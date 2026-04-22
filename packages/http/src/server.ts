@@ -62,11 +62,12 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
 
   // Default routes — available without any user route registration.
   server.registerRoute('GET', '/health', createHealthRoute(version))
-  server.registerRoute(
-    'GET',
-    '/api/products',
-    createProductsRoute(documentStore, config.store.name),
-  )
+  // The commerce routes (including `/api/products`) are registered by
+  // `platform.attachHttp(...)` — we intentionally do not pre-register them
+  // here to avoid FST_ERR_DUPLICATED_ROUTE conflicts when the kernel is wired.
+  void createProductsRoute
+  void documentStore
+  void config
 
   return server
 }

@@ -68,6 +68,16 @@ export const securitySchema = z.object({
     })
     .default({}),
   csrf: z.boolean().default(true),
+  auth: z
+    .object({
+      jwtSecret: z.string().min(16).default('dev-secret-please-override-me-1234567890'),
+      accessTtl: z.string().regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "15m"').default('15m'),
+      refreshTtl: z
+        .string()
+        .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
+        .default('7d'),
+    })
+    .default({}),
 })
 
 const adapterBlock = z.object({
@@ -84,6 +94,12 @@ export const commerceSchema = z.object({
   shipping: adapterBlock,
   tax: adapterBlock,
   ai: adapterBlock,
+  orders: z
+    .object({
+      numberPrefix: z.string().min(1).default('NYM'),
+      numberStart: z.number().int().nonnegative().default(1000),
+    })
+    .default({}),
 })
 
 export const httpSchema = z.object({

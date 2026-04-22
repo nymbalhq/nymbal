@@ -1,14 +1,25 @@
 import type { CommandStore } from '../command-store.js'
 import * as sqliteSchema from '../schema/sqlite.js'
 import * as postgresSchema from '../schema/postgres.js'
-import type { CategoryRow } from '../schema/index.js'
 
 export interface CategoryInsert {
   id: string
+  parentId?: string | null
   slug: string
   name: string
   description: string
+  position?: number
   createdAt: Date
+}
+
+export interface CategoryRow {
+  id: string
+  parentId: string | null
+  slug: string
+  name: string
+  description: string
+  position: number
+  createdAt: Date | string
 }
 
 export function createCategoryRepository(store: CommandStore) {
@@ -21,17 +32,32 @@ export function createCategoryRepository(store: CommandStore) {
       const rows = await store.db.select().from(postgresSchema.categories)
       return rows as CategoryRow[]
     },
+
     async insertMany(items: CategoryInsert[]): Promise<void> {
       if (items.length === 0) return
       if (store.kind === 'sqlite') {
         const rows = items.map((item) => ({
-          ...item,
+          id: item.id,
+          parentId: item.parentId ?? null,
+          slug: item.slug,
+          name: item.name,
+          description: item.description,
+          position: item.position ?? 0,
           createdAt: item.createdAt.toISOString(),
         }))
         store.db.insert(sqliteSchema.categories).values(rows).run()
         return
       }
-      await store.db.insert(postgresSchema.categories).values(items)
+      const rows = items.map((item) => ({
+        id: item.id,
+        parentId: item.parentId ?? null,
+        slug: item.slug,
+        name: item.name,
+        description: item.description,
+        position: item.position ?? 0,
+        createdAt: item.createdAt,
+      }))
+      await store.db.insert(postgresSchema.categories).values(rows)
     },
   }
 }

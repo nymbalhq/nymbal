@@ -63,3 +63,52 @@ export class HttpError extends NymbalError {
     this.status = status
   }
 }
+
+export class AuthError extends HttpError {
+  constructor(
+    code: 'unauthorized' | 'forbidden' | 'invalid_credentials' | 'token_expired' | 'token_invalid',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    const status = code === 'forbidden' ? 403 : 401
+    super(status, message, { ...options, code: `auth.${code}` })
+  }
+}
+
+export class PaymentError extends NymbalError {
+  constructor(
+    code: 'intent_failed' | 'capture_failed' | 'refund_failed' | 'webhook_invalid' | 'not_configured',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(`payment.${code}`, message, options)
+  }
+}
+
+export class CheckoutError extends NymbalError {
+  constructor(
+    code: 'cart_empty' | 'variant_missing' | 'out_of_stock' | 'reservation_failed' | 'finalize_failed',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(`checkout.${code}`, message, options)
+  }
+}
+
+export class StatusTransitionError extends NymbalError {
+  constructor(
+    entity: string,
+    fromStatus: string,
+    toStatus: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(
+      'status.invalid_transition',
+      `Invalid ${entity} status transition: ${fromStatus} → ${toStatus}`,
+      {
+        ...options,
+        context: { entity, fromStatus, toStatus, ...(options.context ?? {}) },
+      },
+    )
+  }
+}

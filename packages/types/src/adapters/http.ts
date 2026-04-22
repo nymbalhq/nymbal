@@ -22,6 +22,7 @@ export interface RequestContext<TBody = unknown, TQuery = Record<string, string 
   params: TParams
   query: TQuery
   body: TBody
+  rawBody?: Buffer
   headers: Record<string, string | string[] | undefined>
   cookies: Record<string, string>
   auth?: RequestAuth
@@ -57,11 +58,29 @@ export interface RouteOptions {
   name?: string
   csrf?: boolean
   rateLimit?: string
+  rawBody?: boolean
 }
 
 export type MiddlewareHandler = (
   ctx: RequestContext,
 ) => Promise<ResponseEnvelope | void> | ResponseEnvelope | void
+
+export interface SseEvent {
+  id?: string
+  event?: string
+  data: unknown
+}
+
+export interface StreamContext {
+  send(event: SseEvent): void
+  close(): void
+  onClose(callback: () => void): void
+}
+
+export type StreamHandler = (
+  ctx: RequestContext,
+  stream: StreamContext,
+) => Promise<void> | void
 
 export interface HttpAdapter {
   registerRoute(
@@ -70,7 +89,14 @@ export interface HttpAdapter {
     handler: RouteHandler,
     options?: RouteOptions,
   ): void
+  registerStreamRoute(
+    method: 'GET',
+    path: string,
+    handler: StreamHandler,
+    options?: RouteOptions,
+  ): void
   registerMiddleware(middleware: MiddlewareHandler): void
+  setDefaultHeaders(headers: Record<string, string>): void
   start(port: number, host?: string): Promise<void>
   stop(): Promise<void>
 }

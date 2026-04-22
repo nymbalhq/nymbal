@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
 import { loadConfig } from '@nymbal/config'
-import { createPlatform, runSeed } from '@nymbal/platform'
+import { createApp, runSeed } from '@nymbal/platform'
 import { createHttpServer } from '@nymbal/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
@@ -20,11 +20,11 @@ export const devCommand = defineCommand({
   },
   async run({ args }) {
     const { config, projectRoot } = await loadConfig()
-    const platform = createPlatform(config)
     const version = getCliVersion()
+    const app = await createApp(config, { version })
+    const { platform } = app
 
     if (args.seed) {
-      // Naive "is empty" check — products doc store count via query.
       const existing = await platform.documentStore.query('products', {
         partitionKey: { field: 'storeId', value: config.store.name },
         limit: 1,
@@ -48,6 +48,7 @@ export const devCommand = defineCommand({
       documentStore: platform.documentStore,
       version,
     })
+    await app.attachHttp(http.adapter)
     await http.start()
 
     const templateFilter =
@@ -70,7 +71,7 @@ export const devCommand = defineCommand({
         // ignore
       }
       await http.stop().catch(() => {})
-      await platform.close().catch(() => {})
+      await app.stop().catch(() => {})
       process.exit(0)
     }
     process.on('SIGINT', () => void shutdown('SIGINT'))

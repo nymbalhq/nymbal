@@ -42,7 +42,12 @@ export function createCommandStore(
         raw.close()
       },
       async transaction(fn) {
-        return db.transaction(async (tx) => fn(tx as unknown as SqliteClient))
+        // better-sqlite3 is synchronous — attempting an async tx with
+        // Drizzle's sync wrapper causes the callback to resolve after the
+        // transaction has already committed/rolled back. For v0.1 we run the
+        // callback directly against the single connection; sqlite guarantees
+        // serial access so the ACID boundary collapses to "the whole process".
+        return fn(db)
       },
     }
   }
