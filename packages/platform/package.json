@@ -1,0 +1,58 @@
+{
+  "name": "@nymbal/platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nymbal CQRS kernel (command store, document store, event bus)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/db/schema/index.d.ts",
+      "import": "./dist/db/schema/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "drizzle.config.sqlite.ts",
+    "drizzle.config.postgres.ts",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate:sqlite": "drizzle-kit generate --config=drizzle.config.sqlite.ts",
+    "db:generate:postgres": "drizzle-kit generate --config=drizzle.config.postgres.ts",
+    "db:migrate:sqlite": "drizzle-kit migrate --config=drizzle.config.sqlite.ts",
+    "db:migrate:postgres": "drizzle-kit migrate --config=drizzle.config.postgres.ts"
+  },
+  "dependencies": {
+    "@nymbal/config": "workspace:*",
+    "@nymbal/types": "workspace:*",
+    "better-sqlite3": "^11.3.0",
+    "drizzle-orm": "^0.36.0",
+    "pg": "^8.13.1",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.28.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

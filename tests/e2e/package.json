@@ -1,0 +1,18 @@
+{
+  "name": "@nymbal/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@nymbal/config": "workspace:*",
+    "@nymbal/http": "workspace:*",
+    "@nymbal/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.2"
+  }
+}

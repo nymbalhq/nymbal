@@ -1,0 +1,21 @@
+{
+  "name": "@nymbal/template-astro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Astro storefront shell for Nymbal (Prompt 4 extends this)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "astro": "^4.16.7",
+    "@astrojs/node": "^8.3.4"
+  }
+}
