@@ -25,6 +25,7 @@ export interface AddToCartProps {
   children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const AddToCart = forwardRef<HTMLElement, AddToCartProps>(
@@ -61,7 +62,7 @@ export const AddToCart = forwardRef<HTMLElement, AddToCartProps>(
   }, [props.onItemAdded])
 
     return (
-      <nymbal-add-to-cart ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-add-to-cart ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         {props.children}
       </nymbal-add-to-cart>
     )
@@ -73,6 +74,7 @@ export interface CartDrawerProps {
   onCheckoutClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const CartDrawer = forwardRef<HTMLElement, CartDrawerProps>(
@@ -99,7 +101,7 @@ export const CartDrawer = forwardRef<HTMLElement, CartDrawerProps>(
   }, [props.onCheckoutClick])
 
     return (
-      <nymbal-cart-drawer ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-cart-drawer ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-cart-drawer>
     )
@@ -110,6 +112,7 @@ export interface MiniCartProps {
   onClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const MiniCart = forwardRef<HTMLElement, MiniCartProps>(
@@ -128,7 +131,7 @@ export const MiniCart = forwardRef<HTMLElement, MiniCartProps>(
   }, [props.onClick])
 
     return (
-      <nymbal-mini-cart ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-mini-cart ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-mini-cart>
     )
@@ -140,6 +143,7 @@ export interface VariantSelectorProps {
   onVariantSelected?: (event: CustomEvent<{ variant: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const VariantSelector = forwardRef<HTMLElement, VariantSelectorProps>(
@@ -166,7 +170,7 @@ export const VariantSelector = forwardRef<HTMLElement, VariantSelectorProps>(
   }, [props.onVariantSelected])
 
     return (
-      <nymbal-variant-selector ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-variant-selector ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-variant-selector>
     )
@@ -180,6 +184,7 @@ export interface QuantitySelectorProps {
   onQuantityChange?: (event: CustomEvent<{ value: number }>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const QuantitySelector = forwardRef<HTMLElement, QuantitySelectorProps>(
@@ -226,7 +231,7 @@ export const QuantitySelector = forwardRef<HTMLElement, QuantitySelectorProps>(
   }, [props.onQuantityChange])
 
     return (
-      <nymbal-quantity-selector ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-quantity-selector ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-quantity-selector>
     )
@@ -239,6 +244,7 @@ export interface SearchBarProps {
   onSearchSelect?: (event: CustomEvent<{ product: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const SearchBar = forwardRef<HTMLElement, SearchBarProps>(
@@ -275,7 +281,7 @@ export const SearchBar = forwardRef<HTMLElement, SearchBarProps>(
   }, [props.onSearchSelect])
 
     return (
-      <nymbal-search-bar ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-search-bar ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-search-bar>
     )
@@ -287,6 +293,7 @@ export interface ProductFilterProps {
   onFilterChange?: (event: CustomEvent<{ name: string; value: string }>) => void
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const ProductFilter = forwardRef<HTMLElement, ProductFilterProps>(
@@ -313,7 +320,7 @@ export const ProductFilter = forwardRef<HTMLElement, ProductFilterProps>(
   }, [props.onFilterChange])
 
     return (
-      <nymbal-product-filter ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-product-filter ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-product-filter>
     )
@@ -325,6 +332,7 @@ export interface ToastProps {
   durationMs?: number
   className?: string
   style?: React.CSSProperties
+  'data-testid'?: string
 }
 
 export const Toast = forwardRef<HTMLElement, ToastProps>(
@@ -355,7 +363,7 @@ export const Toast = forwardRef<HTMLElement, ToastProps>(
 
 
     return (
-      <nymbal-toast ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <nymbal-toast ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-toast>
     )

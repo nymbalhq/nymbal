@@ -1,0 +1,297 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+env:
+  PNPM_VERSION: '9.12.3'
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm vitest run --project platform-unit --project sdk --project web-components --project react --project factories --project config --project types
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm vitest run --project platform-integration
+
+  contracts:
+    name: Contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm vitest run --project contracts-native
+
+  coverage:
+    name: Coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm vitest run --coverage
+
+  build:
+    name: Build all packages + templates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm build:templates
+
+  e2e-astro:
+    name: E2E — Astro
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Run E2E (Astro)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep-invert "@visual|@a11y"
+        env:
+          CI: true
+
+  e2e-nextjs:
+    name: E2E — Next.js
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Run E2E (Next.js)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep-invert "@visual|@a11y"
+        env:
+          CI: true
+
+  visual-astro:
+    name: Visual regression — Astro
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Visual regression (Astro)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@visual"
+        env:
+          CI: true
+
+  visual-nextjs:
+    name: Visual regression — Next.js
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Visual regression (Next.js)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@visual"
+        env:
+          CI: true
+
+  a11y-astro:
+    name: Accessibility — Astro
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Accessibility scan (Astro)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@a11y"
+        env:
+          CI: true
+
+  a11y-nextjs:
+    name: Accessibility — Next.js
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Accessibility scan (Next.js)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@a11y"
+        env:
+          CI: true
+
+  perf-astro:
+    name: Performance — Astro
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build:templates
+      - name: Run Lighthouse CI (Astro)
+        run: |
+          pnpm --filter @nymbal/template-astro preview &
+          sleep 5
+          pnpm lhci autorun
+        env:
+          CI: true
+          NYMBAL_TEMPLATE: astro
+
+  perf-nextjs:
+    name: Performance — Next.js
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build:templates
+      - name: Run Lighthouse CI (Next.js)
+        run: |
+          pnpm --filter @nymbal/template-nextjs start &
+          sleep 5
+          pnpm lhci autorun
+        env:
+          CI: true
+          NYMBAL_TEMPLATE: nextjs

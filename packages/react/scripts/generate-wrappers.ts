@@ -132,6 +132,7 @@ function generatePropInterface(comp: ComponentDef): string {
   }
   lines.push(`  className?: string`)
   lines.push(`  style?: React.CSSProperties`)
+  lines.push(`  'data-testid'?: string`)
   return `export interface ${comp.reactName}Props {\n${lines.join('\n')}\n}`
 }
 
@@ -196,7 +197,7 @@ ${attrEffects}
 ${eventEffects}
 
     return (
-      <${comp.tagName} ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style}>
+      <${comp.tagName} ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         ${childSlot}
       </${comp.tagName}>
     )
