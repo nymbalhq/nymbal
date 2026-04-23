@@ -1,0 +1,37 @@
+---
+import '../styles/pages/search.css'
+import '../styles/pages/home.css'
+import BaseLayout from '../layouts/BaseLayout.astro'
+---
+
+<BaseLayout title="Search | Nymbal" description="Search our product catalogue.">
+  <div class="search-hero">
+    <h1 class="search-hero-title">Search</h1>
+    <div class="search-bar-wrapper">
+      <input
+        type="search"
+        id="search-input"
+        class="search-input-large"
+        placeholder="Search for products..."
+        aria-label="Search products"
+        data-testid="search-input"
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  <div class="container section">
+    <p class="search-query-label" id="search-query-label" style="display:none; margin-bottom: var(--nymbal-spacing-md, 1rem);"></p>
+    <div id="search-results" data-testid="search-results">
+      <div class="search-empty">
+        <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
+        <h2 class="search-empty-title">Search our store</h2>
+        <p class="search-empty-text">Type a keyword to find products.</p>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../scripts/search.js'
+</script>

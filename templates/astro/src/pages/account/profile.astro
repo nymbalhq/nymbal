@@ -1,0 +1,132 @@
+---
+import '../../styles/pages/account.css'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="Profile">
+  <h1 class="account-page-title">Profile</h1>
+  <p class="account-page-subtitle">Update your personal information.</p>
+
+  <form id="profile-form" class="account-form" data-testid="profile-form">
+    <div class="account-form-row">
+      <div class="form-group">
+        <label for="profile-firstName">First Name</label>
+        <input
+          type="text"
+          id="profile-firstName"
+          name="firstName"
+          autocomplete="given-name"
+          data-testid="profile-firstName"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="profile-lastName">Last Name</label>
+        <input
+          type="text"
+          id="profile-lastName"
+          name="lastName"
+          autocomplete="family-name"
+          data-testid="profile-lastName"
+        />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="profile-email">Email</label>
+      <input
+        type="email"
+        id="profile-email"
+        name="email"
+        disabled
+        autocomplete="email"
+        data-testid="profile-email"
+        style="opacity: 0.6; cursor: not-allowed;"
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="profile-phone">Phone</label>
+      <input
+        type="tel"
+        id="profile-phone"
+        name="phone"
+        autocomplete="tel"
+        data-testid="profile-phone"
+      />
+    </div>
+
+    <div class="account-form-actions">
+      <button type="submit" class="btn btn-primary" data-testid="profile-save">Save Changes</button>
+    </div>
+
+    <p class="form-message" id="profile-message" style="display:none; margin-top: var(--nymbal-spacing-md, 1rem); font-size: var(--nymbal-font-size-sm, 0.875rem);"></p>
+  </form>
+</AccountLayout>
+
+<script>
+  import { client } from '../../lib/client.js'
+
+  const form = document.getElementById('profile-form') as HTMLFormElement | null
+  const messageEl = document.getElementById('profile-message')
+
+  function populateForm() {
+    const state = client.auth.getState()
+    const profile = state.profile ?? state.user
+    if (!profile) return
+
+    const firstNameEl = document.getElementById('profile-firstName') as HTMLInputElement
+    const lastNameEl = document.getElementById('profile-lastName') as HTMLInputElement
+    const emailEl = document.getElementById('profile-email') as HTMLInputElement
+    const phoneEl = document.getElementById('profile-phone') as HTMLInputElement
+
+    if (firstNameEl) firstNameEl.value = profile.firstName ?? ''
+    if (lastNameEl) lastNameEl.value = profile.lastName ?? ''
+    if (emailEl) emailEl.value = profile.email ?? ''
+    if (phoneEl) phoneEl.value = profile.phone ?? ''
+  }
+
+  // Load profile data
+  async function init() {
+    try {
+      await client.auth.loadProfile()
+    } catch {
+      // ignore
+    }
+    populateForm()
+  }
+
+  client.auth.subscribe(populateForm)
+  init()
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    if (!form || !messageEl) return
+
+    const firstName = (document.getElementById('profile-firstName') as HTMLInputElement)?.value
+    const lastName = (document.getElementById('profile-lastName') as HTMLInputElement)?.value
+    const phone = (document.getElementById('profile-phone') as HTMLInputElement)?.value
+
+    const submitBtn = form.querySelector('[data-testid="profile-save"]') as HTMLButtonElement
+    if (submitBtn) {
+      submitBtn.disabled = true
+      submitBtn.textContent = 'Saving...'
+    }
+
+    try {
+      await client.auth.updateProfile({ firstName, lastName, phone })
+      messageEl.textContent = 'Profile updated successfully.'
+      messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
+      messageEl.style.display = 'block'
+    } catch (err: any) {
+      messageEl.textContent = err.message ?? 'Failed to update profile.'
+      messageEl.style.color = 'var(--nymbal-color-error, #dc2626)'
+      messageEl.style.display = 'block'
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false
+        submitBtn.textContent = 'Save Changes'
+      }
+    }
+  })
+</script>

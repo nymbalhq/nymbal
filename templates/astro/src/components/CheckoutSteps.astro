@@ -1,0 +1,29 @@
+---
+import '../styles/pages/checkout.css'
+
+interface Props {
+  currentStep: 'contact' | 'shipping' | 'payment'
+}
+
+const { currentStep } = Astro.props
+const steps = ['contact', 'shipping', 'payment'] as const
+const stepLabels = { contact: 'Contact', shipping: 'Shipping', payment: 'Payment' }
+const currentIndex = steps.indexOf(currentStep)
+---
+
+<div class="checkout-steps" data-testid="checkout-steps">
+  {steps.map((step, index) => {
+    const isCompleted = index < currentIndex
+    const isActive = step === currentStep
+    const stepClass = isCompleted ? 'checkout-step completed' : isActive ? 'checkout-step active' : 'checkout-step'
+    const dividerClass = index < currentIndex ? 'checkout-step-divider completed' : 'checkout-step-divider'
+    return (
+      <>
+        {index > 0 && <div class={dividerClass} aria-hidden="true"></div>}
+        <div class={stepClass} data-testid={`checkout-step-${step}`}>
+          <span>{stepLabels[step]}</span>
+        </div>
+      </>
+    )
+  })}
+</div>

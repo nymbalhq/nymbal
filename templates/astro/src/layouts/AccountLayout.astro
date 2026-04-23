@@ -1,0 +1,168 @@
+---
+import BaseLayout from './BaseLayout.astro'
+
+interface Props {
+  title: string
+}
+
+const { title } = Astro.props
+---
+<BaseLayout title={`${title} | Nymbal`} description="Manage your Nymbal account">
+  <div class="account-layout container section">
+    <!-- Loading state shown while auth check runs -->
+    <div class="account-loading" id="account-loading">
+      <p>Checking authentication...</p>
+    </div>
+
+    <!-- Actual content, hidden until auth check passes -->
+    <div class="account-content" id="account-content" style="display:none;">
+      <aside class="account-sidebar">
+        <nav class="account-nav" aria-label="Account navigation">
+          <a href="/account" class="account-nav-link">Dashboard</a>
+          <a href="/account/orders" class="account-nav-link">Orders</a>
+          <a href="/account/addresses" class="account-nav-link">Addresses</a>
+          <a href="/account/profile" class="account-nav-link">Profile</a>
+          <button type="button" class="account-nav-link account-logout-btn" id="logout-btn">
+            Logout
+          </button>
+        </nav>
+      </aside>
+
+      <div class="account-main">
+        <slot />
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import { client } from '../lib/client.js'
+
+  async function guardAuth() {
+    const loadingEl = document.getElementById('account-loading')
+    const contentEl = document.getElementById('account-content')
+
+    let state = client.auth.getState()
+
+    if (!state.isAuthenticated) {
+      try {
+        await client.auth.loadProfile()
+        state = client.auth.getState()
+      } catch {
+        // ignore — will redirect below
+      }
+    }
+
+    if (!state.isAuthenticated) {
+      const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+      window.location.href = `/account/login?redirect=${redirect}`
+      return
+    }
+
+    if (loadingEl) loadingEl.style.display = 'none'
+    if (contentEl) contentEl.style.display = ''
+  }
+
+  guardAuth()
+
+  // Logout handler
+  const logoutBtn = document.getElementById('logout-btn')
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await client.auth.logout()
+      window.location.href = '/account/login'
+    })
+  }
+</script>
+
+<style>
+  .account-layout {
+    min-height: 60vh;
+  }
+
+  .account-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40vh;
+    color: var(--nymbal-color-text-muted, #71717a);
+    font-size: var(--nymbal-font-size-sm, 0.875rem);
+  }
+
+  .account-content {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--nymbal-spacing-xl, 2rem);
+  }
+
+  @media (min-width: 769px) {
+    .account-content {
+      grid-template-columns: 220px 1fr;
+    }
+  }
+
+  .account-sidebar {
+    border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+    padding-bottom: var(--nymbal-spacing-md, 1rem);
+  }
+
+  @media (min-width: 769px) {
+    .account-sidebar {
+      border-bottom: none;
+      border-right: 1px solid var(--nymbal-color-border, #e4e4e7);
+      padding-bottom: 0;
+      padding-right: var(--nymbal-spacing-xl, 2rem);
+    }
+  }
+
+  .account-nav {
+    display: flex;
+    gap: var(--nymbal-spacing-xs, 0.25rem);
+    overflow-x: auto;
+  }
+
+  @media (min-width: 769px) {
+    .account-nav {
+      flex-direction: column;
+      overflow-x: visible;
+    }
+  }
+
+  .account-nav-link {
+    display: block;
+    padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+    font-size: var(--nymbal-font-size-sm, 0.875rem);
+    font-weight: var(--nymbal-font-weight-medium, 500);
+    color: var(--nymbal-color-text, #18181b);
+    text-decoration: none;
+    border-radius: var(--nymbal-radius-md, 0.5rem);
+    white-space: nowrap;
+    transition: background-color var(--nymbal-transition-fast, 150ms) ease,
+      color var(--nymbal-transition-fast, 150ms) ease;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    width: 100%;
+  }
+
+  .account-nav-link:hover {
+    background-color: var(--nymbal-color-border, #e4e4e7);
+    color: var(--nymbal-color-accent, #2563eb);
+  }
+
+  .account-logout-btn {
+    color: var(--nymbal-color-error, #dc2626);
+    margin-top: var(--nymbal-spacing-sm, 0.5rem);
+  }
+
+  .account-logout-btn:hover {
+    background-color: rgba(220, 38, 38, 0.08);
+    color: var(--nymbal-color-error, #dc2626);
+  }
+
+  .account-main {
+    min-width: 0;
+  }
+</style>

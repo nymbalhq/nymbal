@@ -1,0 +1,132 @@
+---
+import '../../styles/pages/account.css'
+import '../../styles/pages/checkout.css'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+import AddressForm from '../../components/AddressForm.astro'
+---
+
+<AccountLayout title="Addresses">
+  <h1 class="account-page-title">Addresses</h1>
+
+  <div id="addresses-container" data-testid="addresses-list">
+    <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
+      Loading addresses...
+    </p>
+  </div>
+
+  <div style="margin-top: var(--nymbal-spacing-xl, 2rem);">
+    <h2 class="section-title">Add New Address</h2>
+    <form id="add-address-form" class="account-form" data-testid="add-address-form">
+      <AddressForm id="new-address" />
+      <div class="account-form-actions">
+        <button type="submit" class="btn btn-primary" data-testid="save-address">Save Address</button>
+      </div>
+    </form>
+    <p class="form-message" id="address-form-message" style="display:none; margin-top: var(--nymbal-spacing-md, 1rem); font-size: var(--nymbal-font-size-sm, 0.875rem);"></p>
+  </div>
+</AccountLayout>
+
+<script>
+  import { client } from '../../lib/client.js'
+
+  const container = document.getElementById('addresses-container')
+  const form = document.getElementById('add-address-form') as HTMLFormElement | null
+  const messageEl = document.getElementById('address-form-message')
+
+  async function loadAddresses() {
+    if (!container) return
+
+    try {
+      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
+      const state = client.auth.getState()
+      const token = state.token ?? state.accessToken
+
+      const res = await fetch(`${apiUrl}/api/addresses`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (!res.ok) throw new Error('Failed to load')
+      const addresses = (await res.json()) as any[]
+
+      if (addresses.length === 0) {
+        container.innerHTML = `
+          <div class="account-empty">
+            <h2 class="account-empty-title">No saved addresses</h2>
+            <p class="account-empty-text">Add an address below to get started.</p>
+          </div>
+        `
+        return
+      }
+
+      container.innerHTML = `
+        <div class="address-list">
+          ${addresses
+            .map(
+              (addr: any) => `
+            <div class="address-card ${addr.isDefault ? 'default' : ''}" data-testid="address-${addr.id}">
+              ${addr.isDefault ? '<span class="address-card-badge">Default</span>' : ''}
+              <div class="address-card-line">${addr.line1}</div>
+              ${addr.line2 ? `<div class="address-card-line">${addr.line2}</div>` : ''}
+              <div class="address-card-line">${addr.city}, ${addr.state} ${addr.postcode}</div>
+              <div class="address-card-line">${addr.country}</div>
+            </div>
+          `,
+            )
+            .join('')}
+        </div>
+      `
+    } catch {
+      container.innerHTML = `
+        <div class="account-empty">
+          <p class="account-empty-text">Unable to load addresses.</p>
+        </div>
+      `
+    }
+  }
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    if (!form || !messageEl) return
+
+    const formData = new FormData(form)
+    const address = {
+      line1: String(formData.get('line1')),
+      line2: String(formData.get('line2') || ''),
+      city: String(formData.get('city')),
+      state: String(formData.get('state')),
+      postcode: String(formData.get('postcode')),
+      country: String(formData.get('country')),
+    }
+
+    try {
+      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
+      const state = client.auth.getState()
+      const token = state.token ?? state.accessToken
+
+      const res = await fetch(`${apiUrl}/api/addresses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(address),
+      })
+
+      if (res.ok) {
+        messageEl.textContent = 'Address saved successfully.'
+        messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
+        messageEl.style.display = 'block'
+        form.reset()
+        loadAddresses()
+      } else {
+        throw new Error('Failed to save')
+      }
+    } catch {
+      messageEl.textContent = 'Failed to save address. Please try again.'
+      messageEl.style.color = 'var(--nymbal-color-error, #dc2626)'
+      messageEl.style.display = 'block'
+    }
+  })
+
+  loadAddresses()
+</script>

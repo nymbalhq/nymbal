@@ -1,0 +1,78 @@
+---
+import '../../styles/pages/plp.css'
+import '../../styles/pages/home.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import Breadcrumb from '../../components/Breadcrumb.astro'
+import ProductCard from '../../components/ProductCard.astro'
+import SortDropdown from '../../components/SortDropdown.astro'
+import Pagination from '../../components/Pagination.astro'
+import { fetchProducts, fetchCategories } from '../../lib/api'
+
+const { slug } = Astro.params
+
+const [productResult, categories] = await Promise.all([
+  fetchProducts({ limit: 24, category: slug }),
+  fetchCategories(),
+])
+
+const products = productResult.items
+const category = categories.find((c) => c.slug === slug)
+const categoryName = category?.name ?? slug ?? 'Category'
+const facets = categories.map((c) => ({ name: c.slug, label: c.name }))
+---
+
+<BaseLayout
+  title={`${categoryName} | Nymbal`}
+  description={category?.description ?? `Browse ${categoryName} products.`}
+>
+  <div class="container section">
+    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: categoryName }]} />
+
+    <div class="plp-header">
+      <h1 class="plp-title">{categoryName}</h1>
+      {category?.description && (
+        <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">
+          {category.description}
+        </p>
+      )}
+      <p class="plp-count" id="product-count">{products.length} products</p>
+    </div>
+
+    <div class="plp-layout">
+      <aside class="plp-sidebar">
+        <nymbal-product-filter
+          facets={JSON.stringify([
+            {
+              name: 'category',
+              label: 'Category',
+              values: facets,
+            },
+          ])}
+        ></nymbal-product-filter>
+      </aside>
+
+      <div class="plp-grid-area">
+        <SortDropdown />
+
+        <div class="product-grid" id="product-grid">
+          {products.map((product) => (
+            <ProductCard product={product} />
+          ))}
+        </div>
+
+        {products.length === 0 && (
+          <div class="plp-empty">
+            <h2 class="plp-empty-title">No products found</h2>
+            <p class="plp-empty-text">Check back soon for new arrivals.</p>
+          </div>
+        )}
+
+        <Pagination />
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../scripts/plp.js'
+</script>

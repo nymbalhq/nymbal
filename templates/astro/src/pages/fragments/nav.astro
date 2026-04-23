@@ -1,0 +1,9 @@
+---
+import CategoryNav from '../../components/CategoryNav.astro'
+import { fetchCategories } from '../../lib/api'
+
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=300')
+
+const categories = await fetchCategories()
+---
+<CategoryNav categories={categories} />

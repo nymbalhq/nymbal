@@ -1,0 +1,213 @@
+/* ----------------------------------------------------------------
+   Product listing page (PLP) styles
+   ---------------------------------------------------------------- */
+
+/* ---- Page layout ---- */
+
+.plp-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+@media (min-width: 769px) {
+  .plp-layout {
+    grid-template-columns: 240px 1fr;
+    gap: var(--nymbal-spacing-xl, 2rem);
+  }
+}
+
+/* ---- Page header / breadcrumbs ---- */
+
+.plp-header {
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+}
+
+.plp-title {
+  font-size: 1.75rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.plp-count {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+/* ---- Filter sidebar ---- */
+
+.plp-sidebar {
+  display: none;
+}
+
+@media (min-width: 769px) {
+  .plp-sidebar {
+    display: block;
+    position: sticky;
+    top: 80px;
+    align-self: start;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+  }
+}
+
+.filter-section {
+  border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+  padding-bottom: var(--nymbal-spacing-md, 1rem);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+}
+
+.filter-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.filter-heading {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.filter-item label {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text, #18181b);
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.filter-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--nymbal-color-accent, #2563eb);
+  cursor: pointer;
+}
+
+.filter-link {
+  display: block;
+  padding: var(--nymbal-spacing-xs, 0.25rem) 0;
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text, #18181b);
+  text-decoration: none;
+  transition: color var(--nymbal-transition-fast, 150ms) ease;
+}
+
+.filter-link:hover,
+.filter-link[aria-current="page"] {
+  color: var(--nymbal-color-accent, #2563eb);
+}
+
+.filter-link[aria-current="page"] {
+  font-weight: var(--nymbal-font-weight-bold, 700);
+}
+
+/* Mobile filter toggle */
+
+.plp-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-xs, 0.25rem);
+  padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+  background: var(--nymbal-color-surface, #fff);
+  border: 1px solid var(--nymbal-color-border, #e4e4e7);
+  border-radius: var(--nymbal-radius-md, 0.5rem);
+  cursor: pointer;
+}
+
+@media (min-width: 769px) {
+  .plp-filter-toggle {
+    display: none;
+  }
+}
+
+/* ---- Sort bar ---- */
+
+.plp-sort-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  padding-bottom: var(--nymbal-spacing-md, 1rem);
+  border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  flex-wrap: wrap;
+}
+
+.plp-sort-bar label {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text-muted, #71717a);
+  margin-bottom: 0;
+}
+
+.plp-sort-bar select {
+  width: auto;
+  min-width: 160px;
+  padding: var(--nymbal-spacing-xs, 0.25rem) var(--nymbal-spacing-sm, 0.5rem);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+/* ---- Grid area ---- */
+
+.plp-grid-area {
+  min-width: 0;
+}
+
+/* ---- Pagination ---- */
+
+.plp-pagination {
+  display: flex;
+  justify-content: center;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  margin-top: var(--nymbal-spacing-xl, 2rem);
+  padding-top: var(--nymbal-spacing-lg, 1.5rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.plp-pagination .btn {
+  min-width: 100px;
+}
+
+/* ---- Empty state ---- */
+
+.plp-empty {
+  text-align: center;
+  padding: 4rem var(--nymbal-spacing-md, 1rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+.plp-empty-title {
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.plp-empty-text {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+/* ---- nymbal-product-filter integration ---- */
+
+nymbal-product-filter {
+  display: block;
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+}

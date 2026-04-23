@@ -1,0 +1,107 @@
+---
+import '../../styles/pages/confirmation.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import OrderSummary from '../../components/OrderSummary.astro'
+import { fetchOrder } from '../../lib/api'
+import { formatPrice } from '../../lib/format'
+
+const { orderNumber } = Astro.params
+const order = await fetchOrder(orderNumber!)
+
+if (!order) return Astro.redirect('/404')
+
+const lineItems = (order.lineItems ?? []).map((item) => ({
+  name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
+  qty: item.qty,
+  priceMinor: item.unitPriceMinor,
+}))
+
+const shippingAddress = order.shippingAddress
+---
+
+<BaseLayout title="Order Confirmed | Nymbal" description="Your order has been placed successfully.">
+  <div class="container section">
+    <div class="confirmation-page">
+      <div class="confirmation-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+
+      <h1 class="confirmation-title">Thank you for your order!</h1>
+      <p class="confirmation-subtitle">
+        Your order <strong data-testid="order-number">{order.orderNumber}</strong> has been confirmed.
+        We'll send a confirmation to <strong>{order.email}</strong>.
+      </p>
+
+      <div class="confirmation-card">
+        <h2 class="confirmation-card-title">Order Details</h2>
+
+        <dl>
+          <div class="confirmation-detail-row">
+            <dt>Order Number</dt>
+            <dd>{order.orderNumber}</dd>
+          </div>
+          <div class="confirmation-detail-row">
+            <dt>Status</dt>
+            <dd style="text-transform: capitalize;">{order.status}</dd>
+          </div>
+        </dl>
+
+        <div class="confirmation-items">
+          {lineItems.map((item) => (
+            <div class="confirmation-item">
+              <span>
+                <span class="confirmation-item-name">{item.name}</span>
+                <span class="confirmation-item-qty"> x{item.qty}</span>
+              </span>
+              <span class="confirmation-item-price">
+                {formatPrice(item.priceMinor * item.qty, order.currency)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div class="confirmation-totals">
+          <div class="confirmation-total-row">
+            <span>Subtotal</span>
+            <span>{formatPrice(order.subtotalMinor, order.currency)}</span>
+          </div>
+          {order.shippingTotalMinor != null && (
+            <div class="confirmation-total-row">
+              <span>Shipping</span>
+              <span>{order.shippingTotalMinor === 0 ? 'Free' : formatPrice(order.shippingTotalMinor, order.currency)}</span>
+            </div>
+          )}
+          {order.taxTotalMinor != null && (
+            <div class="confirmation-total-row">
+              <span>Tax</span>
+              <span>{formatPrice(order.taxTotalMinor, order.currency)}</span>
+            </div>
+          )}
+          <div class="confirmation-total-row grand-total">
+            <span>Total</span>
+            <span>{formatPrice(order.totalMinor, order.currency)}</span>
+          </div>
+        </div>
+      </div>
+
+      {shippingAddress && (
+        <div class="confirmation-card">
+          <h2 class="confirmation-card-title">Shipping Address</h2>
+          <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
+            {shippingAddress.line1}<br />
+            {shippingAddress.line2 && <>{shippingAddress.line2}<br /></>}
+            {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postcode}<br />
+            {shippingAddress.country}
+          </p>
+        </div>
+      )}
+
+      <div class="confirmation-actions">
+        <a href="/account/register" class="btn btn-primary">Create an Account</a>
+        <a href="/products" class="btn btn-secondary">Continue Shopping</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,272 @@
+/* ----------------------------------------------------------------
+   Product detail page (PDP) styles
+   ---------------------------------------------------------------- */
+
+/* ---- Two-column layout ---- */
+
+.pdp-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+@media (min-width: 769px) {
+  .pdp-layout {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--nymbal-spacing-xl, 2rem);
+  }
+}
+
+@media (min-width: 1025px) {
+  .pdp-layout {
+    grid-template-columns: 1.2fr 1fr;
+    gap: 3rem;
+  }
+}
+
+/* ---- Breadcrumbs ---- */
+
+.pdp-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-xs, 0.25rem);
+  font-size: var(--nymbal-font-size-xs, 0.75rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  flex-wrap: wrap;
+}
+
+.pdp-breadcrumbs a {
+  color: var(--nymbal-color-text-muted, #71717a);
+  text-decoration: none;
+  transition: color var(--nymbal-transition-fast, 150ms) ease;
+}
+
+.pdp-breadcrumbs a:hover {
+  color: var(--nymbal-color-accent, #2563eb);
+}
+
+.pdp-breadcrumbs .separator {
+  color: var(--nymbal-color-border, #e4e4e7);
+}
+
+.pdp-breadcrumbs .current {
+  color: var(--nymbal-color-text, #18181b);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+}
+
+/* ---- Image gallery ---- */
+
+.pdp-gallery {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+}
+
+.pdp-main-image {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: var(--nymbal-radius-lg, 0.75rem);
+  background-color: #f4f4f5;
+  margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.pdp-thumbnails {
+  display: flex;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.pdp-thumbnail {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--nymbal-radius-md, 0.5rem);
+  border: 2px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  background-color: #f4f4f5;
+  transition: border-color var(--nymbal-transition-fast, 150ms) ease;
+}
+
+.pdp-thumbnail:hover {
+  border-color: var(--nymbal-color-border, #e4e4e7);
+}
+
+.pdp-thumbnail.active {
+  border-color: var(--nymbal-color-primary, #18181b);
+}
+
+@media (min-width: 641px) {
+  .pdp-thumbnail {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+/* ---- Product info ---- */
+
+.pdp-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-md, 1rem);
+}
+
+.pdp-title {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  line-height: 1.2;
+}
+
+@media (min-width: 641px) {
+  .pdp-title {
+    font-size: 1.75rem;
+  }
+}
+
+.pdp-price {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+}
+
+.pdp-price-range {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  font-weight: var(--nymbal-font-weight-normal, 400);
+  margin-left: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.pdp-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-xs, 0.25rem);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+}
+
+.pdp-stock.in-stock {
+  color: var(--nymbal-color-success, #16a34a);
+}
+
+.pdp-stock.out-of-stock {
+  color: var(--nymbal-color-error, #dc2626);
+}
+
+.pdp-stock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--nymbal-radius-full, 9999px);
+  background-color: currentColor;
+}
+
+.pdp-description {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  line-height: 1.7;
+}
+
+/* ---- Variant / quantity / add-to-cart area ---- */
+
+.pdp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-md, 1rem);
+  padding-top: var(--nymbal-spacing-md, 1rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+nymbal-variant-selector {
+  display: block;
+}
+
+nymbal-quantity-selector {
+  display: inline-flex;
+}
+
+nymbal-add-to-cart {
+  display: block;
+}
+
+.pdp-add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-md, 1rem);
+  flex-wrap: wrap;
+}
+
+/* ---- Reviews section ---- */
+
+.pdp-reviews {
+  margin-top: var(--nymbal-spacing-xl, 2rem);
+  padding-top: var(--nymbal-spacing-xl, 2rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.pdp-reviews-title {
+  font-size: 1.25rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+.review-item {
+  padding-bottom: var(--nymbal-spacing-lg, 1.5rem);
+  border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.review-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+  flex-wrap: wrap;
+}
+
+.review-rating {
+  display: flex;
+  gap: 2px;
+  color: var(--nymbal-color-warning, #d97706);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+.review-date {
+  font-size: var(--nymbal-font-size-xs, 0.75rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+.review-title {
+  font-size: var(--nymbal-font-size-base, 1rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.review-body {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  line-height: 1.6;
+}
+
+.reviews-empty {
+  text-align: center;
+  padding: var(--nymbal-spacing-xl, 2rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}

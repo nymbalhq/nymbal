@@ -1,0 +1,53 @@
+---
+import { formatPrice } from '../lib/format'
+
+interface Props {
+  items: Array<{ name: string; qty: number; priceMinor: number }>
+  subtotalMinor: number
+  currency: string
+  shippingMinor?: number
+  taxMinor?: number
+  totalMinor?: number
+}
+
+const { items, subtotalMinor, currency, shippingMinor, taxMinor, totalMinor } = Astro.props
+const computedTotal = totalMinor ?? subtotalMinor + (shippingMinor ?? 0) + (taxMinor ?? 0)
+---
+
+<div class="order-summary" data-testid="order-summary">
+  <div class="checkout-summary-items">
+    {items.map((item) => (
+      <div class="checkout-summary-item">
+        <span class="checkout-summary-item-name">{item.name}</span>
+        <span class="checkout-summary-item-qty">x{item.qty}</span>
+        <span class="checkout-summary-item-price">
+          {formatPrice(item.priceMinor * item.qty, currency)}
+        </span>
+      </div>
+    ))}
+  </div>
+
+  <dl>
+    <div class="checkout-summary-row">
+      <dt>Subtotal</dt>
+      <dd>{formatPrice(subtotalMinor, currency)}</dd>
+    </div>
+    {shippingMinor != null && (
+      <div class="checkout-summary-row">
+        <dt>Shipping</dt>
+        <dd>{shippingMinor === 0 ? 'Free' : formatPrice(shippingMinor, currency)}</dd>
+      </div>
+    )}
+    {taxMinor != null && (
+      <div class="checkout-summary-row">
+        <dt>Tax</dt>
+        <dd>{formatPrice(taxMinor, currency)}</dd>
+      </div>
+    )}
+  </dl>
+
+  <div class="checkout-summary-total">
+    <span>Total</span>
+    <span>{formatPrice(computedTotal, currency)}</span>
+  </div>
+</div>

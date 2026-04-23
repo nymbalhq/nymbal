@@ -1,0 +1,100 @@
+---
+import '../styles/pages/checkout.css'
+import BaseLayout from '../layouts/BaseLayout.astro'
+import CheckoutSteps from '../components/CheckoutSteps.astro'
+import AddressForm from '../components/AddressForm.astro'
+---
+
+<BaseLayout title="Checkout | Nymbal" description="Complete your purchase.">
+  <div class="container section">
+    <h1 style="font-size: 1.75rem; font-weight: var(--nymbal-font-weight-bold, 700); margin-bottom: var(--nymbal-spacing-md, 1rem);">Checkout</h1>
+
+    <div id="checkout-steps-container">
+      <CheckoutSteps currentStep="contact" />
+    </div>
+
+    <div class="checkout-error" id="checkout-error" style="display:none;" data-testid="checkout-error" role="alert"></div>
+
+    <div class="checkout-layout">
+      <div class="checkout-form">
+        <!-- Contact Section -->
+        <section class="checkout-section" id="checkout-contact" data-testid="checkout-contact">
+          <h2 class="checkout-section-title">Contact Information</h2>
+          <form id="contact-form">
+            <div class="form-group">
+              <label for="contact-email">Email Address</label>
+              <input
+                type="email"
+                id="contact-email"
+                name="email"
+                required
+                autocomplete="email"
+                placeholder="you@example.com"
+                data-testid="contact-email"
+              />
+            </div>
+            <button type="submit" class="btn btn-primary" data-testid="contact-continue">
+              Continue to Shipping
+            </button>
+          </form>
+        </section>
+
+        <!-- Shipping Section -->
+        <section class="checkout-section" id="checkout-shipping" style="display:none;" data-testid="checkout-shipping">
+          <h2 class="checkout-section-title">Shipping Address</h2>
+          <form id="shipping-form">
+            <AddressForm id="shipping" />
+            <button type="submit" class="btn btn-primary" style="margin-top: var(--nymbal-spacing-md, 1rem);" data-testid="shipping-continue">
+              Continue to Payment
+            </button>
+          </form>
+        </section>
+
+        <!-- Payment Section -->
+        <section class="checkout-section" id="checkout-payment" style="display:none;" data-testid="checkout-payment">
+          <h2 class="checkout-section-title">Payment</h2>
+          <form id="payment-form">
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="billing-same" checked />
+                Billing address same as shipping
+              </label>
+            </div>
+
+            <div id="billing-fields" style="display:none;">
+              <h3 class="checkout-section-title" style="font-size: 1rem; margin-top: var(--nymbal-spacing-md, 1rem);">Billing Address</h3>
+              <div id="billing-form">
+                <AddressForm id="billing" />
+              </div>
+            </div>
+
+            <div class="payment-section" style="margin-top: var(--nymbal-spacing-md, 1rem);">
+              <label style="margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">Card Details</label>
+              <div id="stripe-card-element" style="padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem); border: 1px solid var(--nymbal-color-border, #e4e4e7); border-radius: var(--nymbal-radius-md, 0.5rem); background: var(--nymbal-color-surface, #fff); min-height: 40px;" data-testid="stripe-card-element">
+                <!-- Stripe CardElement mounts here -->
+              </div>
+            </div>
+
+            <div class="checkout-submit">
+              <button type="submit" class="btn btn-primary" data-testid="place-order">
+                Place Order
+              </button>
+              <p class="checkout-terms">
+                By placing your order, you agree to our terms and conditions.
+              </p>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <aside class="checkout-summary" id="checkout-summary" data-testid="checkout-summary">
+        <h2 class="checkout-summary-title">Order Summary</h2>
+        <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a);">Loading cart...</p>
+      </aside>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../scripts/checkout.js'
+</script>

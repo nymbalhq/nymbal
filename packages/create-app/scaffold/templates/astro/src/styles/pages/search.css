@@ -1,0 +1,152 @@
+/* ----------------------------------------------------------------
+   Search results page styles
+   ---------------------------------------------------------------- */
+
+/* ---- Prominent search bar ---- */
+
+.search-hero {
+  text-align: center;
+  padding: var(--nymbal-spacing-xl, 2rem) var(--nymbal-spacing-md, 1rem);
+  background-color: #fafafa;
+  border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.search-hero-title {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+}
+
+.search-bar-wrapper {
+  max-width: 36rem;
+  margin-inline: auto;
+}
+
+.search-bar-wrapper nymbal-search-bar {
+  display: block;
+}
+
+.search-input-large {
+  width: 100%;
+  padding: var(--nymbal-spacing-md, 1rem) var(--nymbal-spacing-lg, 1.5rem);
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  border: 2px solid var(--nymbal-color-border, #e4e4e7);
+  border-radius: var(--nymbal-radius-lg, 0.75rem);
+  background-color: var(--nymbal-color-surface, #fff);
+  transition: border-color var(--nymbal-transition-fast, 150ms) ease,
+    box-shadow var(--nymbal-transition-fast, 150ms) ease;
+}
+
+.search-input-large:focus {
+  outline: none;
+  border-color: var(--nymbal-color-accent, #2563eb);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+/* ---- Results area ---- */
+
+.search-results {
+  padding-top: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+.search-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  flex-wrap: wrap;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.search-query-label {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+.search-query-label strong {
+  color: var(--nymbal-color-text, #18181b);
+  font-weight: var(--nymbal-font-weight-bold, 700);
+}
+
+.search-result-count {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+/* ---- Results grid (uses .product-grid from global) ---- */
+
+/* ---- Empty / no results ---- */
+
+.search-empty {
+  text-align: center;
+  padding: 4rem var(--nymbal-spacing-md, 1rem);
+}
+
+.search-empty-icon {
+  font-size: 3rem;
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  opacity: 0.3;
+}
+
+.search-empty-title {
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.search-empty-text {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  max-width: 28ch;
+  margin-inline: auto;
+}
+
+/* ---- Suggestions ---- */
+
+.search-suggestions {
+  margin-top: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+.search-suggestions-title {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+  margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.search-suggestions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.search-suggestion {
+  display: inline-flex;
+  padding: var(--nymbal-spacing-xs, 0.25rem) var(--nymbal-spacing-md, 1rem);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: var(--nymbal-color-text, #18181b);
+  background-color: var(--nymbal-color-surface, #fff);
+  border: 1px solid var(--nymbal-color-border, #e4e4e7);
+  border-radius: var(--nymbal-radius-full, 9999px);
+  text-decoration: none;
+  transition: border-color var(--nymbal-transition-fast, 150ms) ease,
+    background-color var(--nymbal-transition-fast, 150ms) ease;
+}
+
+.search-suggestion:hover {
+  border-color: var(--nymbal-color-accent, #2563eb);
+  background-color: rgba(37, 99, 235, 0.04);
+}
+
+/* ---- Loading ---- */
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--nymbal-color-text-muted, #71717a);
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}

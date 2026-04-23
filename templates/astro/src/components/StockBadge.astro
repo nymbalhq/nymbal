@@ -1,0 +1,32 @@
+---
+interface Props {
+  stock: number
+}
+
+const { stock } = Astro.props
+
+let statusClass: string
+let label: string
+
+if (stock <= 0) {
+  statusClass = 'out-of-stock'
+  label = 'Out of Stock'
+} else if (stock < 5) {
+  statusClass = 'low-stock'
+  label = 'Low Stock'
+} else {
+  statusClass = 'in-stock'
+  label = 'In Stock'
+}
+---
+
+<span class={`pdp-stock ${statusClass}`} data-testid="stock-badge">
+  <span class="pdp-stock-dot" aria-hidden="true"></span>
+  {label}
+</span>
+
+<style>
+  .low-stock {
+    color: var(--nymbal-color-warning, #d97706);
+  }
+</style>

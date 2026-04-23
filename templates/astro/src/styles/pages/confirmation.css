@@ -1,0 +1,142 @@
+/* ----------------------------------------------------------------
+   Order confirmation page styles
+   ---------------------------------------------------------------- */
+
+.confirmation-page {
+  text-align: center;
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+/* ---- Success icon ---- */
+
+.confirmation-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto var(--nymbal-spacing-md, 1rem);
+  border-radius: var(--nymbal-radius-full, 9999px);
+  background-color: rgba(22, 163, 74, 0.1);
+  color: var(--nymbal-color-success, #16a34a);
+}
+
+.confirmation-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
+/* ---- Heading area ---- */
+
+.confirmation-title {
+  font-size: 1.75rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.confirmation-subtitle {
+  font-size: var(--nymbal-font-size-base, 1rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  margin-bottom: var(--nymbal-spacing-xl, 2rem);
+}
+
+/* ---- Order details card ---- */
+
+.confirmation-card {
+  text-align: left;
+  background-color: #fafafa;
+  border: 1px solid var(--nymbal-color-border, #e4e4e7);
+  border-radius: var(--nymbal-radius-lg, 0.75rem);
+  padding: var(--nymbal-spacing-lg, 1.5rem);
+  margin-bottom: var(--nymbal-spacing-xl, 2rem);
+}
+
+.confirmation-card-title {
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  padding-bottom: var(--nymbal-spacing-md, 1rem);
+  border-bottom: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.confirmation-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--nymbal-spacing-xs, 0.25rem) 0;
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+.confirmation-detail-row dt {
+  color: var(--nymbal-color-text-muted, #71717a);
+}
+
+.confirmation-detail-row dd {
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-text, #18181b);
+}
+
+/* ---- Line items ---- */
+
+.confirmation-items {
+  margin-top: var(--nymbal-spacing-md, 1rem);
+  padding-top: var(--nymbal-spacing-md, 1rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.confirmation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--nymbal-spacing-sm, 0.5rem) 0;
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+.confirmation-item-name {
+  color: var(--nymbal-color-text, #18181b);
+}
+
+.confirmation-item-qty {
+  color: var(--nymbal-color-text-muted, #71717a);
+  margin-left: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+.confirmation-item-price {
+  font-weight: var(--nymbal-font-weight-medium, 500);
+}
+
+/* ---- Totals ---- */
+
+.confirmation-totals {
+  margin-top: var(--nymbal-spacing-md, 1rem);
+  padding-top: var(--nymbal-spacing-md, 1rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+.confirmation-total-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--nymbal-spacing-xs, 0.25rem) 0;
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+}
+
+.confirmation-total-row.grand-total {
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  padding-top: var(--nymbal-spacing-sm, 0.5rem);
+  margin-top: var(--nymbal-spacing-xs, 0.25rem);
+  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+}
+
+/* ---- Actions ---- */
+
+.confirmation-actions {
+  display: flex;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  justify-content: center;
+  flex-wrap: wrap;
+}

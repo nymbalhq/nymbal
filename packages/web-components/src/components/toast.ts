@@ -69,7 +69,10 @@ nymbal-toast .nymbal-toast-close {
 }
 `
 
-export class NymbalToast extends HTMLElement {
+const HTMLElementBase =
+  typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as unknown as typeof HTMLElement)
+
+export class NymbalToast extends HTMLElementBase {
   static get observedAttributes(): string[] {
     return ['position', 'duration-ms']
   }

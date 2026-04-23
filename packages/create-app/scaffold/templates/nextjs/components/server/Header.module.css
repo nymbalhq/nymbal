@@ -1,0 +1,147 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: var(--nymbal-z-dropdown);
+  background-color: var(--nymbal-color-surface);
+  border-bottom: 1px solid var(--nymbal-color-border);
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-lg);
+  height: 4rem;
+  position: relative;
+}
+
+.logo {
+  font-size: var(--nymbal-font-size-xl);
+  font-weight: var(--nymbal-font-weight-bold);
+  color: var(--nymbal-color-primary);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
+.logo:hover {
+  color: var(--nymbal-color-primary);
+  text-decoration: none;
+}
+
+.nav {
+  display: none;
+}
+
+.navList {
+  display: flex;
+  gap: var(--nymbal-spacing-lg);
+  list-style: none;
+}
+
+.navLink {
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  color: var(--nymbal-color-text);
+  text-decoration: none;
+  transition: color var(--nymbal-transition-fast);
+}
+
+.navLink:hover {
+  color: var(--nymbal-color-accent);
+  text-decoration: none;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-md);
+  margin-left: auto;
+}
+
+.search {
+  display: none;
+}
+
+.iconLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nymbal-color-text);
+  transition: color var(--nymbal-transition-fast);
+}
+
+.iconLink:hover {
+  color: var(--nymbal-color-accent);
+}
+
+/* ── Mobile menu (CSS-only) ───────────────────────────────────────── */
+
+.menuCheckbox {
+  display: none;
+}
+
+.menuButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--nymbal-color-text);
+  order: 10;
+}
+
+.mobileNav {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--nymbal-color-surface);
+  border-bottom: 1px solid var(--nymbal-color-border);
+  box-shadow: var(--nymbal-shadow-md);
+  z-index: var(--nymbal-z-dropdown);
+}
+
+.menuCheckbox:checked ~ .mobileNav {
+  display: block;
+}
+
+.mobileNavList {
+  list-style: none;
+  padding: var(--nymbal-spacing-md);
+}
+
+.mobileNavLink {
+  display: block;
+  padding: var(--nymbal-spacing-sm) 0;
+  font-size: var(--nymbal-font-size-base);
+  font-weight: var(--nymbal-font-weight-medium);
+  color: var(--nymbal-color-text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--nymbal-color-border);
+}
+
+.mobileNavLink:hover {
+  color: var(--nymbal-color-accent);
+  text-decoration: none;
+}
+
+/* ── Desktop ──────────────────────────────────────────────────────── */
+
+@media (min-width: 1024px) {
+  .nav {
+    display: block;
+  }
+
+  .search {
+    display: block;
+    width: 16rem;
+  }
+
+  .menuButton {
+    display: none;
+  }
+
+  .mobileNav {
+    display: none !important;
+  }
+}

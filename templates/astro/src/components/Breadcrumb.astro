@@ -1,0 +1,20 @@
+---
+interface Props {
+  items: Array<{ label: string; href?: string }>
+}
+
+const { items } = Astro.props
+---
+
+<nav class="pdp-breadcrumbs" aria-label="Breadcrumb" data-testid="breadcrumb">
+  {items.map((item, index) => (
+    <>
+      {index > 0 && <span class="separator" aria-hidden="true">/</span>}
+      {item.href && index < items.length - 1 ? (
+        <a href={item.href}>{item.label}</a>
+      ) : (
+        <span class="current" aria-current="page">{item.label}</span>
+      )}
+    </>
+  ))}
+</nav>

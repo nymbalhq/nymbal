@@ -1,0 +1,41 @@
+---
+import '../styles/pages/pdp.css'
+import { formatDate } from '../lib/format'
+
+interface Props {
+  reviews: Array<{
+    id: string
+    rating: number
+    title: string
+    body: string
+    submittedAt: string
+  }>
+}
+
+const { reviews } = Astro.props
+
+function renderStars(rating: number): string {
+  const filled = '★'
+  const empty = '☆'
+  return filled.repeat(rating) + empty.repeat(5 - rating)
+}
+---
+
+{reviews.length > 0 ? (
+  <div class="review-list" data-testid="review-list">
+    {reviews.map((review) => (
+      <div class="review-item" data-testid={`review-${review.id}`}>
+        <div class="review-header">
+          <span class="review-rating" aria-label={`${review.rating} out of 5 stars`}>
+            {renderStars(review.rating)}
+          </span>
+          <span class="review-date">{formatDate(review.submittedAt)}</span>
+        </div>
+        <h4 class="review-title">{review.title}</h4>
+        <p class="review-body">{review.body}</p>
+      </div>
+    ))}
+  </div>
+) : (
+  <p class="reviews-empty">No reviews yet. Be the first to review this product.</p>
+)}

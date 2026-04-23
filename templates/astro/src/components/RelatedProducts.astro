@@ -1,0 +1,28 @@
+---
+import ProductCard from './ProductCard.astro'
+
+interface Props {
+  products: Array<{
+    slug: string
+    name: string
+    priceMinor: number | null
+    currency: string | null
+    media: any
+    imageUrl?: string
+  }>
+}
+
+const { products } = Astro.props
+const displayProducts = products.slice(0, 4)
+---
+
+{displayProducts.length > 0 && (
+  <section class="section" data-testid="related-products">
+    <h2 class="section-title">You may also like</h2>
+    <div class="product-grid">
+      {displayProducts.map((product) => (
+        <ProductCard product={product} />
+      ))}
+    </div>
+  </section>
+)}

@@ -1,7 +1,10 @@
 import type { NymbalClient } from '@nymbal/sdk'
 import { getClient } from './registry.js'
 
-export abstract class NymbalElement extends HTMLElement {
+const HTMLElementBase =
+  typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as unknown as typeof HTMLElement)
+
+export abstract class NymbalElement extends HTMLElementBase {
   private _unsubs: Array<() => void> = []
   private _renderQueued = false
 
