@@ -3,7 +3,6 @@ import { InMemoryDocumentStore } from '../../src/document-store/in-memory.js'
 import { InProcessEventBus } from '../../src/event-bus/in-process.js'
 import { withIdempotency } from '../../src/handlers/idempotency.js'
 import { createProcessedEventRepository } from '../../src/repositories/processed-event.js'
-import { createEventPublisher } from '../../src/events/publisher.js'
 import { createLogger } from '../../src/logger.js'
 import type { NymbalEvent } from '@nymbal/types'
 

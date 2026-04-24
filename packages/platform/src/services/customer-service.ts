@@ -47,7 +47,7 @@ export function createCustomerService(deps: {
       return stripPassword(await loadOrThrow(customerId))
     },
     async updateProfile(customerId, patch) {
-      const customer = await loadOrThrow(customerId)
+      await loadOrThrow(customerId)
       const now = new Date()
       await repos.customer.update(customerId, { ...patch, updatedAt: now })
       await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })

@@ -8,6 +8,7 @@ import {
   EVT_CUSTOMER_CREATED,
   ValidationError,
   type Customer,
+  type CustomerAddress,
   type Logger,
   type Role,
 } from '@nymbal/types'
@@ -41,7 +42,7 @@ export interface ImportCustomerInput {
   firstName?: string
   lastName?: string
   phone?: string
-  addresses?: import('@nymbal/types').CustomerAddress[]
+  addresses?: CustomerAddress[]
   metadata?: Record<string, unknown>
 }
 

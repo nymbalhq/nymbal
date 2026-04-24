@@ -3,12 +3,10 @@ import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
   Mail,
-  MapPin,
   CreditCard,
   Clock,
   MessageSquare,
   Package,
-  Send,
   CheckCircle,
   XCircle,
   Truck,

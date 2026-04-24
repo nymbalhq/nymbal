@@ -43,7 +43,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm vitest run --project platform-unit --project sdk --project web-components --project react --project factories --project config --project types --project admin
 
   integration:
@@ -59,7 +59,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm vitest run --project platform-integration
 
   contracts:
@@ -75,7 +75,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm vitest run --project contracts-native
 
   coverage:
@@ -91,7 +91,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm vitest run --coverage
 
   build:
@@ -125,7 +125,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Astro)
@@ -147,7 +147,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Next.js)
@@ -171,7 +171,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Astro)
@@ -195,7 +195,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Next.js)
@@ -217,7 +217,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Astro)
@@ -239,7 +239,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Next.js)
@@ -261,7 +261,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm --filter @nymbal/admin build
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
@@ -286,7 +286,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm --filter @nymbal/admin build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
@@ -309,7 +309,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm --filter @nymbal/admin build
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
@@ -332,7 +332,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm build:templates
       - name: Run Lighthouse CI (Astro)
         run: |
@@ -357,7 +357,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm build
       - run: pnpm build:templates
       - name: Run Lighthouse CI (Next.js)
         run: |

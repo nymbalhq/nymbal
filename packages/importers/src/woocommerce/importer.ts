@@ -9,6 +9,7 @@ import type { WooCommerceImportOptions, ImportState, ProgressCallback } from '..
 import { loadState, freshState, saveState } from '../state.js'
 import { buildReport } from '../report.js'
 import { WooCommerceClient, WooCommerceApiError } from './client.js'
+import type { WcCategory, WcProduct, WcVariation, WcCustomer, WcOrder, WcReview } from './client.js'
 import { mapCategory } from './mappers/category.js'
 import { mapProduct } from './mappers/product.js'
 import { mapCustomer } from './mappers/customer.js'
@@ -87,7 +88,7 @@ export async function runWooCommerceImport(
     let done = state.importedIds.categories.length
     let total = 0
 
-    for await (const page of client.paginate<import('./client.js').WcCategory>('/products/categories', {}, startPage)) {
+    for await (const page of client.paginate<WcCategory>('/products/categories', {}, startPage)) {
       total = page.total
 
       for (const wc of page.items) {
@@ -121,7 +122,7 @@ export async function runWooCommerceImport(
 
     const seenSlugs = new Set<string>()
 
-    for await (const page of client.paginate<import('./client.js').WcProduct>('/products', {}, startPage)) {
+    for await (const page of client.paginate<WcProduct>('/products', {}, startPage)) {
       total = page.total
 
       await pMap(
@@ -129,7 +130,7 @@ export async function runWooCommerceImport(
         async (wc) => {
           if (state.wcToNymbalProduct[wc.id]) return
 
-          let variations: import('./client.js').WcVariation[] = []
+          let variations: WcVariation[] = []
           if (wc.type === 'variable' && wc.variations.length > 0) {
             try {
               variations = await client.getProductVariations(wc.id)
@@ -178,7 +179,7 @@ export async function runWooCommerceImport(
     let done = state.importedIds.customers.length
     let total = 0
 
-    for await (const page of client.paginate<import('./client.js').WcCustomer>('/customers', {}, startPage)) {
+    for await (const page of client.paginate<WcCustomer>('/customers', {}, startPage)) {
       total = page.total
 
       await pMap(
@@ -213,7 +214,7 @@ export async function runWooCommerceImport(
     let done = state.importedIds.orders.length
     let total = 0
 
-    for await (const page of client.paginate<import('./client.js').WcOrder>('/orders', {}, startPage)) {
+    for await (const page of client.paginate<WcOrder>('/orders', {}, startPage)) {
       total = page.total
 
       await pMap(
@@ -257,7 +258,7 @@ export async function runWooCommerceImport(
     let done = state.importedIds.reviews.length
     let total = 0
 
-    for await (const page of client.paginate<import('./client.js').WcReview>('/products/reviews', {}, startPage)) {
+    for await (const page of client.paginate<WcReview>('/products/reviews', {}, startPage)) {
       total = page.total
 
       for (const wc of page.items) {

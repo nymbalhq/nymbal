@@ -3,7 +3,6 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatMoney } from '@/lib/money'
 import { tid } from '@/lib/testid'
 import type { Variant } from '@/types'
 

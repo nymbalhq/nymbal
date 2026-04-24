@@ -7,7 +7,6 @@ import {
   type IndexResult,
   type Logger,
   type SearchAdapter,
-  type SearchDocument,
   type SearchResult,
 } from '@nymbal/types'
 import { noopInitialize, okHealth } from '../base.js'

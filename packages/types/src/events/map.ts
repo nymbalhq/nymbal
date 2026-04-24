@@ -1,5 +1,5 @@
 import type * as P from './payloads.js'
-import * as C from './constants.js'
+import type * as C from './constants.js'
 
 export interface NymbalEventMap {
   [C.EVT_PRODUCT_CREATED]: P.ProductCreatedV1Payload

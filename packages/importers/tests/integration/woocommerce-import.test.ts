@@ -100,7 +100,7 @@ async function buildTestEnv() {
     eventBus,
     builderContext: { storeId: 'test', environment: 'development', version: '0.0.0', source: 'test' },
   })
-  const payments = createNativeStubPaymentsAdapter({ logger })
+  const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
   const search = createNativeSearchAdapter({ documentStore, logger })

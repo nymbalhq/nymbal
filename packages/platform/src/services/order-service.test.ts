@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { EVT_ORDER_PLACED, EVT_ORDER_SHIPPED, EVT_ORDER_DELIVERED, EVT_ORDER_CANCELLED, EVT_ORDER_REFUNDED, EVT_ORDER_PARTIALLY_REFUNDED, EVT_ORDER_PAID, NotFoundError } from '@nymbal/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'

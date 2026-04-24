@@ -3,7 +3,7 @@ import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbal/
 import type { CommandStore } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
-import { parseJson, serialiseJson, toIso, fromTimestamp } from './json.js'
+import { parseJson, serialiseJson, fromTimestamp } from './json.js'
 
 export interface ProductInsert {
   id: string

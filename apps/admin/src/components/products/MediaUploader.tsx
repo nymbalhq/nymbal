@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { GripVertical, X, Star, Plus, Image as ImageIcon } from 'lucide-react'
+import { X, Star, Plus, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'

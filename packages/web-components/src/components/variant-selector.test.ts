@@ -24,7 +24,6 @@ describe('nymbal-variant-selector', () => {
     const el = createElement([
       { name: 'Size', values: ['S', 'M', 'L'] },
     ])
-    const filterGroup = el.querySelector('[data-testid^="filter-group-"]') ?? el.querySelector('[class*="filter-group"]') ?? el.querySelector('.nymbal-variant-group')
     // Just check the element rendered
     expect(el.children.length).toBeGreaterThanOrEqual(0)
   })

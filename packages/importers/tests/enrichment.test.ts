@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest'
-import { isThinContent } from '../src/woocommerce/mappers/product.js'
 import { enrichProduct, runEnrichment } from '../src/woocommerce/enrichment.js'
 import type { AiAdapter } from '@nymbal/types'
 import type { ProductService } from '@nymbal/platform'

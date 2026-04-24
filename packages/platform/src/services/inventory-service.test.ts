@@ -32,7 +32,7 @@ async function setup() {
   return { commandStore, eventBus, product, inventory, repos }
 }
 
-async function createTestVariant(product: ReturnType<typeof import('./product-service.js').createProductService>, stock = 20) {
+async function createTestVariant(product: ReturnType<typeof createProductService>, stock = 20) {
   const snap = await product.create({
     slug: `inv-test-${Math.random().toString(36).slice(2)}`,
     name: 'Inventory Test',

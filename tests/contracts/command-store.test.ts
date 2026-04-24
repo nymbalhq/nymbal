@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { createCommandStore, runMigrations, type CommandStore } from '@nymbal/platform'
 
 async function buildStore(): Promise<CommandStore> {

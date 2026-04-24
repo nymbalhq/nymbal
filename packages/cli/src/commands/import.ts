@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty'
-import { intro, outro, text, select, confirm, spinner, isCancel, cancel } from '@clack/prompts'
+import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
 import * as p from 'picocolors'
 import { loadConfig } from '@nymbal/config'
 import { createApp } from '@nymbal/platform'

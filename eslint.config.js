@@ -12,6 +12,7 @@ export default [
       '**/.next/**',
       '**/coverage/**',
       '**/*.js',
+      '**/*.d.ts',
     ],
   },
   {

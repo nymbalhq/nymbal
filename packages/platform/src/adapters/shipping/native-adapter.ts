@@ -31,7 +31,7 @@ export function createNativeShippingAdapter(logger: Logger): ShippingAdapter {
         carrier: params.carrier,
       }
     },
-    async track(trackingNumber) {
+    async track(_trackingNumber) {
       return {
         status: 'in_transit',
         lastUpdateAt: new Date().toISOString(),
