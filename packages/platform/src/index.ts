@@ -49,3 +49,8 @@ export * from './adapters/index.js'
 export { createLogger, type CreateLoggerOptions } from './logger.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
+export {
+  createLocalFsMediaStorage,
+  type MediaStorage,
+  type LocalFsMediaStorageOptions,
+} from './media/index.js'

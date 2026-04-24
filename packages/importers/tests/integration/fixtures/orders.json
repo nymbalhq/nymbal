@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1000,
+    "number": "1000",
+    "status": "completed",
+    "currency": "GBP",
+    "date_created": "2024-02-01T12:00:00",
+    "customer_id": 1,
+    "billing": { "first_name": "Alice", "last_name": "Smith", "company": "", "address_1": "1 Main St", "address_2": "", "city": "London", "state": "England", "postcode": "E1 6AN", "country": "GB", "phone": "07700900000", "email": "alice@example.com" },
+    "shipping": { "first_name": "Alice", "last_name": "Smith", "company": "", "address_1": "1 Main St", "address_2": "", "city": "London", "state": "England", "postcode": "E1 6AN", "country": "GB", "phone": "" },
+    "line_items": [
+      { "id": 1, "product_id": 100, "variation_id": 0, "name": "Classic White Tee", "quantity": 2, "price": 29.99, "subtotal": "59.98", "total": "59.98", "sku": "CWT-001" }
+    ],
+    "shipping_lines": [{ "method_title": "Flat Rate", "total": "5.00" }],
+    "tax_lines": [{ "label": "VAT", "tax_total": "12.99" }],
+    "discount_total": "0.00",
+    "shipping_total": "5.00",
+    "total_tax": "12.99",
+    "total": "77.97",
+    "customer_note": "",
+    "meta_data": [],
+    "payment_method": "stripe"
+  }
+]

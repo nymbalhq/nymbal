@@ -80,6 +80,25 @@ export default defineConfig({
           include: ['packages/types/src/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'importers-unit',
+          environment: 'node',
+          include: [
+            'packages/importers/tests/mappers/**/*.test.ts',
+            'packages/importers/tests/client.test.ts',
+            'packages/importers/tests/enrichment.test.ts',
+          ],
+        },
+      },
+      {
+        test: {
+          name: 'importers-integration',
+          environment: 'node',
+          include: ['packages/importers/tests/integration/**/*.test.ts'],
+          testTimeout: 60000,
+        },
+      },
     ],
     coverage: {
       provider: 'v8',

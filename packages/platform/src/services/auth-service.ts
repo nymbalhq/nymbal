@@ -36,12 +36,22 @@ export interface CustomerJwtPayload extends JWTPayload {
   jti?: string
 }
 
+export interface ImportCustomerInput {
+  email: string
+  firstName?: string
+  lastName?: string
+  phone?: string
+  addresses?: import('@nymbal/types').CustomerAddress[]
+  metadata?: Record<string, unknown>
+}
+
 export interface AuthService {
   register(input: RegisterInput): Promise<{ customer: Customer; tokens: AuthTokens }>
   login(email: string, password: string): Promise<{ customer: Customer; tokens: AuthTokens }>
   refresh(refreshToken: string): Promise<AuthTokens>
   logout(refreshToken: string): Promise<void>
   verifyAccessToken(token: string): Promise<CustomerJwtPayload>
+  importCustomer(input: ImportCustomerInput): Promise<Customer>
 }
 
 export interface CreateAuthServiceDeps {
@@ -237,6 +247,33 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         if (err instanceof AuthError) throw err
         throw new AuthError('token_invalid', 'access token invalid', { cause: err })
       }
+    },
+
+    async importCustomer(input) {
+      if (!input.email.includes('@')) throw new ValidationError('invalid email')
+      const email = input.email.toLowerCase()
+      const existing = await repos.customer.findByEmail(email)
+      if (existing) return stripPassword(existing)
+      const id = uuidv7()
+      const now = new Date()
+      await repos.customer.insert({
+        id,
+        email,
+        passwordHash: 'IMPORTED_NO_PASSWORD',
+        requiresPasswordReset: true,
+        ...(input.firstName !== undefined && { firstName: input.firstName }),
+        ...(input.lastName !== undefined && { lastName: input.lastName }),
+        ...(input.phone !== undefined && { phone: input.phone }),
+        ...(input.addresses !== undefined && { addresses: input.addresses }),
+        ...(input.metadata !== undefined && { metadata: input.metadata }),
+        createdAt: now,
+        updatedAt: now,
+      })
+      const customer = await repos.customer.findById(id)
+      if (!customer) throw new Error('customer disappeared after insert')
+      await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
+      logger.info({ customerId: id }, 'customer imported')
+      return stripPassword(customer)
     },
   }
 }

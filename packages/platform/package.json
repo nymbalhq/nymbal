@@ -36,6 +36,7 @@
     "db:migrate:postgres": "drizzle-kit migrate --config=drizzle.config.postgres.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@nymbal/config": "workspace:*",
     "@nymbal/types": "workspace:*",
     "bcryptjs": "^2.4.3",

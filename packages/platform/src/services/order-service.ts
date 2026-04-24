@@ -37,8 +37,15 @@ export interface OrderCreateDraftInput {
   paymentIntentId?: string | null
 }
 
+export interface OrderImportInput extends OrderCreateDraftInput {
+  orderNumber: string
+  status: OrderStatus
+  createdAt: Date
+}
+
 export interface OrderService {
   createFromCheckout(input: OrderCreateDraftInput): Promise<Order>
+  importOrder(input: OrderImportInput): Promise<Order>
   getById(id: string): Promise<Order>
   getByOrderNumber(orderNumber: string): Promise<Order>
   listByCustomer(customerId: string): Promise<Order[]>
@@ -211,6 +218,37 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
         currency,
       })
       return requireOrder(order.id)
+    },
+
+    async importOrder(input) {
+      return store.transaction(async () => {
+        const sequence = await repos.orderSequence.nextSequence(deps.orderNumberStart)
+        await repos.order.insert({
+          id: input.orderId,
+          orderNumber: input.orderNumber,
+          sequence,
+          customerId: input.customerId,
+          status: input.status,
+          email: input.email,
+          billingAddress: input.billingAddress,
+          shippingAddress: input.shippingAddress,
+          lineItems: input.lineItems,
+          subtotalMinor: input.subtotalMinor,
+          taxTotalMinor: input.taxTotalMinor,
+          shippingTotalMinor: input.shippingTotalMinor,
+          discountTotalMinor: input.discountTotalMinor,
+          totalMinor: input.totalMinor,
+          currency: input.currency,
+          notes: input.notes ?? '',
+          metadata: input.metadata ?? {},
+          paymentIntentId: input.paymentIntentId ?? null,
+          createdAt: input.createdAt,
+          updatedAt: input.createdAt,
+        })
+        const fresh = await requireOrder(input.orderId)
+        await publisher.publish(EVT_ORDER_PLACED, { order: fresh })
+        return fresh
+      })
     },
   }
 }

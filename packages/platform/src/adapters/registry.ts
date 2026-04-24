@@ -29,6 +29,7 @@ import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
 import { createNativeAiAdapter } from './ai/native-adapter.js'
+import { createAnthropicAiAdapter } from './ai/anthropic-adapter.js'
 
 export interface AdapterRegistry {
   security: SecurityAdapter
@@ -79,7 +80,15 @@ export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterReg
   const analytics = createNativeAnalyticsAdapter(logger)
   const shipping = createNativeShippingAdapter(logger)
   const tax = createNativeTaxAdapter(logger)
-  const ai = createNativeAiAdapter(logger)
+  const aiProvider = config.commerce.ai?.provider
+  const ai: AiAdapter =
+    aiProvider === 'anthropic'
+      ? createAnthropicAiAdapter({
+          apiKey: process.env['ANTHROPIC_API_KEY'] ?? '',
+          model: (config.commerce.ai?.config?.['model'] as string | undefined) ?? 'claude-sonnet-4-6',
+          logger: logger.child({ adapter: 'ai' }),
+        })
+      : createNativeAiAdapter(logger)
   const security = createMiddlewareSecurityAdapter({
     logger: logger.child({ adapter: 'security' }),
   })
