@@ -12,6 +12,7 @@ import { registerCheckoutRoutes } from './checkout.js'
 import { registerOrderRoutes } from './orders.js'
 import { registerCustomerRoutes } from './customers.js'
 import { registerAdminRoutes } from './admin.js'
+import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
 import { registerStripeWebhookRoute } from './webhooks-stripe.js'
 
@@ -43,10 +44,10 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   registerOrderRoutes(adapter, services.order, documentStore)
   registerCustomerRoutes(adapter, services.customer)
   registerAdminRoutes(adapter, {
-    product: services.product,
-    order: services.order,
-    reviewsAdapter: adapters.reviews,
-    reviewRepo: repos.review,
+    config,
+    services,
+    repos,
+    adapters,
   })
   registerEventsSseRoute(adapter, {
     eventBus,
@@ -59,4 +60,11 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     publisher,
     documentStore,
   })
+
+  if (process.env['NODE_ENV'] === 'production') {
+    const adminDistPath =
+      process.env['NYMBAL_ADMIN_DIST'] ??
+      new URL('../../../../apps/admin/dist', import.meta.url).pathname
+    registerAdminStaticRoute(adapter, adminDistPath)
+  }
 }

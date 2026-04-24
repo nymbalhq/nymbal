@@ -99,6 +99,14 @@ export default defineConfig({
           testTimeout: 60000,
         },
       },
+      {
+        test: {
+          name: 'admin',
+          environment: 'jsdom',
+          include: ['apps/admin/src/**/*.test.{ts,tsx}'],
+          setupFiles: ['apps/admin/src/tests/setup.ts'],
+        },
+      },
     ],
     coverage: {
       provider: 'v8',

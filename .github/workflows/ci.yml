@@ -44,7 +44,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r build --filter './packages/**'
-      - run: pnpm vitest run --project platform-unit --project sdk --project web-components --project react --project factories --project config --project types
+      - run: pnpm vitest run --project platform-unit --project sdk --project web-components --project react --project factories --project config --project types --project admin
 
   integration:
     name: Integration tests
@@ -109,6 +109,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm build:templates
+      - run: pnpm --filter @nymbal/admin build
 
   e2e-astro:
     name: E2E — Astro
@@ -243,6 +244,77 @@ jobs:
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Next.js)
         run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@a11y"
+        env:
+          CI: true
+
+  e2e-admin:
+    name: E2E — Admin
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm --filter @nymbal/admin build
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Run E2E (Admin)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert "@visual|@a11y" --pass-with-no-tests
+        env:
+          CI: true
+
+  visual-admin:
+    name: Visual regression — Admin
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm --filter @nymbal/admin build
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Visual regression (Admin)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --project admin-mobile --grep "@visual" --pass-with-no-tests
+        env:
+          CI: true
+
+  a11y-admin:
+    name: Accessibility — Admin
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build --filter './packages/**'
+      - run: pnpm --filter @nymbal/admin build
+      - name: Install Playwright
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Accessibility scan (Admin)
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep "@a11y" --pass-with-no-tests
         env:
           CI: true
 

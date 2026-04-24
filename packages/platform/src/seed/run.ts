@@ -30,6 +30,7 @@ export interface SeedResult {
   products: number
   variants: number
   customers: number
+  admins: number
 }
 
 async function insertVariants(
@@ -106,10 +107,12 @@ async function insertCustomer(
     passwordHash: string
     firstName: string
     lastName: string
+    metadata?: Record<string, unknown>
     createdAt: Date
     updatedAt: Date
   },
 ): Promise<void> {
+  const meta = row.metadata ?? {}
   if (store.kind === 'sqlite') {
     store.db
       .insert(sqliteSchema.customers)
@@ -123,7 +126,7 @@ async function insertCustomer(
         addresses: '[]',
         orderCount: 0,
         totalSpentMinor: 0,
-        metadata: '{}',
+        metadata: JSON.stringify(meta),
         requiresPasswordReset: false,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
@@ -141,7 +144,7 @@ async function insertCustomer(
     addresses: [],
     orderCount: 0,
     totalSpentMinor: 0,
-    metadata: {},
+    metadata: meta,
     requiresPasswordReset: false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -231,6 +234,21 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     updatedAt: now,
   }
   await insertCustomer(commandStore, demoCustomer)
+
+  // Admin user — email and password from env, defaults for dev
+  const adminEmail = process.env['NYMBAL_ADMIN_EMAIL'] ?? 'admin@nymbal.local'
+  const adminPassword = process.env['NYMBAL_ADMIN_PASSWORD'] ?? 'nymbal-admin-dev'
+  const adminCustomer = {
+    id: uuidv7(),
+    email: adminEmail,
+    passwordHash: hashSync(adminPassword, 10),
+    firstName: 'Admin',
+    lastName: 'User',
+    metadata: { roles: ['admin'] },
+    createdAt: now,
+    updatedAt: now,
+  }
+  await insertCustomer(commandStore, adminCustomer)
 
   // Document-store read-model rebuild
   const productDocs = new Map<string, Record<string, unknown>>()
@@ -369,8 +387,19 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
       customerId: demoCustomer.id,
       email: demoCustomer.email,
     }),
+    makeEvent(EVT_CUSTOMER_CREATED, {
+      customerId: adminCustomer.id,
+      email: adminCustomer.email,
+    }),
   ]
   await eventBus.publishBatch(events)
+
+  logger.info({ adminEmail }, 'Admin user seeded')
+  if (!process.env['NYMBAL_ADMIN_EMAIL']) {
+    console.log(
+      `Admin seeded: ${adminEmail} / ${adminPassword} (change NYMBAL_ADMIN_PASSWORD to override)`,
+    )
+  }
 
   logger.info(
     {
@@ -378,6 +407,7 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
       products: productInserts.length,
       variants: variantInserts.length,
       customers: 1,
+      admins: 1,
     },
     'Seed complete',
   )
@@ -386,5 +416,6 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     products: productInserts.length,
     variants: variantInserts.length,
     customers: 1,
+    admins: 1,
   }
 }

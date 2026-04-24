@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
+const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:5174'
 const isCI = !!process.env.CI
 
 export default defineConfig({
@@ -43,6 +44,23 @@ export default defineConfig({
       use: {
         ...devices['iPhone 14'],
         baseURL: nextjsURL,
+      },
+      grep: /@visual/,
+    },
+    {
+      name: 'admin',
+      testMatch: ['**/journeys/admin/**/*.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: adminURL,
+      },
+    },
+    {
+      name: 'admin-mobile',
+      testMatch: ['**/journeys/admin/**/*.spec.ts'],
+      use: {
+        ...devices['iPhone 14'],
+        baseURL: adminURL,
       },
       grep: /@visual/,
     },

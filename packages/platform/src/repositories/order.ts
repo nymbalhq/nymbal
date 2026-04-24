@@ -61,6 +61,7 @@ export interface OrderRepository {
   insert(o: OrderInsert): Promise<void>
   setStatus(id: string, status: OrderStatus, updatedAt: Date): Promise<void>
   setPaymentIntent(id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
+  setNotes(id: string, notes: string, updatedAt: Date): Promise<void>
 }
 
 export function createOrderRepository(store: CommandStore): OrderRepository {
@@ -207,6 +208,20 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
       await store.db
         .update(postgresSchema.orders)
         .set({ paymentIntentId, updatedAt })
+        .where(eq(postgresSchema.orders.id, id))
+    },
+    async setNotes(id, notes, updatedAt) {
+      if (store.kind === 'sqlite') {
+        store.db
+          .update(sqliteSchema.orders)
+          .set({ notes, updatedAt: updatedAt.toISOString() })
+          .where(eq(sqliteSchema.orders.id, id))
+          .run()
+        return
+      }
+      await store.db
+        .update(postgresSchema.orders)
+        .set({ notes, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
   }
