@@ -6,6 +6,13 @@ export default defineConfig({
     projects: [
       {
         test: {
+          name: 'create-app',
+          environment: 'node',
+          include: ['packages/create-app/test/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'platform-unit',
           environment: 'node',
           include: ['packages/platform/src/**/*.test.ts'],

@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, readFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +9,8 @@ import pc from 'picocolors'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SCAFFOLD_ROOT = resolve(HERE, '..', 'scaffold')
 
+export type PackageManager = 'npm' | 'pnpm' | 'yarn-classic' | 'yarn-berry' | 'bun'
+
 interface Answers {
   name: string
   directory: string
@@ -18,8 +20,56 @@ interface Answers {
   includeMobile: boolean
 }
 
-async function main(): Promise<void> {
+export function detectPackageManager(): PackageManager {
+  const ua = process.env['npm_config_user_agent']
+  if (!ua) return 'npm'
+  const token = ua.split(' ')[0] ?? ''
+  const slash = token.indexOf('/')
+  const pm = slash >= 0 ? token.slice(0, slash) : token
+  const version = slash >= 0 ? token.slice(slash + 1) : ''
+  if (pm === 'pnpm') return 'pnpm'
+  if (pm === 'bun') return 'bun'
+  if (pm === 'yarn') {
+    const major = parseInt(version.split('.')[0] ?? '1', 10)
+    return major < 2 ? 'yarn-classic' : 'yarn-berry'
+  }
+  return 'npm'
+}
+
+function installCmd(pm: PackageManager): [string, string[]] {
+  switch (pm) {
+    case 'pnpm': return ['pnpm', ['install']]
+    case 'bun': return ['bun', ['install']]
+    case 'yarn-classic':
+    case 'yarn-berry': return ['yarn', ['install']]
+    default: return ['npm', ['install']]
+  }
+}
+
+function seedCmd(pm: PackageManager): [string, string[]] {
+  switch (pm) {
+    case 'pnpm': return ['pnpm', ['exec', 'nymbal', 'seed']]
+    case 'bun': return ['bunx', ['nymbal', 'seed']]
+    case 'yarn-classic': return ['yarn', ['run', 'nymbal', 'seed']]
+    case 'yarn-berry': return ['yarn', ['exec', 'nymbal', 'seed']]
+    default: return ['npx', ['nymbal', 'seed']]
+  }
+}
+
+function devCmd(pm: PackageManager): string {
+  switch (pm) {
+    case 'pnpm': return 'pnpm dev'
+    case 'bun': return 'bun dev'
+    case 'yarn-classic':
+    case 'yarn-berry': return 'yarn dev'
+    default: return 'npm run dev'
+  }
+}
+
+export async function main(): Promise<void> {
   const argvName = process.argv[2] && !process.argv[2]!.startsWith('-') ? process.argv[2] : undefined
+
+  const pm = detectPackageManager()
 
   intro(pc.cyan(pc.bold('◆ create-nymbal-app')))
 
@@ -74,6 +124,13 @@ async function main(): Promise<void> {
 
   if (isCancel(includeMobile)) return cancel('Cancelled')
 
+  const shouldInstall = (await confirm({
+    message: 'Install dependencies now?',
+    initialValue: true,
+  })) as boolean | symbol
+
+  if (isCancel(shouldInstall)) return cancel('Cancelled')
+
   const answers: Answers = {
     name: String(name).trim(),
     directory: toDirectoryName(String(name).trim()),
@@ -97,64 +154,44 @@ async function main(): Promise<void> {
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
-  await installDeps(targetDir)
-  if (answers.seedDemo) {
-    await runSeed(targetDir)
+
+  if (shouldInstall) {
+    await installDeps(targetDir, pm)
+    if (answers.seedDemo) {
+      await runSeed(targetDir, pm)
+    }
   }
 
-  outro(
-    [
-      pc.green(`✓ Created ${answers.directory}`),
-      '',
-      `  ${pc.cyan('cd')} ${answers.directory}`,
-      `  ${pc.cyan('nymbal')} dev`,
-    ].join('\n'),
-  )
+  const cmd = devCmd(pm)
+  const nextSteps = [
+    `  ${pc.cyan('cd')} ${answers.directory}`,
+  ]
+  if (!shouldInstall) {
+    const [ic] = installCmd(pm)
+    nextSteps.push(`  ${pc.cyan(ic + ' install')}`)
+  }
+  nextSteps.push(`  ${pc.cyan(cmd)}`)
+
+  outro([pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps].join('\n'))
 }
 
-function toDirectoryName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-_ ]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
+export async function scaffold(dir: string, answers: Answers): Promise<void> {
+  // Copy the chosen template directly into dir (flat — no storefront/ subdirectory)
+  await copyScaffoldDir(resolve(SCAFFOLD_ROOT, 'templates', answers.template), dir)
+
+  // Write nymbal.config.ts (answers-dependent, so generated at runtime)
+  await writeFile(resolve(dir, 'nymbal.config.ts'), renderConfig(answers), 'utf8')
+
+  // Patch the copied package.json: set name to the project directory name
+  await patchPackageJson(dir, answers.directory)
 }
 
-async function scaffold(dir: string, answers: Answers): Promise<void> {
-  // 1) Copy base scaffold.
-  await copyScaffoldDir(resolve(SCAFFOLD_ROOT, 'base'), dir)
-  // 2) Copy only the chosen template.
-  await copyScaffoldDir(resolve(SCAFFOLD_ROOT, 'templates', answers.template), resolve(dir, 'storefront'))
-
-  // 3) Write nymbal.config.ts
-  const configTs = renderConfig(answers)
-  await writeFile(resolve(dir, 'nymbal.config.ts'), configTs, 'utf8')
-
-  // 4) Write root package.json
-  const pkg = renderRootPackage(answers)
-  await writeFile(resolve(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-
-  // 5) Write pnpm workspace
-  await writeFile(
-    resolve(dir, 'pnpm-workspace.yaml'),
-    'packages:\n  - "storefront"\n',
-    'utf8',
-  )
-
-  // 6) .env.example
-  await writeFile(
-    resolve(dir, '.env.example'),
-    [
-      '# Copy to .env and fill in as needed',
-      'NYMBAL_API_URL=http://localhost:3001',
-      '# DATABASE_URL=postgres://user:pass@localhost:5432/nymbal',
-      '# STRIPE_SECRET_KEY=',
-      '# STRIPE_WEBHOOK_SECRET=',
-      '# ANTHROPIC_API_KEY=',
-      '',
-    ].join('\n'),
-    'utf8',
-  )
+async function patchPackageJson(dir: string, name: string): Promise<void> {
+  const pkgPath = resolve(dir, 'package.json')
+  const pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as Record<string, unknown>
+  pkg['name'] = name
+  pkg['private'] = true
+  await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
 }
 
 async function copyScaffoldDir(src: string, dest: string): Promise<void> {
@@ -165,20 +202,18 @@ async function copyScaffoldDir(src: string, dest: string): Promise<void> {
     recursive: true,
     filter: (source) => !source.endsWith('node_modules'),
   })
-  // Rename any _gitignore / _dot files.
   await renameDotFiles(dest)
 }
 
 async function renameDotFiles(dir: string): Promise<void> {
+  // Non-recursive: only rename _dot.* files at the project root.
+  // All shared dotfiles (_dot.gitignore, _dot.env.example) live at template root.
   const entries = await readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
-    const full = resolve(dir, entry.name)
-    if (entry.isDirectory()) {
-      await renameDotFiles(full)
-    } else if (entry.name.startsWith('_dot.')) {
+    if (!entry.isDirectory() && entry.name.startsWith('_dot.')) {
+      const full = resolve(dir, entry.name)
       const renamed = resolve(dir, '.' + entry.name.slice(5))
-      const content = await readFile(full)
-      await writeFile(renamed, content)
+      await writeFile(renamed, await readFile(full))
       await rm(full)
     }
   }
@@ -258,32 +293,8 @@ export default defineConfig({
 `
 }
 
-function renderRootPackage(answers: Answers): Record<string, unknown> {
-  return {
-    name: answers.directory,
-    version: '0.1.0',
-    private: true,
-    type: 'module',
-    engines: { node: '>=22' },
-    packageManager: 'pnpm@9.12.3',
-    scripts: {
-      dev: 'nymbal dev',
-      build: 'nymbal build',
-      migrate: 'nymbal migrate',
-      seed: 'nymbal seed',
-    },
-    dependencies: {
-      '@nymbal/config': 'workspace:*',
-      '@nymbal/platform': 'workspace:*',
-      '@nymbal/cli': 'workspace:*',
-      '@nymbal/types': 'workspace:*',
-      [`@nymbal/template-${answers.template}`]: 'workspace:*',
-    },
-  }
-}
-
 function defaultLocale(currency: Answers['currency']): string {
-  return currency === 'USD' ? 'en-US' : currency === 'EUR' ? 'en-GB' : 'en-GB'
+  return currency === 'USD' ? 'en-US' : 'en-GB'
 }
 
 function defaultTimezone(currency: Answers['currency']): string {
@@ -294,15 +305,24 @@ function escape(v: string): string {
   return v.replace(/'/g, "\\'")
 }
 
-async function installDeps(dir: string): Promise<void> {
-  note(pc.dim('Running pnpm install (this may take a moment)...'), 'Installing')
-  await runCmd('pnpm', ['install'], dir)
+function toDirectoryName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9-_ ]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
 }
 
-async function runSeed(dir: string): Promise<void> {
+async function installDeps(dir: string, pm: PackageManager): Promise<void> {
+  const [cmd, args] = installCmd(pm)
+  note(pc.dim(`Running ${cmd} install (this may take a moment)...`), 'Installing')
+  await runCmd(cmd, args, dir)
+}
+
+async function runSeed(dir: string, pm: PackageManager): Promise<void> {
   note(pc.dim('Seeding demo content...'), 'Seeding')
-  // Use pnpm exec to find the workspace-linked nymbal CLI.
-  await runCmd('pnpm', ['exec', 'nymbal', 'seed'], dir)
+  const [cmd, args] = seedCmd(pm)
+  await runCmd(cmd, args, dir)
 }
 
 function runCmd(cmd: string, args: string[], cwd: string): Promise<void> {
@@ -315,14 +335,3 @@ function runCmd(cmd: string, args: string[], cwd: string): Promise<void> {
     })
   })
 }
-
-// Silence unused-var lint for helper retained for future use.
-void stat
-
-main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(pc.red('✗ create-nymbal-app failed'))
-  // eslint-disable-next-line no-console
-  console.error(err)
-  process.exit(1)
-})

@@ -5,10 +5,11 @@ A commerce project scaffolded with [create-nymbal-app](https://github.com/nymbal
 ## Scripts
 
 ```
-pnpm dev         # nymbal dev — API + storefront
-pnpm build       # nymbal build — production bundle
-pnpm migrate     # nymbal migrate — run database migrations
-pnpm seed        # nymbal seed — re-seed demo content
+pnpm dev         # start Astro dev server
+pnpm build       # production build
+pnpm preview     # preview production build locally
+pnpm migrate     # run database migrations
+pnpm seed        # re-seed demo content
 ```
 
 ## Configuration
