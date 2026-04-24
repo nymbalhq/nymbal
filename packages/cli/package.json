@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/cli",
   "version": "0.1.0",
-  "private": true,
   "description": "nymbal — developer CLI for the Nymbal platform",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

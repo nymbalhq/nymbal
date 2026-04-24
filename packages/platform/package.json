@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/platform",
   "version": "0.1.0",
-  "private": true,
   "description": "Nymbal CQRS kernel (command store, document store, event bus)",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

@@ -1,7 +1,7 @@
 {
   "name": "@nymbal/test-factories",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "description": "Typed test data factories for Nymbal packages and adapters",
   "license": "MIT",
   "type": "module",

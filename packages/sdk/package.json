@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/sdk",
   "version": "0.1.0",
-  "private": true,
   "description": "Framework-agnostic commerce SDK with pub/sub stores and adapter interface",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

@@ -1,7 +1,7 @@
 {
   "name": "@nymbal/contract-tests",
   "version": "0.1.0",
-  "private": false,
+  "private": true,
   "description": "Reusable contract test suites for all Nymbal adapter interfaces",
   "license": "MIT",
   "type": "module",

@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/http",
   "version": "0.1.0",
-  "private": true,
   "description": "Framework-agnostic HTTP abstraction with Fastify adapter",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

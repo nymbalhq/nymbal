@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/web-components",
   "version": "0.1.0",
-  "private": true,
   "description": "Interactive commerce UI as native Web Components",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

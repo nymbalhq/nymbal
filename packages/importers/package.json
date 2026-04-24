@@ -1,9 +1,11 @@
 {
   "name": "@nymbal/importers",
   "version": "0.1.0",
-  "private": true,
   "description": "Source migration importers for Nymbal (WooCommerce, etc.)",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
