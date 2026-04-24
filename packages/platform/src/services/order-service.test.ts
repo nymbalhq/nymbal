@@ -291,4 +291,61 @@ describe('OrderService', () => {
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
+
+  it('importOrder inserts historical order and emits order.placed', async () => {
+    const { commandStore, eventBus, orderService } = await setup()
+    const received: unknown[] = []
+    await eventBus.subscribe(EVT_ORDER_PLACED, (e) => { received.push(e.payload) })
+    const line = await createLine(1500, 3)
+    const now = new Date('2024-01-15T10:00:00Z')
+    const order = await orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: 'WC-1001',
+      status: 'confirmed',
+      customerId: null,
+      email: 'import@example.com',
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: line.lineTotalMinor,
+      taxTotalMinor: 100,
+      shippingTotalMinor: 500,
+      discountTotalMinor: 0,
+      totalMinor: line.lineTotalMinor + 600,
+      currency: 'GBP',
+      notes: 'Imported from WooCommerce',
+      metadata: { wcOrderId: 1001 },
+      paymentIntentId: 'pi_wc_1001',
+      createdAt: now,
+    })
+    expect(order.orderNumber).toBe('WC-1001')
+    expect(order.status).toBe('confirmed')
+    expect(order.notes).toBe('Imported from WooCommerce')
+    expect(received).toHaveLength(1)
+    await commandStore.close()
+  })
+
+  it('importOrder works with minimal optional fields', async () => {
+    const { commandStore, orderService } = await setup()
+    const line = await createLine()
+    const order = await orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: 'WC-1002',
+      status: 'fulfilled',
+      customerId: null,
+      email: 'min@example.com',
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: line.lineTotalMinor,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor: line.lineTotalMinor,
+      currency: 'GBP',
+      createdAt: new Date(),
+    })
+    expect(order.orderNumber).toBe('WC-1002')
+    await commandStore.close()
+  })
 })

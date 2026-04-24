@@ -115,6 +115,8 @@ export default defineConfig({
         '**/generated/**',
         '**/*.generated.ts',
         '**/*.d.ts',
+        '**/*.test.ts',
+        '**/*.test.tsx',
         '**/dist/**',
         'packages/*/src/index.ts',
         '**/tests/**',
@@ -122,7 +124,7 @@ export default defineConfig({
         'packages/contract-tests/**',
       ],
       thresholds: {
-        'packages/platform/src/services/**': { lines: 100 },
+        'packages/platform/src/services/*-service.ts': { lines: 100, branches: 100 },
         'packages/platform/src/utils/**': { lines: 100 },
       },
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EVT_PRODUCT_CREATED, EVT_PRODUCT_PUBLISHED } from '@nymbal/types'
+import { EVT_PRODUCT_CREATED, EVT_PRODUCT_PUBLISHED, NotFoundError, ValidationError } from '@nymbal/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'
@@ -8,6 +8,7 @@ import { buildRepositories } from '../repositories/index.js'
 import { createEventPublisher } from '../events/publisher.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
+import { v7 as uuidv7 } from 'uuid'
 
 async function setup() {
   const config = {
@@ -91,6 +92,193 @@ describe('ProductService', () => {
     const { service, commandStore } = await setup()
     await service.create({ slug: 'dup', name: 'A' })
     await expect(service.create({ slug: 'dup', name: 'B' })).rejects.toThrow(/already exists/)
+    await commandStore.close()
+  })
+
+  it('create rejects empty slug', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.create({ slug: '   ', name: 'A' })).rejects.toThrow(ValidationError)
+    await commandStore.close()
+  })
+
+  it('create rejects empty name', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.create({ slug: 'valid', name: '  ' })).rejects.toThrow(ValidationError)
+    await commandStore.close()
+  })
+
+  it('create uses explicit variant id when provided', async () => {
+    const { service, commandStore } = await setup()
+    const variantId = uuidv7()
+    const snap = await service.create({
+      slug: 'explicit-vid', name: 'Explicit',
+      variants: [{ id: variantId, sku: 'EV-1', name: 'Custom', priceMinor: 500, stock: 1, options: [] }],
+    })
+    expect(snap.variants[0]!.id).toBe(variantId)
+    await commandStore.close()
+  })
+
+  it('create with categoryIds attaches categories', async () => {
+    const { service, repos, commandStore } = await setup()
+    const categoryId = uuidv7()
+    await repos.category.insert({
+      id: categoryId, slug: 'test-cat', name: 'Test Category',
+      description: '', path: categoryId, parentId: null,
+      createdAt: new Date(), updatedAt: new Date(),
+    })
+    const snap = await service.create({ slug: 'with-category', name: 'With Category', categoryIds: [categoryId] })
+    expect(snap.categoryIds).toContain(categoryId)
+    await commandStore.close()
+  })
+
+  it('update patches fields and emits product.updated', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({ slug: 'upd-test', name: 'Original', status: 'draft' })
+    const updated = await service.update(created.id, { name: 'Updated', description: 'New desc' })
+    expect(updated.name).toBe('Updated')
+    expect(updated.description).toBe('New desc')
+    await commandStore.close()
+  })
+
+  it('update throws NotFoundError for unknown id', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.update('ghost', { name: 'x' })).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('update replaces categoryIds', async () => {
+    const { service, repos, commandStore } = await setup()
+    const catA = uuidv7()
+    const catB = uuidv7()
+    for (const [id, slug] of [[catA, 'cat-a'], [catB, 'cat-b']] as [string, string][]) {
+      await repos.category.insert({ id, slug, name: slug, description: '', path: id, parentId: null, createdAt: new Date(), updatedAt: new Date() })
+    }
+    const created = await service.create({ slug: 'cat-swap', name: 'Cat Swap', categoryIds: [catA] })
+    const updated = await service.update(created.id, { categoryIds: [catB] })
+    expect(updated.categoryIds).toContain(catB)
+    expect(updated.categoryIds).not.toContain(catA)
+    await commandStore.close()
+  })
+
+  it('delete removes product and its variants', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({
+      slug: 'del-test', name: 'To Delete',
+      variants: [{ sku: 'DEL-1', name: 'Default', priceMinor: 100, stock: 1, options: [] }],
+    })
+    await service.delete(created.id)
+    await expect(service.getById(created.id)).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('delete throws NotFoundError for unknown id', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.delete('ghost')).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('publish does nothing when product is already active', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({ slug: 'already-active', name: 'Active', status: 'active' })
+    await service.publish(created.id)
+    const fresh = await service.getById(created.id)
+    expect(fresh.status).toBe('active')
+    await commandStore.close()
+  })
+
+  it('unpublish transitions active product to draft', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({ slug: 'unpub-test', name: 'Active', status: 'active' })
+    await service.unpublish(created.id)
+    const fresh = await service.getById(created.id)
+    expect(fresh.status).toBe('draft')
+    await commandStore.close()
+  })
+
+  it('unpublish does nothing when product is already draft', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({ slug: 'already-draft', name: 'Draft', status: 'draft' })
+    await service.unpublish(created.id)
+    const fresh = await service.getById(created.id)
+    expect(fresh.status).toBe('draft')
+    await commandStore.close()
+  })
+
+  it('getById throws NotFoundError for unknown id', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.getById('ghost')).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('getBySlug returns product snapshot', async () => {
+    const { service, commandStore } = await setup()
+    await service.create({ slug: 'find-by-slug', name: 'By Slug' })
+    const found = await service.getBySlug('find-by-slug')
+    expect(found.slug).toBe('find-by-slug')
+    await commandStore.close()
+  })
+
+  it('getBySlug throws NotFoundError for unknown slug', async () => {
+    const { service, commandStore } = await setup()
+    await expect(service.getBySlug('no-such-slug')).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('list returns all products', async () => {
+    const { service, commandStore } = await setup()
+    await service.create({ slug: 'list-a', name: 'A', status: 'active' })
+    await service.create({ slug: 'list-b', name: 'B', status: 'draft' })
+    const all = await service.list()
+    expect(all.length).toBeGreaterThanOrEqual(2)
+    await commandStore.close()
+  })
+
+  it('list filters by status', async () => {
+    const { service, commandStore } = await setup()
+    await service.create({ slug: 'filter-active', name: 'Active', status: 'active' })
+    await service.create({ slug: 'filter-draft', name: 'Draft', status: 'draft' })
+    const active = await service.list({ status: 'active' })
+    expect(active.every((p) => p.status === 'active')).toBe(true)
+    await commandStore.close()
+  })
+
+  it('create with all optional fields stores them correctly', async () => {
+    const { service, commandStore } = await setup()
+    const snap = await service.create({
+      slug: 'full-create',
+      name: 'Full Create',
+      description: 'Full description',
+      shortDescription: 'Short desc',
+      status: 'draft',
+      type: 'variable',
+      seoTitle: 'SEO Title',
+      seoDescription: 'SEO Description',
+      media: [{ url: 'https://example.com/img.jpg', alt: 'Image', type: 'image', position: 0 }],
+      metadata: { brand: 'TestBrand' },
+    })
+    expect(snap.description).toBe('Full description')
+    expect(snap.shortDescription).toBe('Short desc')
+    expect(snap.seoTitle).toBe('SEO Title')
+    await commandStore.close()
+  })
+
+  it('update with all optional fields patches them', async () => {
+    const { service, commandStore } = await setup()
+    const created = await service.create({ slug: 'full-update', name: 'Original' })
+    const updated = await service.update(created.id, {
+      name: 'Updated',
+      description: 'Updated desc',
+      shortDescription: 'Updated short',
+      status: 'active',
+      type: 'simple',
+      seoTitle: 'New SEO',
+      seoDescription: 'New SEO Desc',
+      media: [{ url: 'https://example.com/new.jpg', alt: 'New', type: 'image', position: 0 }],
+      metadata: { updated: true },
+    })
+    expect(updated.name).toBe('Updated')
+    expect(updated.seoTitle).toBe('New SEO')
+    expect(updated.metadata).toMatchObject({ updated: true })
     await commandStore.close()
   })
 })

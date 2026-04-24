@@ -80,6 +80,7 @@ function parseDurationToMs(s: string): number {
       return qty * 60 * 60 * 1000
     case 'd':
       return qty * 24 * 60 * 60 * 1000
+    /* c8 ignore next 2 -- regex above only matches ms|s|m|h|d, making this unreachable */
     default:
       throw new ValidationError(`invalid duration unit: ${match[2]}`)
   }
@@ -173,6 +174,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         updatedAt: now,
       })
       const customer = await repos.customer.findById(id)
+      /* c8 ignore next -- defensive: customer was inserted in this transaction */
       if (!customer) throw new Error('customer disappeared after insert')
       const tokens = await issueTokens(customer)
       await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
@@ -271,6 +273,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         updatedAt: now,
       })
       const customer = await repos.customer.findById(id)
+      /* c8 ignore next -- defensive: customer was inserted above */
       if (!customer) throw new Error('customer disappeared after insert')
       await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
       logger.info({ customerId: id }, 'customer imported')

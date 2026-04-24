@@ -126,4 +126,22 @@ describe('CustomerService', () => {
     await expect(customerService.deleteAddress(customer.id, only.id)).rejects.toThrow(ValidationError)
     await commandStore.close()
   })
+
+  it('addAddress with isDefaultShipping clears other default shipping', async () => {
+    const { auth, customerService, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'defship@test.com', password: 'password123' })
+    const first = await customerService.addAddress(customer.id, { ...addr, isDefaultShipping: true })
+    const second = await customerService.addAddress(customer.id, { ...addr, isDefaultShipping: true })
+    const list = await customerService.listAddresses(customer.id)
+    const firstRefresh = list.find((a) => a.id === first.id)
+    expect(firstRefresh?.isDefaultShipping).toBe(false)
+    expect(second.isDefaultShipping).toBe(true)
+    await commandStore.close()
+  })
+
+  it('updateProfile throws NotFoundError for unknown customer', async () => {
+    const { customerService, commandStore } = await setup()
+    await expect(customerService.updateProfile('ghost', { firstName: 'x' })).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
 })

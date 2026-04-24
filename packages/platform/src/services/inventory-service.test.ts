@@ -197,4 +197,22 @@ describe('InventoryService', () => {
     await expect(inventory.getStockStatus('nope')).rejects.toThrow(NotFoundError)
     await commandStore.close()
   })
+
+  it('reserveStock throws NotFoundError for unknown variant', async () => {
+    const { commandStore, inventory } = await setup()
+    await expect(inventory.reserveStock('unknown-variant', 1, null)).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+
+  it('commitReservation throws NotFoundError when variant is deleted after reservation', async () => {
+    const { commandStore, product, inventory } = await setup()
+    const variant = await createTestVariant(product, 5)
+    const { reservationId } = await inventory.reserveStock(variant.id, 1, null)
+    // Delete the product (which deletes the variant) to force the variant-not-found path in commitReservation
+    const products = await product.list()
+    const p = products.find((pr) => pr.variants.some((v) => v.id === variant.id))!
+    await product.delete(p.id)
+    await expect(inventory.commitReservation(reservationId, 'test')).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
 })
