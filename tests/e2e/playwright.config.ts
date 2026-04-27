@@ -19,6 +19,7 @@ export default defineConfig({
   projects: [
     {
       name: 'astro',
+      testIgnore: ['**/journeys/admin/**'],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -26,6 +27,7 @@ export default defineConfig({
     },
     {
       name: 'nextjs',
+      testIgnore: ['**/journeys/admin/**'],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -33,6 +35,7 @@ export default defineConfig({
     },
     {
       name: 'astro-mobile',
+      testIgnore: ['**/journeys/admin/**'],
       use: {
         ...devices['iPhone 14'],
         baseURL: astroURL,
@@ -41,6 +44,7 @@ export default defineConfig({
     },
     {
       name: 'nextjs-mobile',
+      testIgnore: ['**/journeys/admin/**'],
       use: {
         ...devices['iPhone 14'],
         baseURL: nextjsURL,

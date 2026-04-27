@@ -62,7 +62,8 @@ export function createTokenManager(options?: TokenManagerOptions): TokenManager 
       try {
         const result = await refreshFn()
         setTokens(result.accessToken, result.expiresIn)
-      } catch {
+      } catch (err) {
+        console.error('[TokenManager] auto-refresh failed, clearing session', err)
         clear()
       }
     }, delayMs)

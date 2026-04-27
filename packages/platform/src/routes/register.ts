@@ -36,7 +36,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
 
   registerAuthRoutes(adapter, services.auth)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
-  registerProductRoutes(adapter, documentStore, config.store.name, adapters.reviews)
+  registerProductRoutes(adapter, documentStore, config.store.name, adapters.reviews, services.search)
   registerCartRoutes(adapter, {
     cart: services.cart,
     productRepo: repos.product,

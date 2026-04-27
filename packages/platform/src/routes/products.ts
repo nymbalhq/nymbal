@@ -5,6 +5,7 @@ import {
   type HttpAdapter,
   type ReviewsAdapter,
 } from '@nymbal/types'
+import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
 
 function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
@@ -36,7 +37,35 @@ export function registerProductRoutes(
   documentStore: DocumentStoreAdapter,
   storeName: string,
   reviewsAdapter?: ReviewsAdapter,
+  searchService?: SearchService,
 ): void {
+  adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
+    try {
+      const rawQ = ctx.query.q
+      const q = Array.isArray(rawQ) ? rawQ[0] : rawQ
+      if (!q || !q.trim()) return ok({ items: [], nextCursor: null, facets: [] })
+      if (!searchService) return ok({ items: [], nextCursor: null, facets: [] })
+      const rawLimit = ctx.query.limit
+      const limit = rawLimit
+        ? Math.min(100, Math.max(1, Number(Array.isArray(rawLimit) ? rawLimit[0] : rawLimit) || 20))
+        : 20
+      const rawCursor = ctx.query.cursor
+      const cursor = Array.isArray(rawCursor) ? rawCursor[0] : rawCursor
+      const searchResult = await searchService.products(q.trim(), {
+        limit,
+        ...(cursor !== undefined && { cursor }),
+      })
+      const slugs = searchResult.items
+        .map((doc) => String((doc.fields as Record<string, unknown>)?.slug ?? ''))
+        .filter(Boolean)
+      const products = await Promise.all(slugs.map((slug) => documentStore.get('products', slug)))
+      const items = products.filter(Boolean)
+      return ok({ items, nextCursor: searchResult.nextCursor, facets: [] })
+    } catch (err) {
+      return renderError(err)
+    }
+  })
+
   adapter.registerRoute('GET', '/api/products', async (ctx) => {
     try {
       const rawLimit = ctx.query.limit

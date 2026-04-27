@@ -52,9 +52,9 @@ export class NymbalMiniCart extends NymbalElement {
     const { itemCount } = this.client.cart.getState()
 
     this.innerHTML = `
-      <button data-testid="mini-cart" aria-label="Cart (${itemCount} items)">
+      <button type="button" data-testid="mini-cart" aria-label="Cart (${itemCount} items)">
         ${CART_SVG}
-        <span class="nymbal-mini-cart-badge">${itemCount > 0 ? itemCount : ''}</span>
+        <span class="nymbal-mini-cart-badge" data-testid="mini-cart-badge">${itemCount > 0 ? itemCount : ''}</span>
       </button>
     `
 

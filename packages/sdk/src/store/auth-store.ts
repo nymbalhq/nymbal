@@ -40,10 +40,9 @@ export function createAuthStore(
         loading: false,
       })
     } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      const message = err instanceof Error ? err.message : String(err)
+      store.setState({ loading: false, error: message })
+      throw err
     }
   }
 
@@ -58,10 +57,9 @@ export function createAuthStore(
         loading: false,
       })
     } catch (err) {
-      store.setState({
-        loading: false,
-        error: err instanceof Error ? err.message : String(err),
-      })
+      const message = err instanceof Error ? err.message : String(err)
+      store.setState({ loading: false, error: message })
+      throw err
     }
   }
 
@@ -90,7 +88,8 @@ export function createAuthStore(
     try {
       const result = await adapter.customers.refresh()
       tokenManager.setTokens(result.accessToken, result.expiresIn)
-    } catch {
+    } catch (err) {
+      console.error('[AuthStore] token refresh failed, logging out', err)
       tokenManager.clear()
       store.setState({
         customer: null,

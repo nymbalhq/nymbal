@@ -46,6 +46,7 @@ export class NymbalAddToCart extends NymbalElement {
 
     if (!this.button) {
       this.button = document.createElement('button')
+      this.button.setAttribute('type', 'button')
       this.button.setAttribute('data-testid', 'add-to-cart')
       this.button.addEventListener('click', this.handleClick)
       this.innerHTML = ''

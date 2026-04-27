@@ -51,4 +51,40 @@ test.describe('Browse catalog', () => {
       await page.waitForTimeout(800)
     }
   })
+
+  test('filter round-trip: apply filter then remove restores original product count and all filter groups remain visible', async ({ page }) => {
+    await page.goto('/products')
+    await expect(page.locator('[data-testid^="product-card-"]').first()).toBeVisible({ timeout: 15000 })
+
+    const filterGroups = page.locator('[data-testid^="filter-group-"]')
+    const filterGroupCount = await filterGroups.count()
+    if (filterGroupCount === 0) {
+      // No filters on this template — skip gracefully
+      return
+    }
+
+    // Capture original product count
+    const originalProductCount = await page.locator('[data-testid^="product-card-"]').count()
+    expect(originalProductCount).toBeGreaterThan(0)
+
+    // Click the first available filter checkbox
+    const firstCheckbox = filterGroups.first().locator('input[type="checkbox"]').first()
+    await firstCheckbox.click()
+    await page.waitForTimeout(1000)
+
+    // Products updated — count should be >= 0 (never nothing unless genuinely empty)
+    const filteredCount = await page.locator('[data-testid^="product-card-"]').count()
+    // All filter groups remain visible after filtering
+    await expect(filterGroups.first()).toBeVisible()
+
+    // Unclick filter — should restore original state
+    await firstCheckbox.click()
+    await page.waitForTimeout(1000)
+
+    const restoredCount = await page.locator('[data-testid^="product-card-"]').count()
+    expect(restoredCount).toBe(originalProductCount)
+
+    // All filter groups still visible
+    expect(await filterGroups.count()).toBe(filterGroupCount)
+  })
 })

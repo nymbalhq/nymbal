@@ -103,4 +103,38 @@ describe('CartStore', () => {
     expect(listener).toHaveBeenCalled()
     store.destroy()
   })
+
+  it('round-trip: addItem then removeItem returns cart to empty state', async () => {
+    const cartWithItem = makeCart({
+      items: [{ variantId: 'v1', productId: 'p1', productName: 'P', variantName: 'D', priceMinor: 1000, qty: 1, imageUrl: '' }],
+      subtotalMinor: 1000,
+    })
+    const emptyCart = makeCart({ items: [], subtotalMinor: 0 })
+
+    const adapter = makeAdapter({
+      get: vi.fn().mockResolvedValue(emptyCart),
+      addItem: vi.fn().mockResolvedValue(cartWithItem),
+      removeItem: vi.fn().mockResolvedValue(emptyCart),
+    })
+
+    const store = createCartStore(adapter)
+    await store.load()
+
+    // Initial state: empty cart
+    expect(store.getState().items).toHaveLength(0)
+    expect(store.getState().subtotalMinor).toBe(0)
+
+    // Add item
+    await store.addItem('v1', 1)
+    expect(store.getState().items).toHaveLength(1)
+    expect(store.getState().subtotalMinor).toBe(1000)
+    expect(store.getState().loading).toBe(false)
+
+    // Remove item — should return to original empty state
+    await store.removeItem('v1')
+    expect(store.getState().items).toHaveLength(0)
+    expect(store.getState().subtotalMinor).toBe(0)
+    expect(store.getState().loading).toBe(false)
+    expect(store.getState().error).toBeNull()
+  })
 })

@@ -30,6 +30,7 @@ export class FetchClient {
   private readonly getAccessToken: () => string | null
   private readonly getCartToken: (() => string | null) | undefined
   private readonly onUnauthorized: (() => Promise<void>) | undefined
+  private handlingUnauthorized = false
 
   constructor(options: FetchClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
@@ -42,8 +43,13 @@ export class FetchClient {
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const response = await this.doFetch(method, path, body)
 
-    if (response.status === 401 && this.onUnauthorized) {
-      await this.onUnauthorized()
+    if (response.status === 401 && this.onUnauthorized && !this.handlingUnauthorized) {
+      this.handlingUnauthorized = true
+      try {
+        await this.onUnauthorized()
+      } finally {
+        this.handlingUnauthorized = false
+      }
       const retry = await this.doFetch(method, path, body)
       return this.parseResponse<T>(retry)
     }

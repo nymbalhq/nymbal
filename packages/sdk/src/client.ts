@@ -47,7 +47,9 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
         try {
           const result = await adapter.customers.refresh()
           tokenManager.setTokens(result.accessToken, result.expiresIn)
-        } catch {
+        } catch (err) {
+          // Token refresh failure is expected when the user session has expired.
+          console.warn('[NymbalClient] token refresh on unauthorized failed', err)
           tokenManager.clear()
         }
       },

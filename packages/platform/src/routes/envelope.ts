@@ -1,4 +1,4 @@
-import { HttpError, NymbalError, type ResponseEnvelope } from '@nymbal/types'
+import { HttpError, NotFoundError, NymbalError, type ResponseEnvelope } from '@nymbal/types'
 
 export interface Envelope<T> {
   data?: T
@@ -21,6 +21,9 @@ export function fail(code: string, message: string, status = 400, context?: Reco
 export function renderError(err: unknown): ResponseEnvelope<Envelope<never>> {
   if (err instanceof HttpError) {
     return fail(err.code, err.message, err.status)
+  }
+  if (err instanceof NotFoundError) {
+    return fail(err.code, err.message, 404, err.context)
   }
   if (err instanceof NymbalError) {
     return fail(err.code, err.message, 500, err.context)

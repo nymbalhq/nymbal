@@ -122,17 +122,23 @@ export class NymbalSearchBar extends NymbalElement {
         e.preventDefault()
         this.selectedIndex = Math.max(this.selectedIndex - 1, -1)
         this.render()
-      } else if (e.key === 'Enter' && this.selectedIndex >= 0) {
+      } else if (e.key === 'Enter') {
         e.preventDefault()
-        const selected = results[this.selectedIndex]
+        const selected = this.selectedIndex >= 0 ? results[this.selectedIndex] : undefined
         if (selected) {
           this.dispatchEvent(
             new CustomEvent('nymbal:search:selected', {
               bubbles: true,
               composed: true,
-              detail: { product: selected },
+              detail: { product: selected, query: selected.name },
             }),
           )
+          this.client.search.clearSearch()
+        } else {
+          const query = input.value.trim()
+          if (query) {
+            window.location.href = `/search?q=${encodeURIComponent(query)}`
+          }
         }
       } else if (e.key === 'Escape') {
         this.client.search.clearSearch()

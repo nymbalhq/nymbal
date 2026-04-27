@@ -25,10 +25,12 @@ export interface ProductListStore {
 
 export function createProductListStore(adapter: CommerceAdapter): ProductListStore {
   const store = createStore<ProductListState>(INITIAL_STATE)
+  let lastLimit: number | undefined
 
   function buildParams(): ProductListParams {
     const state = store.getState()
     const params: ProductListParams = {}
+    if (lastLimit !== undefined) params.limit = lastLimit
     const category = state.filters['category']
     if (typeof category === 'string') {
       params.category = category
@@ -37,6 +39,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
   }
 
   async function load(params?: ProductListParams): Promise<void> {
+    if (params?.limit !== undefined) lastLimit = params.limit
     store.setState({ loading: true })
     try {
       const result = await adapter.products.list(params ?? buildParams())

@@ -79,7 +79,7 @@ async function init() {
   if (initialCategory) {
     await client.productList.applyFilter('category', initialCategory)
   } else {
-    await client.productList.load()
+    await client.productList.load({ limit: 24 })
   }
   client.productList.subscribe(renderGrid)
 }

@@ -7,7 +7,7 @@ const searchInput = document.getElementById('search-input') as HTMLInputElement 
 
 function renderResults() {
   const state = client.search.getState()
-  const results = state.items ?? []
+  const results = state.results ?? []
   const query = state.query ?? ''
   const isLoading = state.loading ?? false
 
@@ -122,9 +122,9 @@ searchInput?.addEventListener('input', () => {
   }
 })
 
-// Handle search bar web component selection
+// Handle search bar web component selection (navigates from dropdown selection)
 document.addEventListener('nymbal:search:selected', ((e: CustomEvent) => {
-  const query = e.detail?.query ?? e.detail?.value
+  const query = e.detail?.query ?? e.detail?.product?.name
   if (query) {
     window.location.href = `/search?q=${encodeURIComponent(query)}`
   }

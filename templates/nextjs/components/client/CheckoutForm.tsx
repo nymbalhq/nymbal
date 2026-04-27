@@ -8,19 +8,12 @@ import { loadStripe } from '@stripe/stripe-js'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/checkout.module.css'
 
-const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub'
-const stripePromise = isStub ? null : loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '')
+const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
+const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
+const stripePromise = isStub ? null : loadStripe(stripeKey)
 
-interface AddressFields {
-  firstName: string
-  lastName: string
-  addressLine1: string
-  addressLine2: string
-  city: string
-  region: string
-  postalCode: string
-  country: string
-}
+import type { Address } from '@nymbal/types'
+type AddressFields = Pick<Address, 'firstName' | 'lastName' | 'addressLine1' | 'city' | 'region' | 'postalCode' | 'country'> & { addressLine2: string }
 
 const emptyAddress: AddressFields = {
   firstName: '',

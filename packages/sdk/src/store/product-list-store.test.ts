@@ -150,4 +150,55 @@ describe('ProductListStore', () => {
     expect(store.getState().loading).toBe(false)
     expect(store.getState().error).toBe('timeout')
   })
+
+  it('round-trip: applyFilter then removeFilter restores original products and facets', async () => {
+    const originalItem = { ...emptyItem, id: 'p1', slug: 'p1' }
+    const filteredItem = { ...emptyItem, id: 'p2', slug: 'p2' }
+    const originalFacets = [
+      {
+        field: 'category',
+        label: 'Category',
+        values: [
+          { value: 'books', label: 'Books', count: 1 },
+          { value: 'electronics', label: 'Electronics', count: 1 },
+        ],
+      },
+    ]
+    const filteredFacets = [
+      {
+        field: 'category',
+        label: 'Category',
+        values: [{ value: 'books', label: 'Books', count: 1 }],
+      },
+    ]
+
+    const adapter = makeAdapter(null, [originalItem])
+    vi.mocked(adapter.products.list)
+      .mockResolvedValueOnce({ items: [originalItem], nextCursor: null, facets: originalFacets })
+      .mockResolvedValueOnce({ items: [filteredItem], nextCursor: null, facets: filteredFacets })
+      .mockResolvedValueOnce({ items: [originalItem], nextCursor: null, facets: originalFacets })
+
+    const store = createProductListStore(adapter)
+    await store.load()
+
+    // Pre-filter state
+    expect(store.getState().products).toHaveLength(1)
+    expect(store.getState().products[0]?.id).toBe('p1')
+    expect(store.getState().facets[0]?.values).toHaveLength(2)
+
+    // Apply filter
+    await store.applyFilter('category', 'books')
+    expect(store.getState().products).toHaveLength(1)
+    expect(store.getState().products[0]?.id).toBe('p2')
+    expect(store.getState().filters['category']).toBe('books')
+    expect(store.getState().facets[0]?.values).toHaveLength(1)
+
+    // Remove filter — should return to original state
+    await store.removeFilter('category')
+    expect(store.getState().filters['category']).toBeUndefined()
+    expect(store.getState().products).toHaveLength(1)
+    expect(store.getState().products[0]?.id).toBe('p1')
+    expect(store.getState().facets[0]?.values).toHaveLength(2)
+    expect(store.getState().loading).toBe(false)
+  })
 })

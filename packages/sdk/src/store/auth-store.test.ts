@@ -54,11 +54,11 @@ describe('AuthStore', () => {
     expect(tokenManager.setTokens).toHaveBeenCalledWith('tok', 900)
   })
 
-  it('login on failure sets error state', async () => {
+  it('login on failure sets error state and rethrows', async () => {
     const adapter = makeAdapter()
     vi.mocked(adapter.customers.login).mockRejectedValueOnce(new Error('invalid credentials'))
     const store = createAuthStore(adapter, makeTokenManager())
-    await store.login('bad@example.com', 'wrong')
+    await expect(store.login('bad@example.com', 'wrong')).rejects.toThrow('invalid credentials')
     expect(store.getState().isAuthenticated).toBe(false)
     expect(store.getState().error).toBe('invalid credentials')
   })

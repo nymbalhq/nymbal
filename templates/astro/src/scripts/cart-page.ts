@@ -12,9 +12,9 @@ function renderCart() {
   if (items.length === 0) {
     container!.innerHTML = `
       <div class="cart-empty">
-        <h2 class="cart-empty-title">Your cart is empty</h2>
+        <h1 class="cart-empty-title">Your cart is empty</h1>
         <p class="cart-empty-text">Looks like you haven't added anything yet.</p>
-        <a href="/products" class="btn btn-primary">Continue Shopping</a>
+        <a href="/products" class="btn btn-primary" data-testid="continue-shopping">Continue Shopping</a>
       </div>
     `
     return

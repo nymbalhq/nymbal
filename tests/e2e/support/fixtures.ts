@@ -12,6 +12,12 @@ export const test = base.extend<{ autoFailOnErrors: void }>({
       if (msg.type() === 'error') {
         const text = msg.text()
         if (text.includes('favicon.ico')) return
+        // The browser auto-generates "Failed to load resource" console.errors for any
+        // non-2xx HTTP response. These are browser-level messages, not application errors.
+        // Real application errors are logged separately by the SDK with specific prefixes
+        // (e.g. "[CartStore] load failed"). Filtering these prevents false positives for
+        // expected HTTP errors like 401 on bad credentials or 404 on missing pages.
+        if (text.startsWith('Failed to load resource:')) return
         errors.push(`console.error: ${text}`)
       }
     })

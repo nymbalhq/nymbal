@@ -128,17 +128,35 @@ export class NymbalCartDrawer extends NymbalElement {
     return ['open']
   }
 
+  private readonly handleItemAdded = (): void => {
+    this.open()
+  }
+
+  private readonly handleMiniCartClicked = (): void => {
+    this.toggle()
+  }
+
   protected setup(): void {
     injectStyles('nymbal-cart-drawer', STYLES)
     this.subscribeToStore(this.client.cart)
+    document.addEventListener('nymbal:cart:item-added', this.handleItemAdded)
+    document.addEventListener('nymbal:mini-cart:clicked', this.handleMiniCartClicked)
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback()
+    document.removeEventListener('nymbal:cart:item-added', this.handleItemAdded)
+    document.removeEventListener('nymbal:mini-cart:clicked', this.handleMiniCartClicked)
   }
 
   open(): void {
     this.setAttribute('open', '')
+    window.dispatchEvent(new CustomEvent('nymbal:cart:open'))
   }
 
   close(): void {
     this.removeAttribute('open')
+    window.dispatchEvent(new CustomEvent('nymbal:cart:close'))
   }
 
   toggle(): void {
@@ -164,17 +182,17 @@ export class NymbalCartDrawer extends NymbalElement {
           </div>
           <div class="nymbal-cart-item-actions">
             <span>${this.formatPrice(item.priceMinor * item.qty, currency)}</span>
-            <button class="nymbal-cart-item-remove" data-testid="remove-item-${item.variantId}" data-variant-id="${item.variantId}">Remove</button>
+            <button type="button" class="nymbal-cart-item-remove" data-testid="remove-item-${item.variantId}" data-variant-id="${item.variantId}">Remove</button>
           </div>
         </div>
       `).join('')
 
     this.innerHTML = `
       <div class="nymbal-drawer-overlay" data-testid="cart-drawer-overlay"></div>
-      <aside class="nymbal-drawer-panel" role="dialog" aria-label="Shopping cart" data-testid="cart-drawer">
+      <div class="nymbal-drawer-panel" role="dialog" aria-label="Shopping cart" aria-modal="true" data-testid="cart-drawer">
         <div class="nymbal-drawer-header">
           <h2>Cart (${state.itemCount})</h2>
-          <button class="nymbal-drawer-close" data-testid="cart-drawer-close" aria-label="Close cart">&times;</button>
+          <button type="button" class="nymbal-drawer-close" data-testid="cart-drawer-close" aria-label="Close cart">&times;</button>
         </div>
         <div class="nymbal-drawer-items">${itemsHtml}</div>
         ${state.items.length > 0 ? `
@@ -183,10 +201,10 @@ export class NymbalCartDrawer extends NymbalElement {
               <span>Subtotal</span>
               <span>${this.formatPrice(state.subtotalMinor, currency)}</span>
             </div>
-            <button class="nymbal-checkout-btn" data-testid="cart-checkout-btn">Checkout</button>
+            <button type="button" class="nymbal-checkout-btn" data-testid="cart-checkout-btn">Checkout</button>
           </div>
         ` : ''}
-      </aside>
+      </div>
     `
 
     this.querySelector('.nymbal-drawer-overlay')?.addEventListener('click', () => this.close())

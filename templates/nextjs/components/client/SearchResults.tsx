@@ -73,6 +73,7 @@ export function SearchResults() {
                   key={product.id}
                   href={`/product/${product.slug}`}
                   className={styles.productCard}
+                  data-testid={`product-card-${product.slug}`}
                 >
                   <div className={styles.productImage}>
                     {imageUrl && (

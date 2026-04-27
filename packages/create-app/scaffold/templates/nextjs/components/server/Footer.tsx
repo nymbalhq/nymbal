@@ -29,7 +29,7 @@ export function Footer() {
       <div className={`container ${styles.inner}`}>
         <div className={styles.columns}>
           <div className={styles.column}>
-            <h3 className={styles.heading}>Shop</h3>
+            <h2 className={styles.heading}>Shop</h2>
             <ul className={styles.list}>
               {SHOP_LINKS.map((link) => (
                 <li key={link.href}>
@@ -42,7 +42,7 @@ export function Footer() {
           </div>
 
           <div className={styles.column}>
-            <h3 className={styles.heading}>Account</h3>
+            <h2 className={styles.heading}>Account</h2>
             <ul className={styles.list}>
               {ACCOUNT_LINKS.map((link) => (
                 <li key={link.href}>
@@ -55,7 +55,7 @@ export function Footer() {
           </div>
 
           <div className={styles.column}>
-            <h3 className={styles.heading}>About</h3>
+            <h2 className={styles.heading}>About</h2>
             <ul className={styles.list}>
               {ABOUT_LINKS.map((link) => (
                 <li key={link.href}>

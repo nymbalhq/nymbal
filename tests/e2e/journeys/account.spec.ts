@@ -3,12 +3,12 @@ import { expect, test } from '../support/fixtures'
 test.describe('Account flows', () => {
   test('login page renders login form', async ({ page }) => {
     await page.goto('/account/login')
-    await expect(page.locator('[data-testid="login-form"], [data-testid="login-email"]')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="login-form"], [data-testid="login-email"]').first()).toBeVisible({ timeout: 10000 })
   })
 
   test('register page renders register form', async ({ page }) => {
     await page.goto('/account/register')
-    await expect(page.locator('[data-testid="register-form"], [data-testid="register-email"]')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('[data-testid="register-form"], [data-testid="register-email"]').first()).toBeVisible({ timeout: 10000 })
   })
 
   test('unauthenticated account access redirects to login', async ({ page }) => {
@@ -21,14 +21,12 @@ test.describe('Account flows', () => {
 
   test('login with bad credentials shows error', async ({ page }) => {
     await page.goto('/account/login')
-    const emailInput = page.locator('[data-testid="login-email"], input[type="email"]').first()
-    await emailInput.fill('notexist@example.com')
-    const passInput = page.locator('[data-testid="login-password"], input[type="password"]').first()
-    await passInput.fill('wrongpassword')
-    await page.locator('[data-testid="login-submit"], button[type="submit"]').first().click()
+    await page.locator('[data-testid="login-email"]').fill('notexist@example.com')
+    await page.locator('[data-testid="login-password"]').fill('wrongpassword')
+    await page.locator('[data-testid="login-submit"]').click()
     // Error should appear somewhere on the page
     await expect(
-      page.locator('.error, [role="alert"], [data-testid*="error"]'),
+      page.locator('[role="alert"]').first(),
     ).toBeVisible({ timeout: 10000 })
   })
 })

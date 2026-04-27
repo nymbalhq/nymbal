@@ -28,7 +28,7 @@ export function CartPage() {
           <p className={styles.emptyText}>
             Looks like you have not added anything to your cart yet.
           </p>
-          <Link href="/products" className="btn btn-primary">
+          <Link href="/products" className="btn btn-primary" data-testid="continue-shopping">
             Continue Shopping
           </Link>
         </div>

@@ -33,7 +33,8 @@ export function createSearchStore(adapter: CommerceAdapter): SearchStore {
         total: result.items.length,
         loading: false,
       })
-    } catch {
+    } catch (err) {
+      console.error('[SearchStore] search failed', err)
       store.setState({ loading: false })
     }
   }

@@ -5,7 +5,7 @@ test.describe('Auth checkout flow', () => {
   test('registered user can see account link in nav', async ({ page }) => {
     await page.goto('/')
     // Just verify the header has an account link
-    const accountLink = page.locator('[data-testid="site-header"] a[href*="account"]')
+    const accountLink = page.locator('[data-testid="site-header"] a[href*="account"]').first()
     await expect(accountLink).toBeVisible({ timeout: 10000 })
   })
 
