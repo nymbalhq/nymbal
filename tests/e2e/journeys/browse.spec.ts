@@ -87,4 +87,24 @@ test.describe('Browse catalog', () => {
     // All filter groups still visible
     expect(await filterGroups.count()).toBe(filterGroupCount)
   })
+
+  test('clicking filter keeps all category options visible', async ({ page }) => {
+    await page.goto('/products')
+    await expect(page.locator('[data-testid^="product-card-"]').first()).toBeVisible({ timeout: 15000 })
+
+    const filterOptions = page.locator('[data-testid^="filter-option-"]')
+    const countBefore = await filterOptions.count()
+    if (countBefore <= 1) {
+      // Not enough filter options to test — skip gracefully
+      return
+    }
+
+    // Click first filter option
+    await filterOptions.first().click()
+    await page.waitForTimeout(500)
+
+    // All filter options still visible (count must not decrease)
+    const countAfter = await filterOptions.count()
+    expect(countAfter).toBe(countBefore)
+  })
 })

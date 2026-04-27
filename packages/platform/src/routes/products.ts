@@ -90,7 +90,15 @@ export function registerProductRoutes(
             ...(cursor !== undefined && { cursor }),
           }))
 
-      const categoryFacet = buildCategoryFacet(result.items as Array<Record<string, unknown>>)
+      // Always build facets from the full product catalog so all filter options
+      // remain visible regardless of the active category filter.
+      const allResult = category
+        ? await documentStore.query('products', {
+            partitionKey: { field: 'storeId', value: storeName },
+            limit: 1000,
+          })
+        : result
+      const categoryFacet = buildCategoryFacet(allResult.items as Array<Record<string, unknown>>)
       return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
       return renderError(err)

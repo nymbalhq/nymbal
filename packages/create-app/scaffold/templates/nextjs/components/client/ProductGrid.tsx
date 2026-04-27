@@ -25,11 +25,29 @@ export function ProductGrid({
   const { products, facets, pagination, loading, load, loadMore } = useProductList()
   const [initialized, setInitialized] = useState(false)
   const [showMobileFilters, setShowMobileFilters] = useState(false)
+  // Preserve the widest facet list seen so filter options never disappear during a
+  // filtered query (the API always returns full facets, but this guards against regressions).
+  const [stableFacets, setStableFacets] = useState(
+    categories.length > 0
+      ? [{ field: 'category', label: 'Category', values: categories.map((c) => ({ value: c.slug, label: c.name })) }]
+      : [],
+  )
 
   useEffect(() => {
     load({ limit: 24, category: categorySlug })
     setInitialized(true)
   }, [categorySlug, load])
+
+  // Keep stableFacets updated whenever the store returns a wider facet list.
+  useEffect(() => {
+    if (facets.length > 0) {
+      const incomingValues = facets.reduce((acc, f) => acc + f.values.length, 0)
+      const stableValues = stableFacets.reduce((acc, f) => acc + f.values.length, 0)
+      if (incomingValues >= stableValues) {
+        setStableFacets(facets)
+      }
+    }
+  }, [facets, stableFacets])
 
   const displayProducts = initialized && products.length > 0 ? products : initialProducts
   const hasMore = initialized ? pagination.hasMore : !!initialCursor
@@ -40,11 +58,9 @@ export function ProductGrid({
     }
   }, [hasMore, loading, loadMore])
 
-  const displayFacets = facets.length > 0
-    ? facets
-    : categories.length > 0
-      ? [{ field: 'category', label: 'Category', values: categories.map((c) => ({ value: c.slug, label: c.name })) }]
-      : []
+  // Use stableFacets (which always contains the full category list) so all filter
+  // options remain visible after a category filter is applied.
+  const displayFacets = stableFacets
 
   return (
     <div className={styles.layout}>

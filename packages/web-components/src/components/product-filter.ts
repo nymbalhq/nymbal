@@ -69,7 +69,7 @@ export class NymbalProductFilter extends NymbalElement {
           ${facet.values.map((v) => {
             const checked = activeValues.includes(v.value)
             return `
-              <label class="nymbal-filter-option">
+              <label class="nymbal-filter-option" data-testid="filter-option-${v.value}">
                 <input type="checkbox" data-filter-name="${facet.field}" data-filter-value="${v.value}" ${checked ? 'checked' : ''}>
                 <span>${this.esc(v.label ?? v.value)}</span>
                 ${v.count !== undefined ? `<span class="nymbal-filter-count">(${v.count})</span>` : ''}

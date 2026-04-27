@@ -113,12 +113,22 @@ describe('GET /api/products facet computation', () => {
     expect(elec).toMatchObject({ value: 'electronics', label: 'Electronics', count: 2 })
   })
 
-  it('filters products by category slug via ?category= param', async () => {
+  it('filters products by category slug via ?category= param, facets always show all categories', async () => {
     const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+    // Filtered result: only the book
     await documentStore.put('products-by-category', 'category:books#product:moby-dick', {
       id: 'p1', slug: 'moby-dick', name: 'Moby Dick', storeId: 'test',
       partitionKey: 'category:books', sortKey: 'product:moby-dick',
       categories: [{ id: 'c1', name: 'Books', slug: 'books' }],
+    })
+    // Full catalog (used for facet computation): book + electronics item
+    await documentStore.put('products', 'moby-dick', {
+      id: 'p1', slug: 'moby-dick', name: 'Moby Dick', storeId: 'test',
+      categories: [{ id: 'c1', name: 'Books', slug: 'books' }],
+    })
+    await documentStore.put('products', 'laptop', {
+      id: 'p2', slug: 'laptop', name: 'Laptop', storeId: 'test',
+      categories: [{ id: 'c2', name: 'Electronics', slug: 'electronics' }],
     })
 
     const { adapter, invoke } = makeAdapter()
@@ -126,10 +136,13 @@ describe('GET /api/products facet computation', () => {
 
     const resp = await invoke('GET', '/api/products', { category: 'books' })
     expect(resp.status).toBe(200)
-    const body = resp.body as { data: { items: unknown[]; facets: Array<{ field: string; values: unknown[] }> } }
+    const body = resp.body as { data: { items: unknown[]; facets: Array<{ field: string; values: Array<{ value: string }> }> } }
+    // Items are filtered to the requested category
     expect(body.data.items).toHaveLength(1)
+    // Facets always reflect the FULL catalog so all category options remain visible
     const facet = body.data.facets.find((f) => f.field === 'category')!
-    expect(facet.values).toHaveLength(1)
+    expect(facet.values).toHaveLength(2)
+    expect(facet.values.map((v) => v.value).sort()).toEqual(['books', 'electronics'])
   })
 })
 
