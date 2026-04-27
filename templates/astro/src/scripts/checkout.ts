@@ -155,7 +155,16 @@ shippingForm?.addEventListener('submit', (e) => {
 let stripe: any = null
 let cardElement: any = null
 
+const isStubPayments = (import.meta as any).env?.PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub'
+
 async function mountStripe() {
+  if (isStubPayments) {
+    const cardContainer = document.getElementById('stripe-card-element')
+    if (cardContainer) {
+      cardContainer.innerHTML = '<p style="color: var(--nymbal-color-text-muted, #71717a); font-size: 0.875rem; margin: 0;">Test mode — payment skipped</p>'
+    }
+    return
+  }
   try {
     const { loadStripe } = await import('@stripe/stripe-js')
     const stripeKey = (import.meta as any).env?.PUBLIC_STRIPE_PUBLISHABLE_KEY
@@ -229,7 +238,7 @@ paymentForm?.addEventListener('submit', async (e) => {
       return
     }
 
-    if (stripe && cardElement && state.order?.paymentIntent?.clientSecret) {
+    if (!isStubPayments && stripe && cardElement && state.order?.paymentIntent?.clientSecret) {
       const { error } = await stripe.confirmCardPayment(state.order.paymentIntent.clientSecret, {
         payment_method: { card: cardElement },
       })
@@ -243,9 +252,9 @@ paymentForm?.addEventListener('submit', async (e) => {
       }
     }
 
-    const orderId = state.order?.orderId
+    const orderNumber = state.order?.orderNumber
     client.checkout.reset()
-    window.location.href = `/order/${orderId}`
+    window.location.href = `/order/${orderNumber}`
   } catch (err: any) {
     showError(err.message ?? 'Payment failed. Please try again.')
     if (submitBtn) {

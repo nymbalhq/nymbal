@@ -2,6 +2,7 @@ import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbal/type
 import type { NymbalConfig } from '@nymbal/config'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
+import { registerCategoryProjection } from './projections/category-projection.js'
 import { registerProductProjection } from './projections/product-projection.js'
 import { registerOrderProjection } from './projections/order-projection.js'
 import { registerCustomerProjection } from './projections/customer-projection.js'
@@ -23,6 +24,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
   const { config, eventBus, documentStore, repos, adapters, logger } = deps
   const handlerLogger = logger.child({ component: 'handlers' })
 
+  await registerCategoryProjection({
+    eventBus,
+    documentStore,
+    logger: handlerLogger.child({ projection: 'category' }),
+    storeId: config.store.name,
+  })
   await registerProductProjection({
     eventBus,
     documentStore,

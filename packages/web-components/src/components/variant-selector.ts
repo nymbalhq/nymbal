@@ -109,11 +109,16 @@ export class NymbalVariantSelector extends NymbalElement {
         }
         currentSelections.set(optionName, optionValue)
 
-        const match = product.variants.find((v: DenormalisedVariant) =>
-          (v.options as VariantOption[]).every(
-            (o) => currentSelections.get(o.name) === o.value,
-          ),
-        )
+        const match = product.variants.find((v: DenormalisedVariant) => {
+          const vRaw = v.options
+          let vOpts: VariantOption[] = []
+          if (typeof vRaw === 'string') {
+            try { vOpts = JSON.parse(vRaw) } catch (e) { console.warn('[variant-selector] malformed variant options JSON', e); vOpts = [] }
+          } else if (Array.isArray(vRaw)) {
+            vOpts = vRaw
+          }
+          return vOpts.every((o) => currentSelections.get(o.name) === o.value)
+        })
 
         if (match) {
           this.client.product.selectVariant(match)
@@ -138,14 +143,21 @@ export class NymbalVariantSelector extends NymbalElement {
     if (optionsAttr) {
       try {
         return JSON.parse(optionsAttr) as OptionGroup[]
-      } catch {
-        // fall through to derive from variants
+      } catch (e) {
+        console.warn('[variant-selector] malformed options attribute, falling back to variant derivation', e)
       }
     }
 
     const groups = new Map<string, Set<string>>()
     for (const variant of product.variants) {
-      for (const opt of variant.options as VariantOption[]) {
+      const raw = variant.options
+      let opts: VariantOption[] = []
+      if (typeof raw === 'string') {
+        try { opts = JSON.parse(raw) } catch (e) { console.warn('[variant-selector] malformed variant options in getOptionGroups', e); opts = [] }
+      } else if (Array.isArray(raw)) {
+        opts = raw
+      }
+      for (const opt of opts) {
         let values = groups.get(opt.name)
         if (!values) {
           values = new Set()

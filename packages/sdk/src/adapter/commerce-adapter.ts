@@ -1,4 +1,4 @@
-import type { Cart, Customer } from '@nymbal/types'
+import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbal/types'
 import type {
   DenormalisedProduct,
   ProductListParams,
@@ -7,8 +7,6 @@ import type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
-  ReviewsListResult,
-  ReviewSubmitResult,
 } from '../types.js'
 
 export interface CommerceAdapter {
@@ -41,12 +39,12 @@ export interface CommerceAdapter {
     getForProduct(
       productId: string,
       params?: { limit?: number; cursor?: string },
-    ): Promise<ReviewsListResult>
+    ): Promise<ReviewsResult>
     submit(review: {
       productId: string
       rating: number
       title: string
       body: string
-    }): Promise<ReviewSubmitResult>
+    }): Promise<ReviewResult>
   }
 }

@@ -9,6 +9,7 @@ const INITIAL_STATE: ProductListState = {
   sort: null,
   pagination: { cursor: null, hasMore: false },
   loading: false,
+  error: null,
 }
 
 export interface ProductListStore {
@@ -41,11 +42,14 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
       const result = await adapter.products.list(params ?? buildParams())
       store.setState({
         products: result.items,
+        facets: result.facets ?? store.getState().facets,
         pagination: { cursor: result.nextCursor, hasMore: result.nextCursor !== null },
         loading: false,
+        error: null,
       })
-    } catch {
-      store.setState({ loading: false })
+    } catch (err) {
+      console.error('[ProductListStore] load failed', err)
+      store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
   }
 
@@ -63,9 +67,11 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         products: [...state.products, ...result.items],
         pagination: { cursor: result.nextCursor, hasMore: result.nextCursor !== null },
         loading: false,
+        error: null,
       })
-    } catch {
-      store.setState({ loading: false })
+    } catch (err) {
+      console.error('[ProductListStore] loadMore failed', err)
+      store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
   }
 

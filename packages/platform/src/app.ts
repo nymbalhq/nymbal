@@ -5,6 +5,7 @@ import { buildAdapters, type AdapterRegistry } from './adapters/registry.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { registerHandlers } from './handlers/register.js'
+import { warmDocumentStore } from './warm-document-store.js'
 import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
@@ -73,6 +74,14 @@ export async function createApp(
     repos,
     adapters,
     logger,
+  })
+
+  await warmDocumentStore({
+    config,
+    repos,
+    eventBus: platform.eventBus,
+    logger,
+    version,
   })
 
   const sweepers: SweeperHandle[] = [

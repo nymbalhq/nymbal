@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from 'vitest'
 import { createProductListStore } from './product-list-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 
-const emptyItem = { id: 'p1', slug: 'p1', name: 'P', description: '', shortDescription: '', status: 'active' as const, type: 'simple' as const, seoTitle: '', seoDescription: '', media: [], metadata: {}, priceMinor: 1000, compareAtPriceMinor: null, currency: 'GBP', variants: [], categories: [], reviewCount: 0, averageRating: 0, createdAt: '', updatedAt: '' }
+const emptyItem = {
+  id: 'p1', slug: 'p1', name: 'P', description: '', shortDescription: '',
+  status: 'active' as const, type: 'simple' as const, media: [],
+  variantCount: 0, inStock: false, priceRange: null,
+  priceMinor: 1000, currency: 'GBP', variants: [],
+  categoryIds: [], categories: [],
+  createdAt: '', updatedAt: '',
+}
 
 function makeAdapter(nextCursor: string | null = null, items = [emptyItem]): CommerceAdapter {
   return {
@@ -78,11 +85,40 @@ describe('ProductListStore', () => {
     expect(adapter.products.list).toHaveBeenCalled()
   })
 
-  it('load on error sets loading false', async () => {
+  it('load on error sets loading false and records error message', async () => {
     const adapter = makeAdapter()
-    vi.mocked(adapter.products.list).mockRejectedValueOnce(new Error('fail'))
+    vi.mocked(adapter.products.list).mockRejectedValueOnce(new Error('network error'))
     const store = createProductListStore(adapter)
     await store.load()
     expect(store.getState().loading).toBe(false)
+    expect(store.getState().error).toBe('network error')
+  })
+
+  it('load populates facets from adapter response', async () => {
+    const adapter = makeAdapter()
+    vi.mocked(adapter.products.list).mockResolvedValueOnce({
+      items: [emptyItem],
+      nextCursor: null,
+      facets: [{ field: 'category', label: 'Category', values: [{ value: 'apparel', label: 'Apparel', count: 2 }] }],
+    })
+    const store = createProductListStore(adapter)
+    await store.load()
+    expect(store.getState().facets).toHaveLength(1)
+    expect(store.getState().facets[0]).toMatchObject({ field: 'category', values: [{ value: 'apparel', count: 2 }] })
+  })
+
+  it('initial state has error null', () => {
+    const store = createProductListStore(makeAdapter())
+    expect(store.getState().error).toBeNull()
+  })
+
+  it('loadMore on error sets error message and loading false', async () => {
+    const adapter = makeAdapter('cursor-1')
+    const store = createProductListStore(adapter)
+    await store.load()
+    vi.mocked(adapter.products.list).mockRejectedValueOnce(new Error('timeout'))
+    await store.loadMore()
+    expect(store.getState().loading).toBe(false)
+    expect(store.getState().error).toBe('timeout')
   })
 })

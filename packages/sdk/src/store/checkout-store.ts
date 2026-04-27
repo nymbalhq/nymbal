@@ -60,7 +60,7 @@ export function createCheckoutStore(adapter: CommerceAdapter): CheckoutStore {
       })
       store.setState({
         paymentStatus: 'succeeded',
-        order: { orderId: result.orderId, paymentIntent: result.paymentIntent },
+        order: { orderId: result.orderId, orderNumber: result.orderNumber, paymentIntent: result.paymentIntent },
         step: 'confirmation',
       })
     } catch (err) {

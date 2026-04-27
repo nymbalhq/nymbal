@@ -48,6 +48,7 @@ export * from './services/index.js'
 export * from './adapters/index.js'
 export { createLogger, type CreateLoggerOptions } from './logger.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
+export { warmDocumentStore, type WarmDocumentStoreDeps, type WarmResult } from './warm-document-store.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

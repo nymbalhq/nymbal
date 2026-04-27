@@ -32,4 +32,23 @@ test.describe('Browse catalog', () => {
     await page.locator('[data-testid^="product-card-"]').first().click()
     await expect(page.locator('[data-testid="stock-badge"]')).toBeVisible({ timeout: 15000 })
   })
+
+  test('product listing shows at least 4 products', async ({ page }) => {
+    await page.goto('/products')
+    const cards = page.locator('[data-testid^="product-card-"]')
+    await expect(cards.first()).toBeVisible({ timeout: 15000 })
+    const count = await cards.count()
+    expect(count).toBeGreaterThanOrEqual(4)
+  })
+
+  test('product filters are clickable and do not crash', async ({ page }) => {
+    await page.goto('/products')
+    await expect(page.locator('[data-testid^="product-card-"]').first()).toBeVisible({ timeout: 15000 })
+    const filterGroups = page.locator('[data-testid^="filter-group-"]')
+    if (await filterGroups.count() > 0) {
+      const checkbox = filterGroups.first().locator('input[type="checkbox"]').first()
+      await checkbox.click()
+      await page.waitForTimeout(800)
+    }
+  })
 })

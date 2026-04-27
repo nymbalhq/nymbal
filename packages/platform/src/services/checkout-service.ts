@@ -31,6 +31,7 @@ export interface BeginCheckoutInput {
 
 export interface BeginCheckoutResult {
   orderId: string
+  orderNumber: string
   paymentIntent: PaymentIntent
   currency: string
   totalMinor: number
@@ -168,6 +169,7 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       logger.info({ orderId: order.id, orderNumber: order.orderNumber }, 'checkout started')
       return {
         orderId: order.id,
+        orderNumber: order.orderNumber,
         paymentIntent,
         currency: cartDoc.currency,
         totalMinor,

@@ -10,12 +10,6 @@ const countEl = document.getElementById('product-count')
 const urlParams = new URLSearchParams(window.location.search)
 const initialCategory = urlParams.get('category')
 
-if (initialCategory) {
-  client.productList.applyFilter('category', initialCategory)
-}
-
-client.productList.load()
-
 function renderProductCard(product: any): string {
   const imageUrl =
     product.imageUrl ??
@@ -46,7 +40,7 @@ function renderProductCard(product: any): string {
 
 function renderGrid() {
   const state = client.productList.getState()
-  const products = state.items ?? []
+  const products = state.products ?? []
 
   if (!gridContainer) return
 
@@ -68,11 +62,23 @@ function renderGrid() {
 
   // Toggle load more
   if (loadMoreBtn) {
-    loadMoreBtn.style.display = state.nextCursor ? '' : 'none'
+    loadMoreBtn.style.display = state.pagination.hasMore ? '' : 'none'
   }
 }
 
-client.productList.subscribe(renderGrid)
+// Await the initial load before subscribing so the subscription only handles
+// re-renders (sort, filter, load-more) and never fires with empty state while
+// SSR content is still the source of truth.
+async function init() {
+  if (initialCategory) {
+    await client.productList.applyFilter('category', initialCategory)
+  } else {
+    await client.productList.load()
+  }
+  client.productList.subscribe(renderGrid)
+}
+
+void init()
 
 // Sort handler
 sortSelect?.addEventListener('change', () => {

@@ -53,6 +53,7 @@ export type CustomerWithHash = Customer & { passwordHash: string }
 export interface CustomerRepository {
   findById(id: string): Promise<CustomerWithHash | null>
   findByEmail(email: string): Promise<CustomerWithHash | null>
+  list(opts?: { limit?: number; offset?: number }): Promise<CustomerWithHash[]>
   insert(c: CustomerInsert): Promise<void>
   update(id: string, patch: CustomerUpdate): Promise<void>
   incrementStats(id: string, deltaOrders: number, deltaSpentMinor: number, updatedAt: Date): Promise<void>
@@ -91,6 +92,16 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         .from(postgresSchema.customers)
         .where(eq(postgresSchema.customers.email, normalized))
       return row ? rowToCustomer('postgres', row as Record<string, unknown>) : null
+    },
+    async list(opts = {}) {
+      const limit = opts.limit ?? 1000
+      const offset = opts.offset ?? 0
+      if (store.kind === 'sqlite') {
+        const rows = store.db.select().from(sqliteSchema.customers).limit(limit).offset(offset).all()
+        return rows.map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
+      }
+      const rows = await store.db.select().from(postgresSchema.customers).limit(limit).offset(offset)
+      return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
     },
     async insert(c) {
       const email = c.email.toLowerCase()

@@ -1,14 +1,41 @@
 import {
   NotFoundError,
   type DocumentStoreAdapter,
+  type Facet,
   type HttpAdapter,
+  type ReviewsAdapter,
 } from '@nymbal/types'
 import { ok, renderError, fail } from './envelope.js'
+
+function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
+  const counts = new Map<string, { name: string; count: number }>()
+  for (const product of products) {
+    const categories = product['categories'] as
+      | Array<{ id: string; name: string; slug: string }>
+      | undefined
+    if (!Array.isArray(categories)) continue
+    for (const cat of categories) {
+      const entry = counts.get(cat.slug)
+      if (entry) entry.count++
+      else counts.set(cat.slug, { name: cat.name, count: 1 })
+    }
+  }
+  return {
+    field: 'category',
+    label: 'Category',
+    values: Array.from(counts.entries()).map(([slug, { name, count }]) => ({
+      value: slug,
+      label: name,
+      count,
+    })),
+  }
+}
 
 export function registerProductRoutes(
   adapter: HttpAdapter,
   documentStore: DocumentStoreAdapter,
   storeName: string,
+  reviewsAdapter?: ReviewsAdapter,
 ): void {
   adapter.registerRoute('GET', '/api/products', async (ctx) => {
     try {
@@ -22,21 +49,20 @@ export function registerProductRoutes(
       const rawCategory = ctx.query.category
       const category = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory
 
-      if (category) {
-        const result = await documentStore.query('products-by-category', {
-          partitionKey: { field: 'partitionKey', value: `category:${category}` },
-          limit,
-          ...(cursor !== undefined && { cursor }),
-        })
-        return ok(result.items, { nextCursor: result.nextCursor })
-      }
+      const result = await (category
+        ? documentStore.query('products-by-category', {
+            partitionKey: { field: 'partitionKey', value: `category:${category}` },
+            limit,
+            ...(cursor !== undefined && { cursor }),
+          })
+        : documentStore.query('products', {
+            partitionKey: { field: 'storeId', value: storeName },
+            limit,
+            ...(cursor !== undefined && { cursor }),
+          }))
 
-      const result = await documentStore.query('products', {
-        partitionKey: { field: 'storeId', value: storeName },
-        limit,
-        ...(cursor !== undefined && { cursor }),
-      })
-      return ok(result.items, { nextCursor: result.nextCursor })
+      const categoryFacet = buildCategoryFacet(result.items as Array<Record<string, unknown>>)
+      return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
       return renderError(err)
     }
@@ -49,6 +75,24 @@ export function registerProductRoutes(
       const doc = await documentStore.get('products', slug)
       if (!doc) throw new NotFoundError('product', slug)
       return ok(doc)
+    } catch (err) {
+      return renderError(err)
+    }
+  })
+
+  adapter.registerRoute('GET', '/api/products/:id/reviews', async (ctx) => {
+    try {
+      const id = ctx.params.id
+      if (!id) return fail('products.id_required', 'id param required', 400)
+      if (!reviewsAdapter) return ok({ items: [], nextCursor: null })
+      const rawLimit = ctx.query.limit
+      const limit = rawLimit
+        ? Math.min(100, Math.max(1, Number(Array.isArray(rawLimit) ? rawLimit[0] : rawLimit) || 20))
+        : 20
+      const rawCursor = ctx.query.cursor
+      const cursor = Array.isArray(rawCursor) ? rawCursor[0] : rawCursor
+      const result = await reviewsAdapter.getProductReviews(id, { limit, ...(cursor && { cursor }) })
+      return ok(result)
     } catch (err) {
       return renderError(err)
     }

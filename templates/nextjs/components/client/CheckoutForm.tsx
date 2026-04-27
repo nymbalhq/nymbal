@@ -8,9 +8,8 @@ import { loadStripe } from '@stripe/stripe-js'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/checkout.module.css'
 
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '',
-)
+const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub'
+const stripePromise = isStub ? null : loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '')
 
 interface AddressFields {
   firstName: string
@@ -67,6 +66,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-firstName`}>First Name</label>
         <input
           id={`${prefix}-firstName`}
+          data-testid={`${prefix}-firstName`}
           type="text"
           value={values.firstName}
           onChange={(e) => onChange('firstName', e.target.value)}
@@ -78,6 +78,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-lastName`}>Last Name</label>
         <input
           id={`${prefix}-lastName`}
+          data-testid={`${prefix}-lastName`}
           type="text"
           value={values.lastName}
           onChange={(e) => onChange('lastName', e.target.value)}
@@ -89,6 +90,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-addressLine1`}>Address Line 1</label>
         <input
           id={`${prefix}-addressLine1`}
+          data-testid={`${prefix}-addressLine1`}
           type="text"
           value={values.addressLine1}
           onChange={(e) => onChange('addressLine1', e.target.value)}
@@ -100,6 +102,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-addressLine2`}>Address Line 2 (optional)</label>
         <input
           id={`${prefix}-addressLine2`}
+          data-testid={`${prefix}-addressLine2`}
           type="text"
           value={values.addressLine2}
           onChange={(e) => onChange('addressLine2', e.target.value)}
@@ -110,6 +113,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-city`}>City</label>
         <input
           id={`${prefix}-city`}
+          data-testid={`${prefix}-city`}
           type="text"
           value={values.city}
           onChange={(e) => onChange('city', e.target.value)}
@@ -121,6 +125,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-region`}>State / County</label>
         <input
           id={`${prefix}-region`}
+          data-testid={`${prefix}-region`}
           type="text"
           value={values.region}
           onChange={(e) => onChange('region', e.target.value)}
@@ -132,6 +137,7 @@ function AddressFormFields({
         <label htmlFor={`${prefix}-postalCode`}>Postcode</label>
         <input
           id={`${prefix}-postalCode`}
+          data-testid={`${prefix}-postalCode`}
           type="text"
           value={values.postalCode}
           onChange={(e) => onChange('postalCode', e.target.value)}
@@ -140,14 +146,16 @@ function AddressFormFields({
         />
       </div>
       <div>
-        <label htmlFor={`${prefix}-country`}>Country</label>
+        <label htmlFor={`${prefix}-country`}>Country (2-letter code)</label>
         <input
           id={`${prefix}-country`}
+          data-testid={`${prefix}-country`}
           type="text"
           value={values.country}
           onChange={(e) => onChange('country', e.target.value)}
           required
           autoComplete="country"
+          placeholder="GB"
         />
       </div>
     </div>
@@ -173,7 +181,7 @@ function CheckoutFormInner() {
 
   useEffect(() => {
     if (checkout.paymentStatus === 'succeeded' && checkout.order) {
-      router.push(`/order/${checkout.order.orderId}`)
+      router.push(`/order/${checkout.order.orderNumber}`)
     }
     if (checkout.paymentStatus === 'failed' && checkout.error) {
       setError(checkout.error)
@@ -242,7 +250,7 @@ function CheckoutFormInner() {
   const handlePlaceOrder = useCallback(
     async (e: FormEvent) => {
       e.preventDefault()
-      if (!stripe || !elements) return
+      if (!isStub && (!stripe || !elements)) return
 
       setProcessing(true)
       setError(null)
@@ -262,20 +270,19 @@ function CheckoutFormInner() {
       try {
         await checkout.submitPayment()
 
-        const state = checkout
-        if (state.order?.paymentIntent?.clientSecret) {
-          const cardElement = elements.getElement(CardElement)
-          if (!cardElement) {
+        if (!isStub && stripe && elements && checkout.order?.paymentIntent?.clientSecret) {
+          const cardEl = elements.getElement(CardElement)
+          if (!cardEl) {
             setError('Card element not found.')
             setProcessing(false)
             return
           }
 
           const { error: stripeError } = await stripe.confirmCardPayment(
-            state.order.paymentIntent.clientSecret,
+            checkout.order.paymentIntent.clientSecret,
             {
               payment_method: {
-                card: cardElement,
+                card: cardEl,
                 billing_details: {
                   email,
                   address: {
@@ -332,12 +339,12 @@ function CheckoutFormInner() {
                 <div className="form-group">
                   <label htmlFor="checkout-email">Email Address</label>
                   <input
-                    id="checkout-email"
+                    id="contact-email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    data-testid="checkout-email"
+                    data-testid="contact-email"
                     placeholder="you@example.com"
                     autoComplete="email"
                   />
@@ -345,7 +352,7 @@ function CheckoutFormInner() {
               </div>
               <div className={styles.formActions}>
                 <span />
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" data-testid="contact-continue">
                   Continue to Shipping
                 </button>
               </div>
@@ -357,7 +364,7 @@ function CheckoutFormInner() {
               <div className={styles.formSection} data-testid="shipping-address">
                 <h2 className={styles.formSectionTitle}>Shipping Address</h2>
                 <AddressFormFields
-                  prefix="ship"
+                  prefix="shipping"
                   values={shippingAddress}
                   onChange={updateShipping}
                 />
@@ -370,7 +377,7 @@ function CheckoutFormInner() {
                 >
                   Back
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" data-testid="shipping-continue">
                   Continue to Payment
                 </button>
               </div>
@@ -403,19 +410,27 @@ function CheckoutFormInner() {
 
               <div className={styles.formSection} style={{ marginTop: 'var(--nymbal-spacing-lg)' }}>
                 <h2 className={styles.formSectionTitle}>Payment</h2>
-                <div className={styles.paymentElement} data-testid="card-element">
-                  <CardElement
-                    options={{
-                      style: {
-                        base: {
-                          fontSize: '16px',
-                          color: '#1a1a1a',
-                          '::placeholder': { color: '#9ca3af' },
+                {isStub ? (
+                  <div className={styles.paymentElement} data-testid="card-element">
+                    <p style={{ color: 'var(--nymbal-color-text-muted, #9ca3af)', fontSize: '0.875rem', margin: 0 }}>
+                      Test mode — payment skipped
+                    </p>
+                  </div>
+                ) : (
+                  <div className={styles.paymentElement} data-testid="card-element">
+                    <CardElement
+                      options={{
+                        style: {
+                          base: {
+                            fontSize: '16px',
+                            color: '#1a1a1a',
+                            '::placeholder': { color: '#9ca3af' },
+                          },
                         },
-                      },
-                    }}
-                  />
-                </div>
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className={styles.formActions}>
@@ -429,7 +444,7 @@ function CheckoutFormInner() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={!stripe || processing}
+                  disabled={(!isStub && !stripe) || processing}
                   data-testid="place-order"
                 >
                   Place Order

@@ -15,6 +15,8 @@ import {
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { seedCategories, seedProducts, type SeedProduct } from './data.js'
+import { buildRepositories } from '../repositories/index.js'
+import { warmDocumentStore } from '../warm-document-store.js'
 
 export interface SeedDeps {
   config: NymbalConfig
@@ -411,6 +413,10 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     },
     'Seed complete',
   )
+
+  const repos = buildRepositories(commandStore, documentStore)
+  await warmDocumentStore({ config, repos, eventBus, logger, version })
+
   return {
     categories: categoryInserts.length,
     products: productInserts.length,

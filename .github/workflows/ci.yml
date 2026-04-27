@@ -112,6 +112,39 @@ jobs:
       - run: pnpm build:templates
       - run: pnpm --filter @nymbal/admin build
 
+  scaffold-smoke:
+    name: Scaffold smoke test
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Scaffold Next.js project
+        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes
+      - name: Install Next.js scaffold deps
+        run: pnpm install --no-frozen-lockfile
+        working-directory: smoke-nextjs
+      - name: Seed demo content
+        run: pnpm exec nymbal seed
+        working-directory: smoke-nextjs
+      - name: Start Next.js dev server
+        run: pnpm dev &
+        working-directory: smoke-nextjs
+      - name: Wait for Next.js dev server
+        run: npx wait-on http://localhost:3000 --timeout 60000
+      - name: Smoke check Next.js
+        run: node tools/scaffold-smoke-check.mjs --port 3000
+      - name: Stop Next.js dev server
+        run: pkill -f "next dev" || true
+
   e2e-astro:
     name: E2E — Astro
     runs-on: ubuntu-latest
@@ -133,6 +166,8 @@ jobs:
         run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep-invert "@visual|@a11y"
         env:
           CI: true
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
 
   e2e-nextjs:
     name: E2E — Next.js
@@ -155,6 +190,8 @@ jobs:
         run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep-invert "@visual|@a11y"
         env:
           CI: true
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
 
   visual-astro:
     name: Visual regression — Astro

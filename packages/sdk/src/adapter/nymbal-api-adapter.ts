@@ -1,4 +1,4 @@
-import type { Cart, Customer } from '@nymbal/types'
+import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbal/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
 import type {
@@ -9,8 +9,6 @@ import type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
-  ReviewsListResult,
-  ReviewSubmitResult,
 } from '../types.js'
 
 export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapter {
@@ -103,13 +101,13 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         if (params?.limit !== undefined) search.set('limit', String(params.limit))
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
         const qs = search.toString()
-        return fetchClient.request<ReviewsListResult>(
+        return fetchClient.request<ReviewsResult>(
           'GET',
           `/api/products/${encodeURIComponent(productId)}/reviews${qs ? `?${qs}` : ''}`,
         )
       },
       submit(review: { productId: string; rating: number; title: string; body: string }) {
-        return fetchClient.request<ReviewSubmitResult>('POST', '/api/reviews', review)
+        return fetchClient.request<ReviewResult>('POST', '/api/reviews', review)
       },
     },
   }

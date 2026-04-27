@@ -16,8 +16,10 @@ export async function fetchProducts(params?: {
   try {
     const res = await fetch(url.toString(), { cache: 'no-store' })
     if (!res.ok) return { items: [], nextCursor: null }
-    return (await res.json()) as ProductListResult
-  } catch {
+    const envelope = (await res.json()) as { data: ProductListResult }
+    return envelope.data ?? { items: [], nextCursor: null }
+  } catch (err) {
+    console.error('[api] fetchProducts failed', err)
     return { items: [], nextCursor: null }
   }
 }
@@ -26,8 +28,10 @@ export async function fetchProduct(slug: string): Promise<DenormalisedProduct | 
   try {
     const res = await fetch(`${API_URL}/api/products/${encodeURIComponent(slug)}`, { cache: 'no-store' })
     if (!res.ok) return null
-    return (await res.json()) as DenormalisedProduct
-  } catch {
+    const envelope = (await res.json()) as { data: DenormalisedProduct }
+    return envelope.data ?? null
+  } catch (err) {
+    console.error('[api] fetchProduct failed', err)
     return null
   }
 }
@@ -43,8 +47,10 @@ export async function fetchCategories(): Promise<Category[]> {
   try {
     const res = await fetch(`${API_URL}/api/categories`, { cache: 'no-store' })
     if (!res.ok) return SEED_CATEGORIES
-    return (await res.json()) as Category[]
-  } catch {
+    const envelope = (await res.json()) as { data: Category[] }
+    return envelope.data ?? SEED_CATEGORIES
+  } catch (err) {
+    console.error('[api] fetchCategories failed', err)
     return SEED_CATEGORIES
   }
 }
@@ -53,8 +59,10 @@ export async function fetchOrder(orderNumber: string): Promise<Order | null> {
   try {
     const res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`, { cache: 'no-store' })
     if (!res.ok) return null
-    return (await res.json()) as Order
-  } catch {
+    const envelope = (await res.json()) as { data: Order }
+    return envelope.data ?? null
+  } catch (err) {
+    console.error('[api] fetchOrder failed', err)
     return null
   }
 }
@@ -63,8 +71,10 @@ export async function fetchReviews(productId: string): Promise<ReviewsListResult
   try {
     const res = await fetch(`${API_URL}/api/products/${encodeURIComponent(productId)}/reviews`, { cache: 'no-store' })
     if (!res.ok) return { items: [], nextCursor: null }
-    return (await res.json()) as ReviewsListResult
-  } catch {
+    const envelope = (await res.json()) as { data: ReviewsListResult }
+    return envelope.data ?? { items: [], nextCursor: null }
+  } catch (err) {
+    console.error('[api] fetchReviews failed', err)
     return { items: [], nextCursor: null }
   }
 }

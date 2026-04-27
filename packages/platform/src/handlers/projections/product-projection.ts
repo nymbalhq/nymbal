@@ -40,13 +40,19 @@ export interface DenormalisedProduct {
     options: unknown
   }>
   categoryIds: string[]
+  categories: Array<{ id: string; name: string; slug: string }>
   createdAt: string
   updatedAt: string
   partitionKey?: string
   sortKey?: string
 }
 
-function denormalise(p: ProductSnapshot, storeId: string, storeCurrency: string): DenormalisedProduct {
+function denormalise(
+  p: ProductSnapshot,
+  storeId: string,
+  storeCurrency: string,
+  categories: Array<{ id: string; name: string; slug: string }>,
+): DenormalisedProduct {
   const prices = p.variants.map((v) => v.priceMinor)
   const priceRange = prices.length
     ? { minMinor: Math.min(...prices), maxMinor: Math.max(...prices) }
@@ -76,9 +82,27 @@ function denormalise(p: ProductSnapshot, storeId: string, storeCurrency: string)
       options: v.options,
     })),
     categoryIds: p.categoryIds,
+    categories,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   }
+}
+
+async function resolveCategories(
+  categoryIds: string[],
+  documentStore: DocumentStoreAdapter,
+  storeId: string,
+): Promise<Array<{ id: string; name: string; slug: string }>> {
+  if (categoryIds.length === 0) return []
+  const result = await documentStore.query<{ id: string; name: string; slug: string }>(
+    'categories',
+    { partitionKey: { field: 'storeId', value: storeId }, limit: 500 },
+  )
+  const byId = new Map(result.items.map((c) => [c.id, c]))
+  return categoryIds.flatMap((id) => {
+    const c = byId.get(id)
+    return c ? [{ id: c.id, name: c.name, slug: c.slug }] : []
+  })
 }
 
 export interface RegisterProductProjectionDeps {
@@ -94,13 +118,14 @@ export async function registerProductProjection(deps: RegisterProductProjectionD
 
   const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (event) => {
     const { product } = event.payload
-    const doc = denormalise(product, storeId, currency)
+    const categories = await resolveCategories(product.categoryIds, documentStore, storeId)
+    const doc = denormalise(product, storeId, currency, categories)
     await documentStore.put<DenormalisedProduct>(PRODUCTS, product.slug, doc)
-    for (const categoryId of product.categoryIds) {
+    for (const cat of categories) {
       await documentStore.put(
         PRODUCTS_BY_CATEGORY,
-        `category:${categoryId}#product:${product.slug}`,
-        { ...doc, partitionKey: `category:${categoryId}`, sortKey: `product:${product.slug}` },
+        `category:${cat.slug}#product:${product.slug}`,
+        { ...doc, partitionKey: `category:${cat.slug}`, sortKey: `product:${product.slug}` },
       )
     }
     logger.debug({ slug: product.slug, eventType: event.type }, 'product projected')
@@ -110,8 +135,11 @@ export async function registerProductProjection(deps: RegisterProductProjectionD
     const { productId, slug } = event.payload
     const existing = await documentStore.get<DenormalisedProduct>(PRODUCTS, slug)
     if (existing) {
-      for (const categoryId of existing.categoryIds) {
-        await documentStore.delete(PRODUCTS_BY_CATEGORY, `category:${categoryId}#product:${slug}`)
+      const catKeys = existing.categories?.length
+        ? existing.categories.map((c) => c.slug)
+        : existing.categoryIds
+      for (const key of catKeys) {
+        await documentStore.delete(PRODUCTS_BY_CATEGORY, `category:${key}#product:${slug}`)
       }
     }
     await documentStore.delete(PRODUCTS, slug)

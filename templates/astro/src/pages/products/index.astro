@@ -14,7 +14,7 @@ const [productResult, categories] = await Promise.all([
 ])
 
 const products = productResult.items
-const facets = categories.map((c) => ({ name: c.slug, label: c.name }))
+const facets = productResult.facets ?? []
 ---
 
 <BaseLayout title="All Products | Nymbal" description="Browse our full product collection.">
@@ -29,13 +29,7 @@ const facets = categories.map((c) => ({ name: c.slug, label: c.name }))
     <div class="plp-layout">
       <aside class="plp-sidebar">
         <nymbal-product-filter
-          facets={JSON.stringify([
-            {
-              name: 'category',
-              label: 'Category',
-              values: facets,
-            },
-          ])}
+          facets={JSON.stringify(facets)}
         ></nymbal-product-filter>
       </aside>
 

@@ -66,10 +66,70 @@ function devCmd(pm: PackageManager): string {
   }
 }
 
+interface CliFlags {
+  name?: string
+  template?: 'astro' | 'nextjs'
+  currency?: 'GBP' | 'USD' | 'EUR'
+  yes: boolean
+}
+
+function parseCliFlags(argv: string[]): CliFlags {
+  const flags: CliFlags = { yes: false }
+  const args = argv.slice(2)
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    if (arg === '--yes' || arg === '-y') {
+      flags.yes = true
+    } else if (arg.startsWith('--name=')) {
+      flags.name = arg.slice('--name='.length)
+    } else if (arg.startsWith('--template=')) {
+      const t = arg.slice('--template='.length)
+      if (t === 'astro' || t === 'nextjs') flags.template = t
+    } else if (arg.startsWith('--currency=')) {
+      const c = arg.slice('--currency='.length)
+      if (c === 'GBP' || c === 'USD' || c === 'EUR') flags.currency = c
+    } else if (!arg.startsWith('-') && !flags.name) {
+      flags.name = arg
+    }
+  }
+  return flags
+}
+
 export async function main(): Promise<void> {
-  const argvName = process.argv[2] && !process.argv[2]!.startsWith('-') ? process.argv[2] : undefined
+  const flags = parseCliFlags(process.argv)
 
   const pm = detectPackageManager()
+
+  if (flags.yes) {
+    if (!flags.name) {
+      process.stderr.write('Error: --yes requires --name or a positional name argument\n')
+      process.exit(1)
+    }
+    const name = flags.name.trim()
+    const answers: Answers = {
+      name,
+      directory: toDirectoryName(name),
+      currency: flags.currency ?? 'GBP',
+      template: flags.template ?? 'astro',
+      seedDemo: true,
+      includeMobile: false,
+    }
+    const targetDir = resolve(process.cwd(), answers.directory)
+    if (existsSync(targetDir)) {
+      const entries = await readdir(targetDir)
+      if (entries.length > 0) {
+        process.stderr.write(`Error: Directory ${answers.directory} already exists and is not empty.\n`)
+        process.exit(1)
+      }
+    } else {
+      await mkdir(targetDir, { recursive: true })
+    }
+    await scaffold(targetDir, answers)
+    process.stdout.write(`Created ${answers.directory}\n`)
+    return
+  }
+
+  const argvName = !flags.name && process.argv[2] && !process.argv[2]!.startsWith('-') ? process.argv[2] : flags.name
 
   intro(pc.cyan(pc.bold('◆ create-nymbal-app')))
 

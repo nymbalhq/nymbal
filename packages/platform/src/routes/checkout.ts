@@ -34,6 +34,7 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
       })
       return ok({
         orderId: result.orderId,
+        orderNumber: result.orderNumber,
         paymentIntent: result.paymentIntent,
         currency: result.currency,
         totalMinor: result.totalMinor,

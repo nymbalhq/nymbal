@@ -22,7 +22,7 @@ export function ProductGrid({
   categorySlug,
   categories,
 }: ProductGridProps) {
-  const { products, pagination, loading, load, loadMore } = useProductList()
+  const { products, facets, pagination, loading, load, loadMore } = useProductList()
   const [initialized, setInitialized] = useState(false)
   const [showMobileFilters, setShowMobileFilters] = useState(false)
 
@@ -40,13 +40,9 @@ export function ProductGrid({
     }
   }, [hasMore, loading, loadMore])
 
-  const facets = [
-    {
-      name: 'category',
-      label: 'Category',
-      values: categories.map((c) => ({ value: c.slug, label: c.name })),
-    },
-  ]
+  const displayFacets = facets.length > 0
+    ? facets
+    : categories.map((c) => ({ field: 'category', label: 'Category', values: [{ value: c.slug, label: c.name }] })).slice(0, 1)
 
   return (
     <div className={styles.layout}>
@@ -62,7 +58,7 @@ export function ProductGrid({
           className={styles.filterSection}
           style={{ display: showMobileFilters ? 'block' : undefined }}
         >
-          <ProductFilter facets={JSON.stringify(facets)} />
+          <ProductFilter facets={JSON.stringify(displayFacets)} />
         </div>
       </aside>
 

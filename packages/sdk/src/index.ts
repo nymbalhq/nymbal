@@ -47,6 +47,6 @@ export type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
-  ReviewsListResult,
-  ReviewSubmitResult,
 } from './types.js'
+
+export type { ReviewsResult as ReviewsListResult, ReviewResult as ReviewSubmitResult } from '@nymbal/types'

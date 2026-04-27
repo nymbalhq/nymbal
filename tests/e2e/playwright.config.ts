@@ -71,12 +71,20 @@ export default defineConfig({
       url: 'http://localhost:4321',
       reuseExistingServer: false,
       timeout: 60000,
+      env: {
+        NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+        PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+      },
     },
     {
       command: 'pnpm --filter @nymbal/template-nextjs dev',
       url: 'http://localhost:3000',
       reuseExistingServer: false,
       timeout: 60000,
+      env: {
+        NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+        NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+      },
     },
     {
       command: 'pnpm --filter @nymbal/admin preview --port 5174',

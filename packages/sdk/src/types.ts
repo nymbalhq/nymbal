@@ -34,6 +34,7 @@ export interface DenormalisedProduct {
   priceMinor: number | null
   variants: DenormalisedVariant[]
   categoryIds: string[]
+  categories: Array<{ id: string; name: string; slug: string }>
   createdAt: string
   updatedAt: string
 }
@@ -63,6 +64,7 @@ export interface ProductListState {
   sort: { field: string; direction: 'asc' | 'desc' } | null
   pagination: { cursor: string | null; hasMore: boolean }
   loading: boolean
+  error: string | null
 }
 
 export interface SearchState {
@@ -90,7 +92,7 @@ export interface CheckoutState {
   shippingMethod: ShippingMethod | null
   paymentStatus: 'idle' | 'processing' | 'succeeded' | 'failed'
   error: string | null
-  order: { orderId: string; paymentIntent: PaymentIntent } | null
+  order: { orderId: string; orderNumber: string; paymentIntent: PaymentIntent } | null
 }
 
 export interface AuthState {
@@ -111,6 +113,7 @@ export interface ProductListParams {
 export interface ProductListResult {
   items: DenormalisedProduct[]
   nextCursor: string | null
+  facets?: Facet[]
 }
 
 export interface CheckoutDetails {
@@ -122,6 +125,7 @@ export interface CheckoutDetails {
 
 export interface CheckoutResult {
   orderId: string
+  orderNumber: string
   paymentIntent: PaymentIntent
   currency: string
   totalMinor: number
@@ -141,25 +145,3 @@ export interface AuthResult {
   expiresIn: number
 }
 
-export interface ReviewsListResult {
-  items: Array<{
-    id: string
-    productId: string
-    customerId: string | null
-    rating: number
-    title: string
-    body: string
-    submittedAt: string
-  }>
-  nextCursor: string | null
-}
-
-export interface ReviewSubmitResult {
-  review: {
-    id: string
-    productId: string
-    rating: number
-    title: string
-    body: string
-  }
-}
