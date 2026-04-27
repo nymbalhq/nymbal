@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 test.describe('Guest checkout flow', () => {
   test('checkout page is accessible from cart', async ({ page }) => {

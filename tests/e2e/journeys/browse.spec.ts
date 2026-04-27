@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 test.describe('Browse catalog', () => {
   test('homepage shows hero and product cards', async ({ page }) => {

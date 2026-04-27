@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 test.describe('Search', () => {
   test('search page shows search input and empty state', async ({ page }) => {

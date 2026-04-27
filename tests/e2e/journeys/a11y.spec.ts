@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 import AxeBuilder from '@axe-core/playwright'
 
 const pages = [

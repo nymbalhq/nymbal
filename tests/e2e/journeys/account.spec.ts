@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 test.describe('Account flows', () => {
   test('login page renders login form', async ({ page }) => {

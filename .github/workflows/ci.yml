@@ -267,7 +267,7 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert "@visual|@a11y" --pass-with-no-tests
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert "@visual|@a11y"
         env:
           CI: true
 
@@ -292,7 +292,7 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --project admin-mobile --grep "@visual" --pass-with-no-tests
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --project admin-mobile --grep "@visual"
         env:
           CI: true
 
@@ -315,7 +315,7 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep "@a11y" --pass-with-no-tests
+        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep "@a11y"
         env:
           CI: true
 

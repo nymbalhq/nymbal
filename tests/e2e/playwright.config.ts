@@ -78,5 +78,11 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60000,
     },
+    {
+      command: 'pnpm --filter @nymbal/admin preview --port 5174',
+      url: 'http://localhost:5174',
+      reuseExistingServer: false,
+      timeout: 60000,
+    },
   ] : undefined,
 })

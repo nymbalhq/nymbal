@@ -3,7 +3,7 @@ import {
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_UPDATED,
   type DocumentStoreAdapter,
-  type FacetResult,
+  type Facet,
   type IndexResult,
   type Logger,
   type SearchAdapter,
@@ -103,18 +103,20 @@ export function createNativeSearchAdapter(deps: {
       for (const item of result.items) {
         const raw = (item.fields as Record<string, unknown>)[field]
         if (raw == null) continue
-        const values = Array.isArray(raw) ? raw : [raw]
-        for (const v of values) {
+        const vals = Array.isArray(raw) ? raw : [raw]
+        for (const v of vals) {
           const key = String(v)
           counts.set(key, (counts.get(key) ?? 0) + 1)
         }
       }
+      const label = field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
       return {
         field,
-        buckets: [...counts.entries()]
+        label,
+        values: [...counts.entries()]
           .sort((a, b) => b[1] - a[1])
           .map(([value, count]) => ({ value, count })),
-      } satisfies FacetResult
+      } satisfies Facet
     },
   }
 }

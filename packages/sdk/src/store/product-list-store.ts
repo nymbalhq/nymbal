@@ -4,6 +4,7 @@ import { createStore } from './create-store.js'
 
 const INITIAL_STATE: ProductListState = {
   products: [],
+  facets: [],
   filters: {},
   sort: null,
   pagination: { cursor: null, hasMore: false },

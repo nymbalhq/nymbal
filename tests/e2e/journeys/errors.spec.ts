@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 test.describe('Error pages', () => {
   test('404 page shows branded error page with header', async ({ page }) => {

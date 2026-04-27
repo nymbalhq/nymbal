@@ -2,6 +2,7 @@ import type {
   CartItem,
   Customer,
   Address,
+  Facet,
   PaymentIntent,
   VariantOption,
 } from '@nymbal/types'
@@ -57,6 +58,7 @@ export interface ProductState {
 
 export interface ProductListState {
   products: DenormalisedProduct[]
+  facets: Facet[]
   filters: Record<string, string | string[]>
   sort: { field: string; direction: 'asc' | 'desc' } | null
   pagination: { cursor: string | null; hasMore: boolean }

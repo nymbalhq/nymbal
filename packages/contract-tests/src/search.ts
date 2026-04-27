@@ -30,10 +30,20 @@ export function runSearchContract(build: () => SearchAdapter): void {
       expect(found).toBeUndefined()
     })
 
-    it('facet returns buckets for a field', async () => {
+    it('facet returns values for a field', async () => {
       const adapter = build()
-      const facetResult = await adapter.facet('type')
-      expect(Array.isArray(facetResult.buckets)).toBe(true)
+      await adapter.index([
+        { id: 'facet-doc-1', type: 'product', fields: { category: 'shirts' } },
+        { id: 'facet-doc-2', type: 'product', fields: { category: 'trousers' } },
+        { id: 'facet-doc-3', type: 'product', fields: { category: 'shirts' } },
+      ])
+      const facet = await adapter.facet('category')
+      expect(typeof facet.field).toBe('string')
+      expect(typeof facet.label).toBe('string')
+      expect(Array.isArray(facet.values)).toBe(true)
+      if (facet.values.length > 0) {
+        expect(typeof facet.values[0]!.value).toBe('string')
+      }
     })
 
     it('healthCheck returns a valid report', async () => {

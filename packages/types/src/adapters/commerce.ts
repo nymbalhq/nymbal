@@ -112,9 +112,10 @@ export interface FacetParams {
   filters?: Record<string, unknown>
 }
 
-export interface FacetResult {
+export interface Facet {
   field: string
-  buckets: Array<{ value: string; count: number }>
+  label: string
+  values: Array<{ value: string; label?: string; count?: number }>
 }
 
 export interface SearchAdapter extends CommerceAdapter {
@@ -122,7 +123,7 @@ export interface SearchAdapter extends CommerceAdapter {
   index(documents: SearchDocument[]): Promise<IndexResult>
   remove(documentIds: string[]): Promise<void>
   search(query: string, params?: SearchParams): Promise<SearchResult>
-  facet(field: string, params?: FacetParams): Promise<FacetResult>
+  facet(field: string, params?: FacetParams): Promise<Facet>
 }
 
 // --- Analytics -------------------------------------------------------------

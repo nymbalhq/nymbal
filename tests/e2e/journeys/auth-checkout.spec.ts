@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../support/fixtures'
 
 // auth-checkout runs after successful login + cart add
 test.describe('Auth checkout flow', () => {

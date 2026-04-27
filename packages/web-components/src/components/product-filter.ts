@@ -1,3 +1,4 @@
+import type { Facet } from '@nymbal/types'
 import { NymbalElement } from '../base-element.js'
 import { injectStyles } from '../styles.js'
 
@@ -36,11 +37,6 @@ nymbal-product-filter .nymbal-filter-count {
 }
 `
 
-interface FacetConfig {
-  name: string
-  label: string
-  values: Array<{ value: string; label?: string; count?: number }>
-}
 
 export class NymbalProductFilter extends NymbalElement {
   static get observedAttributes(): string[] {
@@ -62,19 +58,19 @@ export class NymbalProductFilter extends NymbalElement {
     }
 
     this.innerHTML = facets.map((facet) => {
-      const activeFilter = state.filters[facet.name]
+      const activeFilter = state.filters[facet.field]
       const activeValues = Array.isArray(activeFilter)
         ? activeFilter
         : (activeFilter ? [activeFilter] : [])
 
       return `
-        <div class="nymbal-filter-group" data-testid="filter-group-${facet.name}">
+        <div class="nymbal-filter-group" data-testid="filter-group-${facet.field}">
           <span class="nymbal-filter-label">${this.esc(facet.label)}</span>
           ${facet.values.map((v) => {
             const checked = activeValues.includes(v.value)
             return `
               <label class="nymbal-filter-option">
-                <input type="checkbox" data-filter-name="${facet.name}" data-filter-value="${v.value}" ${checked ? 'checked' : ''}>
+                <input type="checkbox" data-filter-name="${facet.field}" data-filter-value="${v.value}" ${checked ? 'checked' : ''}>
                 <span>${this.esc(v.label ?? v.value)}</span>
                 ${v.count !== undefined ? `<span class="nymbal-filter-count">(${v.count})</span>` : ''}
               </label>
@@ -117,12 +113,13 @@ export class NymbalProductFilter extends NymbalElement {
     if (this.isConnected) this.requestRender()
   }
 
-  private getFacets(): FacetConfig[] {
+  private getFacets(): Facet[] {
     const attr = this.getAttribute('facets')
     if (!attr) return []
     try {
-      return JSON.parse(attr) as FacetConfig[]
-    } catch {
+      return JSON.parse(attr) as Facet[]
+    } catch (err) {
+      console.error('[nymbal-product-filter] failed to parse facets attribute', err)
       return []
     }
   }
