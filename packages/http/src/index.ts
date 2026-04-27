@@ -1,4 +1,4 @@
-export { FastifyHttpAdapter } from './fastify-adapter.js'
+export { FastifyHttpAdapter, type CorsOptions, type FastifyAdapterOptions } from './fastify-adapter.js'
 export {
   createSecurityGuard,
   buildSecurityHeaders,

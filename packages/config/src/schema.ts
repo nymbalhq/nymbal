@@ -106,6 +106,14 @@ export const httpSchema = z.object({
   adapter: z.enum(['fastify', 'hono']).default('fastify'),
   port: z.number().int().positive().default(3001),
   host: z.string().default('0.0.0.0'),
+  cors: z
+    .object({
+      allowedOrigins: z
+        .array(z.string())
+        .default(['http://localhost:3000', 'http://localhost:4321']),
+      credentials: z.boolean().default(true),
+    })
+    .default({}),
 })
 
 export const deploymentSchema = z.object({

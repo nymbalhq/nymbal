@@ -58,9 +58,16 @@ export const devCommand = defineCommand({
     console.log(
       pc.cyan(`→ Starting template: ${pc.bold(templateFilter)} (pnpm filter)`),
     )
+    const apiUrl = `http://localhost:${config.http.port}`
     const templateProc = run('pnpm', ['--filter', templateFilter, 'dev'], {
       cwd: projectRoot,
-      env: { ...process.env, NYMBAL_API_URL: `http://localhost:${config.http.port}` },
+      env: {
+        ...process.env,
+        NYMBAL_API_URL: apiUrl,
+        // Client-side env vars for each framework (must be set before the dev server starts)
+        PUBLIC_NYMBAL_API_URL: apiUrl,        // Astro
+        NEXT_PUBLIC_NYMBAL_API_URL: apiUrl,   // Next.js
+      },
     })
 
     const shutdown = async (signal: string) => {

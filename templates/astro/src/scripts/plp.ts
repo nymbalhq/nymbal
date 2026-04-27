@@ -44,6 +44,12 @@ function renderGrid() {
 
   if (!gridContainer) return
 
+  // Don't overwrite the grid with an empty state while a load is in flight.
+  // This prevents the SSR content from being replaced by "No products found"
+  // during the brief window between applyFilter setting filters and the API
+  // responding with the filtered set.
+  if (products.length === 0 && state.loading) return
+
   if (products.length === 0) {
     gridContainer.innerHTML = `
       <div class="plp-empty">

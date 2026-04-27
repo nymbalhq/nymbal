@@ -42,7 +42,9 @@ export function ProductGrid({
 
   const displayFacets = facets.length > 0
     ? facets
-    : categories.map((c) => ({ field: 'category', label: 'Category', values: [{ value: c.slug, label: c.name }] })).slice(0, 1)
+    : categories.length > 0
+      ? [{ field: 'category', label: 'Category', values: categories.map((c) => ({ value: c.slug, label: c.name })) }]
+      : []
 
   return (
     <div className={styles.layout}>
@@ -58,7 +60,7 @@ export function ProductGrid({
           className={styles.filterSection}
           style={{ display: showMobileFilters ? 'block' : undefined }}
         >
-          <ProductFilter facets={JSON.stringify(displayFacets)} />
+          <ProductFilter facets={displayFacets} />
         </div>
       </aside>
 

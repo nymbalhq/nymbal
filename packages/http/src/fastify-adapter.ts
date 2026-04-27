@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import fastifyCookie from '@fastify/cookie'
+import fastifyCors from '@fastify/cors'
 import { v7 as uuidv7 } from 'uuid'
 import type {
   HttpAdapter,
@@ -16,9 +17,15 @@ import type {
 } from '@nymbal/types'
 import { HttpError, NymbalError } from '@nymbal/types'
 
+export interface CorsOptions {
+  allowedOrigins: string[]
+  credentials: boolean
+}
+
 export interface FastifyAdapterOptions {
   logger: Logger
   trustProxy?: boolean
+  cors?: CorsOptions
 }
 
 export class FastifyHttpAdapter implements HttpAdapter {
@@ -27,6 +34,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   readonly #middlewares: MiddlewareHandler[] = []
   readonly #defaultHeaders: Record<string, string> = {}
   #started = false
+  #boundPort = 0
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
@@ -37,6 +45,17 @@ export class FastifyHttpAdapter implements HttpAdapter {
       genReqId: () => uuidv7(),
     })
     void this.#app.register(fastifyCookie)
+    if (options.cors && options.cors.allowedOrigins.length > 0) {
+      void this.#app.register(fastifyCors, {
+        origin: options.cors.allowedOrigins,
+        credentials: options.cors.credentials,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+      })
+    }
+  }
+
+  get boundPort(): number {
+    return this.#boundPort
   }
 
   registerRoute(
@@ -166,8 +185,9 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   async start(port: number, host = '0.0.0.0'): Promise<void> {
     await this.#app.listen({ port, host })
+    this.#boundPort = (this.#app.server.address() as { port: number }).port
     this.#started = true
-    this.#logger.info({ port, host }, 'HTTP server listening')
+    this.#logger.info({ port: this.#boundPort, host }, 'HTTP server listening')
   }
 
   async stop(): Promise<void> {

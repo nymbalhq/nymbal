@@ -112,6 +112,35 @@ describe('ProductListStore', () => {
     expect(store.getState().error).toBeNull()
   })
 
+  it('applyFilter preserves previous products while filtered load is in flight', async () => {
+    const adapter = makeAdapter()
+    const store = createProductListStore(adapter)
+    await store.load()
+    expect(store.getState().products).toHaveLength(1)
+
+    const filteredItem = { ...emptyItem, id: 'p2', slug: 'p2' }
+    // Block the next list call so we can inspect state mid-flight
+    vi.mocked(adapter.products.list).mockResolvedValueOnce({
+      items: [filteredItem],
+      nextCursor: null,
+      facets: [{ field: 'category', label: 'Category', values: [{ value: 'books', label: 'Books', count: 1 }] }],
+    })
+
+    const applyPromise = store.applyFilter('category', 'books')
+
+    // Synchronously after applyFilter starts: filters set, loading true, but products unchanged
+    const stateWhileLoading = store.getState()
+    expect(stateWhileLoading.filters['category']).toBe('books')
+    expect(stateWhileLoading.loading).toBe(true)
+    expect(stateWhileLoading.products).toHaveLength(1)  // not wiped during load
+
+    await applyPromise
+
+    expect(store.getState().products).toHaveLength(1)
+    expect(store.getState().products[0]?.id).toBe('p2')
+    expect(store.getState().loading).toBe(false)
+  })
+
   it('loadMore on error sets error message and loading false', async () => {
     const adapter = makeAdapter('cursor-1')
     const store = createProductListStore(adapter)

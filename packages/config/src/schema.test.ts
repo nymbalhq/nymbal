@@ -81,4 +81,20 @@ describe('nymbalConfigSchema', () => {
     expect(cfg.security.headers.hsts).toBe(true)
     expect(cfg.security.headers.xFrameOptions).toBe('deny')
   })
+
+  it('applies CORS defaults for local dev — localhost origins, credentials true', () => {
+    const cfg = nymbalConfigSchema.parse(baseConfig())
+    expect(cfg.http.cors.credentials).toBe(true)
+    expect(cfg.http.cors.allowedOrigins).toContain('http://localhost:3000')
+    expect(cfg.http.cors.allowedOrigins).toContain('http://localhost:4321')
+  })
+
+  it('accepts explicit CORS origins override', () => {
+    const input = baseConfig() as unknown as Record<string, unknown>
+    input.http = { ...(input.http as object), cors: { allowedOrigins: ['https://shop.example.com'], credentials: false } }
+    const cfg = nymbalConfigSchema.parse(input)
+    expect(cfg.http.cors.allowedOrigins).toEqual(['https://shop.example.com'])
+    expect(cfg.http.cors.credentials).toBe(false)
+  })
+
 })

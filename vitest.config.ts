@@ -13,6 +13,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'http',
+          environment: 'node',
+          include: ['packages/http/src/**/*.test.ts'],
+          testTimeout: 10000,
+        },
+      },
+      {
+        test: {
           name: 'platform-unit',
           environment: 'node',
           include: ['packages/platform/src/**/*.test.ts'],

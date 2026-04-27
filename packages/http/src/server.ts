@@ -39,7 +39,7 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
   if (config.http.adapter !== 'fastify') {
     throw new Error(`Unsupported http.adapter: ${config.http.adapter}`)
   }
-  const adapter = new FastifyHttpAdapter({ logger })
+  const adapter = new FastifyHttpAdapter({ logger, cors: config.http.cors })
   const security = createSecurityGuard(config.security)
 
   const server: HttpServer = {
@@ -53,7 +53,7 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     },
     async start() {
       await adapter.start(config.http.port, config.http.host)
-      return { port: config.http.port, host: config.http.host }
+      return { port: adapter.boundPort, host: config.http.host }
     },
     async stop() {
       await adapter.stop()
