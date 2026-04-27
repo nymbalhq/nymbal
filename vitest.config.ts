@@ -13,6 +13,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'cli',
+          environment: 'node',
+          include: ['packages/cli/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'http',
           environment: 'node',
           include: ['packages/http/src/**/*.test.ts'],

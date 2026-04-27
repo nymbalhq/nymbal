@@ -27,7 +27,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
+    <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
       {/* Background grid */}
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.03]"
@@ -90,7 +90,11 @@ export function LoginPage() {
             </div>
 
             {error && (
-              <div className="rounded-md border border-red-800/50 bg-red-900/20 px-3 py-2 text-sm text-red-400">
+              <div
+                role="alert"
+                data-testid={tid('login', 'error')}
+                className="rounded-md border border-red-800/50 bg-red-900/20 px-3 py-2 text-sm text-red-400"
+              >
                 {error}
               </div>
             )}
@@ -117,6 +121,6 @@ export function LoginPage() {
           Nymbal Admin · Precision Workspace
         </p>
       </div>
-    </div>
+    </main>
   )
 }
