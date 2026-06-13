@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupMockClient, createMockClient } from '../testing/index.js'
+import { setupMockClient, createMockClient, type createMockStore } from '../testing/index.js'
 import { registerClient } from '../registry.js'
 import type { Facet } from '@nymbal/types'
 
@@ -65,21 +65,21 @@ describe('nymbal-product-filter', () => {
     el.setAttribute('facets', JSON.stringify(sampleFacets))
     document.body.appendChild(el)
 
-    let filterEvent: CustomEvent | null = null
-    el.addEventListener('nymbal:filter:changed', (e) => { filterEvent = e as CustomEvent })
+    const filterEvents: CustomEvent[] = []
+    el.addEventListener('nymbal:filter:changed', (e) => { filterEvents.push(e as CustomEvent) })
 
     const checkbox = el.querySelector('input[data-filter-value="books"]') as HTMLInputElement
     checkbox.checked = true
     checkbox.dispatchEvent(new Event('change', { bubbles: true }))
 
-    expect(filterEvent).not.toBeNull()
-    expect((filterEvent as CustomEvent).detail).toMatchObject({ name: 'category', value: 'books' })
+    expect(filterEvents).toHaveLength(1)
+    expect(filterEvents[0]!.detail).toMatchObject({ name: 'category', value: 'books' })
   })
 
   it('calls removeFilter when unchecking the only active filter', () => {
     const mock = createMockClient()
     vi.spyOn(mock.productList, 'removeFilter').mockResolvedValue(undefined)
-    ;(mock.productList as ReturnType<typeof createMockStore>).setState({
+    ;(mock.productList as unknown as ReturnType<typeof createMockStore>).setState({
       filters: { category: 'books' },
     })
     registerClient(mock)

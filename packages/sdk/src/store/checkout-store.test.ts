@@ -50,7 +50,7 @@ describe('CheckoutStore', () => {
 
   it('setShippingMethod advances step to payment', () => {
     const store = createCheckoutStore(makeAdapter())
-    store.setShippingMethod({ id: 'std', name: 'Standard', amountMinor: 0 })
+    store.setShippingMethod({ carrier: 'Royal Mail', service: 'Standard', amountMinor: 0, currency: 'GBP', estimatedDays: 3 })
     expect(store.getState().step).toBe('payment')
   })
 

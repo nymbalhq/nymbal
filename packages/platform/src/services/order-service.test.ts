@@ -331,7 +331,7 @@ describe('OrderService', () => {
     const order = await orderService.importOrder({
       orderId: uuidv7(),
       orderNumber: 'WC-1002',
-      status: 'fulfilled',
+      status: 'confirmed',
       customerId: null,
       email: 'min@example.com',
       billingAddress: addr,

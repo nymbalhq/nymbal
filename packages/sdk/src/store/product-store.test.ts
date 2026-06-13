@@ -7,10 +7,10 @@ function makeProduct(overrides?: Partial<DenormalisedProduct>): DenormalisedProd
   return {
     id: 'p1', slug: 'test-product', name: 'Test', description: '',
     shortDescription: '', status: 'active', type: 'simple',
-    seoTitle: '', seoDescription: '', media: [], metadata: {},
-    priceMinor: 1000, compareAtPriceMinor: null, currency: 'GBP',
-    variants: [{ id: 'v1', productId: 'p1', sku: 'S1', name: 'D', priceMinor: 1000, compareAtPriceMinor: null, weightGrams: null, dimensions: null, stock: 5, lowStockThreshold: 2, options: [], status: 'active', createdAt: '', updatedAt: '' }],
-    categories: [], reviewCount: 0, averageRating: 0,
+    media: [], variantCount: 1, inStock: true, priceRange: null,
+    currency: 'GBP', priceMinor: 1000,
+    variants: [{ id: 'v1', sku: 'S1', name: 'D', priceMinor: 1000, stock: 5, options: [] }],
+    categoryIds: [], categories: [],
     createdAt: '', updatedAt: '',
     ...overrides,
   }

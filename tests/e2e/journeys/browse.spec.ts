@@ -72,8 +72,9 @@ test.describe('Browse catalog', () => {
     await firstCheckbox.click()
     await page.waitForTimeout(1000)
 
-    // Products updated — count should be >= 0 (never nothing unless genuinely empty)
+    // Products updated — a filter narrows (or keeps) the listing, never grows it.
     const filteredCount = await page.locator('[data-testid^="product-card-"]').count()
+    expect(filteredCount).toBeLessThanOrEqual(originalProductCount)
     // All filter groups remain visible after filtering
     await expect(filterGroups.first()).toBeVisible()
 

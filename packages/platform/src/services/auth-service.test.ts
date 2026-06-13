@@ -288,7 +288,7 @@ describe('AuthService', () => {
   })
 
   it('refresh rejects valid token when customer has been deleted', async () => {
-    const { auth, repos, commandStore } = await setup()
+    const { auth, commandStore } = await setup()
     const { customer, tokens } = await auth.register({ email: 'deleted@test.com', password: 'password123' })
     // Delete the customer directly from the DB to simulate account deletion
     if (commandStore.kind === 'sqlite') {

@@ -52,7 +52,7 @@ test.describe('Search', () => {
 
     // The count after clearing should be >= results with query (clearing a filter broadens results)
     // or show the search empty state — either way, the page responds to the change
-    expect(afterClearCount).toBeGreaterThanOrEqual(0)
+    expect(afterClearCount).toBeGreaterThanOrEqual(queryCount)
     // The query text must be cleared in the input
     expect(await searchInput.inputValue()).toBe('')
   })

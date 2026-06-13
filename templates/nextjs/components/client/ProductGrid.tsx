@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type { DenormalisedProduct } from '@nymbal/sdk'
-import type { Category } from '@nymbal/types'
+import type { Category, Facet } from '@nymbal/types'
 import { useProductList } from '@nymbal/react'
 import { ProductFilter } from '@nymbal/react'
 import { ProductCard } from '@/components/server/ProductCard'
@@ -27,7 +27,7 @@ export function ProductGrid({
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   // Preserve the widest facet list seen so filter options never disappear during a
   // filtered query (the API always returns full facets, but this guards against regressions).
-  const [stableFacets, setStableFacets] = useState(
+  const [stableFacets, setStableFacets] = useState<Facet[]>(
     categories.length > 0
       ? [{ field: 'category', label: 'Category', values: categories.map((c) => ({ value: c.slug, label: c.name })) }]
       : [],

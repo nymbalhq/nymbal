@@ -126,6 +126,7 @@ function specifiersWithLines(content: string): { specifier: string; line: number
     let match: RegExpExecArray | null
     while ((match = pattern.exec(content)) !== null) {
       const specifier = match[1]
+      if (specifier === undefined) continue
       // Line number = 1 + number of newlines before the match start.
       const line = content.slice(0, match.index).split('\n').length
       const key = `${specifier}@${line}`

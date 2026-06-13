@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { registerOrderRoutes } from './orders.js'
 import type { HttpAdapter, RouteHandler, RequestContext } from '@nymbal/types'
@@ -34,10 +34,9 @@ function makeAdapter() {
       params: options.params ?? {},
       query: {},
       body: null,
-      rawBody: undefined,
       headers: {},
       cookies: {},
-      auth: options.auth,
+      ...(options.auth !== undefined && { auth: options.auth }),
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {

@@ -14,7 +14,7 @@ runProjectionContract({
       { repo, logger },
     )
     return {
-      handle: wrapped,
+      handle: async (event) => { await wrapped(event) },
       applicationCount: async () => count,
     }
   },

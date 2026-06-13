@@ -34,10 +34,9 @@ function makeAdapter() {
       params: options.params ?? {},
       query: {},
       body: options.body ?? null,
-      rawBody: undefined,
       headers: {},
       cookies: {},
-      auth: options.auth,
+      ...(options.auth !== undefined && { auth: options.auth }),
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {

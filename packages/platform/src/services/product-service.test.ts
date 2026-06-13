@@ -123,8 +123,8 @@ describe('ProductService', () => {
     const categoryId = uuidv7()
     await repos.category.insert({
       id: categoryId, slug: 'test-cat', name: 'Test Category',
-      description: '', path: categoryId, parentId: null,
-      createdAt: new Date(), updatedAt: new Date(),
+      description: '', parentId: null,
+      createdAt: new Date(),
     })
     const snap = await service.create({ slug: 'with-category', name: 'With Category', categoryIds: [categoryId] })
     expect(snap.categoryIds).toContain(categoryId)
@@ -151,7 +151,7 @@ describe('ProductService', () => {
     const catA = uuidv7()
     const catB = uuidv7()
     for (const [id, slug] of [[catA, 'cat-a'], [catB, 'cat-b']] as [string, string][]) {
-      await repos.category.insert({ id, slug, name: slug, description: '', path: id, parentId: null, createdAt: new Date(), updatedAt: new Date() })
+      await repos.category.insert({ id, slug, name: slug, description: '', parentId: null, createdAt: new Date() })
     }
     const created = await service.create({ slug: 'cat-swap', name: 'Cat Swap', categoryIds: [catA] })
     const updated = await service.update(created.id, { categoryIds: [catB] })
@@ -253,7 +253,7 @@ describe('ProductService', () => {
       type: 'variable',
       seoTitle: 'SEO Title',
       seoDescription: 'SEO Description',
-      media: [{ url: 'https://example.com/img.jpg', alt: 'Image', type: 'image', position: 0 }],
+      media: [{ url: 'https://example.com/img.jpg', altText: 'Image', position: 0 }],
       metadata: { brand: 'TestBrand' },
     })
     expect(snap.description).toBe('Full description')
@@ -273,7 +273,7 @@ describe('ProductService', () => {
       type: 'simple',
       seoTitle: 'New SEO',
       seoDescription: 'New SEO Desc',
-      media: [{ url: 'https://example.com/new.jpg', alt: 'New', type: 'image', position: 0 }],
+      media: [{ url: 'https://example.com/new.jpg', altText: 'New', position: 0 }],
       metadata: { updated: true },
     })
     expect(updated.name).toBe('Updated')

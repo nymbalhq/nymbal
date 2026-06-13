@@ -71,7 +71,7 @@ export default defineConfig({
       grep: /@visual/,
     },
   ],
-  webServer: isCI ? [
+  ...(isCI ? { webServer: [
     ...(isAdminE2E ? [] : [
       {
         command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
@@ -124,5 +124,5 @@ export default defineConfig({
         timeout: 60000,
       },
     ] : []),
-  ] : undefined,
+  ] } : {}),
 })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { nymbalConfigSchema } from './schema.js'
+import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
-function baseConfig() {
+function baseConfig(): NymbalConfigInput {
   return {
     store: { name: 'Test', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro' as const,

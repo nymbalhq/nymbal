@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { setupMockClient, createMockClient } from '../testing/index.js'
+import { setupMockClient, createMockClient, type createMockStore } from '../testing/index.js'
 import { registerClient } from '../registry.js'
 import type { NymbalClient } from '@nymbal/sdk'
 
@@ -24,7 +24,7 @@ describe('nymbal-variant-selector', () => {
 
   it('renders option buttons when options attribute and product are set', () => {
     const mock = createMockClient()
-    ;(mock.product as ReturnType<typeof import('../testing/index.js').createMockStore>).setState({
+    ;(mock.product as unknown as ReturnType<typeof createMockStore>).setState({
       product: {
         id: 'p1', slug: 'shirt', name: 'Shirt',
         description: '', shortDescription: '',
@@ -55,7 +55,7 @@ describe('nymbal-variant-selector', () => {
   describe('options attribute parsing guard', () => {
     function makeClientWithProduct(variantOptions: unknown): NymbalClient {
       const mock = createMockClient()
-      ;(mock.product as ReturnType<typeof import('../testing/index.js').createMockStore>).setState({
+      ;(mock.product as unknown as ReturnType<typeof createMockStore>).setState({
         product: {
           id: 'p1', slug: 'shirt', name: 'Shirt',
           description: '', shortDescription: '',

@@ -25,7 +25,6 @@ function makeAdapter() {
       params: {},
       query: {},
       body: null,
-      rawBody: undefined,
       headers: {},
       cookies: {},
       requestId: 'test-req',
