@@ -1,0 +1,25 @@
+---
+import { formatPrice } from '../lib/format'
+
+interface Props {
+  priceMinor: number
+  currency: string
+  compareAtMinor?: number
+}
+
+const { priceMinor, currency, compareAtMinor } = Astro.props
+const price = formatPrice(priceMinor, currency)
+const comparePrice = compareAtMinor ? formatPrice(compareAtMinor, currency) : null
+const isOnSale = compareAtMinor != null && compareAtMinor > priceMinor
+---
+
+<div class="pdp-price" data-testid="product-price">
+  {isOnSale && comparePrice && (
+    <span
+      style="text-decoration: line-through; color: var(--nymbal-color-text-muted, #71717a); font-weight: var(--nymbal-font-weight-normal, 400); margin-right: var(--nymbal-spacing-sm, 0.5rem);"
+    >
+      {comparePrice}
+    </span>
+  )}
+  <span>{price}</span>
+</div>

@@ -7,9 +7,11 @@ import { detectPackageManager, scaffold } from '../src/index.js'
 import {
   NYMBAL_PACKAGE_DIRS,
   NON_SCAFFOLD_PACKAGES,
+  main as syncScaffold,
   mergePackageJson,
   readNymbalVersions,
   rewriteWorkspaceVersions,
+  shouldCopyScaffoldEntry,
 } from '../scripts/sync-scaffold.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -349,6 +351,171 @@ describe('scaffold() output', () => {
       })
     })
   }
+})
+
+// ─── sync-scaffold: shouldCopyScaffoldEntry (filter regression) ──────────────
+//
+// Regression guard for the filter bug that shipped a scaffold with ZERO .astro
+// page files: the old filter used src.endsWith('.astro'), which excluded every
+// *.astro FILE instead of just the .astro cache DIRECTORY.
+
+describe('shouldCopyScaffoldEntry', () => {
+  it('rejects the .astro cache directory (exact basename)', () => {
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/.astro')).toBe(false)
+  })
+
+  it('accepts .astro page files (the old endsWith filter wrongly rejected these)', () => {
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/src/pages/index.astro')).toBe(true)
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/src/pages/cart.astro')).toBe(true)
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/src/components/ProductCard.astro')).toBe(
+      true,
+    )
+  })
+
+  it('rejects node_modules, dist and .next directories by exact basename', () => {
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/node_modules')).toBe(false)
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/dist')).toBe(false)
+    expect(shouldCopyScaffoldEntry('/repo/templates/nextjs/.next')).toBe(false)
+  })
+
+  it('rejects *.tsbuildinfo files', () => {
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/tsconfig.tsbuildinfo')).toBe(false)
+  })
+
+  it('accepts files whose names merely contain an excluded name', () => {
+    // next.config.mjs basename is not ".next"; the old endsWith hazard is gone
+    expect(shouldCopyScaffoldEntry('/repo/templates/nextjs/next.config.mjs')).toBe(true)
+    expect(shouldCopyScaffoldEntry('/repo/templates/astro/src/lib/distance.ts')).toBe(true)
+  })
+})
+
+// ─── sync-scaffold: main() integration ───────────────────────────────────────
+
+describe('syncScaffold main() integration', () => {
+  const tmpDest = resolve(PKG_ROOT, 'test', '.tmp-sync')
+
+  beforeAll(async () => {
+    await rm(tmpDest, { recursive: true, force: true })
+    await syncScaffold(tmpDest)
+  })
+
+  afterAll(async () => {
+    await rm(tmpDest, { recursive: true, force: true })
+  })
+
+  it('copies .astro page files into the synced astro scaffold', async () => {
+    const index = await readFile(resolve(tmpDest, 'astro', 'src', 'pages', 'index.astro'), 'utf8')
+    expect(index).toContain('<HeroSection')
+
+    const cart = await readFile(resolve(tmpDest, 'astro', 'src', 'pages', 'cart.astro'), 'utf8')
+    expect(cart.length).toBeGreaterThan(0)
+  })
+
+  it('copies .astro layout and component files', () => {
+    expect(existsSync(resolve(tmpDest, 'astro', 'src', 'layouts', 'BaseLayout.astro'))).toBe(true)
+    expect(existsSync(resolve(tmpDest, 'astro', 'src', 'components', 'ProductCard.astro'))).toBe(
+      true,
+    )
+  })
+
+  it('does not copy the .astro cache dir, node_modules or dist', () => {
+    expect(existsSync(resolve(tmpDest, 'astro', '.astro'))).toBe(false)
+    expect(existsSync(resolve(tmpDest, 'astro', 'node_modules'))).toBe(false)
+    expect(existsSync(resolve(tmpDest, 'astro', 'dist'))).toBe(false)
+    expect(existsSync(resolve(tmpDest, 'nextjs', 'node_modules'))).toBe(false)
+    expect(existsSync(resolve(tmpDest, 'nextjs', '.next'))).toBe(false)
+  })
+
+  it('rewrites workspace:* in the synced package.json', async () => {
+    const pkg = await readFile(resolve(tmpDest, 'astro', 'package.json'), 'utf8')
+    expect(pkg).not.toContain('workspace:')
+  })
+
+  it('never touches the project-layer overrides (scaffold/project is outside the sync root)', () => {
+    // sync-scaffold rm -rf's only <destRoot>/<template>. The shipped override must
+    // survive every sync — it is the source of the project layer, not synced output.
+    expect(
+      existsSync(resolve(PKG_ROOT, 'scaffold', 'project', 'astro', 'src', 'pages', 'index.astro')),
+    ).toBe(true)
+  })
+})
+
+// ─── override resolution: project layer wins ─────────────────────────────────
+
+describe('override resolution (project layer wins)', () => {
+  const tmpBase = resolve(PKG_ROOT, 'test', '.tmp-override')
+  const templateDefaultIndex = resolve(
+    SCAFFOLD_TEMPLATES,
+    'astro',
+    'src',
+    'pages',
+    'index.astro',
+  )
+  let outDir: string
+
+  beforeAll(async () => {
+    // Fail loudly (never skip) if the synced scaffold is stale or missing —
+    // the override guard is meaningless against a stale scaffold.
+    if (!existsSync(templateDefaultIndex)) {
+      throw new Error(
+        `Synced scaffold is stale: ${templateDefaultIndex} is missing. ` +
+          'Run "pnpm --filter create-nymbal-app build" before running these tests.',
+      )
+    }
+    await rm(tmpBase, { recursive: true, force: true })
+    outDir = resolve(tmpBase, 'override-astro')
+    await scaffold(outDir, {
+      name: 'Override Store',
+      directory: 'override-astro',
+      currency: 'GBP',
+      template: 'astro',
+      seedDemo: false,
+      includeMobile: false,
+    })
+  })
+
+  afterAll(async () => {
+    await rm(tmpBase, { recursive: true, force: true })
+  })
+
+  it('scaffolded homepage contains the project-override marker (project layer won)', async () => {
+    const index = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
+    expect(index).toContain('nymbal:project-override homepage')
+  })
+
+  it('scaffolded homepage differs from the template default', async () => {
+    const scaffolded = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
+    const templateDefault = await readFile(templateDefaultIndex, 'utf8')
+    expect(scaffolded).not.toBe(templateDefault)
+    // The template default must NOT carry the override marker — otherwise this
+    // test could pass even if the template layer (not the project layer) won.
+    expect(templateDefault).not.toContain('nymbal:project-override')
+  })
+
+  it('non-overridden pages are byte-identical to the template default', async () => {
+    const scaffoldedCart = await readFile(resolve(outDir, 'src', 'pages', 'cart.astro'), 'utf8')
+    const templateCart = await readFile(
+      resolve(SCAFFOLD_TEMPLATES, 'astro', 'src', 'pages', 'cart.astro'),
+      'utf8',
+    )
+    expect(scaffoldedCart).toBe(templateCart)
+  })
+
+  it('scaffolded project actually contains .astro pages (filter bug regression)', () => {
+    for (const page of ['index.astro', 'cart.astro', 'checkout.astro', 'search.astro']) {
+      expect(existsSync(resolve(outDir, 'src', 'pages', page)), `missing src/pages/${page}`).toBe(
+        true,
+      )
+    }
+  })
+
+  it('override homepage keeps the smoke-check and E2E markers intact', async () => {
+    const index = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
+    // tools/scaffold-smoke-check.mjs greps served HTML for "hero-section" and
+    // "product-card-" — the override must keep rendering both components.
+    expect(index).toContain('<HeroSection')
+    expect(index).toContain('<ProductCard')
+  })
 })
 
 // ─── readNymbalVersions ───────────────────────────────────────────────────────

@@ -1,0 +1,68 @@
+---
+import '../../styles/pages/account.css'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="My Account">
+  <h1 class="account-page-title">Dashboard</h1>
+
+  <div id="account-dashboard">
+    <div class="account-stats">
+      <div class="account-stat-card">
+        <div class="account-stat-label">Welcome back</div>
+        <div class="account-stat-value" id="dashboard-name">--</div>
+      </div>
+      <div class="account-stat-card">
+        <div class="account-stat-label">Email</div>
+        <div class="account-stat-value" id="dashboard-email" style="font-size: var(--nymbal-font-size-sm, 0.875rem);">--</div>
+      </div>
+      <div class="account-stat-card">
+        <div class="account-stat-label">Member since</div>
+        <div class="account-stat-value" id="dashboard-since" style="font-size: var(--nymbal-font-size-sm, 0.875rem);">--</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Quick Links</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--nymbal-spacing-md, 1rem);">
+      <a href="/account/orders" class="category-card" style="min-height: auto; padding: var(--nymbal-spacing-md, 1rem);">
+        <span class="category-card-name">Order History</span>
+      </a>
+      <a href="/account/addresses" class="category-card" style="min-height: auto; padding: var(--nymbal-spacing-md, 1rem);">
+        <span class="category-card-name">Addresses</span>
+      </a>
+      <a href="/account/profile" class="category-card" style="min-height: auto; padding: var(--nymbal-spacing-md, 1rem);">
+        <span class="category-card-name">Profile Settings</span>
+      </a>
+      <a href="/products" class="category-card" style="min-height: auto; padding: var(--nymbal-spacing-md, 1rem);">
+        <span class="category-card-name">Continue Shopping</span>
+      </a>
+    </div>
+  </div>
+</AccountLayout>
+
+<script>
+  import { client } from '../../lib/client.js'
+  import { formatDate } from '../../lib/format.js'
+
+  function renderDashboard() {
+    const state = client.auth.getState()
+    const profile = state.profile ?? state.user
+
+    const nameEl = document.getElementById('dashboard-name')
+    const emailEl = document.getElementById('dashboard-email')
+    const sinceEl = document.getElementById('dashboard-since')
+
+    if (nameEl && profile) {
+      nameEl.textContent = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || 'User'
+    }
+    if (emailEl && profile) {
+      emailEl.textContent = profile.email ?? '--'
+    }
+    if (sinceEl && profile?.createdAt) {
+      sinceEl.textContent = formatDate(profile.createdAt)
+    }
+  }
+
+  client.auth.subscribe(renderDashboard)
+  renderDashboard()
+</script>

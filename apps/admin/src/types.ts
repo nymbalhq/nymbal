@@ -230,14 +230,12 @@ export interface Notification {
   read: boolean
 }
 
-// API response shapes
+// API response shapes — matches POST /api/auth/login envelope
+// (refresh token travels via httpOnly cookie, not the body)
 export interface LoginResponse {
   data: {
     customer: Customer
-    tokens: {
-      accessToken: string
-      refreshToken: string
-      expiresIn: number
-    }
+    accessToken: string
+    expiresIn: number
   }
 }

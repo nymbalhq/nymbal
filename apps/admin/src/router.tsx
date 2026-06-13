@@ -14,7 +14,7 @@ import { NotFoundPage } from '@/pages/NotFoundPage'
 
 function authLoader() {
   if (!isAuthenticated()) {
-    return redirect('/admin/login')
+    return redirect('/login')
   }
   return null
 }

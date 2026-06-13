@@ -127,6 +127,22 @@ export function registerAdminOrdersRoutes(
     }),
   )
 
+  // POST /api/admin/orders/:id/process — confirmed → processing
+  adapter.registerRoute(
+    'POST',
+    '/api/admin/orders/:id/process',
+    requireRole('admin', async (ctx) => {
+      try {
+        const id = ctx.params.id
+        if (!id) return fail('admin.invalid', 'id required', 400)
+        const fresh = await order.updateStatus(id, 'processing', `admin:${ctx.auth!.userId}`)
+        return ok(fresh)
+      } catch (err) {
+        return renderError(err)
+      }
+    }),
+  )
+
   // POST /api/admin/orders/:id/cancel
   adapter.registerRoute(
     'POST',

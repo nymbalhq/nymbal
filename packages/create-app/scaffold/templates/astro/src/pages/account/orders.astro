@@ -1,0 +1,92 @@
+---
+import '../../styles/pages/account.css'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="Order History">
+  <h1 class="account-page-title">Order History</h1>
+
+  <div id="orders-container" data-testid="orders-list">
+    <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
+      Loading orders...
+    </p>
+  </div>
+</AccountLayout>
+
+<script>
+  import { client } from '../../lib/client.js'
+  import { formatPrice, formatDate } from '../../lib/format.js'
+
+  const container = document.getElementById('orders-container')
+
+  async function loadOrders() {
+    if (!container) return
+
+    try {
+      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
+      const state = client.auth.getState()
+      const token = state.token ?? state.accessToken
+
+      const res = await fetch(`${apiUrl}/api/orders`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (!res.ok) throw new Error('Failed to load orders')
+      const data = await res.json()
+      const orders = data.items ?? data ?? []
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="account-empty">
+            <h2 class="account-empty-title">No orders yet</h2>
+            <p class="account-empty-text">Once you place an order, it will appear here.</p>
+            <a href="/products" class="btn btn-primary">Start Shopping</a>
+          </div>
+        `
+        return
+      }
+
+      container.innerHTML = `
+        <div class="order-list">
+          ${orders
+            .map(
+              (order: any) => `
+            <div class="order-card" data-testid="order-${order.orderNumber}">
+              <div class="order-card-header">
+                <div>
+                  <span class="order-card-number">#${order.orderNumber}</span>
+                  ${order.createdAt ? `<span class="order-card-date" style="margin-left: var(--nymbal-spacing-sm, 0.5rem);">${formatDate(order.createdAt)}</span>` : ''}
+                </div>
+                <span class="order-status status-${order.status}">${order.status}</span>
+              </div>
+              <div class="order-card-body">
+                <div class="order-card-items">
+                  ${(order.lineItems ?? [])
+                    .slice(0, 3)
+                    .map((item: any) => `<span>${item.productName} x${item.qty}</span>`)
+                    .join('')}
+                  ${(order.lineItems ?? []).length > 3 ? `<span>+${(order.lineItems ?? []).length - 3} more items</span>` : ''}
+                </div>
+              </div>
+              <div class="order-card-footer">
+                <span class="order-card-total">${formatPrice(order.totalMinor, order.currency)}</span>
+                <a href="/account/orders/${order.id}" class="order-card-link">View Details</a>
+              </div>
+            </div>
+          `,
+            )
+            .join('')}
+        </div>
+      `
+    } catch {
+      container.innerHTML = `
+        <div class="account-empty">
+          <h2 class="account-empty-title">Unable to load orders</h2>
+          <p class="account-empty-text">Please try again later.</p>
+        </div>
+      `
+    }
+  }
+
+  loadOrders()
+</script>

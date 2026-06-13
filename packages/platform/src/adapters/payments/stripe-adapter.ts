@@ -18,6 +18,21 @@ export interface StripePaymentsConfig {
   secretKey: string
   webhookSecret: string
   apiVersion?: string
+  /** Override the Stripe API host (for stripe-mock style test servers). Omit in production. */
+  host?: string
+  /** Override the Stripe API port. Only used together with `host`. */
+  port?: number
+  /** Override the Stripe API protocol. Defaults to https when omitted. */
+  protocol?: 'http' | 'https'
+}
+
+/**
+ * Stripe returns lowercase ISO currency codes (e.g. "gbp"); Nymbal's canonical
+ * currency format is uppercase ISO 4217 (e.g. "GBP") everywhere else in the
+ * domain, so adapter results are normalised on the way out.
+ */
+function toIsoCurrency(currency: string): string {
+  return currency.toUpperCase()
 }
 
 function mapStatus(status: Stripe.PaymentIntent.Status): PaymentStatus {
@@ -47,6 +62,9 @@ export function createStripePaymentsAdapter(deps: {
     ...(cfg.apiVersion !== undefined && {
       apiVersion: cfg.apiVersion as Stripe.LatestApiVersion,
     }),
+    ...(cfg.host !== undefined && { host: cfg.host }),
+    ...(cfg.port !== undefined && { port: cfg.port }),
+    ...(cfg.protocol !== undefined && { protocol: cfg.protocol }),
   })
   return {
     kind: 'payments',
@@ -84,7 +102,7 @@ export function createStripePaymentsAdapter(deps: {
           id: intent.id,
           clientSecret: intent.client_secret ?? '',
           amountMinor: intent.amount,
-          currency: intent.currency,
+          currency: toIsoCurrency(intent.currency),
           status: mapStatus(intent.status),
         }
       } catch (err) {
@@ -99,7 +117,7 @@ export function createStripePaymentsAdapter(deps: {
         return {
           paymentId: captured.id,
           capturedAmountMinor: captured.amount_received ?? captured.amount,
-          currency: captured.currency,
+          currency: toIsoCurrency(captured.currency),
           status: mapStatus(captured.status),
         }
       } catch (err) {
@@ -117,7 +135,7 @@ export function createStripePaymentsAdapter(deps: {
           refundId: refund.id,
           paymentId,
           amountMinor: refund.amount,
-          currency: refund.currency,
+          currency: toIsoCurrency(refund.currency),
           reason: refund.reason ?? null,
           status: (refund.status ?? 'pending') as Refund['status'],
         }
@@ -145,7 +163,7 @@ export function createStripePaymentsAdapter(deps: {
             kind: 'payment.captured',
             paymentIntentId: intent.id,
             amountMinor: intent.amount_received ?? intent.amount,
-            currency: intent.currency,
+            currency: toIsoCurrency(intent.currency),
             raw: { ...intent } as unknown as Record<string, unknown>,
           }
         }
@@ -169,7 +187,7 @@ export function createStripePaymentsAdapter(deps: {
             kind: 'payment.refunded',
             ...(pi !== undefined && { paymentIntentId: pi }),
             amountMinor: charge.amount_refunded,
-            currency: charge.currency,
+            currency: toIsoCurrency(charge.currency),
           }
         }
         default:

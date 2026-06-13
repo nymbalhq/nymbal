@@ -1,0 +1,43 @@
+---
+import { formatPrice } from '../lib/format'
+
+interface Props {
+  product: {
+    slug: string
+    name: string
+    priceMinor: number | null
+    currency: string | null
+    media: any
+    imageUrl?: string
+  }
+}
+
+const { product } = Astro.props
+const imageUrl =
+  product.imageUrl ??
+  (Array.isArray(product.media) && product.media[0]?.url) ??
+  `https://picsum.photos/seed/${product.slug}/600/600`
+const price =
+  product.priceMinor != null
+    ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
+    : ''
+---
+
+<a
+  href={`/product/${product.slug}`}
+  class="product-card"
+  data-testid={`product-card-${product.slug}`}
+>
+  <img
+    src={imageUrl}
+    alt={product.name}
+    class="product-card-image"
+    loading="lazy"
+    width="600"
+    height="600"
+  />
+  <div class="product-card-body">
+    <span class="product-card-name">{product.name}</span>
+    {price && <span class="product-card-price">{price}</span>}
+  </div>
+</a>

@@ -20,22 +20,22 @@ export function useAuth() {
       throw new Error(data.error?.message ?? 'Login failed')
     }
 
-    const { tokens, customer } = data.data
-    const roles = (customer as { roles?: string[] }).roles ?? []
+    const { accessToken, customer } = data.data
+    const roles = (customer.metadata as { roles?: string[] } | undefined)?.roles ?? []
 
     if (!roles.includes('admin')) {
       throw new Error('Not authorized: admin role required')
     }
 
-    setToken(tokens.accessToken)
+    setToken(accessToken)
     await queryClient.invalidateQueries({ queryKey: ['me'] })
-    navigate('/admin')
+    navigate('/')
   }, [navigate])
 
   const logout = useCallback(() => {
     clearToken()
     queryClient.clear()
-    navigate('/admin/login')
+    navigate('/login')
   }, [navigate])
 
   return {

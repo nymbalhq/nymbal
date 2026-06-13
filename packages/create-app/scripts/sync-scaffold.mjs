@@ -3,7 +3,7 @@
 // always copies from a single canonical source. Also merges root-manifest deps/scripts and
 // rewrites workspace:* references to real semver versions baked from the monorepo.
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -37,6 +37,24 @@ const templates = [
   { name: 'astro', from: resolve(MONOREPO_ROOT, 'templates', 'astro') },
   { name: 'nextjs', from: resolve(MONOREPO_ROOT, 'templates', 'nextjs') },
 ]
+
+// Entries excluded from the scaffold copy, matched by EXACT basename so that
+// *.astro page/component FILES are copied while the .astro CACHE DIRECTORY is not.
+// (A previous endsWith() filter excluded every *.astro file — see the filter
+// regression test in test/scaffold.test.ts.)
+const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next'])
+
+/**
+ * Predicate for fs.cp's filter option: returns true when the entry should be copied.
+ * Excludes build/cache directories by exact basename plus *.tsbuildinfo files.
+ * @param {string} src absolute path of the entry being considered
+ */
+export function shouldCopyScaffoldEntry(src) {
+  const name = basename(src)
+  if (EXCLUDED_BASENAMES.has(name)) return false
+  if (name.endsWith('.tsbuildinfo')) return false
+  return true
+}
 
 export async function readNymbalVersions() {
   /** @type {Record<string, string>} */
@@ -119,23 +137,25 @@ export function mergePackageJson(templatePkg, versions) {
   }
 }
 
-async function main() {
-  await mkdir(SCAFFOLD_TEMPLATES, { recursive: true })
+/**
+ * Syncs templates/* into the scaffold destination root.
+ * NOTE: this only ever removes/rewrites <destRoot>/<template-name>. The sibling
+ * scaffold/project/ directory (project-layer overrides) lives OUTSIDE the
+ * destination root and must never be touched by this sync.
+ * @param {string} [destRoot] destination root (defaults to scaffold/templates)
+ */
+export async function main(destRoot = SCAFFOLD_TEMPLATES) {
+  await mkdir(destRoot, { recursive: true })
 
   const versions = await readNymbalVersions()
 
   for (const t of templates) {
-    const dest = resolve(SCAFFOLD_TEMPLATES, t.name)
+    const dest = resolve(destRoot, t.name)
     await rm(dest, { recursive: true, force: true })
     await mkdir(dest, { recursive: true })
     await cp(t.from, dest, {
       recursive: true,
-      filter: (src) =>
-        !src.includes('node_modules') &&
-        !src.endsWith('dist') &&
-        !src.endsWith('.astro') &&
-        !src.endsWith('.next') &&
-        !src.endsWith('.tsbuildinfo'),
+      filter: shouldCopyScaffoldEntry,
     })
 
     const pkgPath = resolve(dest, 'package.json')
@@ -144,7 +164,7 @@ async function main() {
     await writeFile(pkgPath, JSON.stringify(mergedPkg, null, 2) + '\n', 'utf8')
 
     // eslint-disable-next-line no-console
-    console.log(`✓ synced scaffold/templates/${t.name}`)
+    console.log(`✓ synced ${dest}`)
   }
 }
 

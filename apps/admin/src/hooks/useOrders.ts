@@ -39,10 +39,8 @@ export function useOrderTimeline(orderId: string) {
 export function useOrderNotes(orderId: string) {
   return useQuery({
     queryKey: ['orders', 'notes', orderId],
-    queryFn: async () => {
-      const result = await api.get<{ notes: NoteEntry[] }>(`/api/admin/orders/${orderId}/notes`)
-      return result.notes
-    },
+    // GET /api/admin/orders/:id/notes returns NoteEntry[] inside the envelope
+    queryFn: () => api.get<NoteEntry[]>(`/api/admin/orders/${orderId}/notes`),
     enabled: !!orderId,
   })
 }
@@ -57,6 +55,8 @@ export function useUpdateOrderStatus() {
       queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
         old ? { ...old, ...updatedOrder } : updatedOrder
       )
+      // Refetch the detail document so the status history/timeline stays in sync
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', updatedOrder.orderNumber] })
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
@@ -140,6 +140,8 @@ export function useRefundOrder() {
       queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
         old ? { ...old, ...updatedOrder } : updatedOrder
       )
+      // Refetch the detail document so the status history/timeline stays in sync
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', updatedOrder.orderNumber] })
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
   })

@@ -5,6 +5,7 @@ interface OrderStatusBadgeProps {
   status: OrderStatus
   size?: 'sm' | 'md'
   className?: string
+  'data-testid'?: string
 }
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
@@ -29,9 +30,15 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   partially_refunded: 'Part. Refunded',
 }
 
-export function OrderStatusBadge({ status, size = 'md', className }: OrderStatusBadgeProps) {
+export function OrderStatusBadge({
+  status,
+  size = 'md',
+  className,
+  'data-testid': dataTestId,
+}: OrderStatusBadgeProps) {
   return (
     <span
+      data-testid={dataTestId}
       className={cn(
         'inline-flex items-center rounded-full font-medium',
         size === 'sm' ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-0.5 text-xs',

@@ -57,7 +57,7 @@ export function ProductsListPage() {
             {products ? `${products.length} products` : 'Loading...'}
           </p>
         </div>
-        <Button onClick={() => navigate('/admin/products/new')} className="gap-1.5">
+        <Button onClick={() => navigate('/products/new')} className="gap-1.5">
           <Plus className="h-4 w-4" />
           Add Product
         </Button>
@@ -105,7 +105,7 @@ export function ProductsListPage() {
             title="No products found"
             description={search ? 'Try a different search.' : 'Create your first product.'}
             action={
-              <Button onClick={() => navigate('/admin/products/new')} className="gap-1.5">
+              <Button onClick={() => navigate('/products/new')} className="gap-1.5">
                 <Plus className="h-4 w-4" />
                 Add Product
               </Button>
@@ -138,7 +138,7 @@ export function ProductsListPage() {
                     key={product.id}
                     data-testid={tid('products', 'row', product.id)}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/admin/products/${product.slug}`)}
+                    onClick={() => navigate(`/products/${product.slug}`)}
                   >
                     <TableCell>
                       {primaryMedia ? (
@@ -191,7 +191,7 @@ export function ProductsListPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => navigate(`/admin/products/${product.slug}`)}>
+                          <DropdownMenuItem onClick={() => navigate(`/products/${product.slug}`)}>
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem

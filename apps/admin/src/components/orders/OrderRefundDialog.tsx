@@ -108,6 +108,7 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
+                data-testid={tid('order', 'refund-reason')}
               />
             </div>
             <DialogFooter>
@@ -118,6 +119,7 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
                 variant="destructive"
                 onClick={() => void handleFullRefund()}
                 disabled={refundMutation.isPending}
+                data-testid={tid('order', 'refund-confirm')}
               >
                 {refundMutation.isPending ? 'Processing...' : 'Issue Full Refund'}
               </Button>

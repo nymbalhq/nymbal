@@ -1,0 +1,107 @@
+---
+import '../styles/pages/checkout.css'
+
+interface Props {
+  id: string
+}
+
+const { id } = Astro.props
+---
+
+<div class="address-grid" data-testid={`${id}-form`}>
+  <div class="form-group">
+    <label for={`${id}-firstName`}>First Name</label>
+    <input
+      type="text"
+      id={`${id}-firstName`}
+      name="firstName"
+      required
+      autocomplete="given-name"
+      data-testid={`${id}-firstName`}
+    />
+  </div>
+
+  <div class="form-group">
+    <label for={`${id}-lastName`}>Last Name</label>
+    <input
+      type="text"
+      id={`${id}-lastName`}
+      name="lastName"
+      required
+      autocomplete="family-name"
+      data-testid={`${id}-lastName`}
+    />
+  </div>
+
+  <div class="form-group full-width">
+    <label for={`${id}-addressLine1`}>Address Line 1</label>
+    <input
+      type="text"
+      id={`${id}-addressLine1`}
+      name="addressLine1"
+      required
+      autocomplete="address-line1"
+      data-testid={`${id}-addressLine1`}
+    />
+  </div>
+
+  <div class="form-group full-width">
+    <label for={`${id}-addressLine2`}>Address Line 2 (optional)</label>
+    <input
+      type="text"
+      id={`${id}-addressLine2`}
+      name="addressLine2"
+      autocomplete="address-line2"
+      data-testid={`${id}-addressLine2`}
+    />
+  </div>
+
+  <div class="form-group">
+    <label for={`${id}-city`}>City</label>
+    <input
+      type="text"
+      id={`${id}-city`}
+      name="city"
+      required
+      autocomplete="address-level2"
+      data-testid={`${id}-city`}
+    />
+  </div>
+
+  <div class="form-group">
+    <label for={`${id}-region`}>State / County</label>
+    <input
+      type="text"
+      id={`${id}-region`}
+      name="region"
+      required
+      autocomplete="address-level1"
+      data-testid={`${id}-region`}
+    />
+  </div>
+
+  <div class="form-group">
+    <label for={`${id}-postalCode`}>Postcode</label>
+    <input
+      type="text"
+      id={`${id}-postalCode`}
+      name="postalCode"
+      required
+      autocomplete="postal-code"
+      data-testid={`${id}-postalCode`}
+    />
+  </div>
+
+  <div class="form-group">
+    <label for={`${id}-country`}>Country (2-letter code)</label>
+    <input
+      type="text"
+      id={`${id}-country`}
+      name="country"
+      required
+      autocomplete="country"
+      placeholder="GB"
+      data-testid={`${id}-country`}
+    />
+  </div>
+</div>

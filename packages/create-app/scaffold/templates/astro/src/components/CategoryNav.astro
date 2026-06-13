@@ -1,0 +1,27 @@
+---
+import '../styles/pages/home.css'
+import type { Category } from '@nymbal/types'
+
+interface Props {
+  categories: Category[]
+}
+
+const { categories } = Astro.props
+---
+
+<div class="category-grid">
+  {categories.map((cat) => (
+    <a
+      href={`/category/${cat.slug}`}
+      class="category-card"
+      data-testid={`category-${cat.slug}`}
+    >
+      <span class="category-card-name">{cat.name}</span>
+      {cat.description && (
+        <span class="category-card-description" style="font-size: var(--nymbal-font-size-xs, 0.75rem); color: var(--nymbal-color-text-muted, #71717a); margin-top: var(--nymbal-spacing-xs, 0.25rem);">
+          {cat.description}
+        </span>
+      )}
+    </a>
+  ))}
+</div>

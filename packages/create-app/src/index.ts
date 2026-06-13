@@ -239,6 +239,16 @@ export async function scaffold(dir: string, answers: Answers): Promise<void> {
   // Copy the chosen template directly into dir (flat — no storefront/ subdirectory)
   await copyScaffoldDir(resolve(SCAFFOLD_ROOT, 'templates', answers.template), dir)
 
+  // Overlay the project layer (scaffold/project/<template>) on top of the template
+  // defaults. Project files WIN on path collision — this is the override model:
+  // anything in the project layer shadows the template default at the same path.
+  // scaffold/project/ lives outside scaffold/templates/, so sync-scaffold's
+  // rm -rf of scaffold/templates/* never deletes it.
+  const projectLayer = resolve(SCAFFOLD_ROOT, 'project', answers.template)
+  if (existsSync(projectLayer)) {
+    await copyScaffoldDir(projectLayer, dir)
+  }
+
   // Write nymbal.config.ts (answers-dependent, so generated at runtime)
   await writeFile(resolve(dir, 'nymbal.config.ts'), renderConfig(answers), 'utf8')
 

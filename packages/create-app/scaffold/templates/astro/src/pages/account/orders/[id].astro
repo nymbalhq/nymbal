@@ -1,0 +1,115 @@
+---
+import '../../../styles/pages/account.css'
+import '../../../styles/pages/confirmation.css'
+import AccountLayout from '../../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="Order Detail">
+  <div id="order-detail-container" data-testid="order-detail" data-order-id={Astro.params.id}>
+    <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
+      Loading order details...
+    </p>
+  </div>
+</AccountLayout>
+
+<script>
+  import { client } from '../../../lib/client.js'
+  import { formatPrice, formatDate } from '../../../lib/format.js'
+
+  const container = document.getElementById('order-detail-container')
+  const orderId = container?.dataset.orderId
+
+  async function loadOrderDetail() {
+    if (!container || !orderId) return
+
+    try {
+      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
+      const state = client.auth.getState()
+      const token = state.token ?? state.accessToken
+
+      const res = await fetch(`${apiUrl}/api/orders/${orderId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (!res.ok) throw new Error('Failed to load order')
+      const order = await res.json()
+
+      container.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--nymbal-spacing-lg, 1.5rem); flex-wrap: wrap; gap: var(--nymbal-spacing-sm, 0.5rem);">
+          <div>
+            <h1 class="account-page-title" style="margin-bottom: 0;">Order #${order.orderNumber}</h1>
+            ${order.createdAt ? `<p class="account-page-subtitle" style="margin-top: var(--nymbal-spacing-xs, 0.25rem);">${formatDate(order.createdAt)}</p>` : ''}
+          </div>
+          <span class="order-status status-${order.status}">${order.status}</span>
+        </div>
+
+        <div class="confirmation-card">
+          <h2 class="confirmation-card-title">Items</h2>
+          <div class="confirmation-items" style="margin-top: 0; padding-top: 0; border-top: none;">
+            ${(order.lineItems ?? [])
+              .map(
+                (item: any) => `
+              <div class="confirmation-item">
+                <span>
+                  <span class="confirmation-item-name">${item.productName}</span>
+                  ${item.variantName ? ` - ${item.variantName}` : ''}
+                  <span class="confirmation-item-qty"> x${item.qty}</span>
+                </span>
+                <span class="confirmation-item-price">${formatPrice(item.lineTotalMinor, order.currency)}</span>
+              </div>
+            `,
+              )
+              .join('')}
+          </div>
+
+          <div class="confirmation-totals">
+            <div class="confirmation-total-row">
+              <span>Subtotal</span>
+              <span>${formatPrice(order.subtotalMinor, order.currency)}</span>
+            </div>
+            ${order.shippingTotalMinor != null ? `
+              <div class="confirmation-total-row">
+                <span>Shipping</span>
+                <span>${order.shippingTotalMinor === 0 ? 'Free' : formatPrice(order.shippingTotalMinor, order.currency)}</span>
+              </div>
+            ` : ''}
+            ${order.taxTotalMinor != null ? `
+              <div class="confirmation-total-row">
+                <span>Tax</span>
+                <span>${formatPrice(order.taxTotalMinor, order.currency)}</span>
+              </div>
+            ` : ''}
+            <div class="confirmation-total-row grand-total">
+              <span>Total</span>
+              <span>${formatPrice(order.totalMinor, order.currency)}</span>
+            </div>
+          </div>
+        </div>
+
+        ${order.shippingAddress ? `
+          <div class="confirmation-card">
+            <h2 class="confirmation-card-title">Shipping Address</h2>
+            <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
+              ${order.shippingAddress.line1}<br/>
+              ${order.shippingAddress.line2 ? order.shippingAddress.line2 + '<br/>' : ''}
+              ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postcode}<br/>
+              ${order.shippingAddress.country}
+            </p>
+          </div>
+        ` : ''}
+
+        <a href="/account/orders" class="btn btn-secondary" style="margin-top: var(--nymbal-spacing-md, 1rem);">Back to Orders</a>
+      `
+    } catch {
+      container.innerHTML = `
+        <div class="account-empty">
+          <h2 class="account-empty-title">Unable to load order</h2>
+          <p class="account-empty-text">Please try again later.</p>
+          <a href="/account/orders" class="btn btn-secondary">Back to Orders</a>
+        </div>
+      `
+    }
+  }
+
+  loadOrderDetail()
+</script>

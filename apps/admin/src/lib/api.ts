@@ -33,9 +33,7 @@ async function request<T>(
   query?: QueryParams
 ): Promise<T> {
   const token = getToken()
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
+  const headers: Record<string, string> = {}
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
@@ -43,6 +41,9 @@ async function request<T>(
   const url = buildUrl(path, query)
   const init: RequestInit = { method, headers }
   if (body !== undefined) {
+    // Only declare a JSON content type when a body is actually sent —
+    // Fastify rejects empty bodies that claim application/json.
+    headers['Content-Type'] = 'application/json'
     init.body = JSON.stringify(body)
   }
   const response = await fetch(url, init)

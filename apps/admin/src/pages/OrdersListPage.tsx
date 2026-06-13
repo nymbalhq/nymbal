@@ -171,7 +171,9 @@ export function OrdersListPage() {
                 <TableHead className="text-center">Items</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Date</TableHead>
-                <TableHead className="w-10"></TableHead>
+                <TableHead className="w-10">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -194,37 +196,42 @@ export function OrdersListPage() {
                   </TableCell>
                   <TableCell
                     className="font-mono text-sm font-medium text-blue-600 cursor-pointer"
-                    onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
                   >
                     #{order.orderNumber}
                   </TableCell>
                   <TableCell
                     className="text-zinc-600 cursor-pointer"
-                    onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
                   >
                     <div className="truncate max-w-[180px]">{order.email}</div>
                   </TableCell>
-                  <TableCell onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}>
+                  <TableCell onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                     <OrderStatusBadge status={order.status} />
                   </TableCell>
-                  <TableCell className="text-center text-zinc-500" onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}>
+                  <TableCell className="text-center text-zinc-500" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                     {order.lineItems.length}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm" onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}>
+                  <TableCell className="text-right font-mono text-sm" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                     {formatMoney(order.totalMinor, order.currency)}
                   </TableCell>
-                  <TableCell className="text-right text-sm text-zinc-400" onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}>
+                  <TableCell className="text-right text-sm text-zinc-400" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                     {formatRelative(order.createdAt)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Actions for order ${order.orderNumber}`}
+                          className="h-8 w-8 text-zinc-400"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}>
+                        <DropdownMenuItem onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                           View details
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />

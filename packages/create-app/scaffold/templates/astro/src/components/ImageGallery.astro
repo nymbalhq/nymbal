@@ -1,0 +1,42 @@
+---
+import '../styles/pages/pdp.css'
+
+interface Props {
+  images: Array<{ url: string; alt: string }>
+}
+
+const { images } = Astro.props
+const mainImage = images[0] ?? { url: 'https://picsum.photos/seed/placeholder/600/600', alt: 'Product image' }
+---
+
+<div class="pdp-gallery" data-testid="product-gallery">
+  <img
+    src={mainImage.url}
+    alt={mainImage.alt}
+    class="pdp-main-image"
+    id="gallery-main-image"
+    width="600"
+    height="600"
+  />
+  {images.length > 1 && (
+    <div class="pdp-thumbnails" id="gallery-thumbnails">
+      {images.map((img, i) => (
+        <img
+          src={img.url}
+          alt={img.alt}
+          class={`pdp-thumbnail ${i === 0 ? 'active' : ''}`}
+          data-index={i}
+          data-url={img.url}
+          data-alt={img.alt}
+          width="80"
+          height="80"
+          loading="lazy"
+        />
+      ))}
+    </div>
+  )}
+</div>
+
+<script>
+  import '../scripts/image-gallery.js'
+</script>

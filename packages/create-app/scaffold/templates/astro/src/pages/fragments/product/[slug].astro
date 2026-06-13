@@ -1,0 +1,14 @@
+---
+import ProductCard from '../../../components/ProductCard.astro'
+import { fetchProduct } from '../../../lib/api'
+
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60')
+
+const { slug } = Astro.params
+const product = await fetchProduct(slug!)
+
+if (!product) {
+  return new Response('Not found', { status: 404 })
+}
+---
+<ProductCard product={product} />

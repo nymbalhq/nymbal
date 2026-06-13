@@ -1,0 +1,55 @@
+---
+import '../styles/global.css'
+import SkipNav from '../components/SkipNav.astro'
+import Header from '../components/Header.astro'
+import Footer from '../components/Footer.astro'
+
+interface Props {
+  title: string
+  description?: string
+  ogImage?: string
+  jsonLd?: Record<string, unknown>
+}
+
+const { title, description = 'Shop the Nymbal store', ogImage, jsonLd } = Astro.props
+const canonicalUrl = Astro.url.href
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+
+    <!-- JSON-LD structured data -->
+    {jsonLd && (
+      <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    )}
+  </head>
+  <body>
+    <SkipNav />
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+
+    <!-- Web component overlays (rendered outside main flow) -->
+    <nymbal-cart-drawer></nymbal-cart-drawer>
+    <nymbal-toast></nymbal-toast>
+
+    <!-- Initialise SDK + web components on the client -->
+    <script>
+      import '../scripts/init-client.js'
+    </script>
+  </body>
+</html>

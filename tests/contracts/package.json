@@ -12,6 +12,7 @@
     "@nymbal/types": "workspace:*"
   },
   "devDependencies": {
+    "stripe": "^17.4.0",
     "vitest": "^3.0.0"
   }
 }

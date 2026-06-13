@@ -73,7 +73,7 @@ export function CustomersListPage() {
                     key={customer.id}
                     data-testid={tid('customers', 'row', customer.id)}
                     className="cursor-pointer"
-                    onClick={() => navigate(`/admin/customers/${customer.id}`)}
+                    onClick={() => navigate(`/customers/${customer.id}`)}
                   >
                     <TableCell>
                       <div className="flex items-center gap-3">

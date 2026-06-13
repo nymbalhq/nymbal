@@ -80,7 +80,7 @@ export function OrderDetailPage() {
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <Package className="mb-3 h-8 w-8 text-zinc-300" />
         <p className="text-sm text-zinc-500">Order not found</p>
-        <Link to="/admin/orders" className="mt-3 text-sm text-blue-600 hover:underline">
+        <Link to="/orders" className="mt-3 text-sm text-blue-600 hover:underline">
           ← Back to orders
         </Link>
       </div>
@@ -114,7 +114,7 @@ export function OrderDetailPage() {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <Link
-            to="/admin/orders"
+            to="/orders"
             className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -133,7 +133,7 @@ export function OrderDetailPage() {
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" data-testid={tid('order', 'actions')}>
                 Actions
               </Button>
             </DropdownMenuTrigger>
@@ -144,7 +144,11 @@ export function OrderDetailPage() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {(order.status === 'delivered') && (
-                <DropdownMenuItem onClick={() => setShowRefund(true)} className="gap-2">
+                <DropdownMenuItem
+                  onClick={() => setShowRefund(true)}
+                  className="gap-2"
+                  data-testid={tid('order', 'action', 'refund')}
+                >
                   <CreditCard className="h-4 w-4" />
                   Issue refund
                 </DropdownMenuItem>
@@ -259,7 +263,11 @@ export function OrderDetailPage() {
                       <span className="rounded-full bg-zinc-100 px-1.5 text-[10px]">{notes.length}</span>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="timeline" className="gap-1.5 text-xs">
+                  <TabsTrigger
+                    value="timeline"
+                    className="gap-1.5 text-xs"
+                    data-testid={tid('order', 'tab', 'timeline')}
+                  >
                     <Clock className="h-3.5 w-3.5" />
                     Timeline
                   </TabsTrigger>
@@ -292,7 +300,7 @@ export function OrderDetailPage() {
                 <p className="text-sm font-medium text-zinc-800">{order.email}</p>
                 {order.customerId && (
                   <Link
-                    to={`/admin/customers/${order.customerId}`}
+                    to={`/customers/${order.customerId}`}
                     className="text-xs text-blue-600 hover:underline"
                   >
                     View customer →

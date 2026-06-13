@@ -11,7 +11,7 @@ export function NotFoundPage() {
         The page you're looking for doesn't exist.
       </p>
       <div className="mt-6">
-        <Button variant="outline" onClick={() => navigate('/admin')}>
+        <Button variant="outline" onClick={() => navigate('/')}>
           Go to Dashboard
         </Button>
       </div>

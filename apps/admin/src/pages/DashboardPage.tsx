@@ -116,7 +116,7 @@ export function DashboardPage() {
             <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
               <h2 className="text-sm font-semibold text-zinc-900">Recent Orders</h2>
               <button
-                onClick={() => navigate('/admin/orders')}
+                onClick={() => navigate('/orders')}
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium"
               >
                 View all →
@@ -150,7 +150,7 @@ export function DashboardPage() {
                     <tr
                       key={order.id}
                       className="cursor-pointer border-b border-zinc-50 last:border-0 hover:bg-zinc-50 transition-colors"
-                      onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}
+                      onClick={() => navigate(`/orders/${order.orderNumber}`)}
                     >
                       <td className="px-4 py-2.5">
                         <span className="font-mono text-sm font-medium text-blue-600">
@@ -190,7 +190,7 @@ export function DashboardPage() {
                 )}
               </div>
               <button
-                onClick={() => navigate('/admin/inventory')}
+                onClick={() => navigate('/inventory')}
                 className="text-xs text-blue-600 hover:text-blue-700 font-medium"
               >
                 Manage →
@@ -216,7 +216,7 @@ export function DashboardPage() {
                   <div
                     key={row.variantId}
                     className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-zinc-50 transition-colors"
-                    onClick={() => navigate('/admin/inventory')}
+                    onClick={() => navigate('/inventory')}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium text-zinc-700">

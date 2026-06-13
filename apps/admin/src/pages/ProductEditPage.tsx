@@ -72,7 +72,7 @@ export function ProductEditPage() {
   const handleSave = async () => {
     if (isNew) {
       const created = await createProduct.mutateAsync(form)
-      navigate(`/admin/products/${created.slug}`)
+      navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
       await updateProduct.mutateAsync({ id: existingProduct.id, data: form })
       setIsDirty(false)
@@ -99,7 +99,7 @@ export function ProductEditPage() {
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <Link
-            to="/admin/products"
+            to="/products"
             className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700"
           >
             <ArrowLeft className="h-4 w-4" />

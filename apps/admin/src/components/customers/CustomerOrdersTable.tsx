@@ -53,7 +53,7 @@ export function CustomerOrdersTable({ orders, isLoading }: CustomerOrdersTablePr
             <TableRow
               key={order.id}
               className="cursor-pointer"
-              onClick={() => navigate(`/admin/orders/${order.orderNumber}`)}
+              onClick={() => navigate(`/orders/${order.orderNumber}`)}
             >
               <TableCell className="font-mono text-sm font-medium text-blue-600">
                 #{order.orderNumber}

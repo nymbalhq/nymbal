@@ -2,7 +2,6 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    passWithNoTests: true,
     projects: [
       {
         test: {
@@ -129,6 +128,13 @@ export default defineConfig({
           setupFiles: ['apps/admin/src/tests/setup.ts'],
         },
       },
+      {
+        test: {
+          name: 'architecture',
+          environment: 'node',
+          include: ['tests/architecture/**/*.test.ts'],
+        },
+      },
     ],
     coverage: {
       provider: 'v8',
@@ -148,6 +154,10 @@ export default defineConfig({
       thresholds: {
         'packages/platform/src/services/*-service.ts': { lines: 100, branches: 100 },
         'packages/platform/src/utils/**': { lines: 100 },
+        // CLAUDE.md requires non-service packages at >=80% line coverage.
+        // Only packages currently meeting that bar get an enforced gate here;
+        // packages below 80% are tracked separately and must not gate red.
+        'packages/web-components/src/**': { lines: 80 },
       },
     },
   },

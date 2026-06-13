@@ -1,5 +1,6 @@
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { formatDate, formatRelative } from '@/lib/dates'
+import { tid } from '@/lib/testid'
 import type { OrderHistoryEntry } from '@/types'
 
 interface OrderTimelineProps {
@@ -15,7 +16,7 @@ export function OrderTimeline({ entries }: OrderTimelineProps) {
     <div className="flow-root">
       <ul className="-mb-8">
         {sorted.map((entry, idx) => (
-          <li key={entry.id}>
+          <li key={entry.id} data-testid={tid('order', 'timeline-entry', entry.toStatus)}>
             <div className="relative pb-8">
               {idx < sorted.length - 1 && (
                 <span

@@ -11,14 +11,16 @@ import {
 import { useMe } from '@/hooks/useMe'
 import { useAuth } from '@/hooks/useAuth'
 import { useOrders } from '@/hooks/useOrders'
+import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 
+// Paths are relative to the router basename (/admin)
 const navItems = [
-  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/orders', label: 'Orders', icon: ShoppingBag, end: false },
-  { to: '/admin/products', label: 'Products', icon: Package, end: false },
-  { to: '/admin/inventory', label: 'Inventory', icon: Boxes, end: false },
-  { to: '/admin/customers', label: 'Customers', icon: Users, end: false },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/orders', label: 'Orders', icon: ShoppingBag, end: false },
+  { to: '/products', label: 'Products', icon: Package, end: false },
+  { to: '/inventory', label: 'Inventory', icon: Boxes, end: false },
+  { to: '/customers', label: 'Customers', icon: Users, end: false },
 ]
 
 function PendingOrdersBadge() {
@@ -39,7 +41,7 @@ export function Sidebar() {
 
   const handleLogout = () => {
     logout()
-    navigate('/admin/login')
+    navigate('/login')
   }
 
   return (
@@ -69,6 +71,7 @@ export function Sidebar() {
               <NavLink
                 to={item.to}
                 end={item.end}
+                data-testid={tid('nav', item.label.toLowerCase())}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all duration-100',

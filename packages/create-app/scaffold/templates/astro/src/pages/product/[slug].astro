@@ -1,0 +1,112 @@
+---
+import '../../styles/pages/pdp.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import Breadcrumb from '../../components/Breadcrumb.astro'
+import ImageGallery from '../../components/ImageGallery.astro'
+import PriceDisplay from '../../components/PriceDisplay.astro'
+import StockBadge from '../../components/StockBadge.astro'
+import ReviewList from '../../components/ReviewList.astro'
+import ReviewForm from '../../components/ReviewForm.astro'
+import RelatedProducts from '../../components/RelatedProducts.astro'
+import { fetchProduct, fetchReviews, fetchProducts } from '../../lib/api'
+import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
+
+const { slug } = Astro.params
+
+const product = await fetchProduct(slug!)
+if (!product) return Astro.redirect('/404')
+
+const [reviewsResult, relatedResult] = await Promise.all([
+  fetchReviews(product.id),
+  fetchProducts({
+    limit: 4,
+    category: product.categoryIds?.[0] ?? undefined,
+  }),
+])
+
+const reviews = reviewsResult.items ?? []
+const relatedProducts = (relatedResult.items ?? []).filter((p) => p.id !== product.id).slice(0, 4)
+
+const images = Array.isArray(product.media) && product.media.length > 0
+  ? product.media.map((m: any) => ({
+      url: typeof m === 'string' ? m : m.url,
+      alt: typeof m === 'string' ? product.name : (m.alt ?? product.name),
+    }))
+  : [{ url: `https://picsum.photos/seed/${product.slug}/600/600`, alt: product.name }]
+
+const defaultVariant = product.variants?.[0]
+const stock = defaultVariant?.stock ?? (product.inStock ? 10 : 0)
+
+const jsonLd = productJsonLd(product, Astro.url.origin)
+const breadcrumb = breadcrumbJsonLd([
+  { name: 'Home', url: Astro.url.origin },
+  { name: 'Products', url: `${Astro.url.origin}/products` },
+  { name: product.name, url: `${Astro.url.origin}/product/${product.slug}` },
+])
+
+const variantOptions = product.variants?.map((v: any) => ({
+  id: v.id,
+  name: v.name,
+  options: v.options ?? [],
+})) ?? []
+---
+
+<BaseLayout title={`${product.name} | Nymbal`} description={product.shortDescription ?? product.description ?? ''} jsonLd={jsonLd}>
+  <div class="container section" data-product-slug={product.slug}>
+    <Breadcrumb
+      items={[
+        { label: 'Home', href: '/' },
+        { label: 'Products', href: '/products' },
+        { label: product.name },
+      ]}
+    />
+
+    <div class="pdp-layout">
+      <ImageGallery images={images} />
+
+      <div class="pdp-info">
+        <h1 class="pdp-title" data-testid="product-title">{product.name}</h1>
+
+        <PriceDisplay
+          priceMinor={defaultVariant?.priceMinor ?? product.priceMinor}
+          currency={product.currency ?? 'GBP'}
+        />
+
+        <StockBadge stock={stock} />
+
+        <div class="pdp-actions">
+          {variantOptions.length > 1 && (
+            <nymbal-variant-selector
+              options={JSON.stringify(variantOptions)}
+            ></nymbal-variant-selector>
+          )}
+
+          <div class="pdp-add-row">
+            <nymbal-quantity-selector value="1" min="1" max="99"></nymbal-quantity-selector>
+            <nymbal-add-to-cart
+              variant-id={defaultVariant?.id ?? product.id}
+            ></nymbal-add-to-cart>
+          </div>
+        </div>
+
+        {product.description && (
+          <div class="pdp-description" data-testid="product-description">
+            <Fragment set:html={product.description} />
+          </div>
+        )}
+      </div>
+    </div>
+
+    <section class="pdp-reviews">
+      <h2 class="pdp-reviews-title">Customer Reviews</h2>
+      <ReviewList reviews={reviews} />
+      <ReviewForm productId={product.id} />
+    </section>
+
+    <RelatedProducts products={relatedProducts} />
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../scripts/pdp.js'
+</script>

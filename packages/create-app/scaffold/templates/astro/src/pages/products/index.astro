@@ -1,0 +1,60 @@
+---
+import '../../styles/pages/plp.css'
+import '../../styles/pages/home.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import Breadcrumb from '../../components/Breadcrumb.astro'
+import ProductCard from '../../components/ProductCard.astro'
+import SortDropdown from '../../components/SortDropdown.astro'
+import Pagination from '../../components/Pagination.astro'
+import { fetchProducts, fetchCategories } from '../../lib/api'
+
+const [productResult, categories] = await Promise.all([
+  fetchProducts({ limit: 24 }),
+  fetchCategories(),
+])
+
+const products = productResult.items
+const facets = productResult.facets ?? []
+---
+
+<BaseLayout title="All Products | Nymbal" description="Browse our full product collection.">
+  <div class="container section">
+    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Products' }]} />
+
+    <div class="plp-header">
+      <h1 class="plp-title">All Products</h1>
+      <p class="plp-count" id="product-count">{products.length} products</p>
+    </div>
+
+    <div class="plp-layout">
+      <aside class="plp-sidebar">
+        <nymbal-product-filter
+          facets={JSON.stringify(facets)}
+        ></nymbal-product-filter>
+      </aside>
+
+      <div class="plp-grid-area">
+        <SortDropdown />
+
+        <div class="product-grid" id="product-grid">
+          {products.map((product) => (
+            <ProductCard product={product} />
+          ))}
+        </div>
+
+        {products.length === 0 && (
+          <div class="plp-empty">
+            <h2 class="plp-empty-title">No products found</h2>
+            <p class="plp-empty-text">Try adjusting your filters.</p>
+          </div>
+        )}
+
+        <Pagination />
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../scripts/plp.js'
+</script>

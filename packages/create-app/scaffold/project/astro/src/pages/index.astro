@@ -1,0 +1,57 @@
+---
+import '../styles/pages/home.css'
+import BaseLayout from '../layouts/BaseLayout.astro'
+import HeroSection from '../components/HeroSection.astro'
+import CategoryNav from '../components/CategoryNav.astro'
+import ProductCard from '../components/ProductCard.astro'
+import NewsletterSignup from '../components/NewsletterSignup.astro'
+import { fetchProducts, fetchCategories } from '../lib/api'
+import { organizationJsonLd } from '../lib/seo'
+
+const [productResult, categories] = await Promise.all([
+  fetchProducts({ limit: 8 }),
+  fetchCategories(),
+])
+
+const products = productResult.items
+const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
+---
+
+<BaseLayout title="Nymbal — Modern Storefront" jsonLd={jsonLd}>
+  {/* Marks this page as the project-scaffolded override of the template default.
+      Rendered as a real (hidden) element rather than an HTML comment because the
+      Astro compiler strips bare comments that lead a component fragment, which
+      would silently break the override smoke check. */}
+  <div hidden data-nymbal-marker="nymbal:project-override homepage"></div>
+  <HeroSection />
+
+  <section class="section container">
+    <p class="section-tagline" style="text-align: center; color: var(--nymbal-color-text-muted, #71717a);">
+      Welcome to your store — this homepage is yours to customise.
+    </p>
+    <h2 class="section-title">Shop by Category</h2>
+    <CategoryNav categories={categories} />
+  </section>
+
+  <section class="featured-section section">
+    <div class="container">
+      <div class="featured-header">
+        <h2 class="section-title" style="margin-bottom: 0;">Our Featured Picks</h2>
+        <a href="/products" class="featured-link">View all</a>
+      </div>
+      {products.length > 0 ? (
+        <div class="product-grid">
+          {products.map((product) => (
+            <ProductCard product={product} />
+          ))}
+        </div>
+      ) : (
+        <p style="text-align: center; color: var(--nymbal-color-text-muted, #71717a);">
+          Products coming soon.
+        </p>
+      )}
+    </div>
+  </section>
+
+  <NewsletterSignup />
+</BaseLayout>

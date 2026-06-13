@@ -32,7 +32,7 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
 
 const ACTION_MAP: Partial<Record<OrderStatus, string>> = {
   confirmed: 'confirm',
-  processing: 'confirm',
+  processing: 'process',
   shipped: 'ship',
   delivered: 'mark-delivered',
   cancelled: 'cancel',
@@ -62,7 +62,8 @@ export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: Order
 
     try {
       await updateStatus({ orderId, action })
-    } catch {
+    } catch (err) {
+      console.error('[OrderStatusSelect] status update failed', err)
       setOptimisticStatus(null)
       queryClient.invalidateQueries({ queryKey: ['orders', 'detail', orderNumber] })
     }
@@ -76,16 +77,25 @@ export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: Order
     >
       <SelectTrigger
         className={cn('w-44 h-8 text-xs', isPending && 'opacity-50')}
+        aria-label="Order status"
         data-testid={tid('order', 'status-select')}
       >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={currentStatus} disabled>
+        <SelectItem
+          value={currentStatus}
+          disabled
+          data-testid={tid('order', 'status-option', currentStatus)}
+        >
           {STATUS_LABELS[currentStatus]} (current)
         </SelectItem>
         {nextStatuses.map((status) => (
-          <SelectItem key={status} value={status}>
+          <SelectItem
+            key={status}
+            value={status}
+            data-testid={tid('order', 'status-option', status)}
+          >
             {STATUS_LABELS[status]}
           </SelectItem>
         ))}

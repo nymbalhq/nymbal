@@ -63,7 +63,7 @@ export function CommandPalette() {
                 key={order.id}
                 value={`order-${order.orderNumber}`}
                 onSelect={() =>
-                  runCommand(() => navigate(`/admin/orders/${order.orderNumber}`))
+                  runCommand(() => navigate(`/orders/${order.orderNumber}`))
                 }
               >
                 <ShoppingBag className="h-4 w-4 text-zinc-400 shrink-0" />
@@ -85,7 +85,7 @@ export function CommandPalette() {
                   key={product.id}
                   value={`product-${product.id}`}
                   onSelect={() =>
-                    runCommand(() => navigate(`/admin/products/${product.slug}`))
+                    runCommand(() => navigate(`/products/${product.slug}`))
                   }
                 >
                   <Package className="h-4 w-4 text-zinc-400 shrink-0" />
@@ -108,7 +108,7 @@ export function CommandPalette() {
                   key={customer.id}
                   value={`customer-${customer.id}`}
                   onSelect={() =>
-                    runCommand(() => navigate(`/admin/customers/${customer.id}`))
+                    runCommand(() => navigate(`/customers/${customer.id}`))
                   }
                 >
                   <Users className="h-4 w-4 text-zinc-400 shrink-0" />

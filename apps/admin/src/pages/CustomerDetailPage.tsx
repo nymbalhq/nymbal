@@ -65,7 +65,7 @@ export function CustomerDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <p className="text-sm text-zinc-500">Customer not found</p>
-        <Link to="/admin/customers" className="mt-3 text-sm text-blue-600 hover:underline">
+        <Link to="/customers" className="mt-3 text-sm text-blue-600 hover:underline">
           ← Back to customers
         </Link>
       </div>
@@ -81,7 +81,7 @@ export function CustomerDetailPage() {
       {/* Back */}
       <div className="flex items-center gap-2">
         <Link
-          to="/admin/customers"
+          to="/customers"
           className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700"
         >
           <ArrowLeft className="h-4 w-4" />

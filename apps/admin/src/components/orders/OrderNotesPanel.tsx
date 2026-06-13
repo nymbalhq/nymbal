@@ -56,6 +56,7 @@ export function OrderNotesPanel({ orderId, notes }: OrderNotesPanelProps) {
         <Button
           type="submit"
           size="icon"
+          aria-label="Add note"
           disabled={!body.trim() || addNote.isPending}
           className="self-end h-9 w-9"
         >

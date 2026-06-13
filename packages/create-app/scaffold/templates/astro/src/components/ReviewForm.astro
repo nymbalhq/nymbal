@@ -1,0 +1,108 @@
+---
+interface Props {
+  productId: string
+}
+
+const { productId } = Astro.props
+---
+
+<form
+  class="review-form"
+  id="review-form"
+  data-product-id={productId}
+  data-testid="review-form"
+>
+  <h3 style="font-size: 1.125rem; font-weight: var(--nymbal-font-weight-bold, 700); margin-bottom: var(--nymbal-spacing-md, 1rem);">
+    Write a Review
+  </h3>
+
+  <div class="form-group">
+    <label for="review-rating">Rating</label>
+    <select id="review-rating" name="rating" required data-testid="review-rating">
+      <option value="">Select a rating</option>
+      <option value="5">5 - Excellent</option>
+      <option value="4">4 - Very Good</option>
+      <option value="3">3 - Good</option>
+      <option value="2">2 - Fair</option>
+      <option value="1">1 - Poor</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="review-title">Title</label>
+    <input
+      type="text"
+      id="review-title"
+      name="title"
+      placeholder="Summarise your experience"
+      required
+      data-testid="review-title"
+    />
+  </div>
+
+  <div class="form-group">
+    <label for="review-body">Review</label>
+    <textarea
+      id="review-body"
+      name="body"
+      rows="4"
+      placeholder="Tell us what you think..."
+      required
+      data-testid="review-body"
+      style="resize: vertical;"
+    ></textarea>
+  </div>
+
+  <button type="submit" class="btn btn-primary" data-testid="review-submit">
+    Submit Review
+  </button>
+
+  <p class="review-form-message" id="review-form-message" style="display:none; margin-top: var(--nymbal-spacing-md, 1rem); font-size: var(--nymbal-font-size-sm, 0.875rem);"></p>
+</form>
+
+<script>
+  const form = document.getElementById('review-form') as HTMLFormElement | null
+  const messageEl = document.getElementById('review-form-message')
+
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    if (!form || !messageEl) return
+
+    const productId = form.dataset.productId
+    const formData = new FormData(form)
+    const rating = Number(formData.get('rating'))
+    const title = String(formData.get('title'))
+    const body = String(formData.get('body'))
+
+    try {
+      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
+      const res = await fetch(`${apiUrl}/api/products/${productId}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, title, body }),
+      })
+
+      if (res.ok) {
+        messageEl.textContent = 'Thank you for your review!'
+        messageEl.style.display = 'block'
+        messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
+        form.reset()
+      } else {
+        throw new Error('Failed to submit review')
+      }
+    } catch {
+      messageEl.textContent = 'Something went wrong. Please try again.'
+      messageEl.style.display = 'block'
+      messageEl.style.color = 'var(--nymbal-color-error, #dc2626)'
+    }
+  })
+</script>
+
+<style>
+  .review-form {
+    margin-top: var(--nymbal-spacing-xl, 2rem);
+    padding-top: var(--nymbal-spacing-xl, 2rem);
+    border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
+    max-width: 32rem;
+  }
+</style>

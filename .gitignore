@@ -18,3 +18,12 @@ nymbal.db-wal
 playwright-report/
 test-results/
 .lighthouseci/
+
+# Scaffold smoke-test projects (create-nymbal-app output) — throwaway dirs
+# created in the repo root by CI scaffold-smoke and local launch proofs. They
+# are listed as workspace members in pnpm-workspace.yaml so `pnpm install` can
+# link the unpublished @nymbal/* packages into them, but they must never be
+# committed.
+/smoke-astro/
+/smoke-nextjs/
+/launch-smoke-astro/

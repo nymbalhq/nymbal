@@ -127,6 +127,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: Scaffold Astro project
+        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes
+      - name: Install Astro scaffold deps
+        run: pnpm install --no-frozen-lockfile
+        working-directory: smoke-astro
+      - name: Seed demo content (Astro)
+        run: pnpm exec nymbal seed
+        working-directory: smoke-astro
+      - name: Start Astro dev server
+        run: pnpm dev &
+        working-directory: smoke-astro
+      - name: Wait for Astro dev server
+        run: npx wait-on http://localhost:4321 --timeout 60000
+      - name: Verify project override is live (Astro)
+        run: curl -fsS http://localhost:4321/ | grep "nymbal:project-override homepage"
+      - name: Smoke check Astro
+        run: node tools/scaffold-smoke-check.mjs --port 4321
+      - name: Stop Astro dev server
+        run: pkill -f "astro dev" || true
       - name: Scaffold Next.js project
         run: node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes
       - name: Install Next.js scaffold deps
