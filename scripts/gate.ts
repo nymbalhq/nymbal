@@ -117,6 +117,58 @@ export function newTestFiles(nameStatus: string): string[] {
   return added
 }
 
+/**
+ * A line that holds an assertion: an `expect` call (also `.soft` and `.poll`), a bare `assert(` or `assert.<x>(`,
+ * `fc.assert(`, or a matcher that continues a multi-line `expect`, such as `).toBe(` or `.not.toEqual(`.
+ */
+const ASSERTION_LINE = [
+  /\bexpect(?:\.soft|\.poll)?\(/,
+  /(?<![\w.$])assert(?:\.\w+)?\(/,
+  /\bfc\.assert\(/,
+  /^\s*\)*\s*(?:\.(?:not|resolves|rejects))*\.to[A-Z]\w*\(/,
+]
+
+/** The path a `git diff` file section is about: where a rename went, else the new side of the file. */
+function sectionPath(section: string[]): string | undefined {
+  for (const line of section) {
+    if (line.startsWith('@@')) break
+    if (line.startsWith('rename to ')) return line.slice('rename to '.length)
+    if (line.startsWith('+++ ') && line !== '+++ /dev/null') {
+      return line.slice('+++ b/'.length).replace(/\t.*$/, '')
+    }
+  }
+  return /^diff --git a\/.* b\/(.*)$/.exec(section[0] ?? '')?.[1]
+}
+
+/**
+ * Whether the change touches assertions in `path`, from a unified `git diff -M` that may cover several files: the file
+ * is new, or an added or removed line in its own hunks holds an assertion, so deleting or weakening one is judged as
+ * much as writing one. Context lines, headers and other files' hunks never count, and a file that only moved is not
+ * new.
+ */
+export function assertionTouched(diff: string, path: string): boolean {
+  const sections: string[][] = []
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) sections.push([])
+    sections[sections.length - 1]?.push(line)
+  }
+  for (const section of sections) {
+    if (sectionPath(section) !== path) continue
+    let inHunk = false
+    for (const line of section) {
+      if (line.startsWith('@@')) {
+        inHunk = true
+      } else if (!inHunk) {
+        if (line.startsWith('new file mode')) return true
+      } else if (/^[+-]/.test(line)) {
+        const content = line.slice(1)
+        if (ASSERTION_LINE.some((shape) => shape.test(content))) return true
+      }
+    }
+  }
+  return false
+}
+
 function seconds(ms: number): string {
   return (ms / 1000).toFixed(1)
 }
@@ -308,8 +360,64 @@ const DELTA_KEYS: Array<keyof Totals> = [
   'prints',
 ]
 
-function censusTrendStep(root: string, base: string): number {
+const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--src-prefix=a/', '--dst-prefix=b/']
+
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/**
+ * For each path the change adds or renames to: the path it moved from, or null when it is new. Git pairs a removed
+ * file with the added file closest in content, so a codemod that moves one file and adds an identical one is paired
+ * the wrong way round; a removed file's own name settles that before git's pairing does.
+ */
+export function moveSources(nameStatus: string): Map<string, string | null> {
+  const removed = new Set<string>()
+  const targets = new Map<string, string | null>()
+  for (const line of nameStatus.split('\n')) {
+    const [status, first, second] = line.split('\t')
+    if (first === undefined) continue
+    if (status === 'D') removed.add(first)
+    else if (status === 'A') targets.set(first, null)
+    else if (status?.startsWith('R') && second !== undefined) {
+      removed.add(first)
+      targets.set(second, first)
+    }
+  }
+  const result = new Map<string, string | null>()
+  const claimed = new Set<string>()
+  for (const target of targets.keys()) {
+    const same = [...removed].filter((path) => basename(path) === basename(target))
+    if (same.length === 1 && !claimed.has(same[0] as string)) {
+      claimed.add(same[0] as string)
+      result.set(target, same[0] as string)
+    }
+  }
+  for (const [target, gitSource] of targets) {
+    if (result.has(target)) continue
+    result.set(target, gitSource !== null && !claimed.has(gitSource) ? gitSource : null)
+  }
+  return result
+}
+
+/** Test files the change touches that rule 2 judges: new ones, and old ones it adds or edits an assertion in. */
+function judgedTestFiles(root: string, base: string): string[] {
   const touched = changedFiles(root, base).filter(isCensusFile)
+  const untracked = new Set(lines(git(root, ['ls-files', '--others', '--exclude-standard'])))
+  const diff = git(root, ['diff', '-M', ...DIFF_FLAGS, base])
+  const moves = moveSources(git(root, ['diff', '--name-status', '-M', base]))
+  return touched.filter((path) => {
+    if (untracked.has(path)) return true
+    if (!moves.has(path)) return assertionTouched(diff, path)
+    const source = moves.get(path)
+    if (source === null || source === undefined) return true
+    const pair = git(root, ['diff', '-M', ...DIFF_FLAGS, base, '--', source, path])
+    return assertionTouched(pair, path)
+  })
+}
+
+function censusTrendStep(root: string, base: string): number {
+  const touched = judgedTestFiles(root, base)
   const { violations, delta } = censusTrend(baseCensus(root, base), headCensus(root), touched)
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
   process.stdout.write(
