@@ -103,6 +103,16 @@ export default defineConfig({
       },
       {
         test: {
+          // Needs a Postgres server (NYMBAL_TEST_POSTGRES_URL; `docker compose up -d --wait` starts one). It is
+          // left out of the default run: `pnpm test` excludes it and `pnpm gate:full` runs it.
+          name: 'integration-postgres',
+          environment: 'node',
+          include: ['packages/platform/tests/postgres/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
           name: 'importers-unit',
           environment: 'node',
           include: [
