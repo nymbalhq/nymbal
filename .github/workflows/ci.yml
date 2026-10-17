@@ -77,6 +77,7 @@ jobs:
     needs: [build]
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
     services:
       postgres:
         image: postgres:16-alpine
@@ -99,6 +100,16 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,6 +127,8 @@ jobs:
           name: build-output
       - name: Postgres integration
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
+      - name: Proof kit services (Postgres race, Mailpit sink)
+        run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
       - name: Platform and importers integration, contracts
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
@@ -152,8 +165,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [build]
+    # tests-fail-on-base runs every project against the base, so a new Postgres or Mailpit test needs its server here
+    # too, or it fails on base for want of one.
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
     services:
       postgres:
         image: postgres:16-alpine
@@ -164,6 +180,16 @@ jobs:
           - '5432:5432'
         options: >-
           --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
@@ -203,8 +229,8 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      # integration-postgres has its own job, with a database.
-      - run: pnpm vitest run --coverage --project '!integration-postgres'
+      # integration-postgres and proof-kit-services have their own job, with the services they need.
+      - run: pnpm vitest run --coverage --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'
 
   e2e-astro:
     name: E2E — Astro
@@ -389,4 +415,3 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm changeset status --since=origin/${{ github.base_ref }}
-

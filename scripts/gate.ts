@@ -44,6 +44,8 @@ export type RunResult = { exitCode: number; steps: Step[]; report: string }
 export const GATE_BUDGET_MS = 60_000
 export const FULL_BUDGET_MS = 600_000
 export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
+/** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
+export const MAILPIT_URL = 'http://localhost:18025'
 
 const ROOT_CONFIG_FILES = new Set([
   'package.json',
@@ -78,6 +80,56 @@ export function selectTests(changed: string[]): {
     }
   }
   return { mode: 'changed', reason: 'tests related to the changed files' }
+}
+
+/**
+ * A file the build of a package reads: its source (tests aside), manifest, tsconfig or tsup config. Workspace packages
+ * resolve one another through `dist`, so a change to one of these leaves every importer testing the old build.
+ */
+export function isBuildInput(path: string): boolean {
+  if (TEST_FILE.test(path)) return false
+  return /^packages\/[^/]+\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+    path,
+  )
+}
+
+/**
+ * `packages/<dir>` of `start` and every workspace package it depends on, directly or not, read from the manifests.
+ * The proof kit's tests import these through `dist`, which `vitest --changed` cannot trace back to their source.
+ */
+export function workspaceClosure(root: string, start: string): string[] {
+  const packages = resolve(root, 'packages')
+  const dirByName = new Map<string, string>()
+  const depsByDir = new Map<string, string[]>()
+  for (const name of readdirSync(packages)) {
+    const manifest = resolve(packages, name, 'package.json')
+    if (!existsSync(manifest)) continue
+    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as {
+      name?: string
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+    }
+    const dir = `packages/${name}`
+    if (pkg.name !== undefined) dirByName.set(pkg.name, dir)
+    depsByDir.set(dir, [
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+      ...Object.keys(pkg.peerDependencies ?? {}),
+    ])
+  }
+  const seen = new Set<string>()
+  const queue = [start]
+  while (queue.length > 0) {
+    const dir = queue.shift() as string
+    if (seen.has(dir) || !depsByDir.has(dir)) continue
+    seen.add(dir)
+    for (const dep of depsByDir.get(dir) ?? []) {
+      const next = dirByName.get(dep)
+      if (next !== undefined) queue.push(next)
+    }
+  }
+  return [...seen].sort()
 }
 
 /** Rule 2 on the test files a change touches, and the census movement. Old debt in untouched files is ignored. */
@@ -574,9 +626,13 @@ export type PlanInput = {
   /** `compose` starts the services here; `external` expects them to exist (CI services) at `postgresUrl`. */
   services?: 'compose' | 'external' | undefined
   postgresUrl?: string | undefined
+  /** Where `external` services have Mailpit's API. */
+  mailpitUrl?: string | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
   noBuild?: boolean | undefined
   artefactPresent?: boolean | undefined
+  /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
+  proofKitPackages?: string[] | undefined
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
@@ -645,19 +701,47 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const selection = full
     ? { mode: 'all' as const, reason: 'gate:full runs every test' }
     : selectTests(changed)
+  // Tests and typecheck read other packages through their `dist`: gate:full always builds first, the plain gate when
+  // a package's build input changed (a warm build is about 7 s).
+  const buildInputs = changed.filter(isBuildInput)
+  const build: StepSpec = full
+    ? input.noBuild === true
+      ? {
+          name: 'build',
+          command: 'true',
+          skip: 'the build artefact is used (--no-build)',
+          idle: true,
+        }
+      : { name: 'build', command: 'pnpm build' }
+    : buildInputs.length === 0
+      ? { name: 'build', command: 'true', skip: 'no package build input changed', idle: true }
+      : { name: 'build', command: 'pnpm build' }
+  const buildNeeds = full || buildInputs.length > 0 ? { needs: ['build'] } : {}
+  // `--changed` follows imports, and an import of `dist` leads to no changed file, so a change to the kit or to what it
+  // imports runs the kit's own tests as well.
+  const kit = input.proofKitPackages ?? ['packages/proof-kit']
+  const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
   const tests: StepSpec =
     selection.mode === 'none'
       ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
       : selection.mode === 'changed'
-        ? { name: 'tests', command: `pnpm run test --changed ${base} --passWithNoTests` }
+        ? {
+            name: 'tests',
+            command:
+              `pnpm run test --changed ${base} --passWithNoTests` +
+              (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
+            ...buildNeeds,
+          }
         : {
             name: 'tests',
             command: full
               ? 'pnpm run test --reporter=default --reporter=json --outputFile.json=reports/vitest.json'
               : 'pnpm test',
+            ...buildNeeds,
           }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
+    build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,
     { name: 'census trend', command: `${SCRIPT} census-trend ${base}` },
@@ -666,6 +750,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
 
   const external = input.services === 'external'
   const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
+  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
   const e2e = (target: string): string =>
@@ -679,18 +764,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : { name: 'compose up', command: 'docker compose up -d --wait' },
-    input.noBuild === true
-      ? {
-          name: 'build',
-          command: 'true',
-          skip: 'the build artefact is used (--no-build)',
-          idle: true,
-        }
-      : { name: 'build', command: 'pnpm build' },
     {
       name: 'integration-postgres',
       command: `${postgres} pnpm exec vitest run --project integration-postgres`,
       needs: ['compose up'],
+    },
+    {
+      name: 'proof-kit-services',
+      command: `${postgres} ${mailpit} pnpm exec vitest run --project proof-kit-services`,
+      needs: ['compose up', 'build'],
     },
     mutated.length === 0
       ? {
@@ -706,7 +788,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     { name: 'sentinels', command: 'pnpm sentinels' },
     {
       name: 'tests-fail-on-base',
-      command: `${postgres} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
+      command: `${postgres} ${mailpit} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
       needs: ['compose up'],
     },
     // The journeys run against the built packages: without a build they test nothing new. Playwright starts its own
@@ -780,6 +862,7 @@ async function main(argv: string[]): Promise<number> {
   const present = changed.filter((path) => existsSync(resolve(root, path)))
   const mutated = values.full ? await mutateSet(root, present) : []
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
+  const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const { steps, budgetMs } = plan({
     full: values.full,
     base,
@@ -788,8 +871,10 @@ async function main(argv: string[]): Promise<number> {
     ...(only === undefined ? {} : { only }),
     services: values.services,
     ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
+    ...(mailpitUrl === undefined || mailpitUrl === '' ? {} : { mailpitUrl }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
+    proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
   })
   if (values.full && only === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.

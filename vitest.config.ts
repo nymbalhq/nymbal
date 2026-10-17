@@ -113,6 +113,25 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'proof-kit',
+          environment: 'node',
+          include: ['packages/proof-kit/tests/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
+          // Needs Postgres and Mailpit (NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_MAILPIT_URL; `docker compose up -d --wait`
+          // starts both). Left out of the default run like integration-postgres: `pnpm test` excludes it and
+          // `pnpm gate:full` runs it.
+          name: 'proof-kit-services',
+          environment: 'node',
+          include: ['packages/proof-kit/tests/services/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
           name: 'importers-unit',
           environment: 'node',
           include: [
@@ -168,6 +187,7 @@ export default defineConfig({
         '**/tests/**',
         'packages/test-factories/**',
         'packages/contract-tests/**',
+        'packages/proof-kit/**',
       ],
       thresholds: {
         'packages/platform/src/services/*-service.ts': { lines: 100, branches: 100 },

@@ -843,3 +843,153 @@ describe('AC-12: nightly e2e-full runs only the -mobile projects', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// P1-01 AC-18, the CI half (the gate:full and `pnpm test` halves are in proof-kit-wiring.test.ts): the integration
+// job runs the proof-kit-services Vitest project, directly or through a gate.ts step, with a Mailpit service whose
+// published ports are the ones the URLs the command sees point at.
+// ---------------------------------------------------------------------------------------------------------------
+
+const KIT_SERVICES = 'proof-kit-services'
+
+function runsKitServices(command: string): boolean {
+  return new RegExp(
+    `\\bvitest\\b[^;&|\\n]*--project(?:=|\\s+)['"]?${KIT_SERVICES}['"]?(?:\\s|$)`,
+  ).test(command)
+}
+
+/** `NAME=value` assignments in a command. */
+function assignedIn(command: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const m of command.matchAll(/(?:^|\s)([A-Z][A-Z0-9_]*)=('[^']*'|"[^"]*"|\S+)/g)) {
+    out[m[1]!] = m[2]!.replace(/^(['"])(.*)\1$/, '$2')
+  }
+  return out
+}
+
+/** container port -> host port, from a service's `ports` list of 'host:container' entries. */
+function publishedPorts(service: unknown): Map<string, string> {
+  const ports = (service as { ports?: Yaml } | undefined)?.ports
+  const out = new Map<string, string>()
+  for (const entry of Array.isArray(ports) ? ports : []) {
+    const m = /^(?:[\d.]+:)?(\d+):(\d+)(?:\/tcp)?$/.exec(text(entry))
+    if (m !== null) out.set(m[2]!, m[1]!)
+  }
+  return out
+}
+
+const portOf = (address: string): string =>
+  new URL(address.includes('://') ? address : `smtp://${address}`).port
+
+describe('AC-18 (P1-01): the CI integration job runs proof-kit-services with a Mailpit service', () => {
+  it('AC-18: the integration job runs proof-kit-services with both URLs set, and its Mailpit service publishes the ports they name', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const job = ci.jobs.integration
+    expect(job, 'ci.yml has an integration job').toBeDefined()
+    const mailpit = Object.values(job?.services ?? {}).find((s) =>
+      (s?.image ?? '').startsWith('axllent/mailpit'),
+    )
+    expect(mailpit?.image ?? '(no Mailpit service)').toMatch(/^axllent\/mailpit:/)
+    const ports = publishedPorts(mailpit)
+
+    const kitRuns: Array<{ via: string; env: Record<string, string> }> = []
+    for (const run of execute(ci, PR_OPENED).filter((r) => r.job === 'integration')) {
+      if (runsKitServices(run.script)) {
+        kitRuns.push({ via: 'vitest', env: { ...run.env, ...assignedIn(run.script) } })
+      }
+      for (const m of run.script.matchAll(
+        /(?:scripts\/gate\.ts|\bpnpm\s+(?:run\s+)?gate:full)([^\n;&|]*)/g,
+      )) {
+        const args = words(m[1] ?? '').map((w) => expand(w, run, m.index))
+        const only = flag(args, '--only')
+        const external = flag(args, '--services') === 'external'
+        const input = {
+          full: true,
+          base: 'HEAD',
+          changed: [],
+          mutated: [],
+          ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+          services: external ? 'external' : 'compose',
+          postgresUrl: run.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+          mailpitUrl: run.env.NYMBAL_TEST_MAILPIT_URL || undefined,
+          noBuild: args.includes('--no-build'),
+          artefactPresent: true,
+        } as PlanInput
+        for (const step of plan(input).steps) {
+          if (step.skip === undefined && runsKitServices(step.command)) {
+            kitRuns.push({
+              via: `gate.ts "${step.name}"`,
+              env: { ...run.env, ...assignedIn(step.command) },
+            })
+          }
+        }
+      }
+    }
+    expect(kitRuns.length, 'integration-job commands that run proof-kit-services').toBeGreaterThan(
+      0,
+    )
+
+    const problems = kitRuns.flatMap(({ via, env }) => {
+      const found: string[] = []
+      if (!env.NYMBAL_TEST_POSTGRES_URL) found.push(`${via}: NYMBAL_TEST_POSTGRES_URL is not set`)
+      const api = env.NYMBAL_TEST_MAILPIT_URL
+      if (!api) found.push(`${via}: NYMBAL_TEST_MAILPIT_URL is not set`)
+      else if (portOf(api) !== ports.get('8025')) {
+        found.push(
+          `${via}: Mailpit API ${api} is not the service's published 8025 (${ports.get('8025')})`,
+        )
+      }
+      const smtp = env.NYMBAL_TEST_MAILPIT_SMTP ?? 'localhost:11025'
+      if (portOf(smtp) !== ports.get('1025')) {
+        found.push(
+          `${via}: Mailpit SMTP ${smtp} is not the service's published 1025 (${ports.get('1025')})`,
+        )
+      }
+      return found
+    })
+    expect(problems).toEqual([])
+  })
+})
+
+describe('AC-18 (P1-01): tests-fail-on-base in CI has the Mailpit the kit tests need', () => {
+  it('AC-18: every CI job whose gate.ts call runs tests-fail-on-base has a Mailpit service, and the step sees NYMBAL_TEST_MAILPIT_URL at its published 8025', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const problems: string[] = []
+    let runsBase = 0
+    for (const call of gateCalls(ci, PR_OPENED)) {
+      const run = execute(ci, PR_OPENED).find((r) => r.job === call.job)!
+      const only = flag(call.args, '--only')
+      const external = flag(call.args, '--services') === 'external'
+      const input = {
+        full: true,
+        base: 'HEAD',
+        changed: [],
+        mutated: [],
+        ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+        services: external ? 'external' : 'compose',
+        postgresUrl: run.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+        mailpitUrl: run.env.NYMBAL_TEST_MAILPIT_URL || undefined,
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+      } as PlanInput
+      for (const step of plan(input).steps) {
+        if (step.name !== 'tests-fail-on-base' || step.skip !== undefined) continue
+        runsBase += 1
+        const mailpit = Object.values(ci.jobs[call.job]?.services ?? {}).find((s) =>
+          (s?.image ?? '').startsWith('axllent/mailpit'),
+        )
+        const published = publishedPorts(mailpit)
+        const api = { ...run.env, ...assignedIn(step.command) }.NYMBAL_TEST_MAILPIT_URL
+        if (mailpit === undefined) problems.push(`${call.job}: no Mailpit service`)
+        if (!api) problems.push(`${call.job}: NYMBAL_TEST_MAILPIT_URL is not set`)
+        else if (portOf(api) !== published.get('8025')) {
+          problems.push(
+            `${call.job}: ${api} is not Mailpit's published 8025 (${published.get('8025')})`,
+          )
+        }
+      }
+    }
+    expect(runsBase, 'CI gate.ts calls that run tests-fail-on-base').toBeGreaterThan(0)
+    expect(problems).toEqual([])
+  })
+})

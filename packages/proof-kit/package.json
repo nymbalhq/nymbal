@@ -1,0 +1,67 @@
+{
+  "name": "@nymbalhq/proof-kit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test-only kit for proving kernel claims: races, chaos kills, a mail sink, a stub payment hook, arbitraries",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./race": {
+      "types": "./dist/race.d.ts",
+      "import": "./dist/race.js"
+    },
+    "./chaos": {
+      "types": "./dist/chaos.d.ts",
+      "import": "./dist/chaos.js"
+    },
+    "./mail": {
+      "types": "./dist/mail.d.ts",
+      "import": "./dist/mail.js"
+    },
+    "./payments": {
+      "types": "./dist/payments.d.ts",
+      "import": "./dist/payments.js"
+    },
+    "./store": {
+      "types": "./dist/store.d.ts",
+      "import": "./dist/store.js"
+    },
+    "./arbitraries": {
+      "types": "./dist/arbitraries.d.ts",
+      "import": "./dist/arbitraries.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/http": "workspace:*",
+    "@nymbalhq/platform": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
+    "fast-check": "^4.10.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/pg": "^8.11.10",
+    "better-sqlite3": "^11.3.0",
+    "pg": "^8.13.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}

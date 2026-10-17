@@ -27,7 +27,10 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 // judged and the step fails closed with the first error line and the output's tail: a change must not be able to
 // opt out of the rule by breaking the base's install.
 
-/** Every Vitest project: a new Postgres test needs NYMBAL_TEST_POSTGRES_URL in the environment, as in gate:full. */
+/**
+ * Every Vitest project: a new Postgres or Mailpit test needs NYMBAL_TEST_POSTGRES_URL or NYMBAL_TEST_MAILPIT_URL in
+ * the environment, as in gate:full, or it fails on base for want of the server and proves nothing.
+ */
 export const DEFAULT_SUITE = 'pnpm vitest run'
 
 export type Verdict = 'fails on base' | 'PASSES ON BASE' | 'not judged'
