@@ -1,0 +1,17 @@
+// AC-5: 8 assertions, each counted once by its final matcher: C1 3, C3 3, C4 2. 1 test.
+import { expect, test } from 'vitest'
+
+test('chains', async () => {
+  expect(a).not.toBe(b)
+  await expect(pending).resolves.toBeGreaterThan(1)
+  await expect(failing).rejects.toThrow()
+  expect.soft(flag).toBeTruthy()
+  await expect(page.getByRole('button')).toHaveText('Pay')
+  expect(
+    total,
+  )
+    .not
+    .toBeLessThan(0)
+  await expect(locator).not.toBeVisible()
+  expect(a).not.toEqual(b - 1)
+})

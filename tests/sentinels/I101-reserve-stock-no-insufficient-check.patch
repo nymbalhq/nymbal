@@ -1,0 +1,20 @@
+# id: I101
+# kind: injected
+# defect: remove the insufficient-stock throw in reserveStock
+# where: packages/platform/src/services/inventory-service.ts:107-111
+# killed-by: packages/platform/src/services/inventory-service.test.ts
+diff --git a/packages/platform/src/services/inventory-service.ts b/packages/platform/src/services/inventory-service.ts
+--- a/packages/platform/src/services/inventory-service.ts
++++ b/packages/platform/src/services/inventory-service.ts
+@@ -104,11 +104,6 @@
+       return store.transaction(async () => {
+         const variant = await repos.variant.findById(variantId)
+         if (!variant) throw new NotFoundError('variant', variantId)
+-        if (variant.stock < qty) {
+-          throw new AdapterError('inventory.insufficient', `Insufficient stock for variant ${variantId}`, {
+-            context: { variantId, requested: qty, available: variant.stock },
+-          })
+-        }
+         const now = new Date()
+         const expiresAt = new Date(now.getTime() + (ttlSeconds ?? defaultTtl) * 1000)
+         const reservationId = uuidv7()

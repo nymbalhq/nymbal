@@ -1,0 +1,17 @@
+// AC-1: every assertion here is C1 (sanity). 12 assertions, 1 test.
+import { expect, test } from 'vitest'
+
+test('sanity matchers', async () => {
+  expect(value).toBeDefined()
+  expect(value).toBeUndefined()
+  expect(value).toBeTruthy()
+  expect(value).toBeFalsy()
+  expect(value).toBeNull()
+  expect(value).toBeInstanceOf(Order)
+  await expect(button).toBeVisible()
+  await expect(banner).toBeHidden()
+  await expect(submit).toBeEnabled()
+  expect(spy).toHaveBeenCalled()
+  expect(response).toBeOK()
+  expect(() => run()).toThrow()
+})

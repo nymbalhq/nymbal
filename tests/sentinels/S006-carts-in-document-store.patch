@@ -1,0 +1,5 @@
+# id: S006
+# kind: present
+# defect: carts are stored in the document store (in memory by default) and are lost on restart
+# where: packages/platform/src/services/cart-service.ts:62
+# killed-by: P1-04 acceptance tests

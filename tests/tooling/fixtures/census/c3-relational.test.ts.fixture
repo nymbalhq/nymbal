@@ -1,0 +1,18 @@
+// AC-3: 11 assertions are C3 (relational); the 2 whose argument is an expect.* call are C4. 1 test.
+import { expect, test } from 'vitest'
+
+test('relational matchers', () => {
+  expect(after).toBeGreaterThan(0)
+  expect(after).toBeGreaterThanOrEqual(1)
+  expect(after).toBeLessThan(10)
+  expect(after).toBeLessThanOrEqual(10)
+  expect(0.1 + 0.2).toBeCloseTo(0.3, 5)
+  expect(after).toBe(before - qty)
+  expect(sum).toEqual(a + b)
+  expect(ok).toBe(lhs >= rhs)
+  expect(total).toBe(sumOf(lines))
+  expect(order).toEqual({ totalMinor: priceMinor * qty })
+  expect(remaining).toHaveLength(items.length - 1)
+  expect(order).toEqual(expect.objectContaining({ status: 'paid' }))
+  expect(id).toEqual(expect.any(String))
+})

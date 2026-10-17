@@ -1,0 +1,18 @@
+// AC-7: 10 test call sites (describe is not a test); 4 skipped (.skip and .todo). No assertions.
+import { describe, it, test } from 'vitest'
+import { fc } from '@fast-check/vitest'
+
+describe('outer', () => {
+  describe.each([1, 2])('inner %i', () => {
+    it('a', () => {})
+    test('b', () => {})
+    it.only('c', () => {})
+    it.skip('d', () => {})
+    test.skip('e', () => {})
+    test.todo('f')
+    it.todo('g')
+    it.each([1, 2, 3])('h %i', () => {})
+    test.concurrent('i', async () => {})
+    test.prop([fc.nat()])('j', () => {})
+  })
+})
