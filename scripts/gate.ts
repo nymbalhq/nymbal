@@ -568,10 +568,16 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           name: 'compose up',
           command: 'true',
           skip: 'services are external (--services external)',
+          idle: true,
         }
       : { name: 'compose up', command: 'docker compose up -d --wait' },
     input.noBuild === true
-      ? { name: 'build', command: 'true', skip: 'the build artefact is used (--no-build)' }
+      ? {
+          name: 'build',
+          command: 'true',
+          skip: 'the build artefact is used (--no-build)',
+          idle: true,
+        }
       : { name: 'build', command: 'pnpm build' },
     {
       name: 'integration-postgres',
@@ -585,24 +591,35 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           skip: "no changed file in Stryker's mutate set",
           idle: true,
         }
-      : { name: 'stryker', command: `pnpm exec stryker run --mutate '${mutated.join(',')}'` },
+      : {
+          name: 'stryker',
+          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))}`,
+        },
     { name: 'sentinels', command: 'pnpm sentinels' },
     {
       name: 'tests-fail-on-base',
       command: `${postgres} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
       needs: ['compose up'],
     },
-    // The journeys run against the built packages and the composed services: without both they test nothing new.
-    { name: 'e2e astro', command: e2e('astro'), needs: ['build', 'compose up'] },
-    { name: 'e2e nextjs', command: e2e('nextjs'), needs: ['build', 'compose up'] },
-    { name: 'e2e admin', command: e2e('admin'), needs: ['build', 'compose up'] },
+    // The journeys run against the built packages: without a build they test nothing new. Playwright starts its own
+    // API, so they use none of the composed services.
+    { name: 'e2e astro', command: e2e('astro'), needs: ['build'] },
+    { name: 'e2e nextjs', command: e2e('nextjs'), needs: ['build'] },
+    { name: 'e2e admin', command: e2e('admin'), needs: ['build'] },
   )
   return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
 }
 
-/** Whether the build output of every package that builds is in the work tree (a downloaded CI artefact, or a build). */
-function artefactPresent(root: string): boolean {
+/** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
+const APP_OUTPUTS = ['templates/astro/dist', 'templates/nextjs/.next', 'apps/admin/dist']
+
+/**
+ * Whether the whole build output is in the work tree (a downloaded CI artefact, or a build): the `dist` of every
+ * package that has a build script, and every entry of `APP_OUTPUTS`.
+ */
+export function artefactPresent(root: string): boolean {
   const packages = resolve(root, 'packages')
+  if (!existsSync(packages)) return false
   const builders = readdirSync(packages).filter((name) => {
     const manifest = resolve(packages, name, 'package.json')
     if (!existsSync(manifest)) return false
@@ -610,7 +627,9 @@ function artefactPresent(root: string): boolean {
     return typeof pkg.scripts?.build === 'string'
   })
   return (
-    builders.length > 0 && builders.every((name) => existsSync(resolve(packages, name, 'dist')))
+    builders.length > 0 &&
+    builders.every((name) => existsSync(resolve(packages, name, 'dist'))) &&
+    APP_OUTPUTS.every((path) => existsSync(resolve(root, path)))
   )
 }
 
@@ -675,18 +694,21 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
-  // A selection that ran nothing because a precondition failed proves nothing: it is red, and the rows say why.
-  // One that had nothing to do (no changed file to mutate) is not.
-  const nothingRan =
-    only !== undefined &&
-    result.steps.every((step) => step.status === 'skipped') &&
-    steps.some((spec) => spec.skip !== undefined && spec.idle !== true)
-  const exitCode = nothingRan ? 1 : result.exitCode
+  // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
+  // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
+  // services or build supplied from outside) is not.
+  const unmet =
+    only === undefined
+      ? []
+      : steps.filter((spec) => spec.skip !== undefined && spec.idle !== true).map((s) => s.name)
+  const exitCode = unmet.length > 0 ? 1 : result.exitCode
   if (values.json) {
     process.stdout.write(`${JSON.stringify({ exitCode, steps: result.steps })}\n`)
-  } else if (nothingRan) {
+  } else if (unmet.length > 0) {
     const rows = result.report.split('\n').slice(0, -1)
-    process.stdout.write(`${[...rows, 'gate: RED (every selected step was skipped)'].join('\n')}\n`)
+    const red = result.steps.filter((step) => step.status === 'red').map((step) => step.name)
+    const verdict = `gate: RED (${[...red, ...unmet.map((name) => `${name} skipped`)].join(', ')})`
+    process.stdout.write(`${[...rows, verdict].join('\n')}\n`)
   } else {
     process.stdout.write(`${result.report}\n`)
   }

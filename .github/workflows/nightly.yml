@@ -173,8 +173,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      # The previous nightly's commit is not tracked, so the incremental steps judge the last commit.
       - name: gate:full with Docker Compose services
-        run: pnpm gate:full
+        run: pnpm gate:full --base HEAD~1
       - name: Upload the gate reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -184,7 +185,8 @@ jobs:
           if-no-files-found: warn
 
   e2e-full:
-    name: E2E — ${{ matrix.target }}, desktop and mobile
+    # gate-full already runs the desktop projects; this job adds the mobile ones.
+    name: E2E — ${{ matrix.target }}, mobile
     runs-on: ubuntu-latest
     needs: [build]
     timeout-minutes: 45
@@ -212,8 +214,8 @@ jobs:
           name: build-output
       - name: Install Playwright browsers
         run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Functional, visual and a11y, desktop and mobile
-        run: pnpm --filter @nymbal/e2e exec playwright test --project ${{ matrix.target }} --project ${{ matrix.target }}-mobile
+      - name: Functional, visual and a11y, mobile
+        run: pnpm --filter @nymbal/e2e exec playwright test --project ${{ matrix.target }}-mobile
       - name: Upload the Playwright results
         if: always()
         uses: actions/upload-artifact@v7
