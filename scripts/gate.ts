@@ -110,7 +110,16 @@ export function newTestFiles(nameStatus: string): string[] {
   return added
 }
 
-const ASSERTION_CALL = /expect\(|assert\.|fc\.assert/
+/**
+ * A line that holds an assertion: an `expect` call (also `.soft` and `.poll`), a bare `assert(` or `assert.<x>(`,
+ * `fc.assert(`, or a matcher that continues a multi-line `expect`, such as `).toBe(` or `.not.toEqual(`.
+ */
+const ASSERTION_LINE = [
+  /\bexpect(?:\.soft|\.poll)?\(/,
+  /(?<![\w.$])assert(?:\.\w+)?\(/,
+  /\bfc\.assert\(/,
+  /^\s*\)*\s*(?:\.(?:not|resolves|rejects))*\.to[A-Z]\w*\(/,
+]
 
 /** The path a `git diff` file section is about: where a rename went, else the new side of the file. */
 function sectionPath(section: string[]): string | undefined {
@@ -125,9 +134,10 @@ function sectionPath(section: string[]): string | undefined {
 }
 
 /**
- * Whether the change writes assertions in `path`, from a unified `git diff -M` that may cover several files: the file
- * is new, or an added line in its own hunks contains an assertion call. Context lines, headers and other files'
- * hunks never count, and a file that only moved is not new.
+ * Whether the change touches assertions in `path`, from a unified `git diff -M` that may cover several files: the file
+ * is new, or an added or removed line in its own hunks holds an assertion, so deleting or weakening one is judged as
+ * much as writing one. Context lines, headers and other files' hunks never count, and a file that only moved is not
+ * new.
  */
 export function assertionTouched(diff: string, path: string): boolean {
   const sections: string[][] = []
@@ -143,8 +153,9 @@ export function assertionTouched(diff: string, path: string): boolean {
         inHunk = true
       } else if (!inHunk) {
         if (line.startsWith('new file mode')) return true
-      } else if (line.startsWith('+') && ASSERTION_CALL.test(line)) {
-        return true
+      } else if (/^[+-]/.test(line)) {
+        const content = line.slice(1)
+        if (ASSERTION_LINE.some((shape) => shape.test(content))) return true
       }
     }
   }
