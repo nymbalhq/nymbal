@@ -499,13 +499,13 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     {
       name: 'e2e',
       command:
-        'CI=1 pnpm --filter @nymbal/e2e exec playwright test --project astro --project nextjs --grep-invert @visual',
+        'CI=1 pnpm --filter @nymbalhq/e2e exec playwright test --project astro --project nextjs --grep-invert @visual',
       needs: ['build', 'compose up'],
     },
     {
       name: 'e2e admin',
       command:
-        'CI=1 NYMBAL_E2E_ADMIN=true pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert @visual',
+        'CI=1 NYMBAL_E2E_ADMIN=true pnpm --filter @nymbalhq/e2e exec playwright test --project admin --grep-invert @visual',
       needs: ['build', 'compose up'],
     },
   )
