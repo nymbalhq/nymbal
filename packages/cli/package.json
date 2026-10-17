@@ -1,8 +1,13 @@
 {
-  "name": "@nymbalhq/cli",
+  "name": "nymbal",
   "version": "0.1.0",
   "description": "nymbal — developer CLI for the Nymbal platform",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/cli"
+  },
   "publishConfig": {
     "access": "public"
   },

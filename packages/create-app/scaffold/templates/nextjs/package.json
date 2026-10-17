@@ -17,7 +17,7 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "@nymbalhq/cli": "^0.1.0",
+    "nymbal": "^0.1.0",
     "@nymbalhq/config": "^0.1.0",
     "@nymbalhq/platform": "^0.1.0",
     "next": "^15.0.2",

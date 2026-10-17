@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Interactive commerce UI as native Web Components",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/web-components"
+  },
   "publishConfig": {
     "access": "public"
   },

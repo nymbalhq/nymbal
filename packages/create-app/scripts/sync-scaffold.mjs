@@ -20,9 +20,10 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/test-factories',
 ])
 
-// Static list of publishable @nymbalhq/* packages. Add an entry here when a new package ships.
+// Static list of publishable scaffold dependencies (@nymbalhq/* and the `nymbal` CLI).
+// Add an entry here when a new package ships.
 export const NYMBAL_PACKAGE_DIRS = [
-  { name: '@nymbalhq/cli', dir: 'cli' },
+  { name: 'nymbal', dir: 'cli' },
   { name: '@nymbalhq/config', dir: 'config' },
   { name: '@nymbalhq/http', dir: 'http' },
   { name: '@nymbalhq/importers', dir: 'importers' },
@@ -102,7 +103,7 @@ export function rewriteWorkspaceVersions(deps, versions) {
 export function mergePackageJson(templatePkg, versions) {
   // Deps from the old root-manifest that are injected into every flat project
   const rootDeps = {
-    '@nymbalhq/cli': `^${versions['@nymbalhq/cli']}`,
+    nymbal: `^${versions['nymbal']}`,
     '@nymbalhq/config': `^${versions['@nymbalhq/config']}`,
     '@nymbalhq/platform': `^${versions['@nymbalhq/platform']}`,
   }

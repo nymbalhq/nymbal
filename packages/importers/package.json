@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Source migration importers for Nymbal (WooCommerce, etc.)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/importers"
+  },
   "publishConfig": {
     "access": "public"
   },
