@@ -950,3 +950,46 @@ describe('AC-18 (P1-01): the CI integration job runs proof-kit-services with a M
     expect(problems).toEqual([])
   })
 })
+
+describe('AC-18 (P1-01): tests-fail-on-base in CI has the Mailpit the kit tests need', () => {
+  it('AC-18: every CI job whose gate.ts call runs tests-fail-on-base has a Mailpit service, and the step sees NYMBAL_TEST_MAILPIT_URL at its published 8025', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const problems: string[] = []
+    let runsBase = 0
+    for (const call of gateCalls(ci, PR_OPENED)) {
+      const run = execute(ci, PR_OPENED).find((r) => r.job === call.job)!
+      const only = flag(call.args, '--only')
+      const external = flag(call.args, '--services') === 'external'
+      const input = {
+        full: true,
+        base: 'HEAD',
+        changed: [],
+        mutated: [],
+        ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+        services: external ? 'external' : 'compose',
+        postgresUrl: run.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+        mailpitUrl: run.env.NYMBAL_TEST_MAILPIT_URL || undefined,
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+      } as PlanInput
+      for (const step of plan(input).steps) {
+        if (step.name !== 'tests-fail-on-base' || step.skip !== undefined) continue
+        runsBase += 1
+        const mailpit = Object.values(ci.jobs[call.job]?.services ?? {}).find((s) =>
+          (s?.image ?? '').startsWith('axllent/mailpit'),
+        )
+        const published = publishedPorts(mailpit)
+        const api = { ...run.env, ...assignedIn(step.command) }.NYMBAL_TEST_MAILPIT_URL
+        if (mailpit === undefined) problems.push(`${call.job}: no Mailpit service`)
+        if (!api) problems.push(`${call.job}: NYMBAL_TEST_MAILPIT_URL is not set`)
+        else if (portOf(api) !== published.get('8025')) {
+          problems.push(
+            `${call.job}: ${api} is not Mailpit's published 8025 (${published.get('8025')})`,
+          )
+        }
+      }
+    }
+    expect(runsBase, 'CI gate.ts calls that run tests-fail-on-base').toBeGreaterThan(0)
+    expect(problems).toEqual([])
+  })
+})
