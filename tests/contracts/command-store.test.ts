@@ -31,10 +31,9 @@ describe('CommandStore contract — SQLite', () => {
   it('schema is migrated — products table exists', async () => {
     const store = await buildStore()
     expect(store.kind).toBe('sqlite')
-    if (store.kind === 'sqlite') {
-      const result = store.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get()
-      expect(result).toBeTruthy()
-    }
+    if (store.kind !== 'sqlite') throw new Error(`expected a sqlite store, got ${store.kind}`)
+    const result = store.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get()
+    expect(result).toEqual({ name: 'products' })
     await store.close()
   })
 

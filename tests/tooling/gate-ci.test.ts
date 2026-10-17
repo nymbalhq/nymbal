@@ -227,18 +227,22 @@ describe('AC-2: --services external and --no-build meet their needs only when th
             expect(ran.includes('lint') && ran.includes('sentinels'), label).toBe(true)
             for (const name of ['integration-postgres', 'tests-fail-on-base']) {
               expect(ran.includes(name), `${label}: ${name}`).toBe(postgresMet)
-              if (!postgresMet) {
-                expect(stepNamed(steps, name)?.detail ?? '', label).toContain(
-                  'NYMBAL_TEST_POSTGRES_URL',
-                )
-              }
+              // A step skipped for want of Postgres names the variable that would run it.
+              const detail = stepNamed(steps, name)?.detail ?? ''
+              expect(
+                postgresMet || detail.includes('NYMBAL_TEST_POSTGRES_URL'),
+                `${label}: ${name} skipped with detail "${detail}"`,
+              ).toBe(true)
             }
             // Round 1, AC-11: the E2E steps need build only, so Postgres no longer gates them.
             for (const name of E2E_NAMES) {
               expect(ran.includes(name), `${label}: ${name}`).toBe(buildMet)
-              if (!buildMet) {
-                expect(stepNamed(steps, name)?.detail ?? '', label).toMatch(/artefact|artifact/i)
-              }
+              // A step skipped for want of the build names the missing artefact.
+              const detail = stepNamed(steps, name)?.detail ?? ''
+              expect(
+                buildMet || /artefact|artifact/i.test(detail),
+                `${label}: ${name} skipped with detail "${detail}"`,
+              ).toBe(true)
             }
           }
         }
@@ -377,13 +381,13 @@ describe('AC-8: an --only run is red when any selected step is skipped for a fai
 
   it.concurrent.for(CASES)(
     'AC-8: one green step plus one skipped for $why exits non-zero',
-    async ({ args, env, skipped, detail }, { expect: expectHere }) => {
+    async ({ args, env, skipped, detail }, { expect }) => {
       const { code, output, steps } = await gateCli(repo, [...COMMON, ...args], env)
-      expectHere(stepNamed(steps, 'lint')?.status, output).toBe('ok')
+      expect(stepNamed(steps, 'lint')?.status, output).toBe('ok')
       const skip = stepNamed(steps, skipped)
-      expectHere(skip?.status, output).toBe('skipped')
-      expectHere(skip?.detail ?? '', output).toMatch(detail)
-      expectHere(code, output).toBe(1)
+      expect(skip?.status, output).toBe('skipped')
+      expect(skip?.detail ?? '', output).toMatch(detail)
+      expect(code, output).toBe(1)
     },
   )
 

@@ -520,9 +520,10 @@ describe('AC-19: the real sentinel set', () => {
         .slice(from - 1, to)
         .join('\n')
       expect(named, `${location} must still be the defect`).toMatch(want.marks)
-      if (want.kind === 'present') {
-        expect(got.patch.trim(), 'a present sentinel is header only').toBe('')
-      }
+      expect(
+        want.kind !== 'present' || got.patch.trim() === '',
+        `a present sentinel is header only: ${location}`,
+      ).toBe(true)
     },
   )
 

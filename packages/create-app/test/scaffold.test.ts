@@ -231,10 +231,9 @@ describe('scaffold/templates built output', () => {
 
       it('all @nymbalhq/* deps match semver range', () => {
         const deps = pkg['dependencies'] as Record<string, string>
-        for (const [key, val] of Object.entries(deps)) {
-          if (key.startsWith('@nymbalhq/')) {
-            expect(val).toMatch(/^\^\d+\.\d+\.\d+/)
-          }
+        const scoped = Object.entries(deps).filter(([key]) => key.startsWith('@nymbalhq/'))
+        for (const [key, val] of scoped) {
+          expect(val, key).toMatch(/^\^\d+\.\d+\.\d+/)
         }
       })
 
@@ -320,20 +319,22 @@ describe('scaffold() output', () => {
       })
 
       it('has no workspace:* anywhere in output', async () => {
-        const check = async (dirPath: string): Promise<void> => {
+        const sources: string[] = []
+        const collect = async (dirPath: string): Promise<void> => {
           const entries = await readdir(dirPath, { withFileTypes: true })
           for (const e of entries) {
             if (e.name === 'node_modules') continue
             const full = resolve(dirPath, e.name)
-            if (e.isDirectory()) {
-              await check(full)
-            } else if (e.name.endsWith('.json') || e.name.endsWith('.ts') || e.name.endsWith('.mjs')) {
-              const content = await readFile(full, 'utf8')
-              expect(content, `workspace:* found in ${full}`).not.toContain('workspace:')
-            }
+            if (e.isDirectory()) await collect(full)
+            else if (/\.(json|ts|mjs)$/.test(e.name)) sources.push(full)
           }
         }
-        await check(outDir)
+        await collect(outDir)
+        expect(sources.length).toBeGreaterThan(0)
+        for (const full of sources) {
+          const content = await readFile(full, 'utf8')
+          expect(content, `workspace:* found in ${full}`).not.toContain('workspace:')
+        }
       })
 
       it('nymbal.config.ts contains the chosen currency', async () => {

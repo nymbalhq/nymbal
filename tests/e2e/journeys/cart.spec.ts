@@ -48,20 +48,17 @@ test.describe('Cart interactions', () => {
     await expect(cartItem).toBeVisible({ timeout: 10000 })
 
     // Mini-cart badge should reflect 1 item added
-    const afterAddText = await badge.textContent().catch(() => '')
-    const afterAddCount = parseInt(afterAddText ?? '0', 10) || 0
-    expect(afterAddCount).toBe(initialCount + 1)
+    await expect(badge).toHaveText(String(initialCount + 1))
 
     // Remove the item using the correct remove-item-* testid rendered by cart-drawer.ts
     const variantId = await cartItem.getAttribute('data-testid').then(id => id?.replace('cart-item-', ''))
     const removeBtn = cartItem.locator(`[data-testid="remove-item-${variantId}"]`)
     await expect(removeBtn).toBeVisible({ timeout: 5000 })
     await removeBtn.click()
-    await page.waitForTimeout(800)
 
-    // Cart should be empty again
-    const afterRemoveText = await badge.textContent().catch(() => '')
-    const afterRemoveCount = parseInt(afterRemoveText ?? '0', 10) || 0
-    expect(afterRemoveCount).toBe(initialCount)
+    // Cart should be empty again: the item leaves the drawer and the badge returns to its initial count
+    // (the badge is empty at zero).
+    await expect(drawer.locator(`[data-testid="cart-item-${variantId}"]`)).toHaveCount(0)
+    await expect(badge).toHaveText(initialCount > 0 ? String(initialCount) : '')
   })
 })

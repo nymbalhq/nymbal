@@ -41,9 +41,8 @@ describe('nymbalConfigSchema', () => {
     cfg.template = 'svelte'
     const result = nymbalConfigSchema.safeParse(cfg)
     expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(result.error.issues.some((i) => i.path.includes('template'))).toBe(true)
-    }
+    const issues = result.success ? [] : result.error.issues
+    expect(issues.some((i) => i.path.includes('template'))).toBe(true)
   })
 
   it('rejects cloud=local with documentStore=dynamodb', () => {
@@ -62,11 +61,8 @@ describe('nymbalConfigSchema', () => {
     // Security stays middleware — should fail cross-field rule
     const result = nymbalConfigSchema.safeParse(cfg)
     expect(result.success).toBe(false)
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) => i.message.includes('middleware')),
-      ).toBe(true)
-    }
+    const issues = result.success ? [] : result.error.issues
+    expect(issues.some((i) => i.message.includes('middleware'))).toBe(true)
   })
 
   it('rejects malformed rate-limit key', () => {

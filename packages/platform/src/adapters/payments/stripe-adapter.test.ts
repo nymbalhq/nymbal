@@ -105,20 +105,16 @@ describe('createStripePaymentsAdapter — client configuration', () => {
 
   it('throws PaymentError not_configured when secretKey is missing', () => {
     expect(() => buildAdapter({ ...baseConfig, secretKey: '' })).toThrowError(PaymentError)
-    try {
-      buildAdapter({ ...baseConfig, secretKey: '' })
-    } catch (err) {
-      expect((err as PaymentError).code).toBe('payment.not_configured')
-    }
+    expect(() => buildAdapter({ ...baseConfig, secretKey: '' })).toThrowError(
+      expect.objectContaining({ code: 'payment.not_configured' }),
+    )
   })
 
   it('throws PaymentError not_configured when webhookSecret is missing', () => {
     expect(() => buildAdapter({ ...baseConfig, webhookSecret: '' })).toThrowError(PaymentError)
-    try {
-      buildAdapter({ ...baseConfig, webhookSecret: '' })
-    } catch (err) {
-      expect((err as PaymentError).code).toBe('payment.not_configured')
-    }
+    expect(() => buildAdapter({ ...baseConfig, webhookSecret: '' })).toThrowError(
+      expect.objectContaining({ code: 'payment.not_configured' }),
+    )
   })
 
   it('declares payments kind, stripe provider and capabilities, and initialize resolves', async () => {

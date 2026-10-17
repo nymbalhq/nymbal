@@ -239,10 +239,8 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const order = await env.repos.order.findByOrderNumber('WC-1000').catch(() => null)
-    if (order) {
-      expect(order.status).toBe('delivered')
-    }
+    const order = await env.repos.order.findByOrderNumber('WC-1000')
+    expect(order?.status).toBe('delivered')
   })
 
   it('resumes from state file without re-importing', async () => {

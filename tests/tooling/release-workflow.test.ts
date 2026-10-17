@@ -286,12 +286,10 @@ describe('AC-12: release.yml', () => {
       const skippable = ancestors(jobs, s.job).filter((a) =>
         MENTIONS_CHANGESETS.test(jobs[a]?.if ?? ''),
       )
-      if (skippable.length > 0) {
-        expect(
-          jobs[s.job]!.if ?? '',
-          `${s.job} needs ${skippable} and must still run when they are skipped`,
-        ).toMatch(SURVIVES_SKIPPED_NEEDS)
-      }
+      expect(
+        skippable.length === 0 || SURVIVES_SKIPPED_NEEDS.test(jobs[s.job]!.if ?? ''),
+        `${s.job} needs ${skippable} and must still run when they are skipped: if "${jobs[s.job]!.if ?? ''}"`,
+      ).toBe(true)
       // A re-run replays the original push; only checking out the branch tip sees the release commit.
       for (const checkout of (jobs[s.job]!.steps ?? []).filter((x) =>
         x.uses?.startsWith('actions/checkout@'),
@@ -346,11 +344,10 @@ describe('AC-12: release.yml', () => {
       /chore\(release\)/,
     )
     expect(condition, `${id} must not depend on changesets`).not.toMatch(MENTIONS_CHANGESETS)
-    if (needsOf(job).length > 0) {
-      expect(condition, `${id} needs ${needsOf(job)} and must run when they are skipped`).toMatch(
-        SURVIVES_SKIPPED_NEEDS,
-      )
-    }
+    expect(
+      needsOf(job).length === 0 || SURVIVES_SKIPPED_NEEDS.test(condition),
+      `${id} needs ${needsOf(job)} and must run when they are skipped: if "${condition}"`,
+    ).toBe(true)
   })
 })
 
