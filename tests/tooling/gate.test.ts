@@ -642,7 +642,8 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
     )
   })
 
-  describe('AC-18: in the gate:full plan the E2E steps need build and compose up', () => {
+  // P0-03 part 2 round 1 AC-11 supersedes the compose-up half: the E2E journeys run on SQLite and need only the build.
+  describe('AC-18: in the gate:full plan the E2E steps need build', () => {
     const fullPlan = plan({
       full: true,
       base: 'abc1234',
@@ -666,20 +667,21 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
       return fullPlan.filter((s) => s.name.startsWith('e2e')).map((s) => s.name)
     }
 
-    it('AC-18: the E2E steps run iff build and compose up are both ok; otherwise each is skipped naming the red need', async () => {
+    it('AC-18: the E2E steps run iff build is ok, whatever compose up does; a red build skips each, naming build', async () => {
       expect(e2eSteps().length).toBeGreaterThanOrEqual(2)
       for (const red of [[], ['compose up'], ['build'], ['build', 'compose up']]) {
         const cwd = scratch()
         const result = await run(rehearse(red), { cwd, budgetMs: 600_000 })
         const ran = fullPlan.filter((_, i) => existsSync(join(cwd, `e2e-ran-${i}`)))
+        const buildOk = !red.includes('build')
         expect(
           ran.map((s) => s.name),
           `red: ${red.join(', ')}`,
-        ).toEqual(red.length === 0 ? e2eSteps() : [])
+        ).toEqual(buildOk ? e2eSteps() : [])
         for (const name of e2eSteps()) {
           const step = result.steps.find((s) => s.name === name)
-          expect(step?.status, name).toBe(red.length === 0 ? 'ok' : 'skipped')
-          for (const need of red) expect(step?.detail, name).toContain(need)
+          expect(step?.status, name).toBe(buildOk ? 'ok' : 'skipped')
+          if (!buildOk) expect(step?.detail, name).toContain('build')
         }
       }
     })
