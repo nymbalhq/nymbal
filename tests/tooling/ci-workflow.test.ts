@@ -10,6 +10,7 @@ import { type PlanInput, plan } from '../../scripts/gate'
 // the job keys found textually, so a misread fails loudly instead of passing quietly.
 
 const WORKFLOW = fileURLToPath(new URL('../../.github/workflows/ci.yml', import.meta.url))
+const NIGHTLY = fileURLToPath(new URL('../../.github/workflows/nightly.yml', import.meta.url))
 
 type Yaml = string | null | Yaml[] | { [key: string]: Yaml }
 
@@ -163,8 +164,22 @@ function parseYaml(source: string): Yaml {
   return doc
 }
 
-type Step = { name?: string; uses?: string; run?: string; with?: Record<string, string> }
-type Job = { needs?: string | string[]; steps?: Step[] }
+type Step = {
+  name?: string
+  uses?: string
+  run?: string
+  if?: string
+  env?: Record<string, string>
+  with?: Record<string, string>
+}
+type Job = {
+  needs?: string | string[]
+  if?: string
+  env?: Record<string, string>
+  services?: Record<string, { image?: string }>
+  strategy?: { matrix?: Record<string, Yaml> }
+  steps?: Step[]
+}
 
 /** The job keys as they appear in the text: two-space keys under the top-level `jobs:`. */
 function textualJobIds(source: string): string[] {
@@ -178,16 +193,22 @@ function textualJobIds(source: string): string[] {
   return ids
 }
 
-function loadJobs(): Record<string, Job> {
-  const source = readFileSync(WORKFLOW, 'utf8')
-  const doc = parseYaml(source) as { jobs?: Record<string, Job> }
+type Workflow = { env?: Record<string, string>; jobs: Record<string, Job> }
+
+function loadWorkflow(file: string): Workflow {
+  const source = readFileSync(file, 'utf8')
+  const doc = parseYaml(source) as { env?: Record<string, string>; jobs?: Record<string, Job> }
   const jobs = doc.jobs ?? {}
   const parsed = Object.keys(jobs)
   const textual = textualJobIds(source)
   if (parsed.join(',') !== textual.join(',')) {
-    throw new Error(`ci.yml misread: parsed jobs [${parsed}] but the text has [${textual}]`)
+    throw new Error(`${file} misread: parsed jobs [${parsed}] but the text has [${textual}]`)
   }
-  return jobs
+  return { ...(doc.env === undefined ? {} : { env: doc.env }), jobs }
+}
+
+function loadJobs(): Record<string, Job> {
+  return loadWorkflow(WORKFLOW).jobs
 }
 
 const runs = (job: Job): string[] =>
@@ -357,5 +378,468 @@ describe('AC-4: one artefact, built once, downloaded by every other job', () => 
     }
     expect(invocations).toBeGreaterThan(0)
     expect(failures).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 1 (review of PR #4): AC-7 (the base every gate.ts call gets), AC-11 (no Postgres in the E2E jobs),
+// AC-12 (nightly E2E runs only the mobile projects).
+// A workflow is "run" for one event: `${{ }}` expressions are evaluated against a github (and matrix) context, step
+// and job `if:` conditions are honoured, env is layered workflow < job < step on top of GitHub's default GITHUB_*
+// variables, and `$VAR` / `${VAR}` in an argument is expanded from that env or from a plain `VAR=value` line earlier
+// in the same script. Anything outside that subset throws, so an unreadable form fails loudly rather than passing.
+// ---------------------------------------------------------------------------------------------------------------
+
+type Ctx = Record<string, unknown>
+
+/** A GitHub Actions expression, for the subset workflows use: literals, context paths, ! == != && || and calls. */
+function evaluate(source: string, ctx: Ctx): unknown {
+  const tokens: string[] = []
+  const re =
+    /\s*('(?:[^']|'')*'|\d+(?:\.\d+)?|==|!=|&&|\|\||[!(),]|[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*)/y
+  let at = 0
+  while (at < source.length) {
+    if (/^\s*$/.test(source.slice(at))) break
+    re.lastIndex = at
+    const m = re.exec(source)
+    if (m === null) throw new Error(`unsupported expression at "${source.slice(at)}": ${source}`)
+    tokens.push(m[1]!)
+    at = re.lastIndex
+  }
+  let i = 0
+  const peek = (): string | undefined => tokens[i]
+  const take = (expected?: string): string => {
+    const t = tokens[i]
+    if (t === undefined || (expected !== undefined && t !== expected)) {
+      throw new Error(`expected ${expected ?? 'a token'} in: ${source}`)
+    }
+    i += 1
+    return t
+  }
+  const truthy = (v: unknown): boolean =>
+    v !== null && v !== undefined && v !== false && v !== '' && v !== 0
+  const equal = (a: unknown, b: unknown): boolean => {
+    if ((a ?? null) === null || (b ?? null) === null) return (a ?? null) === (b ?? null)
+    if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase() === b.toLowerCase()
+    return a === b
+  }
+  const call = (name: string, args: unknown[]): unknown => {
+    const s = args.map((a) => text(a))
+    switch (name) {
+      case 'format':
+        return s[0]!.replace(/\{(\d+)\}/g, (_, n: string) => s[Number(n) + 1] ?? '')
+      case 'startsWith':
+        return s[0]!.toLowerCase().startsWith(s[1]!.toLowerCase())
+      case 'endsWith':
+        return s[0]!.toLowerCase().endsWith(s[1]!.toLowerCase())
+      case 'contains':
+        return Array.isArray(args[0])
+          ? args[0].some((x) => equal(x, args[1]))
+          : s[0]!.toLowerCase().includes(s[1]!.toLowerCase())
+      case 'success':
+      case 'always':
+        return true
+      case 'failure':
+      case 'cancelled':
+        return false
+      default:
+        throw new Error(`unsupported function ${name}() in: ${source}`)
+    }
+  }
+  function primary(): unknown {
+    const t = take()
+    if (t === '(') {
+      const v = or()
+      take(')')
+      return v
+    }
+    if (t.startsWith("'")) return t.slice(1, -1).replaceAll("''", "'")
+    if (/^\d/.test(t)) return Number(t)
+    if (t === 'true') return true
+    if (t === 'false') return false
+    if (t === 'null') return null
+    if (peek() === '(') {
+      take('(')
+      const args: unknown[] = []
+      while (peek() !== ')') {
+        args.push(or())
+        if (peek() === ',') take(',')
+      }
+      take(')')
+      return call(t, args)
+    }
+    let v: unknown = ctx
+    for (const key of t.split('.')) {
+      v = v !== null && typeof v === 'object' ? (v as Ctx)[key] : undefined
+    }
+    return v ?? null
+  }
+  function unary(): unknown {
+    if (peek() === '!') {
+      take('!')
+      return !truthy(unary())
+    }
+    return primary()
+  }
+  function comparison(): unknown {
+    const left = unary()
+    const op = peek()
+    if (op === '==' || op === '!=') {
+      take()
+      const right = unary()
+      return op === '==' ? equal(left, right) : !equal(left, right)
+    }
+    return left
+  }
+  function and(): unknown {
+    let v = comparison()
+    while (peek() === '&&') {
+      take()
+      const r = comparison()
+      v = truthy(v) ? r : v
+    }
+    return v
+  }
+  function or(): unknown {
+    let v = and()
+    while (peek() === '||') {
+      take()
+      const r = and()
+      v = truthy(v) ? v : r
+    }
+    return v
+  }
+  const value = or()
+  if (i !== tokens.length) throw new Error(`unparsed "${tokens.slice(i).join(' ')}" in: ${source}`)
+  return value
+}
+
+function text(v: unknown): string {
+  return v === null || v === undefined ? '' : String(v)
+}
+
+function substitute(source: string, ctx: Ctx): string {
+  return source.replace(/\$\{\{([\s\S]*?)\}\}/g, (_, expr: string) => text(evaluate(expr, ctx)))
+}
+
+function holds(condition: string | undefined, ctx: Ctx): boolean {
+  if (condition === undefined) return true
+  const bare = /^\s*\$\{\{([\s\S]*)\}\}\s*$/.exec(condition)?.[1] ?? condition
+  const v = evaluate(bare, ctx)
+  return v !== null && v !== undefined && v !== false && v !== '' && v !== 0
+}
+
+function layer(env: Record<string, string> | undefined, ctx: Ctx): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env ?? {}).map(([k, v]) => [k, substitute(text(v), ctx)]),
+  )
+}
+
+/** Every combination of a job's matrix (one empty combination when it has none). */
+function combinations(job: Job): Array<Record<string, string>> {
+  const matrix = job.strategy?.matrix
+  if (matrix === undefined) return [{}]
+  let out: Array<Record<string, string>> = [{}]
+  for (const [key, values] of Object.entries(matrix)) {
+    if (!Array.isArray(values)) throw new Error(`unsupported matrix entry ${key}`)
+    out = out.flatMap((combo) => values.map((v) => ({ ...combo, [key]: text(v) })))
+  }
+  return out
+}
+
+type Executed = {
+  job: string
+  matrix: Record<string, string>
+  script: string
+  env: Record<string, string>
+}
+
+/** The run scripts that execute for an event, expressions substituted, with the env each one sees. */
+function execute(workflow: Workflow, github: Ctx): Executed[] {
+  const defaults: Record<string, string> = {
+    GITHUB_EVENT_NAME: text(github.event_name),
+    GITHUB_BASE_REF: text(github.base_ref),
+    GITHUB_HEAD_REF: text(github.head_ref),
+    GITHUB_REF: text(github.ref),
+    GITHUB_REF_NAME: text(github.ref_name),
+    GITHUB_SHA: text(github.sha),
+  }
+  const out: Executed[] = []
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    for (const matrix of combinations(job)) {
+      const base: Ctx = {
+        github,
+        matrix,
+        inputs: {},
+        vars: {},
+        secrets: {},
+        runner: { os: 'Linux' },
+      }
+      const wfEnv = layer(workflow.env, { ...base, env: {} })
+      if (!holds(job.if, { ...base, env: wfEnv })) continue
+      const jobEnv = { ...wfEnv, ...layer(job.env, { ...base, env: wfEnv }) }
+      for (const step of job.steps ?? []) {
+        if (typeof step.run !== 'string') continue
+        const stepEnv = { ...jobEnv, ...layer(step.env, { ...base, env: jobEnv }) }
+        const ctx = { ...base, env: stepEnv }
+        if (!holds(step.if, ctx)) continue
+        out.push({
+          job: id,
+          matrix,
+          script: substitute(step.run.replace(/\\\n/g, ' '), ctx),
+          env: { ...defaults, ...stepEnv },
+        })
+      }
+    }
+  }
+  return out
+}
+
+/** `$VAR` and `${VAR}` expanded from the env, or from a plain `VAR=value` line before `offset` in the script. */
+function expand(word: string, run: Executed, offset: number): string {
+  const assigned: Record<string, string> = {}
+  for (const line of run.script.slice(0, offset).split('\n')) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(\S.*)?$/.exec(line)
+    if (m !== null) assigned[m[1]!] = words(m[2] ?? '').join(' ')
+  }
+  return word.replace(
+    /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g,
+    (raw, a, b) => {
+      const name = (a ?? b) as string
+      const value = assigned[name] ?? run.env[name]
+      if (value === undefined)
+        throw new Error(`${run.job}: $${name} is not set where gate.ts reads it`)
+      return value
+    },
+  )
+}
+
+type GateCall = { job: string; args: string[]; base: string | undefined }
+
+function gateCalls(workflow: Workflow, github: Ctx): GateCall[] {
+  const calls: GateCall[] = []
+  for (const run of execute(workflow, github)) {
+    for (const m of run.script.matchAll(
+      /(?:scripts\/gate\.ts|\bpnpm\s+(?:run\s+)?gate:full)([^\n;&|]*)/g,
+    )) {
+      const args = words(m[1] ?? '').map((w) => expand(w, run, m.index))
+      calls.push({ job: run.job, args, base: flag(args, '--base') })
+    }
+  }
+  return calls
+}
+
+const sha = (c: string): string => c.repeat(40)
+
+const PR_OPENED = {
+  event_name: 'pull_request',
+  base_ref: 'dev',
+  head_ref: 'feat/P0-03-ci-rebuilt',
+  ref: 'refs/pull/4/merge',
+  ref_name: '4/merge',
+  sha: sha('1'),
+  event: {
+    action: 'opened',
+    number: 4,
+    pull_request: { base: { ref: 'dev', sha: sha('2') }, head: { ref: 'feat/x', sha: sha('3') } },
+  },
+}
+
+const CI_EVENTS: Array<{ label: string; github: Ctx; expected: string }> = [
+  { label: 'a pull request opened into dev', github: PR_OPENED, expected: 'origin/dev' },
+  {
+    // A synchronize payload carries `before` too: it must not win over the base branch.
+    label: 'a pull request into main, synchronized',
+    github: {
+      ...PR_OPENED,
+      base_ref: 'main',
+      event: {
+        action: 'synchronize',
+        number: 5,
+        before: sha('4'),
+        after: sha('5'),
+        pull_request: {
+          base: { ref: 'main', sha: sha('6') },
+          head: { ref: 'feat/x', sha: sha('5') },
+        },
+      },
+    },
+    expected: 'origin/main',
+  },
+  {
+    label: 'a push to dev',
+    github: {
+      event_name: 'push',
+      base_ref: '',
+      head_ref: '',
+      ref: 'refs/heads/dev',
+      ref_name: 'dev',
+      sha: sha('a'),
+      event: { before: sha('b'), after: sha('a'), ref: 'refs/heads/dev' },
+    },
+    expected: sha('b'),
+  },
+  {
+    label: 'a push to main',
+    github: {
+      event_name: 'push',
+      base_ref: '',
+      head_ref: '',
+      ref: 'refs/heads/main',
+      ref_name: 'main',
+      sha: sha('c'),
+      event: { before: sha('d'), after: sha('c'), ref: 'refs/heads/main' },
+    },
+    expected: sha('d'),
+  },
+]
+
+const NIGHTLY_EVENTS: Array<{ label: string; github: Ctx }> = [
+  {
+    label: 'schedule',
+    github: {
+      event_name: 'schedule',
+      base_ref: '',
+      ref: 'refs/heads/main',
+      ref_name: 'main',
+      sha: sha('e'),
+      event: { schedule: '0 3 * * *' },
+    },
+  },
+  {
+    label: 'workflow_dispatch',
+    github: {
+      event_name: 'workflow_dispatch',
+      base_ref: '',
+      ref: 'refs/heads/dev',
+      ref_name: 'dev',
+      sha: sha('f'),
+      event: { inputs: {} },
+    },
+  },
+]
+
+/** Jobs that call gate.ts but check out a shallow clone, where neither origin/<base> nor `before` resolves. */
+function shallowGateJobs(workflow: Workflow, calls: GateCall[]): string[] {
+  return [...new Set(calls.map((c) => c.job))].filter((id) => {
+    const checkout = (workflow.jobs[id]?.steps ?? []).find((s) =>
+      s.uses?.startsWith('actions/checkout@'),
+    )
+    return text(checkout?.with?.['fetch-depth']) !== '0'
+  })
+}
+
+describe('AC-7: CI passes the right base to every gate.ts call', () => {
+  const ci = loadWorkflow(WORKFLOW)
+  const prJobs = new Set(gateCalls(ci, PR_OPENED).map((c) => c.job))
+
+  it.each(CI_EVENTS)(
+    'AC-7: on $label, every gate.ts call in ci.yml passes --base $expected',
+    ({ github, expected }) => {
+      const calls = gateCalls(ci, github)
+      expect(calls.length, 'gate.ts calls that run').toBeGreaterThan(0)
+      const missing = [...prJobs].filter((id) => !calls.some((c) => c.job === id))
+      expect(missing, 'jobs that call gate.ts on a pull request but not on this event').toEqual([])
+      const wrong = calls
+        .filter((c) => c.base !== expected)
+        .map((c) => `${c.job}: --base ${c.base ?? '(none)'}`)
+      expect(wrong).toEqual([])
+      expect(shallowGateJobs(ci, calls), 'gate.ts jobs without fetch-depth: 0').toEqual([])
+    },
+  )
+
+  it.each(NIGHTLY_EVENTS)(
+    'AC-7: on $label, every gate.ts or gate:full call in nightly.yml passes --base HEAD~1',
+    ({ github }) => {
+      const nightly = loadWorkflow(NIGHTLY)
+      const calls = gateCalls(nightly, github)
+      expect(calls.length, 'gate calls that run').toBeGreaterThan(0)
+      const wrong = calls
+        .filter((c) => c.base !== 'HEAD~1')
+        .map((c) => `${c.job}: --base ${c.base ?? '(none)'}`)
+      expect(wrong).toEqual([])
+      expect(shallowGateJobs(nightly, calls), 'gate jobs without fetch-depth: 0').toEqual([])
+    },
+  )
+})
+
+describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call still runs its E2E step', () => {
+  it('AC-11: no ci.yml e2e job has a Postgres service; each runs its e2e step with the env the job gives it', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const e2eJobs = Object.keys(ci.jobs).filter((id) => id.startsWith('e2e'))
+    expect(e2eJobs.length).toBeGreaterThanOrEqual(3)
+
+    const failures: string[] = []
+    let e2eSteps = 0
+    for (const id of e2eJobs) {
+      for (const [name, service] of Object.entries(ci.jobs[id]?.services ?? {})) {
+        if (/postgres/i.test(`${name} ${service?.image ?? ''}`)) {
+          failures.push(`${id}: starts service ${name} (${service?.image ?? 'no image'})`)
+        }
+      }
+    }
+    for (const call of gateCalls(ci, PR_OPENED).filter((c) => e2eJobs.includes(c.job))) {
+      const only = flag(call.args, '--only')
+      const run = execute(ci, PR_OPENED).find((r) => r.job === call.job)
+      const steps = plan({
+        full: true,
+        base: 'HEAD',
+        changed: [],
+        mutated: [],
+        ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+        services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+        postgresUrl: run?.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+      }).steps
+      for (const step of steps.filter((s) => s.name.startsWith('e2e'))) {
+        e2eSteps += 1
+        if (step.skip !== undefined)
+          failures.push(`${call.job}: "${step.name}" is skipped: ${step.skip}`)
+      }
+    }
+    expect(e2eSteps).toBeGreaterThanOrEqual(e2eJobs.length)
+    expect(failures).toEqual([])
+  })
+})
+
+/** The projects a `playwright test` command selects: `--project a`, `--project=a`, or `--project a b`. */
+function playwrightProjects(script: string): string[][] {
+  const found: string[][] = []
+  for (const m of script.matchAll(/\bplaywright\s+test\b([^\n;&|]*)/g)) {
+    const args = words(m[1] ?? '')
+    const projects: string[] = []
+    for (let k = 0; k < args.length; k += 1) {
+      const arg = args[k]!
+      if (arg.startsWith('--project=')) projects.push(arg.slice('--project='.length))
+      else if (arg === '--project') {
+        while (k + 1 < args.length && !args[k + 1]!.startsWith('-')) {
+          k += 1
+          projects.push(args[k]!)
+        }
+      }
+    }
+    found.push(projects)
+  }
+  return found
+}
+
+describe('AC-12: nightly e2e-full runs only the -mobile projects', () => {
+  it('AC-12: for each matrix target, every playwright test call in e2e-full selects exactly <target>-mobile', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    expect(nightly.jobs['e2e-full'], 'nightly.yml has an e2e-full job').toBeDefined()
+    const targets = combinations(nightly.jobs['e2e-full']!).map((m) => m.target)
+    expect(targets.length).toBeGreaterThanOrEqual(3)
+
+    const runs = execute(nightly, NIGHTLY_EVENTS[0]!.github).filter((r) => r.job === 'e2e-full')
+    for (const target of targets) {
+      const calls = runs
+        .filter((r) => r.matrix.target === target)
+        .flatMap((r) => playwrightProjects(r.script))
+      expect(calls.length, `${target}: playwright test calls`).toBeGreaterThan(0)
+      for (const projects of calls) {
+        expect([...projects].sort(), `${target}: --project values`).toEqual([`${target}-mobile`])
+      }
+    }
   })
 })

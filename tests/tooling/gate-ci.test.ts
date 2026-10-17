@@ -1,11 +1,18 @@
-import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { execFile, execFileSync, spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
-import { afterEach, describe, expect, it } from 'vitest'
-import { type PlanInput, plan, run, type Step, type StepSpec } from '../../scripts/gate'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import {
+  artefactPresent,
+  type PlanInput,
+  plan,
+  run,
+  type Step,
+  type StepSpec,
+} from '../../scripts/gate'
 
 // Acceptance tests for P0-03 part 2, AC-1 and AC-2: the flags CI jobs pass to `scripts/gate.ts --full`.
 // `--only` reaches `plan` as `only`; `--services external` as `services: 'external'` with the
@@ -41,8 +48,12 @@ function slug(name: string): string {
   return name.replace(/[^A-Za-z0-9]+/g, '-')
 }
 
-function rehearse(steps: StepSpec[]): StepSpec[] {
-  return steps.map((s) => ({ ...s, command: `touch 'ran-${slug(s.name)}'` }))
+/** Every command replaced by one that leaves a marker; the steps named in `red` then exit 1. */
+function rehearse(steps: StepSpec[], red: string[] = []): StepSpec[] {
+  return steps.map((s) => ({
+    ...s,
+    command: `touch 'ran-${slug(s.name)}'${red.includes(s.name) ? '; exit 1' : ''}`,
+  }))
 }
 
 const created: string[] = []
@@ -59,10 +70,11 @@ function scratch(): string {
 /** Plans with `extra`, runs the rehearsal, and returns the step results and the names whose command ran. */
 async function rehearsal(
   extra: Partial<PlanInput>,
+  red: string[] = [],
 ): Promise<{ steps: Step[]; ran: string[]; planned: StepSpec[] }> {
   const planned = fullPlan(extra)
   const cwd = scratch()
-  const result = await run(rehearse(planned), { cwd, budgetMs: 600_000 })
+  const result = await run(rehearse(planned, red), { cwd, budgetMs: 600_000 })
   const markers = new Set(readdirSync(cwd))
   const ran = planned.map((s) => s.name).filter((n) => markers.has(`ran-${slug(n)}`))
   return { steps: result.steps, ran, planned }
@@ -221,8 +233,9 @@ describe('AC-2: --services external and --no-build meet their needs only when th
                 )
               }
             }
+            // Round 1, AC-11: the E2E steps need build only, so Postgres no longer gates them.
             for (const name of E2E_NAMES) {
-              expect(ran.includes(name), `${label}: ${name}`).toBe(postgresMet && buildMet)
+              expect(ran.includes(name), `${label}: ${name}`).toBe(buildMet)
               if (!buildMet) {
                 expect(stepNamed(steps, name)?.detail ?? '', label).toMatch(/artefact|artifact/i)
               }
@@ -231,5 +244,279 @@ describe('AC-2: --services external and --no-build meet their needs only when th
         }
       }
     }
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Round 1 (review of PR #4): AC-8, AC-9, AC-11 (gate side), AC-12 (Stryker quoting)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Environment for a child gate.ts: no Postgres URL and no git variables leaking in from the parent. */
+function childEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  delete env.NYMBAL_TEST_POSTGRES_URL
+  for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key]
+  return { ...env, ...extra }
+}
+
+function write(root: string, path: string, text: string): void {
+  mkdirSync(dirname(join(root, path)), { recursive: true })
+  writeFileSync(join(root, path), text)
+}
+
+type CliRun = { code: number | null; output: string; steps: Step[] }
+
+function gateCli(cwd: string, args: string[], env: Record<string, string>): Promise<CliRun> {
+  return new Promise((resolvePromise) => {
+    execFile(
+      TSX,
+      [GATE, ...args],
+      { cwd, env: childEnv(env), encoding: 'utf8', timeout: 50_000 },
+      (error, stdout, stderr) => {
+        const code =
+          error === null ? 0 : typeof error.code === 'number' ? error.code : (error.code ?? null)
+        const json = stdout
+          .split('\n')
+          .reverse()
+          .find((line) => line.startsWith('{'))
+        let steps: Step[] = []
+        try {
+          steps = json === undefined ? [] : ((JSON.parse(json) as { steps?: Step[] }).steps ?? [])
+        } catch {
+          steps = []
+        }
+        resolvePromise({ code: code as number | null, output: `${stdout}${stderr}`, steps })
+      },
+    )
+  })
+}
+
+describe('AC-8: an --only run is red when any selected step is skipped for a failed precondition', () => {
+  // A scratch repository the real gate.ts runs in: `lint` is a script that succeeds, Stryker's mutate set matches
+  // nothing that changed, and one package builds but has no dist (so the artefact is absent). Every case selects
+  // `lint`, which runs green, plus one step that is skipped: so "every selected step was skipped" never holds.
+  let repo = ''
+
+  function scratchRepo(): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-only-')))
+    write(
+      dir,
+      'package.json',
+      JSON.stringify({
+        name: 'gate-scratch',
+        private: true,
+        scripts: { lint: 'true', typecheck: 'true', sentinels: 'true' },
+      }),
+    )
+    write(dir, 'stryker.config.mjs', "export default { mutate: ['src/**/*.ts'] }\n")
+    write(dir, 'src/index.ts', 'export {}\n')
+    write(
+      dir,
+      'packages/lib/package.json',
+      JSON.stringify({ name: 'lib', scripts: { build: 'tsup' } }),
+    )
+    const git = (args: string[]): void => {
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@example.com',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ],
+        { cwd: dir, env: childEnv({}), stdio: 'ignore' },
+      )
+    }
+    git(['init', '-q'])
+    git(['add', '-A'])
+    git(['commit', '-q', '-m', 'scratch'])
+    return dir
+  }
+
+  beforeAll(() => {
+    repo = scratchRepo()
+  })
+  afterAll(() => {
+    if (repo !== '') rmSync(repo, { recursive: true, force: true })
+  })
+
+  const COMMON = ['--full', '--base', 'HEAD', '--json']
+
+  const CASES: Array<{
+    why: string
+    args: string[]
+    env: Record<string, string>
+    skipped: string
+    detail: RegExp
+  }> = [
+    {
+      why: 'NYMBAL_TEST_POSTGRES_URL unset under --services external',
+      args: ['--only', 'lint,integration-postgres', '--services', 'external'],
+      env: {},
+      skipped: 'integration-postgres',
+      detail: /NYMBAL_TEST_POSTGRES_URL/,
+    },
+    {
+      why: 'the artefact missing under --no-build',
+      args: ['--only', 'lint,e2e astro', '--services', 'external', '--no-build'],
+      env: { NYMBAL_TEST_POSTGRES_URL: CI_URL },
+      skipped: 'e2e astro',
+      detail: /artefact|artifact/i,
+    },
+    {
+      why: 'a need that --only leaves out',
+      args: ['--only', 'lint,integration-postgres'],
+      env: {},
+      skipped: 'integration-postgres',
+      detail: /compose up/,
+    },
+  ]
+
+  it.concurrent.for(CASES)(
+    'AC-8: one green step plus one skipped for $why exits non-zero',
+    async ({ args, env, skipped, detail }, { expect: expectHere }) => {
+      const { code, output, steps } = await gateCli(repo, [...COMMON, ...args], env)
+      expectHere(stepNamed(steps, 'lint')?.status, output).toBe('ok')
+      const skip = stepNamed(steps, skipped)
+      expectHere(skip?.status, output).toBe('skipped')
+      expectHere(skip?.detail ?? '', output).toMatch(detail)
+      expectHere(code, output).toBe(1)
+    },
+  )
+
+  it('AC-8: one green step plus one idle skip (nothing to mutate) stays green', async () => {
+    const { code, output, steps } = await gateCli(repo, [...COMMON, '--only', 'lint,stryker'], {})
+    expect(stepNamed(steps, 'lint')?.status, output).toBe('ok')
+    expect(stepNamed(steps, 'stryker')?.status, output).toBe('skipped')
+    expect(code, output).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Every output the artefact must hold, relative to the root of the tree `artefactTree` lays out. */
+const EXPECTED_OUTPUTS = [
+  'packages/alpha/dist',
+  'packages/beta/dist',
+  'templates/astro/dist',
+  'templates/nextjs/.next',
+  'apps/admin/dist',
+]
+
+/** A repository-shaped tree with a complete build: two built packages, one that does not build, both templates, admin. */
+function artefactTree(): string {
+  const root = scratch()
+  const manifest = (name: string, build?: string): string =>
+    JSON.stringify({ name, ...(build === undefined ? {} : { scripts: { build } }) })
+  write(root, 'packages/alpha/package.json', manifest('@nymbal/alpha', 'tsup'))
+  write(root, 'packages/alpha/dist/index.js', 'export {}\n')
+  write(root, 'packages/beta/package.json', manifest('@nymbal/beta', 'tsup'))
+  write(root, 'packages/beta/dist/index.js', 'export {}\n')
+  write(root, 'packages/fixtures-only/package.json', manifest('@nymbal/fixtures-only'))
+  write(root, 'templates/astro/package.json', manifest('@nymbal/template-astro', 'astro build'))
+  write(root, 'templates/astro/dist/index.html', '<!doctype html>\n')
+  write(root, 'templates/nextjs/package.json', manifest('@nymbal/template-nextjs', 'next build'))
+  write(root, 'templates/nextjs/.next/BUILD_ID', 'scratch\n')
+  write(root, 'apps/admin/package.json', manifest('@nymbal/admin', 'tsc -b && vite build'))
+  write(root, 'apps/admin/dist/index.html', '<!doctype html>\n')
+  return root
+}
+
+describe('AC-9: artefactPresent requires every expected build output', () => {
+  it('AC-9: property: the tree is present iff no expected output is missing (a package with no build needs no dist)', () => {
+    expect(typeof artefactPresent, 'scripts/gate.ts exports artefactPresent(root)').toBe('function')
+    fc.assert(
+      fc.property(fc.subarray(EXPECTED_OUTPUTS), (removed) => {
+        const root = artefactTree()
+        for (const path of removed) rmSync(join(root, path), { recursive: true, force: true })
+        expect(artefactPresent(root), `removed: [${removed.join(', ')}]`).toBe(removed.length === 0)
+      }),
+      { numRuns: 40, examples: EXPECTED_OUTPUTS.map((path) => [[path]]) },
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('AC-11: the E2E steps need build only, not compose up', () => {
+  const POSTGRES_STEPS = ['integration-postgres', 'tests-fail-on-base']
+
+  it('AC-11: with compose up red, every E2E step still runs while the Postgres steps are skipped', async () => {
+    const { steps, ran } = await rehearsal({}, ['compose up'])
+    expect(stepNamed(steps, 'compose up')?.status).toBe('red')
+    for (const name of POSTGRES_STEPS) expect(ran, name).not.toContain(name)
+    expect(ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+  })
+
+  it('AC-11: --services external without a URL, over a present artefact, runs every E2E step and skips the Postgres ones', async () => {
+    const { steps, ran } = await rehearsal({
+      services: 'external',
+      postgresUrl: undefined,
+      noBuild: true,
+      artefactPresent: true,
+    })
+    for (const name of POSTGRES_STEPS) {
+      expect(stepNamed(steps, name)?.detail ?? '', name).toContain('NYMBAL_TEST_POSTGRES_URL')
+    }
+    expect(ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+  })
+
+  it('AC-11: --only with build and the E2E steps (compose up left out) runs them all', async () => {
+    const { ran } = await rehearsal({ only: ['build', ...E2E_NAMES] })
+    expect(ran).toEqual(['build', ...E2E_NAMES])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The argv a step's command hands to Stryker, read by running it under sh with stubs that print their arguments. */
+function strykerArgv(command: string, cwd: string): string[] {
+  const print = `printf '%s\\037' "$@"`
+  const stub = join(cwd, 'node_modules/.bin/stryker')
+  write(cwd, 'node_modules/.bin/stryker', `#!/bin/sh\n${print}\n`)
+  execFileSync('chmod', ['755', stub])
+  const script = `pnpm() { ${print}; }\nnpx() { ${print}; }\nstryker() { ${print}; }\n${command}\n`
+  const child = spawnSync('/bin/sh', ['-c', script], { cwd, encoding: 'utf8' })
+  if (child.status !== 0) {
+    throw new Error(`sh exited ${child.status}: ${child.stderr}\ncommand: ${command}`)
+  }
+  return child.stdout.split('\x1f').slice(0, -1)
+}
+
+function mutateArgument(argv: string[]): string | undefined {
+  const at = argv.findIndex((a) => a === '--mutate' || a.startsWith('--mutate='))
+  if (at === -1) return undefined
+  const arg = argv[at] as string
+  return arg.startsWith('--mutate=') ? arg.slice('--mutate='.length) : argv[at + 1]
+}
+
+describe('AC-12: the Stryker --mutate argument is shell-quoted', () => {
+  // Anything a file name may hold except the comma that joins the list (and NUL, newline, \x1f, used above).
+  const PATH_CHARS = [...'abcXYZ019/._- \'"$`\;&|()*?[]!#~{}<>=%^@+']
+
+  it('AC-12: property: whatever the changed paths hold, Stryker receives exactly them in --mutate', () => {
+    const cwd = scratch()
+    const path = fc
+      .string({ unit: fc.constantFrom(...PATH_CHARS), minLength: 1, maxLength: 14 })
+      .map((s) => `packages/sdk/src/${s}.ts`)
+    fc.assert(
+      fc.property(fc.array(path, { minLength: 1, maxLength: 4 }), (mutated) => {
+        const stryker = plan({ ...BASE_INPUT, mutated }).steps.find((s) => s.name === 'stryker')
+        expect(stryker?.skip, 'stryker runs when the mutate set is not empty').toBeUndefined()
+        const command = stryker?.command ?? ''
+        const received = mutateArgument(strykerArgv(command, cwd))
+        expect(received?.split(','), command).toEqual(mutated)
+      }),
+      {
+        numRuns: 60,
+        examples: [
+          [["packages/sdk/src/it's.ts"]],
+          [['packages/sdk/src/a b.ts', "packages/x/'$(id)'.ts"]],
+        ],
+      },
+    )
   })
 })

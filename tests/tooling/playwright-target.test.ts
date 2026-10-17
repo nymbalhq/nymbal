@@ -76,3 +76,40 @@ describe('AC-3: NYMBAL_E2E_TARGET starts only that target and the API', () => {
     },
   )
 })
+
+// Round 1, AC-10: an unknown NYMBAL_E2E_TARGET makes the config throw, naming the allowed targets. The evaluation
+// prints only the error's message, so a name in a stack frame or a code frame cannot satisfy the assertion.
+const PRINT_OUTCOME = `import(process.env.NYMBAL_TEST_CONFIG_URL).then(
+  (m) => process.stdout.write('\\n' + JSON.stringify({ webServer: m.default.webServer ?? null }) + '\\n'),
+  (e) => process.stdout.write('\\n' + JSON.stringify({ error: String(e && e.message !== undefined ? e.message : e) }) + '\\n'),
+)`
+
+async function outcome(
+  env: Record<string, string>,
+): Promise<{ error?: string; webServer?: unknown }> {
+  const base: NodeJS.ProcessEnv = { ...process.env }
+  for (const key of CONFIG_ENV) delete base[key]
+  const { stdout } = await exec(TSX, ['--eval', PRINT_OUTCOME], {
+    cwd: E2E_DIR,
+    env: { ...base, ...env, NYMBAL_TEST_CONFIG_URL: CONFIG_URL },
+  })
+  return JSON.parse(stdout.trimEnd().split('\n').pop() ?? '{}') as {
+    error?: string
+    webServer?: unknown
+  }
+}
+
+const ALLOWED_TARGETS = ['astro', 'nextjs', 'admin']
+
+describe('AC-10: an unknown NYMBAL_E2E_TARGET makes the Playwright config throw', () => {
+  it.each(['astr0', 'Astro', 'next', 'astro-mobile'])(
+    'AC-10: with CI=1 and NYMBAL_E2E_TARGET=%s, evaluating the config throws naming every allowed target',
+    async (typo) => {
+      const result = await outcome({ CI: '1', NYMBAL_E2E_TARGET: typo })
+      const booted = ((result.webServer ?? []) as WebServer[]).map((s) => s.command)
+      expect(result.error, `no error; it would boot: ${booted.join(' | ')}`).toBeDefined()
+      const unnamed = ALLOWED_TARGETS.filter((t) => !(result.error ?? '').includes(t))
+      expect(unnamed, result.error).toEqual([])
+    },
+  )
+})
