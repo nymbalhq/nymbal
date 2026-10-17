@@ -52,6 +52,7 @@ describe('AC-11: the kit store sends kernel email to the sink', () => {
     })
     const buyer = `ac11-${randomUUID()}@proof-kit.test`
     const shopper = storefrontClient(store.baseUrl)
+    const before = await sink.messages({ to: buyer })
 
     const cart = await shopper.call('GET', '/api/cart')
     expect(cart.status, JSON.stringify(cart.body)).toBe(200)
@@ -70,8 +71,11 @@ describe('AC-11: the kit store sends kernel email to the sink', () => {
 
     const received = await sink.waitFor({ to: buyer }, { timeoutMs: 10_000 })
 
+    const after = await sink.messages({ to: buyer })
+
     expect(received).toHaveLength(1)
     expect(received[0]!.subject).toContain(orderNumber)
-    expect(await sink.messages({ to: buyer })).toHaveLength(received.length)
+    expect(received[0]!.to).toContain(buyer)
+    expect(after.length).toBe(before.length + 1)
   }, 30_000)
 })
