@@ -98,7 +98,7 @@ describe('rewriteWorkspaceVersions', () => {
 
 describe('mergePackageJson', () => {
   const versions = {
-    '@nymbal/cli': '0.1.0',
+    nymbal: '0.1.0',
     '@nymbal/config': '0.1.0',
     '@nymbal/platform': '0.1.0',
     '@nymbal/sdk': '0.1.0',
@@ -140,7 +140,8 @@ describe('mergePackageJson', () => {
   it('injects root-manifest deps', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
-    expect(deps['@nymbal/cli']).toBe('^0.1.0')
+    // P0-04 AC-4: the CLI publishes unscoped as `nymbal`.
+    expect(deps['nymbal']).toBe('^0.1.0')
     expect(deps['@nymbal/config']).toBe('^0.1.0')
     expect(deps['@nymbal/platform']).toBe('^0.1.0')
   })
