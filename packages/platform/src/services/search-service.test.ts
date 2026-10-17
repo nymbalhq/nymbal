@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SearchAdapter } from '@nymbal/types'
+import type { SearchAdapter } from '@nymbalhq/types'
 import { createSearchService } from './search-service.js'
 import { createLogger } from '../logger.js'
 

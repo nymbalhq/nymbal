@@ -1,4 +1,4 @@
-import { type Address, type HttpAdapter } from '@nymbal/types'
+import { type Address, type HttpAdapter } from '@nymbalhq/types'
 import type { CheckoutService } from '../services/checkout-service.js'
 import { ok, fail, renderError } from './envelope.js'
 

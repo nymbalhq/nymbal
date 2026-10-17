@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 import { formatPrice, formatDate } from '@/lib/format'
 import styles from '@/styles/pages/account.module.css'
 

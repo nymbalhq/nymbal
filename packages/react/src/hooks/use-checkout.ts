@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { Address } from '@nymbal/types'
-import type { CheckoutState, ShippingMethod } from '@nymbal/sdk'
+import type { Address } from '@nymbalhq/types'
+import type { CheckoutState, ShippingMethod } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseCheckoutReturn extends CheckoutState {

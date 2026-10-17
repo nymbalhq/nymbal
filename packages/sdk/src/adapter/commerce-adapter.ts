@@ -1,4 +1,4 @@
-import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbal/types'
+import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbalhq/types'
 import type {
   DenormalisedProduct,
   ProductListParams,

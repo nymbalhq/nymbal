@@ -1,5 +1,5 @@
-import type { DenormalisedVariant, DenormalisedProduct } from '@nymbal/sdk'
-import type { VariantOption } from '@nymbal/types'
+import type { DenormalisedVariant, DenormalisedProduct } from '@nymbalhq/sdk'
+import type { VariantOption } from '@nymbalhq/types'
 import { NymbalElement } from '../base-element.js'
 import { injectStyles } from '../styles.js'
 

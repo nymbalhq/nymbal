@@ -14,7 +14,7 @@ import {
   type Order,
   type OrderLineItem,
   type OrderStatus,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'

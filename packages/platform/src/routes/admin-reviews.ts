@@ -1,4 +1,4 @@
-import type { HttpAdapter, ReviewsAdapter } from '@nymbal/types'
+import type { HttpAdapter, ReviewsAdapter } from '@nymbalhq/types'
 import type { ReviewRepository } from '../repositories/review.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'

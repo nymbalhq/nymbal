@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/web-components",
+  "name": "@nymbalhq/web-components",
   "version": "0.1.0",
   "description": "Interactive commerce UI as native Web Components",
   "license": "MIT",
@@ -29,8 +29,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nymbal/sdk": "workspace:*",
-    "@nymbal/types": "workspace:*"
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/types": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setupMockClient, createMockClient, type createMockStore } from '../testing/index.js'
 import { registerClient } from '../registry.js'
-import type { Facet } from '@nymbal/types'
+import type { Facet } from '@nymbalhq/types'
 
 const sampleFacets: Facet[] = [
   {

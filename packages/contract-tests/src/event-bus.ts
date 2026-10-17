@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { EventBusAdapter, NymbalEvent } from '@nymbal/types'
+import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
 
 function makeEvent(type: string, payload: unknown = {}): NymbalEvent {
   return {

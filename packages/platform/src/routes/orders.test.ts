@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { registerOrderRoutes } from './orders.js'
-import type { HttpAdapter, RouteHandler, RequestContext } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, RequestContext } from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 
 function makeAdapter() {

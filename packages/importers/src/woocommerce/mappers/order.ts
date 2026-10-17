@@ -1,5 +1,5 @@
-import type { Address, OrderLineItem, OrderStatus } from '@nymbal/types'
-import type { OrderImportInput } from '@nymbal/platform'
+import type { Address, OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import type { OrderImportInput } from '@nymbalhq/platform'
 import type { WcOrder, WcAddress } from '../client.js'
 import { v7 as uuidv7 } from 'uuid'
 

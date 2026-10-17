@@ -1,4 +1,4 @@
-import type { Customer, CustomerAddress } from '@nymbal/types'
+import type { Customer, CustomerAddress } from '@nymbalhq/types'
 import { createAddress } from './order.js'
 import { nextId, isoDate } from './prng.js'
 

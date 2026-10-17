@@ -1,6 +1,6 @@
 import { existsSync, statSync, readFileSync } from 'node:fs'
 import { join, extname } from 'node:path'
-import type { HttpAdapter } from '@nymbal/types'
+import type { HttpAdapter } from '@nymbalhq/types'
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -68,7 +68,7 @@ export function registerAdminStaticRoute(adapter: HttpAdapter, distPath: string)
     return {
       status: 503,
       headers: { 'Content-Type': 'text/plain' },
-      body: 'Admin not built. Run: pnpm --filter @nymbal/admin build',
+      body: 'Admin not built. Run: pnpm --filter @nymbalhq/admin build',
     }
   })
 }

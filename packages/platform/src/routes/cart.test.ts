@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCartRoutes, type RegisterCartRoutesDeps } from './cart.js'
-import type { HttpAdapter, RouteHandler, Cart, CartItem } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Cart, CartItem } from '@nymbalhq/types'
 
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()

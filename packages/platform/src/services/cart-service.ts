@@ -10,7 +10,7 @@ import {
   type CartItem,
   type DocumentStoreAdapter,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { EventPublisher } from '../events/publisher.js'
 
 const COLLECTION = 'carts'

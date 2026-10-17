@@ -177,19 +177,19 @@ importers:
       '@clack/prompts':
         specifier: ^0.7.0
         version: 0.7.0
-      '@nymbal/config':
+      '@nymbalhq/config':
         specifier: workspace:*
         version: link:../config
-      '@nymbal/http':
+      '@nymbalhq/http':
         specifier: workspace:*
         version: link:../http
-      '@nymbal/importers':
+      '@nymbalhq/importers':
         specifier: workspace:*
         version: link:../importers
-      '@nymbal/platform':
+      '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../platform
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
       citty:
@@ -208,7 +208,7 @@ importers:
 
   packages/config:
     dependencies:
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
       jiti:
@@ -227,7 +227,7 @@ importers:
 
   packages/contract-tests:
     dependencies:
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -268,10 +268,10 @@ importers:
       '@fastify/cors':
         specifier: ^8.5.0
         version: 8.5.0
-      '@nymbal/config':
+      '@nymbalhq/config':
         specifier: workspace:*
         version: link:../config
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
       fastify:
@@ -293,13 +293,13 @@ importers:
 
   packages/importers:
     dependencies:
-      '@nymbal/config':
+      '@nymbalhq/config':
         specifier: workspace:*
         version: link:../config
-      '@nymbal/platform':
+      '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../platform
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
       uuid:
@@ -324,10 +324,10 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
-      '@nymbal/config':
+      '@nymbalhq/config':
         specifier: workspace:*
         version: link:../config
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
       bcryptjs:
@@ -394,13 +394,13 @@ importers:
 
   packages/react:
     dependencies:
-      '@nymbal/sdk':
+      '@nymbalhq/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
-      '@nymbal/web-components':
+      '@nymbalhq/web-components':
         specifier: workspace:*
         version: link:../web-components
     devDependencies:
@@ -437,7 +437,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -450,7 +450,7 @@ importers:
 
   packages/test-factories:
     dependencies:
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -475,10 +475,10 @@ importers:
 
   packages/web-components:
     dependencies:
-      '@nymbal/sdk':
+      '@nymbalhq/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
     devDependencies:
@@ -494,13 +494,13 @@ importers:
       '@astrojs/node':
         specifier: ^8.3.4
         version: 8.3.4(astro@4.16.19(@types/node@22.19.17)(rollup@4.60.2)(typescript@5.9.3))
-      '@nymbal/sdk':
+      '@nymbalhq/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../packages/types
-      '@nymbal/web-components':
+      '@nymbalhq/web-components':
         specifier: workspace:*
         version: link:../../packages/web-components
       '@stripe/stripe-js':
@@ -512,16 +512,16 @@ importers:
 
   templates/nextjs:
     dependencies:
-      '@nymbal/react':
+      '@nymbalhq/react':
         specifier: workspace:*
         version: link:../../packages/react
-      '@nymbal/sdk':
+      '@nymbalhq/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../packages/types
-      '@nymbal/web-components':
+      '@nymbalhq/web-components':
         specifier: workspace:*
         version: link:../../packages/web-components
       '@stripe/react-stripe-js':
@@ -555,13 +555,13 @@ importers:
 
   tests/contracts:
     dependencies:
-      '@nymbal/contract-tests':
+      '@nymbalhq/contract-tests':
         specifier: workspace:*
         version: link:../../packages/contract-tests
-      '@nymbal/platform':
+      '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../../packages/platform
-      '@nymbal/types':
+      '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../packages/types
     devDependencies:
@@ -574,13 +574,13 @@ importers:
 
   tests/e2e:
     dependencies:
-      '@nymbal/config':
+      '@nymbalhq/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@nymbal/http':
+      '@nymbalhq/http':
         specifier: workspace:*
         version: link:../../packages/http
-      '@nymbal/platform':
+      '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../../packages/platform
     devDependencies:
@@ -593,7 +593,7 @@ importers:
 
   tests/fixtures:
     dependencies:
-      '@nymbal/platform':
+      '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../../packages/platform
 

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { Category } from '@nymbal/types'
+import type { Category } from '@nymbalhq/types'
 import styles from '@/styles/pages/home.module.css'
 
 interface CategoryNavProps {

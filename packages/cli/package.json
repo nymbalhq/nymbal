@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/cli",
+  "name": "@nymbalhq/cli",
   "version": "0.1.0",
   "description": "nymbal — developer CLI for the Nymbal platform",
   "license": "MIT",
@@ -32,11 +32,11 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
-    "@nymbal/config": "workspace:*",
-    "@nymbal/http": "workspace:*",
-    "@nymbal/importers": "workspace:*",
-    "@nymbal/platform": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/http": "workspace:*",
+    "@nymbalhq/importers": "workspace:*",
+    "@nymbalhq/platform": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "citty": "^0.1.6",
     "picocolors": "^1.1.1"
   },

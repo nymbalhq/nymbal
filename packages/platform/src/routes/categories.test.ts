@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { registerCategoryRoutes } from './categories.js'
-import type { HttpAdapter, RouteHandler, Category } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Category } from '@nymbalhq/types'
 
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()

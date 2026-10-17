@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'es2022',
-  external: ['react', 'react-dom', '@nymbal/sdk', '@nymbal/web-components', '@nymbal/types'],
+  external: ['react', 'react-dom', '@nymbalhq/sdk', '@nymbalhq/web-components', '@nymbalhq/types'],
 })

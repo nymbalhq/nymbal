@@ -1,4 +1,4 @@
-import type { HttpAdapter, StockAdjustmentReason, VariantOption } from '@nymbal/types'
+import type { HttpAdapter, StockAdjustmentReason, VariantOption } from '@nymbalhq/types'
 import type { InventoryService } from '../services/inventory-service.js'
 import type { ProductService } from '../services/product-service.js'
 import type { Repositories } from '../repositories/index.js'

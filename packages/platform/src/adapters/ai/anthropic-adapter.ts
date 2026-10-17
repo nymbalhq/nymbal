@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { AiAdapter, Logger } from '@nymbal/types'
-import { AdapterError } from '@nymbal/types'
+import type { AiAdapter, Logger } from '@nymbalhq/types'
+import { AdapterError } from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 export interface AnthropicAiAdapterConfig {

@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/contracts",
+  "name": "@nymbalhq/contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,9 +7,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nymbal/contract-tests": "workspace:*",
-    "@nymbal/platform": "workspace:*",
-    "@nymbal/types": "workspace:*"
+    "@nymbalhq/contract-tests": "workspace:*",
+    "@nymbalhq/platform": "workspace:*",
+    "@nymbalhq/types": "workspace:*"
   },
   "devDependencies": {
     "stripe": "^17.4.0",

@@ -4,7 +4,7 @@ import {
   type EventBusAdapter,
   type HttpAdapter,
   type Role,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 

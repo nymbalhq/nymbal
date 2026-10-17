@@ -1,4 +1,4 @@
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import { createProductRepository, type ProductRepository } from './product.js'
 import { createVariantRepository, type VariantRepository } from './variant.js'

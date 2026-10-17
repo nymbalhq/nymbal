@@ -12,7 +12,7 @@ import {
   type OrderLineItem,
   type PaymentsAdapter,
   type PaymentIntent,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'

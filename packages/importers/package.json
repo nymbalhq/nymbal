@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/importers",
+  "name": "@nymbalhq/importers",
   "version": "0.1.0",
   "description": "Source migration importers for Nymbal (WooCommerce, etc.)",
   "license": "MIT",
@@ -27,9 +27,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nymbal/config": "workspace:*",
-    "@nymbal/platform": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/platform": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "uuid": "^10.0.0"
   },
   "devDependencies": {

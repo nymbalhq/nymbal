@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EVT_ORDER_PAID, EVT_PAYMENT_CAPTURED } from '@nymbal/types'
+import { EVT_ORDER_PAID, EVT_PAYMENT_CAPTURED } from '@nymbalhq/types'
 import { createTestEnv, testAddr } from './setup.js'
 
 // The platform checkout flow:

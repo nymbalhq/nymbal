@@ -4,7 +4,7 @@ import type {
   Variant,
   VariantStatus,
   Category,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { nextId, isoDate, randInt } from './prng.js'
 
 export function createProduct(overrides?: Partial<Product>): Product {

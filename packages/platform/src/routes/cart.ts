@@ -1,4 +1,4 @@
-import { type HttpAdapter, type ResponseCookie, type ResponseEnvelope } from '@nymbal/types'
+import { type HttpAdapter, type ResponseCookie, type ResponseEnvelope } from '@nymbalhq/types'
 import type { CartService } from '../services/cart-service.js'
 import type { ProductRepository } from '../repositories/product.js'
 import type { VariantRepository } from '../repositories/variant.js'

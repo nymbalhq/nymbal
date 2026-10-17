@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'node22',
-  external: ['@nymbal/platform', '@nymbal/types', '@nymbal/config'],
+  external: ['@nymbalhq/platform', '@nymbalhq/types', '@nymbalhq/config'],
 })

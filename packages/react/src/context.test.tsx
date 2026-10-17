@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { NymbalProvider, useNymbalClient } from './context.js'
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 
 const mockClient = { cart: { getState: () => ({}), subscribe: () => () => {} } } as unknown as NymbalClient
 

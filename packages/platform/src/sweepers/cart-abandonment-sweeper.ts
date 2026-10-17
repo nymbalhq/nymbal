@@ -3,7 +3,7 @@ import {
   type Cart,
   type DocumentStoreAdapter,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { EventPublisher } from '../events/publisher.js'
 import type { SweeperHandle } from './inventory-reservation-sweeper.js'
 

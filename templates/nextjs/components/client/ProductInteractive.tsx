@@ -1,7 +1,7 @@
 'use client'
 
-import type { DenormalisedProduct, DenormalisedVariant } from '@nymbal/sdk'
-import { useProduct, VariantSelector, AddToCart } from '@nymbal/react'
+import type { DenormalisedProduct, DenormalisedVariant } from '@nymbalhq/sdk'
+import { useProduct, VariantSelector, AddToCart } from '@nymbalhq/react'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/pdp.module.css'
 

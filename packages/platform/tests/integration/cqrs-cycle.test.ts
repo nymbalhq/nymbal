@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EVT_PRODUCT_CREATED, EVT_PRODUCT_PUBLISHED } from '@nymbal/types'
+import { EVT_PRODUCT_CREATED, EVT_PRODUCT_PUBLISHED } from '@nymbalhq/types'
 import { createTestEnv } from './setup.js'
 
 describe('CQRS cycle: write → event → projection → query', () => {

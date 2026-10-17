@@ -1,4 +1,4 @@
-import type { Category, DocumentStoreAdapter, HttpAdapter } from '@nymbal/types'
+import type { Category, DocumentStoreAdapter, HttpAdapter } from '@nymbalhq/types'
 import { ok, renderError } from './envelope.js'
 
 export function registerCategoryRoutes(

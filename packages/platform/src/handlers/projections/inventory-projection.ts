@@ -5,7 +5,7 @@ import {
   type EventHandler,
   type InventoryChangedV1Payload,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { VariantRepository } from '../../repositories/variant.js'
 import type { ProductRepository } from '../../repositories/product.js'
 import type { ProductCategoryRepository } from '../../repositories/product-category.js'

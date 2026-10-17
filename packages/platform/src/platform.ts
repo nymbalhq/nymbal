@@ -1,5 +1,5 @@
-import type { NymbalConfig } from '@nymbal/config'
-import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
 import { createCommandStore, type CommandStore } from './db/command-store.js'
 import { createDocumentStore } from './document-store/factory.js'
 import { createEventBus } from './event-bus/factory.js'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AdapterError } from '@nymbal/types'
+import { AdapterError } from '@nymbalhq/types'
 import { createTestEnv, testAddr } from './setup.js'
 
 // Note: The SQLite CommandStore in test mode uses a simplified transaction wrapper

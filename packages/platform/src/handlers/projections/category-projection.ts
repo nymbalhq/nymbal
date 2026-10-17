@@ -9,7 +9,7 @@ import {
   type EventBusAdapter,
   type EventHandler,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 const CATEGORIES = 'categories'
 

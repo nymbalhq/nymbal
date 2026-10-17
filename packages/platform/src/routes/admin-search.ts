@@ -1,4 +1,4 @@
-import type { HttpAdapter } from '@nymbal/types'
+import type { HttpAdapter } from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 import type { ProductService } from '../services/product-service.js'
 import type { Repositories } from '../repositories/index.js'

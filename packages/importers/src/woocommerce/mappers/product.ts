@@ -1,4 +1,4 @@
-import type { ProductCreateInput } from '@nymbal/platform'
+import type { ProductCreateInput } from '@nymbalhq/platform'
 import type { WcProduct, WcVariation } from '../client.js'
 import { slugify } from './category.js'
 

@@ -21,10 +21,10 @@ describe('resolveMigrations', () => {
     expect(resolveMigrations(root)).toBe(monoPath)
   })
 
-  it('returns installed @nymbal/platform migrations when neither local nor monorepo dir exists', () => {
-    // The package dir lives at <root>/node_modules/@nymbal/platform; its
+  it('returns installed @nymbalhq/platform migrations when neither local nor monorepo dir exists', () => {
+    // The package dir lives at <root>/node_modules/@nymbalhq/platform; its
     // package.json proves the package root, and migrations/ ships inside it.
-    const pkgDir = resolve(root, 'node_modules', '@nymbal/platform')
+    const pkgDir = resolve(root, 'node_modules', '@nymbalhq/platform')
     const pkgJson = resolve(pkgDir, 'package.json')
     const pkgMigrations = resolve(pkgDir, 'migrations')
     mockExistsSync.mockImplementation((p) => p === pkgJson || p === pkgMigrations)
@@ -32,9 +32,9 @@ describe('resolveMigrations', () => {
   })
 
   it('walks up to a hoisted node_modules to find the installed package', () => {
-    // Deeply nested project root; @nymbal/platform is hoisted at the workspace root.
+    // Deeply nested project root; @nymbalhq/platform is hoisted at the workspace root.
     const nested = '/workspace/apps/store'
-    const pkgDir = resolve('/workspace', 'node_modules', '@nymbal/platform')
+    const pkgDir = resolve('/workspace', 'node_modules', '@nymbalhq/platform')
     const pkgJson = resolve(pkgDir, 'package.json')
     const pkgMigrations = resolve(pkgDir, 'migrations')
     mockExistsSync.mockImplementation((p) => p === pkgJson || p === pkgMigrations)
@@ -53,20 +53,20 @@ describe('resolvePackageDir', () => {
   // main entry being CJS-resolvable. It locates node_modules/<pkg> directly.
   it('finds the package dir in the nearest node_modules', () => {
     const root = '/project'
-    const pkgDir = resolve(root, 'node_modules', '@nymbal/platform')
+    const pkgDir = resolve(root, 'node_modules', '@nymbalhq/platform')
     mockExistsSync.mockImplementation((p) => p === resolve(pkgDir, 'package.json'))
-    expect(resolvePackageDir(root, '@nymbal/platform')).toBe(pkgDir)
+    expect(resolvePackageDir(root, '@nymbalhq/platform')).toBe(pkgDir)
   })
 
   it('walks up the tree to find a hoisted package', () => {
     const nested = '/workspace/packages/cli'
-    const pkgDir = resolve('/workspace', 'node_modules', '@nymbal/platform')
+    const pkgDir = resolve('/workspace', 'node_modules', '@nymbalhq/platform')
     mockExistsSync.mockImplementation((p) => p === resolve(pkgDir, 'package.json'))
-    expect(resolvePackageDir(nested, '@nymbal/platform')).toBe(pkgDir)
+    expect(resolvePackageDir(nested, '@nymbalhq/platform')).toBe(pkgDir)
   })
 
   it('returns null when the package is not installed anywhere up the tree', () => {
     mockExistsSync.mockReturnValue(false)
-    expect(resolvePackageDir('/project', '@nymbal/platform')).toBeNull()
+    expect(resolvePackageDir('/project', '@nymbalhq/platform')).toBeNull()
   })
 })

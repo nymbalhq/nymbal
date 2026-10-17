@@ -11,7 +11,7 @@ import {
   type EventHandler,
   type Logger,
   type OrderPaidV1Payload,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { CustomerRepository } from '../../repositories/customer.js'
 import type { OrderRepository } from '../../repositories/order.js'
 

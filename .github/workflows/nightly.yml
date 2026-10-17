@@ -39,7 +39,7 @@ jobs:
       - name: Start the API
         run: node packages/cli/bin/nymbal.mjs dev --api-only &
       - name: Start the storefront (Astro)
-        run: pnpm --filter @nymbal/template-astro preview &
+        run: pnpm --filter @nymbalhq/template-astro preview &
       - name: Wait for the API and the storefront
         run: npx wait-on http://localhost:3001/health http://localhost:4321 --timeout 90000
       - name: Run Lighthouse CI (Astro)
@@ -74,7 +74,7 @@ jobs:
       - name: Start the API
         run: node packages/cli/bin/nymbal.mjs dev --api-only &
       - name: Start the storefront (Next.js)
-        run: pnpm --filter @nymbal/template-nextjs start &
+        run: pnpm --filter @nymbalhq/template-nextjs start &
       - name: Wait for the API and the storefront
         run: npx wait-on http://localhost:3001/health http://localhost:3000 --timeout 90000
       - name: Run Lighthouse CI (Next.js)

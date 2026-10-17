@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCheckout, useCart } from '@nymbal/react'
+import { useCheckout, useCart } from '@nymbalhq/react'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatPrice } from '@/lib/format'
@@ -12,7 +12,7 @@ const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
 const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
 const stripePromise = isStub ? null : loadStripe(stripeKey)
 
-import type { Address } from '@nymbal/types'
+import type { Address } from '@nymbalhq/types'
 type AddressFields = Pick<Address, 'firstName' | 'lastName' | 'addressLine1' | 'city' | 'region' | 'postalCode' | 'country'> & { addressLine2: string }
 
 const emptyAddress: AddressFields = {

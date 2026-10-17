@@ -1,4 +1,4 @@
-import { ConfigError } from '@nymbal/types'
+import { ConfigError } from '@nymbalhq/types'
 
 export function env(key: string, defaultValue?: string): string {
   const value = process.env[key]

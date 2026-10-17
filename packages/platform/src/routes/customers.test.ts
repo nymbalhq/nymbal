@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCustomerRoutes } from './customers.js'
-import type { HttpAdapter, RouteHandler, Customer, CustomerAddress, RequestContext } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Customer, CustomerAddress, RequestContext } from '@nymbalhq/types'
 import type { CustomerService } from '../services/customer-service.js'
 
 function makeAdapter() {

@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/platform",
+  "name": "@nymbalhq/platform",
   "version": "0.1.0",
   "description": "Nymbal CQRS kernel (command store, document store, event bus)",
   "license": "MIT",
@@ -39,8 +39,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "@nymbal/config": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.3.0",
     "drizzle-orm": "^0.36.0",

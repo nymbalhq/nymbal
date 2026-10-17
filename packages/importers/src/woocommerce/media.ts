@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { MediaStorage } from '@nymbal/platform'
+import type { MediaStorage } from '@nymbalhq/platform'
 
 const TIMEOUT_MS = 15_000
 const SUPPORTED_TYPES: Record<string, string> = {

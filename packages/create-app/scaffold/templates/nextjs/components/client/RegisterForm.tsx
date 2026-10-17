@@ -3,7 +3,7 @@
 import { useState, useCallback, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
 export function RegisterForm() {

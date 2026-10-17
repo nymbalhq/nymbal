@@ -1,5 +1,5 @@
 import { desc, eq } from 'drizzle-orm'
-import type { StockAdjustment, StockAdjustmentReason } from '@nymbal/types'
+import type { StockAdjustment, StockAdjustmentReason } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'

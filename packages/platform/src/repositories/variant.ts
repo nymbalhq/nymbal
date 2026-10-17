@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import type { Variant, VariantOption, VariantStatus, VariantDimensions } from '@nymbal/types'
+import type { Variant, VariantOption, VariantStatus, VariantDimensions } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'

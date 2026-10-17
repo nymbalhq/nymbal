@@ -110,7 +110,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm build:templates
-      - run: pnpm --filter @nymbal/admin build
+      - run: pnpm --filter @nymbalhq/admin build
 
   scaffold-smoke:
     name: Scaffold smoke test
@@ -212,9 +212,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep-invert "@visual|@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project astro --grep-invert "@visual|@a11y"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -236,9 +236,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep-invert "@visual|@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project nextjs --grep-invert "@visual|@a11y"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -262,9 +262,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@visual"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project astro --grep "@visual"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -287,9 +287,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@visual"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project nextjs --grep "@visual"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -310,9 +310,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project astro --grep "@a11y"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -333,9 +333,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project nextjs --grep "@a11y"
         env:
           CI: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
@@ -356,9 +356,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Run E2E (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert "@visual|@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project admin --grep-invert "@visual|@a11y"
         env:
           CI: true
           NYMBAL_E2E_ADMIN: true
@@ -382,9 +382,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Visual regression (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --project admin-mobile --grep "@visual"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project admin --project admin-mobile --grep "@visual"
         env:
           CI: true
           NYMBAL_E2E_ADMIN: true
@@ -406,9 +406,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Accessibility scan (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep "@a11y"
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project admin --grep "@a11y"
         env:
           CI: true
           NYMBAL_E2E_ADMIN: true

@@ -1,4 +1,4 @@
-import type { CategoryCreateInput } from '@nymbal/platform'
+import type { CategoryCreateInput } from '@nymbalhq/platform'
 import type { WcCategory } from '../client.js'
 
 export function mapCategory(

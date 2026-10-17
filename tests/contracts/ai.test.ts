@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createNativeAiAdapter, createLogger } from '@nymbal/platform'
+import { createNativeAiAdapter, createLogger } from '@nymbalhq/platform'
 
 // The native AI adapter is an intentional stub — embed/complete throw AdapterError('not_configured').
 // A real adapter test requires a configured AI provider (Anthropic, OpenAI, etc.).

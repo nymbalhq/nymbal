@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { loadConfig } from '@nymbal/config'
-import { NymbalError } from '@nymbal/types'
+import { loadConfig } from '@nymbalhq/config'
+import { NymbalError } from '@nymbalhq/types'
 
 export const configValidateCommand = defineCommand({
   meta: { name: 'config:validate', description: 'Validate nymbal.config.ts' },

@@ -6,7 +6,7 @@ import {
   EVT_CART_CONVERTED,
   CheckoutError,
   NotFoundError,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'

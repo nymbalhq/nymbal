@@ -11,7 +11,7 @@ import {
   type Logger,
   type OrderPlacedV1Payload,
   type OrderShippedV1Payload,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { withIdempotency } from '../idempotency.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 

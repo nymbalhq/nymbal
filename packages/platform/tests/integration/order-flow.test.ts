@@ -5,7 +5,7 @@ import {
   EVT_ORDER_PAID,
   EVT_PAYMENT_CAPTURED,
   EVT_CART_CONVERTED,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { registerOrderProjection } from '../../src/handlers/projections/order-projection.js'
 import { createLogger } from '../../src/logger.js'
 import { createTestEnv, testAddr } from './setup.js'

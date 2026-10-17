@@ -8,7 +8,7 @@ import {
   type Logger,
   type SearchAdapter,
   type SearchResult,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 const INDEX_COLLECTION = 'search-index'

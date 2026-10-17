@@ -7,7 +7,7 @@ import { buildRepositories } from '../../src/repositories/index.js'
 import { createEventPublisher } from '../../src/events/publisher.js'
 import { createProductService } from '../../src/services/product-service.js'
 import { createInventoryService } from '../../src/services/inventory-service.js'
-import { EVT_INVENTORY_RELEASED } from '@nymbal/types'
+import { EVT_INVENTORY_RELEASED } from '@nymbalhq/types'
 import { createLogger } from '../../src/logger.js'
 
 async function setup() {

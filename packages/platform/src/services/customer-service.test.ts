@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NotFoundError, ValidationError, EVT_CUSTOMER_UPDATED } from '@nymbal/types'
+import { NotFoundError, ValidationError, EVT_CUSTOMER_UPDATED } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'

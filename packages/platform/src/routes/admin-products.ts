@@ -1,4 +1,4 @@
-import type { HttpAdapter, AiAdapter, ProductStatus } from '@nymbal/types'
+import type { HttpAdapter, AiAdapter, ProductStatus } from '@nymbalhq/types'
 import type { ProductService } from '../services/product-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'

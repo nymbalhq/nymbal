@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@nymbal/sdk', '@nymbal/react', '@nymbal/web-components'],
+  transpilePackages: ['@nymbalhq/sdk', '@nymbalhq/react', '@nymbalhq/web-components'],
   images: {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },

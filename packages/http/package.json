@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/http",
+  "name": "@nymbalhq/http",
   "version": "0.1.0",
   "description": "Framework-agnostic HTTP abstraction with Fastify adapter",
   "license": "MIT",
@@ -29,8 +29,8 @@
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
     "@fastify/cors": "^8.5.0",
-    "@nymbal/config": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "fastify": "^4.28.1",
     "uuid": "^10.0.0"
   },

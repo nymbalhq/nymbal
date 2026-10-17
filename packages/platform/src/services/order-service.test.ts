@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EVT_ORDER_PLACED, EVT_ORDER_SHIPPED, EVT_ORDER_DELIVERED, EVT_ORDER_CANCELLED, EVT_ORDER_REFUNDED, EVT_ORDER_PARTIALLY_REFUNDED, EVT_ORDER_PAID, NotFoundError } from '@nymbal/types'
+import { EVT_ORDER_PLACED, EVT_ORDER_SHIPPED, EVT_ORDER_DELIVERED, EVT_ORDER_CANCELLED, EVT_ORDER_REFUNDED, EVT_ORDER_PARTIALLY_REFUNDED, EVT_ORDER_PAID, NotFoundError } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'
@@ -10,7 +10,7 @@ import { createOrderService } from './order-service.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
 import { v7 as uuidv7 } from 'uuid'
-import type { Address, OrderLineItem } from '@nymbal/types'
+import type { Address, OrderLineItem } from '@nymbalhq/types'
 
 const addr: Address = {
   firstName: 'Jane', lastName: 'Doe',

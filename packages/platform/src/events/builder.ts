@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
-import type { NymbalEvent, NymbalEnvironment } from '@nymbal/types'
+import type { NymbalEvent, NymbalEnvironment } from '@nymbalhq/types'
 
 export interface EventBuilderContext {
   storeId: string

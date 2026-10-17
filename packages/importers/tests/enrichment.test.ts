@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { enrichProduct, runEnrichment } from '../src/woocommerce/enrichment.js'
-import type { AiAdapter } from '@nymbal/types'
-import type { ProductService } from '@nymbal/platform'
+import type { AiAdapter } from '@nymbalhq/types'
+import type { ProductService } from '@nymbalhq/platform'
 
 function makeAiAdapter(responseText: string): AiAdapter {
   return {

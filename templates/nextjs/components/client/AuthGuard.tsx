@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 
 const PUBLIC_AUTH_PATHS = ['/account/login', '/account/register']
 

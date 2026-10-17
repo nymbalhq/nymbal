@@ -2,7 +2,7 @@ import {
   NotFoundError,
   type DocumentStoreAdapter,
   type HttpAdapter,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireAuth } from './role-middleware.js'

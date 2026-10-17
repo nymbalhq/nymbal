@@ -1,5 +1,5 @@
 import { pino, type Logger as PinoLogger } from 'pino'
-import type { Logger } from '@nymbal/types'
+import type { Logger } from '@nymbalhq/types'
 
 export interface CreateLoggerOptions {
   level?: string

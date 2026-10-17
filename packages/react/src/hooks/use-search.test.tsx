@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { NymbalProvider } from '../context.js'
 import { useSearch } from './use-search.js'
-import type { NymbalClient, SearchState } from '@nymbal/sdk'
+import type { NymbalClient, SearchState } from '@nymbalhq/sdk'
 import type { ReactNode } from 'react'
 
 function makeSearchStore(initial: Partial<SearchState> = {}) {

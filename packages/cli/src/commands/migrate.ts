@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbal/config'
-import { createCommandStore, runMigrations } from '@nymbal/platform'
+import { loadConfig } from '@nymbalhq/config'
+import { createCommandStore, runMigrations } from '@nymbalhq/platform'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
@@ -29,16 +29,16 @@ export function resolveMigrations(projectRoot: string): string {
   const monorepoDev = resolve(projectRoot, 'packages/platform/migrations')
   if (existsSync(monorepoDev)) return monorepoDev
 
-  // 3. Published package: node_modules/@nymbal/platform/migrations
+  // 3. Published package: node_modules/@nymbalhq/platform/migrations
   //
-  // We must NOT use `require.resolve('@nymbal/platform/package.json')` nor
-  // `require.resolve('@nymbal/platform')`: the package's `exports` map is
+  // We must NOT use `require.resolve('@nymbalhq/platform/package.json')` nor
+  // `require.resolve('@nymbalhq/platform')`: the package's `exports` map is
   // ESM-only and does not expose `./package.json`, so CJS resolution throws
   // (ERR_PACKAGE_PATH_NOT_EXPORTED / "No exports main defined"). Instead we
   // locate the installed package directory directly under node_modules, which
   // is independent of the exports map and works for symlinked (pnpm workspace)
   // and flat installs alike.
-  const pkgDir = resolvePackageDir(projectRoot, '@nymbal/platform')
+  const pkgDir = resolvePackageDir(projectRoot, '@nymbalhq/platform')
   if (pkgDir) {
     const pkgMigrations = resolve(pkgDir, 'migrations')
     if (existsSync(pkgMigrations)) return pkgMigrations

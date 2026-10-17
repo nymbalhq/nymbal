@@ -1,6 +1,6 @@
-import type { NymbalConfig } from '@nymbal/config'
-import { ConfigError } from '@nymbal/types'
-import type { EventBusAdapter, Logger } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
+import type { EventBusAdapter, Logger } from '@nymbalhq/types'
 import { InProcessEventBus } from './in-process.js'
 
 export function createEventBus(config: NymbalConfig, logger?: Logger): EventBusAdapter {

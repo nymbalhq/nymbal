@@ -1,5 +1,5 @@
-import type { HttpAdapter } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { HttpAdapter } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { ServiceRegistry } from '../services/index.js'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'

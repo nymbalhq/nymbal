@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PaymentError } from '@nymbal/types'
+import { PaymentError } from '@nymbalhq/types'
 import { createStripePaymentsAdapter, type StripePaymentsConfig } from './stripe-adapter.js'
 import { createLogger } from '../../logger.js'
 

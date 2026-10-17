@@ -1,4 +1,4 @@
-import { AuthError, type RequestContext, type ResponseEnvelope, type Role, type RouteHandler } from '@nymbal/types'
+import { AuthError, type RequestContext, type ResponseEnvelope, type Role, type RouteHandler } from '@nymbalhq/types'
 import { fail } from './envelope.js'
 
 export function requireAuth<T = unknown>(handler: RouteHandler<T>): RouteHandler<T> {

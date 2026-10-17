@@ -1,4 +1,4 @@
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 import { registerClient } from '../registry.js'
 
 export function createMockStore<S>(initialState: S) {

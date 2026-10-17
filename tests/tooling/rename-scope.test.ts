@@ -123,7 +123,7 @@ describe('AC-6: rename-scope.ts is idempotent and skips the lockfile and archive
     for (const path of [...Object.keys(FIXED), ...GENERATED.map((g) => g.path)]) {
       const before = original.get(path)?.toString('utf8') ?? ''
       const after = afterFirst.get(path)?.toString('utf8')
-      // Property over every generated file: only `@nymbal/` changes; brand names and the new scope do not.
+      // Property over every generated file: only `@nymbalhq/` changes; brand names and the new scope do not.
       if (after !== before.replaceAll(OLD, NEW)) wrong.push(path)
     }
     expect(wrong).toEqual([])

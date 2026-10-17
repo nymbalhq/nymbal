@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useProductList } from '@nymbal/react'
+import { useProductList } from '@nymbalhq/react'
 import styles from '@/styles/pages/plp.module.css'
 
 const SORT_OPTIONS: Record<string, { field: string; direction: 'asc' | 'desc' }> = {

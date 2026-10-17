@@ -1,4 +1,4 @@
-import type { NymbalConfig } from '@nymbal/config'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type {
   DocumentStoreAdapter,
   HttpAdapter,
@@ -7,7 +7,7 @@ import type {
   MiddlewareHandler,
   RouteHandler,
   RouteOptions,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 import { createHealthRoute } from './routes/health.js'

@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbal/config'
+import { loadConfig } from '@nymbalhq/config'
 import { run, runOrFail } from '../utils/spawn.js'
 
 export const testCommand = defineCommand({
@@ -14,7 +14,7 @@ export const testE2eCommand = defineCommand({
   async run() {
     const { config } = await loadConfig()
     await runOrFail('pnpm', [
-      '--filter', '@nymbal/e2e', 'exec',
+      '--filter', '@nymbalhq/e2e', 'exec',
       'playwright', 'test', '--project', config.template, '--grep-invert', '@visual|@a11y',
     ])
   },
@@ -41,11 +41,11 @@ export const testVisualCommand = defineCommand({
       await runOrFail('docker', [
         'run', '--rm', '-v', `${cwd}:${cwd}`, '-w', cwd,
         dockerImage, 'sh', '-c',
-        `pnpm --filter @nymbal/e2e exec playwright test --project ${config.template} --grep "@visual" --update-snapshots`,
+        `pnpm --filter @nymbalhq/e2e exec playwright test --project ${config.template} --grep "@visual" --update-snapshots`,
       ])
     } else {
       const pwArgs = [
-        '--filter', '@nymbal/e2e', 'exec',
+        '--filter', '@nymbalhq/e2e', 'exec',
         'playwright', 'test', '--project', config.template, '--grep', '@visual',
       ]
       if (updateBaselines) pwArgs.push('--update-snapshots')
@@ -107,11 +107,11 @@ export const testAllCommand = defineCommand({
 
     const { config } = await loadConfig()
     await runOrFail('pnpm', [
-      '--filter', '@nymbal/e2e', 'exec',
+      '--filter', '@nymbalhq/e2e', 'exec',
       'playwright', 'test', '--project', config.template, '--grep-invert', '@visual|@a11y',
     ])
     await runOrFail('pnpm', [
-      '--filter', '@nymbal/e2e', 'exec',
+      '--filter', '@nymbalhq/e2e', 'exec',
       'playwright', 'test', '--project', config.template, '--grep', '@visual',
     ])
     await runOrFail('pnpm', ['lhci', 'autorun'], {

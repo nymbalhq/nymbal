@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/types",
+  "name": "@nymbalhq/types",
   "version": "0.1.0",
   "description": "Shared TypeScript types and adapter contracts for Nymbal",
   "license": "MIT",

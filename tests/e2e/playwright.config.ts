@@ -84,7 +84,7 @@ export default defineConfig({
         },
       },
       {
-        command: 'pnpm --filter @nymbal/template-astro dev',
+        command: 'pnpm --filter @nymbalhq/template-astro dev',
         url: 'http://localhost:4321',
         cwd: '../..',
         reuseExistingServer: false,
@@ -97,7 +97,7 @@ export default defineConfig({
         },
       },
       {
-        command: 'pnpm --filter @nymbal/template-nextjs dev',
+        command: 'pnpm --filter @nymbalhq/template-nextjs dev',
         url: 'http://localhost:3000',
         cwd: '../..',
         reuseExistingServer: false,
@@ -122,7 +122,7 @@ export default defineConfig({
         },
       },
       {
-        command: 'pnpm --filter @nymbal/admin exec vite --port 5174',
+        command: 'pnpm --filter @nymbalhq/admin exec vite --port 5174',
         url: 'http://localhost:5174/admin/',
         cwd: '../..',
         reuseExistingServer: false,

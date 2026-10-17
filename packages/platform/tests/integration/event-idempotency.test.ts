@@ -4,7 +4,7 @@ import { InProcessEventBus } from '../../src/event-bus/in-process.js'
 import { withIdempotency } from '../../src/handlers/idempotency.js'
 import { createProcessedEventRepository } from '../../src/repositories/processed-event.js'
 import { createLogger } from '../../src/logger.js'
-import type { NymbalEvent } from '@nymbal/types'
+import type { NymbalEvent } from '@nymbalhq/types'
 
 function makeEvent(id: string, type = 'test.event.v1'): NymbalEvent {
   return {

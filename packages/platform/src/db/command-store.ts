@@ -1,6 +1,6 @@
-import type { NymbalConfig } from '@nymbal/config'
-import { envOptional } from '@nymbal/config'
-import { ConfigError } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { envOptional } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
 
 import BetterSqlite3 from 'better-sqlite3'
 import pg from 'pg'

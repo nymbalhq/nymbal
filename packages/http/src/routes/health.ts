@@ -1,4 +1,4 @@
-import type { RouteHandler } from '@nymbal/types'
+import type { RouteHandler } from '@nymbalhq/types'
 
 export function createHealthRoute(version: string): RouteHandler {
   return () => ({

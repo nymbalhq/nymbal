@@ -4,7 +4,7 @@ import type {
   SecurityAdapter,
   SecurityConfigLike,
   ValidationResult,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { buildSecurityHeaders } from './headers.js'
 import { noopInitialize, okHealth } from '../base.js'
 
@@ -13,7 +13,7 @@ import { noopInitialize, okHealth } from '../base.js'
  *
  * CSRF cookie minting requires response-phase mutation, which
  * `HttpAdapter.registerMiddleware` does not currently support. To keep behaviour
- * identical to Prompt 1, the `@nymbal/http` server facade (`createHttpServer`)
+ * identical to Prompt 1, the `@nymbalhq/http` server facade (`createHttpServer`)
  * continues to wrap each route handler with a `SecurityGuard` that handles
  * rate-limit + CSRF verification + header injection + cookie minting.
  *

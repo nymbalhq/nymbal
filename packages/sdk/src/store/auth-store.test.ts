@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { createAuthStore } from './auth-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { TokenManager } from '../auth/token-manager.js'
-import type { Customer } from '@nymbal/types'
+import type { Customer } from '@nymbalhq/types'
 
 const testCustomer: Customer = {
   id: 'cust-1', email: 'test@example.com',

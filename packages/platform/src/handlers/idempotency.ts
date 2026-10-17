@@ -1,4 +1,4 @@
-import type { EventHandler, Logger, NymbalEvent } from '@nymbal/types'
+import type { EventHandler, Logger, NymbalEvent } from '@nymbalhq/types'
 import type { ProcessedEventRepository } from '../repositories/processed-event.js'
 
 export interface IdempotencyOptions {

@@ -1,4 +1,4 @@
-import { defineConfig, env } from '@nymbal/config'
+import { defineConfig, env } from '@nymbalhq/config'
 
 // Reference config showing every supported section. Consumers copy this into
 // `nymbal.config.ts` at their project root. This file is intentionally not
