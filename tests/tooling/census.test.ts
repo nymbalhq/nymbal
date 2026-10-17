@@ -6,7 +6,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { aggregate, classifySource, layerOf, packageOf } from '../../scripts/test-census'
 
-// Acceptance tests for P0-01 (census): AC-1 to AC-11.
+// Acceptance tests for P0-01 (census): AC-1 to AC-11, and AC-25 and AC-26 (review round 1).
 // Types come from the functions the spec names, so the tests do not depend on which types the script exports.
 type FileCensus = ReturnType<typeof classifySource>
 type Counts = FileCensus['assertions']
@@ -219,15 +219,37 @@ describe('AC-10: aggregate is additive across both groupings', () => {
     'skipped',
     'prints',
     'filesWithoutStrong',
+    'delegating',
   ] as const satisfies ReadonlyArray<keyof Totals>
 
-  const countsArb: fc.Arbitrary<Counts> = fc.record({
-    C1: fc.nat(20),
-    C2: fc.nat(3),
-    C3: fc.nat(3),
-    C4: fc.nat(20),
-    other: fc.nat(5),
-  })
+  // A third of the files have no assertion at all (delegating, AC-26), the rest any mix.
+  const countsArb: fc.Arbitrary<Counts> = fc.oneof(
+    fc.constant(ZERO),
+    fc.record({
+      C1: fc.nat(20),
+      C2: fc.nat(3),
+      C3: fc.nat(3),
+      C4: fc.nat(20),
+      other: fc.nat(5),
+    }),
+    fc.record({
+      C1: fc.nat(3),
+      C2: fc.constant(0),
+      C3: fc.constant(0),
+      C4: fc.nat(3),
+      other: fc.nat(1),
+    }),
+  )
+
+  /** AC-26: a file with no assertion delegates; it is not weak. */
+  function isDelegating(f: FileCensus): boolean {
+    return assertionSum(f.assertions) === 0
+  }
+
+  /** AC-10 as amended by AC-26: weak means some assertion, none of them C2 or C3. */
+  function isWeak(f: FileCensus): boolean {
+    return !isDelegating(f) && f.assertions.C2 + f.assertions.C3 === 0
+  }
 
   const filesArb: fc.Arbitrary<FileCensus[]> = fc
     .array(
@@ -262,7 +284,10 @@ describe('AC-10: aggregate is additive across both groupings', () => {
           sum += 1
           break
         case 'filesWithoutStrong':
-          sum += f.assertions.C2 + f.assertions.C3 === 0 ? 1 : 0
+          sum += isWeak(f) ? 1 : 0
+          break
+        case 'delegating':
+          sum += isDelegating(f) ? 1 : 0
           break
         case 'tests':
         case 'skipped':
@@ -304,9 +329,8 @@ describe('AC-10: aggregate is additive across both groupings', () => {
         for (const p of packages) {
           const own = files.filter((f) => f.package === p)
           expect(byPackage[p]?.files).toBe(own.length)
-          expect(byPackage[p]?.filesWithoutStrong).toBe(
-            own.filter((f) => f.assertions.C2 + f.assertions.C3 === 0).length,
-          )
+          expect(byPackage[p]?.filesWithoutStrong).toBe(own.filter(isWeak).length)
+          expect(byPackage[p]?.delegating).toBe(own.filter(isDelegating).length)
         }
         for (const l of layers) {
           expect(byLayer[l]?.files).toBe(files.filter((f) => f.layer === l).length)
@@ -343,5 +367,73 @@ describe('AC-11: the census CLI on the repository', () => {
     const paths = report.files.map((f: FileCensus) => f.path).sort()
     expect(paths).toEqual(expected)
     expect(report.total.files).toBe(report.files.length)
+  })
+})
+
+describe('AC-25: runtime skips inside a test body', () => {
+  it('AC-25: test.skip(), test.skip(cond, reason) and test.fixme() with no name are not test sites', () => {
+    const source = readFileSync(join(FIXTURES, 'runtime-skip.test.ts.fixture'), 'utf8')
+    const file = classifySource(source, 'tests/e2e/journeys/runtime-skip.spec.ts')
+    // Four named tests; only `test.skip('named skip', …)` is skipped.
+    expect(file.tests).toBe(4)
+    expect(file.skipped).toBe(1)
+  })
+})
+
+describe('AC-26: delegating files and --include', () => {
+  it('AC-26: a file with zero assertions is delegating, not weak; a file with only C1/C4 is weak', () => {
+    const delegating = classifySource(
+      "import { test } from 'vitest'\nimport { runSuite } from './suite'\n\ntest('delegates', () => runSuite())\n",
+      'tests/contracts/delegating.test.ts',
+    )
+    const weak = classifySource(
+      "import { expect, test } from 'vitest'\n\ntest('weak', () => {\n  expect(x).toBe(1)\n})\n",
+      'tests/contracts/weak.test.ts',
+    )
+    const { total } = aggregate([delegating, weak])
+
+    expect(total.delegating).toBe(1)
+    expect(total.filesWithoutStrong).toBe(1)
+    expect(total.delegating + total.filesWithoutStrong).toBe(total.files)
+  })
+
+  it('AC-26: --include <glob> adds those source files to the census, as package contract-tests and layer contract', () => {
+    const GLOB = 'packages/contract-tests/src/**/*.ts'
+    const census = (...extra: string[]): CensusJson => {
+      const res = spawnSync('pnpm', ['exec', 'tsx', 'scripts/test-census.ts', '--json', ...extra], {
+        cwd: REPO,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+      expect(res.status, res.stderr).toBe(0)
+      return JSON.parse(res.stdout) as CensusJson
+    }
+    const matching = execFileSync('git', ['ls-files', `:(glob)${GLOB}`], {
+      cwd: REPO,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean)
+    expect(
+      matching.length,
+      'the premise: the glob matches tracked contract sources',
+    ).toBeGreaterThan(0)
+
+    const base = census()
+    const withInclude = census('--include', GLOB)
+
+    const basePaths = base.files.map((f: FileCensus) => f.path)
+    const expected = [...new Set([...basePaths, ...matching])].sort()
+    expect(withInclude.files.map((f: FileCensus) => f.path).sort()).toEqual(expected)
+
+    const included = withInclude.files.filter((f: FileCensus) => matching.includes(f.path))
+    for (const f of included) {
+      expect([f.path, f.package, f.layer]).toEqual([f.path, 'contract-tests', 'contract'])
+    }
+    // The contract suites' assertions become visible.
+    expect(
+      included.reduce((n: number, f: FileCensus) => n + assertionSum(f.assertions), 0),
+    ).toBeGreaterThan(0)
+    expect(withInclude.total.files).toBe(withInclude.files.length)
   })
 })
