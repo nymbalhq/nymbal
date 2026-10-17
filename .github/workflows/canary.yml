@@ -21,7 +21,6 @@ permissions:
 
 env:
   PNPM_VERSION: '9.12.3'
-  NODE_VERSION: '22'
 
 jobs:
   detect:
@@ -70,7 +69,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile

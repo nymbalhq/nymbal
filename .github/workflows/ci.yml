@@ -11,7 +11,6 @@ on:
 
 env:
   PNPM_VERSION: '9.12.3'
-  NODE_VERSION: '22'
   # The base every gate.ts call diffs against: the target branch on a pull request, the previous tip on a push.
   GATE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
 
@@ -27,7 +26,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
@@ -62,7 +61,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -109,7 +108,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -134,7 +133,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -177,7 +176,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -198,7 +197,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -222,7 +221,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -248,7 +247,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -274,7 +273,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -297,7 +296,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
@@ -386,7 +385,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm changeset status --since=origin/${{ github.base_ref }}
