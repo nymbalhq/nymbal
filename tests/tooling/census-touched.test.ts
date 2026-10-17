@@ -79,7 +79,7 @@ type WeakOptions = { from?: string; title?: string; comment?: string; body?: str
 /** A weak Vitest file (C4 assertions only) as old debt looks: an import, a comment, a named test, assertions. */
 function weakTest(opts: WeakOptions = {}): string {
   const {
-    from = '@nymbal/types',
+    from = '@nymbalhq/types',
     title = 'adds two numbers',
     comment = '// the sum of two small numbers',
     body = ['  expect(add(1, 2)).toBe(3)', '  expect(add(2, 2)).toBe(4)'],
@@ -297,7 +297,7 @@ describe('AC-21: the census-trend step judges only new files and files whose ass
 /** A Vitest file from its own lines: the imports, then one test whose body is `body`. */
 function testOf(
   body: string[],
-  imports: string[] = ["import { add } from '@nymbal/types'"],
+  imports: string[] = ["import { add } from '@nymbalhq/types'"],
 ): string {
   return [
     "import { expect, it } from 'vitest'",
@@ -315,14 +315,14 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
   it('AC-24: a removed assertion line is judged; a removed comment or import line is not', () => {
     const base = testOf(
       ['  // two is more than one', '  expect(add(1, 2)).toBe(3)', RELATIONAL],
-      ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+      ["import { add } from '@nymbalhq/types'", "import { fc } from '@fast-check/vitest'"],
     )
     const removedAssertion = diffOf(
       { [WEAK]: base },
       {
         [WEAK]: testOf(
           ['  // two is more than one', '  expect(add(1, 2)).toBe(3)'],
-          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+          ["import { add } from '@nymbalhq/types'", "import { fc } from '@fast-check/vitest'"],
         ),
       },
     )
@@ -331,7 +331,7 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
       {
         [WEAK]: testOf(
           ['  expect(add(1, 2)).toBe(3)', RELATIONAL],
-          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+          ["import { add } from '@nymbalhq/types'", "import { fc } from '@fast-check/vitest'"],
         ),
       },
     )
@@ -361,12 +361,12 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
 
     const before = [
       "import { expect, it } from 'vitest'",
-      "import { add } from '@nymbal/types'",
+      "import { add } from '@nymbalhq/types'",
       "it('adds two numbers', () => expect(add(1, 2))",
       '  .toBeGreaterThan(add(0, 2)))',
       '',
     ].join('\n')
-    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@nymbal/', '@nymbalhq/') })
+    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@nymbalhq/', '@nymbalhq/') })
     // Guard: the matcher line is in the hunk, as context.
     expect(context.split('\n')).toContain('   .toBeGreaterThan(add(0, 2)))')
 

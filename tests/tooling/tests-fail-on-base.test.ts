@@ -531,7 +531,7 @@ describe('AC-22: a dependency change installs the base dependencies in the base 
 
 describe('AC-23 (revised): a base that cannot install or build fails the step closed and says why', () => {
   const TSC_ERROR =
-    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types' or its corresponding type declarations."
+    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbalhq/types' or its corresponding type declarations."
   // The build's last line: it is no error shape, so it can reach the output only as part of the tail.
   const LAST_LINE = 'Found 1 error in src/index.ts:1 (tail line)'
 

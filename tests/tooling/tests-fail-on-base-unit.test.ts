@@ -143,21 +143,21 @@ describe('AC-27: the first error line is the first line of a real error shape, e
       output: [
         'packages/sdk build$ tsup',
         'packages/sdk build: ESM dist/error.js 1.20 KB',
-        "packages/sdk build: src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types' or its corresponding type declarations.",
+        "packages/sdk build: src/index.ts(1,23): error TS2307: Cannot find module '@nymbalhq/types' or its corresponding type declarations.",
         'packages/sdk build: Failed',
-        ' ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @nymbal/sdk@0.0.0 build: `tsup`',
+        ' ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @nymbalhq/sdk@0.0.0 build: `tsup`',
       ],
       expected:
-        "packages/sdk build: src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types' or its corresponding type declarations.",
+        "packages/sdk build: src/index.ts(1,23): error TS2307: Cannot find module '@nymbalhq/types' or its corresponding type declarations.",
     },
     {
       name: 'a coloured tsc error after a harmless line with "error" in it',
       output: [
         '> fixture@ build /tmp/base',
         '> tsc -p tsconfig.json --noErrorTruncation && node copy-error-pages.mjs',
-        "src/a.ts:1:23 - \x1b[91merror\x1b[0m\x1b[90m TS2307: \x1b[0mCannot find module '@nymbal/types'.",
+        "src/a.ts:1:23 - \x1b[91merror\x1b[0m\x1b[90m TS2307: \x1b[0mCannot find module '@nymbalhq/types'.",
       ],
-      expected: "src/a.ts:1:23 - error TS2307: Cannot find module '@nymbal/types'.",
+      expected: "src/a.ts:1:23 - error TS2307: Cannot find module '@nymbalhq/types'.",
     },
     {
       name: "Node's `Error:` line after a command echo with --on-error",
@@ -237,7 +237,7 @@ describe('AC-27: the first error line is the first line of a real error shape, e
   ]
   /** Real error lines, one of each shape. */
   const ERRORS = [
-    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types'.",
+    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbalhq/types'.",
     '[ERR_PNPM_OUTDATED_LOCKFILE] Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json',
     ' ERR_PNPM_LOCKFILE_BREAKING_CHANGE  Lockfile /tmp/base/pnpm-lock.yaml not compatible with current pnpm',
     "Error: Cannot find module '/tmp/base/build.mjs'",
