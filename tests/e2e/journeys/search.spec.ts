@@ -28,32 +28,52 @@ test.describe('Search', () => {
     await expect(page).toHaveURL(/\/search/, { timeout: 10000 })
   })
 
-  test('search round-trip: type query shows results, clear query returns to full listing', async ({ page }) => {
+  test('AC-3: search round-trip: type query shows results, clear query returns to the search empty state', async ({ page }) => {
     await page.goto('/search')
-    // Use the page-specific search input (Astro) or the header search bar (Next.js)
-    const searchInput = page.locator('[data-testid="search-page-input"], [data-testid="search-input"]').first()
+    // Use the page-specific search input (Astro, server-rendered) or the header search bar (Next.js)
+    const pageInput = page.getByTestId('search-page-input')
+    const searchInput = (await pageInput.count()) > 0 ? pageInput : page.getByTestId('search-input').first()
     await expect(searchInput).toBeVisible({ timeout: 10000 })
+    // The empty-query state both templates share
+    const emptyState = page.getByRole('heading', { name: 'Search our store' })
+
+    // Query results: page cards (Astro) or the search bar's result items (Next.js header)
+    const queryResults = page.locator('[data-testid^="product-card-"], [data-testid^="search-result-"]')
+    const productCards = page.locator('[data-testid^="product-card-"]')
 
     // Type a search query (wool matches several seeded products)
     await searchInput.fill('wool')
-    await page.waitForTimeout(500)
-
-    const resultsWithQuery = page.locator('[data-testid^="product-card-"]')
-    const queryCount = await resultsWithQuery.count()
+    await expect(queryResults.first()).toBeVisible({ timeout: 15000 })
+    const queryResultIds = await queryResults.evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))
+    expect(queryResultIds.length).toBeGreaterThan(0)
 
     // Clear the query
     await searchInput.fill('')
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(800)
 
-    // After clearing, should either show all products or empty state — but not remain stuck on query results
-    const resultsAfterClear = page.locator('[data-testid^="product-card-"]')
-    const afterClearCount = await resultsAfterClear.count()
+    // The page returns to the shared empty-query state, not a listing
+    await expect(emptyState).toBeVisible({ timeout: 10000 })
+    await expect(queryResults).toHaveCount(0)
+    for (const id of queryResultIds) {
+      await expect(page.locator(`[data-testid="${id}"]`)).toHaveCount(0)
+    }
+    await expect(productCards).toHaveCount(0)
+    await expect(searchInput).toHaveValue('')
+    await expect(page).not.toHaveURL(/[?&]q=/)
+  })
 
-    // The count after clearing should be >= results with query (clearing a filter broadens results)
-    // or show the search empty state — either way, the page responds to the change
-    expect(afterClearCount).toBeGreaterThanOrEqual(queryCount)
-    // The query text must be cleared in the input
-    expect(await searchInput.inputValue()).toBe('')
+  test('AC-9: a query containing markup is rendered as text, not elements', async ({ page }) => {
+    const payload = '<img src=x id=xss-probe onerror="window.__xss=1">'
+    await page.goto(`/search?q=${encodeURIComponent(payload)}`)
+
+    // Both templates label the query ("Results for …" / "Showing results for …") once they have rendered it
+    await expect(page.getByText(/results for/i).first()).toBeVisible({ timeout: 15000 })
+    // Let the page settle: the search request and any image request the markup would make
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.locator('#xss-probe')).toHaveCount(0)
+    const xss = await page.evaluate(() => (window as unknown as { __xss?: unknown }).__xss)
+    expect(xss).toBeUndefined()
+    // The query is shown literally, as text
+    await expect(page.getByText(payload).first()).toBeVisible()
   })
 })
