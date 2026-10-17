@@ -15,14 +15,14 @@ import {
 
 // The gate: one command to run before finishing (`pnpm gate`) and one before a pull request (`pnpm gate:full`).
 // Every step is a shell command whose exit code decides its status; the verdict is red if and only if a step is
-// red, and every step runs even after a red one (except those that need a step which failed to start).
+// red, and every step runs even after a red one (except those that need a step that is not ok).
 
 export type StepStatus = 'ok' | 'red' | 'skipped'
 
 export type Step = { name: string; status: StepStatus; ms: number; detail?: string }
 
-/** A step to run. `skip` names the reason to leave it out; `needs` skips it when the named step is not ok. */
-export type StepSpec = { name: string; command: string; skip?: string; needs?: string }
+/** A step to run. `skip` names the reason to leave it out; `needs` skips it unless every named step is ok. */
+export type StepSpec = { name: string; command: string; skip?: string; needs?: string[] }
 
 export type RunOptions = {
   cwd: string
@@ -168,11 +168,14 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
   const results: Step[] = []
   const log = opts.log ?? ((): void => {})
   for (const spec of steps) {
-    const blocker =
-      spec.needs === undefined ? undefined : results.find((s) => s.name === spec.needs)
-    const reason =
-      spec.skip ??
-      (blocker !== undefined && blocker.status !== 'ok' ? `needs ${spec.needs}` : undefined)
+    const unmet = (spec.needs ?? []).flatMap((need) => {
+      const earlier = results.find((s) => s.name === need)
+      if (earlier === undefined) {
+        throw new Error(`step "${spec.name}" needs "${need}", which is not an earlier step`)
+      }
+      return earlier.status === 'ok' ? [] : [`${need} (${earlier.status})`]
+    })
+    const reason = spec.skip ?? (unmet.length > 0 ? `needs ${unmet.join(', ')}` : undefined)
     if (reason !== undefined) {
       results.push({ name: spec.name, status: 'skipped', ms: 0, detail: reason })
       log(`skipped ${spec.name}: ${reason}\n`)
@@ -230,9 +233,12 @@ export function resolveBase(root: string, requested: string | undefined): string
   throw new Error('no base: pass --base <ref>, or fetch origin/dev or origin/main')
 }
 
-/** Files that differ from the base in the work tree, committed or not, plus untracked files. Deleted ones are left out. */
-function changedFiles(root: string, base: string): string[] {
-  const tracked = lines(git(root, ['diff', '--name-only', '--diff-filter=d', base]))
+/**
+ * Paths that differ between the base and the work tree, committed, staged or not, deletions included, plus untracked
+ * files, each once. A deleted path is a change: removing a configuration file must still select every test.
+ */
+export function changedFiles(root: string, base: string): string[] {
+  const tracked = lines(git(root, ['diff', '--name-only', base]))
   const untracked = lines(git(root, ['ls-files', '--others', '--exclude-standard']))
   return [...new Set([...tracked, ...untracked])].sort()
 }
@@ -478,7 +484,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     {
       name: 'integration-postgres',
       command: `${postgres} pnpm exec vitest run --project integration-postgres`,
-      needs: 'compose up',
+      needs: ['compose up'],
     },
     mutated.length === 0
       ? { name: 'stryker', command: 'true', skip: "no changed file in Stryker's mutate set" }
@@ -487,17 +493,20 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     {
       name: 'tests-fail-on-base',
       command: `${postgres} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
-      needs: 'compose up',
+      needs: ['compose up'],
     },
+    // The journeys run against the built packages and the composed services: without both they test nothing new.
     {
       name: 'e2e',
       command:
         'CI=1 pnpm --filter @nymbal/e2e exec playwright test --project astro --project nextjs --grep-invert @visual',
+      needs: ['build', 'compose up'],
     },
     {
       name: 'e2e admin',
       command:
         'CI=1 NYMBAL_E2E_ADMIN=true pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert @visual',
+      needs: ['build', 'compose up'],
     },
   )
   return { steps, budgetMs: FULL_BUDGET_MS }
@@ -515,17 +524,24 @@ async function main(argv: string[]): Promise<number> {
     },
   })
   const root = repoRoot()
-  const base = resolveBase(root, values.base)
   const [subcommand, subBase] = positionals
-  if (subcommand === 'census-trend') return censusTrendStep(root, subBase ?? base)
-  if (subcommand === 'test-quality') {
-    return testQualityStep(root, subBase ?? base, Number(values.started ?? 0))
+  if (subcommand !== undefined) {
+    // A step judges against the base the gate passed it, never one looked up again from origin/*.
+    if (subBase === undefined) throw new Error(`usage: gate.ts ${subcommand} <base>`)
+    const stepBase = resolveBase(root, subBase)
+    if (subcommand === 'census-trend') return censusTrendStep(root, stepBase)
+    if (subcommand === 'test-quality') {
+      return testQualityStep(root, stepBase, Number(values.started ?? 0))
+    }
+    throw new Error(`unknown step "${subcommand}"`)
   }
-  if (subcommand !== undefined) throw new Error(`unknown step "${subcommand}"`)
 
+  const base = resolveBase(root, values.base)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
-  const mutated = values.full ? await mutateSet(root, changed) : []
+  // A deleted file has nothing left to mutate.
+  const present = changed.filter((path) => existsSync(resolve(root, path)))
+  const mutated = values.full ? await mutateSet(root, present) : []
   const { steps, budgetMs } = plan({ full: values.full, base, changed, mutated })
   if (values.full) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
