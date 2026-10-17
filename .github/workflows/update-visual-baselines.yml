@@ -32,11 +32,11 @@ jobs:
       - run: pnpm build
 
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
 
       - name: Generate baselines — all visual projects
         run: |
-          pnpm --filter @nymbal/e2e exec playwright test \
+          pnpm --filter @nymbalhq/e2e exec playwright test \
             --project astro --project astro-mobile \
             --project nextjs --project nextjs-mobile \
             --grep "@visual" \
@@ -47,7 +47,7 @@ jobs:
 
       - name: Generate baselines — admin visual projects
         run: |
-          pnpm --filter @nymbal/e2e exec playwright test \
+          pnpm --filter @nymbalhq/e2e exec playwright test \
             --project admin --project admin-mobile \
             --grep "@visual" \
             --update-snapshots

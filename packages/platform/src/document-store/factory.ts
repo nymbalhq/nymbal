@@ -1,6 +1,6 @@
-import type { NymbalConfig } from '@nymbal/config'
-import { ConfigError } from '@nymbal/types'
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from './in-memory.js'
 
 export function createDocumentStore(config: NymbalConfig): DocumentStoreAdapter {

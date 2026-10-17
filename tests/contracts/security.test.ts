@@ -1,5 +1,5 @@
-import { runSecurityContract } from '@nymbal/contract-tests'
-import { createMiddlewareSecurityAdapter, createLogger } from '@nymbal/platform'
+import { runSecurityContract } from '@nymbalhq/contract-tests'
+import { createMiddlewareSecurityAdapter, createLogger } from '@nymbalhq/platform'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 runSecurityContract(() => createMiddlewareSecurityAdapter({ logger }))

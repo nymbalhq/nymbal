@@ -3,7 +3,7 @@ import type {
   NymbalEvent,
   NymbalEventMap,
   NymbalEventType,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { createEventBuilder, type EventBuilderContext, type MakeEventOptions } from './builder.js'
 
 export interface PublishOptions extends MakeEventOptions {}

@@ -79,7 +79,7 @@ type WeakOptions = { from?: string; title?: string; comment?: string; body?: str
 /** A weak Vitest file (C4 assertions only) as old debt looks: an import, a comment, a named test, assertions. */
 function weakTest(opts: WeakOptions = {}): string {
   const {
-    from = '@nymbal/types',
+    from = '@acme/types',
     title = 'adds two numbers',
     comment = '// the sum of two small numbers',
     body = ['  expect(add(1, 2)).toBe(3)', '  expect(add(2, 2)).toBe(4)'],
@@ -100,7 +100,7 @@ const WEAK = 'packages/sdk/src/weak.test.ts'
 
 describe('AC-21: assertionTouched judges a file only when it is new or the change writes an assertion line', () => {
   it('AC-21: a diff that changes only an import path is not judged, though its hunk shows assertion lines as context', () => {
-    const diff = diffOf({ [WEAK]: weakTest() }, { [WEAK]: weakTest({ from: '@nymbalhq/types' }) })
+    const diff = diffOf({ [WEAK]: weakTest() }, { [WEAK]: weakTest({ from: '@acme-renamed/types' }) })
     // Guard: git's context lines around the import carry `expect(`, so only changed lines may decide.
     expect(diff.split('\n').some((l) => l.startsWith(' ') && l.includes('expect('))).toBe(true)
 
@@ -126,7 +126,7 @@ describe('AC-21: assertionTouched judges a file only when it is new or the chang
     const moved = 'packages/types/src/weak.test.ts'
     const diff = diffOf(
       { [WEAK]: weakTest() },
-      { [moved]: weakTest({ from: '@nymbalhq/types' }) },
+      { [moved]: weakTest({ from: '@acme-renamed/types' }) },
       [[WEAK, moved]],
     )
     // Guard: git recorded a rename, not a delete and an add.
@@ -180,7 +180,7 @@ describe('AC-21: assertionTouched judges a file only when it is new or the chang
     const diff = diffOf(
       { [importOnly]: weakTest(), [asserting]: weakTest() },
       {
-        [importOnly]: weakTest({ from: '@nymbalhq/types' }),
+        [importOnly]: weakTest({ from: '@acme-renamed/types' }),
         [asserting]: weakTest({
           body: [
             '  expect(add(1, 2)).toBe(3)',
@@ -239,11 +239,11 @@ describe('AC-21: the census-trend step judges only new files and files whose ass
 
   /** The codemod: import paths, a comment and a test name in old weak files, and one file moved. */
   function codemod(root: string): void {
-    write(root, 'test/weak-import.test.ts', weakTest({ from: '@nymbalhq/types' }))
+    write(root, 'test/weak-import.test.ts', weakTest({ from: '@acme-renamed/types' }))
     write(root, 'test/weak-title.test.ts', weakTest({ title: 'sums two numbers' }))
     mkdirSync(join(root, 'test/moved'), { recursive: true })
     git(root, 'mv', 'test/weak-renamed.test.ts', 'test/moved/weak-renamed.test.ts')
-    write(root, 'test/moved/weak-renamed.test.ts', weakTest({ from: '@nymbalhq/types' }))
+    write(root, 'test/moved/weak-renamed.test.ts', weakTest({ from: '@acme-renamed/types' }))
     commitAll(root, 'head: rename the types package')
     // Left uncommitted: the step judges the working tree.
     write(root, 'test/weak-comment.test.ts', weakTest({ comment: '// the sum of two integers' }))
@@ -297,7 +297,7 @@ describe('AC-21: the census-trend step judges only new files and files whose ass
 /** A Vitest file from its own lines: the imports, then one test whose body is `body`. */
 function testOf(
   body: string[],
-  imports: string[] = ["import { add } from '@nymbal/types'"],
+  imports: string[] = ["import { add } from '@acme/types'"],
 ): string {
   return [
     "import { expect, it } from 'vitest'",
@@ -315,14 +315,14 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
   it('AC-24: a removed assertion line is judged; a removed comment or import line is not', () => {
     const base = testOf(
       ['  // two is more than one', '  expect(add(1, 2)).toBe(3)', RELATIONAL],
-      ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+      ["import { add } from '@acme/types'", "import { fc } from '@fast-check/vitest'"],
     )
     const removedAssertion = diffOf(
       { [WEAK]: base },
       {
         [WEAK]: testOf(
           ['  // two is more than one', '  expect(add(1, 2)).toBe(3)'],
-          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+          ["import { add } from '@acme/types'", "import { fc } from '@fast-check/vitest'"],
         ),
       },
     )
@@ -331,7 +331,7 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
       {
         [WEAK]: testOf(
           ['  expect(add(1, 2)).toBe(3)', RELATIONAL],
-          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+          ["import { add } from '@acme/types'", "import { fc } from '@fast-check/vitest'"],
         ),
       },
     )
@@ -361,12 +361,12 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
 
     const before = [
       "import { expect, it } from 'vitest'",
-      "import { add } from '@nymbal/types'",
+      "import { add } from '@acme/types'",
       "it('adds two numbers', () => expect(add(1, 2))",
       '  .toBeGreaterThan(add(0, 2)))',
       '',
     ].join('\n')
-    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@nymbal/', '@nymbalhq/') })
+    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@acme/', '@acme-renamed/') })
     // Guard: the matcher line is in the hunk, as context.
     expect(context.split('\n')).toContain('   .toBeGreaterThan(add(0, 2)))')
 

@@ -1,5 +1,5 @@
 {
-  "name": "nymbal",
+  "name": "nymbal-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Open source enterprise commerce platform",
@@ -19,7 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
-    "dev": "pnpm --filter @nymbal/cli dev",
+    "dev": "pnpm --filter nymbal dev",
     "mutation": "stryker run",
     "census": "tsx scripts/test-census.ts",
     "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**'\"",

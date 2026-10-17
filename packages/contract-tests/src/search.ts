@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SearchAdapter } from '@nymbal/types'
+import type { SearchAdapter } from '@nymbalhq/types'
 
 export function runSearchContract(build: () => SearchAdapter): void {
   describe('SearchAdapter contract', () => {

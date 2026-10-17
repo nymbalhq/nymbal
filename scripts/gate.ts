@@ -669,7 +669,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
   const e2e = (target: string): string =>
-    `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbal/e2e exec playwright test --project ${target}${grep}`
+    `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target}${grep}`
   steps.push(
     external
       ? {

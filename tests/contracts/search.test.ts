@@ -1,5 +1,5 @@
-import { runSearchContract } from '@nymbal/contract-tests'
-import { createNativeSearchAdapter, InMemoryDocumentStore, createLogger } from '@nymbal/platform'
+import { runSearchContract } from '@nymbalhq/contract-tests'
+import { createNativeSearchAdapter, InMemoryDocumentStore, createLogger } from '@nymbalhq/platform'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 runSearchContract(() => createNativeSearchAdapter({

@@ -1,5 +1,5 @@
-import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbal/sdk'
-import type { Category, Order } from '@nymbal/types'
+import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbalhq/sdk'
+import type { Category, Order } from '@nymbalhq/types'
 
 const API_URL = import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 

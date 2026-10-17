@@ -1,7 +1,7 @@
-import { EVT_PAYMENT_FAILED, type HttpAdapter, type PaymentsAdapter } from '@nymbal/types'
+import { EVT_PAYMENT_FAILED, type HttpAdapter, type PaymentsAdapter } from '@nymbalhq/types'
 import type { CheckoutService } from '../services/checkout-service.js'
 import type { EventPublisher } from '../events/publisher.js'
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 import { ok, fail, renderError } from './envelope.js'
 
 const STRIPE_EVENT_LOG = 'stripe-webhook-log'

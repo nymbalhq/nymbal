@@ -7,5 +7,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'es2022',
-  external: ['@nymbal/sdk', '@nymbal/types'],
+  external: ['@nymbalhq/sdk', '@nymbalhq/types'],
 })

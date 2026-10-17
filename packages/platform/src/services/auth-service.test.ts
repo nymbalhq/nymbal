@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbal/types'
+import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbalhq/types'
 import { SignJWT } from 'jose'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'

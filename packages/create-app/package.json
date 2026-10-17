@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Scaffold a new Nymbal commerce project",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/create-app"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

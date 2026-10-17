@@ -1,4 +1,4 @@
-import type { Logger, TaxAdapter } from '@nymbal/types'
+import type { Logger, TaxAdapter } from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 export function createNativeTaxAdapter(logger: Logger, defaultRate = 0): TaxAdapter {

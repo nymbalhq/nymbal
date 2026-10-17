@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/template-astro",
+  "name": "@nymbalhq/template-astro",
   "version": "0.1.0",
   "private": true,
   "description": "Minimal Astro storefront shell for Nymbal (Prompt 4 extends this)",
@@ -17,9 +17,9 @@
   "dependencies": {
     "astro": "^4.16.7",
     "@astrojs/node": "^8.3.4",
-    "@nymbal/sdk": "workspace:*",
-    "@nymbal/web-components": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/web-components": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "@stripe/stripe-js": "^4.0.0"
   }
 }

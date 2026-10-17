@@ -1,9 +1,9 @@
 /* ----------------------------------------------------------------
    Nymbal Global Styles
-   Built on @nymbal/web-components design tokens (--nymbal-*)
+   Built on @nymbalhq/web-components design tokens (--nymbal-*)
    ---------------------------------------------------------------- */
 
-@import '@nymbal/web-components/tokens.css';
+@import '@nymbalhq/web-components/tokens.css';
 
 /* ---- Reset ---- */
 

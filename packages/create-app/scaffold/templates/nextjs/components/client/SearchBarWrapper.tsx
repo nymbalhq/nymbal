@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { SearchBar } from '@nymbal/react'
+import { SearchBar } from '@nymbalhq/react'
 
 interface SearchProduct {
   slug: string

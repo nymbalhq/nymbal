@@ -1,4 +1,4 @@
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 import { getClient } from './registry.js'
 
 const HTMLElementBase =

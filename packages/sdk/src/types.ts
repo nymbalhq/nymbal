@@ -5,7 +5,7 @@ import type {
   Facet,
   PaymentIntent,
   VariantOption,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 // --- Denormalised product (matches platform document store projection) ------
 

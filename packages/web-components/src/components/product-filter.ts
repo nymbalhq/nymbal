@@ -1,4 +1,4 @@
-import type { Facet } from '@nymbal/types'
+import type { Facet } from '@nymbalhq/types'
 import { NymbalElement } from '../base-element.js'
 import { injectStyles } from '../styles.js'
 

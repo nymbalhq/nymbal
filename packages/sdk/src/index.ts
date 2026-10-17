@@ -49,4 +49,4 @@ export type {
   AuthResult,
 } from './types.js'
 
-export type { ReviewsResult as ReviewsListResult, ReviewResult as ReviewSubmitResult } from '@nymbal/types'
+export type { ReviewsResult as ReviewsListResult, ReviewResult as ReviewSubmitResult } from '@nymbalhq/types'

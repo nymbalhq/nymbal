@@ -24,12 +24,12 @@ The scaffolded project is split so that taking a Nymbal patch never causes a mer
 - **Yours:** everything `create-nymbal-app` puts in your project — `nymbal.config.ts` and the
   thin `src/` layer (Astro pages, layouts, components). Restyle pages, add routes, delete what
   you don't want. One page (the homepage) ships pre-overridden as a working example.
-- **Nymbal's:** the engine — `@nymbal/platform`, `@nymbal/sdk`, `@nymbal/web-components`,
-  `@nymbal/types`, `@nymbal/config` — installed as versioned npm packages. A Nymbal patch is a
+- **Nymbal's:** the engine — `@nymbalhq/platform`, `@nymbalhq/sdk`, `@nymbalhq/web-components`,
+  `@nymbalhq/types`, `@nymbalhq/config` — installed as versioned npm packages. A Nymbal patch is a
   dependency bump:
 
   ```bash
-  pnpm update @nymbal/platform @nymbal/sdk @nymbal/web-components @nymbal/types @nymbal/config
+  pnpm update @nymbalhq/platform @nymbalhq/sdk @nymbalhq/web-components @nymbalhq/types @nymbalhq/config
   ```
 
 Developer files and Nymbal package files never share a file, so there is nothing to merge.
@@ -39,16 +39,16 @@ See [OVERRIDES.md](./OVERRIDES.md) for the exact override/resolution order.
 
 ```
 packages/
-  types/            @nymbal/types          — adapter contracts, shared types (single source of truth)
-  config/           @nymbal/config         — defineConfig(), Zod schema, env()
-  platform/         @nymbal/platform       — CQRS kernel (command store, document store, event bus, services)
-  sdk/              @nymbal/sdk            — framework-agnostic client stores + CommerceAdapter
-  web-components/   @nymbal/web-components — interactive storefront UI (source of truth)
-  react/            @nymbal/react          — hooks + generated wrappers for the web components
-  http/             @nymbal/http           — HTTP abstraction + Fastify adapter (internal)
-  importers/        @nymbal/importers      — WooCommerce migration engine (internal)
-  contract-tests/   @nymbal/contract-tests — adapter certification suites
-  test-factories/   @nymbal/test-factories — typed test data factories
+  types/            @nymbalhq/types          — adapter contracts, shared types (single source of truth)
+  config/           @nymbalhq/config         — defineConfig(), Zod schema, env()
+  platform/         @nymbalhq/platform       — CQRS kernel (command store, document store, event bus, services)
+  sdk/              @nymbalhq/sdk            — framework-agnostic client stores + CommerceAdapter
+  web-components/   @nymbalhq/web-components — interactive storefront UI (source of truth)
+  react/            @nymbalhq/react          — hooks + generated wrappers for the web components
+  http/             @nymbalhq/http           — HTTP abstraction + Fastify adapter (internal)
+  importers/        @nymbalhq/importers      — WooCommerce migration engine (internal)
+  contract-tests/   @nymbalhq/contract-tests — adapter certification suites
+  test-factories/   @nymbalhq/test-factories — typed test data factories
   cli/              nymbal                 — dev / build / migrate / seed / import / config-validate
   create-app/       create-nymbal-app      — project scaffolder
 templates/
@@ -80,7 +80,7 @@ and writes a migration report (imported / skipped / needs-review).
 | `pnpm typecheck` | Type-check the whole workspace |
 | `pnpm test` | Run unit + integration tests (vitest) |
 | `pnpm vitest run --coverage` | Tests with coverage gates (services: 100% branch) |
-| `pnpm --filter @nymbal/e2e exec playwright test` | E2E journeys (astro / nextjs / admin projects) |
+| `pnpm --filter @nymbalhq/e2e exec playwright test` | E2E journeys (astro / nextjs / admin projects) |
 | `pnpm lint` | ESLint |
 | `pnpm format` | Prettier |
 

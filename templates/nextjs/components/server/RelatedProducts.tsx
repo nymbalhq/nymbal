@@ -1,5 +1,5 @@
 import { ProductCard } from './ProductCard'
-import type { DenormalisedProduct } from '@nymbal/sdk'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 interface RelatedProductsProps {
   products: DenormalisedProduct[]

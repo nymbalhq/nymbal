@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback } from 'react'
-import { MiniCart } from '@nymbal/react'
+import { MiniCart } from '@nymbalhq/react'
 
 export function MiniCartWrapper() {
   const handleClick = useCallback(() => {

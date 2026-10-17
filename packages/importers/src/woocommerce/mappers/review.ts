@@ -1,4 +1,4 @@
-import type { ReviewSubmission } from '@nymbal/types'
+import type { ReviewSubmission } from '@nymbalhq/types'
 import type { WcReview } from '../client.js'
 
 export function mapReview(

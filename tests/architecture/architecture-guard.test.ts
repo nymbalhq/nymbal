@@ -196,7 +196,7 @@ describe('architecture guard: core packages stay framework-agnostic', () => {
     expect(matchedFramework('reactive-x')).toBeNull()
     expect(matchedFramework('preactive')).toBeNull()
     expect(matchedFramework('@astrojsx/thing')).toBeNull()
-    expect(matchedFramework('@nymbal/types')).toBeNull()
+    expect(matchedFramework('@nymbalhq/types')).toBeNull()
   })
 
   it('specifiersInLine extracts specifiers from every import form', () => {
@@ -212,7 +212,7 @@ describe('architecture guard: core packages stay framework-agnostic', () => {
     // the guard. A line-by-line scanner would miss this because no single line
     // contains both `import` and `from '<spec>'`.
     const src = [
-      `import { createApp } from '@nymbal/platform'`, // line 1
+      `import { createApp } from '@nymbalhq/platform'`, // line 1
       `import {`, //                                     line 2 (import starts here)
       `  useState,`, //                                  line 3
       `  useEffect,`, //                                 line 4
@@ -225,7 +225,7 @@ describe('architecture guard: core packages stay framework-agnostic', () => {
     expect(react, 'multi-line react import must be detected').toBeDefined()
     expect(react?.line).toBe(2)
     // The non-framework specifier is still captured and not flagged.
-    expect(found.some((f) => f.specifier === '@nymbal/platform')).toBe(true)
-    expect(matchedFramework('@nymbal/platform')).toBeNull()
+    expect(found.some((f) => f.specifier === '@nymbalhq/platform')).toBe(true)
+    expect(matchedFramework('@nymbalhq/platform')).toBeNull()
   })
 })

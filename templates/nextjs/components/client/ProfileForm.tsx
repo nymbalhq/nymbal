@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
 export function ProfileForm() {

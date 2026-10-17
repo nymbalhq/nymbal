@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AdapterError, EVT_INVENTORY_CHANGED, EVT_INVENTORY_RESERVED, EVT_INVENTORY_RELEASED, EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK, NotFoundError, ValidationError } from '@nymbal/types'
+import { AdapterError, EVT_INVENTORY_CHANGED, EVT_INVENTORY_RESERVED, EVT_INVENTORY_RELEASED, EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK, NotFoundError, ValidationError } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'

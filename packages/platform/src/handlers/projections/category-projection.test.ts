@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { EVT_CATEGORY_CREATED, EVT_CATEGORY_DELETED, EVT_CATEGORY_UPDATED, type NymbalEvent } from '@nymbal/types'
+import { EVT_CATEGORY_CREATED, EVT_CATEGORY_DELETED, EVT_CATEGORY_UPDATED, type NymbalEvent } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../../document-store/in-memory.js'
 import { InProcessEventBus } from '../../event-bus/in-process.js'
 import { createLogger } from '../../logger.js'
 import { registerCategoryProjection } from './category-projection.js'
-import type { Category } from '@nymbal/types'
+import type { Category } from '@nymbalhq/types'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 

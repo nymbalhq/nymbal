@@ -4,9 +4,9 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { nymbalConfigSchema } from '@nymbal/config'
-import { createPlatform, runSeed, runMigrations } from '@nymbal/platform'
-import { createHttpServer } from '@nymbal/http'
+import { nymbalConfigSchema } from '@nymbalhq/config'
+import { createPlatform, runSeed, runMigrations } from '@nymbalhq/platform'
+import { createHttpServer } from '@nymbalhq/http'
 
 const VERSION = '0.1.0-smoke'
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCartStore } from './cart-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { Cart } from '@nymbal/types'
+import type { Cart } from '@nymbalhq/types'
 
 function makeCart(overrides?: Partial<Cart>): Cart {
   return {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerAuthRoutes } from './auth.js'
-import type { HttpAdapter, RouteHandler, Customer } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Customer } from '@nymbalhq/types'
 import type { AuthService, AuthTokens } from '../services/auth-service.js'
 
 function makeAdapter() {

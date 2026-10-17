@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { InProcessEventBus } from './in-process.js'
-import type { NymbalEvent } from '@nymbal/types'
+import type { NymbalEvent } from '@nymbalhq/types'
 
 function event<T>(type: string, payload: T): NymbalEvent<T> {
   return {

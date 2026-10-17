@@ -1,4 +1,4 @@
-import type { Logger, ShippingAdapter } from '@nymbal/types'
+import type { Logger, ShippingAdapter } from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 export function createNativeShippingAdapter(logger: Logger): ShippingAdapter {

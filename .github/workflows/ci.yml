@@ -32,7 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm build:templates
-      - run: pnpm --filter @nymbal/admin build
+      - run: pnpm --filter @nymbalhq/admin build
       # The one artefact every other job downloads; nothing downstream builds.
       - uses: actions/upload-artifact@v7
         with:
@@ -229,7 +229,7 @@ jobs:
         with:
           name: build-output
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Astro (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro" --no-build --base "$GATE_BASE"
 
@@ -255,7 +255,7 @@ jobs:
         with:
           name: build-output
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Next.js (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs" --no-build --base "$GATE_BASE"
 
@@ -281,7 +281,7 @@ jobs:
         with:
           name: build-output
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Admin (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
 
@@ -371,3 +371,23 @@ jobs:
         run: |
           kill "$NEXTJS_WEB_PID"
           kill "$NEXTJS_API_PID"
+
+  changeset:
+    name: Changeset
+    # The main -> dev back-merge carries no changes of its own.
+    if: github.event_name == 'pull_request' && github.head_ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm changeset status --since=origin/${{ github.base_ref }}
+

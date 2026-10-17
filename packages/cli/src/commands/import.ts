@@ -1,9 +1,9 @@
 import { defineCommand } from 'citty'
 import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
 import * as p from 'picocolors'
-import { loadConfig } from '@nymbal/config'
-import { createApp } from '@nymbal/platform'
-import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbal/importers'
+import { loadConfig } from '@nymbalhq/config'
+import { createApp } from '@nymbalhq/platform'
+import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
 

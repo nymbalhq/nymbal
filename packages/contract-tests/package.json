@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/contract-tests",
+  "name": "@nymbalhq/contract-tests",
   "version": "0.1.0",
   "private": true,
   "description": "Reusable contract test suites for all Nymbal adapter interfaces",
@@ -25,7 +25,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nymbal/types": "workspace:*"
+    "@nymbalhq/types": "workspace:*"
   },
   "peerDependencies": {
     "vitest": ">=3.0.0"

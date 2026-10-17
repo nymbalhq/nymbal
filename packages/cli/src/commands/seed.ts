@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbal/config'
-import { createPlatform, runSeed } from '@nymbal/platform'
+import { loadConfig } from '@nymbalhq/config'
+import { createPlatform, runSeed } from '@nymbalhq/platform'
 import { getCliVersion } from '../utils/version.js'
 
 export const seedCommand = defineCommand({

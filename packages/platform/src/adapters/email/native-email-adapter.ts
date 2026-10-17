@@ -9,7 +9,7 @@ import {
   type EmailAdapter,
   type Logger,
   type TransactionalEmail,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { okHealth } from '../base.js'
 import { renderTemplate } from './templates.js'
 

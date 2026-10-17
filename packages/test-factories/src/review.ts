@@ -1,4 +1,4 @@
-import type { Review, ReviewModerationStatus } from '@nymbal/types'
+import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
 import { nextId, isoDate, randInt } from './prng.js'
 
 export function createReview(overrides?: Partial<Review>): Review {

@@ -1,4 +1,4 @@
-import type { AnalyticsAdapter, Logger } from '@nymbal/types'
+import type { AnalyticsAdapter, Logger } from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 export function createNativeAnalyticsAdapter(logger: Logger): AnalyticsAdapter {

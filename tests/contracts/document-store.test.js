@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryDocumentStore } from '@nymbal/platform';
+import { InMemoryDocumentStore } from '@nymbalhq/platform';
 // Contract suite — any DocumentStoreAdapter must pass this. Today only in-memory exists;
 // production backends (dynamodb, firestore, cosmosdb, postgres-jsonb) will plug in here.
 const adapters = [

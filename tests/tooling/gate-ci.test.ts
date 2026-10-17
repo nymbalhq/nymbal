@@ -411,16 +411,16 @@ function artefactTree(): string {
   const root = scratch()
   const manifest = (name: string, build?: string): string =>
     JSON.stringify({ name, ...(build === undefined ? {} : { scripts: { build } }) })
-  write(root, 'packages/alpha/package.json', manifest('@nymbal/alpha', 'tsup'))
+  write(root, 'packages/alpha/package.json', manifest('@nymbalhq/alpha', 'tsup'))
   write(root, 'packages/alpha/dist/index.js', 'export {}\n')
-  write(root, 'packages/beta/package.json', manifest('@nymbal/beta', 'tsup'))
+  write(root, 'packages/beta/package.json', manifest('@nymbalhq/beta', 'tsup'))
   write(root, 'packages/beta/dist/index.js', 'export {}\n')
-  write(root, 'packages/fixtures-only/package.json', manifest('@nymbal/fixtures-only'))
-  write(root, 'templates/astro/package.json', manifest('@nymbal/template-astro', 'astro build'))
+  write(root, 'packages/fixtures-only/package.json', manifest('@nymbalhq/fixtures-only'))
+  write(root, 'templates/astro/package.json', manifest('@nymbalhq/template-astro', 'astro build'))
   write(root, 'templates/astro/dist/index.html', '<!doctype html>\n')
-  write(root, 'templates/nextjs/package.json', manifest('@nymbal/template-nextjs', 'next build'))
+  write(root, 'templates/nextjs/package.json', manifest('@nymbalhq/template-nextjs', 'next build'))
   write(root, 'templates/nextjs/.next/BUILD_ID', 'scratch\n')
-  write(root, 'apps/admin/package.json', manifest('@nymbal/admin', 'tsc -b && vite build'))
+  write(root, 'apps/admin/package.json', manifest('@nymbalhq/admin', 'tsc -b && vite build'))
   write(root, 'apps/admin/dist/index.html', '<!doctype html>\n')
   return root
 }

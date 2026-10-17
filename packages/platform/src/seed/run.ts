@@ -1,8 +1,8 @@
 import { v7 as uuidv7 } from 'uuid'
 import bcrypt from 'bcryptjs'
 const { hashSync } = bcrypt
-import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import { createCategoryRepository } from '../db/repositories/categories.js'
 import { createProductRepository } from '../db/repositories/products.js'
@@ -11,7 +11,7 @@ import {
   EVT_CATEGORY_CREATED,
   EVT_PRODUCT_CREATED,
   EVT_CUSTOMER_CREATED,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { seedCategories, seedProducts, type SeedProduct } from './data.js'

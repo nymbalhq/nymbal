@@ -5,7 +5,7 @@ const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
 const ADMIN_PASSWORD = process.env.NYMBAL_ADMIN_PASSWORD ?? 'nymbal-admin-dev'
 
-// Canonical Address shape from @nymbal/types (firstName/lastName/addressLine1/region).
+// Canonical Address shape from @nymbalhq/types (firstName/lastName/addressLine1/region).
 const address = {
   firstName: 'Avery',
   lastName: 'Quinn',

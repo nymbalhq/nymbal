@@ -39,7 +39,7 @@ jobs:
       - name: Start the API
         run: node packages/cli/bin/nymbal.mjs dev --api-only &
       - name: Start the storefront (Astro)
-        run: pnpm --filter @nymbal/template-astro preview &
+        run: pnpm --filter @nymbalhq/template-astro preview &
       - name: Wait for the API and the storefront
         run: npx wait-on http://localhost:3001/health http://localhost:4321 --timeout 90000
       - name: Run Lighthouse CI (Astro)
@@ -82,7 +82,7 @@ jobs:
       - name: Start the API
         run: node packages/cli/bin/nymbal.mjs dev --api-only &
       - name: Start the storefront (Next.js)
-        run: pnpm --filter @nymbal/template-nextjs start &
+        run: pnpm --filter @nymbalhq/template-nextjs start &
       - name: Wait for the API and the storefront
         run: npx wait-on http://localhost:3001/health http://localhost:3000 --timeout 90000
       - name: Run Lighthouse CI (Next.js)
@@ -111,7 +111,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm build:templates
-      - run: pnpm --filter @nymbal/admin build
+      - run: pnpm --filter @nymbalhq/admin build
       - uses: actions/upload-artifact@v7
         with:
           name: build-output
@@ -172,7 +172,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       # The previous nightly's commit is not tracked, so the incremental steps judge the last commit.
       - name: gate:full with Docker Compose services
         run: pnpm gate:full --base HEAD~1
@@ -213,9 +213,9 @@ jobs:
         with:
           name: build-output
       - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Functional, visual and a11y, mobile
-        run: pnpm --filter @nymbal/e2e exec playwright test --project ${{ matrix.target }}-mobile
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile
       - name: Upload the Playwright results
         if: always()
         uses: actions/upload-artifact@v7

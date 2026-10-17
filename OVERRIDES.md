@@ -19,8 +19,8 @@ When `npx create-nymbal-app` scaffolds a project, files are resolved in this ord
    Nymbal never ships a change that rewrites a scaffolded file in place.
 
 2. **Template defaults are copied at scaffold time.** The default pages, layouts,
-   components, and styles come from the canonical `@nymbal/template-astro` source
-   (`templates/astro` in the monorepo; `templates/nextjs` for `@nymbal/template-nextjs`).
+   components, and styles come from the canonical `@nymbalhq/template-astro` source
+   (`templates/astro` in the monorepo; `templates/nextjs` for `@nymbalhq/template-nextjs`).
    At build time, `packages/create-app/scripts/sync-scaffold.mjs` syncs that source into
    `packages/create-app/scaffold/templates/<template>/`, and `create-nymbal-app` copies it
    into the new project. These files are a starting point, not a dependency — once
@@ -28,8 +28,8 @@ When `npx create-nymbal-app` scaffolds a project, files are resolved in this ord
 
 3. **Nymbal logic updates arrive as pure npm dependency bumps.** The platform kernel, SDK,
    interactive UI, shared types, and config schema live in versioned packages:
-   `@nymbal/platform`, `@nymbal/sdk`, `@nymbal/web-components`, `@nymbal/types`,
-   `@nymbal/config`. A Nymbal patch is `npm update` (or `pnpm update`) on those packages.
+   `@nymbalhq/platform`, `@nymbalhq/sdk`, `@nymbalhq/web-components`, `@nymbalhq/types`,
+   `@nymbalhq/config`. A Nymbal patch is `npm update` (or `pnpm update`) on those packages.
    Developer files and Nymbal package files never share a file, so taking a patch never
    merges. The scaffolded `src/` is a thin layer of markup that calls into these packages;
    the behaviour that needs patching (stores, components, API, security, config validation)
@@ -90,7 +90,7 @@ server for both the marker and the storefront markers (`hero-section`, `product-
 
 ## Design decision: scaffold-time overlay, not runtime route injection
 
-A runtime model — installing `@nymbal/template-astro` as a dependency and injecting its
+A runtime model — installing `@nymbalhq/template-astro` as a dependency and injecting its
 routes at dev/build time, with project files shadowing package routes — was considered
 and rejected for v0.1. The project manual (CLAUDE.md) fixes the publishable package list
 to: config, platform, sdk, web-components, react, types, contract-tests, test-factories.

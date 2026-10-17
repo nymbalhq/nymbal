@@ -4,7 +4,7 @@ import { registerCategoryProjection } from '../../src/handlers/projections/categ
 import { registerProductProjection, type DenormalisedProduct } from '../../src/handlers/projections/product-projection.js'
 import { createLogger } from '../../src/logger.js'
 import { registerProductRoutes } from '../../src/routes/products.js'
-import type { HttpAdapter, RouteHandler } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler } from '@nymbalhq/types'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 

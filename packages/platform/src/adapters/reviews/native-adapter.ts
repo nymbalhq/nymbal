@@ -8,7 +8,7 @@ import {
   type ReviewResult,
   type ReviewSubmission,
   type Review,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { Repositories } from '../../repositories/index.js'
 import { noopInitialize, okHealth } from '../base.js'
 

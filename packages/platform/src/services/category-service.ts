@@ -7,7 +7,7 @@ import {
   ValidationError,
   type Category,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 

@@ -6,8 +6,8 @@ import type {
   Subscription,
   SubscriptionConfig,
   Logger,
-} from '@nymbal/types'
-import { ValidationError } from '@nymbal/types'
+} from '@nymbalhq/types'
+import { ValidationError } from '@nymbalhq/types'
 
 interface Registration {
   id: string

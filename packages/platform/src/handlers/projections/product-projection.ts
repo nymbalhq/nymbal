@@ -11,7 +11,7 @@ import {
   type ProductSnapshot,
   type ProductCreatedV1Payload,
   type ProductUpdatedV1Payload,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 const PRODUCTS = 'products'
 const PRODUCTS_BY_CATEGORY = 'products-by-category'

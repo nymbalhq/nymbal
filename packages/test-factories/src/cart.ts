@@ -1,4 +1,4 @@
-import type { Cart, CartItem } from '@nymbal/types'
+import type { Cart, CartItem } from '@nymbalhq/types'
 import { nextId, isoDate, randInt } from './prng.js'
 
 export function createCartItem(overrides?: Partial<CartItem>): CartItem {

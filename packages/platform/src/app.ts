@@ -1,4 +1,4 @@
-import type { NymbalConfig } from '@nymbal/config'
+import type { NymbalConfig } from '@nymbalhq/config'
 import { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
 import { buildAdapters, type AdapterRegistry } from './adapters/registry.js'
@@ -11,7 +11,7 @@ import {
   startCartAbandonmentSweeper,
   type SweeperHandle,
 } from './sweepers/index.js'
-import type { HttpAdapter } from '@nymbal/types'
+import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
   platform: Platform

@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/template-astro",
+  "name": "@nymbalhq/template-astro",
   "version": "0.1.0",
   "private": true,
   "description": "A Nymbal commerce project",
@@ -17,14 +17,14 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "@nymbal/cli": "^0.1.0",
-    "@nymbal/config": "^0.1.0",
-    "@nymbal/platform": "^0.1.0",
+    "nymbal": "^0.1.0",
+    "@nymbalhq/config": "^0.1.0",
+    "@nymbalhq/platform": "^0.1.0",
     "astro": "^4.16.7",
     "@astrojs/node": "^8.3.4",
-    "@nymbal/sdk": "^0.1.0",
-    "@nymbal/web-components": "^0.1.0",
-    "@nymbal/types": "^0.1.0",
+    "@nymbalhq/sdk": "^0.1.0",
+    "@nymbalhq/web-components": "^0.1.0",
+    "@nymbalhq/types": "^0.1.0",
     "@stripe/stripe-js": "^4.0.0"
   }
 }

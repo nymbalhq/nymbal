@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useRef, type ReactNode } from 'react'
-import { NymbalProvider } from '@nymbal/react'
-import { registerClient, registerComponents } from '@nymbal/web-components'
-import '@nymbal/web-components/tokens.css'
+import { NymbalProvider } from '@nymbalhq/react'
+import { registerClient, registerComponents } from '@nymbalhq/web-components'
+import '@nymbalhq/web-components/tokens.css'
 import { getNymbalClient } from '@/lib/client'
 
 export function NymbalSetup({ children }: { children: ReactNode }) {

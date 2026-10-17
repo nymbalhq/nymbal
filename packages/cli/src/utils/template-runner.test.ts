@@ -12,7 +12,7 @@ import {
 /**
  * Regression guard for the flat-scaffold launch bug.
  *
- * `nymbal dev` used to run `pnpm --filter @nymbal/template-astro dev`. In a flat
+ * `nymbal dev` used to run `pnpm --filter @nymbalhq/template-astro dev`. In a flat
  * create-nymbal-app scaffold the project root IS the storefront and its package
  * is named after the project (e.g. `launch-smoke-astro`), so the filter matched
  * the workspace template package (the WRONG directory) inside a monorepo, or
@@ -39,8 +39,8 @@ describe('template-runner', () => {
   }
 
   it('maps templates to the correct workspace filter name', () => {
-    expect(templateFilterFor('astro')).toBe('@nymbal/template-astro')
-    expect(templateFilterFor('nextjs')).toBe('@nymbal/template-nextjs')
+    expect(templateFilterFor('astro')).toBe('@nymbalhq/template-astro')
+    expect(templateFilterFor('nextjs')).toBe('@nymbalhq/template-nextjs')
   })
 
   it('detects a flat astro scaffold by astro.config.mjs', () => {
@@ -94,7 +94,7 @@ describe('template-runner', () => {
     const plan = planTemplateLaunch(root, 'astro', 4399)
     expect(plan.mode).toBe('filter')
     expect(plan.command).toBe('pnpm')
-    expect(plan.args).toEqual(['--filter', '@nymbal/template-astro', 'dev'])
+    expect(plan.args).toEqual(['--filter', '@nymbalhq/template-astro', 'dev'])
   })
 
   it('resolves the symlinked package directory (pnpm workspace) for resolveLocalBin', () => {

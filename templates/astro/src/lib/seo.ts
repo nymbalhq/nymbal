@@ -1,4 +1,4 @@
-import type { DenormalisedProduct } from '@nymbal/sdk'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
   const images = product.media?.length

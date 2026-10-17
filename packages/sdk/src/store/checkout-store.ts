@@ -1,4 +1,4 @@
-import type { Address } from '@nymbal/types'
+import type { Address } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { CheckoutState, ShippingMethod } from '../types.js'
 import { createStore } from './create-store.js'

@@ -3,8 +3,8 @@ import type {
   Logger,
   PaymentsAdapter,
   SearchAdapter,
-} from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+} from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'

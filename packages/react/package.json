@@ -1,8 +1,13 @@
 {
-  "name": "@nymbal/react",
+  "name": "@nymbalhq/react",
   "version": "0.1.0",
   "description": "React bindings for the Nymbal commerce SDK",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/react"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -29,9 +34,9 @@
     "check:generated": "tsx scripts/generate-wrappers.ts --check"
   },
   "dependencies": {
-    "@nymbal/sdk": "workspace:*",
-    "@nymbal/web-components": "workspace:*",
-    "@nymbal/types": "workspace:*"
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/web-components": "workspace:*",
+    "@nymbalhq/types": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=18.0.0",

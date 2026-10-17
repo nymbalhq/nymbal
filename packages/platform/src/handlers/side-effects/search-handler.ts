@@ -10,7 +10,7 @@ import {
   type ProductUpdatedV1Payload,
   type SearchAdapter,
   type SearchDocument,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { withIdempotency } from '../idempotency.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 

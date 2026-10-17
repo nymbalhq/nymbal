@@ -12,7 +12,7 @@ import {
   type Variant,
   type ProductSnapshot,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { ProductInsert, ProductUpdate } from '../repositories/product.js'

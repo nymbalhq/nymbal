@@ -14,8 +14,8 @@ import type {
   SseEvent,
   StreamContext,
   StreamHandler,
-} from '@nymbal/types'
-import { HttpError, NymbalError } from '@nymbal/types'
+} from '@nymbalhq/types'
+import { HttpError, NymbalError } from '@nymbalhq/types'
 
 export interface CorsOptions {
   allowedOrigins: string[]

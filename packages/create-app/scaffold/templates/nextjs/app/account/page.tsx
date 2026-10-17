@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
 export default function AccountDashboard() {

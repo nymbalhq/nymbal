@@ -1,4 +1,4 @@
-import { createNymbalClient, type NymbalClient } from '@nymbal/sdk'
+import { createNymbalClient, type NymbalClient } from '@nymbalhq/sdk'
 
 let instance: NymbalClient | null = null
 

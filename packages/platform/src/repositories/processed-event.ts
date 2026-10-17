@@ -1,4 +1,4 @@
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 
 const COLLECTION = '_processed_events'
 

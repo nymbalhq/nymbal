@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from '@nymbal/types'
+import type { MiddlewareHandler } from '@nymbalhq/types'
 import type { AuthService } from '../services/auth-service.js'
 
 /**

@@ -1,5 +1,5 @@
-import type { HttpAdapter } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { HttpAdapter } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import { ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 

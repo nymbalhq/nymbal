@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCheckoutRoutes } from './checkout.js'
-import type { HttpAdapter, RouteHandler, Address } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Address } from '@nymbalhq/types'
 import type { CheckoutService } from '../services/checkout-service.js'
 
 function makeAdapter() {

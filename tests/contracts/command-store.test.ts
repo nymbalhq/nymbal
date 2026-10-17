@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createCommandStore, runMigrations, type CommandStore } from '@nymbal/platform'
+import { createCommandStore, runMigrations, type CommandStore } from '@nymbalhq/platform'
 
 async function buildStore(): Promise<CommandStore> {
   const store = createCommandStore(

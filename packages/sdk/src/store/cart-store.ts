@@ -1,4 +1,4 @@
-import type { CartItem } from '@nymbal/types'
+import type { CartItem } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { CartState } from '../types.js'
 import { createStore } from './create-store.js'

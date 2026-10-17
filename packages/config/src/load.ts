@@ -3,7 +3,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createJiti } from 'jiti'
 import { z } from 'zod'
-import { ConfigError } from '@nymbal/types'
+import { ConfigError } from '@nymbalhq/types'
 import { nymbalConfigSchema, type NymbalConfig } from './schema.js'
 
 const CONFIG_FILE = 'nymbal.config.ts'

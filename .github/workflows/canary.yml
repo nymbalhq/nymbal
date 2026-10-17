@@ -1,0 +1,125 @@
+name: Canary
+
+# A merge to dev with pending changesets publishes a snapshot of the changed packages to the npm `canary` tag
+# (`npm exec nymbal@canary`) and a GitHub prerelease. It never commits or pushes to dev and never moves `latest`.
+# Needs the NPM_TOKEN repository secret (npm granular token with publish rights on @nymbalhq/*, nymbal and
+# create-nymbal-app); without it the publish is skipped with a notice. A canary also waits until every public package
+# it would publish already exists on npm (scripts/canary-ready.ts), which is true once the first release from main
+# has gone out.
+
+on:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  PNPM_VERSION: '9.12.3'
+  NODE_VERSION: '22'
+
+jobs:
+  detect:
+    name: Detect changesets and token
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changesets: ${{ steps.scan.outputs.changesets }}
+      npm_token: ${{ steps.token.outputs.npm_token }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: scan
+        name: Look for pending changesets
+        run: |
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
+          if [ "$pending" -gt 0 ]; then
+            echo "changesets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changesets=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pending changesets, no canary to publish."
+          fi
+      - id: token
+        name: Check the npm secret
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "npm_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::NPM_TOKEN is not set: skipping the canary publish."
+          fi
+
+  canary:
+    name: Publish canary
+    needs: detect
+    if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.npm_token == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - name: Collect the changeset summaries and current versions
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/summaries.md"
+          for file in .changeset/*.md; do
+            [ "$(basename "$file")" = README.md ] && continue
+            # Drop the frontmatter, keep the prose.
+            awk 'BEGIN { fm = 0 } /^---$/ && fm < 2 { fm++; next } fm >= 2' "$file" >> "$RUNNER_TEMP/summaries.md"
+            echo >> "$RUNNER_TEMP/summaries.md"
+          done
+          pnpm -r list --json --depth -1 > "$RUNNER_TEMP/before.json"
+      - name: Version the snapshot
+        run: |
+          set -euo pipefail
+          pnpm changeset version --snapshot canary
+          pnpm -r list --json --depth -1 > "$RUNNER_TEMP/after.json"
+      # A canary must never be a package's first publish: npm gives a first publish `latest` whatever --tag says.
+      - id: ready
+        name: Check that the canary publishes only packages already on npm
+        run: pnpm exec tsx scripts/canary-ready.ts --before "$RUNNER_TEMP/before.json" --after "$RUNNER_TEMP/after.json"
+      - if: steps.ready.outputs.ready == 'true'
+        run: pnpm build
+      - name: Publish to the canary tag
+        if: steps.ready.outputs.ready == 'true'
+        run: pnpm changeset publish --tag canary --no-git-tag
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+      - name: Create the GitHub prerelease
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short=$(git rev-parse --short=7 "$GITHUB_SHA")
+          {
+            echo "## Packages"
+            echo
+            jq -r --slurpfile before "$RUNNER_TEMP/before.json" '
+              ($before[0] | map({ key: .name, value: .version }) | from_entries) as $was
+              | .[] | select(.private != true and $was[.name] != .version) | "- `\(.name)@\(.version)`"
+            ' "$RUNNER_TEMP/after.json"
+            echo
+            echo "## Changes"
+            echo
+            cat "$RUNNER_TEMP/summaries.md"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "canary-$short" --prerelease --target "$GITHUB_SHA" \
+            --title "canary-$short" --notes-file "$RUNNER_TEMP/notes.md"

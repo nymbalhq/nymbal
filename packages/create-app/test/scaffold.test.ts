@@ -68,25 +68,25 @@ describe('detectPackageManager', () => {
 // ─── sync-scaffold: rewriteWorkspaceVersions ─────────────────────────────────
 
 describe('rewriteWorkspaceVersions', () => {
-  const versions = { '@nymbal/foo': '1.2.3', '@nymbal/bar': '0.5.0' }
+  const versions = { '@nymbalhq/foo': '1.2.3', '@nymbalhq/bar': '0.5.0' }
 
   it('rewrites workspace:* to ^version', () => {
-    const result = rewriteWorkspaceVersions({ '@nymbal/foo': 'workspace:*' }, versions)
-    expect(result).toEqual({ '@nymbal/foo': '^1.2.3' })
+    const result = rewriteWorkspaceVersions({ '@nymbalhq/foo': 'workspace:*' }, versions)
+    expect(result).toEqual({ '@nymbalhq/foo': '^1.2.3' })
   })
 
   it('throws when workspace:* key has no version entry', () => {
     expect(() =>
-      rewriteWorkspaceVersions({ '@nymbal/unknown': 'workspace:*' }, versions),
+      rewriteWorkspaceVersions({ '@nymbalhq/unknown': 'workspace:*' }, versions),
     ).toThrow(/NYMBAL_PACKAGE_DIRS/)
   })
 
   it('leaves non-workspace:* values untouched', () => {
     const result = rewriteWorkspaceVersions(
-      { astro: '^4.0.0', '@nymbal/foo': 'workspace:*' },
+      { astro: '^4.0.0', '@nymbalhq/foo': 'workspace:*' },
       versions,
     )
-    expect(result).toEqual({ astro: '^4.0.0', '@nymbal/foo': '^1.2.3' })
+    expect(result).toEqual({ astro: '^4.0.0', '@nymbalhq/foo': '^1.2.3' })
   })
 
   it('returns undefined unchanged', () => {
@@ -98,16 +98,16 @@ describe('rewriteWorkspaceVersions', () => {
 
 describe('mergePackageJson', () => {
   const versions = {
-    '@nymbal/cli': '0.1.0',
-    '@nymbal/config': '0.1.0',
-    '@nymbal/platform': '0.1.0',
-    '@nymbal/sdk': '0.1.0',
-    '@nymbal/types': '0.1.0',
-    '@nymbal/web-components': '0.1.0',
+    nymbal: '0.1.0',
+    '@nymbalhq/config': '0.1.0',
+    '@nymbalhq/platform': '0.1.0',
+    '@nymbalhq/sdk': '0.1.0',
+    '@nymbalhq/types': '0.1.0',
+    '@nymbalhq/web-components': '0.1.0',
   }
 
   const templatePkg = {
-    name: '@nymbal/template-astro',
+    name: '@nymbalhq/template-astro',
     version: '0.1.0',
     private: true,
     license: 'MIT',
@@ -119,9 +119,9 @@ describe('mergePackageJson', () => {
     },
     dependencies: {
       astro: '^4.16.7',
-      '@nymbal/sdk': 'workspace:*',
-      '@nymbal/types': 'workspace:*',
-      '@nymbal/web-components': 'workspace:*',
+      '@nymbalhq/sdk': 'workspace:*',
+      '@nymbalhq/types': 'workspace:*',
+      '@nymbalhq/web-components': 'workspace:*',
     },
   }
 
@@ -140,23 +140,24 @@ describe('mergePackageJson', () => {
   it('injects root-manifest deps', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
-    expect(deps['@nymbal/cli']).toBe('^0.1.0')
-    expect(deps['@nymbal/config']).toBe('^0.1.0')
-    expect(deps['@nymbal/platform']).toBe('^0.1.0')
+    // P0-04 AC-4: the CLI publishes unscoped as `nymbal`.
+    expect(deps['nymbal']).toBe('^0.1.0')
+    expect(deps['@nymbalhq/config']).toBe('^0.1.0')
+    expect(deps['@nymbalhq/platform']).toBe('^0.1.0')
   })
 
   it('rewrites workspace:* template deps', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
-    expect(deps['@nymbal/sdk']).toBe('^0.1.0')
-    expect(deps['@nymbal/web-components']).toBe('^0.1.0')
+    expect(deps['@nymbalhq/sdk']).toBe('^0.1.0')
+    expect(deps['@nymbalhq/web-components']).toBe('^0.1.0')
   })
 
-  it('deduplicates @nymbal/types (template wins)', () => {
+  it('deduplicates @nymbalhq/types (template wins)', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
     // types appears in both root-manifest (via injected rootDeps if added) and template — just once
-    const typeEntries = Object.keys(deps).filter((k) => k === '@nymbal/types')
+    const typeEntries = Object.keys(deps).filter((k) => k === '@nymbalhq/types')
     expect(typeEntries).toHaveLength(1)
   })
 
@@ -174,7 +175,7 @@ describe('mergePackageJson', () => {
 // ─── NYMBAL_PACKAGE_DIRS coverage ────────────────────────────────────────────
 
 describe('NYMBAL_PACKAGE_DIRS coverage', () => {
-  it('includes every @nymbal/* package directory under packages/', async () => {
+  it('includes every @nymbalhq/* package directory under packages/', async () => {
     const all = await readdir(PACKAGES_DIR, { withFileTypes: true })
     const nymbalDirs = (
       await Promise.all(
@@ -185,7 +186,7 @@ describe('NYMBAL_PACKAGE_DIRS coverage', () => {
               const pkg = JSON.parse(
                 await readFile(resolve(PACKAGES_DIR, e.name, 'package.json'), 'utf8'),
               ) as { name?: string }
-              return pkg.name?.startsWith('@nymbal/') ? pkg.name : null
+              return pkg.name?.startsWith('@nymbalhq/') ? pkg.name : null
             } catch {
               return null
             }
@@ -228,19 +229,19 @@ describe('scaffold/templates built output', () => {
         expect(scripts['seed']).toBe('nymbal seed')
       })
 
-      it('all @nymbal/* deps match semver range', () => {
+      it('all @nymbalhq/* deps match semver range', () => {
         const deps = pkg['dependencies'] as Record<string, string>
         for (const [key, val] of Object.entries(deps)) {
-          if (key.startsWith('@nymbal/')) {
+          if (key.startsWith('@nymbalhq/')) {
             expect(val).toMatch(/^\^\d+\.\d+\.\d+/)
           }
         }
       })
 
-      it('all @nymbal/* versions are equal (version cohort consistency)', () => {
+      it('all @nymbalhq/* versions are equal (version cohort consistency)', () => {
         const deps = pkg['dependencies'] as Record<string, string>
         const nymbalVersions = Object.entries(deps)
-          .filter(([k]) => k.startsWith('@nymbal/'))
+          .filter(([k]) => k.startsWith('@nymbalhq/'))
           .map(([, v]) => v)
         const unique = new Set(nymbalVersions)
         expect(unique.size).toBe(1)

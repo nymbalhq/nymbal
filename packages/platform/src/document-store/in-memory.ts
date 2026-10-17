@@ -1,10 +1,10 @@
-import { AdapterError } from '@nymbal/types'
+import { AdapterError } from '@nymbalhq/types'
 import type {
   DocumentStoreAdapter,
   PutOptions,
   QueryParams,
   QueryResult,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 interface Entry {
   doc: unknown

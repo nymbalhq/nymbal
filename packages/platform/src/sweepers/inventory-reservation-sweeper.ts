@@ -1,4 +1,4 @@
-import type { Logger } from '@nymbal/types'
+import type { Logger } from '@nymbalhq/types'
 import type { InventoryService } from '../services/inventory-service.js'
 import type { InventoryReservationRepository } from '../repositories/inventory-reservation.js'
 

@@ -1,5 +1,5 @@
-import { createNymbalClient } from '@nymbal/sdk'
-import { registerClient, registerComponents } from '@nymbal/web-components'
+import { createNymbalClient } from '@nymbalhq/sdk'
+import { registerClient, registerComponents } from '@nymbalhq/web-components'
 
 const client = createNymbalClient({
   baseUrl: import.meta.env.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001',

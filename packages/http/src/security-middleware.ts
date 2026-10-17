@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import type { NymbalConfig } from '@nymbal/config'
-import type { RequestContext, ResponseEnvelope, RouteHandler } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import type { RequestContext, ResponseEnvelope, RouteHandler } from '@nymbalhq/types'
 import { RateLimiter } from './rate-limit.js'
 
 export const CSRF_COOKIE = 'nymbal.csrf'

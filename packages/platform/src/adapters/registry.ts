@@ -10,8 +10,8 @@ import type {
   SecurityAdapter,
   ShippingAdapter,
   TaxAdapter,
-} from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+} from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
 import { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
 import {

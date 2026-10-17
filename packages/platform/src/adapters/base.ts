@@ -1,4 +1,4 @@
-import type { AdapterBase, HealthReport } from '@nymbal/types'
+import type { AdapterBase, HealthReport } from '@nymbalhq/types'
 
 export function noopInitialize(_config: unknown): Promise<void> {
   return Promise.resolve()

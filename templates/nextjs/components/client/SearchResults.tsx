@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { useSearch } from '@nymbal/react'
+import { useSearch } from '@nymbalhq/react'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/search.module.css'
 

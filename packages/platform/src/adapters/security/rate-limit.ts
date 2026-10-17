@@ -1,4 +1,4 @@
-import type { RateLimitAction } from '@nymbal/types'
+import type { RateLimitAction } from '@nymbalhq/types'
 
 export interface ParsedRule {
   pattern: string

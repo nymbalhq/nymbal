@@ -1,9 +1,9 @@
-import type { AiAdapter } from '@nymbal/types'
+import type { AiAdapter } from '@nymbalhq/types'
 import type {
   ServiceRegistry,
   Repositories,
-} from '@nymbal/platform'
-import { createLocalFsMediaStorage } from '@nymbal/platform'
+} from '@nymbalhq/platform'
+import { createLocalFsMediaStorage } from '@nymbalhq/platform'
 import { join } from 'node:path'
 import type { WooCommerceImportOptions, ImportState, ProgressCallback } from '../types.js'
 import { loadState, freshState, saveState } from '../state.js'
@@ -17,7 +17,7 @@ import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
 import { downloadProductImages } from './media.js'
 import { runEnrichment } from './enrichment.js'
-import type { ReviewsAdapter } from '@nymbal/types'
+import type { ReviewsAdapter } from '@nymbalhq/types'
 
 export interface WooCommerceImporterDeps {
   services: ServiceRegistry

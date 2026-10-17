@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { SearchState } from '@nymbal/sdk'
+import type { SearchState } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseSearchReturn extends SearchState {

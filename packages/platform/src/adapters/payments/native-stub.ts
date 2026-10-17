@@ -12,7 +12,7 @@ import {
   type PaymentsAdapter,
   type Refund,
   type WebhookResult,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { noopInitialize, okHealth } from '../base.js'
 
 interface StubIntent {

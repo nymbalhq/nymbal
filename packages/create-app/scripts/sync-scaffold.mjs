@@ -13,24 +13,25 @@ const PACKAGES_DIR = resolve(MONOREPO_ROOT, 'packages')
 const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 
 // Packages explicitly excluded from the scaffold dep map (dev/testing packages, not runtime deps).
-// If a new @nymbal/* package appears in the monorepo and is NOT intended as a scaffold dep,
+// If a new @nymbalhq/* package appears in the monorepo and is NOT intended as a scaffold dep,
 // add it here so the coverage test knows it's intentionally absent.
 export const NON_SCAFFOLD_PACKAGES = new Set([
-  '@nymbal/contract-tests',
-  '@nymbal/test-factories',
+  '@nymbalhq/contract-tests',
+  '@nymbalhq/test-factories',
 ])
 
-// Static list of publishable @nymbal/* packages. Add an entry here when a new package ships.
+// Static list of publishable scaffold dependencies (@nymbalhq/* and the `nymbal` CLI).
+// Add an entry here when a new package ships.
 export const NYMBAL_PACKAGE_DIRS = [
-  { name: '@nymbal/cli', dir: 'cli' },
-  { name: '@nymbal/config', dir: 'config' },
-  { name: '@nymbal/http', dir: 'http' },
-  { name: '@nymbal/importers', dir: 'importers' },
-  { name: '@nymbal/platform', dir: 'platform' },
-  { name: '@nymbal/react', dir: 'react' },
-  { name: '@nymbal/sdk', dir: 'sdk' },
-  { name: '@nymbal/types', dir: 'types' },
-  { name: '@nymbal/web-components', dir: 'web-components' },
+  { name: 'nymbal', dir: 'cli' },
+  { name: '@nymbalhq/config', dir: 'config' },
+  { name: '@nymbalhq/http', dir: 'http' },
+  { name: '@nymbalhq/importers', dir: 'importers' },
+  { name: '@nymbalhq/platform', dir: 'platform' },
+  { name: '@nymbalhq/react', dir: 'react' },
+  { name: '@nymbalhq/sdk', dir: 'sdk' },
+  { name: '@nymbalhq/types', dir: 'types' },
+  { name: '@nymbalhq/web-components', dir: 'web-components' },
 ]
 
 const templates = [
@@ -68,7 +69,7 @@ export async function readNymbalVersions() {
 }
 
 /**
- * Rewrites workspace:* values to ^version for @nymbal/* keys.
+ * Rewrites workspace:* values to ^version for @nymbalhq/* keys.
  * Throws if a workspace:* key has no entry in the version map — fail-loud at build time.
  * @param {Record<string, string> | undefined} deps
  * @param {Record<string, string>} versions
@@ -78,7 +79,7 @@ export function rewriteWorkspaceVersions(deps, versions) {
   /** @type {Record<string, string>} */
   const result = {}
   for (const [key, val] of Object.entries(deps)) {
-    if (val === 'workspace:*' && key.startsWith('@nymbal/')) {
+    if (val === 'workspace:*' && key.startsWith('@nymbalhq/')) {
       const version = versions[key]
       if (!version) {
         throw new Error(
@@ -102,9 +103,9 @@ export function rewriteWorkspaceVersions(deps, versions) {
 export function mergePackageJson(templatePkg, versions) {
   // Deps from the old root-manifest that are injected into every flat project
   const rootDeps = {
-    '@nymbal/cli': `^${versions['@nymbal/cli']}`,
-    '@nymbal/config': `^${versions['@nymbal/config']}`,
-    '@nymbal/platform': `^${versions['@nymbal/platform']}`,
+    nymbal: `^${versions['nymbal']}`,
+    '@nymbalhq/config': `^${versions['@nymbalhq/config']}`,
+    '@nymbalhq/platform': `^${versions['@nymbalhq/platform']}`,
   }
 
   const templateDeps = rewriteWorkspaceVersions(
@@ -116,7 +117,7 @@ export function mergePackageJson(templatePkg, versions) {
     versions,
   )
 
-  // Template wins on overlap (e.g. @nymbal/types present in both root and template)
+  // Template wins on overlap (e.g. @nymbalhq/types present in both root and template)
   const dependencies = { ...rootDeps, ...templateDeps }
 
   return {

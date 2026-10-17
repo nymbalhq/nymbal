@@ -1,11 +1,11 @@
-import type { NymbalConfig } from '@nymbal/config'
-import type { EventBusAdapter, Logger, NymbalEvent } from '@nymbal/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import type { EventBusAdapter, Logger, NymbalEvent } from '@nymbalhq/types'
 import {
   EVT_CATEGORY_CREATED,
   EVT_CUSTOMER_CREATED,
   EVT_ORDER_PLACED,
   EVT_PRODUCT_CREATED,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { createEventBuilder } from './events/builder.js'
 import type { Repositories } from './repositories/index.js'
 

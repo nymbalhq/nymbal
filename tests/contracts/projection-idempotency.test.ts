@@ -1,5 +1,5 @@
-import { runProjectionContract } from '@nymbal/contract-tests'
-import { InMemoryDocumentStore, createProcessedEventRepository, withIdempotency, createLogger } from '@nymbal/platform'
+import { runProjectionContract } from '@nymbalhq/contract-tests'
+import { InMemoryDocumentStore, createProcessedEventRepository, withIdempotency, createLogger } from '@nymbalhq/platform'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 

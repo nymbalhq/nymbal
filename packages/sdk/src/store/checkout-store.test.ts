@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCheckoutStore } from './checkout-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { Address } from '@nymbal/types'
+import type { Address } from '@nymbalhq/types'
 
 const addr: Address = {
   firstName: 'Jane', lastName: 'Doe',

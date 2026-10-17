@@ -4,7 +4,7 @@ import {
   type Facet,
   type HttpAdapter,
   type ReviewsAdapter,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
 

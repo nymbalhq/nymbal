@@ -1,4 +1,4 @@
-import type { SecurityConfigLike } from '@nymbal/types'
+import type { SecurityConfigLike } from '@nymbalhq/types'
 
 export function buildSecurityHeaders(
   security: SecurityConfigLike,

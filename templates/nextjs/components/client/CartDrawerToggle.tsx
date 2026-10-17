@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { CartDrawer } from '@nymbal/react'
+import { CartDrawer } from '@nymbalhq/react'
 
 export function CartDrawerToggle() {
   const [open, setOpen] = useState(false)

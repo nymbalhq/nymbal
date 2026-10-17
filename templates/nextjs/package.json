@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/template-nextjs",
+  "name": "@nymbalhq/template-nextjs",
   "version": "0.1.0",
   "private": true,
   "description": "Minimal Next.js storefront shell for Nymbal (Prompt 4 extends this)",
@@ -18,10 +18,10 @@
     "next": "^15.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@nymbal/sdk": "workspace:*",
-    "@nymbal/react": "workspace:*",
-    "@nymbal/web-components": "workspace:*",
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/react": "workspace:*",
+    "@nymbalhq/web-components": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "@stripe/stripe-js": "^4.0.0",
     "@stripe/react-stripe-js": "^3.0.0"
   },

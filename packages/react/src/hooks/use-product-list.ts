@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { ProductListState, ProductListParams } from '@nymbal/sdk'
+import type { ProductListState, ProductListParams } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseProductListReturn extends ProductListState {

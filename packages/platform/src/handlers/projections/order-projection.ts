@@ -13,7 +13,7 @@ import {
   type Order,
   type OrderPlacedV1Payload,
   type OrderStatus,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { OrderRepository } from '../../repositories/order.js'
 import type { OrderHistoryRepository } from '../../repositories/order-history.js'
 

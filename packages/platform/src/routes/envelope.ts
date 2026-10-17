@@ -1,4 +1,4 @@
-import { HttpError, NotFoundError, NymbalError, type ResponseEnvelope } from '@nymbal/types'
+import { HttpError, NotFoundError, NymbalError, type ResponseEnvelope } from '@nymbalhq/types'
 
 export interface Envelope<T> {
   data?: T

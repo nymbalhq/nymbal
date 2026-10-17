@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import type { ReviewsAdapter } from '@nymbal/types'
+import type { ReviewsAdapter } from '@nymbalhq/types'
 import {
   createNativeReviewsAdapter,
   createCommandStore,
@@ -8,7 +8,7 @@ import {
   buildRepositories,
   createLogger,
   type CommandStore,
-} from '@nymbal/platform'
+} from '@nymbalhq/platform'
 
 const logger = createLogger({ pretty: false, level: 'error' })
 let adapter: ReviewsAdapter
