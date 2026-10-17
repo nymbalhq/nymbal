@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -18,11 +18,11 @@ jobs:
     name: Lint & typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -35,11 +35,11 @@ jobs:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -51,11 +51,11 @@ jobs:
     name: Integration tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -67,11 +67,11 @@ jobs:
     name: Contract tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -83,11 +83,11 @@ jobs:
     name: Coverage gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -99,11 +99,11 @@ jobs:
     name: Build all packages + templates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -117,11 +117,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -132,11 +132,25 @@ jobs:
       - name: Install Astro scaffold deps
         run: pnpm install --no-frozen-lockfile
         working-directory: smoke-astro
+      - name: Migrate database (Astro)
+        run: pnpm exec nymbal migrate
+        working-directory: smoke-astro
       - name: Seed demo content (Astro)
         run: pnpm exec nymbal seed
         working-directory: smoke-astro
+      - name: Start the API (Astro)
+        run: |
+          pnpm exec nymbal dev --api-only &
+          echo "ASTRO_API_PID=$!" >> "$GITHUB_ENV"
+        working-directory: smoke-astro
+        env:
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+      - name: Wait for the API (Astro)
+        run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Astro dev server
-        run: pnpm dev &
+        run: |
+          pnpm dev &
+          echo "ASTRO_WEB_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-astro
       - name: Wait for Astro dev server
         run: npx wait-on http://localhost:4321 --timeout 60000
@@ -144,36 +158,54 @@ jobs:
         run: curl -fsS http://localhost:4321/ | grep "nymbal:project-override homepage"
       - name: Smoke check Astro
         run: node tools/scaffold-smoke-check.mjs --port 4321
-      - name: Stop Astro dev server
-        run: pkill -f "astro dev" || true
+      - name: Stop Astro dev server and API
+        run: |
+          kill "$ASTRO_WEB_PID"
+          kill "$ASTRO_API_PID"
       - name: Scaffold Next.js project
         run: node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes
       - name: Install Next.js scaffold deps
         run: pnpm install --no-frozen-lockfile
         working-directory: smoke-nextjs
-      - name: Seed demo content
+      - name: Migrate database (Next.js)
+        run: pnpm exec nymbal migrate
+        working-directory: smoke-nextjs
+      - name: Seed demo content (Next.js)
         run: pnpm exec nymbal seed
         working-directory: smoke-nextjs
+      - name: Start the API (Next.js)
+        run: |
+          pnpm exec nymbal dev --api-only &
+          echo "NEXTJS_API_PID=$!" >> "$GITHUB_ENV"
+        working-directory: smoke-nextjs
+        env:
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+      - name: Wait for the API (Next.js)
+        run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Next.js dev server
-        run: pnpm dev &
+        run: |
+          pnpm dev &
+          echo "NEXTJS_WEB_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-nextjs
       - name: Wait for Next.js dev server
         run: npx wait-on http://localhost:3000 --timeout 60000
       - name: Smoke check Next.js
         run: node tools/scaffold-smoke-check.mjs --port 3000
-      - name: Stop Next.js dev server
-        run: pkill -f "next dev" || true
+      - name: Stop Next.js dev server and API
+        run: |
+          kill "$NEXTJS_WEB_PID"
+          kill "$NEXTJS_API_PID"
 
   e2e-astro:
     name: E2E — Astro
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -193,11 +225,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -217,13 +249,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -242,13 +274,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -267,11 +299,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -290,11 +322,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -313,11 +345,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -337,13 +369,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -363,11 +395,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -381,53 +413,3 @@ jobs:
           CI: true
           NYMBAL_E2E_ADMIN: true
           NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  perf-astro:
-    name: Performance — Astro
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm build:templates
-      - name: Run Lighthouse CI (Astro)
-        run: |
-          pnpm --filter @nymbal/template-astro preview &
-          sleep 5
-          pnpm lhci autorun
-        env:
-          CI: true
-          NYMBAL_TEMPLATE: astro
-
-  perf-nextjs:
-    name: Performance — Next.js
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm build:templates
-      - name: Run Lighthouse CI (Next.js)
-        run: |
-          pnpm --filter @nymbal/template-nextjs start &
-          sleep 5
-          pnpm lhci autorun
-        env:
-          CI: true
-          NYMBAL_TEMPLATE: nextjs

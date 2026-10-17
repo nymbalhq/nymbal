@@ -66,37 +66,70 @@ function devCmd(pm: PackageManager): string {
   }
 }
 
-interface CliFlags {
+const TEMPLATES = ['astro', 'nextjs'] as const
+const CURRENCIES = ['GBP', 'USD', 'EUR'] as const
+
+export interface CliFlags {
   name?: string
-  template?: 'astro' | 'nextjs'
-  currency?: 'GBP' | 'USD' | 'EUR'
+  template?: (typeof TEMPLATES)[number]
+  currency?: (typeof CURRENCIES)[number]
   yes: boolean
 }
 
-function parseCliFlags(argv: string[]): CliFlags {
+/** A command-line flag that is missing its value or names a value outside the allowed set. */
+export class CliFlagError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CliFlagError'
+  }
+}
+
+function oneOf<T extends string>(flag: string, value: string, allowed: readonly T[]): T {
+  if ((allowed as readonly string[]).includes(value)) return value as T
+  throw new CliFlagError(`Unknown ${flag} "${value}". Allowed: ${allowed.join(', ')}`)
+}
+
+/** Parses process.argv (node and script first): --name, --template and --currency take `--flag v` or `--flag=v`. */
+export function parseCliFlags(argv: string[]): CliFlags {
   const flags: CliFlags = { yes: false }
   const args = argv.slice(2)
+  let positional: string | undefined
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
     if (arg === '--yes' || arg === '-y') {
       flags.yes = true
-    } else if (arg.startsWith('--name=')) {
-      flags.name = arg.slice('--name='.length)
-    } else if (arg.startsWith('--template=')) {
-      const t = arg.slice('--template='.length)
-      if (t === 'astro' || t === 'nextjs') flags.template = t
-    } else if (arg.startsWith('--currency=')) {
-      const c = arg.slice('--currency='.length)
-      if (c === 'GBP' || c === 'USD' || c === 'EUR') flags.currency = c
-    } else if (!arg.startsWith('-') && !flags.name) {
-      flags.name = arg
+      continue
+    }
+    const match = /^--(name|template|currency)(?:=(.*))?$/s.exec(arg)
+    if (match) {
+      const flag = match[1]!
+      let value = match[2]
+      if (value === undefined) {
+        const next = args[i + 1]
+        if (next === undefined || next.startsWith('-')) throw new CliFlagError(`--${flag} needs a value`)
+        value = next
+        i++
+      }
+      if (flag === 'name') flags.name = value
+      else if (flag === 'template') flags.template = oneOf('--template', value, TEMPLATES)
+      else flags.currency = oneOf('--currency', value, CURRENCIES)
+    } else if (!arg.startsWith('-') && positional === undefined) {
+      positional = arg
     }
   }
+  if (flags.name === undefined && positional !== undefined) flags.name = positional
   return flags
 }
 
 export async function main(): Promise<void> {
-  const flags = parseCliFlags(process.argv)
+  let flags: CliFlags
+  try {
+    flags = parseCliFlags(process.argv)
+  } catch (err) {
+    if (!(err instanceof CliFlagError)) throw err
+    process.stderr.write(`Error: ${err.message}\n`)
+    process.exit(1)
+  }
 
   const pm = detectPackageManager()
 
@@ -129,12 +162,10 @@ export async function main(): Promise<void> {
     return
   }
 
-  const argvName = !flags.name && process.argv[2] && !process.argv[2]!.startsWith('-') ? process.argv[2] : flags.name
-
   intro(pc.cyan(pc.bold('◆ create-nymbal-app')))
 
-  const name = argvName
-    ? argvName
+  const name = flags.name
+    ? flags.name
     : ((await text({
         message: 'Store name',
         placeholder: 'My Store',
