@@ -83,7 +83,7 @@ export class NymbalSearchBar extends NymbalElement {
       } else if (state.results.length > 0) {
         resultsHtml = `<div class="nymbal-search-results" data-testid="search-results">
           ${state.results.map((product, i) => `
-            <div class="nymbal-search-result-item" data-testid="search-result-${product.slug}" data-slug="${product.slug}" aria-selected="${i === this.selectedIndex}">
+            <div class="nymbal-search-result-item" data-testid="search-result-${this.esc(product.slug)}" data-slug="${this.esc(product.slug)}" aria-selected="${i === this.selectedIndex}">
               <div class="nymbal-search-result-name">${this.esc(product.name)}</div>
               ${product.priceMinor !== null ? `<div class="nymbal-search-result-price">${this.formatPrice(product.priceMinor, product.currency ?? 'USD')}</div>` : ''}
             </div>
@@ -93,7 +93,7 @@ export class NymbalSearchBar extends NymbalElement {
     }
 
     this.innerHTML = `
-      <input data-testid="search-input" type="search" placeholder="${placeholder}" value="${this.esc(state.query)}" autocomplete="off" role="combobox" aria-expanded="${state.results.length > 0}" aria-haspopup="listbox">
+      <input data-testid="search-input" type="search" placeholder="${this.esc(placeholder)}" value="${this.esc(state.query)}" autocomplete="off" role="combobox" aria-expanded="${state.results.length > 0}" aria-haspopup="listbox">
       ${resultsHtml}
     `
 
@@ -159,10 +159,14 @@ export class NymbalSearchBar extends NymbalElement {
     }
   }
 
+  /** Escapes a value for both text and quoted-attribute contexts. */
   private esc(str: string): string {
-    const div = document.createElement('div')
-    div.textContent = str
-    return div.innerHTML
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
   }
 
   private formatPrice(minor: number, currency: string): string {

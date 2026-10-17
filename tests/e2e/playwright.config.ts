@@ -39,7 +39,7 @@ export default defineConfig({
       name: 'astro-mobile',
       testIgnore: ['**/journeys/admin/**'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: astroURL,
       },
       grep: /@visual/,
@@ -48,7 +48,7 @@ export default defineConfig({
       name: 'nextjs-mobile',
       testIgnore: ['**/journeys/admin/**'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: nextjsURL,
       },
       grep: /@visual/,
@@ -65,7 +65,7 @@ export default defineConfig({
       name: 'admin-mobile',
       testMatch: ['**/journeys/admin/**/*.spec.ts'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: adminURL,
       },
       grep: /@visual/,

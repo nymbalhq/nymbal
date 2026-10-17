@@ -5,58 +5,42 @@ const resultsContainer = document.getElementById('search-results')
 const queryLabel = document.getElementById('search-query-label')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
 
-function renderProductCard(product: any): string {
+/** Builds an element; dynamic values go in through setAttribute and text nodes, never through markup. */
+function el(tag: string, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElement {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value)
+  node.append(...children)
+  return node
+}
+
+function renderProductCard(product: any): HTMLElement {
+  const slug = String(product.slug ?? '')
+  const name = String(product.name ?? '')
   const imageUrl =
     product.imageUrl ??
     (Array.isArray(product.media) && product.media[0]?.url) ??
-    `https://picsum.photos/seed/${product.slug}/600/600`
+    `https://picsum.photos/seed/${encodeURIComponent(slug)}/600/600`
   const price =
     product.priceMinor != null
       ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
       : ''
 
-  return `
-    <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
-      <img
-        src="${imageUrl}"
-        alt="${product.name}"
-        class="product-card-image"
-        loading="lazy"
-        width="600"
-        height="600"
-      />
-      <div class="product-card-body">
-        <span class="product-card-name">${product.name}</span>
-        ${price ? `<span class="product-card-price">${price}</span>` : ''}
-      </div>
-    </a>
-  `
-}
+  const body = el('div', { class: 'product-card-body' }, el('span', { class: 'product-card-name' }, name))
+  if (price) body.append(el('span', { class: 'product-card-price' }, price))
 
-function renderListing(products: any[]) {
-  if (!resultsContainer) return
-  if (products.length === 0) {
-    resultsContainer.innerHTML = `
-      <div class="search-empty">
-        <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
-        <h2 class="search-empty-title">Search our store</h2>
-        <p class="search-empty-text">Type a keyword to find products.</p>
-      </div>
-    `
-    return
-  }
-  resultsContainer.innerHTML = `
-    <div class="product-grid">
-      ${products.map(renderProductCard).join('')}
-    </div>
-  `
-}
-
-function loadListing() {
-  const listing = client.productList.getState()
-  if (listing.products.length === 0 && !listing.loading) {
-    void client.productList.load({ limit: 24 })
-  }
+  return el(
+    'a',
+    { href: `/product/${encodeURIComponent(slug)}`, class: 'product-card', 'data-testid': `product-card-${slug}` },
+    el('img', {
+      src: String(imageUrl),
+      alt: name,
+      class: 'product-card-image',
+      loading: 'lazy',
+      width: '600',
+      height: '600',
+    }),
+    body,
+  )
 }
 
 function renderResults() {
@@ -70,7 +54,7 @@ function renderResults() {
   // Update query label
   if (queryLabel) {
     if (query) {
-      queryLabel.innerHTML = `Results for <strong>"${query}"</strong>`
+      queryLabel.replaceChildren('Results for ', el('strong', {}, `"${query}"`))
       queryLabel.style.display = ''
     } else {
       queryLabel.style.display = 'none'
@@ -85,15 +69,13 @@ function renderResults() {
   }
 
   if (!query) {
-    // An empty query shows the full product listing, as the Next.js template does.
-    const listing = client.productList.getState()
-    if (listing.loading && listing.products.length === 0) {
-      resultsContainer.innerHTML = `
-        <div class="search-loading">Loading...</div>
-      `
-      return
-    }
-    renderListing(listing.products)
+    resultsContainer.innerHTML = `
+      <div class="search-empty">
+        <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
+        <h2 class="search-empty-title">Search our store</h2>
+        <p class="search-empty-text">Type a keyword to find products.</p>
+      </div>
+    `
     return
   }
 
@@ -108,22 +90,17 @@ function renderResults() {
     return
   }
 
-  const cardsHtml = results.map(renderProductCard).join('')
-
-  resultsContainer.innerHTML = `
-    <div class="search-results-header">
-      <span class="search-result-count">${results.length} result${results.length === 1 ? '' : 's'}</span>
-    </div>
-    <div class="product-grid">
-      ${cardsHtml}
-    </div>
-  `
+  resultsContainer.replaceChildren(
+    el(
+      'div',
+      { class: 'search-results-header' },
+      el('span', { class: 'search-result-count' }, `${results.length} result${results.length === 1 ? '' : 's'}`),
+    ),
+    el('div', { class: 'product-grid' }, ...results.map(renderProductCard)),
+  )
 }
 
 client.search.subscribe(renderResults)
-client.productList.subscribe(() => {
-  if (!client.search.getState().query) renderResults()
-})
 
 // Read initial query from URL
 const urlParams = new URLSearchParams(window.location.search)
@@ -134,7 +111,6 @@ if (initialQuery) {
   client.search.search(initialQuery)
 } else {
   renderResults()
-  loadListing()
 }
 
 // Listen for search input changes
@@ -148,7 +124,6 @@ searchInput?.addEventListener('input', () => {
     window.history.replaceState({}, '', url.toString())
   } else if (value.length === 0) {
     client.search.clearSearch()
-    loadListing()
     const url = new URL(window.location.href)
     url.searchParams.delete('q')
     window.history.replaceState({}, '', url.toString())
