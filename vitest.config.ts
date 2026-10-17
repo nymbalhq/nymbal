@@ -135,6 +135,14 @@ export default defineConfig({
           include: ['tests/architecture/**/*.test.ts'],
         },
       },
+      {
+        test: {
+          name: 'tooling',
+          environment: 'node',
+          include: ['tests/tooling/**/*.test.ts'],
+          testTimeout: 60000,
+        },
+      },
     ],
     coverage: {
       provider: 'v8',
