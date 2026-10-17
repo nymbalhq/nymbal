@@ -1,0 +1,431 @@
+import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+
+// Acceptance tests for P0-02 AC-6 and AC-13 to AC-15: `scripts/tests-fail-on-base.ts <base> --root <repo>
+// --suite <command>`. Each test builds a throwaway git repo: a tiny module, tests, a base commit and a change that
+// adds tests. The script runs `<suite> <test file>` for every added test file against the base commit's source in
+// a temporary worktree, and must leave the checkout exactly as it found it.
+
+const REPO = fileURLToPath(new URL('../../', import.meta.url))
+const TSX = join(REPO, 'node_modules/.bin/tsx')
+const SCRIPT = join(REPO, 'scripts/tests-fail-on-base.ts')
+const VITEST = join(REPO, 'node_modules/.bin/vitest')
+const SUITE = 'node --test'
+
+const created: string[] = []
+afterEach(() => {
+  for (const d of created.splice(0)) rmSync(d, { recursive: true, force: true })
+})
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8' })
+}
+
+function write(root: string, file: string, text: string): void {
+  mkdirSync(join(root, file, '..'), { recursive: true })
+  writeFileSync(join(root, file), text)
+}
+
+function commitAll(root: string, message: string): string {
+  git(root, 'add', '-A')
+  git(root, 'commit', '-q', '-m', message)
+  return git(root, 'rev-parse', 'HEAD').trim()
+}
+
+function testFile(importName: string, assertion: string): string {
+  return [
+    "import { test } from 'node:test'",
+    "import assert from 'node:assert/strict'",
+    `import { ${importName} } from '../src/math.js'`,
+    '',
+    `test('${importName}', () => {`,
+    `  ${assertion}`,
+    '})',
+    '',
+  ].join('\n')
+}
+
+const BASE_MATH = 'export function add(a, b) {\n  return a + b\n}\n'
+const HEAD_MATH = `${BASE_MATH}\nexport function multiply(a, b) {\n  return a * b\n}\n`
+
+/** A repo whose base has `add` and its test; returns the root and the base sha. */
+function makeRepo(): { root: string; base: string } {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-tfob-')))
+  created.push(dir)
+  const root = join(dir, 'repo')
+  mkdirSync(root)
+  write(
+    root,
+    'package.json',
+    `${JSON.stringify({ name: 'tfob-fixture', private: true, type: 'module' }, null, 2)}\n`,
+  )
+  write(root, 'src/math.js', BASE_MATH)
+  write(root, 'test/add.test.js', testFile('add', 'assert.equal(add(2, 3), 5)'))
+  git(root, 'init', '-q', '-b', 'main')
+  git(root, 'config', 'user.email', 'tfob@example.test')
+  git(root, 'config', 'user.name', 'TFOB Test')
+  const base = commitAll(root, 'base')
+  return { root, base }
+}
+
+/** Head adds `multiply` with a test that needs it (fails on base) and edits the existing add test (passes on base). */
+function addGoodHead(root: string): void {
+  write(root, 'src/math.js', HEAD_MATH)
+  write(root, 'test/multiply.test.js', testFile('multiply', 'assert.equal(multiply(2, 3), 6)'))
+  write(root, 'test/add.test.js', testFile('add', 'assert.equal(add(2, 2), 4)'))
+}
+
+/** Every file under the work tree except .git, hashed: the checkout's bytes. */
+function snapshot(root: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const abs = join(dir, entry.name)
+      if (entry.name === '.git') continue
+      // A link is recorded as its target and never followed: pnpm's node_modules links are part of the checkout.
+      if (entry.isSymbolicLink()) out[relative(root, abs)] = `link:${readlinkSync(abs)}`
+      else if (entry.isDirectory()) walk(abs)
+      else out[relative(root, abs)] = createHash('sha256').update(readFileSync(abs)).digest('hex')
+    }
+  }
+  walk(root)
+  return out
+}
+
+function state(root: string) {
+  return {
+    files: snapshot(root),
+    head: git(root, 'rev-parse', 'HEAD').trim(),
+    branch: git(root, 'symbolic-ref', '-q', 'HEAD').trim(),
+    status: git(root, 'status', '--porcelain=v1', '--untracked-files=all'),
+    worktrees: git(root, 'worktree', 'list', '--porcelain'),
+    branches: git(root, 'branch', '--list', '--all'),
+    stash: git(root, 'stash', 'list'),
+  }
+}
+
+function runScript(root: string, base: string, suite = SUITE) {
+  const result = spawnSync(TSX, [SCRIPT, base, '--root', root, '--suite', suite], {
+    cwd: REPO,
+    encoding: 'utf8',
+    timeout: 50_000,
+  })
+  return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
+}
+
+/** The test files the script gave a verdict on. */
+function judged(out: string): string[] {
+  return out
+    .split('\n')
+    .filter((l) => l.includes('fails on base') || l.includes('PASSES ON BASE'))
+    .map((l) => /test\/[\w-]+\.test\.js/.exec(l)?.[0] ?? l)
+    .sort()
+}
+
+/** The test files git lists as added between base and HEAD. */
+function addedTests(root: string, base: string): string[] {
+  return git(root, 'diff', '--name-only', '--diff-filter=A', base, 'HEAD', '--', 'test/')
+    .split('\n')
+    .filter(Boolean)
+    .sort()
+}
+
+function lineFor(out: string, file: string): string | undefined {
+  return out.split('\n').find((l) => l.includes(file))
+}
+
+/** Guards the fixture: every head test is green at head, so failing on base is the base's doing. */
+function expectGreenAtHead(root: string): void {
+  const result = spawnSync('node', ['--test'], { cwd: root, encoding: 'utf8' })
+  expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
+}
+
+describe('AC-6: tests-fail-on-base', () => {
+  it('AC-6: a new test that fails on the base source is fine: exit 0, reported as "fails on base"', () => {
+    const { root, base } = makeRepo()
+    addGoodHead(root)
+    commitAll(root, 'head: multiply')
+    expectGreenAtHead(root)
+    write(root, 'notes/untracked.txt', 'left alone\n')
+    const before = state(root)
+
+    const { status, out } = runScript(root, base)
+
+    expect(status, out).toBe(0)
+    expect(lineFor(out, 'test/multiply.test.js'), out).toContain('fails on base')
+    expect(out).not.toContain('PASSES ON BASE')
+    expect(judged(out), out).toEqual(addedTests(root, base))
+    expect(before).toEqual(state(root))
+  })
+
+  it('AC-6: a new test that passes on the base source is a violation: exit 1, reported as "PASSES ON BASE"', () => {
+    const { root, base } = makeRepo()
+    addGoodHead(root)
+    write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
+    commitAll(root, 'head: multiply and a test that cannot fail on base')
+    expectGreenAtHead(root)
+    write(root, 'notes/untracked.txt', 'left alone\n')
+    const before = state(root)
+
+    const { status, out } = runScript(root, base)
+
+    expect(status, out).toBe(1)
+    expect(lineFor(out, 'test/add-zero.test.js'), out).toContain('PASSES ON BASE')
+    expect(lineFor(out, 'test/multiply.test.js'), out).toContain('fails on base')
+    expect(judged(out), out).toEqual(addedTests(root, base))
+    expect(before).toEqual(state(root))
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// AC-13 to AC-15
+// ---------------------------------------------------------------------------------------------------------------
+
+const VERDICTS = ['not judged', 'fails on base', 'PASSES ON BASE'] as const
+
+/** Every verdict phrase on the lines naming `file`; a file judged once has exactly one. */
+function verdictsOf(out: string, file: string): string[] {
+  const found = new Set<string>()
+  for (const line of out.split('\n')) {
+    if (!line.includes(file)) continue
+    for (const verdict of VERDICTS) if (line.includes(verdict)) found.add(verdict)
+  }
+  return [...found]
+}
+
+function emptyRepo(): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-tfob-')))
+  created.push(dir)
+  const root = join(dir, 'repo')
+  mkdirSync(root)
+  git(root, 'init', '-q', '-b', 'main')
+  git(root, 'config', 'user.email', 'tfob@example.test')
+  git(root, 'config', 'user.name', 'TFOB Test')
+  return root
+}
+
+function json(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`
+}
+
+function expectExit0(cwd: string, command: string, args: string[]): void {
+  const result = spawnSync(command, args, { cwd, encoding: 'utf8' })
+  expect(result.status, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`).toBe(0)
+}
+
+describe('AC-13: tests-fail-on-base resolves workspace packages from the base commit', () => {
+  function workspaceTest(name: string, assertion: string): string {
+    return [
+      "import { test } from 'node:test'",
+      "import assert from 'node:assert/strict'",
+      `import { ${name} } from '@tfob/lib'`,
+      '',
+      `test('${name}', () => {`,
+      `  ${assertion}`,
+      '})',
+      '',
+    ].join('\n')
+  }
+
+  /** A pnpm workspace: `@tfob/app`'s tests import `@tfob/lib` through the link `pnpm install` makes. */
+  function makeWorkspace(): { root: string; base: string } {
+    const root = emptyRepo()
+    write(root, '.gitignore', 'node_modules/\n')
+    write(root, 'package.json', json({ name: 'tfob-workspace', private: true, type: 'module' }))
+    write(root, 'pnpm-workspace.yaml', "packages:\n  - 'packages/*'\n")
+    write(
+      root,
+      'packages/lib/package.json',
+      json({ name: '@tfob/lib', version: '1.0.0', type: 'module', exports: './src/index.js' }),
+    )
+    write(root, 'packages/lib/src/index.js', BASE_MATH)
+    write(
+      root,
+      'packages/app/package.json',
+      json({
+        name: '@tfob/app',
+        version: '1.0.0',
+        type: 'module',
+        dependencies: { '@tfob/lib': 'workspace:*' },
+      }),
+    )
+    write(root, 'packages/app/test/add.test.js', workspaceTest('add', 'assert.equal(add(2, 3), 5)'))
+    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    const base = commitAll(root, 'base')
+    return { root, base }
+  }
+
+  it('AC-13: a new test needing behaviour the change adds to another workspace package fails on base; one that does not, passes', () => {
+    const { root, base } = makeWorkspace()
+    write(root, 'packages/lib/src/index.js', HEAD_MATH)
+    write(
+      root,
+      'packages/app/test/multiply.test.js',
+      workspaceTest('multiply', 'assert.equal(multiply(2, 3), 6)'),
+    )
+    write(
+      root,
+      'packages/app/test/add-zero.test.js',
+      workspaceTest('add', 'assert.equal(add(0, 7), 7)'),
+    )
+    commitAll(root, 'head: lib gains multiply')
+    expectGreenAtHead(root)
+    const before = state(root)
+
+    const { status, out } = runScript(root, base)
+
+    expect(verdictsOf(out, 'packages/app/test/multiply.test.js'), out).toEqual(['fails on base'])
+    expect(verdictsOf(out, 'packages/app/test/add-zero.test.js'), out).toEqual(['PASSES ON BASE'])
+    expect(status, out).toBe(1)
+    expect(state(root)).toEqual(before)
+  })
+})
+
+describe('AC-14: a base run that executes no test is "not judged"', () => {
+  function vitestTest(name: string, assertion: string): string {
+    return [
+      "import { expect, test } from 'vitest'",
+      `import { ${name} } from '../src/math.js'`,
+      '',
+      `test('${name}', () => {`,
+      `  ${assertion}`,
+      '})',
+      '',
+    ].join('\n')
+  }
+
+  function vitestConfig(projects: Array<{ name: string; include: string }>): string {
+    const rows = projects.map(
+      (p) => `    { test: { name: '${p.name}', include: ['${p.include}'] } },`,
+    )
+    return [
+      'export default {',
+      '  test: {',
+      '    projects: [',
+      ...rows,
+      '    ],',
+      '  },',
+      '}',
+      '',
+    ].join('\n')
+  }
+
+  /** A repo tested by Vitest with one project, `unit`, over test/. */
+  function makeVitestRepo(): { root: string; base: string } {
+    const root = emptyRepo()
+    write(root, '.gitignore', 'node_modules/\n')
+    write(root, 'package.json', json({ name: 'tfob-vitest', private: true, type: 'module' }))
+    write(root, 'vitest.config.mjs', vitestConfig([{ name: 'unit', include: 'test/**/*.test.js' }]))
+    write(root, 'src/math.js', BASE_MATH)
+    write(root, 'test/add.test.js', vitestTest('add', 'expect(add(2, 3)).toBe(5)'))
+    const base = commitAll(root, 'base')
+    return { root, base }
+  }
+
+  function headWithSpecsProject(root: string): void {
+    write(root, 'src/math.js', HEAD_MATH)
+    write(
+      root,
+      'vitest.config.mjs',
+      vitestConfig([
+        { name: 'unit', include: 'test/**/*.test.js' },
+        { name: 'specs', include: 'spec/**/*.test.js' },
+      ]),
+    )
+    write(
+      root,
+      'spec/multiply-spec.test.js',
+      vitestTest('multiply', 'expect(multiply(2, 3)).toBe(6)'),
+    )
+  }
+
+  it('AC-14: a file the base configuration does not collect ("No test files found") is not judged and listed apart from the judged ones', () => {
+    const { root, base } = makeVitestRepo()
+    headWithSpecsProject(root)
+    write(root, 'test/multiply.test.js', vitestTest('multiply', 'expect(multiply(2, 3)).toBe(6)'))
+    commitAll(root, 'head: a specs project and two tests')
+    expectExit0(root, VITEST, ['run'])
+
+    const { out } = runScript(root, base, `${VITEST} run`)
+
+    expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
+    expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
+  })
+
+  it('AC-14: a suite naming a project that does not exist at base is not judged', () => {
+    const { root, base } = makeVitestRepo()
+    headWithSpecsProject(root)
+    commitAll(root, 'head: a specs project')
+    expectExit0(root, VITEST, ['run', '--project', 'specs', 'spec/multiply-spec.test.js'])
+
+    const { out } = runScript(root, base, `${VITEST} run --project specs`)
+
+    expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
+  })
+
+  it('AC-14: a base run that ends by a signal is not judged', () => {
+    const { root, base } = makeRepo()
+    write(root, 'src/math.js', HEAD_MATH)
+    // At base `multiply` is missing and the run is killed before any test executes.
+    write(
+      root,
+      'test/killed.test.js',
+      [
+        "import { test } from 'node:test'",
+        "import assert from 'node:assert/strict'",
+        "import * as math from '../src/math.js'",
+        '',
+        "if (typeof math.multiply !== 'function') process.kill(process.pid, 'SIGKILL')",
+        '',
+        "test('multiply', () => {",
+        '  assert.equal(math.multiply(2, 3), 6)',
+        '})',
+        '',
+      ].join('\n'),
+    )
+    write(root, 'test/multiply.test.js', testFile('multiply', 'assert.equal(multiply(2, 3), 6)'))
+    commitAll(root, 'head: multiply')
+    expectExit0(root, 'node', ['test/killed.test.js'])
+    expectExit0(root, 'node', ['test/multiply.test.js'])
+
+    const { out } = runScript(root, base, 'node')
+
+    expect(verdictsOf(out, 'test/killed.test.js'), out).toEqual(['not judged'])
+    expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
+  })
+})
+
+describe('AC-15: added test files include uncommitted and untracked ones', () => {
+  it('AC-15: a staged new test and an untracked new test are both judged, on their working-tree contents', () => {
+    const { root, base } = makeRepo()
+    // Nothing is committed after base: the source change is unstaged, one test staged, one untracked.
+    write(root, 'src/math.js', HEAD_MATH)
+    write(root, 'test/multiply.test.js', testFile('multiply', 'assert.equal(multiply(2, 3), 6)'))
+    git(root, 'add', 'test/multiply.test.js')
+    write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
+    expectGreenAtHead(root)
+    expect(git(root, 'rev-parse', 'HEAD').trim()).toBe(base)
+    const before = state(root)
+
+    const { status, out } = runScript(root, base)
+
+    expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
+    expect(verdictsOf(out, 'test/add-zero.test.js'), out).toEqual(['PASSES ON BASE'])
+    expect(status, out).toBe(1)
+    expect(state(root)).toEqual(before)
+  })
+})

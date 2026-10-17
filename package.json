@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build",
     "build:templates": "pnpm -r --filter './templates/**' build",
-    "test": "vitest run",
+    "test": "vitest run --project '!integration-postgres'",
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -22,7 +22,9 @@
     "dev": "pnpm --filter nymbal dev",
     "mutation": "stryker run",
     "census": "tsx scripts/test-census.ts",
-    "sentinels": "tsx scripts/sentinels.ts"
+    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**'\"",
+    "gate": "tsx scripts/gate.ts",
+    "gate:full": "tsx scripts/gate.ts --full"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

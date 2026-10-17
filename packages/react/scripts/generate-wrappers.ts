@@ -258,6 +258,17 @@ if (isCheck) {
   process.exit(0)
 }
 
+// A build runs this generator, so an unchanged source must leave the tracked files byte-identical: rewriting the
+// manifest would only move `generatedAt` and dirty the tree.
+const recordedHash = existsSync(manifestPath)
+  ? (JSON.parse(readFileSync(manifestPath, 'utf-8')) as { sourceHash?: string }).sourceHash
+  : undefined
+const wrappersCurrent = existsSync(outputPath) && readFileSync(outputPath, 'utf-8') === output
+if (recordedHash === sourceHash && wrappersCurrent) {
+  process.stdout.write(`${COMPONENTS.length} React wrappers are up to date.\n`)
+  process.exit(0)
+}
+
 writeFileSync(outputPath, output, 'utf-8')
 writeFileSync(
   manifestPath,

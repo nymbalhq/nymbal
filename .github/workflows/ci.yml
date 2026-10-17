@@ -112,7 +112,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm vitest run --coverage
+      # integration-postgres needs a database this job does not start yet.
+      - run: pnpm vitest run --coverage --project '!integration-postgres'
 
   build:
     name: Build all packages + templates
