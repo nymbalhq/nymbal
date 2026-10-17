@@ -34,7 +34,7 @@ export function stubPaymentWebhook(opts: StubPaymentWebhookOptions): StubPayment
   }
 }
 
-/** Sends the webhook to a running store's real route and returns what it answered. */
+/** Sends the webhook to a running store's real route and returns what it answered: parsed JSON, else the raw text. */
 export async function finaliseStubPayment(
   baseUrl: string,
   opts: StubPaymentWebhookOptions,
@@ -45,6 +45,15 @@ export async function finaliseStubPayment(
     headers: request.headers,
     body: request.body,
   })
-  const text = await res.text()
-  return { status: res.status, body: text === '' ? null : JSON.parse(text) }
+  return { status: res.status, body: parseBody(await res.text()) }
+}
+
+// A 404 or a proxy's 500 can be plain text or HTML; the caller still needs the status, so the text is kept as is.
+function parseBody(text: string): unknown {
+  if (text === '') return null
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
 }

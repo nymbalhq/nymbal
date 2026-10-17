@@ -165,8 +165,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [build]
+    # tests-fail-on-base runs every project against the base, so a new Postgres or Mailpit test needs its server here
+    # too, or it fails on base for want of one.
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
     services:
       postgres:
         image: postgres:16-alpine
@@ -177,6 +180,16 @@ jobs:
           - '5432:5432'
         options: >-
           --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30

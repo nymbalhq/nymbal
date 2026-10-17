@@ -21,6 +21,7 @@ interface MailpitAddress {
 
 interface MailpitSummary {
   ID: string
+  To: MailpitAddress[] | null
 }
 
 interface MailpitMessage {
@@ -51,11 +52,18 @@ export function createMailSink(opts: { apiUrl?: string; smtp?: string } = {}): M
     throw new Error(`createMailSink: smtp must be host:port, got "${smtp}"`)
   }
 
-  async function messages(filter: { to: string }): Promise<MailMessage[]> {
+  // Mailpit's to:"…" matches a substring (a@x finds ba@x), so the summaries are narrowed to the exact address. Mailpit
+  // itself compares without case, and so does this.
+  async function summaries(to: string): Promise<MailpitSummary[]> {
     const search = new URL('/api/v1/search', apiUrl)
-    search.searchParams.set('query', `to:"${filter.to}"`)
+    search.searchParams.set('query', `to:"${to}"`)
     search.searchParams.set('limit', '500')
     const { messages: found } = await getJson<{ messages: MailpitSummary[] }>(search)
+    const wanted = to.toLowerCase()
+    return found.filter((m) => (m.To ?? []).some((a) => a.Address.toLowerCase() === wanted))
+  }
+
+  function bodies(found: MailpitSummary[]): Promise<MailMessage[]> {
     return Promise.all(
       found.map(async ({ ID }) => {
         const m = await getJson<MailpitMessage>(new URL(`/api/v1/message/${ID}`, apiUrl))
@@ -72,14 +80,14 @@ export function createMailSink(opts: { apiUrl?: string; smtp?: string } = {}): M
 
   return {
     emailConfig: () => ({ transport: 'smtp', smtp: { host, port, secure: false } }),
-    messages,
+    messages: async (filter) => bodies(await summaries(filter.to)),
     async waitFor(filter, waitOpts = {}) {
       const count = filter.count ?? 1
       const timeoutMs = waitOpts.timeoutMs ?? 10_000
       const deadline = Date.now() + timeoutMs
       for (;;) {
-        const found = await messages({ to: filter.to })
-        if (found.length >= count) return found
+        const found = await summaries(filter.to)
+        if (found.length >= count) return bodies(found)
         if (Date.now() >= deadline) {
           throw new Error(
             `waitFor: expected ${count} message(s) to ${filter.to} within ${timeoutMs}ms, saw ${found.length}`,
