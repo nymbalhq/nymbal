@@ -46,6 +46,17 @@ function lastLine(text: string): string {
 const OK_LINE = /^gate: ok in (\d+(?:\.\d+)?) s \(budget (\d+(?:\.\d+)?) s\)(.*)$/
 const RED_LINE = /^gate: RED \((.*)\) in (\d+(?:\.\d+)?) s(.*)$/
 
+/** The verdict line read back: the red steps it lists (none on an ok line), its seconds, its budget (ok only). */
+function readVerdict(
+  line: string,
+): { red: string[]; seconds: number; budget: number | null } | null {
+  const r = RED_LINE.exec(line)
+  if (r) return { red: r[1]!.split(', '), seconds: Number(r[2]), budget: null }
+  const o = OK_LINE.exec(line)
+  if (o) return { red: [], seconds: Number(o[1]), budget: Number(o[2]) }
+  return null
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // AC-1: selectTests
 // ---------------------------------------------------------------------------------------------------------------
@@ -454,17 +465,13 @@ describe('AC-5: formatReport ends with a verdict line that cannot hide a red ste
         const total = input.reduce((sum, s) => sum + s.ms, 0)
         const red = input.filter((s) => s.status === 'red').map((s) => s.name)
 
-        if (red.length > 0) {
-          const m = RED_LINE.exec(verdict)
-          expect(m, verdict).not.toBeNull()
-          expect(m![1]!.split(', ')).toEqual(red)
-          expect(Math.abs(Number(m![2]) - total / 1000)).toBeLessThan(1)
-        } else {
-          const m = OK_LINE.exec(verdict)
-          expect(m, verdict).not.toBeNull()
-          expect(Math.abs(Number(m![1]) - total / 1000)).toBeLessThan(1)
-          expect(Math.abs(Number(m![2]) - budgetMs / 1000)).toBeLessThan(1)
-        }
+        // A RED line lists exactly the red steps; an ok line (no red step) lists none and carries the budget.
+        const read = readVerdict(verdict)
+        expect(read, verdict).not.toBeNull()
+        expect(read!.red, verdict).toEqual(red)
+        expect(read!.budget === null, verdict).toBe(red.length > 0)
+        expect(Math.abs(read!.seconds - total / 1000)).toBeLessThan(1)
+        expect(Math.abs((read!.budget ?? budgetMs / 1000) - budgetMs / 1000)).toBeLessThan(1)
         expect(report.includes('over budget')).toBe(total > budgetMs)
       }),
     )
@@ -631,10 +638,13 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
         const runs = compose === 'ok' && build === 'ok'
         expect(existsSync(join(cwd, 'e2e-ran'))).toBe(runs)
         expect(e2e.status).toBe(runs ? 'ok' : 'skipped')
-        if (!runs) {
-          if (build !== 'ok') expect(e2e.detail ?? '').toMatch(/\bbuild\b/)
-          if (compose !== 'ok') expect(e2e.detail ?? '').toContain('compose up')
-        }
+        // When skipped, the detail names every need that is not ok.
+        const detail = e2e.detail ?? ''
+        expect(build === 'ok' || /\bbuild\b/.test(detail), `build ${build}: "${detail}"`).toBe(true)
+        expect(
+          compose === 'ok' || detail.includes('compose up'),
+          `compose ${compose}: "${detail}"`,
+        ).toBe(true)
         // A skipped dependant never turns the verdict red on its own.
         expect(result.exitCode === 0).toBe(compose !== 'red' && build !== 'red')
       }),
@@ -681,7 +691,10 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
         for (const name of e2eSteps()) {
           const step = result.steps.find((s) => s.name === name)
           expect(step?.status, name).toBe(buildOk ? 'ok' : 'skipped')
-          if (!buildOk) expect(step?.detail, name).toContain('build')
+          expect(
+            buildOk || (step?.detail ?? '').includes('build'),
+            `${name}: "${step?.detail}"`,
+          ).toBe(true)
         }
       }
     })

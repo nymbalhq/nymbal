@@ -168,10 +168,11 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    expect(report.imported.categories).toBe(2)
-    expect(report.imported.products).toBe(2)
-    expect(report.imported.customers).toBe(1)
-    expect(report.imported.orders).toBe(1)
+    // Every source record arrives: imported counts equal the WooCommerce fixtures served.
+    expect(report.imported.categories).toBe((await loadFixture('categories')).length)
+    expect(report.imported.products).toBe((await loadFixture('products')).length)
+    expect(report.imported.customers).toBe((await loadFixture('customers')).length)
+    expect(report.imported.orders).toBe((await loadFixture('orders')).length)
     expect(report.errors).toHaveLength(0)
   })
 
@@ -239,10 +240,8 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const order = await env.repos.order.findByOrderNumber('WC-1000').catch(() => null)
-    if (order) {
-      expect(order.status).toBe('delivered')
-    }
+    const order = await env.repos.order.findByOrderNumber('WC-1000')
+    expect(order?.status).toBe('delivered')
   })
 
   it('resumes from state file without re-importing', async () => {

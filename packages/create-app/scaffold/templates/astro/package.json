@@ -20,11 +20,15 @@
     "nymbal": "^0.1.0",
     "@nymbalhq/config": "^0.1.0",
     "@nymbalhq/platform": "^0.1.0",
-    "astro": "^4.16.7",
     "@astrojs/node": "^8.3.4",
     "@nymbalhq/sdk": "^0.1.0",
-    "@nymbalhq/web-components": "^0.1.0",
     "@nymbalhq/types": "^0.1.0",
-    "@stripe/stripe-js": "^4.0.0"
+    "@nymbalhq/web-components": "^0.1.0",
+    "@stripe/stripe-js": "^4.0.0",
+    "astro": "^4.16.7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.6.3"
   }
 }

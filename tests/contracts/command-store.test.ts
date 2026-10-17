@@ -31,10 +31,27 @@ describe('CommandStore contract — SQLite', () => {
   it('schema is migrated — products table exists', async () => {
     const store = await buildStore()
     expect(store.kind).toBe('sqlite')
-    if (store.kind === 'sqlite') {
-      const result = store.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get()
-      expect(result).toBeTruthy()
-    }
+    if (store.kind !== 'sqlite') throw new Error(`expected a sqlite store, got ${store.kind}`)
+    const result = store.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get()
+    expect(result).toEqual({ name: 'products' })
+    await store.close()
+  })
+
+  it('rows written inside a transaction read back equal after it commits', async () => {
+    const store = await buildStore()
+    if (store.kind !== 'sqlite') throw new Error(`expected a sqlite store, got ${store.kind}`)
+    const written = [
+      { id: 'cat-2', slug: 'home', name: 'Home', position: 1 },
+      { id: 'cat-1', slug: 'books', name: 'Books', position: 2 },
+    ]
+    await store.transaction(() => {
+      const insert = store.raw.prepare(
+        "INSERT INTO categories (id, slug, name, position, created_at) VALUES (@id, @slug, @name, @position, '2026-10-17T00:00:00.000Z')",
+      )
+      for (const row of written) insert.run(row)
+    })
+    const read = store.raw.prepare('SELECT id, slug, name, position FROM categories ORDER BY id').all()
+    expect(read).toEqual([...written].sort((a, b) => a.id.localeCompare(b.id)))
     await store.close()
   })
 
