@@ -15,15 +15,15 @@ jobs:
     name: Generate baselines (Linux / Chromium)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           lfs: true
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -43,6 +43,18 @@ jobs:
             --update-snapshots
         env:
           CI: true
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+
+      - name: Generate baselines — admin visual projects
+        run: |
+          pnpm --filter @nymbal/e2e exec playwright test \
+            --project admin --project admin-mobile \
+            --grep "@visual" \
+            --update-snapshots
+        env:
+          CI: true
+          NYMBAL_E2E_ADMIN: true
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
 
       - name: Commit and push baselines
         run: |

@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@lhci/cli": "0.15.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.9.0",
