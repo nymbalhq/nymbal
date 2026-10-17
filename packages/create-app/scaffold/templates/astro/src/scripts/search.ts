@@ -5,6 +5,60 @@ const resultsContainer = document.getElementById('search-results')
 const queryLabel = document.getElementById('search-query-label')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
 
+function renderProductCard(product: any): string {
+  const imageUrl =
+    product.imageUrl ??
+    (Array.isArray(product.media) && product.media[0]?.url) ??
+    `https://picsum.photos/seed/${product.slug}/600/600`
+  const price =
+    product.priceMinor != null
+      ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
+      : ''
+
+  return `
+    <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
+      <img
+        src="${imageUrl}"
+        alt="${product.name}"
+        class="product-card-image"
+        loading="lazy"
+        width="600"
+        height="600"
+      />
+      <div class="product-card-body">
+        <span class="product-card-name">${product.name}</span>
+        ${price ? `<span class="product-card-price">${price}</span>` : ''}
+      </div>
+    </a>
+  `
+}
+
+function renderListing(products: any[]) {
+  if (!resultsContainer) return
+  if (products.length === 0) {
+    resultsContainer.innerHTML = `
+      <div class="search-empty">
+        <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
+        <h2 class="search-empty-title">Search our store</h2>
+        <p class="search-empty-text">Type a keyword to find products.</p>
+      </div>
+    `
+    return
+  }
+  resultsContainer.innerHTML = `
+    <div class="product-grid">
+      ${products.map(renderProductCard).join('')}
+    </div>
+  `
+}
+
+function loadListing() {
+  const listing = client.productList.getState()
+  if (listing.products.length === 0 && !listing.loading) {
+    void client.productList.load({ limit: 24 })
+  }
+}
+
 function renderResults() {
   const state = client.search.getState()
   const results = state.results ?? []
@@ -31,13 +85,15 @@ function renderResults() {
   }
 
   if (!query) {
-    resultsContainer.innerHTML = `
-      <div class="search-empty">
-        <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
-        <h2 class="search-empty-title">Search our store</h2>
-        <p class="search-empty-text">Type a keyword to find products.</p>
-      </div>
-    `
+    // An empty query shows the full product listing, as the Next.js template does.
+    const listing = client.productList.getState()
+    if (listing.loading && listing.products.length === 0) {
+      resultsContainer.innerHTML = `
+        <div class="search-loading">Loading...</div>
+      `
+      return
+    }
+    renderListing(listing.products)
     return
   }
 
@@ -52,35 +108,7 @@ function renderResults() {
     return
   }
 
-  const cardsHtml = results
-    .map((product: any) => {
-      const imageUrl =
-        product.imageUrl ??
-        (Array.isArray(product.media) && product.media[0]?.url) ??
-        `https://picsum.photos/seed/${product.slug}/600/600`
-      const price =
-        product.priceMinor != null
-          ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-          : ''
-
-      return `
-        <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
-          <img
-            src="${imageUrl}"
-            alt="${product.name}"
-            class="product-card-image"
-            loading="lazy"
-            width="600"
-            height="600"
-          />
-          <div class="product-card-body">
-            <span class="product-card-name">${product.name}</span>
-            ${price ? `<span class="product-card-price">${price}</span>` : ''}
-          </div>
-        </a>
-      `
-    })
-    .join('')
+  const cardsHtml = results.map(renderProductCard).join('')
 
   resultsContainer.innerHTML = `
     <div class="search-results-header">
@@ -93,6 +121,9 @@ function renderResults() {
 }
 
 client.search.subscribe(renderResults)
+client.productList.subscribe(() => {
+  if (!client.search.getState().query) renderResults()
+})
 
 // Read initial query from URL
 const urlParams = new URLSearchParams(window.location.search)
@@ -103,6 +134,7 @@ if (initialQuery) {
   client.search.search(initialQuery)
 } else {
   renderResults()
+  loadListing()
 }
 
 // Listen for search input changes
@@ -116,6 +148,7 @@ searchInput?.addEventListener('input', () => {
     window.history.replaceState({}, '', url.toString())
   } else if (value.length === 0) {
     client.search.clearSearch()
+    loadListing()
     const url = new URL(window.location.href)
     url.searchParams.delete('q')
     window.history.replaceState({}, '', url.toString())

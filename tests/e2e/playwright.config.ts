@@ -76,6 +76,7 @@ export default defineConfig({
       {
         command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
         url: 'http://localhost:3001/health',
+        cwd: '../..',
         reuseExistingServer: false,
         timeout: 90000,
         env: {
@@ -85,6 +86,7 @@ export default defineConfig({
       {
         command: 'pnpm --filter @nymbal/template-astro dev',
         url: 'http://localhost:4321',
+        cwd: '../..',
         reuseExistingServer: false,
         timeout: 60000,
         env: {
@@ -97,6 +99,7 @@ export default defineConfig({
       {
         command: 'pnpm --filter @nymbal/template-nextjs dev',
         url: 'http://localhost:3000',
+        cwd: '../..',
         reuseExistingServer: false,
         timeout: 60000,
         env: {
@@ -111,6 +114,7 @@ export default defineConfig({
       {
         command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
         url: 'http://localhost:3001/health',
+        cwd: '../..',
         reuseExistingServer: false,
         timeout: 90000,
         env: {
@@ -120,6 +124,7 @@ export default defineConfig({
       {
         command: 'pnpm --filter @nymbal/admin exec vite --port 5174',
         url: 'http://localhost:5174/admin/',
+        cwd: '../..',
         reuseExistingServer: false,
         timeout: 60000,
       },
