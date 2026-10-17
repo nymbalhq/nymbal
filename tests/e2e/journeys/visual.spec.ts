@@ -1,4 +1,4 @@
-import { test, expect } from '../support/fixtures'
+import { blockExternalRequests, expect, test } from '../support/fixtures'
 
 const PAGES = [
   { name: 'homepage', path: '/' },
@@ -11,6 +11,8 @@ const PAGES = [
 ]
 
 test.beforeEach(async ({ page }) => {
+  // AC-12: screenshots must not depend on external hosts (product images)
+  await blockExternalRequests(page)
   // Disable CSS animations for stable screenshots
   await page.addStyleTag({
     content: `*, *::before, *::after {

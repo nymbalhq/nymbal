@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@lhci/cli": "0.15.1",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@testing-library/jest-dom": "^6.4.0",
