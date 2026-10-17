@@ -50,3 +50,5 @@ export type {
 } from './types.js'
 
 export type { ReviewsResult as ReviewsListResult, ReviewResult as ReviewSubmitResult } from '@nymbalhq/types'
+
+// changeset probe: a published package changes without a changeset
