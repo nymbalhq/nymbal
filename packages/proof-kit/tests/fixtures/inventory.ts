@@ -58,6 +58,28 @@ export function sqliteInventory(file: string): Inventory {
   }
 }
 
+const CONNECTIONS_GONE_TIMEOUT_MS = 10_000
+const CONNECTIONS_POLL_MS = 25
+
+/** Resolves once no backend is connected to `database`; throws, naming the count, if that takes too long. */
+async function untilNoConnections(admin: pg.Pool, database: string): Promise<void> {
+  const deadline = Date.now() + CONNECTIONS_GONE_TIMEOUT_MS
+  for (;;) {
+    const result = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1',
+      [database],
+    )
+    const n = result.rows[0]!.n
+    if (n === 0) return
+    if (Date.now() > deadline) {
+      throw new Error(
+        `${database}: ${n} connection(s) still open ${CONNECTIONS_GONE_TIMEOUT_MS} ms after pool.end()`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONNECTIONS_POLL_MS))
+  }
+}
+
 /** A fresh database on the server at `serverUrl`, dropped by `close()`. */
 export async function postgresInventory(serverUrl: string): Promise<Inventory> {
   const database = `proof_kit_${process.pid}_${Date.now()}`
@@ -95,7 +117,10 @@ export async function postgresInventory(serverUrl: string): Promise<Inventory> {
     },
     async close() {
       await pool.end()
-      await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`)
+      // pool.end() resolves before each client's socket has closed; dropping now would terminate clients that are
+      // still ending, and they would emit an unhandled error. Wait until the server has let go of every one.
+      await untilNoConnections(admin, database)
+      await admin.query(`DROP DATABASE IF EXISTS ${database}`)
       await admin.end()
     },
   }
