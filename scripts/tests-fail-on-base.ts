@@ -15,14 +15,17 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { newTestFiles } from './gate'
+import { changedFiles, newTestFiles } from './gate'
 import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 
 // Rule 8: a new test must be able to fail. Every test file the change adds (committed, staged or untracked) is run,
 // alone, against the base commit's source in a temporary worktree, with the file copied in from the working tree.
 // A file that passes there proves nothing about the change and is a violation; a run that executed no test judges
 // nothing and is listed apart. The checkout being judged is never written to: the worktree is a detached one in the
-// system temp directory, removed before exit, also on SIGINT and SIGTERM.
+// system temp directory, removed before exit, also on SIGINT and SIGTERM. When a manifest or the lockfile differs
+// from the base's, the worktree installs the base's own dependencies. When that or the base's build fails, no file is
+// judged and the step fails closed with the first error line and the output's tail: a change must not be able to
+// opt out of the rule by breaking the base's install.
 
 /** Every Vitest project: a new Postgres test needs NYMBAL_TEST_POSTGRES_URL in the environment, as in gate:full. */
 export const DEFAULT_SUITE = 'pnpm vitest run'
@@ -30,6 +33,11 @@ export const DEFAULT_SUITE = 'pnpm vitest run'
 export type Verdict = 'fails on base' | 'PASSES ON BASE' | 'not judged'
 
 export type Judgement = { path: string; verdict: Verdict; note?: string }
+
+/** Why the base could not be judged against: the first error line of the failing command, and its output's tail. */
+export type BaseFailure = { reason: string; tail: string[] }
+
+export type Report = { results: Judgement[]; baseFailure?: BaseFailure }
 
 /** Playwright journeys need running servers, which a temporary worktree of the base does not have. */
 const NOT_RUNNABLE = /^tests\/e2e\//
@@ -183,9 +191,75 @@ function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
   return { verdict: run.status === 0 ? 'PASSES ON BASE' : 'fails on base' }
 }
 
-function tail(text: string, count = 30): string {
-  return text.trimEnd().split('\n').slice(-count).join('\n')
+/** The shapes tsc, pnpm and Node print for a real error; words like `error` in a file name or a warning are not. */
+const ERROR_SHAPES = [
+  /\berror TS\d+/,
+  /\bERR_PNPM_\w+/,
+  /^Error(?: \[\w+\])?:/,
+  /Cannot find (?:module|package)/,
+]
+
+function outputLines(output: string): string[] {
+  return output
+    .replace(ANSI, '')
+    .split('\n')
+    .map((line) => line.trimEnd())
 }
+
+/** The first output line of a real error shape; else the last non-empty line; else a placeholder. Trimmed. */
+export function firstErrorLine(output: string): string {
+  const all = outputLines(output)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  return (
+    all.find((line) => ERROR_SHAPES.some((shape) => shape.test(line))) ??
+    all[all.length - 1] ??
+    'no output'
+  )
+}
+
+const TAIL_LINES = 20
+
+/** The last lines of a command's output, blank lines at the end dropped. */
+function tailOf(output: string): string[] {
+  const all = outputLines(output)
+  while (all.length > 0 && all[all.length - 1] === '') all.pop()
+  return all.slice(-TAIL_LINES)
+}
+
+/**
+ * Whether a changed path moves the dependency graph: a `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or
+ * `.npmrc` at any depth, or anything under the root `patches/`.
+ */
+export function isDependencyLayoutPath(path: string): boolean {
+  return (
+    /(?:^|\/)(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc)$/.test(path) ||
+    path.startsWith('patches/')
+  )
+}
+
+function dependenciesChanged(root: string, base: string): boolean {
+  return changedFiles(root, base).some(isDependencyLayoutPath)
+}
+
+/** pnpm errors about the lockfile itself: the registry cannot fix them, so an online retry only wastes time. */
+const UNFIXABLE_ONLINE = /\bERR_PNPM_(?:OUTDATED_LOCKFILE|LOCKFILE_\w+)/
+
+type Run = (cwd: string, command: string, session: Session) => Promise<SuiteRun>
+
+/** Installs the base's own dependencies: from the local store, else online when going online can help. */
+export async function installBase(
+  worktree: string,
+  session: Session,
+  run: Run = runCommand,
+): Promise<SuiteRun> {
+  const offline = await run(worktree, 'pnpm install --frozen-lockfile --offline', session)
+  if (offline.status === 0 || session.signal !== undefined) return offline
+  if (UNFIXABLE_ONLINE.test(offline.output.replace(ANSI, ''))) return offline
+  return run(worktree, 'pnpm install --frozen-lockfile', session)
+}
+
+const BASE_DID_NOT_BUILD = 'base did not build: '
 
 function stop(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return
@@ -202,12 +276,12 @@ export async function judge(opts: {
   suite: string
   /** Run in the base worktree before any test; undefined runs the base's `build` script if it has one. */
   build?: string | undefined
-}): Promise<Judgement[]> {
+}): Promise<Report> {
   const root = resolve(opts.root)
   const realRoot = realpathSync(root)
   const baseSha = git(root, ['rev-parse', '--verify', `${opts.base}^{commit}`]).trim()
   const added = addedTestFiles(root, baseSha)
-  if (added.length === 0) return []
+  if (added.length === 0) return { results: [] }
 
   const session: Session = {}
   const onSignal = (signal: NodeJS.Signals): void => {
@@ -224,11 +298,34 @@ export async function judge(opts: {
   try {
     git(root, ['worktree', 'add', '--detach', '--quiet', worktree, baseSha])
     created = true
-    for (const dir of nodeModulesDirs(root)) {
-      const target = join(worktree, dir, 'node_modules')
-      if (existsSync(target)) continue
-      mirrors.push(target)
-      mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, worktree)
+    // HEAD's modules cannot stand in for the base's when a manifest or the lockfile moved (a renamed dependency).
+    const installs = dependenciesChanged(root, baseSha)
+    if (!installs) {
+      for (const dir of nodeModulesDirs(root)) {
+        const target = join(worktree, dir, 'node_modules')
+        if (existsSync(target)) continue
+        mirrors.push(target)
+        mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, worktree)
+      }
+    }
+
+    // A base that cannot install or build judges no test, and the step fails: the rule is never skipped silently.
+    const notBuilt = (output: string): Report => {
+      const reason = firstErrorLine(output)
+      return {
+        results: added.map((path) => ({
+          path,
+          verdict: 'not judged',
+          note: `${BASE_DID_NOT_BUILD}${reason}`,
+        })),
+        baseFailure: { reason, tail: tailOf(output) },
+      }
+    }
+
+    if (installs) {
+      const installed = await installBase(worktree, session)
+      if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
+      if (installed.status !== 0) return notBuilt(installed.output)
     }
 
     // Workspace packages export their built output, so the base's sources are built before they are imported.
@@ -236,11 +333,7 @@ export async function judge(opts: {
     if (build !== '') {
       const built = await runCommand(worktree, build, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
-      if (built.status !== 0) {
-        throw new Error(
-          `the base build failed (${build}: ${built.signal ?? `exit ${built.status}`}):\n${tail(built.output)}`,
-        )
-      }
+      if (built.status !== 0) return notBuilt(built.output)
     }
 
     const results: Judgement[] = []
@@ -261,7 +354,7 @@ export async function judge(opts: {
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
       results.push({ path, ...verdictOf(run) })
     }
-    return results
+    return { results }
   } finally {
     process.off('SIGINT', onSignal)
     process.off('SIGTERM', onSignal)
@@ -283,7 +376,7 @@ export async function judge(opts: {
   }
 }
 
-export function render(results: Judgement[]): string {
+export function render({ results, baseFailure }: Report): string {
   if (results.length === 0) return 'tests-fail-on-base: the change adds no test files'
   const judged = results.filter((r) => r.verdict !== 'not judged')
   const unjudged = results.filter((r) => r.verdict === 'not judged')
@@ -293,6 +386,12 @@ export function render(results: Judgement[]): string {
   lines.push(
     `tests-fail-on-base: ${results.length} added, ${violations} violation(s), ${unjudged.length} not judged`,
   )
+  if (baseFailure !== undefined) {
+    lines.push(
+      `failed: ${BASE_DID_NOT_BUILD}${baseFailure.reason}; the last ${baseFailure.tail.length} line(s) of its output:`,
+      ...baseFailure.tail.map((line) => `  | ${line}`),
+    )
+  }
   return lines.join('\n')
 }
 
@@ -312,9 +411,10 @@ async function main(argv: string[]): Promise<void> {
       'usage: tests-fail-on-base.ts <base> [--root <repo>] [--suite <command>] [--build <command>, "" for none]',
     )
   }
-  const results = await judge({ root: values.root, base, suite: values.suite, build: values.build })
-  process.stdout.write(`${render(results)}\n`)
-  if (results.some((r) => r.verdict === 'PASSES ON BASE')) process.exit(1)
+  const report = await judge({ root: values.root, base, suite: values.suite, build: values.build })
+  process.stdout.write(`${render(report)}\n`)
+  const violated = report.results.some((r) => r.verdict === 'PASSES ON BASE')
+  if (violated || report.baseFailure !== undefined) process.exit(1)
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
