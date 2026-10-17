@@ -1,0 +1,81 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+env:
+  PNPM_VERSION: '9.12.3'
+  NODE_VERSION: '22'
+
+jobs:
+  perf-astro:
+    name: Performance — Astro
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+      NYMBAL_TEMPLATE: astro
+      NYMBAL_PAYMENTS_PROVIDER: native-stub
+      PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
+      NYMBAL_API_URL: http://localhost:3001
+      PUBLIC_NYMBAL_API_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm build:templates
+      - name: Migrate and seed the API database
+        run: |
+          node packages/cli/bin/nymbal.mjs migrate
+          node packages/cli/bin/nymbal.mjs seed
+      - name: Start the API
+        run: node packages/cli/bin/nymbal.mjs dev --api-only &
+      - name: Start the storefront (Astro)
+        run: pnpm --filter @nymbal/template-astro preview &
+      - name: Wait for the API and the storefront
+        run: npx wait-on http://localhost:3001/health http://localhost:4321 --timeout 90000
+      - name: Run Lighthouse CI (Astro)
+        run: pnpm lhci autorun
+
+  perf-nextjs:
+    name: Performance — Next.js
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+      NYMBAL_TEMPLATE: nextjs
+      NYMBAL_PAYMENTS_PROVIDER: native-stub
+      NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
+      NYMBAL_API_URL: http://localhost:3001
+      NEXT_PUBLIC_NYMBAL_API_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm build:templates
+      - name: Migrate and seed the API database
+        run: |
+          node packages/cli/bin/nymbal.mjs migrate
+          node packages/cli/bin/nymbal.mjs seed
+      - name: Start the API
+        run: node packages/cli/bin/nymbal.mjs dev --api-only &
+      - name: Start the storefront (Next.js)
+        run: pnpm --filter @nymbal/template-nextjs start &
+      - name: Wait for the API and the storefront
+        run: npx wait-on http://localhost:3001/health http://localhost:3000 --timeout 90000
+      - name: Run Lighthouse CI (Next.js)
+        run: pnpm lhci autorun
