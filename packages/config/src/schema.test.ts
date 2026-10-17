@@ -36,6 +36,15 @@ describe('nymbalConfigSchema', () => {
     expect(parsed.features.staging).toBe(false)
   })
 
+  it('round-trips: explicit values survive parsing, and re-parsing a parsed config changes nothing', () => {
+    const input = baseConfig()
+    const parsed = nymbalConfigSchema.parse(input)
+    expect(parsed.store).toEqual(nymbalConfigSchema.parse(input).store)
+    expect(parsed.http.port).toBe(input.http!.port)
+    // Defaults apply once: the parsed config is a fixed point of the schema.
+    expect(parsed).toEqual(nymbalConfigSchema.parse(structuredClone(parsed)))
+  })
+
   it('rejects invalid template', () => {
     const cfg = baseConfig() as unknown as Record<string, unknown>
     cfg.template = 'svelte'

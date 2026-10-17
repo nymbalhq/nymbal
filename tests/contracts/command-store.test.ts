@@ -37,6 +37,24 @@ describe('CommandStore contract — SQLite', () => {
     await store.close()
   })
 
+  it('rows written inside a transaction read back equal after it commits', async () => {
+    const store = await buildStore()
+    if (store.kind !== 'sqlite') throw new Error(`expected a sqlite store, got ${store.kind}`)
+    const written = [
+      { id: 'cat-2', slug: 'home', name: 'Home', position: 1 },
+      { id: 'cat-1', slug: 'books', name: 'Books', position: 2 },
+    ]
+    await store.transaction(() => {
+      const insert = store.raw.prepare(
+        "INSERT INTO categories (id, slug, name, position, created_at) VALUES (@id, @slug, @name, @position, '2026-10-17T00:00:00.000Z')",
+      )
+      for (const row of written) insert.run(row)
+    })
+    const read = store.raw.prepare('SELECT id, slug, name, position FROM categories ORDER BY id').all()
+    expect(read).toEqual([...written].sort((a, b) => a.id.localeCompare(b.id)))
+    await store.close()
+  })
+
   it('concurrent reads do not throw', async () => {
     const store = await buildStore()
     const reads = Array.from({ length: 5 }, () =>

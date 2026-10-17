@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PaymentError } from '@nymbalhq/types'
 import { createStripePaymentsAdapter, type StripePaymentsConfig } from './stripe-adapter.js'
@@ -151,6 +152,33 @@ describe('createStripePaymentsAdapter — payment intents', () => {
       automatic_payment_methods: { enabled: true },
       metadata: { source: 'unit', orderRef: 'order-1', customerId: 'cust-1' },
     })
+  })
+
+  it('createPaymentIntent property: the minor-unit amount reaches Stripe unchanged and comes back unchanged', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 99_999_999 }),
+        fc.constantFrom('GBP', 'USD', 'EUR', 'JPY'),
+        async (amountMinor, currency) => {
+          stripeStubs.paymentIntentsCreate.mockReset()
+          // Stripe echoes the requested amount and currency on the intent it creates.
+          stripeStubs.paymentIntentsCreate.mockImplementation(
+            async (params: { amount: number; currency: string }) =>
+              stripeIntentResponse({ amount: params.amount, currency: params.currency }),
+          )
+          const intent = await buildAdapter().createPaymentIntent({ amountMinor, currency })
+          const sent = stripeStubs.paymentIntentsCreate.mock.calls[0]![0] as {
+            amount: number
+            currency: string
+          }
+          expect(sent.amount).toBe(amountMinor)
+          expect(sent.currency).toBe(currency.toLowerCase())
+          expect(intent.amountMinor).toBe(amountMinor)
+          expect(intent.currency).toBe(currency)
+        },
+      ),
+      { numRuns: 50 },
+    )
   })
 
   it('createPaymentIntent omits orderRef/customerId metadata when params are absent', async () => {
