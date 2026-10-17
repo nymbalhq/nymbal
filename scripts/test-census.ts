@@ -385,8 +385,8 @@ export function aggregate(files: FileCensus[]): {
   return { byPackage, byLayer, total }
 }
 
-const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/
-const EXCLUDED_PREFIXES = ['tests/tooling/fixtures/', 'tests/sentinels/']
+export const TEST_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/
+export const EXCLUDED_PREFIXES = ['tests/tooling/fixtures/', 'tests/sentinels/']
 
 function repoRoot(): string {
   return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
