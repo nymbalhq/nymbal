@@ -1,4 +1,8 @@
 // Mutation testing of the platform services and repositories. Run with `pnpm mutation`.
+//
+// Stryker runs in a sandbox under .stryker-tmp, never in place: in-place mode writes through symlinks in the
+// checkout and its restore replaces them with copies. The sandbox holds only what the platform unit tests need,
+// and is deleted after the run together with the per-worker setup files the Vitest runner writes into it.
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   testRunner: 'vitest',
@@ -10,11 +14,21 @@ export default {
     '!**/*.test.ts',
     '!**/*.d.ts',
   ],
-  // Stryker's sandbox copy fails on directory symlinks, and the tests read the tracked `migrations` symlink
-  // (-> packages/platform/migrations) relative to the repo root, so mutate in place; Stryker restores the sources.
-  inPlace: true,
-  // Executable bins are ignored because the in-place backup restore drops their mode bits.
-  ignorePatterns: ['.claude', 'coverage', 'reports', 'packages/*/bin'],
+  // An allowlist: every root entry is left out except the platform package and the root configs it builds with.
+  // Workspace dependencies resolve through the node_modules links Stryker adds to the sandbox.
+  ignorePatterns: [
+    '/*',
+    '!/package.json',
+    '!/tsconfig*.json',
+    '!/vitest.stryker.config.ts',
+    '!/packages',
+    '/packages/*',
+    '!/packages/platform',
+    '/packages/platform/dist',
+    '/packages/platform/tests',
+    '**/CLAUDE.md',
+  ],
+  disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',
   coverageAnalysis: 'perTest',
   reporters: ['clear-text', 'progress', 'json', 'html'],
   jsonReporter: { fileName: 'reports/mutation/mutation.json' },

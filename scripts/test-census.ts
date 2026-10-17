@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { parseArgs } from 'node:util'
 import ts from 'typescript'
 
 // Assertion census. Classifies every `expect(...).matcher(...)` in the test files by the strength of what it checks:
@@ -10,6 +11,8 @@ import ts from 'typescript'
 //   C3 relational or computed (toBeGreaterThan, toBe(before - qty), toBe(sumOf(lines)) ...)
 //   C4 exact against a literal or a plain reference (toBe(3), toEqual({ ... }), toThrow('boom') ...)
 //   other: a matcher this script does not know (listed by name in otherMatchers)
+// A file with no assertion at all delegates (to a shared suite, say) and is counted as delegating, not as weak;
+// `--include <glob>` adds such suites' source files so their assertions are counted too.
 
 export type Counts = { C1: number; C2: number; C3: number; C4: number; other: number }
 
@@ -31,6 +34,7 @@ export type Totals = Counts & {
   skipped: number
   prints: number
   filesWithoutStrong: number
+  delegating: number
 }
 
 export type Layer = 'unit' | 'integration' | 'contract' | 'e2e' | 'architecture' | 'tooling'
@@ -92,7 +96,11 @@ const TEST_MODIFIERS = new Set([
   'sequential',
   'runIf',
   'skipIf',
+  'fixme',
 ])
+
+/** Modifiers that Playwright also accepts as runtime calls inside a test (`test.skip(cond, reason)`, `test.fixme()`). */
+const RUNTIME_MODIFIERS = new Set(['skip', 'fixme'])
 
 /** Modifiers that return a test function rather than registering a test themselves. */
 const TEST_FACTORY_MODIFIERS = new Set(['each', 'prop', 'runIf', 'skipIf'])
@@ -121,7 +129,15 @@ function emptyCounts(): Counts {
 }
 
 function emptyTotals(): Totals {
-  return { ...emptyCounts(), files: 0, tests: 0, skipped: 0, prints: 0, filesWithoutStrong: 0 }
+  return {
+    ...emptyCounts(),
+    files: 0,
+    tests: 0,
+    skipped: 0,
+    prints: 0,
+    filesWithoutStrong: 0,
+    delegating: 0,
+  }
 }
 
 type Chain = { root: string; mods: string[] }
@@ -159,11 +175,20 @@ function testSite(call: ts.CallExpression): TestSite | undefined {
   if (!chain) return undefined
   const last = chain.mods[chain.mods.length - 1]
   if (last !== undefined && TEST_FACTORY_MODIFIERS.has(last)) return undefined
+  if (last !== undefined && RUNTIME_MODIFIERS.has(last) && !registersTest(call)) return undefined
   return { skipped: isSkipped(chain), property: false }
 }
 
+/** `test.skip('name', fn)` registers a test; `test.skip()`, `test.skip(cond, reason)` and `test.fixme()` do not. */
+function registersTest(call: ts.CallExpression): boolean {
+  const [name, body] = call.arguments
+  if (name === undefined) return false
+  if (ts.isStringLiteralLike(name) || ts.isTemplateExpression(name)) return true
+  return body !== undefined && (ts.isArrowFunction(body) || ts.isFunctionExpression(body))
+}
+
 function isSkipped(chain: Chain): boolean {
-  return chain.mods.includes('skip') || chain.mods.includes('todo')
+  return chain.mods.some((m) => m === 'skip' || m === 'todo' || m === 'fixme')
 }
 
 function isPropertyBuilder(call: ts.CallExpression): boolean {
@@ -310,6 +335,7 @@ export function packageOf(path: string): string {
 
 export function layerOf(path: string): Layer {
   const segments = path.split('/')
+  if (segments[0] === 'packages' && segments[1] === 'contract-tests') return 'contract'
   if (segments[0] === 'tests') {
     switch (segments[1]) {
       case 'contracts':
@@ -338,7 +364,9 @@ function addInto(totals: Totals, file: FileCensus): void {
   totals.tests += file.tests
   totals.skipped += file.skipped
   totals.prints += file.prints
-  if (file.assertions.C2 + file.assertions.C3 === 0) totals.filesWithoutStrong += 1
+  const { C1, C2, C3, C4, other } = file.assertions
+  if (C1 + C2 + C3 + C4 + other === 0) totals.delegating += 1
+  else if (C2 + C3 === 0) totals.filesWithoutStrong += 1
 }
 
 export function aggregate(files: FileCensus[]): {
@@ -364,19 +392,25 @@ function repoRoot(): string {
   return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
 }
 
-function trackedTestFiles(root: string): string[] {
-  return execFileSync('git', ['ls-files'], {
+function lsFiles(root: string, pathspecs: string[]): string[] {
+  return execFileSync('git', ['ls-files', '--', ...pathspecs], {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
-    .filter((p) => TEST_FILE.test(p) && !EXCLUDED_PREFIXES.some((prefix) => p.startsWith(prefix)))
+    .filter(Boolean)
+}
+
+function trackedTestFiles(root: string): string[] {
+  return lsFiles(root, []).filter(
+    (p) => TEST_FILE.test(p) && !EXCLUDED_PREFIXES.some((prefix) => p.startsWith(prefix)),
+  )
 }
 
 function censusFiles(root: string, paths: string[]): FileCensus[] {
   const files: FileCensus[] = []
-  for (const path of paths) {
+  for (const path of new Set(paths)) {
     const absolute = resolve(root, path)
     if (!existsSync(absolute)) continue
     files.push(classifySource(readFileSync(absolute, 'utf8'), relative(root, absolute)))
@@ -395,6 +429,7 @@ const COLUMNS: Array<[header: string, key: keyof Totals]> = [
   ['other', 'other'],
   ['prints', 'prints'],
   ['files without C2/C3', 'filesWithoutStrong'],
+  ['delegating', 'delegating'],
 ]
 
 function table(title: string, rows: Array<[string, Totals]>): string {
@@ -423,12 +458,26 @@ export function renderTables(result: ReturnType<typeof aggregate>): string {
 }
 
 function main(argv: string[]): void {
-  const json = argv.includes('--json')
-  const explicit = argv.filter((a) => !a.startsWith('--'))
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      json: { type: 'boolean', default: false },
+      include: { type: 'string', multiple: true, default: [] },
+    },
+  })
   const root = repoRoot()
-  const files = censusFiles(root, explicit.length > 0 ? explicit : trackedTestFiles(root))
+  const base = positionals.length > 0 ? positionals : trackedTestFiles(root)
+  const included =
+    values.include.length > 0
+      ? lsFiles(
+          root,
+          values.include.map((g) => `:(glob)${g}`),
+        )
+      : []
+  const files = censusFiles(root, [...base, ...included])
   const result = aggregate(files)
-  const output = json ? JSON.stringify({ ...result, files }) : renderTables(result)
+  const output = values.json ? JSON.stringify({ ...result, files }) : renderTables(result)
   process.stdout.write(`${output}\n`)
 }
 
