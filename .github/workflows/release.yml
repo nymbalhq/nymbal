@@ -6,13 +6,15 @@ name: Release
 #   RELEASE_TOKEN  fine-grained token (or App token) with contents and pull-requests write: the release commit, the
 #                  tags and the back-merge pull request are made with it so their checks run
 #   NPM_TOKEN      npm granular token with publish rights on @nymbalhq/*, nymbal and create-nymbal-app
-# Without a secret the dependent steps are skipped with a notice.
+# Without a secret the dependent steps are skipped with a notice. Publishing, tags and releases skip what exists, so
+# re-running a run whose publish failed completes the release.
 
 on:
   push:
     branches: [main]
 
-# The release commit re-triggers this workflow; it finds no changesets and exits early.
+# The release commit re-triggers this workflow; it finds no changesets, so it only publishes what is missing (nothing)
+# and checks the back-merge.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -67,8 +69,8 @@ jobs:
             echo "::notice::NPM_TOKEN is not set: skipping the npm publish."
           fi
 
-  release:
-    name: Version, publish and tag
+  version:
+    name: Version and commit the release
     needs: detect
     if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true'
     runs-on: ubuntu-latest
@@ -85,10 +87,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
       - name: Version packages
         run: pnpm changeset version
+      # The build rewrites the scaffold templates with the new versions; they ship in the release commit.
+      - run: pnpm build
       - name: Commit the release to main
         run: |
           git config user.name "github-actions[bot]"
@@ -96,6 +99,30 @@ jobs:
           git add -A
           git commit -m "chore(release): version packages"
           git push origin HEAD:main
+
+  # Runs on every push to main with the tokens, whether or not this push carried changesets: publishing, tagging and
+  # releasing skip whatever already exists, so re-running a failed run (or the next push) completes the release.
+  publish:
+    name: Publish, tag and release
+    needs: [detect, version]
+    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      # The branch tip, not the pushed sha: it holds the release commit, on a re-run too.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
       # After versioning: the CLI reads its version from package.json and the scaffold bakes the versions in.
       - run: pnpm build
       - name: Publish to npm
@@ -103,6 +130,17 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
+      # changeset publish tags only what it published in this run; a version an earlier, failed run published is
+      # tagged here instead.
+      - name: Tag released versions that have no tag
+        run: |
+          set -euo pipefail
+          pnpm -r list --json --depth -1 \
+            | jq -r '.[] | select(.private != true) | "\(.name)@\(.version)"' \
+            | while read -r tag; do
+                git rev-parse -q --verify "refs/tags/$tag" > /dev/null && continue
+                if npm view "$tag" version > /dev/null 2>&1; then git tag "$tag"; fi
+              done
       - name: Push tags
         run: git push origin --tags
       - name: Create GitHub releases from the changelogs
@@ -112,6 +150,7 @@ jobs:
           set -euo pipefail
           pnpm -r list --json --depth -1 > "$RUNNER_TEMP/packages.json"
           for tag in $(git tag --points-at HEAD); do
+            if gh release view "$tag" > /dev/null 2>&1; then continue; fi
             name="${tag%@*}"
             version="${tag##*@}"
             dir=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .path' "$RUNNER_TEMP/packages.json")
@@ -125,10 +164,10 @@ jobs:
 
   back-merge:
     name: Back-merge main into dev
-    needs: [detect, release]
-    # Runs after every push to main except the release commit itself: the release job's run (the push that carried
-    # the changesets) already covers it, and the release commit's own run would only repeat it.
-    if: ${{ !cancelled() && needs.release.result != 'failure' && needs.detect.outputs.release_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    needs: [detect, publish]
+    # Every push to main, the release commit included: the job opens nothing when dev already has main or a
+    # back-merge pull request is open.
+    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Open a main -> dev pull request if none is open

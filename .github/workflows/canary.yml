@@ -3,8 +3,9 @@ name: Canary
 # A merge to dev with pending changesets publishes a snapshot of the changed packages to the npm `canary` tag
 # (`npm exec nymbal@canary`) and a GitHub prerelease. It never commits or pushes to dev and never moves `latest`.
 # Needs the NPM_TOKEN repository secret (npm granular token with publish rights on @nymbalhq/*, nymbal and
-# create-nymbal-app); without it the publish is skipped with a notice. A canary also waits until every workspace
-# dependency it would reference exists on npm, which is true once the first release from main has gone out.
+# create-nymbal-app); without it the publish is skipped with a notice. A canary also waits until every public package
+# it would publish already exists on npm (scripts/canary-ready.ts), which is true once the first release from main
+# has gone out.
 
 on:
   push:
@@ -85,72 +86,24 @@ jobs:
           done
           pnpm -r list --json --depth -1 > "$RUNNER_TEMP/before.json"
       - name: Version the snapshot
-        run: pnpm changeset version --snapshot canary
-      - id: deps
-        name: Check that every workspace dependency exists on npm
         run: |
-          node --input-type=module <<'EOF'
-          import { execFileSync } from 'node:child_process'
-          import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
-          import { join } from 'node:path'
-
-          const tmp = process.env.RUNNER_TEMP
-          const list = () =>
-            JSON.parse(execFileSync('pnpm', ['-r', 'list', '--json', '--depth', '-1'], { encoding: 'utf8' }))
-          const before = new Map(JSON.parse(readFileSync(join(tmp, 'before.json'), 'utf8')).map((p) => [p.name, p.version]))
-          const after = list().map((p) => ({
-            ...p,
-            manifest: JSON.parse(readFileSync(join(p.path, 'package.json'), 'utf8')),
-          }))
-          const byName = new Map(after.map((p) => [p.name, p]))
-          const changed = after.filter((p) => !p.manifest.private && before.get(p.name) !== p.version)
-
-          const missing = []
-          for (const pkg of changed) {
-            const deps = {
-              ...pkg.manifest.dependencies,
-              ...pkg.manifest.optionalDependencies,
-              ...pkg.manifest.peerDependencies,
-            }
-            for (const [name, range] of Object.entries(deps)) {
-              if (!String(range).startsWith('workspace:')) continue
-              const dep = byName.get(name)
-              if (!dep) continue
-              // A dependency that changes in this run is published by it; pnpm pins its snapshot version.
-              if (changed.some((c) => c.name === name)) continue
-              if (dep.manifest.private) {
-                missing.push(`${pkg.name} -> ${name} (private)`)
-                continue
-              }
-              try {
-                execFileSync('npm', ['view', `${name}@${dep.version}`, 'version'], { stdio: 'pipe' })
-              } catch {
-                missing.push(`${pkg.name} -> ${name}@${dep.version}`)
-              }
-            }
-          }
-
-          const ready = changed.length > 0 && missing.length === 0
-          appendFileSync(process.env.GITHUB_OUTPUT, `ready=${ready}\n`)
-          if (changed.length === 0) console.log('::notice::The changesets version no published package, no canary to publish.')
-          if (missing.length > 0) {
-            console.log(`::notice::Skipping the canary until these exist on npm: ${missing.join(', ')}`)
-          }
-          writeFileSync(
-            join(tmp, 'published.md'),
-            changed.map((p) => `- \`${p.name}@${p.version}\``).join('\n') + '\n',
-          )
-          EOF
-      - if: steps.deps.outputs.ready == 'true'
+          set -euo pipefail
+          pnpm changeset version --snapshot canary
+          pnpm -r list --json --depth -1 > "$RUNNER_TEMP/after.json"
+      # A canary must never be a package's first publish: npm gives a first publish `latest` whatever --tag says.
+      - id: ready
+        name: Check that the canary publishes only packages already on npm
+        run: pnpm exec tsx scripts/canary-ready.ts --before "$RUNNER_TEMP/before.json" --after "$RUNNER_TEMP/after.json"
+      - if: steps.ready.outputs.ready == 'true'
         run: pnpm build
       - name: Publish to the canary tag
-        if: steps.deps.outputs.ready == 'true'
+        if: steps.ready.outputs.ready == 'true'
         run: pnpm changeset publish --tag canary --no-git-tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
       - name: Create the GitHub prerelease
-        if: steps.deps.outputs.ready == 'true'
+        if: steps.ready.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -159,7 +112,10 @@ jobs:
           {
             echo "## Packages"
             echo
-            cat "$RUNNER_TEMP/published.md"
+            jq -r --slurpfile before "$RUNNER_TEMP/before.json" '
+              ($before[0] | map({ key: .name, value: .version }) | from_entries) as $was
+              | .[] | select(.private != true and $was[.name] != .version) | "- `\(.name)@\(.version)`"
+            ' "$RUNNER_TEMP/after.json"
             echo
             echo "## Changes"
             echo
