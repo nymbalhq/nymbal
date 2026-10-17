@@ -57,6 +57,10 @@ const adminServer = {
 
 /** The API and what the run needs: NYMBAL_E2E_TARGET names one target, otherwise both templates (or the admin). */
 function servers() {
+  const targets = ['astro', 'nextjs', 'admin']
+  if (target !== undefined && !targets.includes(target)) {
+    throw new Error(`NYMBAL_E2E_TARGET must be one of ${targets.join(', ')}; got "${target}"`)
+  }
   if (target === 'astro') return [apiServer, astroServer]
   if (target === 'nextjs') return [apiServer, nextjsServer]
   if (isAdminE2E) return [apiServer, adminServer]
