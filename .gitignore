@@ -27,3 +27,7 @@ test-results/
 /smoke-astro/
 /smoke-nextjs/
 /launch-smoke-astro/
+
+# Generated reports (mutation, census) and Stryker sandbox
+reports/
+.stryker-tmp/

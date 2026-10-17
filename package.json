@@ -19,10 +19,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
-    "dev": "pnpm --filter @nymbal/cli dev"
+    "dev": "pnpm --filter @nymbal/cli dev",
+    "mutation": "stryker run",
+    "census": "tsx scripts/test-census.ts",
+    "sentinels": "tsx scripts/sentinels.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.9.0",
