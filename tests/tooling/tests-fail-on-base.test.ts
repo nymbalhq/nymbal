@@ -429,3 +429,198 @@ describe('AC-15: added test files include uncommitted and untracked ones', () =>
     expect(state(root)).toEqual(before)
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// AC-22 and AC-23: a dependency change between base and HEAD, and a base that cannot install or build
+// ---------------------------------------------------------------------------------------------------------------
+
+function runWith(root: string, base: string, extra: string[]) {
+  const result = spawnSync(TSX, [SCRIPT, base, '--root', root, '--suite', SUITE, ...extra], {
+    cwd: REPO,
+    encoding: 'utf8',
+    timeout: 50_000,
+  })
+  return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
+}
+
+/** A node:test file in packages/app/test that imports the app's own source, which re-exports the lib. */
+function appTest(name: string, assertion: string): string {
+  return [
+    "import { test } from 'node:test'",
+    "import assert from 'node:assert/strict'",
+    `import { ${name} } from '../src/index.js'`,
+    '',
+    `test('${name}', () => {`,
+    `  ${assertion}`,
+    '})',
+    '',
+  ].join('\n')
+}
+
+/** Writes a two-package workspace: `<scope>/app` depends on and re-exports `<scope>/lib`, and builds against it. */
+function writeWorkspace(root: string, scope: string, lib: string): void {
+  write(root, '.gitignore', 'node_modules/\n')
+  write(root, 'package.json', json({ name: 'tfob-workspace', private: true, type: 'module' }))
+  write(root, 'pnpm-workspace.yaml', "packages:\n  - 'packages/*'\n")
+  write(
+    root,
+    'packages/lib/package.json',
+    json({ name: `${scope}/lib`, version: '1.0.0', type: 'module', exports: './src/index.js' }),
+  )
+  write(root, 'packages/lib/src/index.js', lib)
+  write(
+    root,
+    'packages/app/package.json',
+    json({
+      name: `${scope}/app`,
+      version: '1.0.0',
+      type: 'module',
+      dependencies: { [`${scope}/lib`]: 'workspace:*' },
+    }),
+  )
+  write(root, 'packages/app/src/index.js', `export * from '${scope}/lib'\n`)
+  // The build resolves the lib by the name this commit's manifests give it.
+  write(
+    root,
+    'packages/app/build.mjs',
+    `import { add } from '${scope}/lib'\nif (add(1, 1) !== 2) process.exit(1)\n`,
+  )
+  write(root, 'packages/app/test/add.test.js', appTest('add', 'assert.equal(add(2, 3), 5)'))
+}
+
+const APP_BUILD = 'node packages/app/build.mjs'
+
+/** The lines naming `file`: one per added file, each with its verdict and note. */
+function linesFor(out: string, file: string): string[] {
+  return out.split('\n').filter((l) => l.includes(file))
+}
+
+describe('AC-22: a dependency change installs the base dependencies in the base worktree', () => {
+  it('AC-22: HEAD renames a workspace dependency; the base builds by its own names and a new test fails on base for its own reason', () => {
+    const root = emptyRepo()
+    writeWorkspace(root, '@scope-a', BASE_MATH)
+    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    const base = commitAll(root, 'base: @scope-a')
+
+    // HEAD renames the scope and adds multiply; HEAD's node_modules know only @scope-b.
+    writeWorkspace(root, '@scope-b', HEAD_MATH)
+    write(
+      root,
+      'packages/app/test/multiply.test.js',
+      appTest('multiply', 'assert.equal(multiply(2, 3), 6)'),
+    )
+    write(root, 'packages/app/test/add-zero.test.js', appTest('add', 'assert.equal(add(0, 7), 7)'))
+    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    commitAll(root, 'head: @scope-b, lib gains multiply')
+    expectGreenAtHead(root)
+    expectExit0(root, 'node', ['packages/app/build.mjs'])
+    // Guards: the dependency change is real, and mirroring HEAD's modules cannot resolve the base's name.
+    expect(git(root, 'diff', '--name-only', base, 'HEAD')).toContain('pnpm-lock.yaml')
+    expect(readdirSync(join(root, 'packages/app/node_modules'))).not.toContain('@scope-a')
+    const before = state(root)
+
+    const { status, out } = runWith(root, base, ['--build', APP_BUILD])
+
+    expect(verdictsOf(out, 'packages/app/test/multiply.test.js'), out).toEqual(['fails on base'])
+    // Passing on base proves the base run resolved @scope-a/lib: the failure above is the missing multiply.
+    expect(verdictsOf(out, 'packages/app/test/add-zero.test.js'), out).toEqual(['PASSES ON BASE'])
+    expect(status, out).toBe(1)
+    expect(state(root)).toEqual(before)
+  })
+})
+
+describe('AC-23: a base that cannot install or build judges nothing, exits 0 and says so', () => {
+  const TSC_ERROR =
+    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types' or its corresponding type declarations."
+
+  it('AC-23: a failing base build marks every added file "not judged (base did not build: <first error line>)", exit 0, with a notice', () => {
+    const { root } = makeRepo()
+    write(
+      root,
+      'build.mjs',
+      [
+        `console.error(${JSON.stringify(TSC_ERROR)})`,
+        "console.error('Found 1 error.')",
+        'process.exit(2)',
+        '',
+      ].join('\n'),
+    )
+    const base = commitAll(root, 'base: a build that fails')
+    write(root, 'build.mjs', 'process.exit(0)\n')
+    // One added test would fail on base and one would pass: neither may be judged.
+    addGoodHead(root)
+    write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
+    commitAll(root, 'head: the build is fixed, multiply and two new tests')
+    expectGreenAtHead(root)
+    const added = addedTests(root, base)
+    expect(added.length).toBeGreaterThanOrEqual(2)
+    const before = state(root)
+
+    const { status, out } = runWith(root, base, ['--build', 'node build.mjs'])
+
+    for (const file of added) {
+      expect(verdictsOf(out, file), out).toEqual(['not judged'])
+      expect(linesFor(out, file).join('\n'), out).toContain(`(base did not build: ${TSC_ERROR})`)
+    }
+    expect(status, out).toBe(0)
+    expect(
+      out.split('\n').some((l) => /notice/i.test(l)),
+      out,
+    ).toBe(true)
+    expect(state(root)).toEqual(before)
+  })
+
+  it('AC-23: a base whose dependencies cannot install (lockfile out of date) marks every added file not judged, exit 0, with a notice', () => {
+    const root = emptyRepo()
+    writeWorkspace(root, '@scope-a', BASE_MATH)
+    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    // The base commits a manifest change without the lockfile it needs: a frozen install of it fails.
+    write(
+      root,
+      'packages/app/package.json',
+      json({
+        name: '@scope-a/app',
+        version: '1.0.0',
+        type: 'module',
+        dependencies: { '@scope-a/lib': 'workspace:*', '@scope-a/util': 'workspace:*' },
+      }),
+    )
+    write(
+      root,
+      'packages/util/package.json',
+      json({ name: '@scope-a/util', version: '1.0.0', type: 'module' }),
+    )
+    const base = commitAll(root, 'base: a dependency without its lockfile entry')
+    write(root, 'packages/lib/src/index.js', HEAD_MATH)
+    write(
+      root,
+      'packages/app/test/multiply.test.js',
+      appTest('multiply', 'assert.equal(multiply(2, 3), 6)'),
+    )
+    write(root, 'packages/app/test/add-zero.test.js', appTest('add', 'assert.equal(add(0, 7), 7)'))
+    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    commitAll(root, 'head: the lockfile is brought up to date')
+    expectGreenAtHead(root)
+    expect(git(root, 'diff', '--name-only', base, 'HEAD')).toContain('pnpm-lock.yaml')
+    const before = state(root)
+
+    const { status, out } = runWith(root, base, ['--build', ''])
+
+    for (const file of [
+      'packages/app/test/multiply.test.js',
+      'packages/app/test/add-zero.test.js',
+    ]) {
+      expect(verdictsOf(out, file), out).toEqual(['not judged'])
+      const line = linesFor(out, file).join('\n')
+      expect(line, out).toContain('(base did not build: ')
+      // The first error line, not pnpm's progress lines before it.
+      expect(line, out).toContain('ERR_PNPM_OUTDATED_LOCKFILE')
+    }
+    expect(status, out).toBe(0)
+    expect(
+      out.split('\n').some((l) => /notice/i.test(l)),
+      out,
+    ).toBe(true)
+    expect(state(root)).toEqual(before)
+  })
+})
