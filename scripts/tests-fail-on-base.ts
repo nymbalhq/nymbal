@@ -22,7 +22,9 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 // alone, against the base commit's source in a temporary worktree, with the file copied in from the working tree.
 // A file that passes there proves nothing about the change and is a violation; a run that executed no test judges
 // nothing and is listed apart. The checkout being judged is never written to: the worktree is a detached one in the
-// system temp directory, removed before exit, also on SIGINT and SIGTERM.
+// system temp directory, removed before exit, also on SIGINT and SIGTERM. When a manifest or the lockfile differs
+// from the base's, the worktree installs the base's own dependencies; when that or the base's build fails, no file is
+// judged and the step says so without failing.
 
 /** Every Vitest project: a new Postgres test needs NYMBAL_TEST_POSTGRES_URL in the environment, as in gate:full. */
 export const DEFAULT_SUITE = 'pnpm vitest run'
@@ -183,9 +185,40 @@ function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
   return { verdict: run.status === 0 ? 'PASSES ON BASE' : 'fails on base' }
 }
 
-function tail(text: string, count = 30): string {
-  return text.trimEnd().split('\n').slice(-count).join('\n')
+/** pnpm's lines that say nothing about why a command failed. */
+const PROGRESS = /^(?:Scope:|Progress:|Lockfile is up to date|Packages:|Already up to date|[+-]+$)/
+
+/** The first output line that is an error; else the first line that is not progress; else a placeholder. */
+export function firstErrorLine(output: string): string {
+  const all = output
+    .replace(ANSI, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  return (
+    all.find((line) => /\berror\b|\bERR_|\bERR!/i.test(line)) ??
+    all.find((line) => !PROGRESS.test(line)) ??
+    'no output'
+  )
 }
+
+/** Whether the work tree holds a `package.json` or `pnpm-lock.yaml` that differs from the base's (or is new). */
+function dependenciesChanged(root: string, base: string): boolean {
+  const paths = [
+    ...git(root, ['diff', '--name-only', base]).split('\n'),
+    ...git(root, ['ls-files', '--others', '--exclude-standard']).split('\n'),
+  ]
+  return paths.some((path) => /(?:^|\/)(?:package\.json|pnpm-lock\.yaml)$/.test(path))
+}
+
+/** Installs the base's own dependencies: from the local store, else online. */
+async function installBase(worktree: string, session: Session): Promise<SuiteRun> {
+  const offline = await runCommand(worktree, 'pnpm install --frozen-lockfile --offline', session)
+  if (offline.status === 0 || session.signal !== undefined) return offline
+  return runCommand(worktree, 'pnpm install --frozen-lockfile', session)
+}
+
+const BASE_DID_NOT_BUILD = 'base did not build: '
 
 function stop(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return
@@ -224,11 +257,29 @@ export async function judge(opts: {
   try {
     git(root, ['worktree', 'add', '--detach', '--quiet', worktree, baseSha])
     created = true
-    for (const dir of nodeModulesDirs(root)) {
-      const target = join(worktree, dir, 'node_modules')
-      if (existsSync(target)) continue
-      mirrors.push(target)
-      mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, worktree)
+    // HEAD's modules cannot stand in for the base's when a manifest or the lockfile moved (a renamed dependency).
+    const installs = dependenciesChanged(root, baseSha)
+    if (!installs) {
+      for (const dir of nodeModulesDirs(root)) {
+        const target = join(worktree, dir, 'node_modules')
+        if (existsSync(target)) continue
+        mirrors.push(target)
+        mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, worktree)
+      }
+    }
+
+    // A base that cannot install or build says nothing about the tests, and is no failure of the change.
+    const notBuilt = (output: string): Judgement[] =>
+      added.map((path) => ({
+        path,
+        verdict: 'not judged',
+        note: `${BASE_DID_NOT_BUILD}${firstErrorLine(output)}`,
+      }))
+
+    if (installs) {
+      const installed = await installBase(worktree, session)
+      if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
+      if (installed.status !== 0) return notBuilt(installed.output)
     }
 
     // Workspace packages export their built output, so the base's sources are built before they are imported.
@@ -236,11 +287,7 @@ export async function judge(opts: {
     if (build !== '') {
       const built = await runCommand(worktree, build, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
-      if (built.status !== 0) {
-        throw new Error(
-          `the base build failed (${build}: ${built.signal ?? `exit ${built.status}`}):\n${tail(built.output)}`,
-        )
-      }
+      if (built.status !== 0) return notBuilt(built.output)
     }
 
     const results: Judgement[] = []
@@ -293,6 +340,13 @@ export function render(results: Judgement[]): string {
   lines.push(
     `tests-fail-on-base: ${results.length} added, ${violations} violation(s), ${unjudged.length} not judged`,
   )
+  const unbuilt = unjudged.find((r) => r.note?.startsWith(BASE_DID_NOT_BUILD))
+  if (unbuilt?.note !== undefined) {
+    const reason = unbuilt.note.slice(BASE_DID_NOT_BUILD.length)
+    lines.push(
+      `notice: base did not build (${reason}); ${unjudged.length} added file(s) not judged`,
+    )
+  }
   return lines.join('\n')
 }
 
