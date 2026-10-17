@@ -1,0 +1,5 @@
+# id: S001
+# kind: present
+# defect: SQLite transaction() calls fn(db) with no transaction, so a failed command leaves partial writes
+# where: packages/platform/src/db/command-store.ts:44-50
+# killed-by: P1-02 acceptance tests

@@ -1,0 +1,5 @@
+# id: S002
+# kind: present
+# defect: reserveStock reads stock then writes stock - qty with no lock or conditional update, so concurrent reservations oversell; adjustStock has the same shape (68-79)
+# where: packages/platform/src/services/inventory-service.ts:104-116
+# killed-by: P1-02 acceptance tests

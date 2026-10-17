@@ -1,0 +1,18 @@
+# id: I102
+# kind: injected
+# defect: finalize no longer commits the order reservations
+# where: packages/platform/src/services/checkout-service.ts:192-194
+# killed-by: packages/platform/src/services/checkout-service.test.ts
+diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
+--- a/packages/platform/src/services/checkout-service.ts
++++ b/packages/platform/src/services/checkout-service.ts
+@@ -190,9 +190,6 @@
+           : []
+ 
+         // Commit reservations (permanently decrements stock via stock-adjustment log)
+-        for (const rid of reservationIds) {
+-          await inventory.commitReservation(rid, 'system:checkout-finalize')
+-        }
+ 
+         // Transition order to confirmed
+         const updated = await orders.updateStatus(order.id, 'confirmed', 'system:checkout', 'payment captured')

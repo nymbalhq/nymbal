@@ -1,0 +1,16 @@
+# id: I105
+# kind: injected
+# defect: refresh accepts a revoked refresh token
+# where: packages/platform/src/services/auth-service.ts:208
+# killed-by: packages/platform/src/services/auth-service.test.ts
+diff --git a/packages/platform/src/services/auth-service.ts b/packages/platform/src/services/auth-service.ts
+--- a/packages/platform/src/services/auth-service.ts
++++ b/packages/platform/src/services/auth-service.ts
+@@ -205,7 +205,6 @@
+       }
+       const record = await repos.refreshToken.findById(payload.jti)
+       if (!record) throw new AuthError('token_invalid', 'refresh token unknown')
+-      if (record.revokedAt) throw new AuthError('token_invalid', 'refresh token revoked')
+       if (record.tokenHash !== hashRefresh(refreshToken)) {
+         // A mismatch means replay with an older token — revoke chain.
+         await repos.refreshToken.revokeAllForCustomer(payload.sub)

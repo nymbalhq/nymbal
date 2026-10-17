@@ -1,0 +1,5 @@
+# id: S004
+# kind: present
+# defect: finalize lists at most 1000 pending orders and filters in JS, so the 1001st pending order cannot be finalised
+# where: packages/platform/src/services/checkout-service.ts:182-183
+# killed-by: P1-02 acceptance tests (findByPaymentIntentId)
