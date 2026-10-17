@@ -529,18 +529,21 @@ describe('AC-22: a dependency change installs the base dependencies in the base 
   })
 })
 
-describe('AC-23: a base that cannot install or build judges nothing, exits 0 and says so', () => {
+describe('AC-23 (revised): a base that cannot install or build fails the step closed and says why', () => {
   const TSC_ERROR =
     "src/index.ts(1,23): error TS2307: Cannot find module '@nymbal/types' or its corresponding type declarations."
+  // The build's last line: it is no error shape, so it can reach the output only as part of the tail.
+  const LAST_LINE = 'Found 1 error in src/index.ts:1 (tail line)'
 
-  it('AC-23: a failing base build marks every added file "not judged (base did not build: <first error line>)", exit 0, with a notice', () => {
+  it('AC-23 (revised): a failing base build exits non-zero with "base did not build: <first error line>" and the output tail; every added file is not judged with that reason', () => {
     const { root } = makeRepo()
     write(
       root,
       'build.mjs',
       [
+        "console.log('CLI Building entry: src/index.ts')",
         `console.error(${JSON.stringify(TSC_ERROR)})`,
-        "console.error('Found 1 error.')",
+        `console.error(${JSON.stringify(LAST_LINE)})`,
         'process.exit(2)',
         '',
       ].join('\n'),
@@ -560,17 +563,14 @@ describe('AC-23: a base that cannot install or build judges nothing, exits 0 and
 
     for (const file of added) {
       expect(verdictsOf(out, file), out).toEqual(['not judged'])
-      expect(linesFor(out, file).join('\n'), out).toContain(`(base did not build: ${TSC_ERROR})`)
+      expect(linesFor(out, file).join('\n'), out).toContain(`base did not build: ${TSC_ERROR}`)
     }
-    expect(status, out).toBe(0)
-    expect(
-      out.split('\n').some((l) => /notice/i.test(l)),
-      out,
-    ).toBe(true)
+    expect(out, out).toContain(LAST_LINE)
+    expect(status, out).not.toBe(0)
     expect(state(root)).toEqual(before)
   })
 
-  it('AC-23: a base whose dependencies cannot install (lockfile out of date) marks every added file not judged, exit 0, with a notice', () => {
+  it('AC-23 (revised): a base whose dependencies cannot install (lockfile out of date) exits non-zero naming the pnpm error; every added file is not judged', () => {
     const root = emptyRepo()
     writeWorkspace(root, '@scope-a', BASE_MATH)
     expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
@@ -611,16 +611,13 @@ describe('AC-23: a base that cannot install or build judges nothing, exits 0 and
       'packages/app/test/add-zero.test.js',
     ]) {
       expect(verdictsOf(out, file), out).toEqual(['not judged'])
-      const line = linesFor(out, file).join('\n')
-      expect(line, out).toContain('(base did not build: ')
       // The first error line, not pnpm's progress lines before it.
-      expect(line, out).toContain('ERR_PNPM_OUTDATED_LOCKFILE')
+      // pnpm 9 prints ` ERR_PNPM_X  msg`, later versions `[ERR_PNPM_X] msg`.
+      expect(linesFor(out, file).join('\n'), out).toMatch(
+        /base did not build: \[?ERR_PNPM_OUTDATED_LOCKFILE\b/,
+      )
     }
-    expect(status, out).toBe(0)
-    expect(
-      out.split('\n').some((l) => /notice/i.test(l)),
-      out,
-    ).toBe(true)
+    expect(status, out).not.toBe(0)
     expect(state(root)).toEqual(before)
   })
 })

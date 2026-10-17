@@ -289,3 +289,139 @@ describe('AC-21: the census-trend step judges only new files and files whose ass
     expect(status, out).toBe(1)
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// AC-24: removed lines and every assertion shape count, so deleting or weakening an assertion is judged
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A Vitest file from its own lines: the imports, then one test whose body is `body`. */
+function testOf(
+  body: string[],
+  imports: string[] = ["import { add } from '@nymbal/types'"],
+): string {
+  return [
+    "import { expect, it } from 'vitest'",
+    ...imports,
+    "it('adds two numbers', () => {",
+    ...body,
+    '})',
+    '',
+  ].join('\n')
+}
+
+const RELATIONAL = '  expect(add(2, 2)).toBeGreaterThan(add(1, 2))'
+
+describe('AC-24: assertionTouched counts removed lines and every assertion or matcher shape', () => {
+  it('AC-24: a removed assertion line is judged; a removed comment or import line is not', () => {
+    const base = testOf(
+      ['  // two is more than one', '  expect(add(1, 2)).toBe(3)', RELATIONAL],
+      ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+    )
+    const removedAssertion = diffOf(
+      { [WEAK]: base },
+      {
+        [WEAK]: testOf(
+          ['  // two is more than one', '  expect(add(1, 2)).toBe(3)'],
+          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+        ),
+      },
+    )
+    const removedComment = diffOf(
+      { [WEAK]: base },
+      {
+        [WEAK]: testOf(
+          ['  expect(add(1, 2)).toBe(3)', RELATIONAL],
+          ["import { add } from '@nymbal/types'", "import { fc } from '@fast-check/vitest'"],
+        ),
+      },
+    )
+    const removedImport = diffOf(
+      { [WEAK]: base },
+      { [WEAK]: testOf(['  // two is more than one', '  expect(add(1, 2)).toBe(3)', RELATIONAL]) },
+    )
+    // Guard: the deletion diff has no added line at all, so only a `-` line can decide.
+    expect(removedAssertion.split('\n').filter((l) => /^\+(?!\+\+)/.test(l))).toEqual([])
+    expect(removedAssertion).toContain(`-${RELATIONAL}`)
+
+    expect({
+      removedAssertion: assertionTouched(removedAssertion, WEAK),
+      removedComment: assertionTouched(removedComment, WEAK),
+      removedImport: assertionTouched(removedImport, WEAK),
+    }).toEqual({ removedAssertion: true, removedComment: false, removedImport: false })
+  })
+
+  it('AC-24: an edited matcher-only line of a multi-line expect is judged (`).toBeGreaterThan(` weakened to `).toBe(`); the same kind of line as mere context next to an import edit is not', () => {
+    const edited = diffOf(
+      { [WEAK]: testOf(['  expect(', '    add(2, 2),', '  ).toBeGreaterThan(add(1, 2))']) },
+      { [WEAK]: testOf(['  expect(', '    add(2, 2),', '  ).toBe(4)']) },
+    )
+    // Guard: no changed line carries `expect(`; only the matcher lines changed.
+    const changed = edited.split('\n').filter((l) => /^[+-](?![+-]{2})/.test(l))
+    expect(changed.some((l) => l.includes('expect('))).toBe(false)
+
+    const before = [
+      "import { expect, it } from 'vitest'",
+      "import { add } from '@nymbal/types'",
+      "it('adds two numbers', () => expect(add(1, 2))",
+      '  .toBeGreaterThan(add(0, 2)))',
+      '',
+    ].join('\n')
+    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@nymbal/', '@nymbalhq/') })
+    // Guard: the matcher line is in the hunk, as context.
+    expect(context.split('\n')).toContain('   .toBeGreaterThan(add(0, 2)))')
+
+    expect({
+      edited: assertionTouched(edited, WEAK),
+      context: assertionTouched(context, WEAK),
+    }).toEqual({ edited: true, context: false })
+  })
+
+  it('AC-24: an edited `.not.to<X>(` matcher line is judged', () => {
+    const diff = diffOf(
+      { [WEAK]: testOf(['  expect(add(2, 2))', '    .not.toBeLessThan(4)']) },
+      { [WEAK]: testOf(['  expect(add(2, 2))', '    .not.toBeNaN()']) },
+    )
+
+    expect(assertionTouched(diff, WEAK)).toBe(true)
+  })
+
+  // Each edit changes only the line holding the call; the matcher on the next line stays as context.
+  const CALL_EDITS: Array<[string, string, string]> = [
+    ['expect.soft(', '  expect.soft(add(1, 2))', '  expect.soft(add(2, 1))'],
+    [
+      'expect.poll(',
+      '  await expect.poll(() => add(1, 2))',
+      '  await expect.poll(() => add(2, 1))',
+    ],
+  ]
+
+  for (const [shape, from, to] of CALL_EDITS) {
+    it(`AC-24: an edited \`${shape}\` line is judged though its matcher is unchanged`, () => {
+      const diff = diffOf(
+        { [WEAK]: testOf([from, '    .toBe(3)']) },
+        { [WEAK]: testOf([to, '    .toBe(3)']) },
+      )
+
+      expect(assertionTouched(diff, WEAK)).toBe(true)
+    })
+  }
+
+  it('AC-24: an added bare `assert(` line is judged', () => {
+    const diff = diffOf(
+      { [WEAK]: testOf(['  expect(add(1, 2)).toBe(3)']) },
+      { [WEAK]: testOf(['  expect(add(1, 2)).toBe(3)', '  assert(add(3, 4) === 7)']) },
+    )
+
+    expect(assertionTouched(diff, WEAK)).toBe(true)
+  })
+
+  it('AC-24: a removed `fc.assert(` property line is judged', () => {
+    const property = '  fc.assert(fc.property(fc.integer(), (n) => add(n, 0) === n))'
+    const diff = diffOf(
+      { [WEAK]: testOf(['  expect(add(1, 2)).toBe(3)', property]) },
+      { [WEAK]: testOf(['  expect(add(1, 2)).toBe(3)']) },
+    )
+
+    expect(assertionTouched(diff, WEAK)).toBe(true)
+  })
+})
