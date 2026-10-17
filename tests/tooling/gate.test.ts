@@ -3,10 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
-import { censusTrend, formatReport, newTestFiles, run, selectTests } from '../../scripts/gate'
+import {
+  censusTrend,
+  formatReport,
+  newTestFiles,
+  plan,
+  run,
+  selectTests,
+  type StepSpec,
+} from '../../scripts/gate'
 import { aggregate, type Counts, type FileCensus, type Totals } from '../../scripts/test-census'
 
-// Acceptance tests for P0-02 (gate): AC-1 to AC-5 and AC-7.
+// Acceptance tests for P0-02 (gate): AC-1 to AC-5, AC-7 and AC-18.
 // AC-7 drives the exported runner with fake steps that are real shell commands, so the verdict under test comes
 // from real exit codes; running `pnpm gate` itself from here would recurse into this suite.
 
@@ -545,5 +553,135 @@ describe('AC-7: run exits non-zero iff a step is red, with the step table in its
       ),
       { numRuns: 15 },
     )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// AC-18: a step that needs others runs only when every one of them is ok
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('AC-18: run skips a step whose needs are red or skipped, and names them', () => {
+  const created: string[] = []
+  afterEach(() => {
+    for (const d of created.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+
+  function scratch(): string {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-needs-')))
+    created.push(dir)
+    return dir
+  }
+
+  type NeedState = 'ok' | 'red' | 'skipped'
+
+  function needStep(name: string, state: NeedState): StepSpec {
+    if (state === 'skipped') return { name, command: 'true', skip: 'nothing to do' }
+    return { name, command: state === 'ok' ? 'true' : 'exit 1' }
+  }
+
+  it('AC-18: a red need skips the step without running it, with a detail naming that need', async () => {
+    const cwd = scratch()
+    const result = await run(
+      [
+        needStep('compose up', 'red'),
+        needStep('build', 'ok'),
+        { name: 'e2e', command: 'touch e2e-ran', needs: ['build', 'compose up'] },
+      ],
+      { cwd, budgetMs: 60_000 },
+    )
+    const e2e = result.steps.find((s) => s.name === 'e2e')
+    expect(existsSync(join(cwd, 'e2e-ran'))).toBe(false)
+    expect(e2e?.status).toBe('skipped')
+    expect(e2e?.detail).toContain('compose up')
+    expect(result.exitCode).toBe(1)
+    expect(RED_LINE.exec(lastLine(result.report))![1]!.split(', ')).toEqual(['compose up'])
+  })
+
+  it('AC-18: a red build skips the step and the detail names build', async () => {
+    const cwd = scratch()
+    const result = await run(
+      [
+        needStep('compose up', 'ok'),
+        needStep('build', 'red'),
+        { name: 'e2e', command: 'touch e2e-ran', needs: ['build', 'compose up'] },
+      ],
+      { cwd, budgetMs: 60_000 },
+    )
+    const e2e = result.steps.find((s) => s.name === 'e2e')
+    expect(existsSync(join(cwd, 'e2e-ran'))).toBe(false)
+    expect(e2e?.status).toBe('skipped')
+    expect(e2e?.detail).toContain('build')
+  })
+
+  it('AC-18: property: the step runs iff every need is ok; when skipped, the detail names every need that is not ok', async () => {
+    const cwd = scratch()
+    const state = fc.constantFrom<NeedState>('ok', 'red', 'skipped')
+    await fc.assert(
+      fc.asyncProperty(state, state, async (compose, build) => {
+        rmSync(join(cwd, 'e2e-ran'), { force: true })
+        const result = await run(
+          [
+            needStep('compose up', compose),
+            needStep('build', build),
+            { name: 'e2e', command: 'touch e2e-ran', needs: ['build', 'compose up'] },
+          ],
+          { cwd, budgetMs: 60_000 },
+        )
+        const e2e = result.steps.find((s) => s.name === 'e2e')!
+        const runs = compose === 'ok' && build === 'ok'
+        expect(existsSync(join(cwd, 'e2e-ran'))).toBe(runs)
+        expect(e2e.status).toBe(runs ? 'ok' : 'skipped')
+        if (!runs) {
+          if (build !== 'ok') expect(e2e.detail ?? '').toMatch(/\bbuild\b/)
+          if (compose !== 'ok') expect(e2e.detail ?? '').toContain('compose up')
+        }
+        // A skipped dependant never turns the verdict red on its own.
+        expect(result.exitCode === 0).toBe(compose !== 'red' && build !== 'red')
+      }),
+      { numRuns: 20 },
+    )
+  })
+
+  describe('AC-18: in the gate:full plan the E2E steps need build and compose up', () => {
+    const fullPlan = plan({
+      full: true,
+      base: 'abc1234',
+      changed: ['packages/sdk/src/client.ts'],
+      mutated: [],
+    }).steps
+
+    /** The plan with every command replaced: the named steps go red, E2E steps leave a marker, the rest pass. */
+    function rehearse(red: string[]): StepSpec[] {
+      return fullPlan.map((step, i) => ({
+        ...step,
+        command: red.includes(step.name)
+          ? 'exit 1'
+          : step.name.startsWith('e2e')
+            ? `touch e2e-ran-${i}`
+            : 'true',
+      }))
+    }
+
+    function e2eSteps(): string[] {
+      return fullPlan.filter((s) => s.name.startsWith('e2e')).map((s) => s.name)
+    }
+
+    it('AC-18: the E2E steps run iff build and compose up are both ok; otherwise each is skipped naming the red need', async () => {
+      expect(e2eSteps().length).toBeGreaterThanOrEqual(2)
+      for (const red of [[], ['compose up'], ['build'], ['build', 'compose up']]) {
+        const cwd = scratch()
+        const result = await run(rehearse(red), { cwd, budgetMs: 600_000 })
+        const ran = fullPlan.filter((_, i) => existsSync(join(cwd, `e2e-ran-${i}`)))
+        expect(
+          ran.map((s) => s.name),
+          `red: ${red.join(', ')}`,
+        ).toEqual(red.length === 0 ? e2eSteps() : [])
+        for (const name of e2eSteps()) {
+          const step = result.steps.find((s) => s.name === name)
+          expect(step?.status, name).toBe(red.length === 0 ? 'ok' : 'skipped')
+          for (const need of red) expect(step?.detail, name).toContain(need)
+        }
+      }
+    })
   })
 })

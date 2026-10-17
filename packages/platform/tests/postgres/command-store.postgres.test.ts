@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -21,14 +22,14 @@ if (serverUrl === undefined || serverUrl.trim() === '') {
   )
 }
 
-const MIGRATIONS = new URL('../../migrations', import.meta.url).pathname
+const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url))
 const JOURNAL = JSON.parse(
   readFileSync(new URL('../../migrations/postgres/meta/_journal.json', import.meta.url), 'utf8'),
 ) as {
   entries: unknown[]
 }
 
-const dbName = `nymbal_p002_${process.pid}_${Date.now()}`
+const dbName = `nymbal_test_${process.pid}_${Date.now()}`
 let admin: pg.Pool
 let store: CommandStore
 let sqlite: CommandStore
