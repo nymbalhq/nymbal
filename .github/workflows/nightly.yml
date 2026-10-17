@@ -44,6 +44,14 @@ jobs:
         run: npx wait-on http://localhost:3001/health http://localhost:4321 --timeout 90000
       - name: Run Lighthouse CI (Astro)
         run: pnpm lhci autorun
+      - name: Upload the Lighthouse report (Astro)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-astro
+          path: .lighthouseci
+          include-hidden-files: true
+          if-no-files-found: warn
 
   perf-nextjs:
     name: Performance — Next.js
@@ -79,3 +87,139 @@ jobs:
         run: npx wait-on http://localhost:3001/health http://localhost:3000 --timeout 90000
       - name: Run Lighthouse CI (Next.js)
         run: pnpm lhci autorun
+      - name: Upload the Lighthouse report (Next.js)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-nextjs
+          path: .lighthouseci
+          include-hidden-files: true
+          if-no-files-found: warn
+
+  build:
+    name: Build all packages, templates and admin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm build:templates
+      - run: pnpm --filter @nymbal/admin build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: |
+            packages/*/dist
+            templates/astro/dist
+            templates/astro/.astro
+            templates/nextjs/.next
+            !templates/nextjs/.next/cache
+            apps/admin/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  mutation-full:
+    name: Mutation — full Stryker run
+    runs-on: ubuntu-latest
+    needs: [build]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Stryker over every mutate target, ignoring the incremental file
+        run: pnpm mutation --force
+      - name: Upload the Stryker report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stryker-report
+          path: reports/mutation
+          if-no-files-found: warn
+
+  gate-full:
+    name: Gate — full, end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: gate:full with Docker Compose services
+        run: pnpm gate:full
+      - name: Upload the gate reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-full-reports
+          path: reports
+          if-no-files-found: warn
+
+  e2e-full:
+    name: E2E — ${{ matrix.target }}, desktop and mobile
+    runs-on: ubuntu-latest
+    needs: [build]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [astro, nextjs, admin]
+    env:
+      CI: true
+      NYMBAL_E2E_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
+      - name: Functional, visual and a11y, desktop and mobile
+        run: pnpm --filter @nymbal/e2e exec playwright test --project ${{ matrix.target }} --project ${{ matrix.target }}-mobile
+      - name: Upload the Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ matrix.target }}
+          path: |
+            tests/e2e/test-results
+            tests/e2e/playwright-report
+          if-no-files-found: ignore

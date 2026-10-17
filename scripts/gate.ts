@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
@@ -22,7 +22,14 @@ export type StepStatus = 'ok' | 'red' | 'skipped'
 export type Step = { name: string; status: StepStatus; ms: number; detail?: string }
 
 /** A step to run. `skip` names the reason to leave it out; `needs` skips it unless every named step is ok. */
-export type StepSpec = { name: string; command: string; skip?: string; needs?: string[] }
+export type StepSpec = {
+  name: string
+  command: string
+  skip?: string
+  needs?: string[]
+  /** The skip is because there is nothing for the step to do (not a precondition that failed). */
+  idle?: boolean
+}
 
 export type RunOptions = {
   cwd: string
@@ -449,9 +456,81 @@ async function mutateSet(root: string, changed: string[]): Promise<string[]> {
   )
 }
 
-export type PlanInput = { full: boolean; base: string; changed: string[]; mutated: string[] }
+export type PlanInput = {
+  full: boolean
+  base: string
+  changed: string[]
+  mutated: string[]
+  /** Run only these steps, in plan order. A name the plan does not have is an error. */
+  only?: string[] | undefined
+  /** `compose` starts the services here; `external` expects them to exist (CI services) at `postgresUrl`. */
+  services?: 'compose' | 'external' | undefined
+  postgresUrl?: string | undefined
+  /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
+  noBuild?: boolean | undefined
+  artefactPresent?: boolean | undefined
+}
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+
+function shellWord(text: string): string {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`
+}
+
+/**
+ * Settles at plan time the needs that flags decide. A need met by a flag is dropped; a need a flag cannot meet, or
+ * that `only` leaves out, skips the step naming why. The rest stay for `run` to judge against the earlier steps.
+ */
+function settle(steps: StepSpec[], input: PlanInput): StepSpec[] {
+  const external = input.services === 'external'
+  const met = new Set<string>()
+  const unmet = new Map<string, string>()
+  if (external) {
+    if (input.postgresUrl !== undefined && input.postgresUrl !== '') met.add('compose up')
+    else unmet.set('compose up', 'NYMBAL_TEST_POSTGRES_URL is not set (--services external)')
+  }
+  if (input.noBuild === true) {
+    if (input.artefactPresent === true) met.add('build')
+    else unmet.set('build', 'the build artefact is not present (--no-build)')
+  }
+  const selected = new Set(steps.map((step) => step.name))
+  return steps.map((step) => {
+    const reasons: string[] = []
+    const needs: string[] = []
+    for (const need of step.needs ?? []) {
+      const why = unmet.get(need)
+      if (met.has(need)) continue
+      if (why !== undefined) reasons.push(why)
+      else if (!selected.has(need)) reasons.push(`needs ${need}, which --only leaves out`)
+      else needs.push(need)
+    }
+    const { needs: _declared, ...rest } = step
+    const skip = step.skip ?? (reasons.length > 0 ? reasons.join('; ') : undefined)
+    return {
+      ...rest,
+      ...(skip === undefined ? {} : { skip }),
+      ...(needs.length > 0 ? { needs } : {}),
+    }
+  })
+}
+
+/** The steps `only` names, in plan order, with their flag-decided needs settled. An unknown name is an error. */
+function select(steps: StepSpec[], input: PlanInput): StepSpec[] {
+  const { only } = input
+  if (only === undefined) return settle(steps, input)
+  const known = steps.map((step) => step.name)
+  const unknown = only.filter((name) => !known.includes(name))
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown step${unknown.length > 1 ? 's' : ''} for --only: ${unknown.map((n) => `"${n}"`).join(', ')}\n` +
+        `known steps: ${known.join(', ')}`,
+    )
+  }
+  return settle(
+    steps.filter((step) => only.includes(step.name)),
+    input,
+  )
+}
 
 export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } {
   const { full, base, changed, mutated } = input
@@ -460,7 +539,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     : selectTests(changed)
   const tests: StepSpec =
     selection.mode === 'none'
-      ? { name: 'tests', command: 'true', skip: selection.reason }
+      ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
       : selection.mode === 'changed'
         ? { name: 'tests', command: `pnpm run test --changed ${base} --passWithNoTests` }
         : {
@@ -475,19 +554,37 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     tests,
     { name: 'census trend', command: `${SCRIPT} census-trend ${base}` },
   ]
-  if (!full) return { steps, budgetMs: GATE_BUDGET_MS }
+  if (!full) return { steps: select(steps, input), budgetMs: GATE_BUDGET_MS }
 
-  const postgres = `NYMBAL_TEST_POSTGRES_URL=${POSTGRES_URL}`
+  const external = input.services === 'external'
+  const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
+  // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
+  const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
+  const e2e = (target: string): string =>
+    `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbal/e2e exec playwright test --project ${target}${grep}`
   steps.push(
-    { name: 'compose up', command: 'docker compose up -d --wait' },
-    { name: 'build', command: 'pnpm build' },
+    external
+      ? {
+          name: 'compose up',
+          command: 'true',
+          skip: 'services are external (--services external)',
+        }
+      : { name: 'compose up', command: 'docker compose up -d --wait' },
+    input.noBuild === true
+      ? { name: 'build', command: 'true', skip: 'the build artefact is used (--no-build)' }
+      : { name: 'build', command: 'pnpm build' },
     {
       name: 'integration-postgres',
       command: `${postgres} pnpm exec vitest run --project integration-postgres`,
       needs: ['compose up'],
     },
     mutated.length === 0
-      ? { name: 'stryker', command: 'true', skip: "no changed file in Stryker's mutate set" }
+      ? {
+          name: 'stryker',
+          command: 'true',
+          skip: "no changed file in Stryker's mutate set",
+          idle: true,
+        }
       : { name: 'stryker', command: `pnpm exec stryker run --mutate '${mutated.join(',')}'` },
     { name: 'sentinels', command: 'pnpm sentinels' },
     {
@@ -496,20 +593,25 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       needs: ['compose up'],
     },
     // The journeys run against the built packages and the composed services: without both they test nothing new.
-    {
-      name: 'e2e',
-      command:
-        'CI=1 pnpm --filter @nymbal/e2e exec playwright test --project astro --project nextjs --grep-invert @visual',
-      needs: ['build', 'compose up'],
-    },
-    {
-      name: 'e2e admin',
-      command:
-        'CI=1 NYMBAL_E2E_ADMIN=true pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert @visual',
-      needs: ['build', 'compose up'],
-    },
+    { name: 'e2e astro', command: e2e('astro'), needs: ['build', 'compose up'] },
+    { name: 'e2e nextjs', command: e2e('nextjs'), needs: ['build', 'compose up'] },
+    { name: 'e2e admin', command: e2e('admin'), needs: ['build', 'compose up'] },
   )
-  return { steps, budgetMs: FULL_BUDGET_MS }
+  return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
+}
+
+/** Whether the build output of every package that builds is in the work tree (a downloaded CI artefact, or a build). */
+function artefactPresent(root: string): boolean {
+  const packages = resolve(root, 'packages')
+  const builders = readdirSync(packages).filter((name) => {
+    const manifest = resolve(packages, name, 'package.json')
+    if (!existsSync(manifest)) return false
+    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { scripts?: { build?: string } }
+    return typeof pkg.scripts?.build === 'string'
+  })
+  return (
+    builders.length > 0 && builders.every((name) => existsSync(resolve(packages, name, 'dist')))
+  )
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -521,6 +623,9 @@ async function main(argv: string[]): Promise<number> {
       base: { type: 'string' },
       json: { type: 'boolean', default: false },
       started: { type: 'string' },
+      only: { type: 'string' },
+      services: { type: 'string', default: 'compose' },
+      'no-build': { type: 'boolean', default: false },
     },
   })
   const root = repoRoot()
@@ -536,14 +641,30 @@ async function main(argv: string[]): Promise<number> {
     throw new Error(`unknown step "${subcommand}"`)
   }
 
+  if (values.services !== 'compose' && values.services !== 'external') {
+    throw new Error(`--services takes compose or external, not "${values.services}"`)
+  }
+  const only = values.only?.split(',').map((name) => name.trim())
+  if (only !== undefined && !values.full) throw new Error('--only needs --full')
   const base = resolveBase(root, values.base)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
   // A deleted file has nothing left to mutate.
   const present = changed.filter((path) => existsSync(resolve(root, path)))
   const mutated = values.full ? await mutateSet(root, present) : []
-  const { steps, budgetMs } = plan({ full: values.full, base, changed, mutated })
-  if (values.full) {
+  const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
+  const { steps, budgetMs } = plan({
+    full: values.full,
+    base,
+    changed,
+    mutated,
+    ...(only === undefined ? {} : { only }),
+    services: values.services,
+    ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
+    noBuild: values['no-build'],
+    artefactPresent: values['no-build'] && artefactPresent(root),
+  })
+  if (values.full && only === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
       name: 'test-quality report',
@@ -554,12 +675,22 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
+  // A selection that ran nothing because a precondition failed proves nothing: it is red, and the rows say why.
+  // One that had nothing to do (no changed file to mutate) is not.
+  const nothingRan =
+    only !== undefined &&
+    result.steps.every((step) => step.status === 'skipped') &&
+    steps.some((spec) => spec.skip !== undefined && spec.idle !== true)
+  const exitCode = nothingRan ? 1 : result.exitCode
   if (values.json) {
-    process.stdout.write(`${JSON.stringify({ exitCode: result.exitCode, steps: result.steps })}\n`)
+    process.stdout.write(`${JSON.stringify({ exitCode, steps: result.steps })}\n`)
+  } else if (nothingRan) {
+    const rows = result.report.split('\n').slice(0, -1)
+    process.stdout.write(`${[...rows, 'gate: RED (every selected step was skipped)'].join('\n')}\n`)
   } else {
     process.stdout.write(`${result.report}\n`)
   }
-  return result.exitCode
+  return exitCode
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

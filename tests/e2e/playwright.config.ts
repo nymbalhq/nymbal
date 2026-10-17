@@ -4,7 +4,64 @@ const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
 const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:5174/admin/'
 const isCI = !!process.env.CI
-const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true'
+const target = process.env.NYMBAL_E2E_TARGET
+const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
+
+// Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
+const apiServer = {
+  command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
+  url: 'http://localhost:3001/health',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 90000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+  },
+}
+
+const astroServer = {
+  command: 'pnpm --filter @nymbal/template-astro dev',
+  url: 'http://localhost:4321',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 60000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_API_URL: 'http://localhost:3001',
+    PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
+  },
+}
+
+const nextjsServer = {
+  command: 'pnpm --filter @nymbal/template-nextjs dev',
+  url: 'http://localhost:3000',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 60000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_API_URL: 'http://localhost:3001',
+    NEXT_PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
+  },
+}
+
+const adminServer = {
+  command: 'pnpm --filter @nymbal/admin exec vite --port 5174',
+  url: 'http://localhost:5174/admin/',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 60000,
+}
+
+/** The API and what the run needs: NYMBAL_E2E_TARGET names one target, otherwise both templates (or the admin). */
+function servers() {
+  if (target === 'astro') return [apiServer, astroServer]
+  if (target === 'nextjs') return [apiServer, nextjsServer]
+  if (isAdminE2E) return [apiServer, adminServer]
+  return [apiServer, astroServer, nextjsServer]
+}
 
 export default defineConfig({
   testDir: './journeys',
@@ -71,63 +128,5 @@ export default defineConfig({
       grep: /@visual/,
     },
   ],
-  ...(isCI ? { webServer: [
-    ...(isAdminE2E ? [] : [
-      {
-        command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
-        url: 'http://localhost:3001/health',
-        cwd: '../..',
-        reuseExistingServer: false,
-        timeout: 90000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/template-astro dev',
-        url: 'http://localhost:4321',
-        cwd: '../..',
-        reuseExistingServer: false,
-        timeout: 60000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NYMBAL_API_URL: 'http://localhost:3001',
-          PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/template-nextjs dev',
-        url: 'http://localhost:3000',
-        cwd: '../..',
-        reuseExistingServer: false,
-        timeout: 60000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NYMBAL_API_URL: 'http://localhost:3001',
-          NEXT_PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
-        },
-      },
-    ]),
-    ...(isAdminE2E ? [
-      {
-        command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
-        url: 'http://localhost:3001/health',
-        cwd: '../..',
-        reuseExistingServer: false,
-        timeout: 90000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/admin exec vite --port 5174',
-        url: 'http://localhost:5174/admin/',
-        cwd: '../..',
-        reuseExistingServer: false,
-        timeout: 60000,
-      },
-    ] : []),
-  ] } : {}),
+  ...(isCI ? { webServer: servers() } : {}),
 })
