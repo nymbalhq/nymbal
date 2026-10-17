@@ -17,6 +17,7 @@ const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 // add it here so the coverage test knows it's intentionally absent.
 export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/contract-tests',
+  '@nymbalhq/proof-kit',
   '@nymbalhq/test-factories',
 ])
 

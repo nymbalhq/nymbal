@@ -44,6 +44,8 @@ export type RunResult = { exitCode: number; steps: Step[]; report: string }
 export const GATE_BUDGET_MS = 60_000
 export const FULL_BUDGET_MS = 600_000
 export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
+/** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
+export const MAILPIT_URL = 'http://localhost:18025'
 
 const ROOT_CONFIG_FILES = new Set([
   'package.json',
@@ -574,6 +576,8 @@ export type PlanInput = {
   /** `compose` starts the services here; `external` expects them to exist (CI services) at `postgresUrl`. */
   services?: 'compose' | 'external' | undefined
   postgresUrl?: string | undefined
+  /** Where `external` services have Mailpit's API. */
+  mailpitUrl?: string | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
   noBuild?: boolean | undefined
   artefactPresent?: boolean | undefined
@@ -666,6 +670,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
 
   const external = input.services === 'external'
   const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
+  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
   const e2e = (target: string): string =>
@@ -690,6 +695,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     {
       name: 'integration-postgres',
       command: `${postgres} pnpm exec vitest run --project integration-postgres`,
+      needs: ['compose up'],
+    },
+    {
+      name: 'proof-kit-services',
+      command: `${postgres} ${mailpit} pnpm exec vitest run --project proof-kit-services`,
       needs: ['compose up'],
     },
     mutated.length === 0
@@ -780,6 +790,7 @@ async function main(argv: string[]): Promise<number> {
   const present = changed.filter((path) => existsSync(resolve(root, path)))
   const mutated = values.full ? await mutateSet(root, present) : []
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
+  const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const { steps, budgetMs } = plan({
     full: values.full,
     base,
@@ -788,6 +799,7 @@ async function main(argv: string[]): Promise<number> {
     ...(only === undefined ? {} : { only }),
     services: values.services,
     ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
+    ...(mailpitUrl === undefined || mailpitUrl === '' ? {} : { mailpitUrl }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
   })
