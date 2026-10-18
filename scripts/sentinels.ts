@@ -395,6 +395,11 @@ async function main(argv: string[]): Promise<void> {
     ...(values.only !== undefined ? { only: values.only } : {}),
   })
   process.stdout.write(`${values.json ? JSON.stringify(report) : renderReport(report)}\n`)
+  // A red control throws from run(). An injected sentinel that is missed, or errors because its patch no longer
+  // applies, proves nothing caught it: the run fails, after the report.
+  if (report.sentinels.some((s) => s.kind === 'injected' && s.status !== 'caught')) {
+    process.exitCode = 1
+  }
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

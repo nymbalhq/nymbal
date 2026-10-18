@@ -602,8 +602,8 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`)
 }
 
-/** Changed files that fall inside Stryker's `mutate` set (its own config is the source of that set). */
-async function mutateSet(root: string, changed: string[]): Promise<string[]> {
+/** The paths that fall inside Stryker's `mutate` set (its own config is the source of that set). */
+export async function mutateSet(root: string, changed: string[]): Promise<string[]> {
   const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
     default: { mutate: string[] }
   }
@@ -782,8 +782,9 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : {
+          // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
           name: 'stryker',
-          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))}`,
+          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
         },
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     { name: 'sentinels', command: `${postgres} pnpm sentinels` },

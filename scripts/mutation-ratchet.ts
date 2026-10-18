@@ -1,0 +1,188 @@
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { parseArgs } from 'node:util'
+import { mutateSet } from './gate'
+
+// The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
+// file below its entry fails. `check` runs in the gate after Stryker; `update` raises entries and never lowers one.
+// Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100.
+
+export type Scores = Record<string, number>
+
+export type Ratchet = { measuredAt: string; command: string; total: number; files: Scores }
+
+type StrykerReport = { files?: Record<string, { mutants?: Array<{ status?: string }> }> }
+
+export const DEFAULT_COMMAND = 'pnpm mutation --force'
+
+const DETECTED = new Set(['Killed', 'Timeout'])
+const UNDETECTED = new Set(['Survived', 'NoCoverage'])
+
+const cents = (score: number): number => Math.round(score * 100)
+
+function percent(detected: number, valid: number): number {
+  return Math.round((detected * 10000) / valid) / 100
+}
+
+function tally(mutants: Array<{ status?: string }>): { detected: number; valid: number } {
+  let detected = 0
+  let valid = 0
+  for (const { status = '' } of mutants) {
+    if (DETECTED.has(status)) detected += 1
+    if (DETECTED.has(status) || UNDETECTED.has(status)) valid += 1
+  }
+  return { detected, valid }
+}
+
+/** Each file's score; a file with no valid mutant has none and is absent. */
+export function scoreByFile(report: unknown): Scores {
+  const scores: Scores = {}
+  for (const [path, file] of Object.entries((report as StrykerReport).files ?? {})) {
+    const { detected, valid } = tally(file.mutants ?? [])
+    if (valid > 0) scores[path] = percent(detected, valid)
+  }
+  return scores
+}
+
+/** The whole report's score, every file's mutants weighed together. */
+export function totalScore(report: unknown): number {
+  const all = Object.values((report as StrykerReport).files ?? {}).flatMap((f) => f.mutants ?? [])
+  const { detected, valid } = tally(all)
+  return valid === 0 ? 0 : percent(detected, valid)
+}
+
+export type Change = { file: string; ratchet: number; score: number; by: number }
+
+/** Files in both whose score fell below the ratchet, and files whose score rose above it. */
+export function compare(ratchet: Scores, scores: Scores): { lower: Change[]; rose: Change[] } {
+  const lower: Change[] = []
+  const rose: Change[] = []
+  for (const [file, score] of Object.entries(scores).sort(([a], [b]) => a.localeCompare(b))) {
+    const held = ratchet[file]
+    if (held === undefined) continue
+    const by = Math.abs(cents(held) - cents(score)) / 100
+    if (cents(score) < cents(held)) lower.push({ file, ratchet: held, score, by })
+    else if (cents(score) > cents(held)) rose.push({ file, ratchet: held, score, by })
+  }
+  return { lower, rose }
+}
+
+/** The ratchet with each file raised to its score where that is higher, and new files added; nothing is lowered. */
+export function raise(ratchet: Scores, scores: Scores): Scores {
+  const raised: Scores = { ...ratchet }
+  for (const [file, score] of Object.entries(scores)) {
+    const held = raised[file]
+    raised[file] = held === undefined ? score : Math.max(held, score)
+  }
+  return Object.fromEntries(Object.entries(raised).sort(([a], [b]) => a.localeCompare(b)))
+}
+
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, 'utf8')) as T
+}
+
+function check(report: unknown, ratchetPath: string): number {
+  const ratchet = readJson<Ratchet>(ratchetPath)
+  const { lower, rose } = compare(ratchet.files, scoreByFile(report))
+  for (const c of lower) {
+    process.stdout.write(
+      `below the ratchet: ${c.file} ${c.score.toFixed(2)} < ${c.ratchet.toFixed(2)} (down ${c.by.toFixed(2)})\n`,
+    )
+  }
+  for (const c of rose) {
+    process.stdout.write(
+      `above the ratchet: ${c.file} ${c.score.toFixed(2)} > ${c.ratchet.toFixed(2)} (up ${c.by.toFixed(2)})\n`,
+    )
+  }
+  if (rose.length > 0) {
+    process.stdout.write(
+      'raise the ratchet with: pnpm mutation:ratchet update --report <mutation.json>\n',
+    )
+  }
+  if (lower.length > 0) {
+    process.stdout.write(`mutation ratchet: ${lower.length} file(s) below their entry\n`)
+    return 1
+  }
+  process.stdout.write('mutation ratchet: no file below its entry\n')
+  return 0
+}
+
+async function update(
+  report: unknown,
+  ratchetPath: string,
+  total: boolean,
+  command: string,
+): Promise<number> {
+  const before: Ratchet | undefined = existsSync(ratchetPath)
+    ? readJson<Ratchet>(ratchetPath)
+    : undefined
+  if (before === undefined && !total) {
+    throw new Error(`${ratchetPath} does not exist: seed it with update --total from a full run`)
+  }
+  let next: Ratchet
+  if (total) {
+    // The total stands for the whole mutate set, so a report from a run over part of it cannot set it.
+    const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split('\n')
+    const reported = new Set(Object.keys((report as StrykerReport).files ?? {}))
+    const missing = (await mutateSet(process.cwd(), tracked.filter(Boolean))).filter(
+      (path) => !reported.has(path),
+    )
+    if (missing.length > 0) {
+      process.stderr.write(
+        `update --total needs a report covering the whole mutate set; missing:\n${missing.map((p) => `  ${p}\n`).join('')}`,
+      )
+      return 1
+    }
+    next = {
+      measuredAt: new Date().toISOString(),
+      command,
+      total: totalScore(report),
+      files: raise(before?.files ?? {}, scoreByFile(report)),
+    }
+  } else {
+    next = { ...(before as Ratchet), files: raise(before?.files ?? {}, scoreByFile(report)) }
+  }
+  writeFileSync(ratchetPath, `${JSON.stringify(next, null, 2)}\n`)
+  process.stdout.write(
+    `wrote ${ratchetPath}: ${Object.keys(next.files).length} file(s), total ${next.total.toFixed(2)}\n`,
+  )
+  return 0
+}
+
+async function main(argv: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      report: { type: 'string' },
+      ratchet: { type: 'string', default: 'mutation-ratchet.json' },
+      total: { type: 'boolean', default: false },
+      command: { type: 'string', default: DEFAULT_COMMAND },
+    },
+  })
+  const [subcommand] = positionals
+  if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
+    throw new Error(
+      'usage: mutation-ratchet.ts check|update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>]',
+    )
+  }
+  const report = readJson<unknown>(resolve(values.report))
+  const ratchetPath = resolve(values.ratchet)
+  return subcommand === 'check'
+    ? check(report, ratchetPath)
+    : update(report, ratchetPath, values.total, values.command)
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code
+    },
+    (error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      process.exitCode = 2
+    },
+  )
+}
