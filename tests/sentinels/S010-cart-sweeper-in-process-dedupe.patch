@@ -1,0 +1,73 @@
+# id: S010
+# kind: injected
+# defect: the cart abandonment sweeper dedupes notices in an in-process Set with no durable claim, so a restart or a second replica notifies every abandoned cart again
+# where: packages/platform/src/sweepers/index.ts:6-9
+# killed-by: P1-04 acceptance tests (packages/platform/tests/integration/cart-abandonment.test.ts AC-5, AC-6)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/cart-abandonment.test.ts
+diff --git a/packages/platform/src/sweepers/index.ts b/packages/platform/src/sweepers/index.ts
+--- a/packages/platform/src/sweepers/index.ts
++++ b/packages/platform/src/sweepers/index.ts
+@@ -3,10 +3,61 @@
+   type SweeperHandle,
+   type InventoryReservationSweeperDeps,
+ } from './inventory-reservation-sweeper.js'
+-export {
+-  startCartAbandonmentSweeper,
++import type { SweeperHandle } from './inventory-reservation-sweeper.js'
++import {
++  startCartAbandonmentSweeper as startClaimingCartAbandonmentSweeper,
+   type CartAbandonmentSweeperDeps,
+ } from './cart-abandonment-sweeper.js'
++export { type CartAbandonmentSweeperDeps } from './cart-abandonment-sweeper.js'
++
++// S010: the pass runs unchanged, but every transaction it opens is rolled back once its callback returns, so no
++// claim (and no expiry delete) is durable. The cart.abandoned.v1 events the callback tried to append are published
++// again afterwards, outside any transaction, deduped only by this process's Set: a restart or a second replica
++// notifies the same cart again.
++export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): SweeperHandle {
++  type Abandoned = { cartId: string; lastActivityAt: string }
++  const notified = new Set<string>()
++  const pending: Abandoned[] = []
++  const rollback = new Error('S010: claim rolled back')
++  let inside = 0
++  const store: CartAbandonmentSweeperDeps['store'] = {
++    kind: deps.store.kind,
++    read: (fn) => deps.store.read(fn),
++    close: () => deps.store.close(),
++    async transaction(fn) {
++      let result: unknown
++      inside += 1
++      try {
++        await deps.store.transaction(async (tx) => {
++          result = await fn(tx)
++          throw rollback
++        })
++      } catch (err) {
++        if (err !== rollback) throw err
++      } finally {
++        inside -= 1
++      }
++      for (const payload of pending.splice(0)) {
++        if (notified.has(payload.cartId)) continue
++        notified.add(payload.cartId)
++        await deps.publisher.publish('cart.abandoned.v1', payload)
++      }
++      return result as never
++    },
++  }
++  const publisher: CartAbandonmentSweeperDeps['publisher'] = {
++    publishMany: (events) => deps.publisher.publishMany(events),
++    correlated: (id) => deps.publisher.correlated(id),
++    async publish(type, payload, options) {
++      if (inside > 0 && type === 'cart.abandoned.v1') pending.push(payload as Abandoned)
++      return deps.publisher.publish(type, payload, options)
++    },
++  }
++  const carts = Object.assign(Object.create(Object.getPrototypeOf(deps.carts)), deps.carts, {
++    store,
++  })
++  return startClaimingCartAbandonmentSweeper({ ...deps, store, carts, publisher })
++}
+ export {
+   startEventRetentionSweeper,
+   type EventRetentionSweeperDeps,

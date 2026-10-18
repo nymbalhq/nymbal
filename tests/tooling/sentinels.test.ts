@@ -439,11 +439,13 @@ describe('AC-19: the real sentinel set', () => {
       lines: [68, 70],
       marks: /append\(/,
     },
+    // S006 became injected in P1-04 and S010 is new: predicted against the spec's interface at lines the task does
+    // not change (the cart routes take a CartService; the sweeper is re-exported), re-based if the kernel moves them.
     S006: {
-      kind: 'present',
-      path: 'packages/platform/src/services/cart-service.ts',
-      lines: [62, 62],
-      marks: /documentStore\.put/,
+      kind: 'injected',
+      path: 'packages/platform/src/routes/cart.ts',
+      lines: [39, 39],
+      marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
     S007: {
       kind: 'present',
@@ -462,6 +464,12 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/warm-document-store.ts',
       lines: [79, 79],
       marks: /eventBus\.replay\(events\)/,
+    },
+    S010: {
+      kind: 'injected',
+      path: 'packages/platform/src/sweepers/index.ts',
+      lines: [6, 9],
+      marks: /startCartAbandonmentSweeper,/,
     },
     I101: {
       kind: 'injected',
@@ -505,7 +513,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S009 and I101-I105, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I105, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {
