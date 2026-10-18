@@ -45,7 +45,16 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
       eventBus: 'in-process',
       compute: 'in-process',
     },
-    security: { adapter: 'middleware', botProtection: { mode: 'off' } },
+    security: {
+      adapter: 'middleware',
+      botProtection: { mode: 'off' },
+      // P1-06 decision 4: the harness overrides the built-in login and register limits, so suites that log in many
+      // times from 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`).
+      rateLimit: {
+        '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
+        '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      },
+    },
     commerce: {
       payments: { provider: 'native' },
       email: { provider: 'native', config: { transport: 'console' } },
@@ -59,6 +68,14 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
     http: { adapter: 'fastify', port: 3999, host: '127.0.0.1' },
     deployment: { strategy: 'standard' },
   })
+}
+
+/** The kernel config with no user rule for login or register, so the built-in defaults apply (P1-06 AC-5, AC-6). */
+export function withoutAuthRateRules(config: NymbalConfig): NymbalConfig {
+  const rateLimit = { ...config.security.rateLimit }
+  delete rateLimit['/api/auth/login']
+  delete rateLimit['/api/auth/register']
+  return { ...config, security: { ...config.security, rateLimit } }
 }
 
 /**

@@ -1,0 +1,21 @@
+# id: I108
+# kind: injected
+# defect: the login limiter keys on the IP only, so rotating X-Forwarded-For resets the count for one account
+# where: packages/http/src/security-middleware.ts:65-67
+# killed-by: packages/platform/tests/integration/login-rate-limit.test.ts (AC-6a)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/login-rate-limit.test.ts
+diff --git a/packages/http/src/security-middleware.ts b/packages/http/src/security-middleware.ts
+--- a/packages/http/src/security-middleware.ts
++++ b/packages/http/src/security-middleware.ts
+@@ -62,9 +62,8 @@ function csrfCookie(token: string): ResponseCookie {
+ 
+ function loginKeys(ctx: RequestContext): string[] {
+   const email = (ctx.body as { email?: unknown } | undefined)?.email
+-  return typeof email === 'string' && email !== ''
+-    ? [ctx.ip, `account:${email.toLowerCase()}`]
+-    : [ctx.ip]
++  void email
++  return [ctx.ip]
+ }
+ 
+ function isLogin(ctx: RequestContext): boolean {

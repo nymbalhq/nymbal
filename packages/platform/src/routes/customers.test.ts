@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCustomerRoutes } from './customers.js'
-import type { HttpAdapter, RouteHandler, Customer, CustomerAddress, RequestContext } from '@nymbalhq/types'
+import type {
+  HttpAdapter,
+  RouteHandler,
+  Customer,
+  CustomerAddress,
+  RequestContext,
+} from '@nymbalhq/types'
 import type { CustomerService } from '../services/customer-service.js'
 
 function makeAdapter() {
@@ -40,8 +46,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -60,6 +72,7 @@ const testCustomer: Customer = {
   orderCount: 5,
   totalSpentMinor: 10000,
   metadata: {},
+  roles: ['customer'],
   requiresPasswordReset: false,
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',

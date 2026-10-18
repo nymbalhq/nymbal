@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
+import { csrf } from '../../support/csrf'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
@@ -38,6 +39,7 @@ async function createPendingOrder(
     const variantId = product.variants?.[0]?.id
     if (!variantId) continue
     const addRes = await request.post(`${API_URL}/api/cart/items`, {
+      headers: await csrf(request, API_URL),
       data: { variantId, qty: 1 },
     })
     if (addRes.ok()) {
@@ -48,6 +50,7 @@ async function createPendingOrder(
   expect(added, 'a seeded variant should be added to the cart').toBe(true)
 
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
+    headers: await csrf(request, API_URL),
     data: {
       email: 'e2e-admin-orders@nymbal.dev',
       billingAddress: address,
@@ -67,6 +70,7 @@ async function createPendingOrder(
 
 async function adminAccessToken(request: APIRequestContext): Promise<string> {
   const res = await request.post(`${API_URL}/api/auth/login`, {
+    headers: await csrf(request, API_URL),
     data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
   })
   expect(res.ok(), 'admin API login should succeed').toBe(true)
@@ -126,7 +130,7 @@ test.describe('Admin orders', () => {
     // tracking details the status select does not collect)
     const token = await adminAccessToken(request)
     const shipRes = await request.post(`${API_URL}/api/admin/orders/${orderId}/ship`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...(await csrf(request, API_URL)) },
       data: { trackingNumber: 'TRK-E2E-0001', carrier: 'DHL' },
     })
     expect(shipRes.ok(), 'POST /api/admin/orders/:id/ship should succeed').toBe(true)
@@ -180,9 +184,7 @@ test.describe('Admin orders', () => {
       timeout: 15000,
     })
     const AxeBuilder = (await import('@axe-core/playwright')).default
-    const results = await new AxeBuilder({ page })
-      .disableRules(['color-contrast'])
-      .analyze()
+    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()
     expect(results.violations).toEqual([])
   })
 
@@ -193,9 +195,7 @@ test.describe('Admin orders', () => {
     await openOrderDetail(page, orderNumber)
     await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Pending')
     const AxeBuilder = (await import('@axe-core/playwright')).default
-    const results = await new AxeBuilder({ page })
-      .disableRules(['color-contrast'])
-      .analyze()
+    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()
     expect(results.violations).toEqual([])
   })
 })

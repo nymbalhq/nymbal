@@ -1,4 +1,5 @@
-import '@testing-library/jest-dom'
+// The admin project runs without Vitest globals, so jest-dom registers its matchers on Vitest's own expect.
+import '@testing-library/jest-dom/vitest'
 import { afterEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 

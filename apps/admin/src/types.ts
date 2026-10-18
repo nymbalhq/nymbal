@@ -152,6 +152,7 @@ export interface Customer {
   orderCount: number
   totalSpentMinor: number
   metadata: Record<string, unknown>
+  roles: string[]
   requiresPasswordReset: boolean
   createdAt: string
   updatedAt: string

@@ -15,7 +15,13 @@ export interface ShopResponse<T> {
 }
 
 export function shopper(baseUrl: string, jar: CookieJar = new Map()) {
-  async function call<T>(method: string, path: string, body?: unknown): Promise<ShopResponse<T>> {
+  /** `opts.headers` is applied last, so a test can tamper with the CSRF header or add `authorization`. */
+  async function call<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts: { headers?: Record<string, string> } = {},
+  ): Promise<ShopResponse<T>> {
     const headers: Record<string, string> = { accept: 'application/json' }
     if (jar.size > 0) {
       headers.cookie = [...jar].map(([name, value]) => `${name}=${value}`).join('; ')
@@ -23,6 +29,7 @@ export function shopper(baseUrl: string, jar: CookieJar = new Map()) {
     const csrf = jar.get(CSRF_COOKIE)
     if (csrf !== undefined) headers[CSRF_HEADER] = csrf
     if (body !== undefined) headers['content-type'] = 'application/json'
+    Object.assign(headers, opts.headers)
     const res = await fetch(new URL(path, baseUrl), {
       method,
       headers,

@@ -2,7 +2,7 @@ import { inArray } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import bcrypt from 'bcryptjs'
 const { hashSync } = bcrypt
-import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
+import type { DocumentStoreAdapter, EventBusAdapter, Logger, Role } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { rawClients, type CommandStore } from '../db/command-store.js'
 import { createCategoryRepository } from '../db/repositories/categories.js'
@@ -162,12 +162,12 @@ async function insertCustomer(
     passwordHash: string
     firstName: string
     lastName: string
-    metadata?: Record<string, unknown>
+    roles?: Role[]
     createdAt: Date
     updatedAt: Date
   },
 ): Promise<void> {
-  const meta = row.metadata ?? {}
+  const roles = row.roles ?? ['customer']
   const clients = rawClients(store)
   if (clients.kind === 'sqlite') {
     clients.db
@@ -182,7 +182,8 @@ async function insertCustomer(
         addresses: '[]',
         orderCount: 0,
         totalSpentMinor: 0,
-        metadata: JSON.stringify(meta),
+        metadata: '{}',
+        roles: JSON.stringify(roles),
         requiresPasswordReset: false,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
@@ -200,7 +201,8 @@ async function insertCustomer(
     addresses: [],
     orderCount: 0,
     totalSpentMinor: 0,
-    metadata: meta,
+    metadata: {},
+    roles,
     requiresPasswordReset: false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -300,13 +302,14 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
 
   // Admin user — email and password from env, defaults for dev
   const adminPassword = process.env['NYMBAL_ADMIN_PASSWORD'] ?? 'nymbal-admin-dev'
+  const adminRoles: Role[] = ['admin']
   const adminCustomer = {
     id: uuidv7(),
     email: adminEmail,
     passwordHash: hashSync(adminPassword, 10),
     firstName: 'Admin',
     lastName: 'User',
-    metadata: { roles: ['admin'] },
+    roles: adminRoles,
     createdAt: now,
     updatedAt: now,
   }

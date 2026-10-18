@@ -94,6 +94,8 @@ export const httpSchema = z.object({
   adapter: z.enum(['fastify', 'hono']).default('fastify'),
   port: z.number().int().positive().default(3001),
   host: z.string().default('0.0.0.0'),
+  /** Whether `X-Forwarded-For` sets the client IP the rate limiter keys on; only behind a proxy you run. */
+  trustProxy: z.boolean().default(false),
   cors: z
     .object({
       allowedOrigins: z

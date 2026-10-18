@@ -13,6 +13,7 @@ import {
   type Role,
 } from '@nymbalhq/types'
 import type { Repositories } from '../repositories/index.js'
+import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
 
 export interface AuthTokens {
@@ -103,12 +104,11 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const accessTtlMs = parseDurationToMs(accessTtl)
   const refreshTtlMs = parseDurationToMs(refreshTtl)
 
-  async function mintAccess(customer: Customer): Promise<string> {
-    const roles: Role[] = (customer.metadata.roles as Role[] | undefined) ?? ['customer']
+  async function mintAccess(customer: CustomerWithHash): Promise<string> {
     return new SignJWT({
       sub: customer.id,
       email: customer.email,
-      roles,
+      roles: customer.roles,
       type: 'access',
     } satisfies CustomerJwtPayload)
       .setProtectedHeader({ alg: 'HS256' })
@@ -134,7 +134,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       .sign(secretKey)
   }
 
-  async function issueTokens(customer: Customer): Promise<AuthTokens> {
+  async function issueTokens(customer: CustomerWithHash): Promise<AuthTokens> {
     const jti = uuidv7()
     const refreshToken = await mintRefresh(customer, jti)
     await store.transaction((tx) =>
@@ -281,6 +281,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           ...(input.phone !== undefined && { phone: input.phone }),
           ...(input.addresses !== undefined && { addresses: input.addresses }),
           ...(input.metadata !== undefined && { metadata: input.metadata }),
+          roles: ['customer'],
           createdAt: now,
           updatedAt: now,
         })

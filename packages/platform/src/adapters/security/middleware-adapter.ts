@@ -11,16 +11,11 @@ import { noopInitialize, okHealth } from '../base.js'
 /**
  * v0.1 security adapter.
  *
- * CSRF cookie minting requires response-phase mutation, which
- * `HttpAdapter.registerMiddleware` does not currently support. To keep behaviour
- * identical to Prompt 1, the `@nymbalhq/http` server facade (`createHttpServer`)
- * continues to wrap each route handler with a `SecurityGuard` that handles
- * rate-limit + CSRF verification + header injection + cookie minting.
- *
- * This adapter therefore only asserts static security headers via
- * `HttpAdapter.setDefaultHeaders(...)`. Request-side rate-limit and CSRF
- * are still applied by the server facade. A future v1.0 WAF-native adapter
- * will replace both layers.
+ * Rate limiting, CSRF verification and CSRF cookie minting need the request before
+ * any middleware and the response after the handler, so the HTTP adapter runs them
+ * itself on every route (`FastifyHttpAdapter`'s guard). This adapter only asserts
+ * static security headers via `HttpAdapter.setDefaultHeaders(...)`. A future
+ * WAF-native adapter will replace both layers.
  */
 export function createMiddlewareSecurityAdapter(deps: { logger: Logger }): SecurityAdapter {
   const { logger } = deps

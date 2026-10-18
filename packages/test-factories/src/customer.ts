@@ -24,6 +24,7 @@ export function createCustomer(overrides?: Partial<Customer>): Customer {
     orderCount: 0,
     totalSpentMinor: 0,
     metadata: {},
+    roles: ['customer'],
     requiresPasswordReset: false,
     createdAt: isoDate(),
     updatedAt: isoDate(),

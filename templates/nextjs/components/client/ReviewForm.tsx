@@ -2,6 +2,7 @@
 
 import { useState, useCallback, type FormEvent } from 'react'
 import styles from '@/styles/pages/pdp.module.css'
+import { getNymbalClient } from '@/lib/client'
 
 interface ReviewFormProps {
   productId: string
@@ -22,24 +23,13 @@ export function ReviewForm({ productId }: ReviewFormProps) {
       setError(null)
 
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
-        const res = await fetch(
-          `${apiUrl}/api/products/${encodeURIComponent(productId)}/reviews`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating, title, body }),
-          },
-        )
-
-        if (!res.ok) throw new Error('Failed to submit review.')
-
+        await getNymbalClient().adapter.reviews.submit({ productId, rating, title, body })
         setSuccess(true)
         setTitle('')
         setBody('')
         setRating(5)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong.')
+      } catch {
+        setError('Failed to submit review.')
       } finally {
         setSubmitting(false)
       }
@@ -63,7 +53,13 @@ export function ReviewForm({ productId }: ReviewFormProps) {
       <h3 className={styles.reviewsTitle}>Write a Review</h3>
 
       {error && (
-        <p style={{ fontSize: 'var(--nymbal-font-size-sm)', color: 'var(--nymbal-color-error)', marginBottom: 'var(--nymbal-spacing-md)' }}>
+        <p
+          style={{
+            fontSize: 'var(--nymbal-font-size-sm)',
+            color: 'var(--nymbal-color-error)',
+            marginBottom: 'var(--nymbal-spacing-md)',
+          }}
+        >
           {error}
         </p>
       )}
@@ -111,11 +107,7 @@ export function ReviewForm({ productId }: ReviewFormProps) {
             placeholder="Tell us what you thought..."
           />
         </div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={submitting}
-        >
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? 'Submitting...' : 'Submit Review'}
         </button>
       </form>
