@@ -76,5 +76,52 @@ export function idempotencyRestartSuite(
         await db.drop()
       }
     }, 90_000)
+
+    it(`AC-7: two handlers with different names each run once for one envelope; processed_events holds one row per handler (${dialect})`, async () => {
+      const db = await fresh()
+      try {
+        const event = createEventBuilder(TEST_BUILDER_CONTEXT)('ac7.probe.v1', {
+          n: 1,
+        }) as NymbalEvent<unknown>
+        const names = ['ac7:mailer', 'ac7:indexer']
+        const ran: string[] = []
+
+        const kernel = await db.open()
+        try {
+          const handlers = names.map((name) =>
+            withIdempotency(
+              name,
+              async () => {
+                ran.push(name)
+              },
+              { repo: kernel.repos.processedEvent, logger: kernel.logger },
+            ),
+          )
+          // Each handler gets the envelope twice: once must run, the redelivery must not.
+          for (const handler of handlers) await handler(event)
+          for (const handler of handlers) await handler(event)
+          expect(
+            ran.slice().sort(),
+            "a handler was skipped because another handler's record matched",
+          ).toEqual(names.slice().sort())
+
+          const raw = openRaw(kernel.dialect, kernel.target)
+          try {
+            const rows = await raw.rows<{ handler_name: string }>(
+              'SELECT handler_name FROM processed_events WHERE event_id = ?',
+              [event.id],
+            )
+            expect(rows.length).toBe(names.length)
+            expect(rows.map((r) => r.handler_name).sort()).toEqual(ran.slice().sort())
+          } finally {
+            await raw.close()
+          }
+        } finally {
+          await kernel.close()
+        }
+      } finally {
+        await db.drop()
+      }
+    }, 90_000)
   })
 }
