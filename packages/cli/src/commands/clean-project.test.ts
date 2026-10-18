@@ -20,7 +20,7 @@ const Database = createRequire(join(PACKAGES, 'platform', 'package.json'))(
 ) as new (
   path: string,
   opts?: { readonly?: boolean; fileMustExist?: boolean },
-) => { prepare(sql: string): { get(): { n: number } }; close(): void }
+) => { prepare(sql: string): { get(): { n: number } }; exec(sql: string): void; close(): void }
 
 const TABLES = ['categories', 'products', 'variants', 'customers'] as const
 type Counts = Record<(typeof TABLES)[number], number>
@@ -150,6 +150,37 @@ describe('nymbal seed in a fresh project', () => {
     const second = nymbal(dir, ['seed'])
     expect(second.status, why(second)).toBe(0)
     expect(counts(db)).toEqual(once)
+  }, 60_000)
+
+  it('AC-8: a seed over a partial demo (categories present, products gone) exits 0 and duplicates nothing', async () => {
+    const dir = await project()
+    const db = join(dir, 'nymbal.db')
+    const migrate = nymbal(dir, ['migrate'])
+    expect(migrate.status, why(migrate)).toBe(0)
+
+    const first = nymbal(dir, ['seed'])
+    expect(first.status, why(first)).toBe(0)
+    const once = counts(db)
+    expect(once.categories).toBeGreaterThan(0)
+    expect(once.customers).toBeGreaterThan(0)
+
+    // As a seed interrupted after the categories, or a merchant who deleted every product, leaves it.
+    const writer = new Database(db, { fileMustExist: true })
+    try {
+      writer.exec('DELETE FROM product_categories; DELETE FROM variants; DELETE FROM products;')
+    } finally {
+      writer.close()
+    }
+    const partial = counts(db)
+    expect(partial.products).toBe(0)
+    expect(partial.categories).toBe(once.categories)
+
+    const again = nymbal(dir, ['seed'])
+    expect(again.status, why(again)).toBe(0)
+    const after = counts(db)
+    for (const table of TABLES) {
+      expect(after[table], `${table} after the partial seed`).toBeLessThanOrEqual(once[table])
+    }
   }, 60_000)
 })
 
