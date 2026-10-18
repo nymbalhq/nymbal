@@ -136,15 +136,13 @@ describe('AC-2: SDK customer orders against a running API', () => {
     expect(paid.status, JSON.stringify(paid.body)).toBe(200)
 
     // The orders-by-customer view is a projection: wait for it, bounded, instead of sleeping.
-    const listed = await vi.waitFor(
+    await vi.waitFor(
       async () => {
         const page = await buyer.client.customer.orders.list()
         expect(page.items.map((o) => o.orderNumber)).toContain(started.orderNumber)
-        return page
       },
       { timeout: 5_000, interval: 50 },
     )
-    expect(listed.nextCursor === null || typeof listed.nextCursor === 'string').toBe(true)
 
     const order = await buyer.client.customer.orders.get(started.orderNumber)
     expect(order.orderNumber).toBe(started.orderNumber)
@@ -154,5 +152,42 @@ describe('AC-2: SDK customer orders against a running API', () => {
 
     const othersOrders = await other.client.customer.orders.list()
     expect(othersOrders.items.map((o) => o.orderNumber)).not.toContain(started.orderNumber)
+  }, 30_000)
+
+  it('AC-2: orders.list carries the API envelope meta.nextCursor for the same bearer, not a constant null', async () => {
+    const buyer = await signedInShopper('Pager')
+    // Read the envelope ourselves with the same customer's own bearer token.
+    const login = await fetch(`${store.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: buyer.email, password: 'correct-horse-battery' }),
+    })
+    expect(login.status).toBe(200)
+    const { data: auth } = (await login.json()) as {
+      data: { accessToken: string; customer: { id: string } }
+    }
+
+    // More orders than one page of the orders-by-customer view, so the API has a cursor to hand on.
+    const documentStore = store.app.platform.documentStore
+    for (let n = 0; n < 51; n++) {
+      const sortKey = `order:${String(n).padStart(16, '0')}:P109-PAGE-${n}`
+      await documentStore.put('orders-by-customer', `customer:${auth.customer.id}#${sortKey}`, {
+        orderNumber: `P109-PAGE-${n}`,
+        partitionKey: `customer:${auth.customer.id}`,
+        sortKey,
+      })
+    }
+
+    const raw = await fetch(`${store.baseUrl}/api/orders`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+    })
+    expect(raw.status).toBe(200)
+    const envelope = (await raw.json()) as { data: unknown[]; meta?: { nextCursor?: unknown } }
+    const apiCursor = envelope.meta?.nextCursor
+    expect(typeof apiCursor, JSON.stringify(envelope.meta)).toBe('string')
+
+    const page = await buyer.client.customer.orders.list()
+    expect(page.nextCursor).toBe(apiCursor)
+    expect(page.items.length).toBe(envelope.data.length)
   }, 30_000)
 })

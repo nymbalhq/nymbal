@@ -44,6 +44,61 @@ describe('nymbal-search-bar', () => {
     expect(searchSpy).toHaveBeenCalledWith('widget')
   })
 
+  // P1-09 decision 5: a result is chosen by click or by ArrowDown+Enter, and the event names the chosen one
+  async function renderResults(slugs: string[]): Promise<HTMLElement> {
+    const client = setupMockClient()
+    const el = createElement()
+    ;(client.search as unknown as { setState(p: object): void }).setState({
+      query: 'w',
+      loading: false,
+      total: slugs.length,
+      results: slugs.map((slug) => ({
+        slug,
+        name: `Name ${slug}`,
+        priceMinor: null,
+        currency: null,
+      })),
+    })
+    await Promise.resolve()
+    return el
+  }
+
+  function captureSelected(el: HTMLElement): string[] {
+    const seen: string[] = []
+    el.addEventListener('nymbal:search:selected', (e) => {
+      seen.push((e as CustomEvent<{ product: { slug: string } }>).detail.product.slug)
+    })
+    return seen
+  }
+
+  it('P1-09 decision 5: clicking the second result selects that result, not the first', async () => {
+    const el = await renderResults(['first-widget', 'second-widget', 'third-widget'])
+    const items = el.querySelectorAll<HTMLElement>('.nymbal-search-result-item')
+    const seen = captureSelected(el)
+    const clicked = items[1]!
+    clicked.click()
+    expect(seen).toEqual([clicked.dataset.slug])
+    expect(seen[0]).not.toBe(items[0]!.dataset.slug)
+  })
+
+  it('P1-09 decision 5: ArrowDown twice then Enter selects the second result', async () => {
+    const el = await renderResults(['first-widget', 'second-widget', 'third-widget'])
+    const seen = captureSelected(el)
+    for (let n = 0; n < 2; n++) {
+      el.querySelector('input')!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      )
+    }
+    const highlighted = el.querySelector<HTMLElement>(
+      '.nymbal-search-result-item[aria-selected="true"]',
+    )!
+    el.querySelector('input')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    )
+    expect(seen).toEqual([highlighted.dataset.slug])
+    expect(highlighted).toBe(el.querySelectorAll('.nymbal-search-result-item')[1])
+  })
+
   it('disconnectedCallback removes search subscription', () => {
     const el = createElement()
     document.body.removeChild(el)
