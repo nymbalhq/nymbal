@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { ConfigError } from '@nymbalhq/types'
@@ -112,6 +112,61 @@ describe('production refusals at createApp', () => {
 
     expect(await attempt(config, sqlitePath)).toBeNull()
     expect(existsSync(sqlitePath)).toBe(true)
+  })
+
+  // Decision 7 refuses the resolved stub, so a provider name the registry does not know (its fallback branch) is
+  // refused like `native`. Kills a check on the string 'native', and a check that opens the store before refusing.
+  it('AC-8: in production every stub-or-default-secret cell is refused with a code the spec predicts and leaves the store directory as it found it', async () => {
+    process.env.NODE_ENV = 'production'
+    const CUSTOM_SECRET = 'p1-05-production-secret-0123456789'
+    const cells = [
+      { provider: 'native', secret: CUSTOM_SECRET },
+      { provider: 'native', secret: DEFAULT_JWT_SECRET },
+      { provider: 'p1-05-unregistered-provider', secret: CUSTOM_SECRET },
+      { provider: 'p1-05-unregistered-provider', secret: DEFAULT_JWT_SECRET },
+      { provider: 'stripe', secret: DEFAULT_JWT_SECRET },
+    ]
+
+    /** The refusal codes decision 7 predicts for a cell; createApp throws one of them. */
+    function predictedCodes(cell: { provider: string; secret: string }): string[] {
+      const codes: string[] = []
+      if (cell.provider !== 'stripe') codes.push('config.production_stub_payments')
+      if (cell.secret === DEFAULT_JWT_SECRET) codes.push('config.production_default_jwt_secret')
+      return codes
+    }
+
+    const results = []
+    for (const cell of cells) {
+      const sqlitePath = storePath()
+      const dir = dirname(sqlitePath)
+      const base = kernelConfig('sqlite')
+      const config = withJwtSecret(
+        cell.provider === 'stripe'
+          ? withStripe(base)
+          : {
+              ...base,
+              commerce: { ...base.commerce, payments: { provider: cell.provider } },
+            },
+        cell.secret,
+      )
+      const filesBefore = readdirSync(dir).sort()
+      const error = await attempt(config, sqlitePath)
+      const filesAfter = readdirSync(dir).sort()
+      results.push({ cell, error, filesBefore, filesAfter })
+    }
+
+    const unpredicted = results
+      .filter(({ cell, error }) => {
+        if (!(error instanceof ConfigError)) return true
+        if (!predictedCodes(cell).includes(error.code)) return true
+        // A stub refusal names the configured provider, not a hard-coded 'native'.
+        return (
+          error.code === 'config.production_stub_payments' && !error.message.includes(cell.provider)
+        )
+      })
+      .map(({ cell, error }) => ({ cell, error: String(error) }))
+    expect(unpredicted).toEqual([])
+    expect(results.map((r) => r.filesAfter)).toEqual(results.map((r) => r.filesBefore))
   })
 
   it('AC-8: with NODE_ENV unset, the stub provider and the default JWT secret both start as today', async () => {
