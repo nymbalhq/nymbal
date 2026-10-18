@@ -35,3 +35,7 @@ reports/
 # Next 16 writes an AGENTS.md into the app on `next dev`/`next build`; it is not ours to ship.
 templates/nextjs/AGENTS.md
 packages/create-app/scaffold/templates/nextjs/AGENTS.md
+
+# `next dev` and `next build` write different next-env.d.ts files; Next regenerates it, so it is not tracked.
+templates/nextjs/next-env.d.ts
+packages/create-app/scaffold/templates/nextjs/next-env.d.ts
