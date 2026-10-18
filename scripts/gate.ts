@@ -737,7 +737,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           skip: 'the build artefact is used (--no-build)',
           idle: true,
         }
-      : { name: 'build', command: 'pnpm build' }
+      : // `pnpm build` covers packages/** only; the admin E2E serves apps/admin/dist, which a fresh checkout lacks.
+        { name: 'build', command: 'pnpm build && pnpm --filter @nymbalhq/admin build' }
     : buildInputs.length === 0
       ? { name: 'build', command: 'true', skip: 'no package build input changed', idle: true }
       : { name: 'build', command: 'pnpm build' }
