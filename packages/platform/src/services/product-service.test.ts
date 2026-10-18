@@ -10,7 +10,8 @@ import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
-import { createEventPublisher } from '../events/publisher.js'
+import { createEventPublisher, createRelay } from '../index.js'
+import { wirePublisher } from '../../tests/support/publisher.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
 import { v7 as uuidv7 } from 'uuid'
@@ -32,15 +33,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: {
-      storeId: 'test',
-      environment: 'development',
-      version: '0.0.0-test',
-      source: 'test',
-    },
-  })
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const service = createProductService({ store: commandStore, repos, publisher, logger })
   return { service, repos, eventBus, commandStore, documentStore, publisher, logger }
 }
