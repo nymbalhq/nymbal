@@ -106,8 +106,14 @@ export function createSecurityGuard(security: NymbalConfig['security']): Securit
     finish(ctx, envelope) {
       if (isLogin(ctx)) {
         const keys = loginKeys(ctx)
-        if (envelope.status >= 200 && envelope.status < 300) rateLimiter.clear(ctx.path, keys)
-        else rateLimiter.hit(ctx.path, keys)
+        // Success clears the account only: the IP bucket expires with its window, so logging in to one's own
+        // account cannot reset a spray across other accounts.
+        if (envelope.status >= 200 && envelope.status < 300) {
+          rateLimiter.clear(
+            ctx.path,
+            keys.filter((key) => key.startsWith('account:')),
+          )
+        } else rateLimiter.hit(ctx.path, keys)
       }
       const finished = applyHeaders(envelope)
       const setsCsrf = finished.cookies?.some((cookie) => cookie.name === CSRF_COOKIE) ?? false

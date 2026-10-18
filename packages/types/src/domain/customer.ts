@@ -17,7 +17,7 @@ export interface Customer {
   totalSpentMinor: number
   metadata: Record<string, unknown>
   /** What an access token grants. Written by seed and admin code only, never taken from `metadata`. */
-  roles?: Role[]
+  roles: Role[]
   requiresPasswordReset: boolean
   createdAt: string
   updatedAt: string

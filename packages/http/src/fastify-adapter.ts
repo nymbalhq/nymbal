@@ -16,7 +16,7 @@ import type {
   StreamHandler,
 } from '@nymbalhq/types'
 import { HttpError, NymbalError } from '@nymbalhq/types'
-import { securitySchema, type NymbalConfig } from '@nymbalhq/config'
+import type { NymbalConfig } from '@nymbalhq/config'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 
 export interface CorsOptions {
@@ -26,11 +26,8 @@ export interface CorsOptions {
 
 export interface FastifyAdapterOptions {
   logger: Logger
-  /**
-   * The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. When
-   * omitted, the schema's defaults apply (CSRF on, the built-in login and register limits), never an open adapter.
-   */
-  security?: NymbalConfig['security']
+  /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
+  security: NymbalConfig['security']
   /** Whether `X-Forwarded-For` sets the request IP. Off unless a trusted proxy sits in front. */
   trustProxy?: boolean
   cors?: CorsOptions
@@ -47,9 +44,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
-    this.#guard = createSecurityGuard(
-      options.security ?? securitySchema.parse({ adapter: 'middleware' }),
-    )
+    this.#guard = createSecurityGuard(options.security)
     this.#app = Fastify({
       logger: false,
       trustProxy: options.trustProxy ?? false,

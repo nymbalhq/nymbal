@@ -30,9 +30,13 @@ interface Bucket {
   resetAt: number
 }
 
+/** The map size that triggers the first sweep of expired buckets. */
+const PRUNE_THRESHOLD = 1024
+
 export class RateLimiter {
   readonly #rules: ParsedRule[]
   readonly #buckets = new Map<string, Bucket>()
+  #pruneAt = PRUNE_THRESHOLD
 
   constructor(rules: RateLimitRules) {
     this.#rules = Object.entries(rules).map(([pattern, rule]) => ({
@@ -51,7 +55,7 @@ export class RateLimiter {
     const now = Date.now()
     const bucket = this.#buckets.get(key)
     if (!bucket || bucket.resetAt <= now) {
-      this.#buckets.set(key, { count: 1, resetAt: now + rule.windowMs })
+      this.#open(key, now, rule.windowMs)
       return { allowed: true, action: rule.action }
     }
     bucket.count += 1
@@ -86,7 +90,7 @@ export class RateLimiter {
       const bucketKey = `${rule.pattern}|${key}`
       const bucket = this.#buckets.get(bucketKey)
       if (!bucket || bucket.resetAt <= now) {
-        this.#buckets.set(bucketKey, { count: 1, resetAt: now + rule.windowMs })
+        this.#open(bucketKey, now, rule.windowMs)
       } else {
         bucket.count += 1
       }
@@ -101,6 +105,20 @@ export class RateLimiter {
 
   reset(): void {
     this.#buckets.clear()
+    this.#pruneAt = PRUNE_THRESHOLD
+  }
+
+  /**
+   * Starts a bucket. Keys include caller-chosen values (an account email), so expired buckets are swept once the map
+   * reaches `#pruneAt`; the next sweep waits until the map doubles past what survived, which keeps the cost amortised
+   * constant per insert even when every bucket is live.
+   */
+  #open(key: string, now: number, windowMs: number): void {
+    if (this.#buckets.size >= this.#pruneAt) {
+      for (const [k, b] of this.#buckets) if (b.resetAt <= now) this.#buckets.delete(k)
+      this.#pruneAt = Math.max(PRUNE_THRESHOLD, this.#buckets.size * 2)
+    }
+    this.#buckets.set(key, { count: 1, resetAt: now + windowMs })
   }
 
   #ruleFor(path: string): ParsedRule | undefined {
