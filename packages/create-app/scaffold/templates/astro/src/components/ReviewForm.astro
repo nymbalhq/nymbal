@@ -61,6 +61,8 @@ const { productId } = Astro.props
 </form>
 
 <script>
+  import { client } from '../lib/client.js'
+
   const form = document.getElementById('review-form') as HTMLFormElement | null
   const messageEl = document.getElementById('review-form-message')
 
@@ -68,28 +70,18 @@ const { productId } = Astro.props
     e.preventDefault()
     if (!form || !messageEl) return
 
-    const productId = form.dataset.productId
+    const productId = form.dataset.productId ?? ''
     const formData = new FormData(form)
     const rating = Number(formData.get('rating'))
     const title = String(formData.get('title'))
     const body = String(formData.get('body'))
 
     try {
-      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
-      const res = await fetch(`${apiUrl}/api/products/${productId}/reviews`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating, title, body }),
-      })
-
-      if (res.ok) {
-        messageEl.textContent = 'Thank you for your review!'
-        messageEl.style.display = 'block'
-        messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
-        form.reset()
-      } else {
-        throw new Error('Failed to submit review')
-      }
+      await client.adapter.reviews.submit({ productId, rating, title, body })
+      messageEl.textContent = 'Thank you for your review!'
+      messageEl.style.display = 'block'
+      messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
+      form.reset()
     } catch {
       messageEl.textContent = 'Something went wrong. Please try again.'
       messageEl.style.display = 'block'
