@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P1-10 (phase exit), AC-1, AC-2, AC-3 and AC-5: the mutation ratchet.
+// Acceptance tests for P1-10 (phase exit), AC-1, AC-2, AC-3, AC-5 and AC-5b: the mutation ratchet.
 // The module is imported by URL so that its absence fails these tests at run time, not the typecheck; the signatures
 // below are the spec's Interface. Scores are percent with two decimals; every generated score is a whole number of
 // hundredths built as `cents / 100`, the value JSON gives back for that text, so nothing drifts through a file.
@@ -386,6 +386,8 @@ describe('AC-3: the ratchet only rises', () => {
       inReport: fc.boolean(),
       ratchet: fc.option(fc.integer({ min: 0, max: 10000 }), { nil: undefined }),
     })
+    // Paths from the real mutate set: update keeps entries only for those (AC-5b).
+    const set = await mutateSet()
     await fc.assert(
       fc.asyncProperty(fc.array(fileCase, { minLength: 1, maxLength: 5 }), async (cases) => {
         const dir = scratch()
@@ -393,7 +395,7 @@ describe('AC-3: the ratchet only rises', () => {
         const files: Scores = {}
         const expected: Scores = {}
         cases.forEach((c, i) => {
-          const path = pathOf(i)
+          const path = set[i]!
           const cents = centsOf(c.score.killed, c.score.n)
           if (c.inReport) rep[path] = exactFile(c.score.killed, c.score.n, c.score.ignored)
           if (c.ratchet !== undefined) files[path] = c.ratchet / 100
@@ -492,5 +494,104 @@ describe('AC-5: the Phase 1 score is committed', () => {
       expect(score, path).toBeLessThanOrEqual(100)
       expect(hasTwoDecimals(score), `${path}: ${score} has two decimals`).toBe(true)
     }
+  })
+})
+
+describe('AC-5b: the ratchet follows the mutate set', () => {
+  /** Paths the mutate set no longer selects: a deleted or renamed service, and a file outside the globs. */
+  const GONE = [
+    'packages/platform/src/services/gone-service.ts',
+    'packages/platform/src/repositories/renamed-repository.ts',
+    'packages/platform/src/db/not-mutated.ts',
+  ]
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  /** The paths of `candidates` that `output` names as a whole path, not as part of a longer one. */
+  const named = (output: string, candidates: string[]): string[] =>
+    candidates.filter((p) => new RegExp(`(?<![\\w./-])${escape(p)}(?![\\w./-])`).test(output))
+
+  it('AC-5b: property: update drops entries outside the mutate set and never lowers one inside it, through the CLI', async () => {
+    const set = await mutateSet()
+    const fileCase = fc.record({
+      score: fc.option(exactScore, { nil: undefined }),
+      ratchet: fc.option(fc.integer({ min: 0, max: 10000 }), { nil: undefined }),
+    })
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fileCase, { minLength: 1, maxLength: 6 }),
+        fc.subarray(GONE, { minLength: 1 }),
+        fc.integer({ min: 0, max: 10000 }),
+        async (cases, gone, goneCents) => {
+          const dir = scratch()
+          const rep: Record<string, Status[]> = {}
+          const files: Scores = {}
+          const expected: Scores = {}
+          cases.forEach((c, i) => {
+            const path = set[i]!
+            if (c.score !== undefined) {
+              rep[path] = exactFile(c.score.killed, c.score.n, c.score.ignored)
+            }
+            if (c.ratchet !== undefined) files[path] = c.ratchet / 100
+            const best = Math.max(
+              c.score === undefined ? -1 : centsOf(c.score.killed, c.score.n),
+              c.ratchet ?? -1,
+            )
+            if (best >= 0) expected[path] = best / 100
+          })
+          for (const path of gone) files[path] = goneCents / 100
+          const before: Ratchet = {
+            measuredAt: '2026-10-01T00:00:00.000Z',
+            command: 'fixture: an earlier full run',
+            total: 47.5,
+            files,
+          }
+          const ratchetFile = writeJson(dir, 'mutation-ratchet.json', before)
+          const reportFile = writeJson(dir, 'mutation.json', report(rep))
+          const { code, output } = await cli([
+            'update',
+            '--report',
+            reportFile,
+            '--ratchet',
+            ratchetFile,
+          ])
+          expect(code, output).toBe(0)
+          const after = readRatchet(ratchetFile)
+          for (const [path, held] of Object.entries(before.files)) {
+            if (!set.includes(path)) continue
+            expect(after.files[path], `${path} never falls`).toBeGreaterThanOrEqual(held)
+          }
+          expect(
+            Object.keys(after.files).filter((p) => !set.includes(p)),
+            'no entry outside the mutate set',
+          ).toEqual([])
+          expect(after.files).toEqual(expected)
+          expect({ ...after, files: before.files }).toEqual(before)
+        },
+      ),
+      { numRuns: 10 },
+    )
+  })
+
+  it('AC-5b: property: check names exactly the mutate-set files with no entry, with the hint to run update', async () => {
+    const set = await mutateSet()
+    await fc.assert(
+      fc.asyncProperty(fc.subarray(set, { minLength: 1 }), async (missing) => {
+        const dir = scratch()
+        const files: Scores = Object.fromEntries(
+          set.filter((p) => !missing.includes(p)).map((p, i) => [p, (i * 37) % 100]),
+        )
+        const ratchetFile = writeJson(dir, 'mutation-ratchet.json', {
+          measuredAt: '2026-10-01T00:00:00.000Z',
+          command: 'fixture',
+          total: 50,
+          files,
+        })
+        // An empty report: no file rises or falls, so whatever check names it names for the missing entries.
+        const reportFile = writeJson(dir, 'mutation.json', report({}))
+        const { output } = await cli(['check', '--report', reportFile, '--ratchet', ratchetFile])
+        expect(named(output, set), output).toEqual(missing)
+        expect(output, 'the hint to run update').toMatch(/\bupdate\b/)
+      }),
+      { numRuns: 6 },
+    )
   })
 })

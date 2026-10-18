@@ -1,6 +1,9 @@
+import { execFile, execFileSync } from 'node:child_process'
 import {
+  appendFileSync,
   chmodSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -13,6 +16,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { plan, run, type StepSpec } from '../../scripts/gate'
 
@@ -66,6 +70,12 @@ const REPORT_SCORE = 50
 async function scratch(ratchetScore: number): Promise<string> {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-ratchet-')))
   created.push(dir)
+  await populate(dir, ratchetScore)
+  return dir
+}
+
+/** The scratch's scripts, configs, linked node_modules, stubbed stryker and a ratchet holding FILE at `ratchetScore`. */
+async function populate(dir: string, ratchetScore: number): Promise<void> {
   const rootPackage = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>
   }
@@ -99,7 +109,7 @@ async function scratch(ratchetScore: number): Promise<string> {
   const stub = join(dir, 'node_modules/.bin/stryker')
   writeFileSync(
     stub,
-    `#!/bin/sh\nmkdir -p '${dirname(reportPath)}' && cp fixture-report.json '${reportPath}'\n`,
+    `#!/bin/sh\ntouch stryker-ran && mkdir -p '${dirname(reportPath)}' && cp fixture-report.json '${reportPath}'\n`,
   )
   chmodSync(stub, 0o755)
 
@@ -119,7 +129,6 @@ async function scratch(ratchetScore: number): Promise<string> {
       2,
     )}\n`,
   )
-  return dir
 }
 
 describe('AC-4: the gate runs the ratchet after Stryker', () => {
@@ -149,4 +158,157 @@ describe('AC-4: the gate runs the ratchet after Stryker', () => {
       `step command: ${step.command}\n${detail}`,
     ).toEqual(CASES.map((c) => (c.ratchet > REPORT_SCORE ? 'red' : 'ok')))
   })
+})
+
+// AC-4b: test-only changes run the ratchet. Here the whole gate runs (`gate.ts --full --only stryker`), so its own
+// change detection decides the plan: each scratch is a git repository committed as the base, then one kind of path
+// changes in the work tree. A Stryker input (a test under packages/platform/src, vitest.stryker.config.ts,
+// stryker.config.mjs) must plan the step and run `check` after the stubbed Stryker; any other path skips it.
+
+const TEST = 'packages/platform/src/services/cart-service.test.ts'
+const exec = promisify(execFile)
+
+function git(cwd: string, args: string[]): void {
+  execFileSync(
+    'git',
+    [
+      '-c',
+      'user.name=fixture',
+      '-c',
+      'user.email=fixture@example.com',
+      '-c',
+      'commit.gpgsign=false',
+      ...args,
+    ],
+    { cwd, stdio: 'ignore' },
+  )
+}
+
+async function repoScratch(ratchetScore: number): Promise<string> {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-ratchet-git-')))
+  created.push(dir)
+  await populate(dir, ratchetScore)
+  cpSync(join(REPO, 'vitest.stryker.config.ts'), join(dir, 'vitest.stryker.config.ts'))
+  mkdirSync(join(dir, dirname(FILE)), { recursive: true })
+  writeFileSync(join(dir, FILE), 'export const total = (a: number, b: number): number => a + b\n')
+  writeFileSync(
+    join(dir, TEST),
+    "import { expect, it } from 'vitest'\nimport { total } from './cart-service'\n\nit('adds', () => expect(total(1, 2)).toBe(3))\n",
+  )
+  writeFileSync(join(dir, '.gitignore'), 'node_modules\nreports\nstryker-ran\n')
+  git(dir, ['init', '--quiet'])
+  git(dir, ['add', '-A'])
+  git(dir, ['commit', '--quiet', '-m', 'base'])
+  return dir
+}
+
+/** Runs the gate's stryker step as `gate:full --only stryker` would, against HEAD; the step's status and whether Stryker ran. */
+async function gateStryker(cwd: string): Promise<{ status: string; ran: boolean; output: string }> {
+  const args = [
+    join(REPO, 'node_modules/.bin/tsx'),
+    'scripts/gate.ts',
+    '--full',
+    '--only',
+    'stryker',
+    '--base',
+    'HEAD',
+    '--json',
+  ]
+  let stdout = ''
+  let stderr = ''
+  try {
+    ;({ stdout, stderr } = await exec(args[0]!, args.slice(1), { cwd, encoding: 'utf8' }))
+  } catch (error) {
+    const e = error as { stdout?: string; stderr?: string }
+    stdout = e.stdout ?? ''
+    stderr = e.stderr ?? ''
+  }
+  const last = stdout.trim().split('\n').at(-1) ?? ''
+  let status = 'no result'
+  try {
+    const parsed = JSON.parse(last) as { steps: Array<{ name: string; status: string }> }
+    status = parsed.steps.find((s) => s.name === 'stryker')?.status ?? 'not planned'
+  } catch {
+    // the gate printed no JSON: the status stays 'no result' and the output says why
+  }
+  return { status, ran: existsSync(join(cwd, 'stryker-ran')), output: `${stdout}\n${stderr}` }
+}
+
+describe('AC-4b: a change set with a Stryker input and no mutate-set file still runs the ratchet', () => {
+  const CHANGES = [
+    {
+      // The control: a mutate-set file planned the step before AC-4b, so a red here is the scratch working.
+      name: 'only a mutate-set file',
+      ratchet: 50.01,
+      input: true,
+      change: (d: string) => appendFileSync(join(d, FILE), '// changed\n'),
+    },
+    {
+      name: 'only a co-located platform test, the ratchet a hundredth above the report',
+      ratchet: 50.01,
+      input: true,
+      change: (d: string) =>
+        appendFileSync(join(d, TEST), "it('adds zero', () => expect(total(0, 0)).toBe(0))\n"),
+    },
+    {
+      name: 'only a co-located platform test, the ratchet equal to the report',
+      ratchet: 50,
+      input: true,
+      change: (d: string) =>
+        appendFileSync(join(d, TEST), "it('adds zero', () => expect(total(0, 0)).toBe(0))\n"),
+    },
+    {
+      name: 'only vitest.stryker.config.ts',
+      ratchet: 50.01,
+      input: true,
+      change: (d: string) => appendFileSync(join(d, 'vitest.stryker.config.ts'), '// changed\n'),
+    },
+    {
+      name: 'only stryker.config.mjs',
+      ratchet: 50.01,
+      input: true,
+      change: (d: string) => appendFileSync(join(d, 'stryker.config.mjs'), '// changed\n'),
+    },
+    {
+      name: 'only a test outside packages/platform/src',
+      ratchet: 50.01,
+      input: false,
+      change: (d: string) => {
+        mkdirSync(join(d, 'packages/sdk/src'), { recursive: true })
+        writeFileSync(
+          join(d, 'packages/sdk/src/client.test.ts'),
+          "import { it } from 'vitest'\nit('runs', () => {})\n",
+        )
+      },
+    },
+    {
+      name: 'only documentation',
+      ratchet: 50.01,
+      input: false,
+      change: (d: string) => {
+        mkdirSync(join(d, 'docs'), { recursive: true })
+        writeFileSync(join(d, 'docs/notes.md'), '# notes\n')
+      },
+    },
+  ]
+
+  it('AC-4b: a Stryker input alone plans the stryker step and its check reds a lowered file; no Stryker input skips it', async () => {
+    const results = await Promise.all(
+      CHANGES.map(async (c) => {
+        const dir = await repoScratch(c.ratchet)
+        c.change(dir)
+        return { name: c.name, ...(await gateStryker(dir)) }
+      }),
+    )
+    const detail = results.map((r) => `--- ${r.name}: ${r.status}\n${r.output}`).join('\n')
+    expect(
+      results.map((r) => `${r.name}: ${r.status}, stryker ${r.ran ? 'ran' : 'did not run'}`),
+      detail,
+    ).toEqual(
+      CHANGES.map((c) => {
+        const status = !c.input ? 'skipped' : c.ratchet > REPORT_SCORE ? 'red' : 'ok'
+        return `${c.name}: ${status}, stryker ${c.input ? 'ran' : 'did not run'}`
+      }),
+    )
+  }, 120_000)
 })
