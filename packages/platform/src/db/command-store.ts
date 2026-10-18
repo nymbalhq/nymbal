@@ -243,6 +243,34 @@ function createQueue(): { acquire(): Promise<() => void> } {
   }
 }
 
+/** How long a SQLite writer waits for another connection's write transaction: better-sqlite3's own default. */
+const SQLITE_BUSY_WAIT_MS = 5000
+
+/**
+ * `BEGIN IMMEDIATE`, waiting for another connection's write transaction between event-loop turns. The driver's busy
+ * handler sleeps the thread instead, so when the holder is another command store in this process it can never reach
+ * its COMMIT, and every writer after the first fails with SQLITE_BUSY once the wait runs out.
+ */
+async function beginImmediate(raw: BetterSqlite3.Database): Promise<void> {
+  const deadline = Date.now() + SQLITE_BUSY_WAIT_MS
+  raw.pragma('busy_timeout = 0')
+  try {
+    for (let pauseMs = 1; ; pauseMs = Math.min(pauseMs * 2, 20)) {
+      try {
+        raw.exec('BEGIN IMMEDIATE')
+        return
+      } catch (error) {
+        if ((error as { code?: unknown }).code !== 'SQLITE_BUSY' || Date.now() >= deadline) {
+          throw error
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, pauseMs))
+    }
+  } finally {
+    raw.pragma(`busy_timeout = ${SQLITE_BUSY_WAIT_MS}`)
+  }
+}
+
 export function createCommandStore(
   config: NymbalConfig,
   options: CommandStoreOptions = {},
@@ -273,9 +301,7 @@ export function createCommandStore(
           owner,
           {
             client,
-            async begin() {
-              raw.exec('BEGIN IMMEDIATE')
-            },
+            begin: () => beginImmediate(raw),
             async commit() {
               raw.exec('COMMIT')
             },

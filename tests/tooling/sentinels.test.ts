@@ -407,11 +407,12 @@ describe('AC-19: the real sentinel set', () => {
     { kind: 'present' | 'injected'; path: string; lines: [number, number]; marks: RegExp }
   > = {
     // S001-S004 became injected in P1-02: their lines and marks name the fixed code the patch breaks.
+    // P1-04 moved BEGIN IMMEDIATE into beginImmediate(); S001 still empties begin, commit and rollback.
     S001: {
       kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
-      lines: [276, 282],
-      marks: /BEGIN IMMEDIATE/,
+      lines: [304, 310],
+      marks: /beginImmediate\(raw\)[\s\S]*raw\.exec\('COMMIT'\)[\s\S]*raw\.exec\('ROLLBACK'\)/,
     },
     S002: {
       kind: 'injected',
@@ -428,7 +429,7 @@ describe('AC-19: the real sentinel set', () => {
     S004: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [176, 176],
+      lines: [175, 175],
       marks: /findByPaymentIntentId\(/,
     },
     // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
@@ -439,16 +440,18 @@ describe('AC-19: the real sentinel set', () => {
       lines: [68, 70],
       marks: /append\(/,
     },
+    // S006 became injected in P1-04 and S010 is new: predicted against the spec's interface at lines the task does
+    // not change (the cart routes take a CartService; the sweeper is re-exported), re-based if the kernel moves them.
     S006: {
-      kind: 'present',
-      path: 'packages/platform/src/services/cart-service.ts',
-      lines: [62, 62],
-      marks: /documentStore\.put/,
+      kind: 'injected',
+      path: 'packages/platform/src/routes/cart.ts',
+      lines: [39, 39],
+      marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
     S007: {
       kind: 'present',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [174, 226],
+      lines: [173, 242],
       marks: /finalize\(paymentIntentId, paidAmountMinor\)/,
     },
     S008: {
@@ -463,6 +466,12 @@ describe('AC-19: the real sentinel set', () => {
       lines: [79, 79],
       marks: /eventBus\.replay\(events\)/,
     },
+    S010: {
+      kind: 'injected',
+      path: 'packages/platform/src/sweepers/index.ts',
+      lines: [6, 9],
+      marks: /startCartAbandonmentSweeper,/,
+    },
     I101: {
       kind: 'injected',
       path: 'packages/platform/src/services/inventory-service.ts',
@@ -472,13 +481,13 @@ describe('AC-19: the real sentinel set', () => {
     I102: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [189, 191],
+      lines: [188, 190],
       marks: /commitReservation/,
     },
     I103: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [112, 112],
+      lines: [111, 111],
       marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
     },
     I104: {
@@ -505,7 +514,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S009 and I101-I105, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I105, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {

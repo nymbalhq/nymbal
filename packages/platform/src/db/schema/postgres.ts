@@ -276,6 +276,29 @@ export const reviews = pgTable(
   }),
 )
 
+// --- Carts -----------------------------------------------------------------
+
+export const carts = pgTable(
+  'carts',
+  {
+    token: text('token').primaryKey(),
+    customerId: text('customer_id'),
+    currency: text('currency').notNull(),
+    items: jsonb('items').notNull().default([]),
+    lineCount: integer('line_count').notNull().default(0),
+    subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
+    abandonedNotifiedAt: timestamp('abandoned_notified_at', { withTimezone: true }),
+  },
+  (t) => ({
+    expiresIdx: index('carts_expires_idx').on(t.expiresAt),
+    updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+  }),
+)
+
 // --- Event log (outbox) and handler idempotency ----------------------------
 
 export const events = pgTable(
@@ -321,6 +344,7 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  carts,
   events,
   processedEvents,
 }

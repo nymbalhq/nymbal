@@ -267,6 +267,29 @@ export const reviews = sqliteTable(
   }),
 )
 
+// --- Carts -----------------------------------------------------------------
+
+export const carts = sqliteTable(
+  'carts',
+  {
+    token: text('token').primaryKey(),
+    customerId: text('customer_id'),
+    currency: text('currency').notNull(),
+    items: text('items').notNull().default('[]'),
+    lineCount: integer('line_count').notNull().default(0),
+    subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
+    abandonedNotifiedAt: text('abandoned_notified_at'),
+  },
+  (t) => ({
+    expiresIdx: index('carts_expires_idx').on(t.expiresAt),
+    updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+  }),
+)
+
 // --- Event log (outbox) and handler idempotency ----------------------------
 
 export const events = sqliteTable(
@@ -312,6 +335,7 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  carts,
   events,
   processedEvents,
 }

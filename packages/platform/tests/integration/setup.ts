@@ -44,7 +44,13 @@ export async function createTestEnv() {
     orderNumberPrefix: 'INT',
     orderNumberStart: 1,
   })
-  const cart = createCartService({ documentStore, publisher, logger, currency: 'GBP' })
+  const cart = createCartService({
+    store: commandStore,
+    carts: repos.cart,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const checkout = createCheckoutService({
     store: commandStore,
     repos,
@@ -54,7 +60,6 @@ export async function createTestEnv() {
     orders: order,
     inventory,
     payments,
-    documentStore,
     currency: 'GBP',
   })
   const auth = createAuthService({

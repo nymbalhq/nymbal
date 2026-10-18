@@ -8,8 +8,10 @@ import {
   EVT_ORDER_PAID,
   type NymbalEvent,
 } from '@nymbalhq/types'
+import { createCheckoutService } from '../../../src/services/checkout-service.js'
 import { address, checkoutOf, seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
+import { lineFor } from '../replica.js'
 
 // P1-02 AC-6, AC-10 and AC-11 on one dialect: finalize's inner service calls join its transaction, beginCheckout
 // does its database work in one transaction, and finalize finds its order by payment intent through an index.
@@ -71,43 +73,43 @@ export function checkoutTransactionSuite(
       expect(paid).toEqual([])
     })
 
-    it('AC-10: a cart holding the same variant twice at qty 1 with stock 1 fails beginCheckout with CheckoutError; afterwards stock 1, no reservation, order or stock-adjustment row, and no inventory.reserved.v1 or inventory.released.v1', async () => {
-      const seeded = await seedVariant(k, 1, { priceMinor: 500 })
+    it('AC-10: a cart of two variants whose second reservation is refused fails beginCheckout with CheckoutError; afterwards both stocks are unchanged, no reservation, order or stock-adjustment row, and no inventory.reserved.v1 or inventory.released.v1', async () => {
+      const first = await seedVariant(k, 1, { priceMinor: 500 })
+      const second = await seedVariant(k, 1, { priceMinor: 800 })
+      const variantIds = [first.variantId, second.variantId]
       const events: string[] = []
       await k.eventBus.subscribe([EVT_INVENTORY_RESERVED, EVT_INVENTORY_RELEASED], (event) => {
-        if ((event as WithVariant).payload.variantId === seeded.variantId) events.push(event.type)
+        if (variantIds.includes((event as WithVariant).payload.variantId)) events.push(event.type)
+      })
+      // One line per variant is a cart invariant, so the failing second reservation comes from an inventory that
+      // refuses its second call; the first call's row and decrement ran inside the same transaction.
+      let reservations = 0
+      const inventory: Kernel['services']['inventory'] = {
+        ...k.services.inventory,
+        async reserveStock(...args) {
+          reservations += 1
+          if (reservations === 2) throw new Error('second reservation refused')
+          return k.services.inventory.reserveStock(...args)
+        },
+      }
+      const checkout = createCheckoutService({
+        store: k.store,
+        repos: k.repos,
+        publisher: k.publisher,
+        logger: k.logger,
+        cart: k.services.cart,
+        orders: k.services.order,
+        inventory,
+        payments: k.app.adapters.payments,
+        currency: k.config.store.currency,
       })
       const cart = await k.services.cart.getOrCreate()
-      const line = {
-        variantId: seeded.variantId,
-        productId: seeded.productId,
-        productName: 'Transactional Widget',
-        variantName: 'Default',
-        priceMinor: seeded.priceMinor,
-        imageUrl: '',
-        qty: 1,
-      }
-      // Two lines for one variant: addItem would merge them, so the document is written directly (the shape of
-      // checkout-service.test.ts). Pre-validation passes (1 <= 1); the second decrement must fail.
-      await k.documentStore.put(
-        'carts',
-        cart.token,
-        {
-          token: cart.token,
-          customerId: null,
-          currency: 'GBP',
-          subtotalMinor: 2 * seeded.priceMinor,
-          expiresAt: cart.expiresAt,
-          createdAt: cart.createdAt,
-          updatedAt: cart.updatedAt,
-          items: [line, line],
-        },
-        { ttl: 3600 },
-      )
-      const email = `twice-${randomUUID()}@p1-02.test`
+      await k.services.cart.addItem(cart.token, lineFor(first, 1))
+      await k.services.cart.addItem(cart.token, lineFor(second, 1))
+      const email = `refused-${randomUUID()}@p1-02.test`
 
       await expect(
-        k.services.checkout.beginCheckout({
+        checkout.beginCheckout({
           cartToken: cart.token,
           email,
           billingAddress: address,
@@ -115,14 +117,14 @@ export function checkoutTransactionSuite(
         }),
       ).rejects.toBeInstanceOf(CheckoutError)
 
+      expect(reservations).toBe(2)
       expect(events).toEqual([])
-      expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock)
+      expect(await stockOf(raw, first.variantId)).toBe(first.initialStock)
+      expect(await stockOf(raw, second.variantId)).toBe(second.initialStock)
       expect({
-        reservations: await raw.count('inventory_reservations', 'variant_id = ?', [
-          seeded.variantId,
-        ]),
+        reservations: await raw.count('inventory_reservations', 'variant_id IN (?, ?)', variantIds),
         orders: await raw.count('orders', 'email = ?', [email]),
-        adjustments: await raw.count('stock_adjustments', 'variant_id = ?', [seeded.variantId]),
+        adjustments: await raw.count('stock_adjustments', 'variant_id IN (?, ?)', variantIds),
       }).toEqual({ reservations: 0, orders: 0, adjustments: 0 })
     })
 

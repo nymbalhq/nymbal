@@ -126,7 +126,7 @@ export interface Seeded {
 
 /** One active product with one variant at `stock`, unique slug and sku. */
 export async function seedVariant(
-  kernel: Pick<Kernel, 'services'>,
+  kernel: { services: Pick<Kernel['services'], 'product'> },
   stock: number,
   opts: { priceMinor?: number; lowStockThreshold?: number } = {},
 ): Promise<Seeded> {
@@ -158,7 +158,7 @@ export async function seedVariant(
 
 /** A cart holding `qty` of the variant, through the cart service. */
 export async function cartWith(
-  kernel: Pick<Kernel, 'services'>,
+  kernel: { services: Pick<Kernel['services'], 'cart'> },
   seeded: Seeded,
   qty: number,
 ): Promise<string> {
