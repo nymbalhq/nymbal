@@ -72,7 +72,6 @@ describe('AC-4: the scaffold emits @nymbalhq/* dependencies and the nymbal CLI',
         currency: 'GBP',
         template,
         seedDemo: false,
-        includeMobile: false,
       })
     }
   }, 60_000)

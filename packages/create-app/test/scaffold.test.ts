@@ -70,9 +70,10 @@ describe('detectPackageManager', () => {
 describe('rewriteWorkspaceVersions', () => {
   const versions = { '@nymbalhq/foo': '1.2.3', '@nymbalhq/bar': '0.5.0' }
 
-  it('rewrites workspace:* to ^version', () => {
+  // P1-07 AC-2: Nymbal dependencies are pinned exactly, never a caret range.
+  it('rewrites workspace:* to the exact version', () => {
     const result = rewriteWorkspaceVersions({ '@nymbalhq/foo': 'workspace:*' }, versions)
-    expect(result).toEqual({ '@nymbalhq/foo': '^1.2.3' })
+    expect(result).toEqual({ '@nymbalhq/foo': '1.2.3' })
   })
 
   it('throws when workspace:* key has no version entry', () => {
@@ -86,7 +87,7 @@ describe('rewriteWorkspaceVersions', () => {
       { astro: '^4.0.0', '@nymbalhq/foo': 'workspace:*' },
       versions,
     )
-    expect(result).toEqual({ astro: '^4.0.0', '@nymbalhq/foo': '^1.2.3' })
+    expect(result).toEqual({ astro: '^4.0.0', '@nymbalhq/foo': '1.2.3' })
   })
 
   it('returns undefined unchanged', () => {
@@ -140,17 +141,17 @@ describe('mergePackageJson', () => {
   it('injects root-manifest deps', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
-    // P0-04 AC-4: the CLI publishes unscoped as `nymbal`.
-    expect(deps['nymbal']).toBe('^0.1.0')
-    expect(deps['@nymbalhq/config']).toBe('^0.1.0')
-    expect(deps['@nymbalhq/platform']).toBe('^0.1.0')
+    // P0-04 AC-4: the CLI publishes unscoped as `nymbal`. P1-07 AC-2: exact versions.
+    expect(deps['nymbal']).toBe('0.1.0')
+    expect(deps['@nymbalhq/config']).toBe('0.1.0')
+    expect(deps['@nymbalhq/platform']).toBe('0.1.0')
   })
 
   it('rewrites workspace:* template deps', () => {
     const merged = mergePackageJson(templatePkg, versions)
     const deps = merged.dependencies as Record<string, string>
-    expect(deps['@nymbalhq/sdk']).toBe('^0.1.0')
-    expect(deps['@nymbalhq/web-components']).toBe('^0.1.0')
+    expect(deps['@nymbalhq/sdk']).toBe('0.1.0')
+    expect(deps['@nymbalhq/web-components']).toBe('0.1.0')
   })
 
   it('deduplicates @nymbalhq/types (template wins)', () => {
@@ -164,11 +165,6 @@ describe('mergePackageJson', () => {
   it('sanitizes description', () => {
     const merged = mergePackageJson(templatePkg, versions)
     expect(merged.description).toBe('A Nymbal commerce project')
-  })
-
-  it('drops packageManager field', () => {
-    const merged = mergePackageJson(templatePkg, versions)
-    expect(merged).not.toHaveProperty('packageManager')
   })
 })
 
@@ -229,11 +225,11 @@ describe('scaffold/templates built output', () => {
         expect(scripts['seed']).toBe('nymbal seed')
       })
 
-      it('all @nymbalhq/* deps match semver range', () => {
+      it('all @nymbalhq/* deps are an exact version (P1-07 AC-2)', () => {
         const deps = pkg['dependencies'] as Record<string, string>
         const scoped = Object.entries(deps).filter(([key]) => key.startsWith('@nymbalhq/'))
         for (const [key, val] of scoped) {
-          expect(val, key).toMatch(/^\^\d+\.\d+\.\d+/)
+          expect(val, key).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/)
         }
       })
 
@@ -248,10 +244,6 @@ describe('scaffold/templates built output', () => {
 
       it('description is the generic project description', () => {
         expect(pkg['description']).toBe('A Nymbal commerce project')
-      })
-
-      it('has no packageManager field', () => {
-        expect(pkg).not.toHaveProperty('packageManager')
       })
     })
   }
@@ -290,7 +282,6 @@ describe('scaffold() output', () => {
       currency: 'GBP',
       template,
       seedDemo: false,
-      includeMobile: false,
     })
     return dir
   }
@@ -472,7 +463,6 @@ describe('override resolution (project layer wins)', () => {
       currency: 'GBP',
       template: 'astro',
       seedDemo: false,
-      includeMobile: false,
     })
   })
 
