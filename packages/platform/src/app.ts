@@ -1,7 +1,8 @@
-import type { NymbalConfig } from '@nymbalhq/config'
+import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
 import { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
-import { buildAdapters, type AdapterRegistry } from './adapters/registry.js'
+import { buildAdapters, paymentsAdapterFor, type AdapterRegistry } from './adapters/registry.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, type Relay } from './events/relay.js'
@@ -31,10 +32,33 @@ export interface CreateAppOptions extends CreatePlatformOptions {
   version?: string
 }
 
+/**
+ * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
+ * tokens with the schema's published default secret. Checked before anything opens the store.
+ */
+function refuseUnsafeProduction(config: NymbalConfig): void {
+  if (process.env.NODE_ENV !== 'production') return
+  const provider = config.commerce.payments.provider
+  if (paymentsAdapterFor(provider) === 'native-stub') {
+    throw new ConfigError(
+      `Payments provider "${provider}" resolves to the stub adapter, which verifies no webhook signature; ` +
+        'configure a real payments provider for production.',
+      { code: 'config.production_stub_payments', context: { provider } },
+    )
+  }
+  if (config.security.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+    throw new ConfigError(
+      'security.auth.jwtSecret is the schema default; set a secret of your own for production.',
+      { code: 'config.production_default_jwt_secret' },
+    )
+  }
+}
+
 export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
 ): Promise<NymbalApp> {
+  refuseUnsafeProduction(config)
   const platform = createPlatform(config, options)
   const version = options.version ?? '0.1.0'
   const logger = platform.logger

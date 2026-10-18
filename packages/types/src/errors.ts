@@ -4,7 +4,11 @@ export class NymbalError extends Error {
   readonly code: string
   readonly context: ErrorContext
 
-  constructor(code: string, message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined)
     this.name = this.constructor.name
     this.code = code
@@ -17,8 +21,11 @@ export class NymbalError extends Error {
 }
 
 export class ConfigError extends NymbalError {
-  constructor(message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
-    super('config.invalid', message, options)
+  constructor(
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext; code?: `config.${string}` } = {},
+  ) {
+    super(options.code ?? 'config.invalid', message, options)
   }
 }
 
@@ -77,7 +84,12 @@ export class AuthError extends HttpError {
 
 export class PaymentError extends NymbalError {
   constructor(
-    code: 'intent_failed' | 'capture_failed' | 'refund_failed' | 'webhook_invalid' | 'not_configured',
+    code:
+      | 'intent_failed'
+      | 'capture_failed'
+      | 'refund_failed'
+      | 'webhook_invalid'
+      | 'not_configured',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
@@ -87,7 +99,12 @@ export class PaymentError extends NymbalError {
 
 export class CheckoutError extends NymbalError {
   constructor(
-    code: 'cart_empty' | 'variant_missing' | 'out_of_stock' | 'reservation_failed' | 'finalize_failed',
+    code:
+      | 'cart_empty'
+      | 'variant_missing'
+      | 'out_of_stock'
+      | 'reservation_failed'
+      | 'finalize_failed',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

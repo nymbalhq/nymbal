@@ -5,15 +5,17 @@ import {
   EVT_CART_UPDATED,
   EVT_ORDER_PAID,
   EVT_PAYMENT_CAPTURED,
+  EVT_PAYMENT_FAILED,
   NotFoundError,
   type Address,
   type Cart,
   type Logger,
+  type Order,
   type OrderLineItem,
   type PaymentsAdapter,
   type PaymentIntent,
 } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { InventoryService } from './inventory-service.js'
@@ -37,9 +39,29 @@ export interface BeginCheckoutResult {
   totalMinor: number
 }
 
+/** What the payment provider captured. */
+export interface CapturedPayment {
+  amountMinor: number
+  /** ISO 4217, in any case. */
+  currency: string
+}
+
+export interface FinalizeResult {
+  /** Null when no order has the payment intent. */
+  orderNumber: string | null
+  /** True when the order is confirmed: by this call, or already for this intent. */
+  finalized: boolean
+  /** Why the captured payment did not confirm the order; recorded as payment.failed. */
+  reason?: string
+}
+
 export interface CheckoutService {
   beginCheckout(input: BeginCheckoutInput): Promise<BeginCheckoutResult>
-  finalize(paymentIntentId: string, paidAmountMinor: number): Promise<{ orderNumber: string }>
+  /**
+   * Confirms the order a captured payment is for, or records why not (a payment.failed with the reason and, when
+   * there is an order, a history note) and leaves the order as it was. Joins the caller's transaction.
+   */
+  finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult>
   cancel(orderId: string, reason: string): Promise<void>
 }
 
@@ -60,6 +82,18 @@ interface DraftMetadata {
   reservationIds: string[]
 }
 
+/** A line whose released reservation cannot be re-taken: another order has the stock now. */
+class StockUnavailable extends Error {
+  constructor(readonly variantId: string) {
+    super(`stock unavailable for variant ${variantId}`)
+  }
+}
+
+/** The conditional confirm found the order no longer pending: a concurrent writer moved it first. */
+class NoLongerPending extends Error {}
+
+const FINALIZE_ACTOR = 'system:checkout-finalize'
+
 export function createCheckoutService(deps: CreateCheckoutServiceDeps): CheckoutService {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
 
@@ -76,6 +110,136 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       )
     }
     return c
+  }
+
+  /** No order for the intent, or an order that is no longer pending. */
+  async function settled(
+    tx: Tx,
+    paymentIntentId: string,
+    order: Order | null,
+  ): Promise<FinalizeResult> {
+    if (order === null) return recordOutcome(tx, paymentIntentId, null, 'no_order')
+    // Idempotent on the order: a second event id or a concurrent delivery for a confirmed order changes nothing.
+    if (order.status === 'confirmed') return { orderNumber: order.orderNumber, finalized: true }
+    return recordOutcome(tx, paymentIntentId, order, `order_not_pending: ${order.status}`)
+  }
+
+  /** A captured payment that does not confirm its order: recorded, and nothing else changes. */
+  async function recordOutcome(
+    tx: Tx,
+    paymentIntentId: string,
+    order: Order | null,
+    reason: string,
+  ): Promise<FinalizeResult> {
+    await publisher.publish(EVT_PAYMENT_FAILED, {
+      paymentId: paymentIntentId,
+      orderId: order?.id ?? '',
+      reason,
+    })
+    if (order !== null) {
+      await repos.orderHistory.append(tx, {
+        id: uuidv7(),
+        orderId: order.id,
+        fromStatus: order.status,
+        toStatus: order.status,
+        actor: FINALIZE_ACTOR,
+        note: `captured payment not applied: ${reason}`,
+        timestamp: new Date(),
+      })
+    }
+    logger.warn({ paymentIntentId, orderId: order?.id, reason }, 'captured payment not applied')
+    return { orderNumber: order?.orderNumber ?? null, finalized: false, reason }
+  }
+
+  /**
+   * The reservation for line `index`, held or re-taken. The sweeper releases a reservation after its TTL while the
+   * order stays pending; a late payment takes the line's stock again with the same conditional decrement.
+   */
+  async function reservationFor(
+    tx: Tx,
+    order: Order,
+    reservationId: string,
+    index: number,
+  ): Promise<string> {
+    const held = await repos.inventoryReservation.findById(tx, reservationId)
+    if (held !== null) return reservationId
+    // Checkout reserves one line at a time, in line order.
+    const line = order.lineItems[index]
+    if (line === undefined) {
+      throw new CheckoutError(
+        'finalize_failed',
+        `Order ${order.id} has no line for reservation ${reservationId}`,
+      )
+    }
+    const retaken = await inventory.tryReserveStock(line.variantId, line.qty, order.id)
+    if (retaken === null) throw new StockUnavailable(line.variantId)
+    return retaken.reservationId
+  }
+
+  async function confirm(
+    tx: Tx,
+    paymentIntentId: string,
+    paid: CapturedPayment,
+    order: Order,
+  ): Promise<FinalizeResult> {
+    const metadata = order.metadata as Partial<DraftMetadata>
+    const reservationIds = Array.isArray(metadata.reservationIds)
+      ? (metadata.reservationIds as string[])
+      : []
+    // Committing makes the reservation's decrement permanent, with its stock-adjustment row.
+    for (const [index, reservationId] of reservationIds.entries()) {
+      const reservation = await reservationFor(tx, order, reservationId, index)
+      await inventory.commitReservation(reservation, FINALIZE_ACTOR)
+    }
+
+    const now = new Date()
+    if (!(await repos.order.setStatusIf(tx, order.id, 'pending', 'confirmed', now))) {
+      throw new NoLongerPending()
+    }
+    await repos.orderHistory.append(tx, {
+      id: uuidv7(),
+      orderId: order.id,
+      fromStatus: 'pending',
+      toStatus: 'confirmed',
+      actor: 'system:checkout',
+      note: 'payment captured',
+      timestamp: now,
+    })
+    if (order.customerId) {
+      await repos.customer.incrementStats(tx, order.customerId, 1, order.totalMinor, now)
+    }
+
+    await publisher.publish(EVT_PAYMENT_CAPTURED, {
+      paymentId: paymentIntentId,
+      orderId: order.id,
+      amountMinor: paid.amountMinor,
+      currency: order.currency,
+    })
+    await publisher.publish(EVT_ORDER_PAID, {
+      orderId: order.id,
+      paymentIntentId,
+      amountMinor: paid.amountMinor,
+      currency: order.currency,
+    })
+
+    // The cart empties in the same commit as the payment it became. A cart that expired or was swept while the
+    // shopper paid is not a reason to refuse a paid order; cart.converted still records where the order came from.
+    const cartToken = metadata.cartToken
+    if (cartToken) {
+      if (await repos.cart.clearIfLive(tx, cartToken, now)) {
+        await publisher.publish(EVT_CART_UPDATED, {
+          cartId: cartToken,
+          itemCount: 0,
+          totalMinor: 0,
+        })
+      }
+      await publisher.publish(EVT_CART_CONVERTED, {
+        cartId: cartToken,
+        orderId: order.id,
+      })
+    }
+    logger.info({ orderId: order.id, orderNumber: order.orderNumber }, 'checkout finalized')
+    return { orderNumber: order.orderNumber, finalized: true }
   }
 
   return {
@@ -170,78 +334,35 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       }
     },
 
-    async finalize(paymentIntentId, paidAmountMinor) {
-      const updated = await store.transaction(async (tx) => {
+    async finalize(paymentIntentId, paid) {
+      return store.transaction(async (tx) => {
+        const outcome = (order: Order | null, reason: string) =>
+          recordOutcome(tx, paymentIntentId, order, reason)
         const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
-        if (!order || order.status !== 'pending') {
-          throw new CheckoutError(
-            'finalize_failed',
-            `No pending order for intent ${paymentIntentId}`,
+        if (order === null || order.status !== 'pending') return settled(tx, paymentIntentId, order)
+        // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
+        if (
+          paid.amountMinor !== order.totalMinor ||
+          paid.currency.toUpperCase() !== order.currency.toUpperCase()
+        ) {
+          return outcome(
+            order,
+            `amount_mismatch: paid ${paid.amountMinor} ${paid.currency.toUpperCase()}, ` +
+              `due ${order.totalMinor} ${order.currency.toUpperCase()}`,
           )
         }
-        const metadata = order.metadata as Partial<DraftMetadata>
-        const reservationIds = Array.isArray(metadata.reservationIds)
-          ? (metadata.reservationIds as string[])
-          : []
-
-        // Commit reservations (permanently decrements stock via stock-adjustment log)
-        for (const rid of reservationIds) {
-          await inventory.commitReservation(rid, 'system:checkout-finalize')
-        }
-
-        // Transition order to confirmed
-        const updated = await orders.updateStatus(
-          order.id,
-          'confirmed',
-          'system:checkout',
-          'payment captured',
-        )
-
-        // Bump customer stats
-        if (updated.customerId) {
-          await repos.customer.incrementStats(
-            tx,
-            updated.customerId,
-            1,
-            updated.totalMinor,
-            new Date(),
-          )
-        }
-
-        // Emit payment.captured + order.paid
-        await publisher.publish(EVT_PAYMENT_CAPTURED, {
-          paymentId: paymentIntentId,
-          orderId: updated.id,
-          amountMinor: paidAmountMinor,
-          currency: updated.currency,
-        })
-        await publisher.publish(EVT_ORDER_PAID, {
-          orderId: updated.id,
-          paymentIntentId,
-          amountMinor: paidAmountMinor,
-          currency: updated.currency,
-        })
-
-        // The cart empties in the same commit as the payment it became. A cart that expired or was swept while the
-        // shopper paid is not a reason to refuse a paid order; cart.converted still records where the order came from.
-        const cartToken = metadata.cartToken
-        if (cartToken) {
-          if (await repos.cart.clearIfLive(tx, cartToken, new Date())) {
-            await publisher.publish(EVT_CART_UPDATED, {
-              cartId: cartToken,
-              itemCount: 0,
-              totalMinor: 0,
-            })
+        try {
+          // Behind a savepoint: when stock is gone or the order moved first, whatever the earlier lines took is undone.
+          return await store.savepoint(() => confirm(tx, paymentIntentId, paid, order))
+        } catch (err) {
+          if (err instanceof StockUnavailable) {
+            return outcome(order, `stock_unavailable: ${err.variantId}`)
           }
-          await publisher.publish(EVT_CART_CONVERTED, {
-            cartId: cartToken,
-            orderId: updated.id,
-          })
+          if (!(err instanceof NoLongerPending)) throw err
         }
-        return updated
+        // Another delivery (or an admin) moved the order between the read and the write.
+        return settled(tx, paymentIntentId, await repos.order.findById(tx, order.id))
       })
-      logger.info({ orderId: updated.id, orderNumber: updated.orderNumber }, 'checkout finalized')
-      return { orderNumber: updated.orderNumber }
     },
 
     async cancel(orderId, reason) {
