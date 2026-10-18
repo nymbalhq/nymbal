@@ -1,12 +1,12 @@
 # id: I103
 # kind: injected
 # defect: checkout writes each order line total one minor unit high
-# where: packages/platform/src/services/checkout-service.ts:112
+# where: packages/platform/src/services/checkout-service.ts:111
 # killed-by: none known; expected missed (no test reads lineTotalMinor from a checkout order)
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -109,7 +109,7 @@
+@@ -108,7 +108,7 @@
          unitPriceMinor: item.priceMinor,
          lineSubtotalMinor: item.priceMinor * item.qty,
          lineTaxMinor: 0,

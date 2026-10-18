@@ -17,7 +17,7 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createCartService } from './cart-service.js'
 import { createLogger } from '../logger.js'
 
-// Carts live in the document store, but their events go through the outbox, so the publisher needs a command store.
+// Carts are command-store rows (P1-04) and their events go through the outbox on the same store.
 async function makeDeps() {
   const commandStore = createCommandStore(
     // @ts-expect-error minimal config
@@ -27,16 +27,21 @@ async function makeDeps() {
   await runMigrations(commandStore, {
     migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
   })
-  const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
-  const repos = buildRepositories(commandStore, documentStore)
+  const repos = buildRepositories(commandStore, new InMemoryDocumentStore({ sweepIntervalMs: 0 }))
   const publisher = wirePublisher(
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
   ).publisher
-  const service = createCartService({ documentStore, publisher, logger, currency: 'GBP' })
-  return { service, eventBus, documentStore }
+  const service = createCartService({
+    store: commandStore,
+    carts: repos.cart,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
+  return { service, eventBus }
 }
 
 const testItem = {

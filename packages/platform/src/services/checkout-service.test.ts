@@ -52,7 +52,8 @@ async function setup() {
     orderNumberStart: 1000,
   })
   const cart = createCartService({
-    documentStore,
+    store: commandStore,
+    carts: repos.cart,
     publisher,
     logger,
     currency: 'GBP',
@@ -66,12 +67,10 @@ async function setup() {
     orders: order,
     inventory,
     payments,
-    documentStore,
     currency: 'GBP',
   })
   return {
     commandStore,
-    documentStore,
     eventBus,
     product,
     cart,
@@ -255,7 +254,6 @@ describe('CheckoutService', () => {
       payments: createNativeStubPaymentsAdapter({
         logger: createLogger({ pretty: false, level: 'error' }),
       }),
-      documentStore: env.documentStore,
       currency: 'USD',
     })
     const productSnap = await env.product.create({
@@ -295,72 +293,71 @@ describe('CheckoutService', () => {
     await env.commandStore.close()
   })
 
-  it('beginCheckout rolls back partial reservations and wraps error when second reservation fails', async () => {
-    // Use the same variantId in two separate cart line items (bypassing addItem merge logic)
-    // so the first reservation depletes stock and the second fails
+  it('beginCheckout rolls back the earlier reservation and wraps the error when a later reservation fails', async () => {
+    // A cart of two distinct variants (one line per variant is a cart invariant) over an inventory whose second
+    // reservation is refused: the first one's row and decrement must roll back with the failed transaction.
     const env = await setup()
     const productSnap = await env.product.create({
       slug: 'race-widget',
       name: 'Race Widget',
       status: 'active',
       variants: [
-        {
-          sku: 'RW-1',
-          name: 'Default',
-          priceMinor: 500,
-          stock: 1,
-          lowStockThreshold: 0,
-          options: [],
-        },
+        { sku: 'RW-1', name: 'One', priceMinor: 500, stock: 3, lowStockThreshold: 0, options: [] },
+        { sku: 'RW-2', name: 'Two', priceMinor: 700, stock: 3, lowStockThreshold: 0, options: [] },
       ],
     })
-    const variant = productSnap.variants[0]!
-    const cart = await env.cart.getOrCreate()
-    // Bypass addItem merge by writing two items with the same variantId directly
-    const twoItemCart = {
-      token: cart.token,
-      customerId: null,
-      currency: 'GBP',
-      subtotalMinor: 1000,
-      expiresAt: cart.expiresAt,
-      createdAt: cart.createdAt,
-      updatedAt: cart.updatedAt,
-      items: [
-        {
-          variantId: variant.id,
-          productId: productSnap.id,
-          productName: productSnap.name,
-          variantName: variant.name,
-          priceMinor: 500,
-          imageUrl: '',
-          qty: 1,
-        },
-        {
-          variantId: variant.id,
-          productId: productSnap.id,
-          productName: productSnap.name,
-          variantName: variant.name,
-          priceMinor: 500,
-          imageUrl: '',
-          qty: 1,
-        },
-      ],
+    const variants = productSnap.variants
+    expect(variants).toHaveLength(2)
+    let reservations = 0
+    const inventory: typeof env.inventory = {
+      ...env.inventory,
+      async reserveStock(...args) {
+        reservations += 1
+        if (reservations === 2) throw new Error('second reservation refused')
+        return env.inventory.reserveStock(...args)
+      },
     }
-    await env.documentStore.put('carts', cart.token, twoItemCart, { ttl: 3600 })
-    // First item reserves the 1 unit; second item fails → catch block fires → CheckoutError
+    const logger = createLogger({ pretty: false, level: 'error' })
+    const checkout = createCheckoutService({
+      store: env.commandStore,
+      repos: env.repos,
+      publisher: env.publisher,
+      logger,
+      cart: env.cart,
+      orders: env.order,
+      inventory,
+      payments: createNativeStubPaymentsAdapter({ logger }),
+      currency: 'GBP',
+    })
+    const cart = await env.cart.getOrCreate()
+    for (const variant of variants) {
+      await env.cart.addItem(cart.token, {
+        variantId: variant.id,
+        productId: productSnap.id,
+        productName: productSnap.name,
+        variantName: variant.name,
+        priceMinor: variant.priceMinor,
+        imageUrl: '',
+        qty: 1,
+      })
+    }
     await expect(
-      env.checkout.beginCheckout({
+      checkout.beginCheckout({
         cartToken: cart.token,
         email: 'race@test.com',
         billingAddress: makeAddr(),
         shippingAddress: makeAddr(),
       }),
     ).rejects.toThrow(CheckoutError)
-    // Confirm the partial reservation was rolled back
-    const remaining = await env.commandStore.read((tx) =>
-      env.repos.inventoryReservation.findByVariant(tx, variant.id),
-    )
-    expect(remaining).toHaveLength(0)
+    expect(reservations).toBe(2)
+    for (const variant of variants) {
+      const remaining = await env.commandStore.read((tx) =>
+        env.repos.inventoryReservation.findByVariant(tx, variant.id),
+      )
+      expect(remaining).toHaveLength(0)
+      const after = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+      expect(after?.stock).toBe(variant.stock)
+    }
     await env.commandStore.close()
   })
 

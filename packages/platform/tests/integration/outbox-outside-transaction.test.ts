@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { EVT_CART_ABANDONED, type Cart, type NymbalEvent } from '@nymbalhq/types'
+import { EVT_CART_ABANDONED, type NymbalEvent } from '@nymbalhq/types'
+import { createCartService } from '../../src/services/cart-service.js'
 import { startCartAbandonmentSweeper } from '../../src/sweepers/index.js'
-import { cartWith, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
+import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { eventRows, failPublishFor, type EventRow, type FailingBus } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
+import { lineFor } from '../support/replica.js'
 
-// P1-03 AC-9 on SQLite: an event published outside any transaction (cart.abandoned.v1 from the abandonment sweeper's
-// tick) is appended to the log and delivered from it; with the bus rejecting, the row stays for the relay.
-// Each test gets its own kernel: the sweeper announces every stale cart in the document store, so a cart left by an
+// P1-03 AC-9 on SQLite: an event the abandonment sweeper's tick publishes (cart.abandoned.v1) is appended to the log
+// and delivered from it; with the bus rejecting, the row stays for the relay.
+// Each test gets its own kernel: the sweeper announces every stale cart on the database, so a cart left by an
 // earlier test would add rows (and relay retries) to the next one's assertions.
 
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
@@ -33,16 +35,21 @@ afterEach(async () => {
   await k?.close()
 })
 
-/** A cart with one item whose last activity was two days ago. */
+/** A cart with one item whose last activity was two days ago: written through a cart service whose clock is. */
 async function staleCart(): Promise<string> {
-  const token = await cartWith(k, await seedVariant(k, 5), 1)
-  const cart = await k.documentStore.get<Cart>('carts', token)
-  if (cart === null) throw new Error(`cart ${token} is not in the document store`)
-  await k.documentStore.put<Cart>('carts', token, {
-    ...cart,
-    updatedAt: new Date(Date.now() - TWO_DAYS_MS).toISOString(),
+  const seeded = await seedVariant(k, 5)
+  const twoDaysAgo = new Date(Date.now() - TWO_DAYS_MS)
+  const cart = createCartService({
+    store: k.store,
+    carts: k.repos.cart,
+    publisher: k.publisher,
+    logger: k.logger,
+    currency: k.config.store.currency,
+    now: () => twoDaysAgo,
   })
-  return token
+  const created = await cart.getOrCreate()
+  await cart.addItem(created.token, lineFor(seeded, 1))
+  return created.token
 }
 
 async function abandonedRows(token: string): Promise<EventRow[]> {
@@ -52,7 +59,8 @@ async function abandonedRows(token: string): Promise<EventRow[]> {
 
 function sweeper() {
   return startCartAbandonmentSweeper({
-    documentStore: k.documentStore,
+    store: k.store,
+    carts: k.repos.cart,
     publisher: k.publisher,
     logger: k.logger,
     intervalMs: 3_600_000,
