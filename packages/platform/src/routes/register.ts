@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './admin.js'
 import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
 import { registerStripeWebhookRoute } from './webhooks-stripe.js'
+import { validatedAdapter } from './validated-adapter.js'
 
 export interface RegisterAllRoutesDeps {
   config: NymbalConfig
@@ -29,7 +30,8 @@ export interface RegisterAllRoutesDeps {
 }
 
 export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
-  const { config, adapter, services, adapters, repos, documentStore, eventBus, publisher } = deps
+  const { config, services, adapters, repos, documentStore, eventBus, publisher } = deps
+  const adapter = validatedAdapter(deps.adapter)
 
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))

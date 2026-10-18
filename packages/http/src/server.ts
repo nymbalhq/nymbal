@@ -9,7 +9,6 @@ import type {
   RouteOptions,
 } from '@nymbalhq/types'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
-import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 import { createHealthRoute } from './routes/health.js'
 import { createProductsRoute } from './routes/products.js'
 
@@ -22,7 +21,6 @@ export interface HttpServerDeps {
 
 export interface HttpServer {
   adapter: HttpAdapter
-  security: SecurityGuard
   registerRoute(
     method: HttpMethod,
     path: string,
@@ -39,14 +37,17 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
   if (config.http.adapter !== 'fastify') {
     throw new Error(`Unsupported http.adapter: ${config.http.adapter}`)
   }
-  const adapter = new FastifyHttpAdapter({ logger, cors: config.http.cors })
-  const security = createSecurityGuard(config.security)
+  const adapter = new FastifyHttpAdapter({
+    logger,
+    cors: config.http.cors,
+    security: config.security,
+    trustProxy: config.http.trustProxy,
+  })
 
   const server: HttpServer = {
     adapter,
-    security,
     registerRoute(method, path, handler, options) {
-      adapter.registerRoute(method, path, security.wrap(handler), options)
+      adapter.registerRoute(method, path, handler, options)
     },
     registerMiddleware(middleware) {
       adapter.registerMiddleware(middleware)

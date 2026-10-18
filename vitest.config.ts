@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 // Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
@@ -165,6 +166,9 @@ export default defineConfig({
         },
       },
       {
+        resolve: {
+          alias: { '@': fileURLToPath(new URL('./apps/admin/src', import.meta.url)) },
+        },
         test: {
           name: 'admin',
           environment: 'jsdom',

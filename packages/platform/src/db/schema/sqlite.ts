@@ -105,6 +105,7 @@ export const customers = sqliteTable(
     orderCount: integer('order_count').notNull().default(0),
     totalSpentMinor: integer('total_spent_minor').notNull().default(0),
     metadata: text('metadata').notNull().default('{}'),
+    roles: text('roles').notNull().default('["customer"]'),
     requiresPasswordReset: integer('requires_password_reset', { mode: 'boolean' })
       .notNull()
       .default(false),

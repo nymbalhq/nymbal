@@ -16,6 +16,8 @@ import type {
   StreamHandler,
 } from '@nymbalhq/types'
 import { HttpError, NymbalError } from '@nymbalhq/types'
+import { securitySchema, type NymbalConfig } from '@nymbalhq/config'
+import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 
 export interface CorsOptions {
   allowedOrigins: string[]
@@ -24,6 +26,12 @@ export interface CorsOptions {
 
 export interface FastifyAdapterOptions {
   logger: Logger
+  /**
+   * The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. When
+   * omitted, the schema's defaults apply (CSRF on, the built-in login and register limits), never an open adapter.
+   */
+  security?: NymbalConfig['security']
+  /** Whether `X-Forwarded-For` sets the request IP. Off unless a trusted proxy sits in front. */
   trustProxy?: boolean
   cors?: CorsOptions
 }
@@ -31,6 +39,7 @@ export interface FastifyAdapterOptions {
 export class FastifyHttpAdapter implements HttpAdapter {
   readonly #app: FastifyInstance
   readonly #logger: Logger
+  readonly #guard: SecurityGuard
   readonly #middlewares: MiddlewareHandler[] = []
   readonly #defaultHeaders: Record<string, string> = {}
   #started = false
@@ -38,9 +47,12 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
+    this.#guard = createSecurityGuard(
+      options.security ?? securitySchema.parse({ adapter: 'middleware' }),
+    )
     this.#app = Fastify({
       logger: false,
-      trustProxy: options.trustProxy ?? true,
+      trustProxy: options.trustProxy ?? false,
       disableRequestLogging: true,
       genReqId: () => uuidv7(),
     })
@@ -65,6 +77,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
       })
     }
+    // The token a client on another origin of the same site echoes in `x-csrf-token`: it cannot read this cookie.
+    this.registerRoute('GET', '/api/csrf', (ctx) => this.#guard.issueToken(ctx))
   }
 
   get boundPort(): number {
@@ -91,18 +105,15 @@ export class FastifyHttpAdapter implements HttpAdapter {
       url: path,
       handler: async (req, reply) => {
         const ctx = this.#buildContext(req, options?.rawBody ?? false)
+        const refused = this.#guard.admit(ctx, options)
+        if (refused) return this.#applyEnvelope(reply, refused)
+        let envelope: ResponseEnvelope
         try {
-          for (const mw of this.#middlewares) {
-            const out = await mw(ctx)
-            if (out) {
-              return this.#applyEnvelope(reply, out)
-            }
-          }
-          const envelope = await handler(ctx)
-          return this.#applyEnvelope(reply, envelope)
+          envelope = await this.#runMiddlewaresThen(ctx, handler)
         } catch (err) {
-          return this.#applyEnvelope(reply, this.#renderError(err, ctx))
+          envelope = this.#renderError(err, ctx)
         }
+        return this.#applyEnvelope(reply, this.#guard.finish(ctx, envelope))
       },
       config: { routeOptions: options ?? {} },
     }
@@ -123,6 +134,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
       url: path,
       handler: async (req, reply) => {
         const ctx = this.#buildContext(req, false)
+        const refused = this.#guard.admit(ctx, options)
+        if (refused) return this.#applyEnvelope(reply, refused)
         try {
           for (const mw of this.#middlewares) {
             const out = await mw(ctx)
@@ -212,6 +225,14 @@ export class FastifyHttpAdapter implements HttpAdapter {
     if (!this.#started) return
     await this.#app.close()
     this.#started = false
+  }
+
+  async #runMiddlewaresThen(ctx: RequestContext, handler: RouteHandler): Promise<ResponseEnvelope> {
+    for (const mw of this.#middlewares) {
+      const out = await mw(ctx)
+      if (out) return out
+    }
+    return handler(ctx)
   }
 
   #buildContext(req: FastifyRequest, includeRawBody: boolean): RequestContext {

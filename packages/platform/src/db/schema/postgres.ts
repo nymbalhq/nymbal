@@ -116,6 +116,7 @@ export const customers = pgTable(
     orderCount: integer('order_count').notNull().default(0),
     totalSpentMinor: integer('total_spent_minor').notNull().default(0),
     metadata: jsonb('metadata').notNull().default({}),
+    roles: jsonb('roles').notNull().default(['customer']),
     requiresPasswordReset: boolean('requires_password_reset').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),

@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm'
-import type { Customer, CustomerAddress } from '@nymbalhq/types'
+import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -21,6 +21,8 @@ export interface CustomerInsert {
   phone?: string
   addresses?: CustomerAddress[]
   metadata?: Record<string, unknown>
+  /** Defaults to `['customer']`; only seed and admin code pass anything else. */
+  roles?: Role[]
   requiresPasswordReset?: boolean
   createdAt: Date
   updatedAt: Date
@@ -40,7 +42,7 @@ export interface CustomerUpdate {
 function rowToCustomer(
   store: CommandStore['kind'],
   row: Record<string, unknown>,
-): Customer & { passwordHash: string } {
+): CustomerWithHash {
   return {
     id: String(row.id),
     email: String(row.email),
@@ -52,13 +54,15 @@ function rowToCustomer(
     orderCount: Number(row.orderCount ?? 0),
     totalSpentMinor: Number(row.totalSpentMinor ?? 0),
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
+    roles: parseJson<Role[]>(store, row.roles, ['customer']),
     requiresPasswordReset: Boolean(row.requiresPasswordReset),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
 }
 
-export type CustomerWithHash = Customer & { passwordHash: string }
+/** A stored customer: its roles column is always read. */
+export type CustomerWithHash = Customer & { passwordHash: string; roles: Role[] }
 
 export interface CustomerRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<CustomerWithHash | null>
@@ -149,6 +153,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
             ...common,
             addresses: JSON.stringify(c.addresses ?? []),
             metadata: JSON.stringify(c.metadata ?? {}),
+            roles: JSON.stringify(c.roles ?? ['customer']),
             createdAt: c.createdAt.toISOString(),
             updatedAt: c.updatedAt.toISOString(),
           })
@@ -161,6 +166,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
           ...common,
           addresses: c.addresses ?? [],
           metadata: c.metadata ?? {},
+          roles: c.roles ?? ['customer'],
           createdAt: c.createdAt,
           updatedAt: c.updatedAt,
         })
