@@ -1,12 +1,12 @@
 # id: I102
 # kind: injected
 # defect: finalize no longer commits the order reservations
-# where: packages/platform/src/services/checkout-service.ts:189-191
+# where: packages/platform/src/services/checkout-service.ts:187-189
 # killed-by: packages/platform/src/services/checkout-service.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -186,9 +186,6 @@
+@@ -184,9 +184,6 @@
            : []
  
          // Commit reservations (permanently decrements stock via stock-adjustment log)

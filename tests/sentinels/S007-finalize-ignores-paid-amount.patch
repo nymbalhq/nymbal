@@ -1,5 +1,5 @@
 # id: S007
 # kind: present
 # defect: finalize(paymentIntentId, paidAmountMinor) never compares the paid amount with order.totalMinor
-# where: packages/platform/src/services/checkout-service.ts:174-226
+# where: packages/platform/src/services/checkout-service.ts:172-235
 # killed-by: P1-05 acceptance tests
