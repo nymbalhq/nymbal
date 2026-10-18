@@ -76,7 +76,7 @@ export async function warmDocumentStore(deps: WarmDocumentStoreDeps): Promise<Wa
   }
 
   if (events.length > 0) {
-    await eventBus.publishBatch(events)
+    await eventBus.replay(events)
   }
 
   logger.info(

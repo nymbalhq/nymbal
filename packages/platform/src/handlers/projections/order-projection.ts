@@ -92,6 +92,7 @@ export async function registerOrderProjection(deps: RegisterOrderProjectionDeps)
 
   await eventBus.subscribe(EVT_ORDER_PLACED, onPlaced as EventHandler, {
     name: 'order-projection-placed',
+    derived: true,
   })
   await eventBus.subscribe(
     [
@@ -103,6 +104,6 @@ export async function registerOrderProjection(deps: RegisterOrderProjectionDeps)
       EVT_ORDER_PARTIALLY_REFUNDED,
     ],
     onStatusChange as EventHandler,
-    { name: 'order-projection-status' },
+    { name: 'order-projection-status', derived: true },
   )
 }

@@ -15,6 +15,13 @@
       "when": 1792286470820,
       "tag": "0001_neat_zeigeist",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792302105204,
+      "tag": "0002_sloppy_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

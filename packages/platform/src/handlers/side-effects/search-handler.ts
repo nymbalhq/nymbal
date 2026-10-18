@@ -4,27 +4,24 @@ import {
   EVT_PRODUCT_UPDATED,
   type EventBusAdapter,
   type EventHandler,
-  type Logger,
   type ProductCreatedV1Payload,
   type ProductDeletedV1Payload,
   type ProductUpdatedV1Payload,
   type SearchAdapter,
   type SearchDocument,
 } from '@nymbalhq/types'
-import { withIdempotency } from '../idempotency.js'
-import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 
 export interface RegisterSearchHandlerDeps {
   eventBus: EventBusAdapter
   search: SearchAdapter
-  logger: Logger
-  processedEventRepo: ProcessedEventRepository
 }
 
 export async function registerSearchHandler(deps: RegisterSearchHandlerDeps): Promise<void> {
-  const { eventBus, search, logger, processedEventRepo } = deps
+  const { eventBus, search } = deps
 
-  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (event) => {
+  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (
+    event,
+  ) => {
     const p = event.payload.product
     const doc: SearchDocument = {
       id: p.id,
@@ -45,20 +42,14 @@ export async function registerSearchHandler(deps: RegisterSearchHandlerDeps): Pr
     await search.remove([event.payload.productId])
   }
 
-  await eventBus.subscribe(
-    [EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED],
-    withIdempotency('search:product-upsert', onUpsert as EventHandler, {
-      repo: processedEventRepo,
-      logger,
-    }),
-    { name: 'search-product-upsert' },
-  )
-  await eventBus.subscribe(
-    EVT_PRODUCT_DELETED,
-    withIdempotency('search:product-delete', onDelete as EventHandler, {
-      repo: processedEventRepo,
-      logger,
-    }),
-    { name: 'search-product-delete' },
-  )
+  // Derived state: indexing and removing by document id is idempotent, so no processed-event record is kept, and
+  // warm-up's replay rebuilds the index.
+  await eventBus.subscribe([EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED], onUpsert as EventHandler, {
+    name: 'search-product-upsert',
+    derived: true,
+  })
+  await eventBus.subscribe(EVT_PRODUCT_DELETED, onDelete as EventHandler, {
+    name: 'search-product-delete',
+    derived: true,
+  })
 }

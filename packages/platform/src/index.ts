@@ -42,6 +42,7 @@ export {
   type PublishOptions,
   type CreatePublisherOptions,
 } from './events/publisher.js'
+export { createRelay, type Relay, type CreateRelayOptions } from './events/relay.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
@@ -49,7 +50,9 @@ export { createApp, type NymbalApp, type CreateAppOptions } from './app.js'
 export {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
+  startEventRetentionSweeper,
   type SweeperHandle,
+  type EventRetentionSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
 export * from './adapters/index.js'

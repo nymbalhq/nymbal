@@ -48,5 +48,6 @@ export async function registerInventoryProjection(
 
   await eventBus.subscribe(EVT_INVENTORY_CHANGED, handler as EventHandler, {
     name: 'inventory-projection',
+    derived: true,
   })
 }

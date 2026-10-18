@@ -7,3 +7,7 @@ export {
   startCartAbandonmentSweeper,
   type CartAbandonmentSweeperDeps,
 } from './cart-abandonment-sweeper.js'
+export {
+  startEventRetentionSweeper,
+  type EventRetentionSweeperDeps,
+} from './event-retention-sweeper.js'

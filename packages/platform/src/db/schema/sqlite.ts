@@ -267,6 +267,38 @@ export const reviews = sqliteTable(
   }),
 )
 
+// --- Event log (outbox) and handler idempotency ----------------------------
+
+export const events = sqliteTable(
+  'events',
+  {
+    seq: integer('seq').primaryKey({ autoIncrement: true }),
+    id: text('id').notNull(),
+    type: text('type').notNull(),
+    envelope: text('envelope').notNull(),
+    createdAt: text('created_at').notNull(),
+    deliveredAt: text('delivered_at'),
+    attempts: integer('attempts').notNull().default(0),
+    deadAt: text('dead_at'),
+  },
+  (t) => ({
+    idUnique: uniqueIndex('events_id_unique').on(t.id),
+    undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+  }),
+)
+
+export const processedEvents = sqliteTable(
+  'processed_events',
+  {
+    handlerName: text('handler_name').notNull(),
+    eventId: text('event_id').notNull(),
+    processedAt: text('processed_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.handlerName, t.eventId] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -280,4 +312,6 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  events,
+  processedEvents,
 }
