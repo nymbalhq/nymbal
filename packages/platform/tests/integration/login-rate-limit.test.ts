@@ -7,9 +7,10 @@ import { openRaw, type RawReader } from '../support/raw.js'
 import { login, primedShopper } from '../support/security.js'
 
 // P1-06 AC-5 and AC-6 on a served kernel (SQLite) with no user rule for `/api/auth/login`, so the built-in default
-// (10 per 15m, block) applies, keyed by IP and by the lowercased email; failures count, a success clears both.
-// Kills: no default login rule, the guard running after the handler, successes counted against the limit, no
-// per-email key, `trustProxy` defaulting to true.
+// (10 per 15m, block) applies, keyed by IP and by the lowercased email; failures count, a success clears the email
+// bucket only, and the IP bucket expires with its window. Kills: no default login rule, the guard running after the
+// handler, successes counted against the limit, a success clearing the IP bucket, no per-email key, `trustProxy`
+// defaulting to true.
 
 const PASSWORD = 'correct-horse-battery'
 const WRONG = 'wrong-password'
@@ -74,7 +75,7 @@ describe('login rate limit (built-in default)', () => {
     })
   })
 
-  it('AC-5: 15 successful logins in a row from one IP all answer 200, because a success clears the bucket; 10 failures after them still answer 401 and the 11th 429', async () => {
+  it('AC-5: 15 successful logins in a row from one IP all answer 200, because successes are not counted; 10 failures after them still answer 401 and the 11th 429', async () => {
     await withServed(withoutAuthRateRules, async (s, raw) => {
       const customer = await registered(s)
       const shop = await primedShopper(s.baseUrl)
@@ -92,7 +93,7 @@ describe('login rate limit (built-in default)', () => {
         tokensBefore + runs,
       )
 
-      // The limiter is live on this server, and the successes left nothing in the buckets: a full run of failures
+      // The limiter is live on this server, and the successes added nothing to either bucket: a full run of failures
       // still fits before the 429.
       const failures: number[] = []
       for (let i = 0; i <= LIMIT; i += 1) {
@@ -102,6 +103,35 @@ describe('login rate limit (built-in default)', () => {
       }
       expect(failures.slice(0, LIMIT)).toEqual(Array.from({ length: LIMIT }, () => 401))
       expect(failures[LIMIT]).toBe(429)
+    })
+  })
+
+  it('AC-5b: from one IP, 9 wrong logins at 9 emails, a successful login to another account, and a wrong login at a 10th email answer 401, 200, 401; the success does not clear the IP bucket, so the next login, right password included, answers 429', async () => {
+    await withServed(withoutAuthRateRules, async (s) => {
+      const own = await registered(s)
+      const next = await registered(s)
+      const shop = await primedShopper(s.baseUrl)
+      const sprayed = (i: number): string => `spray5b-${i}-${randomUUID()}@p1-06.test`
+
+      const before: number[] = []
+      for (let i = 0; i < LIMIT - 1; i += 1) {
+        before.push(
+          (await login(s.baseUrl, shop.jar, { email: sprayed(i), password: WRONG })).status,
+        )
+      }
+      expect(before).toEqual(Array.from({ length: LIMIT - 1 }, () => 401))
+
+      const success = await login(s.baseUrl, shop.jar, { email: own.email, password: PASSWORD })
+      expect(success.status, JSON.stringify(success.body)).toBe(200)
+
+      const tenth = await login(s.baseUrl, shop.jar, { email: sprayed(LIMIT), password: WRONG })
+      expect(tenth.status, JSON.stringify(tenth.body)).toBe(401)
+
+      // Ten failures sit in the IP bucket whatever the success did to the email buckets.
+      const blocked = await login(s.baseUrl, shop.jar, { email: next.email, password: PASSWORD })
+      expect(blocked.status, JSON.stringify(blocked.body)).toBe(429)
+      expect(blocked.body.error?.code).toBe('rate_limit.block')
+      expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThanOrEqual(1)
     })
   })
 
