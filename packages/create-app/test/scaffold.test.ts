@@ -1,5 +1,6 @@
 import { readdir, readFile, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -115,11 +116,11 @@ describe('mergePackageJson', () => {
     type: 'module',
     engines: { node: '>=22' },
     scripts: {
-      dev: 'astro dev --port 4321',
+      dev: 'astro dev',
       build: 'astro build',
     },
     dependencies: {
-      astro: '^4.16.7',
+      astro: '^7.4.0',
       '@nymbalhq/sdk': 'workspace:*',
       '@nymbalhq/types': 'workspace:*',
       '@nymbalhq/web-components': 'workspace:*',
@@ -134,7 +135,7 @@ describe('mergePackageJson', () => {
 
   it('preserves framework-native scripts', () => {
     const merged = mergePackageJson(templatePkg, versions)
-    expect((merged.scripts as Record<string, string>)['dev']).toBe('astro dev --port 4321')
+    expect((merged.scripts as Record<string, string>)['dev']).toBe(templatePkg.scripts.dev)
     expect((merged.scripts as Record<string, string>)['build']).toBe('astro build')
   })
 
@@ -303,9 +304,9 @@ describe('scaffold() output', () => {
       })
 
       it('patches package.json name to project directory', async () => {
-        const pkg = JSON.parse(
-          await readFile(resolve(outDir, 'package.json'), 'utf8'),
-        ) as { name: string }
+        const pkg = JSON.parse(await readFile(resolve(outDir, 'package.json'), 'utf8')) as {
+          name: string
+        }
         expect(pkg.name).toBe(`test-${tmpl}`)
       })
 
@@ -437,13 +438,7 @@ describe('syncScaffold main() integration', () => {
 
 describe('override resolution (project layer wins)', () => {
   const tmpBase = resolve(PKG_ROOT, 'test', '.tmp-override')
-  const templateDefaultIndex = resolve(
-    SCAFFOLD_TEMPLATES,
-    'astro',
-    'src',
-    'pages',
-    'index.astro',
-  )
+  const templateDefaultIndex = resolve(SCAFFOLD_TEMPLATES, 'astro', 'src', 'pages', 'index.astro')
   let outDir: string
 
   beforeAll(async () => {
@@ -508,6 +503,82 @@ describe('override resolution (project layer wins)', () => {
     expect(index).toContain('<HeroSection')
     expect(index).toContain('<ProductCard')
   })
+})
+
+// ─── P1-09 AC-10: the scaffold equals the templates ──────────────────────────
+
+// The scaffold under scaffold/templates is committed, so a template upgrade that skips `sync:scaffold` ships the old
+// framework to every new project. The framework majors are the ones the spec names (decision 6); each scaffold range
+// must also equal the template's own, so the two cannot drift apart within a major.
+
+type Manifest = {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}
+
+function rangeOf(pkg: Manifest, name: string): string | undefined {
+  return pkg.dependencies?.[name] ?? pkg.devDependencies?.[name]
+}
+
+function majorOf(range: string | undefined): number | null {
+  const match = /(\d+)/.exec(range ?? '')
+  return match ? Number(match[1]) : null
+}
+
+const FRAMEWORK: Record<'astro' | 'nextjs', Record<string, number>> = {
+  astro: { astro: 7 },
+  nextjs: { next: 16, react: 19, 'react-dom': 19, '@types/react': 19 },
+}
+
+/** Tracked files of templates/<t> that sync-scaffold copies, package.json aside (it is merged, not copied). */
+function trackedTemplateFiles(tmpl: 'astro' | 'nextjs'): string[] {
+  const out = execFileSync('git', ['ls-files', '-z', `templates/${tmpl}`], {
+    cwd: MONOREPO_ROOT,
+    encoding: 'utf8',
+  })
+  return out
+    .split('\0')
+    .filter((path) => path !== '')
+    .map((path) => path.slice(`templates/${tmpl}/`.length))
+    .filter((rel) => rel !== 'package.json')
+    .filter((rel) =>
+      rel
+        .split('/')
+        .every((_, i, parts) => shouldCopyScaffoldEntry(parts.slice(0, i + 1).join('/'))),
+    )
+}
+
+describe('AC-10: the scaffold equals the templates', () => {
+  for (const tmpl of ['astro', 'nextjs'] as const) {
+    it(`AC-10: the ${tmpl} scaffold declares the upgraded framework majors, at the template's own ranges`, () => {
+      const scaffoldPkg = JSON.parse(
+        readFileSync(resolve(SCAFFOLD_TEMPLATES, tmpl, 'package.json'), 'utf8'),
+      ) as Manifest
+      const templatePkg = JSON.parse(
+        readFileSync(resolve(MONOREPO_ROOT, 'templates', tmpl, 'package.json'), 'utf8'),
+      ) as Manifest
+
+      const names = Object.keys(FRAMEWORK[tmpl])
+      const majors = Object.fromEntries(names.map((n) => [n, majorOf(rangeOf(scaffoldPkg, n))]))
+      expect(majors).toEqual(FRAMEWORK[tmpl])
+      for (const name of names) {
+        expect(rangeOf(scaffoldPkg, name), name).toBe(rangeOf(templatePkg, name))
+      }
+    })
+
+    it(`AC-10: every tracked ${tmpl} template file but package.json is byte-identical in the scaffold`, () => {
+      const files = trackedTemplateFiles(tmpl)
+      expect(files.length).toBeGreaterThan(0)
+      const differing = files.filter((rel) => {
+        const scaffolded = resolve(SCAFFOLD_TEMPLATES, tmpl, rel)
+        if (!existsSync(scaffolded)) return true
+        return !readFileSync(scaffolded).equals(
+          readFileSync(resolve(MONOREPO_ROOT, 'templates', tmpl, rel)),
+        )
+      })
+      expect(differing).toEqual([])
+    })
+  }
 })
 
 // ─── readNymbalVersions ───────────────────────────────────────────────────────
