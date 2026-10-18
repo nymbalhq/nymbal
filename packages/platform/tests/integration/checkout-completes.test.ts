@@ -150,14 +150,21 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
   })
 
   // Kills: an adapter `succeeded` taken at its word: the order confirmed (or reported succeeded) although the units it
-  // reserved went to another order while the shopper paid.
-  it('AC-4: an adapter that answers succeeded after another order took the reserved stock gives payment failed with stock_unavailable and no confirmed order', async () => {
+  // reserved went to another order while the shopper paid. Diff-review finding M2 also kills: the captured payment left
+  // on a pending order, neither attached nor refunded, and the draft left pending with what it reserved.
+  it('AC-4: (M2) an adapter that answers succeeded after another order took the reserved stock gives payment failed with stock_unavailable, refunds that intent once through the adapter, and cancels the order with its reservations released', async () => {
     const qty = 2
     const seeded = await seedVariant(k, qty)
     let other: Awaited<ReturnType<typeof checkoutOf>> | undefined
+    let created: string | undefined
+    const refunded: string[] = []
     const stub = k.app.adapters.payments
     const payments: PaymentsAdapter = {
       ...stub,
+      async refund(paymentId, amountMinor, reason) {
+        refunded.push(paymentId)
+        return stub.refund(paymentId, amountMinor, reason)
+      },
       async createPaymentIntent(params) {
         // The reservation lapses while the shopper pays, and another shopper takes every unit it gave back.
         const held = await k.store.read((tx) =>
@@ -167,8 +174,9 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
           await k.services.inventory.releaseReservation(r.reservationId, 'expired')
         }
         other = await checkoutOf(k, seeded, qty)
+        created = `pi_ac4_${randomUUID()}`
         return {
-          id: `pi_ac4_${randomUUID()}`,
+          id: created,
           clientSecret: `pi_ac4_secret_${randomUUID()}`,
           amountMinor: params.amountMinor,
           currency: params.currency,
@@ -201,6 +209,13 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
     expect(result.orderStatus).not.toBe('confirmed')
     expect(await orderStatus(raw, result.orderId)).not.toBe('confirmed')
     expect(await paidFor(raw, result.orderId)).toEqual([])
+    // M2: the captured money goes back, once, for the intent this checkout made; the draft does not stay pending.
+    expect(created).toBeDefined()
+    expect(result.paymentIntent.id).toBe(created)
+    expect(refunded).toEqual([result.paymentIntent.id])
+    expect(result.orderStatus).toBe('cancelled')
+    expect(await orderStatus(raw, result.orderId)).toBe('cancelled')
+    expect(await reservationsFor(raw, result.orderId)).toBe(0)
     // The other order keeps what it took: nothing went below zero.
     expect(other).toBeDefined()
     expect(await reservationsFor(raw, other!.orderId)).toBe(1)
