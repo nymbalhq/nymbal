@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from 'uuid'
 import {
   CheckoutError,
   EVT_CART_CONVERTED,
+  EVT_CART_UPDATED,
   EVT_ORDER_PAID,
   EVT_PAYMENT_CAPTURED,
   NotFoundError,
@@ -225,7 +226,13 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
         // shopper paid is not a reason to refuse a paid order; cart.converted still records where the order came from.
         const cartToken = metadata.cartToken
         if (cartToken) {
-          if (await cart.get(cartToken)) await cart.clear(cartToken)
+          if (await repos.cart.clearIfLive(tx, cartToken, new Date())) {
+            await publisher.publish(EVT_CART_UPDATED, {
+              cartId: cartToken,
+              itemCount: 0,
+              totalMinor: 0,
+            })
+          }
           await publisher.publish(EVT_CART_CONVERTED, {
             cartId: cartToken,
             orderId: updated.id,

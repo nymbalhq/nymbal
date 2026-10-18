@@ -36,6 +36,9 @@ export interface CartRepository extends StoreRepository {
   /** Writes the cart whole and starts a new inactivity period (clears the abandonment claim). */
   put(tx: Tx, cart: Cart): Promise<void>
   remove(tx: Tx, token: string): Promise<void>
+  /** Empties the cart if it is still live at `at`, in one conditional write; false when there was no live row to
+   *  empty (expired, or deleted by a sweep or a merge). Starts a new inactivity period; the expiry stays as it was. */
+  clearIfLive(tx: Tx, token: string, at: Date): Promise<boolean>
   /** Deletes every cart whose expiry is at or before `at`; returns how many. */
   deleteExpired(tx: Tx, at: Date): Promise<number>
   /** Up to `limit` tokens due a notice, in token order after `after`; claims nothing. */
@@ -207,6 +210,38 @@ export function createCartRepository(store: CommandStore): CartRepository {
         return
       }
       await postgresDb(tx).delete(postgresSchema.carts).where(eq(postgresSchema.carts.token, token))
+    },
+    async clearIfLive(tx, token, at) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.carts
+        const result = sqliteDb(tx)
+          .update(t)
+          .set({
+            items: '[]',
+            lineCount: 0,
+            subtotalMinor: 0,
+            updatedAt: at.toISOString(),
+            abandonedNotifiedAt: null,
+          })
+          .where(and(eq(t.token, token), gt(t.expiresAt, at.toISOString())))
+          .run()
+        return result.changes > 0
+      }
+      // Under READ COMMITTED the update waits for a concurrent delete or write on the row and re-checks the condition
+      // against what that one committed, so a row swept in between is skipped rather than reported missing.
+      const t = postgresSchema.carts
+      const rows = await postgresDb(tx)
+        .update(t)
+        .set({
+          items: [],
+          lineCount: 0,
+          subtotalMinor: 0,
+          updatedAt: at,
+          abandonedNotifiedAt: null,
+        })
+        .where(and(eq(t.token, token), gt(t.expiresAt, at)))
+        .returning({ token: t.token })
+      return rows.length > 0
     },
     async deleteExpired(tx, at) {
       if (tx.kind === 'sqlite') {
