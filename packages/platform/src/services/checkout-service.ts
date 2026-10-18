@@ -105,6 +105,12 @@ const CANCEL_ACTOR = 'system:checkout-cancel'
 /** Cancels of a changed cart's earlier intent one checkout makes before it gives up to a busier writer. */
 const SUPERSEDE_ATTEMPTS = 3
 
+/**
+ * A pending order still without an intent this long after it was placed is abandoned (its T2 failed, or the process
+ * died between T1 and T2): longer than any provider call takes.
+ */
+const ABANDON_AFTER_MS = 120_000
+
 /** What one pass under the cart lock decided. */
 type Placement =
   | { kind: 'placed'; order: Order }
@@ -335,13 +341,14 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
 
   /**
    * T1, under the cart's row lock: the cart's pending order is returned when it is for this cart, superseded when the
-   * cart changed and its intent is cancelled (`cancelled`), or else the stock is reserved and a new pending order
-   * created with no intent yet. Nothing is written unless an order is created.
+   * cart changed and its intent is cancelled, or cancelled itself when its intent is no longer open (`closed`, by the
+   * reason), or abandoned when it never got an intent; or else the stock is reserved and a new pending order created
+   * with no intent yet. Nothing is written unless an order is created or cancelled.
    */
   async function place(
     tx: Tx,
     input: BeginCheckoutInput,
-    cancelled: ReadonlySet<string>,
+    closed: ReadonlyMap<string, string>,
   ): Promise<Placement> {
     // Read again under the lock: the lines to order are the ones no concurrent cart command can change now.
     const cartDoc = await repos.cart.lock(tx, input.cartToken)
@@ -351,16 +358,21 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     const pending = await repos.order.findPendingByCartToken(tx, input.cartToken)
     if (pending !== null) {
       const { paymentIntentId } = pending
-      // Another checkout of this cart is between its order and its intent; a second intent is never made.
       if (paymentIntentId === null) {
-        throw new CheckoutError('in_progress', 'A checkout for this cart is already in progress')
+        // Another checkout of this cart is between its order and its intent; a second intent is never made.
+        if (Date.now() - Date.parse(pending.createdAt) <= ABANDON_AFTER_MS) {
+          throw new CheckoutError('in_progress', 'A checkout for this cart is already in progress')
+        }
+        await cancelDraft(pending.id, 'abandoned: no payment intent')
+      } else {
+        const reason = closed.get(paymentIntentId)
+        if (reason === undefined) {
+          if (sameLines(pending, cartDoc))
+            return { kind: 'existing', order: { ...pending, paymentIntentId } }
+          return { kind: 'cancel-first', order: { ...pending, paymentIntentId } }
+        }
+        await cancelDraft(pending.id, reason)
       }
-      if (sameLines(pending, cartDoc))
-        return { kind: 'existing', order: { ...pending, paymentIntentId } }
-      if (!cancelled.has(paymentIntentId)) {
-        return { kind: 'cancel-first', order: { ...pending, paymentIntentId } }
-      }
-      await cancelDraft(pending.id, 'superseded: the cart changed')
     }
 
     await checkStock(tx, cartDoc)
@@ -411,11 +423,18 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     return { kind: 'placed', order }
   }
 
-  /** The cart's pending order, answered again with its intent as the provider holds it now. */
+  /**
+   * The cart's pending order, answered again with its intent as the provider holds it now, or the reason to cancel the
+   * order when the provider failed or cancelled that intent. Never `succeeded`: the order is still pending, and only
+   * finalize confirms it.
+   */
   async function answerExisting(
     order: Order & { paymentIntentId: string },
-  ): Promise<BeginCheckoutResult> {
+  ): Promise<BeginCheckoutResult | { closed: string }> {
     const paymentIntent = await payments.getPaymentIntent(order.paymentIntentId)
+    if (outcomeOf(paymentIntent.status) === 'failed') {
+      return { closed: `payment_${paymentIntent.status}` }
+    }
     return {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -463,7 +482,9 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       throw err
     }
 
-    return store.transaction(async (tx) => {
+    // Why a captured payment did not confirm the order, when it did not.
+    let unconfirmed = null as string | null
+    const answer = await store.transaction(async (tx) => {
       await repos.cart.lock(tx, input.cartToken)
       await repos.order.setPaymentIntent(tx, order.id, intent.id, new Date())
       let payment: CheckoutPayment
@@ -473,9 +494,9 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
           amountMinor: intent.amountMinor,
           currency: intent.currency,
         })
-        payment = done.finalized
-          ? { status: 'succeeded' }
-          : { status: 'failed', reason: done.reason ?? 'not_confirmed' }
+        if (!done.finalized) unconfirmed = done.reason ?? 'not_confirmed'
+        payment =
+          unconfirmed === null ? { status: 'succeeded' } : { status: 'failed', reason: unconfirmed }
       } else if (outcome === 'failed') {
         const reason = `payment_${intent.status}`
         await cancelDraft(order.id, reason)
@@ -503,6 +524,15 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
         payment,
       }
     })
+    // A capture that did not confirm its still-pending order goes back in full, after the commit and outside any
+    // transaction (finalize already refunded one whose order was cancelled). The draft is cancelled first: a refund
+    // that throws then leaves a cancelled order, which the webhook's backstop refunds, never a pending one to confirm.
+    if (unconfirmed !== null && answer.orderStatus === 'pending') {
+      await cancelDraft(order.id, unconfirmed)
+      await payments.refund(intent.id)
+      return { ...answer, orderStatus: 'cancelled' }
+    }
+    return answer
   }
 
   async function finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult> {
@@ -542,17 +572,23 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
   return {
     async beginCheckout(input) {
       await loadValidCart(input.cartToken)
-      // Intents this checkout has cancelled with the provider, so a pending order holding one may be superseded.
-      const cancelled = new Set<string>()
+      // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with the
+      // reason the pending order holding one is cancelled when the next pass finds it under the lock.
+      const closed = new Map<string, string>()
       for (let attempt = 0; ; attempt += 1) {
-        const placement = await store.transaction((tx) => place(tx, input, cancelled))
+        const placement = await store.transaction((tx) => place(tx, input, closed))
         if (placement.kind === 'placed') return pay(input, placement.order)
-        if (placement.kind === 'existing') return answerExisting(placement.order)
+        if (placement.kind === 'existing') {
+          const answer = await answerExisting(placement.order)
+          if (!('closed' in answer)) return answer
+          closed.set(placement.order.paymentIntentId, answer.closed)
+          continue
+        }
         if (attempt === SUPERSEDE_ATTEMPTS) {
           throw new CheckoutError('in_progress', 'A checkout for this cart is already in progress')
         }
         await cancelIntent(placement.order)
-        cancelled.add(placement.order.paymentIntentId)
+        closed.set(placement.order.paymentIntentId, 'superseded: the cart changed')
       }
     },
 

@@ -1,6 +1,7 @@
 import type { Address } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import { NymbalApiError } from '../adapter/fetch-client.js'
+import type { CartStore } from './cart-store.js'
 import type { CheckoutResult, CheckoutState, ShippingMethod } from '../types.js'
 import { createStore } from './create-store.js'
 
@@ -38,7 +39,11 @@ export interface CheckoutStore {
   destroy(): void
 }
 
-export function createCheckoutStore(adapter: CommerceAdapter): CheckoutStore {
+/**
+ * `cart`, when given, is loaded again once the server has answered a submit: placing an order changes the cart on the
+ * server (emptied when confirmed, kept while awaiting payment), and whatever renders the cart store must show that.
+ */
+export function createCheckoutStore(adapter: CommerceAdapter, cart?: CartStore): CheckoutStore {
   const store = createStore<CheckoutState>(INITIAL_STATE)
 
   function setEmail(email: string): void {
@@ -84,13 +89,17 @@ export function createCheckoutStore(adapter: CommerceAdapter): CheckoutStore {
             : null,
         ...(status === 'succeeded' && { step: 'confirmation' as const }),
       })
+      await cart?.load()
       return result
     } catch (err) {
+      const placedOrderNumber = namedOrder(err)
       store.setState({
         paymentStatus: 'failed',
         error: err instanceof Error ? err.message : String(err),
-        placedOrderNumber: namedOrder(err),
+        placedOrderNumber,
       })
+      // A refusal naming an order: the cart became (or is becoming) that order on the server.
+      if (placedOrderNumber !== null) await cart?.load()
       return null
     }
   }

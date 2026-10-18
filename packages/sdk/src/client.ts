@@ -77,7 +77,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
   const product = createProductStore(adapter)
   const productList = createProductListStore(adapter)
   const search = createSearchStore(adapter)
-  const checkout = createCheckoutStore(adapter)
+  const checkout = createCheckoutStore(adapter, cart)
   const auth = createAuthStore(adapter, tokenManager)
 
   const customer: CustomerAccount = {
