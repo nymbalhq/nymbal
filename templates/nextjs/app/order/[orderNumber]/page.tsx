@@ -3,22 +3,37 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { fetchOrder } from '@/lib/api'
 import { OrderSummary } from '@/components/server/OrderSummary'
+import { OrderStatusRefresh } from '@/components/client/OrderStatusRefresh'
+import { isPaid, orderHeading } from '@/lib/order-status'
 import styles from '@/styles/pages/confirmation.module.css'
 
 interface OrderPageProps {
   params: Promise<{ orderNumber: string }>
 }
 
-export async function generateMetadata({
-  params,
-}: OrderPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: OrderPageProps): Promise<Metadata> {
   const { orderNumber } = await params
   return {
     title: `Order ${orderNumber}`,
   }
 }
 
-function AddressBlock({ title, address }: { title: string; address: { firstName?: string; lastName?: string; addressLine1: string; addressLine2?: string; city: string; region: string; postalCode: string; country: string } | null }) {
+function AddressBlock({
+  title,
+  address,
+}: {
+  title: string
+  address: {
+    firstName?: string
+    lastName?: string
+    addressLine1: string
+    addressLine2?: string
+    city: string
+    region: string
+    postalCode: string
+    country: string
+  } | null
+}) {
   if (!address) return null
 
   return (
@@ -43,31 +58,41 @@ export default async function OrderPage({ params }: OrderPageProps) {
   const order = await fetchOrder(orderNumber)
 
   if (!order) notFound()
+  const paid = isPaid(order.status)
 
   return (
     <div className={`container ${styles.page}`}>
+      <OrderStatusRefresh orderNumber={order.orderNumber} status={order.status} />
       <div className={styles.wrapper}>
         <div className={styles.successHeader}>
-          <div className={styles.checkCircle}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
-          <h1 className={styles.successTitle}>Order Confirmed</h1>
+          {paid && (
+            <div className={styles.checkCircle}>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+          )}
+          <h1 className={styles.successTitle} data-testid="order-heading">
+            {orderHeading(order.status)}
+          </h1>
           <p className={styles.successSubtitle}>
-            Thank you for your order. Your order number is{' '}
+            {paid ? 'Thank you for your order. ' : ''}Your order number is{' '}
             <span className={styles.orderNumber} data-testid="order-number">
               {order.orderNumber}
             </span>
-            .
+            . Status:{' '}
+            <span data-testid="order-status" style={{ textTransform: 'capitalize' }}>
+              {order.status}
+            </span>
+            .{order.status === 'pending' && ' We will confirm it once the payment arrives.'}
           </p>
         </div>
 

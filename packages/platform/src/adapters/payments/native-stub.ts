@@ -24,8 +24,32 @@ interface StubIntent {
 }
 
 /**
+ * Like Stripe's test cards, the receipt email's local part picks the outcome: ending `+stub-pending` the intent waits
+ * for the shopper (a webhook pays it), ending `+stub-decline` it fails, and otherwise it is captured at creation.
+ */
+function statusFor(receiptEmail: string | undefined): PaymentStatus {
+  const address = receiptEmail ?? ''
+  const at = address.lastIndexOf('@')
+  const local = at < 0 ? address : address.slice(0, at)
+  if (local.endsWith('+stub-pending')) return 'requires_action'
+  if (local.endsWith('+stub-decline')) return 'failed'
+  return 'succeeded'
+}
+
+function toIntent(intent: StubIntent): PaymentIntent {
+  return {
+    id: intent.id,
+    clientSecret: `${intent.id}_secret`,
+    amountMinor: intent.amountMinor,
+    currency: intent.currency,
+    status: intent.status,
+  }
+}
+
+/**
  * Deterministic payments adapter for local development without Stripe keys.
- * Every intent immediately succeeds; webhook verification is a no-op.
+ * Every intent succeeds at creation unless the receipt email asks otherwise (`statusFor`); webhook verification is a
+ * no-op.
  */
 export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): PaymentsAdapter {
   const { logger } = deps
@@ -45,18 +69,12 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
         id,
         amountMinor: params.amountMinor,
         currency: params.currency,
-        status: 'requires_confirmation',
+        status: statusFor(params.receiptEmail),
         ...(params.orderRef !== undefined && { orderRef: params.orderRef }),
       }
       intents.set(id, intent)
-      logger.debug({ intentId: id }, 'stub payment intent created')
-      return {
-        id,
-        clientSecret: `${id}_secret`,
-        amountMinor: intent.amountMinor,
-        currency: intent.currency,
-        status: intent.status,
-      }
+      logger.debug({ intentId: id, status: intent.status }, 'stub payment intent created')
+      return toIntent(intent)
     },
 
     async capturePayment(intentId): Promise<PaymentCapture> {
@@ -87,10 +105,25 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
       return intents.get(intentId)?.status ?? 'failed'
     },
 
+    async getPaymentIntent(intentId): Promise<PaymentIntent> {
+      const intent = intents.get(intentId)
+      if (!intent) throw new PaymentError('intent_failed', `unknown intent ${intentId}`)
+      return toIntent(intent)
+    },
+
+    async cancelPaymentIntent(intentId): Promise<void> {
+      // An intent this process never made (it restarted) cannot be paid through the stub: nothing to cancel.
+      const intent = intents.get(intentId)
+      if (!intent) return
+      if (intent.status === 'succeeded') {
+        throw new PaymentError('cancel_refused', `intent ${intentId} is already captured`)
+      }
+      intent.status = 'cancelled'
+    },
+
     async parseWebhook(rawBody): Promise<WebhookResult> {
       try {
-        const body =
-          typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8')
+        const body = typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8')
         const event = JSON.parse(body) as {
           id?: string
           kind?: WebhookResult['kind']

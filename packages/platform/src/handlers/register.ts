@@ -65,6 +65,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     email: adapters.email,
     logger: handlerLogger.child({ handler: 'email' }),
     processedEventRepo: repos.processedEvent,
+    orderRepo: repos.order,
     storeName: config.store.name,
   })
   await registerSearchHandler({
