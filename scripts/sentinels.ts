@@ -236,7 +236,7 @@ function restore(root: string, paths: Set<string>): void {
   }
 }
 
-function loadSentinels(dir: string): Sentinel[] {
+export function loadSentinels(dir: string): Sentinel[] {
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.patch'))
     .map((entry) => entry.name)

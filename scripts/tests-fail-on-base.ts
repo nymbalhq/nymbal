@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   existsSync,
   lstatSync,
@@ -16,6 +16,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { changedFiles, newTestFiles } from './gate'
+import { loadSentinels, type Sentinel } from './sentinels'
 import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 
 // Rule 8: a new test must be able to fail. Every test file the change adds (committed, staged or untracked) is run,
@@ -26,6 +27,10 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 // from the base's, the worktree installs the base's own dependencies. When that or the base's build fails, no file is
 // judged and the step fails closed with the first error line and the output's tail: a change must not be able to
 // opt out of the rule by breaking the base's install.
+// A file can pass on the base by design when it guards correct code against a known defect. A file that passes on
+// the base and is named in the `# suite:` of an injected sentinel under `tests/sentinels/` is run once more, alone, in
+// a second temporary worktree of HEAD with that sentinel's patch applied: failing there is `fails under sentinel <id>`
+// and no violation; passing there, or being named by no sentinel, stays PASSES ON BASE.
 
 /**
  * Every Vitest project: a new Postgres or Mailpit test needs NYMBAL_TEST_POSTGRES_URL or NYMBAL_TEST_MAILPIT_URL in
@@ -33,9 +38,10 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
  */
 export const DEFAULT_SUITE = 'pnpm vitest run'
 
-export type Verdict = 'fails on base' | 'PASSES ON BASE' | 'not judged'
+export type Verdict = 'fails on base' | 'PASSES ON BASE' | 'fails under sentinel' | 'not judged'
 
-export type Judgement = { path: string; verdict: Verdict; note?: string }
+/** `sentinel` is the id of the injected sentinel whose patch made the file fail, with `fails under sentinel`. */
+export type Judgement = { path: string; verdict: Verdict; note?: string; sentinel?: string }
 
 /** Why the base could not be judged against: the first error line of the failing command, and its output's tail. */
 export type BaseFailure = { reason: string; tail: string[] }
@@ -276,6 +282,100 @@ function stop(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
+/** Whether a sentinel's `# suite:` command names `path` as one of its words, quoted or not. */
+function suiteNames(suite: string, path: string): boolean {
+  return suite
+    .split(/\s+/)
+    .some((word) => word.replace(/^(['"])(.*)\1$/, '$2').replace(/^\.\//, '') === path)
+}
+
+/** The injected sentinels under the checkout's `tests/sentinels/` whose `# suite:` names one of `paths`. */
+function namingSentinels(root: string, paths: string[]): Sentinel[] {
+  const dir = join(root, 'tests', 'sentinels')
+  if (!existsSync(dir)) return []
+  return loadSentinels(dir).filter((sentinel) => {
+    const suite = sentinel.suite
+    return (
+      sentinel.kind === 'injected' &&
+      suite !== undefined &&
+      paths.some((path) => suiteNames(suite, path))
+    )
+  })
+}
+
+/** Applies a sentinel's patch to a worktree, or takes it back out; the first error line when git refuses. */
+function applyPatch(worktree: string, patch: string, reverse: boolean): string | undefined {
+  const applied = spawnSync('git', ['apply', ...(reverse ? ['-R'] : []), '-'], {
+    cwd: worktree,
+    input: patch.endsWith('\n') ? patch : `${patch}\n`,
+    encoding: 'utf8',
+  })
+  return applied.status === 0 ? undefined : firstErrorLine(`${applied.stdout}${applied.stderr}`)
+}
+
+/**
+ * Runs each PASSES ON BASE file a sentinel names once more, alone, in `worktree` (HEAD's source) with that sentinel's
+ * patch applied, and marks it `fails under sentinel <id>` when it fails there. Each patch is taken back out before
+ * the next sentinel, so every sentinel is judged against HEAD's own source.
+ */
+async function judgeUnderSentinels(
+  results: Judgement[],
+  sentinels: Sentinel[],
+  head: { root: string; worktree: string; build: string; suite: string; session: Session },
+): Promise<void> {
+  for (const sentinel of sentinels) {
+    const suite = sentinel.suite ?? ''
+    const named = results.filter((r) => r.verdict === 'PASSES ON BASE' && suiteNames(suite, r.path))
+    if (named.length === 0) continue
+    const refused = applyPatch(head.worktree, sentinel.patch, false)
+    if (refused !== undefined) {
+      for (const r of named) r.note = `sentinel ${sentinel.id} does not apply to HEAD: ${refused}`
+      continue
+    }
+    try {
+      if (head.build !== '') {
+        const built = await runCommand(head.worktree, head.build, head.session)
+        if (head.session.signal !== undefined) {
+          throw new Error(`interrupted by ${head.session.signal}`)
+        }
+        if (built.status !== 0) {
+          const reason = firstErrorLine(built.output)
+          for (const r of named)
+            r.note = `HEAD did not build under sentinel ${sentinel.id}: ${reason}`
+          continue
+        }
+      }
+      for (const r of named) {
+        const target = join(head.worktree, r.path)
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, readFileSync(join(head.root, r.path)))
+        const run = await runCommand(head.worktree, `${head.suite} ${quote(r.path)}`, head.session)
+        if (head.session.signal !== undefined) {
+          throw new Error(`interrupted by ${head.session.signal}`)
+        }
+        const { verdict, note } = verdictOf(run)
+        if (verdict === 'fails on base') {
+          r.verdict = 'fails under sentinel'
+          r.sentinel = sentinel.id
+          delete r.note
+        } else {
+          r.note =
+            verdict === 'PASSES ON BASE'
+              ? `passes under sentinel ${sentinel.id} too`
+              : `no verdict under sentinel ${sentinel.id}: ${note}`
+        }
+      }
+    } finally {
+      const stuck = applyPatch(head.worktree, sentinel.patch, true)
+      if (stuck !== undefined) {
+        throw new Error(
+          `sentinel ${sentinel.id} could not be taken back out of HEAD's worktree: ${stuck}`,
+        )
+      }
+    }
+  }
+}
+
 export async function judge(opts: {
   root: string
   base: string
@@ -300,20 +400,25 @@ export async function judge(opts: {
   const scratch = mkdtempSync(join(tmpdir(), 'nymbal-tfob-'))
   const worktree = join(scratch, 'base')
   const mirrors: string[] = []
-  let created = false
+  const worktrees: string[] = []
+  const addWorktree = (path: string, sha: string): void => {
+    git(root, ['worktree', 'add', '--detach', '--quiet', path, sha])
+    worktrees.push(path)
+  }
+  const mirrorInto = (tree: string): void => {
+    for (const dir of nodeModulesDirs(root)) {
+      const target = join(tree, dir, 'node_modules')
+      if (existsSync(target)) continue
+      mirrors.push(target)
+      mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, tree)
+    }
+  }
+  const buildOf = (tree: string): string => opts.build ?? (hasBuildScript(tree) ? 'pnpm build' : '')
   try {
-    git(root, ['worktree', 'add', '--detach', '--quiet', worktree, baseSha])
-    created = true
+    addWorktree(worktree, baseSha)
     // HEAD's modules cannot stand in for the base's when a manifest or the lockfile moved (a renamed dependency).
     const installs = dependenciesChanged(root, baseSha)
-    if (!installs) {
-      for (const dir of nodeModulesDirs(root)) {
-        const target = join(worktree, dir, 'node_modules')
-        if (existsSync(target)) continue
-        mirrors.push(target)
-        mirrorNodeModules(join(root, dir, 'node_modules'), target, realRoot, worktree)
-      }
-    }
+    if (!installs) mirrorInto(worktree)
 
     // A base that cannot install or build judges no test, and the step fails: the rule is never skipped silently.
     const notBuilt = (output: string): Report => {
@@ -335,7 +440,7 @@ export async function judge(opts: {
     }
 
     // Workspace packages export their built output, so the base's sources are built before they are imported.
-    const build = opts.build ?? (hasBuildScript(worktree) ? 'pnpm build' : '')
+    const build = buildOf(worktree)
     if (build !== '') {
       const built = await runCommand(worktree, build, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
@@ -360,6 +465,22 @@ export async function judge(opts: {
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
       results.push({ path, ...verdictOf(run) })
     }
+
+    const passing = results.filter((r) => r.verdict === 'PASSES ON BASE').map((r) => r.path)
+    const sentinels = passing.length === 0 ? [] : namingSentinels(root, passing)
+    if (sentinels.length > 0) {
+      // A sentinel's patch is written against HEAD's source, so it runs in a worktree of HEAD with HEAD's modules.
+      const head = join(scratch, 'head')
+      addWorktree(head, git(root, ['rev-parse', '--verify', 'HEAD^{commit}']).trim())
+      mirrorInto(head)
+      await judgeUnderSentinels(results, sentinels, {
+        root,
+        worktree: head,
+        build: buildOf(head),
+        suite: opts.suite,
+        session,
+      })
+    }
     return { results }
   } finally {
     process.off('SIGINT', onSignal)
@@ -370,11 +491,11 @@ export async function judge(opts: {
         rmSync(mirror, { recursive: true, force: true })
       }
     }
-    if (created) {
+    for (const tree of worktrees) {
       try {
-        git(root, ['worktree', 'remove', '--force', worktree])
+        git(root, ['worktree', 'remove', '--force', tree])
       } catch {
-        rmSync(worktree, { recursive: true, force: true })
+        rmSync(tree, { recursive: true, force: true })
         git(root, ['worktree', 'prune'])
       }
     }
@@ -386,7 +507,10 @@ export function render({ results, baseFailure }: Report): string {
   if (results.length === 0) return 'tests-fail-on-base: the change adds no test files'
   const judged = results.filter((r) => r.verdict !== 'not judged')
   const unjudged = results.filter((r) => r.verdict === 'not judged')
-  const lines = judged.map((r) => `${r.verdict}: ${r.path}`)
+  const lines = judged.map((r) => {
+    const verdict = r.verdict === 'fails under sentinel' ? `${r.verdict} ${r.sentinel}` : r.verdict
+    return `${verdict}: ${r.path}${r.note === undefined ? '' : ` (${r.note})`}`
+  })
   for (const r of unjudged) lines.push(`not judged: ${r.path} (${r.note})`)
   const violations = results.filter((r) => r.verdict === 'PASSES ON BASE').length
   lines.push(
