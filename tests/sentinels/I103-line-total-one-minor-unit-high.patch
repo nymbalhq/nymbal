@@ -1,18 +1,18 @@
 # id: I103
 # kind: injected
 # defect: checkout writes each order line total one minor unit high
-# where: packages/platform/src/services/checkout-service.ts:281
+# where: packages/platform/src/services/checkout-service.ts:377
 # killed-by: P1-05 acceptance tests (packages/platform/tests/integration/order-arithmetic.test.ts AC-9)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/order-arithmetic.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -278,7 +278,7 @@
-         unitPriceMinor: item.priceMinor,
-         lineSubtotalMinor: item.priceMinor * item.qty,
-         lineTaxMinor: 0,
--        lineTotalMinor: item.priceMinor * item.qty,
-+        lineTotalMinor: item.priceMinor * item.qty + 1,
-         imageUrl: item.imageUrl,
-       }))
-       const subtotalMinor = cartDoc.subtotalMinor
+@@ -374,7 +374,7 @@
+       unitPriceMinor: item.priceMinor,
+       lineSubtotalMinor: item.priceMinor * item.qty,
+       lineTaxMinor: 0,
+-      lineTotalMinor: item.priceMinor * item.qty,
++      lineTotalMinor: item.priceMinor * item.qty + 1,
+       imageUrl: item.imageUrl,
+     }))
+     const orderId = uuidv7()
