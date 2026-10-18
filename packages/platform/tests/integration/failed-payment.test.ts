@@ -20,18 +20,26 @@ describe('Failed payment flow', () => {
 
     const cart = await env.cart.getOrCreate()
     await env.cart.addItem(cart.token, {
-      variantId: variant.id, productId: productSnap.id,
-      productName: productSnap.name, variantName: variant.name,
-      priceMinor: variant.priceMinor, imageUrl: '', qty: 2,
+      variantId: variant.id,
+      productId: productSnap.id,
+      productName: productSnap.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
     })
 
     const started = await env.checkout.beginCheckout({
-      cartToken: cart.token, email: 'fail@test.com',
-      billingAddress: testAddr, shippingAddress: testAddr,
+      cartToken: cart.token,
+      email: 'fail@test.com',
+      billingAddress: testAddr,
+      shippingAddress: testAddr,
     })
 
     // Stock decremented during beginCheckout (reservation)
-    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+    const afterReserve = await env.commandStore.read((tx) =>
+      env.repos.variant.findById(tx, variant.id),
+    )
     expect(afterReserve?.stock).toBe(3)
 
     // Simulating: client payment fails, finalize() is never called.
@@ -39,17 +47,22 @@ describe('Failed payment flow', () => {
     expect(started.paymentIntent.id).toBeTruthy()
 
     // Verify the reservation exists
-    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
+    const reservations = await env.commandStore.read((tx) =>
+      env.repos.inventoryReservation.findByVariant(tx, variant.id),
+    )
     expect(reservations.length).toBeGreaterThan(0)
 
     await env.commandStore.close()
   })
 
-  it('finalize throws if payment intent does not match a pending order', async () => {
+  // P1-05 decision 4 step 1: no pending order for the intent is the recorded outcome `no_order`, not a throw.
+  it('AC-6c: finalize for an intent with no order is the outcome no_order with no order number', async () => {
     const env = await createTestEnv()
-    await expect(
-      env.checkout.finalize('pi_nonexistent_intent', 1000),
-    ).rejects.toThrow()
+    const result = await env.checkout.finalize('pi_nonexistent_intent', {
+      amountMinor: 1000,
+      currency: 'GBP',
+    })
+    expect(result).toMatchObject({ finalized: false, reason: 'no_order', orderNumber: null })
     await env.commandStore.close()
   })
 })

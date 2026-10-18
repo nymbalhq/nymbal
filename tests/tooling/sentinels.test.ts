@@ -448,11 +448,13 @@ describe('AC-19: the real sentinel set', () => {
       lines: [39, 39],
       marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
+    // S007 became injected in P1-05: predicted against the spec's decision 4 step 3 (the amount and currency check
+    // in finalize), re-based on the fix as it lands, as P1-02 did for S001-S004.
     S007: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [173, 242],
-      marks: /finalize\(paymentIntentId, paidAmountMinor\)/,
+      lines: [200, 206],
+      marks: /amount_mismatch/,
     },
     S008: {
       kind: 'present',

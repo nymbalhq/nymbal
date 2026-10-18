@@ -28,39 +28,63 @@ describe('Full order flow: cart → checkout → payment → order', () => {
       name: 'Flow Widget',
       description: '',
       status: 'active',
-      variants: [{ sku: 'FW-1', name: 'Default', priceMinor: 3000, stock: 10, lowStockThreshold: 2, options: [] }],
+      variants: [
+        {
+          sku: 'FW-1',
+          name: 'Default',
+          priceMinor: 3000,
+          stock: 10,
+          lowStockThreshold: 2,
+          options: [],
+        },
+      ],
     })
     const variant = productSnap.variants[0]!
 
     const cart = await env.cart.getOrCreate()
     await env.cart.addItem(cart.token, {
-      variantId: variant.id, productId: productSnap.id,
-      productName: productSnap.name, variantName: variant.name,
-      priceMinor: variant.priceMinor, imageUrl: '', qty: 2,
+      variantId: variant.id,
+      productId: productSnap.id,
+      productName: productSnap.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
     })
 
     const eventTypes: string[] = []
     await env.eventBus.subscribe(
       [EVT_ORDER_PLACED, EVT_ORDER_PAID, EVT_PAYMENT_CAPTURED, EVT_CART_CONVERTED],
-      (e) => { eventTypes.push(e.type) },
+      (e) => {
+        eventTypes.push(e.type)
+      },
     )
 
     const started = await env.checkout.beginCheckout({
-      cartToken: cart.token, email: 'buyer@test.com',
-      billingAddress: testAddr, shippingAddress: testAddr,
+      cartToken: cart.token,
+      email: 'buyer@test.com',
+      billingAddress: testAddr,
+      shippingAddress: testAddr,
     })
 
     expect(started.totalMinor).toBe(6000)
 
     // Stock was reserved during checkout
-    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+    const afterReserve = await env.commandStore.read((tx) =>
+      env.repos.variant.findById(tx, variant.id),
+    )
     expect(afterReserve?.stock).toBe(8)
 
     // Order number has the expected prefix
-    const draftOrder = await env.commandStore.read((tx) => env.repos.order.findById(tx, started.orderId))
+    const draftOrder = await env.commandStore.read((tx) =>
+      env.repos.order.findById(tx, started.orderId),
+    )
     expect(draftOrder?.orderNumber).toMatch(/^INT-/)
 
-    await env.checkout.finalize(started.paymentIntent.id, started.totalMinor)
+    await env.checkout.finalize(started.paymentIntent.id, {
+      amountMinor: started.totalMinor,
+      currency: started.currency,
+    })
 
     // Cart should be cleared
     const clearedCart = await env.cart.get(cart.token)
@@ -74,12 +98,17 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     expect(eventTypes).toContain(EVT_CART_CONVERTED)
 
     // Reservation committed — removed from reservation table
-    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
+    const reservations = await env.commandStore.read((tx) =>
+      env.repos.inventoryReservation.findByVariant(tx, variant.id),
+    )
     expect(reservations).toHaveLength(0)
 
     // Order exists in document store read model
     const orderNumber = draftOrder!.orderNumber
-    const readModel = await env.documentStore.get<{ orderNumber: string; status: string }>('orders', orderNumber)
+    const readModel = await env.documentStore.get<{ orderNumber: string; status: string }>(
+      'orders',
+      orderNumber,
+    )
     expect(readModel).toBeDefined()
     expect(readModel!.orderNumber).toBe(orderNumber)
     expect(readModel!.status).toBe('confirmed')
@@ -94,21 +123,36 @@ describe('Full order flow: cart → checkout → payment → order', () => {
       slug: 'scarce-widget',
       name: 'Scarce Widget',
       status: 'active',
-      variants: [{ sku: 'SW-1', name: 'Default', priceMinor: 1000, stock: 1, lowStockThreshold: 0, options: [] }],
+      variants: [
+        {
+          sku: 'SW-1',
+          name: 'Default',
+          priceMinor: 1000,
+          stock: 1,
+          lowStockThreshold: 0,
+          options: [],
+        },
+      ],
     })
     const variant = productSnap.variants[0]!
 
     const cart = await env.cart.getOrCreate()
     await env.cart.addItem(cart.token, {
-      variantId: variant.id, productId: productSnap.id,
-      productName: productSnap.name, variantName: variant.name,
-      priceMinor: variant.priceMinor, imageUrl: '', qty: 2,
+      variantId: variant.id,
+      productId: productSnap.id,
+      productName: productSnap.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
     })
 
     await expect(
       env.checkout.beginCheckout({
-        cartToken: cart.token, email: 'buyer@test.com',
-        billingAddress: testAddr, shippingAddress: testAddr,
+        cartToken: cart.token,
+        email: 'buyer@test.com',
+        billingAddress: testAddr,
+        shippingAddress: testAddr,
       }),
     ).rejects.toThrow(CheckoutError)
 
@@ -117,11 +161,15 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     expect(orders).toHaveLength(0)
 
     // Stock unchanged
-    const stockAfter = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+    const stockAfter = await env.commandStore.read((tx) =>
+      env.repos.variant.findById(tx, variant.id),
+    )
     expect(stockAfter?.stock).toBe(1)
 
     // No reservations
-    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
+    const reservations = await env.commandStore.read((tx) =>
+      env.repos.inventoryReservation.findByVariant(tx, variant.id),
+    )
     expect(reservations).toHaveLength(0)
 
     await env.commandStore.close()
@@ -134,34 +182,55 @@ describe('Full order flow: cart → checkout → payment → order', () => {
       slug: 'cancel-widget',
       name: 'Cancel Widget',
       status: 'active',
-      variants: [{ sku: 'CW-1', name: 'Default', priceMinor: 2000, stock: 10, lowStockThreshold: 2, options: [] }],
+      variants: [
+        {
+          sku: 'CW-1',
+          name: 'Default',
+          priceMinor: 2000,
+          stock: 10,
+          lowStockThreshold: 2,
+          options: [],
+        },
+      ],
     })
     const variant = productSnap.variants[0]!
 
     const cart = await env.cart.getOrCreate()
     await env.cart.addItem(cart.token, {
-      variantId: variant.id, productId: productSnap.id,
-      productName: productSnap.name, variantName: variant.name,
-      priceMinor: variant.priceMinor, imageUrl: '', qty: 2,
+      variantId: variant.id,
+      productId: productSnap.id,
+      productName: productSnap.name,
+      variantName: variant.name,
+      priceMinor: variant.priceMinor,
+      imageUrl: '',
+      qty: 2,
     })
 
     const started = await env.checkout.beginCheckout({
-      cartToken: cart.token, email: 'buyer@test.com',
-      billingAddress: testAddr, shippingAddress: testAddr,
+      cartToken: cart.token,
+      email: 'buyer@test.com',
+      billingAddress: testAddr,
+      shippingAddress: testAddr,
     })
 
     // Stock reserved (10 - 2 = 8)
-    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+    const afterReserve = await env.commandStore.read((tx) =>
+      env.repos.variant.findById(tx, variant.id),
+    )
     expect(afterReserve?.stock).toBe(8)
 
     // Simulate payment failure: operator/webhook calls cancel
     await env.checkout.cancel(started.orderId, 'payment_failed')
 
     // Reservations released — stock restored
-    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
+    const reservations = await env.commandStore.read((tx) =>
+      env.repos.inventoryReservation.findByVariant(tx, variant.id),
+    )
     expect(reservations).toHaveLength(0)
 
-    const stockAfter = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
+    const stockAfter = await env.commandStore.read((tx) =>
+      env.repos.variant.findById(tx, variant.id),
+    )
     expect(stockAfter?.stock).toBe(10)
 
     // Cart still has its items (cancel does not touch the cart)

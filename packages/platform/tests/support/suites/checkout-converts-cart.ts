@@ -122,10 +122,10 @@ export function checkoutConvertsCartSuite(
         clock.advance(ttlSeconds * 1000 + 1000)
         expect(await replica.services.cart.get(cart.token), 'the cart has expired').toBeNull()
 
-        const result = await replica.services.checkout.finalize(
-          started.paymentIntent.id,
-          started.totalMinor,
-        )
+        const result = await replica.services.checkout.finalize(started.paymentIntent.id, {
+          amountMinor: started.totalMinor,
+          currency: started.currency,
+        })
         expect(result.orderNumber).toBe(started.orderNumber)
 
         const order = await replica.services.order.getById(started.orderId)

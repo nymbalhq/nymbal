@@ -153,7 +153,10 @@ describe('CheckoutService', () => {
     const after = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(after?.stock).toBe(variant.stock - 2)
 
-    await env.checkout.finalize(started.paymentIntent.id, started.totalMinor)
+    await env.checkout.finalize(started.paymentIntent.id, {
+      amountMinor: started.totalMinor,
+      currency: started.currency,
+    })
 
     // Cart converted → subtotal zero
     const cleared = await env.cart.get(cart.token)
@@ -463,9 +466,14 @@ describe('CheckoutService', () => {
     await env.commandStore.close()
   })
 
-  it('finalize throws CheckoutError when no pending order matches intent', async () => {
+  // P1-05 decision 4 step 1: no order for the intent is the recorded outcome `no_order`, not a CheckoutError.
+  it('AC-6c: finalize for an intent with no order is the outcome no_order with no order number', async () => {
     const env = await setup()
-    await expect(env.checkout.finalize('pi_nonexistent', 1000)).rejects.toThrow(CheckoutError)
+    const result = await env.checkout.finalize('pi_nonexistent', {
+      amountMinor: 1000,
+      currency: 'GBP',
+    })
+    expect(result).toMatchObject({ finalized: false, reason: 'no_order', orderNumber: null })
     await env.commandStore.close()
   })
 
@@ -560,7 +568,7 @@ describe('CheckoutService', () => {
     await env.commandStore.transaction((tx) =>
       env.repos.order.setPaymentIntent(tx, draftOrder.id, paymentIntentId, new Date()),
     )
-    const result = await env.checkout.finalize(paymentIntentId, 0)
+    const result = await env.checkout.finalize(paymentIntentId, { amountMinor: 0, currency: 'GBP' })
     expect(result.orderNumber).toBeTruthy()
     await env.commandStore.close()
   })

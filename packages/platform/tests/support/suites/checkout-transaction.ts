@@ -53,7 +53,10 @@ export function checkoutTransactionSuite(
       }
       try {
         await expect(
-          k.services.checkout.finalize(started.paymentIntent.id, started.totalMinor),
+          k.services.checkout.finalize(started.paymentIntent.id, {
+            amountMinor: started.totalMinor,
+            currency: started.currency,
+          }),
         ).rejects.toThrow('history unavailable')
       } finally {
         k.repos.orderHistory.append = original
@@ -160,7 +163,10 @@ export function checkoutTransactionSuite(
         })
         expect(await raw.count('orders', "status = 'pending'")).toBeGreaterThanOrEqual(fillers + 1)
 
-        const result = await k.services.checkout.finalize(first.paymentIntent.id, first.totalMinor)
+        const result = await k.services.checkout.finalize(first.paymentIntent.id, {
+          amountMinor: first.totalMinor,
+          currency: first.currency,
+        })
 
         expect(result.orderNumber).toBe(first.orderNumber)
         const row = await raw.one<{ status: string }>('SELECT status FROM orders WHERE id = ?', [

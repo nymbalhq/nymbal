@@ -1,5 +1,18 @@
 # id: S007
-# kind: present
-# defect: finalize(paymentIntentId, paidAmountMinor) never compares the paid amount with order.totalMinor
-# where: packages/platform/src/services/checkout-service.ts:173-242
-# killed-by: P1-05 acceptance tests
+# kind: injected
+# defect: finalize skips the amount and currency check, so any captured amount in any currency confirms the order
+# where: packages/platform/src/services/checkout-service.ts:200-206
+# killed-by: P1-05 acceptance tests (packages/platform/tests/integration/underpayment.test.ts AC-3)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/underpayment.test.ts
+diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
+--- a/packages/platform/src/services/checkout-service.ts
++++ b/packages/platform/src/services/checkout-service.ts
+@@ -200,7 +200,4 @@
+         // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
+-        if (
+-          paid.amountMinor !== order.totalMinor ||
+-          paid.currency.toUpperCase() !== order.currency.toUpperCase()
+-        ) {
++        if (false) {
+           return outcome(
+             order,

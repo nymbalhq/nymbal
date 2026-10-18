@@ -64,6 +64,9 @@ writeFileSync(
 )
 
 armChaos(store.app.platform.eventBus)
-await services.checkout.finalize(started.paymentIntent.id, started.totalMinor)
+await services.checkout.finalize(started.paymentIntent.id, {
+  amountMinor: started.totalMinor,
+  currency: started.currency,
+})
 console.log('finalize completed without a kill')
 await store.stop()

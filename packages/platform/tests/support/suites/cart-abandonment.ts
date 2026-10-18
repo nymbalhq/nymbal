@@ -144,7 +144,10 @@ export function cartAbandonmentSuite(
         billingAddress: address,
         shippingAddress: address,
       })
-      await r.services.checkout.finalize(started.paymentIntent.id, started.totalMinor)
+      await r.services.checkout.finalize(started.paymentIntent.id, {
+        amountMinor: started.totalMinor,
+        currency: started.currency,
+      })
       expect((await r.services.cart.get(converted.token))?.items, 'conversion empties').toEqual([])
       await r.services.cart.addItem(converted.token, lineFor(seeded, 1))
 
