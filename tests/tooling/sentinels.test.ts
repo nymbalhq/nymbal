@@ -510,7 +510,7 @@ describe('AC-19: the real sentinel set', () => {
     I106: {
       kind: 'injected',
       path: 'packages/http/src/fastify-adapter.ts',
-      lines: [108, 109],
+      lines: [103, 104],
       marks: /this\.#guard\.admit\(ctx, options\)/,
     },
     I107: {
