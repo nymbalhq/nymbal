@@ -30,16 +30,22 @@ import { useOrder, useOrderNotes, useConfirmOrder, useCancelOrder, useMarkDelive
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
-import type { Order } from '@/types'
+import type { Order } from '@nymbalhq/types'
 
 function AddressBlock({ address, label }: { address: Order['billingAddress']; label: string }) {
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 mb-1.5">{label}</p>
       <div className="text-sm text-zinc-600 space-y-0.5">
-        <p>{address.line1}</p>
-        {address.line2 && <p>{address.line2}</p>}
-        <p>{address.city}, {address.state} {address.postalCode}</p>
+        <p>
+          {address.firstName} {address.lastName}
+        </p>
+        {address.company && <p>{address.company}</p>}
+        <p>{address.addressLine1}</p>
+        {address.addressLine2 && <p>{address.addressLine2}</p>}
+        <p>
+          {address.city}, {address.region} {address.postalCode}
+        </p>
         <p>{address.country}</p>
       </div>
     </div>

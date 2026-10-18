@@ -1,5 +1,5 @@
 import { createBrowserRouter, redirect } from 'react-router-dom'
-import { isAuthenticated } from '@/lib/auth'
+import { isAuthenticated, onSessionLost, restoreSession } from '@/lib/auth'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -12,11 +12,17 @@ import { CustomersListPage, customersListHandle } from '@/pages/CustomersListPag
 import { CustomerDetailPage, customerDetailHandle } from '@/pages/CustomerDetailPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
-function authLoader() {
-  if (!isAuthenticated()) {
-    return redirect('/login')
-  }
-  return null
+let restoreAttempt: Promise<boolean> | null = null
+
+/**
+ * The first protected route waits for one session restore from the refresh cookie before it renders; afterwards only
+ * the token in memory counts, so a logout or a lost session is not restored behind the merchant's back.
+ */
+async function authLoader() {
+  if (isAuthenticated()) return null
+  restoreAttempt ??= restoreSession()
+  await restoreAttempt
+  return isAuthenticated() ? null : redirect('/login')
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,3 +109,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
     basename: '/admin',
   }
 )
+
+onSessionLost(() => {
+  void router.navigate('/login')
+})

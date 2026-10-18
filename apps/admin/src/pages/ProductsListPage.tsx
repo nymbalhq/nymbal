@@ -19,7 +19,7 @@ import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { ProductStatus } from '@/types'
+import type { ProductStatus } from '@nymbalhq/types'
 
 const STATUS_FILTERS: { label: string; value: ProductStatus | 'all' }[] = [
   { label: 'All', value: 'all' },

@@ -8,8 +8,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useUpdateOrderStatus } from '@/hooks/useOrders'
-import { ORDER_STATUS_TRANSITIONS } from '@/types'
-import type { OrderStatus } from '@/types'
+import { ORDER_STATUS_TRANSITIONS } from '@nymbalhq/types'
+import type { OrderStatus } from '@nymbalhq/types'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 

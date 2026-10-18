@@ -469,10 +469,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
     body: z.unknown(),
   },
 
-  // The admin SPA, served in production only
+  // The admin SPA, served when attachHttp is given an admin root (or NYMBAL_ADMIN_DIST is set)
   'GET /admin': {
     name: 'admin.app.redirect',
     description: 'Redirect to the admin app.',
+  },
+  'GET /admin/': {
+    name: 'admin.app.index',
+    description: 'Serve the admin app.',
   },
   'GET /admin/*': {
     name: 'admin.app.asset',

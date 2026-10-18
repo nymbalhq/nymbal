@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { InventoryRow, StockAdjustment, StockAdjustmentReason } from '@/types'
+import type { StockAdjustment, StockAdjustmentReason } from '@nymbalhq/types'
+import type { InventoryRow } from '@/types'
 
 interface InventoryFilters {
   status?: string | undefined

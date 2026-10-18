@@ -27,7 +27,7 @@ import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { OrderStatus } from '@/types'
+import type { OrderStatus } from '@nymbalhq/types'
 
 const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'All', value: 'all' },

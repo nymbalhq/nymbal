@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { tid } from '@/lib/testid'
-import type { Variant } from '@/types'
+import type { Variant } from '@nymbalhq/types'
 
 interface VariantTableProps {
   productId: string
@@ -21,6 +21,8 @@ function createEmptyVariant(productId: string): Variant {
     name: 'New Variant',
     priceMinor: 0,
     compareAtPriceMinor: null,
+    weightGrams: null,
+    dimensions: null,
     stock: 0,
     lowStockThreshold: 5,
     options: [],

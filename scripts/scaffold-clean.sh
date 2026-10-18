@@ -91,13 +91,14 @@ export npm_config_cache="$work/npm-cache"
 
 # ─── publish every public package at one snapshot version ───────────────────────────────────────────────────────
 tar -cf "$work/backup.tar" -C "$root" \
-  $(cd "$root" && ls packages/*/package.json) packages/create-app/scaffold
+  $(cd "$root" && ls packages/*/package.json) apps/admin/package.json packages/create-app/scaffold
 restore=1
 
 snapshot="$(cd "$root" && node -e '
 const { readFileSync, writeFileSync, readdirSync } = require("node:fs")
 const dirs = readdirSync("packages").filter((d) => { try { readFileSync(`packages/${d}/package.json`); return true } catch { return false } })
-const manifests = dirs.map((d) => ({ path: `packages/${d}/package.json`, pkg: JSON.parse(readFileSync(`packages/${d}/package.json`, "utf8")) }))
+const paths = [...dirs.map((d) => `packages/${d}/package.json`), "apps/admin/package.json"]
+const manifests = paths.map((path) => ({ path, pkg: JSON.parse(readFileSync(path, "utf8")) }))
 const stack = manifests.find((m) => m.pkg.name === "@nymbalhq/stack").pkg
 const version = `${stack.version}-scaffold.${Math.floor(Date.now() / 1000)}`
 for (const { path, pkg } of manifests) {
@@ -112,7 +113,8 @@ console.log(version)
 ')"
 echo "scaffold-clean: snapshot $snapshot on $registry"
 
-(cd "$root" && pnpm build >/dev/null && pnpm -r publish --no-git-checks --access public --tag latest --registry "$registry/" >"$work/publish.log" 2>&1) \
+# The root build covers packages/** only; the admin publishes its dist, which `nymbal dev` serves.
+(cd "$root" && pnpm build >/dev/null && pnpm --filter @nymbalhq/admin build >/dev/null && pnpm -r publish --no-git-checks --access public --tag latest --registry "$registry/" >"$work/publish.log" 2>&1) \
   || { tail -30 "$work/publish.log" >&2; echo "scaffold-clean: publish failed" >&2; exit 1; }
 
 # ─── create + install, outside the checkout ─────────────────────────────────────────────────────────────────────

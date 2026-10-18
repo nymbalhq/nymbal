@@ -9,6 +9,7 @@ import { getCliVersion } from '../utils/version.js'
 import { findFreePort } from '../utils/port.js'
 import { planTemplateLaunch } from '../utils/template-runner.js'
 import { migrateProject } from './migrate.js'
+import { resolveAdminRoot } from '../admin.js'
 
 /** Default storefront dev-server port per template (matches the scaffold scripts). */
 export function defaultStorefrontPort(template: 'astro' | 'nextjs'): number {
@@ -132,7 +133,16 @@ export const devCommand = defineCommand({
       documentStore: platform.documentStore,
       version,
     })
-    await app.attachHttp(http.adapter)
+    const adminRoot = resolveAdminRoot()
+    if (adminRoot === null) {
+      // eslint-disable-next-line no-console
+      console.log(
+        pc.yellow(
+          '→ The admin is not built, so /admin/ answers 404: run `pnpm --filter @nymbalhq/admin build`.',
+        ),
+      )
+    }
+    await app.attachHttp(http.adapter, { adminRoot })
     await http.start()
 
     if (args.apiOnly) {

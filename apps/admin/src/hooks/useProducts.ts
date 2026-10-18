@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { ProductSnapshot } from '@/types'
+import type { ProductSnapshot } from '@nymbalhq/types'
 
 interface ProductFilters {
   status?: string | undefined

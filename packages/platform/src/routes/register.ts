@@ -27,6 +27,8 @@ export interface RegisterAllRoutesDeps {
   documentStore: DocumentStoreAdapter
   eventBus: EventBusAdapter
   publisher: EventPublisher
+  /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
+  adminRoot?: string | null | undefined
 }
 
 export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
@@ -72,11 +74,5 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     processedEvents: repos.processedEvent,
     orders: repos.order,
   })
-
-  if (process.env['NODE_ENV'] === 'production') {
-    const adminDistPath =
-      process.env['NYMBAL_ADMIN_DIST'] ??
-      new URL('../../../../apps/admin/dist', import.meta.url).pathname
-    registerAdminStaticRoute(adapter, adminDistPath)
-  }
+  if (deps.adminRoot !== undefined) registerAdminStaticRoute(adapter, deps.adminRoot)
 }

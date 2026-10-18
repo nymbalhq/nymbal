@@ -1,3 +1,4 @@
+import { STANDARD_EVENT_TYPES, type NymbalEventMap } from '@nymbalhq/types'
 import { api } from '@/lib/api'
 
 const BACKOFF_DELAYS = [1000, 2000, 5000, 10000, 30000]
@@ -7,9 +8,25 @@ export interface SseClient {
   disconnect(): void
 }
 
-export function createSseClient(
-  onEvent: (type: string, data: unknown) => void
-): SseClient {
+export type SseEventHandler = <K extends keyof NymbalEventMap>(
+  type: K,
+  payload: NymbalEventMap[K],
+) => void
+
+/** The envelope's payload, or undefined for a frame that is not a JSON envelope (dropped). */
+function payloadOf(data: string): unknown {
+  try {
+    const parsed = JSON.parse(data) as unknown
+    if (typeof parsed === 'object' && parsed !== null && 'payload' in parsed) {
+      return (parsed as { payload: unknown }).payload
+    }
+  } catch {
+    // malformed frame
+  }
+  return undefined
+}
+
+export function createSseClient(onEvent: SseEventHandler): SseClient {
   let es: EventSource | null = null
   let retryCount = 0
   let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -41,24 +58,13 @@ export function createSseClient(
         retryCount = 0
       }
 
-      es.onmessage = (evt) => {
-        try {
-          const parsed = JSON.parse(evt.data as string) as { type: string; data: unknown }
-          onEvent(parsed.type, parsed.data)
-        } catch {
-          // ignore malformed events
-        }
+      // The server names each event by its type and sends `{ id, type, timestamp, payload }`.
+      for (const type of STANDARD_EVENT_TYPES) {
+        es.addEventListener(type, (evt) => {
+          const payload = payloadOf((evt as MessageEvent<string>).data)
+          if (payload !== undefined) onEvent(type, payload as NymbalEventMap[typeof type])
+        })
       }
-
-      es.addEventListener('event', (evt) => {
-        const msgEvent = evt as MessageEvent<string>
-        try {
-          const parsed = JSON.parse(msgEvent.data) as { type: string; data: unknown }
-          onEvent(parsed.type, parsed.data)
-        } catch {
-          // ignore
-        }
-      })
 
       es.onerror = () => {
         es?.close()

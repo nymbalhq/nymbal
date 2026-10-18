@@ -1,7 +1,7 @@
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { formatDate, formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
-import type { OrderHistoryEntry } from '@/types'
+import type { OrderHistoryEntry } from '@nymbalhq/types'
 
 interface OrderTimelineProps {
   entries: OrderHistoryEntry[]

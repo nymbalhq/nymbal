@@ -1,4 +1,4 @@
-import { getToken, clearToken } from '@/lib/auth'
+import { getToken, refreshSession } from '@/lib/auth'
 
 export class ApiError extends Error {
   constructor(
@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-type QueryParams = Record<string, string | number | boolean | undefined | null>
+type UrlQuery = Record<string, string | number | boolean | undefined | null>
 
 const CSRF_HEADER = 'x-csrf-token'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
@@ -67,7 +67,7 @@ export async function fetchWithCsrf(url: string, init: RequestInit = {}): Promis
   return send()
 }
 
-function buildUrl(path: string, query?: QueryParams): string {
+function buildUrl(path: string, query?: UrlQuery): string {
   if (!query) return path
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
@@ -79,11 +79,22 @@ function buildUrl(path: string, query?: QueryParams): string {
   return qs ? `${path}?${qs}` : path
 }
 
+/**
+ * Whether a call answered 401 with `sentToken` may be retried: once, after the shared refresh, or at once when a
+ * concurrent refresh already replaced the token it sent. A session lost since it was sent is not refreshed again.
+ */
+async function renewedAfter401(sentToken: string | null): Promise<boolean> {
+  const current = getToken()
+  if (current !== sentToken) return current !== null
+  return refreshSession()
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  query?: QueryParams,
+  query?: UrlQuery,
+  retried = false,
 ): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {}
@@ -102,7 +113,10 @@ async function request<T>(
   const response = await fetchWithCsrf(url, init)
 
   if (response.status === 401) {
-    clearToken()
+    // An /api/auth/* 401 is an answer about credentials, never an expired access token.
+    if (!retried && !path.startsWith('/api/auth/') && (await renewedAfter401(token))) {
+      return request<T>(method, path, body, query, true)
+    }
     const errData = (await response.json().catch(() => ({}))) as Record<string, unknown>
     const errObj = (errData as { error?: { code?: string; message?: string } }).error
     throw new ApiError(errObj?.code ?? 'UNAUTHORIZED', errObj?.message ?? 'Unauthorized', 401)
@@ -131,7 +145,7 @@ async function request<T>(
 }
 
 export const api = {
-  get<T>(path: string, query?: QueryParams): Promise<T> {
+  get<T>(path: string, query?: UrlQuery): Promise<T> {
     return request<T>('GET', path, undefined, query)
   },
   post<T>(path: string, body?: unknown): Promise<T> {

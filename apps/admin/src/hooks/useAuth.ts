@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isAuthenticated, setToken, clearToken } from '@/lib/auth'
-import { fetchWithCsrf } from '@/lib/api'
+import { api, fetchWithCsrf } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import type { LoginResponse } from '@/types'
 
@@ -37,7 +37,9 @@ export function useAuth() {
     [navigate],
   )
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async (): Promise<void> => {
+    // The server revokes the refresh token and expires its cookie, so a reload cannot restore the session.
+    await api.post('/api/auth/logout').catch(() => undefined)
     clearToken()
     queryClient.clear()
     navigate('/login')

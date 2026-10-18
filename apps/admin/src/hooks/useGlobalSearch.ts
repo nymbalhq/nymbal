@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Order, ProductSnapshot, Customer } from '@/types'
+import type { Order, ProductSnapshot, Customer } from '@nymbalhq/types'
 
 interface SearchResults {
   orders: Order[]

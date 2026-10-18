@@ -15,6 +15,8 @@ import {
   testVisualCommand,
 } from './commands/test.js'
 
+export { resolveAdminRoot } from './admin.js'
+
 const main = defineCommand({
   meta: {
     name: 'nymbal',

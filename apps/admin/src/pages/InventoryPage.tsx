@@ -10,15 +10,16 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { useInventory, useAdjustStock } from '@/hooks/useInventory'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { InventoryRow, InventoryStatus, StockAdjustmentReason } from '@/types'
+import type { StockStatus, StockAdjustmentReason } from '@nymbalhq/types'
+import type { InventoryRow } from '@/types'
 
-const STATUS_BADGE: Record<InventoryStatus, 'success' | 'warning' | 'destructive'> = {
+const STATUS_BADGE: Record<StockStatus, 'success' | 'warning' | 'destructive'> = {
   in_stock: 'success',
   low_stock: 'warning',
   out_of_stock: 'destructive',
 }
 
-const STATUS_LABEL: Record<InventoryStatus, string> = {
+const STATUS_LABEL: Record<StockStatus, string> = {
   in_stock: 'In Stock',
   low_stock: 'Low Stock',
   out_of_stock: 'Out of Stock',
@@ -26,7 +27,7 @@ const STATUS_LABEL: Record<InventoryStatus, string> = {
 
 export function InventoryPage() {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<InventoryStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all')
   const [historyRow, setHistoryRow] = useState<InventoryRow | null>(null)
 
   const { data: inventory, isLoading } = useInventory({
@@ -42,7 +43,7 @@ export function InventoryPage() {
     void adjustStock.mutateAsync({ variantId, delta, reason })
   }
 
-  const borderColor = (status: InventoryStatus) => {
+  const borderColor = (status: StockStatus) => {
     if (status === 'out_of_stock') return 'border-l-4 border-l-red-300'
     if (status === 'low_stock') return 'border-l-4 border-l-amber-300'
     return ''

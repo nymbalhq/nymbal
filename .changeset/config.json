@@ -12,7 +12,8 @@
       "@nymbalhq/types",
       "@nymbalhq/web-components",
       "@nymbalhq/http",
-      "@nymbalhq/react"
+      "@nymbalhq/react",
+      "@nymbalhq/admin"
     ]
   ],
   "linked": [],

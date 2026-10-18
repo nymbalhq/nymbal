@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn, spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
 import pc from 'picocolors'
 
@@ -19,8 +20,48 @@ interface Answers {
   seedDemo: boolean
 }
 
-/** Runs a command in `cwd` and rejects on a non-zero exit. Injected into `main` so tests do not shell out. */
-export type Runner = (cmd: string, args: string[], cwd: string) => Promise<void>
+/**
+ * Runs a command in `cwd` (with `env` when given, else the process environment) and rejects on a non-zero exit.
+ * Injected into `main` so tests do not shell out.
+ */
+export type Runner = (
+  cmd: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+) => Promise<void>
+
+/** The port `renderConfig` gives the API, which serves the admin at /admin/. */
+const API_PORT = 3001
+
+interface AdminCredentials {
+  email: string
+  password: string
+}
+
+/** A fresh admin password per project (128 bits, base64url), so no two stores share the seed's default. */
+function newAdminCredentials(): AdminCredentials {
+  return { email: 'admin@nymbal.local', password: randomBytes(16).toString('base64url') }
+}
+
+/** `.env` holds the admin credentials the seed (and a first `nymbal dev`) creates the admin from. */
+async function writeAdminEnv(dir: string, admin: AdminCredentials): Promise<void> {
+  const lines = [
+    '# The admin account the seed creates. Keep this file out of version control (.gitignore lists it).',
+    `NYMBAL_ADMIN_EMAIL=${admin.email}`,
+    `NYMBAL_ADMIN_PASSWORD=${admin.password}`,
+    '',
+  ]
+  await writeFile(resolve(dir, '.env'), lines.join('\n'), { encoding: 'utf8', mode: 0o600 })
+}
+
+function adminSignIn(admin: AdminCredentials): string[] {
+  return [
+    `Admin: http://localhost:${API_PORT}/admin/`,
+    `  email     ${admin.email}`,
+    `  password  ${admin.password} (saved in .env)`,
+  ]
+}
 
 export interface MainDeps {
   run?: Runner
@@ -186,12 +227,15 @@ export async function main(
       await mkdir(targetDir, { recursive: true })
     }
     await scaffold(targetDir, answers)
+    const admin = newAdminCredentials()
+    await writeAdminEnv(targetDir, admin)
     process.stdout.write(`Created ${answers.directory}\n`)
     if (flags.install !== false) {
-      await installAndSeed(targetDir, pm, answers.seedDemo, run)
+      await installAndSeed(targetDir, pm, answers.seedDemo, run, admin)
     } else {
       process.stdout.write(`Next: cd ${answers.directory} && ${installCmd(pm)[0]} install\n`)
     }
+    process.stdout.write(`${adminSignIn(admin).join('\n')}\n`)
     return
   }
 
@@ -273,9 +317,11 @@ export async function main(
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
+  const admin = newAdminCredentials()
+  await writeAdminEnv(targetDir, admin)
 
   if (shouldInstall) {
-    await installAndSeed(targetDir, pm, answers.seedDemo, run)
+    await installAndSeed(targetDir, pm, answers.seedDemo, run, admin)
   }
 
   const cmd = devCmd(pm)
@@ -288,7 +334,11 @@ export async function main(
   }
   nextSteps.push(`  ${pc.cyan(cmd)}`)
 
-  outro([pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps].join('\n'))
+  outro(
+    [pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps, '', ...adminSignIn(admin)].join(
+      '\n',
+    ),
+  )
 }
 
 /** Install with the detected package manager, then seed through the project's own `nymbal` bin. */
@@ -297,6 +347,7 @@ async function installAndSeed(
   pm: PackageManager,
   seedDemo: boolean,
   run: Runner,
+  admin: AdminCredentials,
 ): Promise<void> {
   const [installBin, installArgs] = installCmd(pm)
   process.stdout.write(`Running ${installBin} install (this may take a moment)...\n`)
@@ -304,7 +355,12 @@ async function installAndSeed(
   if (seedDemo) {
     process.stdout.write('Seeding demo content...\n')
     const [seedBin, seedArgs] = seedCmd(pm)
-    await run(seedBin, seedArgs, dir)
+    // Explicit, so a value exported in the shell cannot replace the one in .env and the outro.
+    await run(seedBin, seedArgs, dir, {
+      ...process.env,
+      NYMBAL_ADMIN_EMAIL: admin.email,
+      NYMBAL_ADMIN_PASSWORD: admin.password,
+    })
   }
 }
 
@@ -416,7 +472,7 @@ export default defineConfig({
 
   http: {
     adapter: 'fastify',
-    port: 3001,
+    port: ${API_PORT},
   },
 
   deployment: {
@@ -452,9 +508,9 @@ function toDirectoryName(name: string): string {
     .replace(/\s+/g, '-')
 }
 
-const runCmd: Runner = (cmd, args, cwd) => {
+const runCmd: Runner = (cmd, args, cwd, env = process.env) => {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell: false })
+    const child = spawn(cmd, args, { cwd, env, stdio: 'inherit', shell: false })
     child.on('error', reject)
     child.on('exit', (code) => {
       if (code === 0) return resolve()

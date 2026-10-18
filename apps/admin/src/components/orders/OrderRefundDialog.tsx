@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useRefundOrder, usePartialRefundOrder } from '@/hooks/useOrders'
 import { formatMoney } from '@/lib/money'
 import { tid } from '@/lib/testid'
-import type { Order, OrderLineItem } from '@/types'
+import type { Order, OrderLineItem } from '@nymbalhq/types'
 
 interface OrderRefundDialogProps {
   order: Order

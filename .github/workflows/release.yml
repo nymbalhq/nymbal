@@ -124,6 +124,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # After versioning: the CLI reads its version from package.json and the scaffold bakes the versions in.
       - run: pnpm build
+      # The root build covers packages/** only; the admin publishes its dist, which `nymbal dev` serves.
+      - run: pnpm --filter @nymbalhq/admin build
       - name: Publish to npm
         run: pnpm changeset publish
         env:
