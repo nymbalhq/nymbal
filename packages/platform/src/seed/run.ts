@@ -1,3 +1,4 @@
+import { inArray } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import bcrypt from 'bcryptjs'
 const { hashSync } = bcrypt
@@ -29,7 +30,7 @@ export interface SeedResult {
   variants: number
   customers: number
   admins: number
-  /** True when the demo products were already in the command store, so nothing was inserted. */
+  /** True when any demo row was already in the command store, so nothing was inserted. */
   alreadySeeded: boolean
 }
 
@@ -101,6 +102,58 @@ async function insertProductCategories(
   await clients.db.insert(postgresSchema.productCategories).values(rows)
 }
 
+/**
+ * Any demo row (category slug, product slug, seeded customer email) means an earlier seed ran, in full or in part.
+ * Each is unique, so inserting the demo again would fail on the first collision: skip instead.
+ */
+async function demoRowsPresent(store: CommandStore, emails: string[]): Promise<boolean> {
+  const categorySlugs = seedCategories.map((c) => c.slug)
+  const productSlugs = seedProducts.map((p) => p.slug)
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    const { categories, products, customers } = sqliteSchema
+    return (
+      clients.db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(inArray(categories.slug, categorySlugs))
+        .limit(1)
+        .all().length > 0 ||
+      clients.db
+        .select({ id: products.id })
+        .from(products)
+        .where(inArray(products.slug, productSlugs))
+        .limit(1)
+        .all().length > 0 ||
+      clients.db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(inArray(customers.email, emails))
+        .limit(1)
+        .all().length > 0
+    )
+  }
+  const { categories, products, customers } = postgresSchema
+  const [category, product, customer] = await Promise.all([
+    clients.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(inArray(categories.slug, categorySlugs))
+      .limit(1),
+    clients.db
+      .select({ id: products.id })
+      .from(products)
+      .where(inArray(products.slug, productSlugs))
+      .limit(1),
+    clients.db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(inArray(customers.email, emails))
+      .limit(1),
+  ])
+  return category.length > 0 || product.length > 0 || customer.length > 0
+}
+
 async function insertCustomer(
   store: CommandStore,
   row: {
@@ -167,9 +220,9 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     source: 'nymbal-seed',
   })
 
-  // Demo products are unique by slug, so their presence means an earlier seed ran: insert nothing.
-  const existing = await Promise.all(seedProducts.map((p) => productRepo.findBySlug(p.slug)))
-  if (existing.some((row) => row !== null)) {
+  const demoEmail = 'demo@nymbal.dev'
+  const adminEmail = process.env['NYMBAL_ADMIN_EMAIL'] ?? 'admin@nymbal.local'
+  if (await demoRowsPresent(commandStore, [demoEmail, adminEmail])) {
     logger.info({}, 'Demo content already present, seed skipped')
     return { categories: 0, products: 0, variants: 0, customers: 0, admins: 0, alreadySeeded: true }
   }
@@ -236,7 +289,7 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   // Demo customer — password: nymbal
   const demoCustomer = {
     id: uuidv7(),
-    email: 'demo@nymbal.dev',
+    email: demoEmail,
     passwordHash: hashSync('nymbal', 10),
     firstName: 'Demo',
     lastName: 'User',
@@ -246,7 +299,6 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   await insertCustomer(commandStore, demoCustomer)
 
   // Admin user — email and password from env, defaults for dev
-  const adminEmail = process.env['NYMBAL_ADMIN_EMAIL'] ?? 'admin@nymbal.local'
   const adminPassword = process.env['NYMBAL_ADMIN_PASSWORD'] ?? 'nymbal-admin-dev'
   const adminCustomer = {
     id: uuidv7(),
