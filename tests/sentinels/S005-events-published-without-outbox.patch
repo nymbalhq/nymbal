@@ -1,5 +1,5 @@
 # id: S005
 # kind: present
-# defect: events are published inside the transaction callback with no outbox, so a rollback after publish leaks the event
-# where: packages/platform/src/services/inventory-service.ts:125; packages/platform/src/services/checkout-service.ts:206
+# defect: events published inside a transaction are held in memory and delivered after COMMIT with no outbox, so a crash or a failed delivery between COMMIT and delivery loses them for good (a rollback now drops held events, so the leak is gone; delivery is not durable)
+# where: packages/platform/src/db/command-store.ts:112-119; packages/platform/src/db/command-store.ts:208-210
 # killed-by: P1-03 acceptance tests

@@ -1,35 +1,43 @@
 import { and, eq } from 'drizzle-orm'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 
-export interface ProductCategoryRepository {
-  attach(productId: string, categoryId: string): Promise<void>
-  detach(productId: string, categoryId: string): Promise<void>
-  detachAllForProduct(productId: string): Promise<void>
-  listCategoriesForProduct(productId: string): Promise<string[]>
-  listProductsForCategory(categoryId: string): Promise<string[]>
+export interface ProductCategoryRepository extends StoreRepository {
+  attach(tx: Tx, productId: string, categoryId: string): Promise<void>
+  detach(tx: Tx, productId: string, categoryId: string): Promise<void>
+  detachAllForProduct(tx: Tx, productId: string): Promise<void>
+  listCategoriesForProduct(tx: ReadTx, productId: string): Promise<string[]>
+  listProductsForCategory(tx: ReadTx, categoryId: string): Promise<string[]>
 }
 
 export function createProductCategoryRepository(store: CommandStore): ProductCategoryRepository {
   return {
-    async attach(productId, categoryId) {
-      if (store.kind === 'sqlite') {
-        store.db
+    store,
+    async attach(tx, productId, categoryId) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.productCategories)
           .values({ productId, categoryId })
           .onConflictDoNothing()
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .insert(postgresSchema.productCategories)
         .values({ productId, categoryId })
         .onConflictDoNothing()
     },
-    async detach(productId, categoryId) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async detach(tx, productId, categoryId) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .delete(sqliteSchema.productCategories)
           .where(
             and(
@@ -40,7 +48,7 @@ export function createProductCategoryRepository(store: CommandStore): ProductCat
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .delete(postgresSchema.productCategories)
         .where(
           and(
@@ -49,43 +57,43 @@ export function createProductCategoryRepository(store: CommandStore): ProductCat
           ),
         )
     },
-    async detachAllForProduct(productId) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async detachAllForProduct(tx, productId) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .delete(sqliteSchema.productCategories)
           .where(eq(sqliteSchema.productCategories.productId, productId))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .delete(postgresSchema.productCategories)
         .where(eq(postgresSchema.productCategories.productId, productId))
     },
-    async listCategoriesForProduct(productId) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async listCategoriesForProduct(tx, productId) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select({ categoryId: sqliteSchema.productCategories.categoryId })
           .from(sqliteSchema.productCategories)
           .where(eq(sqliteSchema.productCategories.productId, productId))
           .all()
         return rows.map((r) => r.categoryId)
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select({ categoryId: postgresSchema.productCategories.categoryId })
         .from(postgresSchema.productCategories)
         .where(eq(postgresSchema.productCategories.productId, productId))
       return rows.map((r) => r.categoryId)
     },
-    async listProductsForCategory(categoryId) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async listProductsForCategory(tx, categoryId) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select({ productId: sqliteSchema.productCategories.productId })
           .from(sqliteSchema.productCategories)
           .where(eq(sqliteSchema.productCategories.categoryId, categoryId))
           .all()
         return rows.map((r) => r.productId)
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select({ productId: postgresSchema.productCategories.productId })
         .from(postgresSchema.productCategories)
         .where(eq(postgresSchema.productCategories.categoryId, categoryId))

@@ -41,54 +41,61 @@ export function createCategoryService(deps: {
   logger: Logger
 }): CategoryService {
   const { repos, publisher } = deps
+  const { store } = repos.category
   return {
     async list() {
-      return repos.category.list()
+      return store.read((tx) => repos.category.list(tx))
     },
     async getById(id) {
-      const c = await repos.category.findById(id)
+      const c = await store.read((tx) => repos.category.findById(tx, id))
       if (!c) throw new NotFoundError('category', id)
       return c
     },
     async getBySlug(slug) {
-      const c = await repos.category.findBySlug(slug)
+      const c = await store.read((tx) => repos.category.findBySlug(tx, slug))
       if (!c) throw new NotFoundError('category', slug)
       return c
     },
     async create(input) {
       if (!input.slug.trim()) throw new ValidationError('Category slug is required')
-      if (await repos.category.findBySlug(input.slug)) {
-        throw new ValidationError(`Category slug already exists: ${input.slug}`)
-      }
-      const now = new Date()
-      const category: Category = {
-        id: uuidv7(),
-        parentId: input.parentId ?? null,
-        slug: input.slug,
-        name: input.name,
-        description: input.description ?? '',
-        position: input.position ?? 0,
-        createdAt: now.toISOString(),
-      }
-      await repos.category.insert({ ...category, createdAt: now })
-      await publisher.publish(EVT_CATEGORY_CREATED, { category })
-      return category
+      return store.transaction(async (tx) => {
+        if (await repos.category.findBySlug(tx, input.slug)) {
+          throw new ValidationError(`Category slug already exists: ${input.slug}`)
+        }
+        const now = new Date()
+        const category: Category = {
+          id: uuidv7(),
+          parentId: input.parentId ?? null,
+          slug: input.slug,
+          name: input.name,
+          description: input.description ?? '',
+          position: input.position ?? 0,
+          createdAt: now.toISOString(),
+        }
+        await repos.category.insert(tx, { ...category, createdAt: now })
+        await publisher.publish(EVT_CATEGORY_CREATED, { category })
+        return category
+      })
     },
     async update(id, input) {
-      const existing = await repos.category.findById(id)
-      if (!existing) throw new NotFoundError('category', id)
-      await repos.category.update(id, input)
-      const fresh = (await repos.category.findById(id)) as Category
-      await publisher.publish(EVT_CATEGORY_UPDATED, { category: fresh })
-      return fresh
+      return store.transaction(async (tx) => {
+        const existing = await repos.category.findById(tx, id)
+        if (!existing) throw new NotFoundError('category', id)
+        await repos.category.update(tx, id, input)
+        const fresh = (await repos.category.findById(tx, id)) as Category
+        await publisher.publish(EVT_CATEGORY_UPDATED, { category: fresh })
+        return fresh
+      })
     },
     async delete(id) {
-      const existing = await repos.category.findById(id)
-      if (!existing) throw new NotFoundError('category', id)
-      await repos.category.delete(id)
-      await publisher.publish(EVT_CATEGORY_DELETED, {
-        categoryId: existing.id,
-        slug: existing.slug,
+      await store.transaction(async (tx) => {
+        const existing = await repos.category.findById(tx, id)
+        if (!existing) throw new NotFoundError('category', id)
+        await repos.category.delete(tx, id)
+        await publisher.publish(EVT_CATEGORY_DELETED, {
+          categoryId: existing.id,
+          slug: existing.slug,
+        })
       })
     },
   }

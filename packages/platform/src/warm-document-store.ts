@@ -37,12 +37,27 @@ export async function warmDocumentStore(deps: WarmDocumentStoreDeps): Promise<Wa
     source: 'nymbal-warm',
   })
 
-  const [products, categories, orders, customers] = await Promise.all([
-    repos.product.list(),
-    repos.category.list(),
-    repos.order.list(),
-    repos.customer.list(),
-  ])
+  const { products, categories, orders, customers, productEvents } = await repos.product.store.read(
+    async (tx) => {
+      const [products, categories, orders, customers] = await Promise.all([
+        repos.product.list(tx),
+        repos.category.list(tx),
+        repos.order.list(tx),
+        repos.customer.list(tx),
+      ])
+      const productEvents: NymbalEvent<unknown>[] = []
+      for (const p of products) {
+        const [variants, categoryIds] = await Promise.all([
+          repos.variant.findByProduct(tx, p.id),
+          repos.productCategory.listCategoriesForProduct(tx, p.id),
+        ])
+        productEvents.push(
+          makeEvent(EVT_PRODUCT_CREATED, { product: { ...p, variants, categoryIds } }),
+        )
+      }
+      return { products, categories, orders, customers, productEvents }
+    },
+  )
 
   const events: NymbalEvent<unknown>[] = []
 
@@ -50,13 +65,7 @@ export async function warmDocumentStore(deps: WarmDocumentStoreDeps): Promise<Wa
     events.push(makeEvent(EVT_CATEGORY_CREATED, { category: c }))
   }
 
-  for (const p of products) {
-    const [variants, categoryIds] = await Promise.all([
-      repos.variant.findByProduct(p.id),
-      repos.productCategory.listCategoriesForProduct(p.id),
-    ])
-    events.push(makeEvent(EVT_PRODUCT_CREATED, { product: { ...p, variants, categoryIds } }))
-  }
+  events.push(...productEvents)
 
   for (const o of orders) {
     events.push(makeEvent(EVT_ORDER_PLACED, { order: o }))

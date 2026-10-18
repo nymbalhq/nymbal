@@ -65,7 +65,7 @@ describe('AC-12: finaliseStubPayment through the real webhook route', () => {
       billingAddress: address,
       shippingAddress: address,
     })
-    const reservedBefore = await repos.inventoryReservation.findByVariant(variant.id)
+    const reservedBefore = await platform.commandStore.read((tx) => repos.inventoryReservation.findByVariant(tx, variant.id))
 
     const paid: string[] = []
     await platform.eventBus.subscribe(EVT_ORDER_PAID, (event) => {
@@ -84,8 +84,8 @@ describe('AC-12: finaliseStubPayment through the real webhook route', () => {
     const order = await services.order.getByOrderNumber(started.orderNumber)
     expect(order.status).toBe('confirmed')
     expect(reservedBefore).toHaveLength(1)
-    expect(await repos.inventoryReservation.findByVariant(variant.id)).toHaveLength(0)
-    expect((await repos.variant.findById(variant.id))?.stock).toBe(initialStock - qty)
+    expect(await platform.commandStore.read((tx) => repos.inventoryReservation.findByVariant(tx, variant.id))).toHaveLength(0)
+    expect((await platform.commandStore.read((tx) => repos.variant.findById(tx, variant.id)))?.stock).toBe(initialStock - qty)
     expect(paid).toHaveLength(1)
 
     const again = await finaliseStubPayment(store.baseUrl, hook)

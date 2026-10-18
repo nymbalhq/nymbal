@@ -53,11 +53,11 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     expect(started.totalMinor).toBe(6000)
 
     // Stock was reserved during checkout
-    const afterReserve = await env.repos.variant.findById(variant.id)
+    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(afterReserve?.stock).toBe(8)
 
     // Order number has the expected prefix
-    const draftOrder = await env.repos.order.findById(started.orderId)
+    const draftOrder = await env.commandStore.read((tx) => env.repos.order.findById(tx, started.orderId))
     expect(draftOrder?.orderNumber).toMatch(/^INT-/)
 
     await env.checkout.finalize(started.paymentIntent.id, started.totalMinor)
@@ -74,7 +74,7 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     expect(eventTypes).toContain(EVT_CART_CONVERTED)
 
     // Reservation committed — removed from reservation table
-    const reservations = await env.repos.inventoryReservation.findByVariant(variant.id)
+    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
     expect(reservations).toHaveLength(0)
 
     // Order exists in document store read model
@@ -113,15 +113,15 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     ).rejects.toThrow(CheckoutError)
 
     // No order created
-    const orders = await env.repos.order.list({ limit: 100 })
+    const orders = await env.commandStore.read((tx) => env.repos.order.list(tx, { limit: 100 }))
     expect(orders).toHaveLength(0)
 
     // Stock unchanged
-    const stockAfter = await env.repos.variant.findById(variant.id)
+    const stockAfter = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(stockAfter?.stock).toBe(1)
 
     // No reservations
-    const reservations = await env.repos.inventoryReservation.findByVariant(variant.id)
+    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
     expect(reservations).toHaveLength(0)
 
     await env.commandStore.close()
@@ -151,17 +151,17 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     })
 
     // Stock reserved (10 - 2 = 8)
-    const afterReserve = await env.repos.variant.findById(variant.id)
+    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(afterReserve?.stock).toBe(8)
 
     // Simulate payment failure: operator/webhook calls cancel
     await env.checkout.cancel(started.orderId, 'payment_failed')
 
     // Reservations released — stock restored
-    const reservations = await env.repos.inventoryReservation.findByVariant(variant.id)
+    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
     expect(reservations).toHaveLength(0)
 
-    const stockAfter = await env.repos.variant.findById(variant.id)
+    const stockAfter = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(stockAfter?.stock).toBe(10)
 
     // Cart still has its items (cancel does not touch the cart)
@@ -169,7 +169,7 @@ describe('Full order flow: cart → checkout → payment → order', () => {
     expect(cartAfter?.items).toHaveLength(1)
 
     // Order exists but is cancelled
-    const order = await env.repos.order.findById(started.orderId)
+    const order = await env.commandStore.read((tx) => env.repos.order.findById(tx, started.orderId))
     expect(order?.status).toBe('cancelled')
 
     await env.commandStore.close()

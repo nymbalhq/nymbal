@@ -22,10 +22,9 @@ const ORDERS_BY_CUSTOMER = 'orders-by-customer'
 
 function customerSortKey(o: Order): string {
   // descending by timestamp prefix + stable order number
-  return `order:${String(Number.MAX_SAFE_INTEGER - new Date(String(o.createdAt)).getTime()).padStart(
-    16,
-    '0',
-  )}:${o.orderNumber}`
+  return `order:${String(
+    Number.MAX_SAFE_INTEGER - new Date(String(o.createdAt)).getTime(),
+  ).padStart(16, '0')}:${o.orderNumber}`
 }
 
 export interface RegisterOrderProjectionDeps {
@@ -52,9 +51,12 @@ export async function registerOrderProjection(deps: RegisterOrderProjectionDeps)
   const { eventBus, documentStore, logger, orderRepo, orderHistoryRepo } = deps
 
   async function reprojectByOrderId(orderId: string): Promise<void> {
-    const order = await orderRepo.findById(orderId)
-    if (!order) return
-    const history = await orderHistoryRepo.listByOrder(order.id)
+    const found = await orderRepo.store.read(async (tx) => {
+      const order = await orderRepo.findById(tx, orderId)
+      return order ? { order, history: await orderHistoryRepo.listByOrder(tx, order.id) } : null
+    })
+    if (!found) return
+    const { order, history } = found
     const doc: OrderDoc = {
       ...order,
       history: history.map((h) => ({

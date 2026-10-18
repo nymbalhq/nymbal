@@ -1,9 +1,5 @@
-import type {
-  EventBusAdapter,
-  NymbalEvent,
-  NymbalEventMap,
-  NymbalEventType,
-} from '@nymbalhq/types'
+import type { EventBusAdapter, NymbalEvent, NymbalEventMap, NymbalEventType } from '@nymbalhq/types'
+import { afterCommit } from '../db/command-store.js'
 import { createEventBuilder, type EventBuilderContext, type MakeEventOptions } from './builder.js'
 
 export interface PublishOptions extends MakeEventOptions {}
@@ -15,13 +11,15 @@ export interface EventPublisher {
     options?: PublishOptions,
   ): Promise<NymbalEvent<NymbalEventMap[E]>>
   publishMany(
-    events: Array<{
-      [E in NymbalEventType]: {
-        type: E
-        payload: NymbalEventMap[E]
-        options?: PublishOptions
-      }
-    }[NymbalEventType]>,
+    events: Array<
+      {
+        [E in NymbalEventType]: {
+          type: E
+          payload: NymbalEventMap[E]
+          options?: PublishOptions
+        }
+      }[NymbalEventType]
+    >,
   ): Promise<void>
   correlated(correlationId: string): EventPublisher
 }
@@ -49,12 +47,12 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
   return {
     async publish(type, payload, options) {
       const event = build(type, payload, options ?? {})
-      await opts.eventBus.publish(event)
+      await afterCommit(() => opts.eventBus.publish(event))
       return event
     },
     async publishMany(events) {
       const built = events.map((e) => build(e.type, e.payload, e.options ?? {}))
-      await opts.eventBus.publishBatch(built)
+      await afterCommit(() => opts.eventBus.publishBatch(built))
     },
     correlated(correlationId) {
       return createEventPublisher({ ...opts, correlationId })

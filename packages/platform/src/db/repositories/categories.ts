@@ -1,4 +1,4 @@
-import type { CommandStore } from '../command-store.js'
+import { rawClients, type CommandStore } from '../command-store.js'
 import * as sqliteSchema from '../schema/sqlite.js'
 import * as postgresSchema from '../schema/postgres.js'
 
@@ -23,19 +23,20 @@ export interface CategoryRow {
 }
 
 export function createCategoryRepository(store: CommandStore) {
+  const clients = rawClients(store)
   return {
     async findAll(): Promise<CategoryRow[]> {
-      if (store.kind === 'sqlite') {
-        const rows = store.db.select().from(sqliteSchema.categories).all()
+      if (clients.kind === 'sqlite') {
+        const rows = clients.db.select().from(sqliteSchema.categories).all()
         return rows as CategoryRow[]
       }
-      const rows = await store.db.select().from(postgresSchema.categories)
+      const rows = await clients.db.select().from(postgresSchema.categories)
       return rows as CategoryRow[]
     },
 
     async insertMany(items: CategoryInsert[]): Promise<void> {
       if (items.length === 0) return
-      if (store.kind === 'sqlite') {
+      if (clients.kind === 'sqlite') {
         const rows = items.map((item) => ({
           id: item.id,
           parentId: item.parentId ?? null,
@@ -45,7 +46,7 @@ export function createCategoryRepository(store: CommandStore) {
           position: item.position ?? 0,
           createdAt: item.createdAt.toISOString(),
         }))
-        store.db.insert(sqliteSchema.categories).values(rows).run()
+        clients.db.insert(sqliteSchema.categories).values(rows).run()
         return
       }
       const rows = items.map((item) => ({
@@ -57,7 +58,7 @@ export function createCategoryRepository(store: CommandStore) {
         position: item.position ?? 0,
         createdAt: item.createdAt,
       }))
-      await store.db.insert(postgresSchema.categories).values(rows)
+      await clients.db.insert(postgresSchema.categories).values(rows)
     },
   }
 }

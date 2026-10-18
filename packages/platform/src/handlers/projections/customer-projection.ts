@@ -36,17 +36,25 @@ function profileFrom(
     orderCount,
     totalSpentMinor,
     segment:
-      totalSpentMinor > 100_000 ? 'vip' : orderCount > 3 ? 'returning' : orderCount > 0 ? 'active' : 'new',
+      totalSpentMinor > 100_000
+        ? 'vip'
+        : orderCount > 3
+          ? 'returning'
+          : orderCount > 0
+            ? 'active'
+            : 'new',
     createdAt,
   }
 }
 
-export async function registerCustomerProjection(deps: RegisterCustomerProjectionDeps): Promise<void> {
+export async function registerCustomerProjection(
+  deps: RegisterCustomerProjectionDeps,
+): Promise<void> {
   const { eventBus, documentStore, logger, customerRepo } = deps
 
   const onCreated: EventHandler<CustomerCreatedV1Payload> = async (event) => {
     const { customerId } = event.payload
-    const c = await customerRepo.findById(customerId)
+    const c = await customerRepo.store.read((tx) => customerRepo.findById(tx, customerId))
     if (!c) return
     const profile = profileFrom(customerId, 0, 0, String(c.createdAt))
     await documentStore.put<CustomerProfile>(COLLECTION, customerId, profile)
@@ -54,7 +62,8 @@ export async function registerCustomerProjection(deps: RegisterCustomerProjectio
   }
 
   const onUpdated: EventHandler<{ customerId: string }> = async (event) => {
-    const c = await customerRepo.findById(event.payload.customerId)
+    const { customerId } = event.payload
+    const c = await customerRepo.store.read((tx) => customerRepo.findById(tx, customerId))
     if (!c) return
     await documentStore.put<CustomerProfile>(
       COLLECTION,
@@ -71,7 +80,8 @@ export async function registerCustomerProjection(deps: RegisterCustomerProjectio
     // Bump customer stats projection via repo reload.
     // Repo has already been incremented by CheckoutService.finalize.
     // Here we just re-project.
-    const fresh = await customerRepo.findById(event.payload.orderId)
+    const { orderId } = event.payload
+    const fresh = await customerRepo.store.read((tx) => customerRepo.findById(tx, orderId))
     if (!fresh) return
     await documentStore.put<CustomerProfile>(
       COLLECTION,

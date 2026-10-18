@@ -41,7 +41,7 @@ describe('Inventory stock validation during checkout', () => {
     expect(first.paymentIntent.id).toBeTruthy()
 
     // Stock should be 0 now (reserved by first checkout)
-    const afterFirst = await env.repos.variant.findById(variant.id)
+    const afterFirst = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(afterFirst?.stock).toBe(0)
 
     // Second checkout should fail because stock is 0

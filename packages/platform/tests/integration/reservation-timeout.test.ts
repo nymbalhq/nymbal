@@ -54,13 +54,13 @@ describe('Reservation timeout / release', () => {
     const { reservationId } = await inventory.reserveStock(variant.id, 3)
 
     // Stock was decremented
-    const during = await repos.variant.findById(variant.id)
+    const during = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(during?.stock).toBe(7)
 
     // Explicit release (simulating timeout handler)
     await inventory.releaseReservation(reservationId, 'expired')
 
-    const after = await repos.variant.findById(variant.id)
+    const after = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(after?.stock).toBe(10)
 
     await new Promise((r) => setTimeout(r, 10))

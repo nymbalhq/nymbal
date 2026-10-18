@@ -20,7 +20,7 @@ export function registerAdminReviewsRoutes(
     '/api/admin/reviews',
     requireRole('admin', async () => {
       try {
-        const pending = await reviewRepo.listByStatus('pending')
+        const pending = await reviewRepo.store.read((tx) => reviewRepo.listByStatus(tx, 'pending'))
         return ok(pending)
       } catch (err) {
         return renderError(err)
@@ -40,11 +40,9 @@ export function registerAdminReviewsRoutes(
         if (!body?.status || !['approved', 'rejected'].includes(body.status)) {
           return fail('reviews.invalid', 'status must be approved|rejected', 400)
         }
-        await reviewRepo.setModerationStatus(
-          id,
-          body.status,
-          `admin:${ctx.auth!.userId}`,
-          new Date(),
+        const status = body.status
+        await reviewRepo.store.transaction((tx) =>
+          reviewRepo.setModerationStatus(tx, id, status, `admin:${ctx.auth!.userId}`, new Date()),
         )
         return ok({ ok: true })
       } catch (err) {

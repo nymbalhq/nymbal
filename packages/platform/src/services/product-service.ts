@@ -13,7 +13,7 @@ import {
   type ProductSnapshot,
   type Logger,
 } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import type { CommandStore, ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { ProductInsert, ProductUpdate } from '../repositories/product.js'
 import type { VariantInsert } from '../repositories/variant.js'
@@ -31,7 +31,9 @@ export interface ProductCreateInput {
   media?: Product['media']
   metadata?: Record<string, unknown>
   categoryIds?: string[]
-  variants?: Array<Omit<VariantInsert, 'id' | 'productId' | 'createdAt' | 'updatedAt'> & { id?: string }>
+  variants?: Array<
+    Omit<VariantInsert, 'id' | 'productId' | 'createdAt' | 'updatedAt'> & { id?: string }
+  >
 }
 
 export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
@@ -46,7 +48,11 @@ export interface ProductService {
   unpublish(id: string): Promise<void>
   getById(id: string): Promise<ProductSnapshot>
   getBySlug(slug: string): Promise<ProductSnapshot>
-  list(opts?: { status?: ProductStatus; limit?: number; offset?: number }): Promise<ProductSnapshot[]>
+  list(opts?: {
+    status?: ProductStatus
+    limit?: number
+    offset?: number
+  }): Promise<ProductSnapshot[]>
 }
 
 export interface CreateProductServiceDeps {
@@ -57,12 +63,13 @@ export interface CreateProductServiceDeps {
 }
 
 async function snapshot(
+  tx: ReadTx,
   repos: Repositories,
   product: Product,
 ): Promise<ProductSnapshot> {
   const [variants, categoryIds] = await Promise.all([
-    repos.variant.findByProduct(product.id),
-    repos.productCategory.listCategoriesForProduct(product.id),
+    repos.variant.findByProduct(tx, product.id),
+    repos.productCategory.listCategoriesForProduct(tx, product.id),
   ])
   return { ...product, variants, categoryIds }
 }
@@ -70,8 +77,8 @@ async function snapshot(
 export function createProductService(deps: CreateProductServiceDeps): ProductService {
   const { store, repos, publisher } = deps
 
-  async function requireProduct(id: string): Promise<Product> {
-    const product = await repos.product.findById(id)
+  async function requireProduct(tx: ReadTx, id: string): Promise<Product> {
+    const product = await repos.product.findById(tx, id)
     if (!product) throw new NotFoundError('product', id)
     return product
   }
@@ -80,13 +87,13 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
     async create(input) {
       if (!input.slug.trim()) throw new ValidationError('Product slug is required')
       if (!input.name.trim()) throw new ValidationError('Product name is required')
-      const existing = await repos.product.findBySlug(input.slug)
+      const existing = await store.read((tx) => repos.product.findBySlug(tx, input.slug))
       if (existing) {
         throw new ValidationError(`Product slug already exists: ${input.slug}`, {
           context: { slug: input.slug },
         })
       }
-      return store.transaction(async () => {
+      return store.transaction(async (tx) => {
         const now = new Date()
         const productId = uuidv7()
         const insert: ProductInsert = {
@@ -104,7 +111,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           createdAt: now,
           updatedAt: now,
         }
-        await repos.product.insert(insert)
+        await repos.product.insert(tx, insert)
         const variantRows: Variant[] = []
         for (const v of input.variants ?? []) {
           const id = v.id ?? uuidv7()
@@ -115,14 +122,14 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
             createdAt: now,
             updatedAt: now,
           }
-          await repos.variant.insert(vi)
-          const stored = await repos.variant.findById(id)
+          await repos.variant.insert(tx, vi)
+          const stored = await repos.variant.findById(tx, id)
           if (stored) variantRows.push(stored)
         }
         for (const categoryId of input.categoryIds ?? []) {
-          await repos.productCategory.attach(productId, categoryId)
+          await repos.productCategory.attach(tx, productId, categoryId)
         }
-        const created = await requireProduct(productId)
+        const created = await requireProduct(tx, productId)
         const snap: ProductSnapshot = {
           ...created,
           variants: variantRows,
@@ -134,8 +141,8 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
     },
 
     async update(id, input) {
-      return store.transaction(async () => {
-        const product = await requireProduct(id)
+      return store.transaction(async (tx) => {
+        const product = await requireProduct(tx, id)
         const now = new Date()
         const updateInput: ProductUpdate = {
           ...(input.name !== undefined && { name: input.name }),
@@ -149,76 +156,84 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           ...(input.metadata !== undefined && { metadata: input.metadata }),
           updatedAt: now,
         }
-        await repos.product.update(product.id, updateInput)
+        await repos.product.update(tx, product.id, updateInput)
         if (input.categoryIds) {
-          await repos.productCategory.detachAllForProduct(product.id)
+          await repos.productCategory.detachAllForProduct(tx, product.id)
           for (const categoryId of input.categoryIds) {
-            await repos.productCategory.attach(product.id, categoryId)
+            await repos.productCategory.attach(tx, product.id, categoryId)
           }
         }
-        const snap = await snapshot(repos, await requireProduct(product.id))
+        const snap = await snapshot(tx, repos, await requireProduct(tx, product.id))
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
         return snap
       })
     },
 
     async delete(id) {
-      const product = await requireProduct(id)
-      await store.transaction(async () => {
-        await repos.productCategory.detachAllForProduct(product.id)
-        const variants = await repos.variant.findByProduct(product.id)
-        for (const v of variants) await repos.variant.delete(v.id)
-        await repos.product.delete(product.id)
-      })
-      await publisher.publish(EVT_PRODUCT_DELETED, {
-        productId: product.id,
-        slug: product.slug,
+      await store.transaction(async (tx) => {
+        const product = await requireProduct(tx, id)
+        await repos.productCategory.detachAllForProduct(tx, product.id)
+        const variants = await repos.variant.findByProduct(tx, product.id)
+        for (const v of variants) await repos.variant.delete(tx, v.id)
+        await repos.product.delete(tx, product.id)
+        await publisher.publish(EVT_PRODUCT_DELETED, {
+          productId: product.id,
+          slug: product.slug,
+        })
       })
     },
 
     async publish(id) {
-      const product = await requireProduct(id)
-      if (product.status === 'active') return
-      await repos.product.setStatus(product.id, 'active', new Date())
-      await publisher.publish(EVT_PRODUCT_PUBLISHED, {
-        productId: product.id,
-        slug: product.slug,
+      await store.transaction(async (tx) => {
+        const product = await requireProduct(tx, id)
+        if (product.status === 'active') return
+        await repos.product.setStatus(tx, product.id, 'active', new Date())
+        await publisher.publish(EVT_PRODUCT_PUBLISHED, {
+          productId: product.id,
+          slug: product.slug,
+        })
+        const fresh = await requireProduct(tx, product.id)
+        const snap = await snapshot(tx, repos, fresh)
+        await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
-      const fresh = await requireProduct(product.id)
-      const snap = await snapshot(repos, fresh)
-      await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
     },
 
     async unpublish(id) {
-      const product = await requireProduct(id)
-      if (product.status === 'draft') return
-      await repos.product.setStatus(product.id, 'draft', new Date())
-      await publisher.publish(EVT_PRODUCT_UNPUBLISHED, {
-        productId: product.id,
-        slug: product.slug,
+      await store.transaction(async (tx) => {
+        const product = await requireProduct(tx, id)
+        if (product.status === 'draft') return
+        await repos.product.setStatus(tx, product.id, 'draft', new Date())
+        await publisher.publish(EVT_PRODUCT_UNPUBLISHED, {
+          productId: product.id,
+          slug: product.slug,
+        })
+        const fresh = await requireProduct(tx, product.id)
+        const snap = await snapshot(tx, repos, fresh)
+        await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
       })
-      const fresh = await requireProduct(product.id)
-      const snap = await snapshot(repos, fresh)
-      await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })
     },
 
     async getById(id) {
-      return snapshot(repos, await requireProduct(id))
+      return store.read(async (tx) => snapshot(tx, repos, await requireProduct(tx, id)))
     },
 
     async getBySlug(slug) {
-      const product = await repos.product.findBySlug(slug)
-      if (!product) throw new NotFoundError('product', slug)
-      return snapshot(repos, product)
+      return store.read(async (tx) => {
+        const product = await repos.product.findBySlug(tx, slug)
+        if (!product) throw new NotFoundError('product', slug)
+        return snapshot(tx, repos, product)
+      })
     },
 
     async list(opts = {}) {
-      const products = await repos.product.list(opts)
-      const out: ProductSnapshot[] = []
-      for (const p of products) {
-        out.push(await snapshot(repos, p))
-      }
-      return out
+      return store.read(async (tx) => {
+        const products = await repos.product.list(tx, opts)
+        const out: ProductSnapshot[] = []
+        for (const p of products) {
+          out.push(await snapshot(tx, repos, p))
+        }
+        return out
+      })
     },
   }
 }

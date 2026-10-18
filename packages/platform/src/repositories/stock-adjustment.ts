@@ -1,6 +1,13 @@
 import { desc, eq } from 'drizzle-orm'
 import type { StockAdjustment, StockAdjustmentReason } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { fromTimestamp } from './json.js'
@@ -29,14 +36,15 @@ function rowToAdjustment(row: Record<string, unknown>): StockAdjustment {
   }
 }
 
-export interface StockAdjustmentRepository {
-  append(a: StockAdjustmentInsert): Promise<void>
-  listByVariant(variantId: string, limit?: number): Promise<StockAdjustment[]>
+export interface StockAdjustmentRepository extends StoreRepository {
+  append(tx: Tx, a: StockAdjustmentInsert): Promise<void>
+  listByVariant(tx: ReadTx, variantId: string, limit?: number): Promise<StockAdjustment[]>
 }
 
 export function createStockAdjustmentRepository(store: CommandStore): StockAdjustmentRepository {
   return {
-    async append(a) {
+    store,
+    async append(tx, a) {
       const common = {
         id: a.id,
         variantId: a.variantId,
@@ -46,20 +54,20 @@ export function createStockAdjustmentRepository(store: CommandStore): StockAdjus
         previousQty: a.previousQty,
         newQty: a.newQty,
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.stockAdjustments)
           .values({ ...common, timestamp: a.timestamp.toISOString() })
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .insert(postgresSchema.stockAdjustments)
         .values({ ...common, timestamp: a.timestamp })
     },
-    async listByVariant(variantId, limit = 100) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async listByVariant(tx, variantId, limit = 100) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.stockAdjustments)
           .where(eq(sqliteSchema.stockAdjustments.variantId, variantId))
@@ -68,7 +76,7 @@ export function createStockAdjustmentRepository(store: CommandStore): StockAdjus
           .all()
         return rows.map((r) => rowToAdjustment(r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.stockAdjustments)
         .where(eq(postgresSchema.stockAdjustments.variantId, variantId))

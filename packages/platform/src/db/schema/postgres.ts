@@ -42,7 +42,9 @@ export const products = pgTable(
     status: text('status', { enum: ['draft', 'active', 'archived'] })
       .notNull()
       .default('draft'),
-    type: text('type', { enum: ['simple', 'variable'] }).notNull().default('simple'),
+    type: text('type', { enum: ['simple', 'variable'] })
+      .notNull()
+      .default('simple'),
     seoTitle: text('seo_title').notNull().default(''),
     seoDescription: text('seo_description').notNull().default(''),
     media: jsonb('media').notNull().default([]),
@@ -184,6 +186,7 @@ export const orders = pgTable(
     sequenceUnique: uniqueIndex('orders_sequence_unique').on(t.sequence),
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
+    paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
   }),
 )
 
@@ -233,14 +236,7 @@ export const stockAdjustments = pgTable(
     variantId: text('variant_id').notNull(),
     adjustment: integer('adjustment').notNull(),
     reason: text('reason', {
-      enum: [
-        'sale',
-        'return',
-        'manual',
-        'import',
-        'reservation-commit',
-        'reservation-release',
-      ],
+      enum: ['sale', 'return', 'manual', 'import', 'reservation-commit', 'reservation-release'],
     }).notNull(),
     actor: text('actor').notNull(),
     previousQty: integer('previous_qty').notNull(),
