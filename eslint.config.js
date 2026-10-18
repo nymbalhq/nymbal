@@ -53,5 +53,37 @@ export default [
       'playwright/prefer-web-first-assertions': 'error',
     },
   },
+  // E2E and scaffold tests reach the store through its own surface: a test that posts the payment webhook proves a
+  // confirmation the product never gives. Kernel tests and the contract suites drive the hook on purpose.
+  {
+    files: ['tests/e2e/**/*.ts', 'tests/scaffold/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@nymbalhq/proof-kit',
+              importNames: ['stubPaymentWebhook', 'finaliseStubPayment'],
+              message:
+                'E2E and scaffold tests confirm payment through the product, not the payment hook.',
+            },
+          ],
+        },
+      ],
+      // / is "/": an esquery regex literal cannot hold a slash.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/\\u002Fapi\\u002Fwebhooks\\u002F/]',
+          message: 'E2E and scaffold tests do not call /api/webhooks/; drive the product instead.',
+        },
+        {
+          selector: 'TemplateElement[value.raw=/\\u002Fapi\\u002Fwebhooks\\u002F/]',
+          message: 'E2E and scaffold tests do not call /api/webhooks/; drive the product instead.',
+        },
+      ],
+    },
+  },
   prettier,
 ]

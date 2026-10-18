@@ -1,14 +1,17 @@
 import { execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { loadSentinels, type Sentinel, touchedPaths } from './sentinels'
 import {
   aggregate,
   classifySource,
   EXCLUDED_PREFIXES,
   type FileCensus,
+  journeyViolations,
   TEST_FILE,
   type Totals,
 } from './test-census'
@@ -130,6 +133,47 @@ export function workspaceClosure(root: string, start: string): string[] {
     }
   }
   return [...seen].sort()
+}
+
+/** Test files a sentinel's `# killed-by` and `# suite:` headers name. */
+const NAMED_TEST_FILE =
+  /\b(?:packages|tests|apps|templates)\/[\w./[\]-]+\.(?:test|spec)\.[cm]?[jt]sx?\b/g
+
+/** A change that can move every sentinel: configuration, the runner, or the sentinels themselves. */
+function selectsEverySentinel(path: string): boolean {
+  return (
+    isConfiguration(path) || path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
+  )
+}
+
+/**
+ * The sentinels a change can bear on: a changed file is a path the patch touches, a test file its headers name, or
+ * inside the workspace closure (`closure(packages/<dir>)`) of a named file's package. Selection only grows with
+ * `changed`. Package-level by design: every kernel change selects every kernel sentinel.
+ */
+export function selectSentinels(
+  sentinels: Sentinel[],
+  changed: string[],
+  closure: (packageDir: string) => string[],
+): Set<string> {
+  if (changed.some(selectsEverySentinel)) return new Set(sentinels.map((s) => s.id))
+  const selected = new Set<string>()
+  for (const sentinel of sentinels) {
+    const named = [...`${sentinel.killedBy} ${sentinel.suite ?? ''}`.matchAll(NAMED_TEST_FILE)].map(
+      (m) => m[0],
+    )
+    const exact = new Set([...touchedPaths(sentinel.patch), ...named])
+    const dirs = new Set(
+      named.flatMap((path) => {
+        const dir = /^packages\/[^/]+/.exec(path)?.[0]
+        return dir === undefined ? [] : closure(dir)
+      }),
+    )
+    const hit = (path: string): boolean =>
+      exact.has(path) || [...dirs].some((dir) => path.startsWith(`${dir}/`))
+    if (changed.some(hit)) selected.add(sentinel.id)
+  }
+  return selected
 }
 
 /** Rule 2 on the test files a change touches, and the census movement. Old debt in untouched files is ignored. */
@@ -471,6 +515,11 @@ function judgedTestFiles(root: string, base: string): string[] {
 function censusTrendStep(root: string, base: string): number {
   const touched = judgedTestFiles(root, base)
   const { violations, delta } = censusTrend(baseCensus(root, base), headCensus(root), touched)
+  for (const path of touched.filter((p) => p.startsWith('tests/e2e/journeys/'))) {
+    const absolute = resolve(root, path)
+    if (existsSync(absolute))
+      violations.push(...journeyViolations(readFileSync(absolute, 'utf8'), path, root))
+  }
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
   process.stdout.write(
     `census trend against ${base.slice(0, 9)}: ${touched.length} test file(s) touched\n` +
@@ -483,7 +532,12 @@ function censusTrendStep(root: string, base: string): number {
 type VitestReport = {
   testResults?: Array<{
     name: string
-    assertionResults?: Array<{ fullName?: string; title?: string; duration?: number | null }>
+    assertionResults?: Array<{
+      fullName?: string
+      title?: string
+      duration?: number | null
+      status?: string
+    }>
   }>
 }
 
@@ -658,9 +712,71 @@ export type PlanInput = {
   artefactPresent?: boolean | undefined
   /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
   proofKitPackages?: string[] | undefined
+  /** The sentinels gate:full runs: every one, or a selection (`selectSentinels`). Every one when not given. */
+  sentinels?: 'all' | Set<string> | undefined
+  /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
+  rerun?: { tests: RedTest[] } | undefined
+}
+
+/** A Vitest test by file (from the root) and full name (describe titles and its own, joined by spaces). */
+export type RedTest = { file: string; name: string }
+
+/** What `--rerun-red` reads back: every gate run writes it. `e2e[target]` is true when that E2E step was red. */
+export type LastRun = {
+  sha: string
+  diffHash: string
+  steps: Record<string, StepStatus>
+  vitest: RedTest[]
+  e2e: Record<string, boolean>
+}
+
+const LAST_RUN = 'reports/last-run.json'
+const RERUN_REPORT = 'reports/vitest-rerun.json'
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Vitest on the red files, filtered to the red tests by full name (the name `-t` matches starts with the file's). */
+function rerunTestsCommand(red: RedTest[]): string {
+  const files = [...new Set(red.map((t) => t.file))].map(shellWord).join(' ')
+  const names = [...new Set(red.map((t) => escapeRegExp(t.name)))].join('|')
+  return (
+    `pnpm run test ${files} -t ${shellWord(`(?:^|\\s)(?:${names})$`)} ` +
+    `--reporter=default --reporter=json --outputFile.json=${RERUN_REPORT}`
+  )
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+/** Where the tests step's Vitest JSON goes: test-quality reads it, and `--rerun-red` finds the red tests in it. */
+const VITEST_REPORT = 'reports/vitest.json'
+const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
+/** Left by scripts/e2e-server.mjs when a server outlived its shutdown. */
+const SHUTDOWN_REPORT = 'reports/e2e-shutdown.json'
+/** The build output each E2E target serves itself. The templates run as dev servers; the API serves the admin. */
+const E2E_SERVES: Record<string, string[]> = {
+  astro: [],
+  nextjs: [],
+  admin: ['apps/admin/dist/index.html'],
+}
+
+/**
+ * An E2E step: red at once when an output it serves is missing, before Playwright starts; red when the server
+ * wrapper recorded a hang on shutdown (the file is cleared first, so only this run's counts).
+ */
+function e2eCommand(target: string, playwright: string): string {
+  const missing = (E2E_SERVES[target] ?? []).map(
+    (path) =>
+      `{ test -f ${path} || { echo "e2e ${target}: ${path} is missing (run the build step)"; exit 1; }; }`,
+  )
+  return [
+    ...missing,
+    `rm -f ${SHUTDOWN_REPORT}`,
+    `${playwright}; code=$?`,
+    `if [ -f ${SHUTDOWN_REPORT} ]; then echo "e2e ${target}: a server outlived its shutdown: $(cat ${SHUTDOWN_REPORT})"; exit 1; fi`,
+    'exit $code',
+  ].join('; ')
+}
 
 function shellWord(text: string): string {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`
@@ -747,24 +863,21 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // imports runs the kit's own tests as well.
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
   const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
+  const red = input.rerun?.tests ?? []
   const tests: StepSpec =
-    selection.mode === 'none'
-      ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
-      : selection.mode === 'changed'
-        ? {
-            name: 'tests',
-            command:
-              `pnpm run test --changed ${base} --passWithNoTests` +
-              (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
-            ...buildNeeds,
-          }
-        : {
-            name: 'tests',
-            command: full
-              ? 'pnpm run test --reporter=default --reporter=json --outputFile.json=reports/vitest.json'
-              : 'pnpm test',
-            ...buildNeeds,
-          }
+    red.length > 0
+      ? { name: 'tests', command: rerunTestsCommand(red), ...buildNeeds }
+      : selection.mode === 'none'
+        ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
+        : selection.mode === 'changed'
+          ? {
+              name: 'tests',
+              command:
+                `pnpm run test --changed ${base} --passWithNoTests ${VITEST_JSON}` +
+                (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
+              ...buildNeeds,
+            }
+          : { name: 'tests', command: `pnpm run test ${VITEST_JSON}`, ...buildNeeds }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     build,
@@ -779,8 +892,28 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
+  const lastFailed = input.rerun === undefined ? '' : ' --last-failed'
+  // `--last-failed` reads `.last-run.json` from the output dir, so each project keeps its own or the last one wins.
   const e2e = (target: string): string =>
-    `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target}${grep}`
+    e2eCommand(
+      target,
+      `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+    )
+  const chosen = input.sentinels ?? 'all'
+  const sentinels: StepSpec =
+    chosen === 'all'
+      ? { name: 'sentinels', command: `${postgres} pnpm sentinels` }
+      : chosen.size === 0
+        ? {
+            name: 'sentinels',
+            command: 'true',
+            skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
+            idle: true,
+          }
+        : {
+            name: 'sentinels',
+            command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+          }
   steps.push(
     external
       ? {
@@ -813,7 +946,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
         },
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
-    { name: 'sentinels', command: `${postgres} pnpm sentinels` },
+    sentinels,
     {
       name: 'tests-fail-on-base',
       command: `${postgres} ${mailpit} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
@@ -851,6 +984,121 @@ export function artefactPresent(root: string): boolean {
   )
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// The last run, and --rerun-red
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A hash of the work tree against HEAD, untracked files included: equal hashes mean nothing was edited between. */
+function diffHash(root: string): string {
+  const hash = createHash('sha256')
+  hash.update(git(root, ['rev-parse', 'HEAD']))
+  hash.update(git(root, ['diff', 'HEAD', '--binary']))
+  for (const path of lines(git(root, ['ls-files', '--others', '--exclude-standard'])).sort()) {
+    const absolute = resolve(root, path)
+    hash.update(`\0${path}\0`)
+    if (existsSync(absolute) && statSync(absolute).isFile()) hash.update(readFileSync(absolute))
+  }
+  return hash.digest('hex')
+}
+
+function testsWith(root: string, report: VitestReport | undefined, status: string): RedTest[] {
+  return (report?.testResults ?? []).flatMap((file) =>
+    (file.assertionResults ?? [])
+      .filter((t) => t.status === status)
+      .map((t) => ({ file: relative(root, file.name), name: t.fullName ?? t.title ?? '' })),
+  )
+}
+
+function writeLastRun(root: string, steps: Step[], startedMs: number): void {
+  const status = (name: string): StepStatus | undefined =>
+    steps.find((s) => s.name === name)?.status
+  const last: LastRun = {
+    sha: git(root, ['rev-parse', 'HEAD']).trim(),
+    diffHash: diffHash(root),
+    steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
+    vitest:
+      status('tests') === 'red'
+        ? testsWith(
+            root,
+            freshReport<VitestReport>(resolve(root, VITEST_REPORT), startedMs),
+            'failed',
+          )
+        : [],
+    e2e: Object.fromEntries(
+      steps
+        .filter((s) => s.name.startsWith('e2e '))
+        .map((s) => [s.name.slice(4), s.status === 'red']),
+    ),
+  }
+  const target = resolve(root, LAST_RUN)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, `${JSON.stringify(last, null, 2)}\n`)
+}
+
+function readLastRun(root: string): LastRun {
+  const path = resolve(root, LAST_RUN)
+  if (!existsSync(path)) throw new Error(`--rerun-red: no ${LAST_RUN}; run the gate first`)
+  return JSON.parse(readFileSync(path, 'utf8')) as LastRun
+}
+
+/** The steps that were red last time, in plan order; a need on a step that is not re-run was met then. */
+function redSteps(steps: StepSpec[], last: LastRun): StepSpec[] {
+  const kept = steps.filter((s) => last.steps[s.name] === 'red')
+  const names = new Set(kept.map((s) => s.name))
+  return kept.map((s) => {
+    const { needs, ...rest } = s
+    const still = (needs ?? []).filter((n) => names.has(n))
+    return still.length > 0 ? { ...rest, needs: still } : rest
+  })
+}
+
+/**
+ * Prints the re-run's rows, a `flaky:` line for each test that went green on an unchanged tree, and the count. It
+ * returns 1 whatever ran: a re-run of part of the gate is never its verdict.
+ */
+function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: number): number {
+  const green: string[] = []
+  const red: string[] = []
+  const flakyCandidates: string[] = []
+  for (const step of result.steps) {
+    if (step.name === 'tests' && last.vitest.length > 0) {
+      const passed = testsWith(
+        root,
+        freshReport<VitestReport>(resolve(root, RERUN_REPORT), startedMs),
+        'passed',
+      )
+      for (const t of last.vitest) {
+        const unit = `${t.file} > ${t.name}`
+        if (passed.some((p) => p.file === t.file && p.name === t.name)) {
+          green.push(unit)
+          flakyCandidates.push(unit)
+        } else red.push(unit)
+      }
+      continue
+    }
+    if (step.status === 'ok') {
+      green.push(step.name)
+      if (step.name.startsWith('e2e ')) flakyCandidates.push(step.name)
+    } else red.push(step.name)
+  }
+  // A red step this plan does not have (a gate:full step re-run without --full) did not go green.
+  const ran = new Set(result.steps.map((s) => s.name))
+  const absent = Object.keys(last.steps).filter((n) => last.steps[n] === 'red' && !ran.has(n))
+  red.push(...absent)
+  const unchanged = diffHash(root) === last.diffHash
+  const out = [
+    ...(green.length + red.length === 0 ? ['nothing was red in the last run'] : []),
+    ...(absent.length > 0
+      ? [`not re-run: ${absent.join(', ')} (not in this plan; add --full)`]
+      : []),
+    ...result.report.split('\n').slice(0, -1),
+    ...(unchanged ? flakyCandidates.map((unit) => `flaky: ${unit}`) : []),
+    `rerun: ${green.length} green, ${red.length} red, not a gate verdict`,
+  ]
+  process.stdout.write(`${out.join('\n')}\n`)
+  return 1
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -863,6 +1111,8 @@ async function main(argv: string[]): Promise<number> {
       only: { type: 'string' },
       services: { type: 'string', default: 'compose' },
       'no-build': { type: 'boolean', default: false },
+      sentinels: { type: 'string', default: 'impacted' },
+      'rerun-red': { type: 'boolean', default: false },
     },
   })
   const root = repoRoot()
@@ -883,13 +1133,26 @@ async function main(argv: string[]): Promise<number> {
   }
   const only = values.only?.split(',').map((name) => name.trim())
   if (only !== undefined && !values.full) throw new Error('--only needs --full')
+  if (values.sentinels !== 'all' && values.sentinels !== 'impacted') {
+    throw new Error(`--sentinels takes all or impacted, not "${values.sentinels}"`)
+  }
+  const rerun = values['rerun-red']
+  if (rerun && only !== undefined)
+    throw new Error('--rerun-red runs what was red; it takes no --only')
+  const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
   const mutated = values.full ? await strykerTargets(root, changed) : []
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
-  const { steps, budgetMs } = plan({
+  const sentinelsDir = resolve(root, 'tests/sentinels')
+  const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
+  const sentinels =
+    values.sentinels === 'all' || allSentinels.length === 0
+      ? ('all' as const)
+      : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
+  const planned = plan({
     full: values.full,
     base,
     changed,
@@ -901,8 +1164,14 @@ async function main(argv: string[]): Promise<number> {
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
+    sentinels,
+    ...(last === undefined
+      ? {}
+      : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
   })
-  if (values.full && only === undefined) {
+  const { budgetMs } = planned
+  const steps = last === undefined ? planned.steps : redSteps(planned.steps, last)
+  if (values.full && only === undefined && last === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
       name: 'test-quality report',
@@ -912,7 +1181,18 @@ async function main(argv: string[]): Promise<number> {
   const log = (text: string): void => {
     process.stderr.write(text)
   }
+  if (steps.some((s) => s.name === 'sentinels' && s.skip === undefined)) {
+    log(
+      sentinels === 'all'
+        ? `sentinels: all (${values.sentinels === 'all' ? '--sentinels all' : 'no tests/sentinels/ to select from'})\n`
+        : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
+    )
+  } else if (sentinels !== 'all' && steps.some((s) => s.name === 'sentinels')) {
+    log(`sentinels: --sentinels impacted selects none of ${allSentinels.length}\n`)
+  }
   const result = await run(steps, { cwd: root, budgetMs, log })
+  if (last !== undefined) return reportRerun(root, result, last, startedMs)
+  writeLastRun(root, result.steps, startedMs)
   // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
   // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
   // services or build supplied from outside) is not.

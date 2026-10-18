@@ -195,6 +195,7 @@ describe('AC-11: a clean-machine scaffold', () => {
     expect(checkout.status, JSON.stringify(checkout.data)).toBe(200)
 
     // The stub payments adapter verifies any signature; the route only needs the header (see proof-kit/payments).
+    // eslint-disable-next-line no-restricted-syntax -- native-stub has no confirmation path of its own yet; P1-12 gives it one and removes this webhook call.
     const finalised = await fetch(new URL('/api/webhooks/stripe', API_URL), {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'stripe-signature': 'scaffold-clean-stub' },

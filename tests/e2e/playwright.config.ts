@@ -10,7 +10,7 @@ const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
 
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
-  command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
+  command: 'node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only',
   url: 'http://localhost:3001/health',
   cwd: '../..',
   reuseExistingServer: false,
@@ -18,6 +18,7 @@ const apiServer = {
   env: {
     NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
   },
+  gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
 // --ignore-lock: Astro 7 backgrounds `astro dev` under an AI agent, and Playwright would see the exit.
