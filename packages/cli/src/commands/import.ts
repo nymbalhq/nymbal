@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty'
 import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
 import * as p from 'picocolors'
-import { loadConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
 import { createApp } from '@nymbalhq/platform'
 import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
 import { join } from 'node:path'
@@ -54,7 +54,7 @@ export const importCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const { config } = await loadConfig()
+    const { config } = await loadProject()
     const projectRoot = process.cwd()
     const statePath = join(projectRoot, '.nymbal-migration.json')
     const isTTY = process.stdin.isTTY ?? false

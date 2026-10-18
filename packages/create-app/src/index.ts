@@ -2,7 +2,7 @@ import { cp, readFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
 import pc from 'picocolors'
 
@@ -17,7 +17,26 @@ interface Answers {
   currency: 'GBP' | 'USD' | 'EUR'
   template: 'astro' | 'nextjs'
   seedDemo: boolean
-  includeMobile: boolean
+}
+
+/** Runs a command in `cwd` and rejects on a non-zero exit. Injected into `main` so tests do not shell out. */
+export type Runner = (cmd: string, args: string[], cwd: string) => Promise<void>
+
+export interface MainDeps {
+  run?: Runner
+}
+
+/**
+ * The `packageManager` field for the package manager that launched us (`npm_config_user_agent`), read when called.
+ * Without a usable user agent it is the installed npm; undefined when npm cannot be run either.
+ */
+function packageManagerField(): string | undefined {
+  const token = (process.env['npm_config_user_agent'] ?? '').split(' ')[0] ?? ''
+  const match = /^(npm|pnpm|yarn|bun)\/(\d+\.\d+\.\d+\S*)$/.exec(token)
+  if (match) return `${match[1]}@${match[2]}`
+  const npm = spawnSync('npm', ['-v'], { encoding: 'utf8', shell: process.platform === 'win32' })
+  const version = npm.status === 0 ? npm.stdout.trim() : ''
+  return version ? `npm@${version}` : undefined
 }
 
 export function detectPackageManager(): PackageManager {
@@ -74,6 +93,8 @@ export interface CliFlags {
   template?: (typeof TEMPLATES)[number]
   currency?: (typeof CURRENCIES)[number]
   yes: boolean
+  /** Present (false) only with `--no-install`. */
+  install?: boolean
 }
 
 /** A command-line flag that is missing its value or names a value outside the allowed set. */
@@ -100,6 +121,10 @@ export function parseCliFlags(argv: string[]): CliFlags {
       flags.yes = true
       continue
     }
+    if (arg === '--no-install') {
+      flags.install = false
+      continue
+    }
     const match = /^--(name|template|currency)(?:=(.*))?$/s.exec(arg)
     if (match) {
       const flag = match[1]!
@@ -121,10 +146,14 @@ export function parseCliFlags(argv: string[]): CliFlags {
   return flags
 }
 
-export async function main(): Promise<void> {
+export async function main(
+  argv: string[] = process.argv,
+  deps: MainDeps = {},
+): Promise<void> {
+  const run = deps.run ?? runCmd
   let flags: CliFlags
   try {
-    flags = parseCliFlags(process.argv)
+    flags = parseCliFlags(argv)
   } catch (err) {
     if (!(err instanceof CliFlagError)) throw err
     process.stderr.write(`Error: ${err.message}\n`)
@@ -145,7 +174,6 @@ export async function main(): Promise<void> {
       currency: flags.currency ?? 'GBP',
       template: flags.template ?? 'astro',
       seedDemo: true,
-      includeMobile: false,
     }
     const targetDir = resolve(process.cwd(), answers.directory)
     if (existsSync(targetDir)) {
@@ -159,6 +187,11 @@ export async function main(): Promise<void> {
     }
     await scaffold(targetDir, answers)
     process.stdout.write(`Created ${answers.directory}\n`)
+    if (flags.install !== false) {
+      await installAndSeed(targetDir, pm, answers.seedDemo, run)
+    } else {
+      process.stdout.write(`Next: cd ${answers.directory} && ${installCmd(pm)[0]} install\n`)
+    }
     return
   }
 
@@ -208,17 +241,13 @@ export async function main(): Promise<void> {
 
   if (isCancel(seedDemo)) return cancel('Cancelled')
 
-  const includeMobile = (await confirm({
-    message: 'Include mobile app? (placeholder for v1.0)',
-    initialValue: false,
-  })) as boolean | symbol
-
-  if (isCancel(includeMobile)) return cancel('Cancelled')
-
-  const shouldInstall = (await confirm({
-    message: 'Install dependencies now?',
-    initialValue: true,
-  })) as boolean | symbol
+  const shouldInstall =
+    flags.install === false
+      ? false
+      : ((await confirm({
+          message: 'Install dependencies now?',
+          initialValue: true,
+        })) as boolean | symbol)
 
   if (isCancel(shouldInstall)) return cancel('Cancelled')
 
@@ -228,7 +257,6 @@ export async function main(): Promise<void> {
     currency: currency as 'GBP' | 'USD' | 'EUR',
     template: template as 'astro' | 'nextjs',
     seedDemo: seedDemo as boolean,
-    includeMobile: includeMobile as boolean,
   }
 
   const targetDir = resolve(process.cwd(), answers.directory)
@@ -247,10 +275,7 @@ export async function main(): Promise<void> {
   await scaffold(targetDir, answers)
 
   if (shouldInstall) {
-    await installDeps(targetDir, pm)
-    if (answers.seedDemo) {
-      await runSeed(targetDir, pm)
-    }
+    await installAndSeed(targetDir, pm, answers.seedDemo, run)
   }
 
   const cmd = devCmd(pm)
@@ -264,6 +289,23 @@ export async function main(): Promise<void> {
   nextSteps.push(`  ${pc.cyan(cmd)}`)
 
   outro([pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps].join('\n'))
+}
+
+/** Install with the detected package manager, then seed through the project's own `nymbal` bin. */
+async function installAndSeed(
+  dir: string,
+  pm: PackageManager,
+  seedDemo: boolean,
+  run: Runner,
+): Promise<void> {
+  const [installBin, installArgs] = installCmd(pm)
+  process.stdout.write(`Running ${installBin} install (this may take a moment)...\n`)
+  await run(installBin, installArgs, dir)
+  if (seedDemo) {
+    process.stdout.write('Seeding demo content...\n')
+    const [seedBin, seedArgs] = seedCmd(pm)
+    await run(seedBin, seedArgs, dir)
+  }
 }
 
 export async function scaffold(dir: string, answers: Answers): Promise<void> {
@@ -292,6 +334,8 @@ async function patchPackageJson(dir: string, name: string): Promise<void> {
   const pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as Record<string, unknown>
   pkg['name'] = name
   pkg['private'] = true
+  const packageManager = packageManagerField()
+  if (packageManager) pkg['packageManager'] = packageManager
   await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
 }
 
@@ -360,13 +404,7 @@ export default defineConfig({
   },
 
   commerce: {
-    payments: {
-      provider: 'stripe',
-      config: {
-        secretKey: env('STRIPE_SECRET_KEY', 'sk_test_placeholder'),
-        webhookSecret: env('STRIPE_WEBHOOK_SECRET', 'whsec_placeholder'),
-      },
-    },
+    payments: { provider: 'native' },
     email: { provider: 'native' },
     reviews: { provider: 'native' },
     search: { provider: 'native' },
@@ -414,19 +452,7 @@ function toDirectoryName(name: string): string {
     .replace(/\s+/g, '-')
 }
 
-async function installDeps(dir: string, pm: PackageManager): Promise<void> {
-  const [cmd, args] = installCmd(pm)
-  note(pc.dim(`Running ${cmd} install (this may take a moment)...`), 'Installing')
-  await runCmd(cmd, args, dir)
-}
-
-async function runSeed(dir: string, pm: PackageManager): Promise<void> {
-  note(pc.dim('Seeding demo content...'), 'Seeding')
-  const [cmd, args] = seedCmd(pm)
-  await runCmd(cmd, args, dir)
-}
-
-function runCmd(cmd: string, args: string[], cwd: string): Promise<void> {
+const runCmd: Runner = (cmd, args, cwd) => {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell: false })
     child.on('error', reject)

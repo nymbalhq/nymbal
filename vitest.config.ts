@@ -1,5 +1,20 @@
 import { defineConfig } from 'vitest/config'
 
+// Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
+// without them), so it exists only when `scripts/scaffold-clean.sh <astro|nextjs>` has set them. Every other run
+// (`pnpm test`, coverage, `nymbal test`, tests-fail-on-base) then cannot select it.
+const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
+  ? [
+      {
+        test: {
+          name: 'scaffold-clean',
+          environment: 'node' as const,
+          include: ['tests/scaffold/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
+
 export default defineConfig({
   test: {
     projects: [
@@ -157,6 +172,7 @@ export default defineConfig({
           setupFiles: ['apps/admin/src/tests/setup.ts'],
         },
       },
+      ...scaffoldClean,
       {
         test: {
           name: 'architecture',

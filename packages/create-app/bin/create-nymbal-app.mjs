@@ -2,7 +2,7 @@
 import { main } from '../dist/index.js'
 import pc from 'picocolors'
 
-main().catch((err) => {
+main(process.argv).catch((err) => {
   console.error(pc.red('✗ create-nymbal-app failed'))
   console.error(err)
   process.exit(1)

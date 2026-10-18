@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbalhq/config'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
 import { createCommandStore, runMigrations } from '@nymbalhq/platform'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
@@ -7,18 +8,23 @@ import { existsSync } from 'node:fs'
 export const migrateCommand = defineCommand({
   meta: { name: 'migrate', description: 'Run database migrations (Drizzle)' },
   async run() {
-    const { config, projectRoot } = await loadConfig()
-    const store = createCommandStore(config)
-    try {
-      const migrationsRoot = resolveMigrations(projectRoot)
-      await runMigrations(store, { migrationsRoot })
-      // eslint-disable-next-line no-console
-      console.log(`✓ migrations applied (${store.kind})`)
-    } finally {
-      await store.close()
-    }
+    const { config, projectRoot } = await loadProject()
+    const kind = await migrateProject(config, projectRoot)
+    // eslint-disable-next-line no-console
+    console.log(`✓ migrations applied (${kind})`)
   },
 })
+
+/** Applies the project's migrations to its command store; the store is closed again before returning. */
+export async function migrateProject(config: NymbalConfig, projectRoot: string): Promise<string> {
+  const store = createCommandStore(config)
+  try {
+    await runMigrations(store, { migrationsRoot: resolveMigrations(projectRoot) })
+    return store.kind
+  } finally {
+    await store.close()
+  }
+}
 
 export function resolveMigrations(projectRoot: string): string {
   // 1. Project-local override (scaffolded projects or custom migrations)
