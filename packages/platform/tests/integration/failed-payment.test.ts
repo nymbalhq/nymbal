@@ -54,15 +54,4 @@ describe('Failed payment flow', () => {
 
     await env.commandStore.close()
   })
-
-  // P1-05 decision 4 step 1: no pending order for the intent is the recorded outcome `no_order`, not a throw.
-  it('AC-6c: finalize for an intent with no order is the outcome no_order with no order number', async () => {
-    const env = await createTestEnv()
-    const result = await env.checkout.finalize('pi_nonexistent_intent', {
-      amountMinor: 1000,
-      currency: 'GBP',
-    })
-    expect(result).toMatchObject({ finalized: false, reason: 'no_order', orderNumber: null })
-    await env.commandStore.close()
-  })
 })

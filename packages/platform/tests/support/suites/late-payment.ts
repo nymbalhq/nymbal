@@ -87,5 +87,29 @@ export function latePaymentSuite(dialect: Kernel['dialect'], start: () => Promis
       expect(again.status).toBe(200)
       expect(again.data?.deduped).toBe(true)
     })
+
+    // Kills: a re-take that looks the deleted variant up and throws NotFoundError (404, rollback, nothing recorded,
+    // Stripe retries for three days) instead of treating it as stock that is not there.
+    it(`AC-11b: the variant was deleted after the reservation expired: 200 finalized: false with reason stock_unavailable, the order stays pending, one payment.failed, and the event is processed (${dialect})`, async () => {
+      const qty = 2
+      const seeded = await seedVariant(k, 5)
+      const late = await expiredCheckout(k, seeded, qty)
+      expect(await reservationsFor(raw, late.orderId)).toBe(0)
+      await k.services.product.delete(seeded.productId)
+      expect(await raw.count('variants', 'id = ?', [seeded.variantId])).toBe(0)
+      const eventId = `evt_${randomUUID()}`
+
+      const answer = await deliverCapture(served.baseUrl, late, { eventId })
+
+      expect(answer.status).toBe(200)
+      expect(answer.data?.finalized).toBe(false)
+      expect(String(answer.data?.reason)).toMatch(/^stock_unavailable/)
+      expect(await orderStatus(raw, late.orderId)).toBe('pending')
+      expect(await paidFor(raw, late.orderId)).toEqual([])
+      const failed = await failedFor(raw, { orderId: late.orderId })
+      expect(failed).toHaveLength(1)
+      expect(failed[0]!.reason).toBe(answer.data?.reason)
+      expect(await processedCount(raw, eventId)).toBe(1)
+    })
   })
 }

@@ -9,6 +9,8 @@ import {
   adjustmentsFor,
   deliverCapture,
   expiredCheckout,
+  failedFor,
+  historyNotes,
   orderStatus,
   paidFor,
   type WebhookAnswer,
@@ -17,7 +19,9 @@ import {
 // P1-05 AC-12 on one dialect: two deliveries of one captured payment at the same instant, against a pending order
 // whose reservation the sweeper already released, so the reservation's DELETE … RETURNING is not what keeps the
 // second finalize out. Kills: an unconditional `pending → confirmed` write (two order.paid, stock taken twice,
-// customer stats bumped twice).
+// customer stats bumped twice). The last-unit cases seed exactly the order's qty, so the losing delivery's re-take finds
+// stock 0 after the winner confirmed. Kills: recording stock_unavailable against the loser's stale pending snapshot
+// (one captured payment ending in order.paid and payment.failed together).
 
 interface Stats {
   orderCount: number
@@ -63,10 +67,13 @@ export function webhookRaceSuite(dialect: Kernel['dialect'], start: () => Promis
       return id
     }
 
-    /** Two deliveries started in one synchronous pass against a released-reservation pending order. */
-    async function raceDeliveries(eventIds: [string, string]) {
+    /**
+     * Two deliveries started in one synchronous pass against a released-reservation pending order, on a variant
+     * seeded at `stock`.
+     */
+    async function raceDeliveries(eventIds: [string, string], stock = 5) {
       const qty = 2
-      const seeded = await seedVariant(k, 5)
+      const seeded = await seedVariant(k, stock)
       const customerId = await customer()
       const started = await expiredCheckout(k, seeded, qty, { customerId })
       expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock)
@@ -82,6 +89,13 @@ export function webhookRaceSuite(dialect: Kernel['dialect'], start: () => Promis
       expect(outcome.won.map((a) => a.status)).toEqual([200, 200])
       expect(await orderStatus(raw, started.orderId)).toBe('confirmed')
       expect(await paidFor(raw, started.orderId)).toHaveLength(1)
+      // Every captured payment ends in exactly one recorded outcome: the order.paid, and no failure beside it.
+      expect(await failedFor(raw, { orderId: started.orderId })).toEqual([])
+      expect(
+        (await historyNotes(raw, started.orderId)).filter((n) =>
+          n.startsWith('captured payment not applied'),
+        ),
+      ).toEqual([])
       expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock - qty)
       // One line, so one stock adjustment for this finalize however many deliveries ran.
       expect((await adjustmentsFor(raw, seeded.variantId)) - adjustmentsBefore).toBe(1)
@@ -98,6 +112,15 @@ export function webhookRaceSuite(dialect: Kernel['dialect'], start: () => Promis
 
     it(`AC-12: two concurrent deliveries of two event ids for one intent: both 200, one order.paid, one stock adjustment, stock = initial − qty, customer stats incremented once (${dialect})`, async () => {
       await raceDeliveries([`evt_${randomUUID()}`, `evt_${randomUUID()}`])
+    }, 60_000)
+
+    it(`AC-12: last units, two concurrent deliveries of one event id: one order.paid, order confirmed, stock 0, no payment.failed and no "captured payment not applied" note (${dialect})`, async () => {
+      const eventId = `evt_${randomUUID()}`
+      await raceDeliveries([eventId, eventId], 2)
+    }, 60_000)
+
+    it(`AC-12: last units, two concurrent deliveries of two event ids for one intent: one order.paid, order confirmed, stock 0, no payment.failed and no "captured payment not applied" note (${dialect})`, async () => {
+      await raceDeliveries([`evt_${randomUUID()}`, `evt_${randomUUID()}`], 2)
     }, 60_000)
   })
 }

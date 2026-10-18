@@ -1010,7 +1010,12 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
    * A writer that moves the order after finalize has read it pending and before its conditional write: the read
    * returns the pending snapshot, then the concurrent writer's status change lands, so setStatusIf changes 0 rows.
    */
-  function raceAfterRead(env: Env, winnerStatus: 'confirmed' | 'cancelled') {
+  function raceAfterRead(
+    env: Env,
+    winnerStatus: 'confirmed' | 'cancelled',
+    /** More of the winner's work, in the same write: e.g. taking the stock its confirm needed. */
+    winnerAlso: () => Promise<void> = async () => {},
+  ) {
     let raced = false
     const order: Env['repos']['order'] = {
       ...env.repos.order,
@@ -1019,9 +1024,10 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
         if (snapshot !== null && !raced) {
           raced = true
           // Joins finalize's open transaction ahead of its savepoint, so the winner's write survives its rollback.
-          await env.commandStore.transaction((wtx) =>
-            env.repos.order.setStatusIf(wtx, snapshot.id, 'pending', winnerStatus, new Date()),
-          )
+          await env.commandStore.transaction(async (wtx) => {
+            await winnerAlso()
+            await env.repos.order.setStatusIf(wtx, snapshot.id, 'pending', winnerStatus, new Date())
+          })
         }
         return snapshot
       },
@@ -1048,6 +1054,35 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     expect(await reservationsOf(env, variants[0]!.id)).toEqual(heldBefore)
     expect(await commitsOf(env, variants[0]!.id)).toHaveLength(0)
     expect((await historyOf(env, started.orderId)).length).toBe(historyBefore)
+    await env.commandStore.close()
+  })
+
+  // Defect: the loser's re-take fails because the winner took the last units, and stock_unavailable is recorded
+  // against its stale pending snapshot, so one captured payment ends in order.paid and payment.failed together.
+  it('AC-12: a delivery that loses the race to a confirming writer that took the last units returns the order number and records no payment.failed', async () => {
+    const env = await setup()
+    const qty = 2
+    const { started, variants, paid } = await placeOrder(env, [
+      { priceMinor: 650, stock: qty, qty },
+    ])
+    const variantId = variants[0]!.id
+    await expire(env, variantId)
+    expect(await stockOf(env, variantId)).toBe(qty)
+    const historyBefore = (await historyOf(env, started.orderId)).length
+
+    const loser = raceAfterRead(env, 'confirmed', async () => {
+      const taken = await env.inventory.tryReserveStock(variantId, qty, started.orderId)
+      await env.inventory.commitReservation(taken!.reservationId, 'system:winner')
+    })
+    const result = await loser.finalize(started.paymentIntent.id, paid)
+
+    expect(result).toEqual({ orderNumber: started.orderNumber, finalized: true })
+    expect((await orderOf(env, started.orderId)).status).toBe('confirmed')
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toEqual([])
+    expect((await historyOf(env, started.orderId)).length).toBe(historyBefore)
+    // The winner's take is the only one: stock went from qty to 0 once.
+    expect(await stockOf(env, variantId)).toBe(qty - qty)
+    expect(await commitsOf(env, variantId)).toHaveLength(1)
     await env.commandStore.close()
   })
 
