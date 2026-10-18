@@ -213,3 +213,48 @@ describe('P1-08 AC-7: a 401 causes one shared refresh and one retry', () => {
     expect(fake.refreshes).toBe(afterAuthRoutes + 1)
   })
 })
+
+// AC-7b kills: a 401-triggered refresh that adopts whatever token the cookie yields (a customer's cookie on the same
+// host) without the role check boot restore makes; a refresh for a call that carried no token at all.
+describe('P1-08 AC-7b: every refresh is role-checked', () => {
+  it('AC-7b: a 401-triggered refresh that yields a non-admin token signs out, fires onSessionLost once, and the call rejects 401 without a retry', async () => {
+    const fake = fakeApi({ roles: ['customer'] })
+    const { api, setToken, isAuthenticated, getToken, onSessionLost, ApiError } = await load()
+    let lost = 0
+    onSessionLost(() => {
+      lost += 1
+    })
+    setToken('admin-expired')
+    const signedInBefore = isAuthenticated()
+
+    const result = await api.get('/api/admin/orders', { i: 0 }).then(
+      () => null,
+      (error: unknown) => error,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(signedInBefore).toBe(true)
+    expect(fake.refreshes).toBe(1)
+    expect(isAuthenticated()).not.toBe(signedInBefore)
+    expect(getToken()).not.toBe('fresh-1')
+    expect(lost).toBe(1)
+    expect(result).toBeInstanceOf(ApiError)
+    expect((result as InstanceType<typeof ApiError>).status).toBe(401)
+    const attempts = fake.calls.filter((c) => c.path === '/api/admin/orders?i=0')
+    expect(attempts.map((c) => c.authorization)).toEqual(['Bearer admin-expired'])
+  })
+
+  it('AC-7b: a 401 for a call sent with no token triggers no refresh, while the same call sent with a token does', async () => {
+    const fake = fakeApi()
+    const { api, setToken } = await load()
+
+    await expect(api.get('/api/admin/orders', { i: 0 })).rejects.toMatchObject({ status: 401 })
+    const afterTokenless = fake.refreshes
+
+    setToken('expired')
+    await api.get('/api/admin/orders', { i: 1 })
+
+    expect(afterTokenless).toBe(0)
+    expect(fake.refreshes).toBe(afterTokenless + 1)
+  })
+})
