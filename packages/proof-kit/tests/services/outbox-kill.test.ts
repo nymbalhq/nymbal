@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { EVT_ORDER_PLACED } from '@nymbalhq/types'
+import { EVT_ORDER_PAID } from '@nymbalhq/types'
 import { runUntilKilled } from '@nymbalhq/proof-kit/chaos'
 import { createMailSink } from '@nymbalhq/proof-kit/mail'
 import { startTestStore } from '@nymbalhq/proof-kit/store'
@@ -12,10 +12,11 @@ import { eventRows } from '../../../platform/tests/support/outbox.js'
 import { createDatabase } from '../../../platform/tests/support/postgres.js'
 import { openRaw } from '../../../platform/tests/support/raw.js'
 
-// Acceptance tests for P1-03 AC-1 (SQLite) and AC-2 (Postgres), the roadmap proof: a child process runs a checkout
-// and its finalize with armChaos at order.placed.v1 and is SIGKILLed when that event reaches the bus, after its
-// transaction committed. The events table holds the row, undelivered. A store restarted on the same database delivers
-// it: one order-placed email in Mailpit and the order served from the document store. A second restart sends nothing.
+// Acceptance tests for P1-03 AC-1 (SQLite) and AC-2 (Postgres), the roadmap proof: a child process runs a checkout,
+// which the stub pays inline, with armChaos at order.paid.v1 and is SIGKILLed when that event reaches the bus, after
+// its transaction committed. The events table holds the row, undelivered. A store restarted on the same database
+// delivers it: one order-placed email in Mailpit (P1-12 decision 5 sends it on order.paid) and the order served from
+// the document store, confirmed. A second restart sends nothing.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_POSTGRES_URL.
 
 function required(name: string, example: string): string {
@@ -79,7 +80,7 @@ function restart(dialect: Dialect, target: string, sink: ReturnType<typeof creat
 describe.each(cases)(
   '$ac: a kill between write and publish ($dialect)',
   ({ ac, dialect, fresh }) => {
-    it(`${ac}: SIGKILL at order.placed.v1 leaves its events row undelivered; a restart delivers it (exactly one order-placed email, the order served by GET /api/orders/:orderNumber); a second restart leaves the email count at 1 (${dialect})`, async () => {
+    it(`${ac}: SIGKILL at order.paid.v1 leaves its events row undelivered; a restart delivers it (exactly one order-placed email, the order served by GET /api/orders/:orderNumber, confirmed); a second restart leaves the email count at 1 (${dialect})`, async () => {
       const sink = createMailSink()
       const buyer = `${ac.toLowerCase()}-${randomUUID()}@proof-kit.test`
       const db = await fresh()
@@ -87,7 +88,7 @@ describe.each(cases)(
         const run = await runUntilKilled({
           script: CHILD,
           args: [dialect, db.target, buyer],
-          point: { beforePublish: EVT_ORDER_PLACED },
+          point: { beforePublish: EVT_ORDER_PAID },
           timeoutMs: 60_000,
         })
         expect(
@@ -98,10 +99,10 @@ describe.each(cases)(
         const raw = openRaw(dialect, db.target)
         try {
           const before = await eventRows(raw)
-          const placed = before.filter((r) => r.type === EVT_ORDER_PLACED)
+          const paid = before.filter((r) => r.type === EVT_ORDER_PAID)
           expect(
-            placed.map((r) => ({ delivered: r.deliveredAt ?? null, dead: r.deadAt ?? null })),
-            'order.placed.v1 rows before the restart',
+            paid.map((r) => ({ delivered: r.deliveredAt ?? null, dead: r.deadAt ?? null })),
+            'order.paid.v1 rows before the restart',
           ).toEqual([{ delivered: null, dead: null }])
           const order = await raw.one<{ id: string; order_number: string }>(
             'SELECT id, order_number FROM orders',
@@ -115,9 +116,10 @@ describe.each(cases)(
             expect(mails[0]!.subject).toContain(order.order_number)
 
             const res = await fetch(`${first.baseUrl}/api/orders/${order.order_number}`)
-            const body = (await res.json()) as { data?: { id: string } }
+            const body = (await res.json()) as { data?: { id: string; status: string } }
             expect(res.status, JSON.stringify(body)).toBe(200)
             expect(body.data?.id).toBe(order.id)
+            expect(body.data?.status).toBe('confirmed')
 
             // Every row the kill left behind, delivered or not, is delivered now; the restart appended none.
             const after = await eventRows(raw)

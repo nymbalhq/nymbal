@@ -114,7 +114,8 @@ export function checkoutConvertsCartSuite(
         await replica.services.cart.addItem(cart.token, lineFor(seeded, qty))
         const started = await replica.services.checkout.beginCheckout({
           cartToken: cart.token,
-          email: `expired-${randomUUID()}@p1-04.test`,
+          // `+stub-pending` (P1-12 decision 7): the cart expires before the payment, which is the finalize below.
+          email: `expired-${randomUUID()}+stub-pending@p1-04.test`,
           billingAddress: address,
           shippingAddress: address,
         })

@@ -199,12 +199,16 @@ export async function cartWith(
   return cart.token
 }
 
-/** beginCheckout for a fresh cart of `qty`, through the services. */
+/**
+ * beginCheckout for a fresh cart of `qty`, through the services. The default buyer's `+stub-pending` address keeps the
+ * order pending with its intent set, as a Stripe order is until its webhook (P1-12 decision 7): the suites built on this
+ * helper drive the capture themselves. Pass an address without the trigger for a checkout the stub pays inline.
+ */
 export async function checkoutOf(
   kernel: Pick<Kernel, 'services'>,
   seeded: Seeded,
   qty: number,
-  email = `buyer-${randomUUID()}@p1-02.test`,
+  email = `buyer-${randomUUID()}+stub-pending@p1-02.test`,
 ) {
   const cartToken = await cartWith(kernel, seeded, qty)
   const started = await kernel.services.checkout.beginCheckout({

@@ -31,7 +31,8 @@ describe('Failed payment flow', () => {
 
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      email: 'fail@test.com',
+      // `+stub-pending` (P1-12 decision 7): the stub would otherwise pay inline; here the payment never comes.
+      email: 'fail+stub-pending@test.com',
       billingAddress: testAddr,
       shippingAddress: testAddr,
     })

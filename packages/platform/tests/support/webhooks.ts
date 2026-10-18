@@ -152,7 +152,8 @@ export async function expiredCheckout(
   const cartToken = await cartWith(k, seeded, qty)
   const started = await checkout.beginCheckout({
     cartToken,
-    email: opts.email ?? `late-${randomUUID()}@p1-05.test`,
+    // `+stub-pending` (P1-12 decision 7): the stub leaves the order pending for the late capture under test.
+    email: opts.email ?? `late-${randomUUID()}+stub-pending@p1-05.test`,
     billingAddress: address,
     shippingAddress: address,
     ...(opts.customerId !== undefined && { customerId: opts.customerId }),

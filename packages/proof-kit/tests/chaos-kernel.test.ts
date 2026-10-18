@@ -21,7 +21,8 @@ afterAll(() => {
 describe('AC-9: the chaos wrapper on a real createApp bus', () => {
   it('AC-9: point { beforePublish: order.placed.v1 } kills the child after the order row exists, before the event is delivered', async () => {
     const c = chaosCase()
-    const email = `chaos-${randomUUID()}@proof-kit.test`
+    // `+stub-pending` (P1-12 decision 7): the order stays pending, so the kill finds it as checkout left it.
+    const email = `chaos-${randomUUID()}+stub-pending@proof-kit.test`
     const run = await runUntilKilled({
       script: CHAOS_ORDER_CHILD,
       args: [c.db, c.marker, email],

@@ -667,7 +667,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
       ...(customerId !== undefined && { customerId }),
-      email: `${tag}@example.com`,
+      // `+stub-pending` (P1-12 decision 7): every finalize below meets a pending order, as a webhook would.
+      email: `${tag}+stub-pending@example.com`,
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
     })
@@ -805,7 +806,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
           ).toEqual({
             orderNumber: cancelled.started.orderNumber,
             finalized: false,
-            reason: 'order_not_pending: cancelled',
+            reason: 'order_cancelled_refunded',
           })
           expect(
             await env.checkout.finalize(confirmed.started.paymentIntent.id, wrongOrRight),
@@ -821,7 +822,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 
   // Defect: the status check is skipped, so a captured payment confirms a cancelled order and takes its stock.
-  it('AC-6b: a captured payment for a cancelled order is order_not_pending: cancelled, recorded, the order untouched', async () => {
+  // P1-12 AC-12 (decision 11): the capture is refunded and recorded as order_cancelled_refunded.
+  it('AC-6b: a captured payment for a cancelled order is order_cancelled_refunded, recorded, the order untouched', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
       { priceMinor: 700, stock: 4, qty: 1 },
@@ -829,7 +831,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     await env.checkout.cancel(started.orderId, 'admin cancelled')
     const stockBefore = await stockOf(env, variants[0]!.id)
     const historyBefore = await historyOf(env, started.orderId)
-    const reason = 'order_not_pending: cancelled'
+    const reason = 'order_cancelled_refunded'
 
     const result = await env.checkout.finalize(started.paymentIntent.id, paid)
 
@@ -1150,13 +1152,13 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 
   // Defect: the lost race confirms anyway, or records the snapshot's status (pending) instead of the one re-read.
-  it('AC-12: a delivery that loses the race to a cancel records order_not_pending: cancelled and undoes its commits', async () => {
+  it('AC-12: a delivery that loses the race to a cancel records order_cancelled_refunded and undoes its commits', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
       { priceMinor: 650, stock: 4, qty: 2 },
     ])
     const heldBefore = await reservationsOf(env, variants[0]!.id)
-    const reason = 'order_not_pending: cancelled'
+    const reason = 'order_cancelled_refunded'
 
     const result = await raceAfterRead(env, 'cancelled').finalize(started.paymentIntent.id, paid)
 

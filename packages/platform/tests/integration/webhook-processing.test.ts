@@ -32,7 +32,8 @@ describe('finalize() — order confirmation flow', () => {
 
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      email: 'webhook@test.com',
+      // `+stub-pending` (P1-12 decision 7): pending until the finalize below, which publishes what the test watches.
+      email: 'webhook+stub-pending@test.com',
       billingAddress: testAddr,
       shippingAddress: testAddr,
     })

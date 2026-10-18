@@ -103,7 +103,11 @@ test.describe('Signed-in account', () => {
     expect(productName.length).toBeGreaterThan(0)
     await page.getByTestId('add-to-cart').click()
     await page.getByTestId('cart-checkout-btn').click()
-    await expect(page).toHaveURL(/\/checkout/, { timeout: 10_000 })
+    // The checkout page's script attaches the forms' submit handlers by `load` (Astro's module script, Next's
+    // hydration). A Continue clicked before then submits the contact form natively and reloads the page at the contact
+    // step, so the shipping fields never appear: a cold first run in CI does exactly that.
+    await page.waitForURL(/\/checkout/, { timeout: 10_000 })
+    await page.waitForLoadState('load')
     await page.getByTestId('contact-email').fill(shopper.email)
     await page.getByTestId('contact-continue').click()
     const shipPostal = `E${Math.floor(Math.random() * 9) + 1} ${Math.floor(Math.random() * 9) + 1}BB`
