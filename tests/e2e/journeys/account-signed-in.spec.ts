@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
+import { csrf } from '../support/csrf'
 
 // P1-09 acceptance (AC-5, AC-6, AC-7): a shopper who signs in sees their own account on either storefront, and
 // signing out really signs them out. Both template projects run this file. Selectors are the data-testid contract both
@@ -144,7 +145,9 @@ test.describe('Signed-in account', () => {
     await expect(signOutControl(page)).toBeVisible({ timeout: 10_000 })
 
     // The browser holds a working refresh credential before sign-out, so the 401 after it is the revocation.
-    const before = await page.request.post(`${API}/api/auth/refresh`)
+    const before = await page.request.post(`${API}/api/auth/refresh`, {
+      headers: await csrf(page.request, API),
+    })
     expect(before.status()).toBe(200)
 
     await signOutControl(page).click()
@@ -153,7 +156,9 @@ test.describe('Signed-in account', () => {
     await page.goto('/account')
     await page.waitForURL(onLogin, { timeout: 10_000 })
 
-    const after = await page.request.post(`${API}/api/auth/refresh`)
+    const after = await page.request.post(`${API}/api/auth/refresh`, {
+      headers: await csrf(page.request, API),
+    })
     expect(after.status()).toBe(401)
     expect(after.status()).not.toBe(before.status())
   })
