@@ -1,13 +1,13 @@
 # id: S004
 # kind: injected
 # defect: finalize lists at most 1000 pending orders and filters in JS instead of findByPaymentIntentId, so the 1001st pending order cannot be finalised
-# where: packages/platform/src/services/checkout-service.ts:341
+# where: packages/platform/src/services/checkout-service.ts:347
 # killed-by: P1-02 acceptance tests (packages/platform/tests/integration/checkout-transaction.test.ts AC-11)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/checkout-transaction.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -338,7 +338,8 @@
+@@ -344,7 +344,8 @@
        return store.transaction(async (tx) => {
          const outcome = (order: Order | null, reason: string) =>
            recordOutcome(tx, paymentIntentId, order, reason)

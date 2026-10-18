@@ -710,7 +710,11 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     await env.inventory.releaseReservation(held!.reservationId, 'expired')
   }
 
-  function checkoutOver(env: Env, repos: Env['repos']) {
+  function checkoutOver(
+    env: Env,
+    repos: Env['repos'],
+    inventory: Env['inventory'] = env.inventory,
+  ) {
     const logger = createLogger({ pretty: false, level: 'error' })
     return createCheckoutService({
       store: env.commandStore,
@@ -719,7 +723,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
       logger,
       cart: env.cart,
       orders: env.order,
-      inventory: env.inventory,
+      inventory,
       payments: createNativeStubPaymentsAdapter({ logger }),
       currency: 'GBP',
     })
@@ -970,6 +974,65 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     expect(
       (await historyOf(env, started.orderId)).filter((h) => h.note.includes(reason)),
     ).toHaveLength(1)
+    await env.commandStore.close()
+  })
+
+  // Defect: the re-take's NotFoundError for a variant deleted since checkout escapes as a 5xx (Stripe retries for
+  // days), or the reason names the wrong line's variant.
+  it('AC-11b: a late payment whose variant was deleted after its release is stock_unavailable for that variant, the order pending', async () => {
+    const env = await setup()
+    const lines = [
+      { priceMinor: 300, stock: 6, qty: 1 },
+      { priceMinor: 500, stock: 6, qty: 2 },
+    ]
+    const { started, variants, paid } = await placeOrder(env, lines)
+    const [kept, deleted] = variants as [(typeof variants)[0], (typeof variants)[0]]
+    await expire(env, kept.id)
+    await expire(env, deleted.id)
+    await env.commandStore.transaction((tx) => env.repos.variant.delete(tx, deleted.id))
+    const keptStockBefore = await stockOf(env, kept.id)
+    const reason = `stock_unavailable: ${deleted.id}`
+
+    const result = await env.checkout.finalize(started.paymentIntent.id, paid)
+
+    expect(result).toEqual({ orderNumber: started.orderNumber, finalized: false, reason })
+    expect((await orderOf(env, started.orderId)).status).toBe('pending')
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toEqual([
+      { paymentId: started.paymentIntent.id, orderId: started.orderId, reason },
+    ])
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
+    // The earlier line's re-take is undone with the refusal.
+    expect(await stockOf(env, kept.id)).toBe(keptStockBefore)
+    expect(await reservationsOf(env, kept.id)).toHaveLength(0)
+    expect(await commitsOf(env, kept.id)).toHaveLength(0)
+    await env.commandStore.close()
+  })
+
+  // Defect: the re-take's catch swallows every error as stock_unavailable, so a store fault is recorded as a
+  // refused payment (payment.failed, a history note) instead of failing the delivery for Stripe to retry.
+  it('decision 5: a re-take that fails with anything but NotFoundError rejects with that error and records nothing', async () => {
+    const env = await setup()
+    const { started, variants, paid } = await placeOrder(env, [
+      { priceMinor: 400, stock: 5, qty: 2 },
+    ])
+    await expire(env, variants[0]!.id)
+    const historyBefore = await historyOf(env, started.orderId)
+    const fault = new Error('database is locked')
+    const inventory: Env['inventory'] = {
+      ...env.inventory,
+      async tryReserveStock() {
+        throw fault
+      },
+    }
+
+    await expect(
+      checkoutOver(env, env.repos, inventory).finalize(started.paymentIntent.id, paid),
+    ).rejects.toBe(fault)
+
+    expect((await orderOf(env, started.orderId)).status).toBe('pending')
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toHaveLength(0)
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
+    expect(await historyOf(env, started.orderId)).toEqual(historyBefore)
     await env.commandStore.close()
   })
 
