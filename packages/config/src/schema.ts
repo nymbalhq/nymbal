@@ -8,6 +8,9 @@ const rateLimitRuleSchema = z.object({
 
 const rateLimitPathPattern = /^\/[\w\-/*:]*$/
 
+/** The schema's JWT secret when none is configured: fine for development, refused in production. */
+export const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
+
 export const storeSchema = z.object({
   name: z.string().min(1),
   currency: z.string().length(3),
@@ -18,27 +21,9 @@ export const storeSchema = z.object({
 export const infrastructureSchema = z.object({
   cloud: z.enum(['local', 'aws', 'gcp', 'azure', 'docker']),
   commandStore: z.enum(['sqlite', 'postgres']),
-  documentStore: z.enum([
-    'in-memory',
-    'dynamodb',
-    'firestore',
-    'cosmosdb',
-    'postgres-jsonb',
-  ]),
-  eventBus: z.enum([
-    'in-process',
-    'eventbridge',
-    'pubsub',
-    'service-bus',
-    'redis-streams',
-  ]),
-  compute: z.enum([
-    'in-process',
-    'lambda',
-    'cloud-functions',
-    'azure-functions',
-    'worker-threads',
-  ]),
+  documentStore: z.enum(['in-memory', 'dynamodb', 'firestore', 'cosmosdb', 'postgres-jsonb']),
+  eventBus: z.enum(['in-process', 'eventbridge', 'pubsub', 'service-bus', 'redis-streams']),
+  compute: z.enum(['in-process', 'lambda', 'cloud-functions', 'azure-functions', 'worker-threads']),
 })
 
 export const securitySchema = z.object({
@@ -70,8 +55,11 @@ export const securitySchema = z.object({
   csrf: z.boolean().default(true),
   auth: z
     .object({
-      jwtSecret: z.string().min(16).default('dev-secret-please-override-me-1234567890'),
-      accessTtl: z.string().regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "15m"').default('15m'),
+      jwtSecret: z.string().min(16).default(DEFAULT_JWT_SECRET),
+      accessTtl: z
+        .string()
+        .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "15m"')
+        .default('15m'),
       refreshTtl: z
         .string()
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')

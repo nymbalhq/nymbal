@@ -44,6 +44,19 @@ export class FastifyHttpAdapter implements HttpAdapter {
       disableRequestLogging: true,
       genReqId: () => uuidv7(),
     })
+    // A signed webhook is verified against the bytes sent, so a route registered with `rawBody` keeps them. The
+    // body is still parsed by Fastify's own JSON parser, with its poisoning settings and its 400s.
+    const parseJson = this.#app.getDefaultJsonParser(
+      this.#app.initialConfig.onProtoPoisoning ?? 'error',
+      this.#app.initialConfig.onConstructorPoisoning ?? 'error',
+    )
+    this.#app.removeContentTypeParser('application/json')
+    this.#app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+      const buffer = body as Buffer
+      const config = req.routeOptions.config as { routeOptions?: RouteOptions } | undefined
+      if (config?.routeOptions?.rawBody === true) req.rawBody = buffer
+      parseJson(req, buffer.toString('utf8'), done)
+    })
     void this.#app.register(fastifyCookie)
     if (options.cors && options.cors.allowedOrigins.length > 0) {
       void this.#app.register(fastifyCors, {
@@ -67,7 +80,13 @@ export class FastifyHttpAdapter implements HttpAdapter {
     if (this.#started) {
       throw new Error('Cannot register routes after the server has started')
     }
-    const routeConfig: { method: HttpMethod; url: string; handler: (req: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply>; config: { routeOptions: RouteOptions }; bodyLimit?: number } = {
+    const routeConfig: {
+      method: HttpMethod
+      url: string
+      handler: (req: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply>
+      config: { routeOptions: RouteOptions }
+      bodyLimit?: number
+    } = {
       method,
       url: path,
       handler: async (req, reply) => {
@@ -148,8 +167,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
             let line = ''
             if (event.id !== undefined) line += `id: ${event.id}\n`
             if (event.event !== undefined) line += `event: ${event.event}\n`
-            const data =
-              typeof event.data === 'string' ? event.data : JSON.stringify(event.data)
+            const data = typeof event.data === 'string' ? event.data : JSON.stringify(event.data)
             line += `data: ${data}\n\n`
             reply.raw.write(line)
           },
@@ -197,8 +215,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   }
 
   #buildContext(req: FastifyRequest, includeRawBody: boolean): RequestContext {
-    const correlationId =
-      (req.headers['x-correlation-id'] as string | undefined) ?? req.id
+    const correlationId = (req.headers['x-correlation-id'] as string | undefined) ?? req.id
     const logger = this.#logger.child({ requestId: req.id, correlationId })
     const ctx: RequestContext = {
       method: req.method as HttpMethod,

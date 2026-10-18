@@ -7,3 +7,8 @@ export { runUntilKilled } from '../../../proof-kit/dist/chaos.js'
 export type { KilledRun } from '../../../proof-kit/dist/chaos.js'
 export { startTestStore } from '../../../proof-kit/dist/store.js'
 export type { TestStore } from '../../../proof-kit/dist/store.js'
+export { stubPaymentWebhook } from '../../../proof-kit/dist/payments.js'
+export type {
+  StubPaymentWebhookOptions,
+  StubPaymentWebhookRequest,
+} from '../../../proof-kit/dist/payments.js'

@@ -1,15 +1,16 @@
 # id: S001
 # kind: injected
 # defect: the SQLite transaction() runs its callback without BEGIN IMMEDIATE / COMMIT / ROLLBACK, so a failed command leaves partial writes
-# where: packages/platform/src/db/command-store.ts:304-310
+# where: packages/platform/src/db/command-store.ts:347-353
 # killed-by: P1-02 acceptance tests (packages/platform/tests/integration/transactions.test.ts AC-4, AC-9; checkout-transaction.test.ts AC-6, AC-10)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/transactions.test.ts packages/platform/tests/integration/checkout-transaction.test.ts
 diff --git a/packages/platform/src/db/command-store.ts b/packages/platform/src/db/command-store.ts
 --- a/packages/platform/src/db/command-store.ts
 +++ b/packages/platform/src/db/command-store.ts
-@@ -302,12 +302,10 @@
-           {
-             client,
+@@ -344,12 +344,10 @@
+             async exec(sql) {
+               raw.exec(sql)
+             },
 -            begin: () => beginImmediate(raw),
 +            async begin() {},
              async commit() {
@@ -20,4 +21,3 @@ diff --git a/packages/platform/src/db/command-store.ts b/packages/platform/src/d
              },
              release,
            },
-           fn,

@@ -57,6 +57,9 @@ const started = await services.checkout.beginCheckout({
   billingAddress: address,
   shippingAddress: address,
 })
-await services.checkout.finalize(started.paymentIntent.id, started.totalMinor)
+await services.checkout.finalize(started.paymentIntent.id, {
+  amountMinor: started.totalMinor,
+  currency: started.currency,
+})
 console.log('checkout and finalize completed without a kill')
 await store.stop()

@@ -36,6 +36,10 @@ export interface CommandStore {
   /** Opens a transaction, or joins the one open in the same async call chain (no new BEGIN; commits and rolls back
    *  with the outermost). */
   transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T>
+  /** Runs `fn` behind a savepoint in the transaction open in the same async call chain: if `fn` throws, its writes
+   *  (and only its writes) are undone, the error is rethrown, and the enclosing transaction carries on. With no
+   *  transaction open it is `transaction`. */
+  savepoint<T>(fn: (tx: Tx) => Promise<T>): Promise<T>
   close(): Promise<void>
 }
 
@@ -66,11 +70,15 @@ class Scope {
   failure: { error: unknown } | undefined
   /** Sends held until the outermost commits; the same function held twice runs once. */
   readonly held = new Set<() => Promise<void>>()
+  /** Savepoints opened so far, for unique names. */
+  savepoints = 0
 
   constructor(
     readonly owner: object,
     readonly client: Client,
     readonly writable: boolean,
+    /** Runs one SQL statement on the transaction's connection; reads have none. */
+    readonly exec?: (sql: string) => Promise<void>,
   ) {}
 
   get kind(): Client['kind'] {
@@ -146,8 +154,40 @@ async function join<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
   }
 }
 
+async function savepoint<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  if (!scope.writable || scope.exec === undefined) {
+    throw new Error(
+      'CommandStore.savepoint() was called inside CommandStore.read(); open the transaction first',
+    )
+  }
+  const exec = scope.exec
+  const name = `nymbal_sp_${(scope.savepoints += 1)}`
+  const failure = scope.failure
+  const held = new Set(scope.held)
+  await exec(`SAVEPOINT ${name}`)
+  try {
+    const result = await fn(scope as unknown as Tx)
+    await exec(`RELEASE SAVEPOINT ${name}`)
+    return result
+  } catch (error) {
+    try {
+      await exec(`ROLLBACK TO SAVEPOINT ${name}`)
+      await exec(`RELEASE SAVEPOINT ${name}`)
+    } catch (rollbackError) {
+      scope.failure ??= { error: rollbackError }
+      throw new AggregateError([error, rollbackError], 'savepoint failed and so did its rollback')
+    }
+    // The failure recorded inside, and the sends held inside, went with the writes the rollback undid.
+    scope.failure = failure
+    for (const send of scope.held) if (!held.has(send)) scope.held.delete(send)
+    throw error
+  }
+}
+
 interface Connection {
   client: Client
+  /** One statement on the transaction's connection: savepoints. */
+  exec(sql: string): Promise<void>
   begin(): Promise<void>
   /** Throws unless the transaction committed. */
   commit(): Promise<void>
@@ -174,7 +214,7 @@ async function runTransaction<T>(
   connection: Connection,
   fn: (tx: Tx) => Promise<T>,
 ): Promise<T> {
-  const scope = new Scope(owner, connection.client, true)
+  const scope = new Scope(owner, connection.client, true, (sql) => connection.exec(sql))
   let result: T
   let begun = false
   let unusable: Error | undefined
@@ -301,6 +341,9 @@ export function createCommandStore(
           owner,
           {
             client,
+            async exec(sql) {
+              raw.exec(sql)
+            },
             begin: () => beginImmediate(raw),
             async commit() {
               raw.exec('COMMIT')
@@ -312,6 +355,10 @@ export function createCommandStore(
           },
           fn,
         )
+      },
+      async savepoint(fn) {
+        const scope = joinable(owner)
+        return scope === undefined ? store.transaction(fn) : savepoint(scope, fn)
       },
       async close() {
         raw.close()
@@ -355,6 +402,9 @@ export function createCommandStore(
           owner,
           {
             client,
+            async exec(sql) {
+              await connection.query(sql)
+            },
             async begin() {
               await connection.query('BEGIN')
             },
@@ -379,6 +429,10 @@ export function createCommandStore(
           },
           fn,
         )
+      },
+      async savepoint(fn) {
+        const scope = joinable(owner)
+        return scope === undefined ? store.transaction(fn) : savepoint(scope, fn)
       },
       async close() {
         await pool.end()

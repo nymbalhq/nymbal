@@ -34,6 +34,13 @@ export interface InventoryService {
     orderRef?: string | null,
     ttlSeconds?: number,
   ): Promise<ReserveStockResult>
+  /** `reserveStock`, answering null instead of throwing when the variant has less than `qty` in stock. */
+  tryReserveStock(
+    variantId: string,
+    qty: number,
+    orderRef?: string | null,
+    ttlSeconds?: number,
+  ): Promise<ReserveStockResult | null>
   releaseReservation(
     reservationId: string,
     reason: 'expired' | 'cancelled' | 'abandoned',
@@ -78,6 +85,47 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
     }
   }
 
+  /** The conditional decrement and its reservation row; `available` instead when the stock is short. */
+  async function take(
+    variantId: string,
+    qty: number,
+    orderRef: string | null,
+    ttlSeconds: number | undefined,
+  ): Promise<ReserveStockResult | { available: number }> {
+    if (qty <= 0) throw new ValidationError(`Reservation qty must be positive, got ${qty}`)
+    return store.transaction(async (tx) => {
+      const variant = await repos.variant.findById(tx, variantId)
+      if (!variant) throw new NotFoundError('variant', variantId)
+      const now = new Date()
+      const remaining = await repos.variant.decrementStock(tx, variant.id, qty, now)
+      if (remaining === null) return { available: variant.stock }
+      const expiresAt = new Date(now.getTime() + (ttlSeconds ?? defaultTtl) * 1000)
+      const reservationId = uuidv7()
+      await repos.inventoryReservation.insert(tx, {
+        reservationId,
+        variantId: variant.id,
+        qty,
+        orderRef,
+        expiresAt,
+        createdAt: now,
+      })
+      await publisher.publish(EVT_INVENTORY_RESERVED, {
+        variantId: variant.id,
+        qty,
+        reservationId,
+        expiresAt: expiresAt.toISOString(),
+      })
+      await publisher.publish(EVT_INVENTORY_CHANGED, {
+        variantId: variant.id,
+        previousQty: remaining + qty,
+        newQty: remaining,
+        reason: 'manual',
+      })
+      await emitThresholdEvents(variant.id, remaining, variant.lowStockThreshold)
+      return { reservationId, expiresAt: expiresAt.toISOString() }
+    })
+  }
+
   return {
     async adjustStock(variantId, delta, reason, actor) {
       return store.transaction(async (tx) => {
@@ -117,46 +165,22 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
     },
 
     async reserveStock(variantId, qty, orderRef = null, ttlSeconds) {
-      if (qty <= 0) throw new ValidationError(`Reservation qty must be positive, got ${qty}`)
-      return store.transaction(async (tx) => {
-        const variant = await repos.variant.findById(tx, variantId)
-        if (!variant) throw new NotFoundError('variant', variantId)
-        const now = new Date()
-        const remaining = await repos.variant.decrementStock(tx, variant.id, qty, now)
-        if (remaining === null) {
-          throw new AdapterError(
-            'inventory.insufficient',
-            `Insufficient stock for variant ${variantId}`,
-            {
-              context: { variantId, requested: qty, available: variant.stock },
-            },
-          )
-        }
-        const expiresAt = new Date(now.getTime() + (ttlSeconds ?? defaultTtl) * 1000)
-        const reservationId = uuidv7()
-        await repos.inventoryReservation.insert(tx, {
-          reservationId,
-          variantId: variant.id,
-          qty,
-          orderRef,
-          expiresAt,
-          createdAt: now,
-        })
-        await publisher.publish(EVT_INVENTORY_RESERVED, {
-          variantId: variant.id,
-          qty,
-          reservationId,
-          expiresAt: expiresAt.toISOString(),
-        })
-        await publisher.publish(EVT_INVENTORY_CHANGED, {
-          variantId: variant.id,
-          previousQty: remaining + qty,
-          newQty: remaining,
-          reason: 'manual',
-        })
-        await emitThresholdEvents(variant.id, remaining, variant.lowStockThreshold)
-        return { reservationId, expiresAt: expiresAt.toISOString() }
-      })
+      const taken = await take(variantId, qty, orderRef, ttlSeconds)
+      if ('available' in taken) {
+        throw new AdapterError(
+          'inventory.insufficient',
+          `Insufficient stock for variant ${variantId}`,
+          {
+            context: { variantId, requested: qty, available: taken.available },
+          },
+        )
+      }
+      return taken
+    },
+
+    async tryReserveStock(variantId, qty, orderRef = null, ttlSeconds) {
+      const taken = await take(variantId, qty, orderRef, ttlSeconds)
+      return 'available' in taken ? null : taken
     },
 
     async releaseReservation(reservationId, reason) {

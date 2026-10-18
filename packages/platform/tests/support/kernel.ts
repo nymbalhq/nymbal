@@ -66,9 +66,16 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
  * same database (P1-03's restart ACs); without it the kernel owns a temp dir and removes it on close.
  */
 export async function createKernel(
-  opts: { dialect: 'sqlite'; sqlitePath?: string } | { dialect: 'postgres'; postgresUrl: string },
+  opts: (
+    | { dialect: 'sqlite'; sqlitePath?: string }
+    | { dialect: 'postgres'; postgresUrl: string }
+  ) & {
+    /** Reshapes the kernel config before anything opens: P1-05 serves a kernel on the Stripe adapter. */
+    configure?: (config: NymbalConfig) => NymbalConfig
+  },
 ): Promise<Kernel> {
-  const config = kernelConfig(opts.dialect)
+  const base = kernelConfig(opts.dialect)
+  const config = opts.configure === undefined ? base : opts.configure(base)
   const logger = createLogger({ pretty: false, level: 'error' })
   const ownedPath = opts.dialect === 'sqlite' ? opts.sqlitePath : undefined
   const dir =

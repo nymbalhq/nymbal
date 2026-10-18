@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -71,6 +71,15 @@ export interface OrderRepository extends StoreRepository {
   ): Promise<Order[]>
   insert(tx: Tx, o: OrderInsert): Promise<void>
   setStatus(tx: Tx, id: string, status: OrderStatus, updatedAt: Date): Promise<void>
+  /** Sets `status` only while the order is still `from`; false when it was not, so a concurrent writer got there
+   *  first. */
+  setStatusIf(
+    tx: Tx,
+    id: string,
+    from: OrderStatus,
+    status: OrderStatus,
+    updatedAt: Date,
+  ): Promise<boolean>
   setPaymentIntent(tx: Tx, id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
   setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
 }
@@ -225,6 +234,23 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .update(postgresSchema.orders)
         .set({ status, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
+    },
+    async setStatusIf(tx, id, from, status, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        const o = sqliteSchema.orders
+        const { changes } = sqliteDb(tx)
+          .update(o)
+          .set({ status, updatedAt: updatedAt.toISOString() })
+          .where(and(eq(o.id, id), eq(o.status, from)))
+          .run()
+        return changes > 0
+      }
+      const o = postgresSchema.orders
+      const result = await postgresDb(tx)
+        .update(o)
+        .set({ status, updatedAt })
+        .where(and(eq(o.id, id), eq(o.status, from)))
+      return (result.rowCount ?? 0) > 0
     },
     async setPaymentIntent(tx, id, paymentIntentId, updatedAt) {
       if (tx.kind === 'sqlite') {

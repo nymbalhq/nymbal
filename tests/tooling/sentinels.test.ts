@@ -411,7 +411,7 @@ describe('AC-19: the real sentinel set', () => {
     S001: {
       kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
-      lines: [304, 310],
+      lines: [347, 353],
       marks: /beginImmediate\(raw\)[\s\S]*raw\.exec\('COMMIT'\)[\s\S]*raw\.exec\('ROLLBACK'\)/,
     },
     S002: {
@@ -429,7 +429,7 @@ describe('AC-19: the real sentinel set', () => {
     S004: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [175, 175],
+      lines: [347, 347],
       marks: /findByPaymentIntentId\(/,
     },
     // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
@@ -448,17 +448,21 @@ describe('AC-19: the real sentinel set', () => {
       lines: [39, 39],
       marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
+    // S007 became injected in P1-05: predicted against the spec's decision 4 step 3 (the amount and currency check
+    // in finalize), re-based on the fix as it landed, as P1-02 did for S001-S004. S008 became injected in P1-05 too:
+    // the fix is createApp's production refusal, so the patch removes it and AC-8's suite must go red.
     S007: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [173, 242],
-      marks: /finalize\(paymentIntentId, paidAmountMinor\)/,
+      lines: [350, 353],
+      marks:
+        /paid\.amountMinor !== order\.totalMinor \|\|\s+paid\.currency\.toUpperCase\(\) !== order\.currency\.toUpperCase\(\)/,
     },
     S008: {
-      kind: 'present',
-      path: 'packages/config/src/schema.ts',
-      lines: [73, 73],
-      marks: /jwtSecret: .*\.default\('/,
+      kind: 'injected',
+      path: 'packages/platform/src/app.ts',
+      lines: [49, 54],
+      marks: /jwtSecret === DEFAULT_JWT_SECRET[\s\S]*config\.production_default_jwt_secret/,
     },
     S009: {
       kind: 'injected',
@@ -475,19 +479,19 @@ describe('AC-19: the real sentinel set', () => {
     I101: {
       kind: 'injected',
       path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [126, 134],
+      lines: [169, 177],
       marks: /inventory\.insufficient/,
     },
     I102: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [188, 190],
+      lines: [198, 198],
       marks: /commitReservation/,
     },
     I103: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [111, 111],
+      lines: [281, 281],
       marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
     },
     I104: {
