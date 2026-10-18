@@ -123,7 +123,8 @@ describe('P1-08 AC-2: named SSE events decoded', () => {
         source.emit(type, frame(type, payload))
         expect(received.length).toBe(before + 1)
         expect(received.at(-1)!.type).toBe(type)
-        expect(received.at(-1)!.payload).toEqual(payload)
+        // A JSON frame cannot carry -0 (fc.jsonValue generates it), so the wire form is the expectation.
+        expect(received.at(-1)!.payload).toEqual(JSON.parse(JSON.stringify(payload)))
       }),
       { numRuns: 100 },
     )

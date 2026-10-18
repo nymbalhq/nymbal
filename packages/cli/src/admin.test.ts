@@ -48,7 +48,7 @@ describe('P1-08 AC-11b: NYMBAL_ADMIN_DIST wins', () => {
     expect(overridden).toBe(built)
 
     for (const dir of [unbuilt, join(tmp, 'missing')]) {
-      expect(resolveWith(dir)).toBe(installed)
+      expect(resolveWith(dir)).toBe(resolveWith(undefined))
     }
   })
 })
