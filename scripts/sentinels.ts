@@ -304,7 +304,8 @@ export async function run(opts: {
   root: string
   dir: string
   suite: string
-  only?: string
+  /** One id, or several; an id with no sentinel is an error before anything runs. */
+  only?: string | string[]
 }): Promise<Report> {
   const root = resolve(opts.root)
   const dir = resolve(opts.dir)
@@ -318,10 +319,13 @@ export async function run(opts: {
   }
 
   const all = loadSentinels(dir)
-  const selected = opts.only === undefined ? all : all.filter((s) => s.id === opts.only)
-  if (opts.only !== undefined && selected.length === 0) {
-    throw new Error(`no sentinel with id ${opts.only} in ${dir}`)
+  const only = opts.only === undefined ? undefined : [opts.only].flat()
+  if (only !== undefined && only.length === 0) throw new Error('--only names no sentinel')
+  const unknown = (only ?? []).filter((id) => !all.some((s) => s.id === id))
+  if (unknown.length > 0) {
+    throw new Error(`no sentinel with id ${unknown.join(', ')} in ${dir}`)
   }
+  const selected = only === undefined ? all : all.filter((s) => only.includes(s.id))
 
   const session: Session = {}
   const onSignal = (signal: NodeJS.Signals): void => {
@@ -392,7 +396,14 @@ async function main(argv: string[]): Promise<void> {
     root,
     dir,
     suite: values.suite,
-    ...(values.only !== undefined ? { only: values.only } : {}),
+    ...(values.only !== undefined
+      ? {
+          only: values.only
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean),
+        }
+      : {}),
   })
   process.stdout.write(`${values.json ? JSON.stringify(report) : renderReport(report)}\n`)
   // A red control throws from run(). An injected sentinel that is missed, or errors because its patch no longer

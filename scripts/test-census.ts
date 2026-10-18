@@ -325,6 +325,116 @@ export function classifySource(source: string, path: string): FileCensus {
   }
 }
 
+/** A call on the `request` fixture or `page.request`, or `fetch`, whose first argument names a path under `/api/`. */
+function isApiRead(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) return false
+  const chain = dottedChain(node.expression)
+  const reader =
+    chain !== undefined &&
+    ((chain.root === 'fetch' && chain.mods.length === 0) ||
+      (chain.root === 'request' && chain.mods.length === 1) ||
+      (chain.root === 'page' && chain.mods.length === 2 && chain.mods[0] === 'request'))
+  const target = node.arguments[0]
+  return reader && target !== undefined && target.getText().includes('/api/')
+}
+
+/** `x` out of `await x`, `(x)`, `x as T`, `x satisfies T` and `x!`. */
+function unwrap(node: ts.Expression): ts.Expression {
+  let current = node
+  while (
+    ts.isAwaitExpression(current) ||
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current)
+  ) {
+    current = current.expression
+  }
+  return current
+}
+
+function mentions(node: ts.Node, names: Set<string>): boolean {
+  if (ts.isIdentifier(node) && names.has(node.text)) return true
+  if (isApiRead(node)) return true
+  return ts.forEachChild(node, (child) => (mentions(child, names) ? true : undefined)) === true
+}
+
+/**
+ * The journey rule (constitution rule 7) on one `tests/e2e/journeys/**` file: every test needs an assertion outside
+ * C1, and the file needs an API read whose value, or its `.json()`, reaches an `expect()` as the subject or a matcher
+ * argument. A read nothing asserts on is decoration, not evidence of what the user sees.
+ */
+export function journeyViolations(source: string, path: string): string[] {
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  const violations: string[] = []
+  const fromApi = new Set<string>()
+  let reads = 0
+  let asserted = false
+
+  const derived = (expression: ts.Expression): boolean => {
+    const e = unwrap(expression)
+    if (isApiRead(e)) return true
+    if (ts.isIdentifier(e)) return fromApi.has(e.text)
+    if (
+      ts.isCallExpression(e) &&
+      ts.isPropertyAccessExpression(e.expression) &&
+      e.expression.name.text === 'json'
+    ) {
+      return derived(e.expression.expression)
+    }
+    return false
+  }
+
+  const bind = (node: ts.Node): void => {
+    if (isApiRead(node)) reads += 1
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      if (derived(node.initializer)) fromApi.add(node.name.text)
+    }
+    ts.forEachChild(node, bind)
+  }
+  bind(sourceFile)
+
+  const judge = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const matcher = matcherOf(node)
+      if (matcher !== undefined && mentions(node, fromApi)) asserted = true
+      const site = testSite(node)
+      if (site !== undefined && !site.skipped) {
+        const kinds: Array<keyof Counts> = []
+        const collect = (child: ts.Node): void => {
+          if (ts.isCallExpression(child)) {
+            const name = matcherOf(child)
+            if (name !== undefined) kinds.push(classifyMatcher(child, name))
+          }
+          ts.forEachChild(child, collect)
+        }
+        node.arguments.forEach(collect)
+        if (!kinds.some((kind) => kind !== 'C1')) {
+          const title = node.arguments[0]
+          const name =
+            title !== undefined && ts.isStringLiteralLike(title) ? title.text : '(unnamed)'
+          violations.push(
+            `${path}: test "${name}": ${kinds.length} assertion(s), all presence (C1); the journey rule needs one outside C1`,
+          )
+        }
+      }
+    }
+    ts.forEachChild(node, judge)
+  }
+  judge(sourceFile)
+
+  if (reads === 0) {
+    violations.push(
+      `${path}: no API read (the request fixture, page.request or fetch to /api/); the journey rule needs one an expect() asserts on`,
+    )
+  } else if (!asserted) {
+    violations.push(
+      `${path}: ${reads} API read(s), none reaches an expect(); the journey rule needs one asserted on`,
+    )
+  }
+  return violations
+}
+
 export function packageOf(path: string): string {
   const [first, second] = path.split('/')
   if (second === undefined) return '.'
