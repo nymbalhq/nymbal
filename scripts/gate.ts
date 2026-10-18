@@ -785,7 +785,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           name: 'stryker',
           command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))}`,
         },
-    { name: 'sentinels', command: 'pnpm sentinels' },
+    // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
+    { name: 'sentinels', command: `${postgres} pnpm sentinels` },
     {
       name: 'tests-fail-on-base',
       command: `${postgres} ${mailpit} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
