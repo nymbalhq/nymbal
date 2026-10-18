@@ -48,6 +48,13 @@ test.describe('A checkout that completes', () => {
       timeout: 15_000,
     })
     await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i)
+
+    // The page's own cart, with no reload: the mini-cart badge renders nothing at zero, and the drawer lists no item.
+    await expect(page.getByTestId('mini-cart-badge')).toHaveText('', { timeout: 10_000 })
+    await page.getByTestId('mini-cart').click()
+    const drawer = page.getByTestId('cart-drawer')
+    await expect(drawer).toBeVisible({ timeout: 10_000 })
+    await expect(drawer.locator('[data-testid^="cart-item-"]')).toHaveCount(0)
   })
 
   // Kills: a second order (and a second decrement) from a double click on Place Order.
