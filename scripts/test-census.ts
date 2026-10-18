@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { posix, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import ts from 'typescript'
@@ -325,17 +325,65 @@ export function classifySource(source: string, path: string): FileCensus {
   }
 }
 
-/** A call on the `request` fixture or `page.request`, or `fetch`, whose first argument names a path under `/api/`. */
-function isApiRead(node: ts.Node): node is ts.CallExpression {
-  if (!ts.isCallExpression(node)) return false
-  const chain = dottedChain(node.expression)
-  const reader =
-    chain !== undefined &&
-    ((chain.root === 'fetch' && chain.mods.length === 0) ||
-      (chain.root === 'request' && chain.mods.length === 1) ||
-      (chain.root === 'page' && chain.mods.length === 2 && chain.mods[0] === 'request'))
-  const target = node.arguments[0]
-  return reader && target !== undefined && target.getText().includes('/api/')
+/** The local names `@playwright/test`'s `request` is imported under (`import { request as r }` included). */
+function playwrightRequestNames(sourceFile: ts.SourceFile): Set<string> {
+  const names = new Set<string>()
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== '@playwright/test'
+    )
+      continue
+    const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue
+    for (const element of bindings.elements) {
+      if ((element.propertyName ?? element.name).text === 'request') names.add(element.name.text)
+    }
+  }
+  return names
+}
+
+/** Variables holding a context from `request.newContext()` (the import) or `playwright.request.newContext()`. */
+function requestContexts(sourceFile: ts.SourceFile): Set<string> {
+  const imported = playwrightRequestNames(sourceFile)
+  const contexts = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const init = unwrap(node.initializer)
+      const chain = ts.isCallExpression(init) ? dottedChain(init.expression) : undefined
+      if (
+        chain !== undefined &&
+        ((imported.has(chain.root) && chain.mods.join('.') === 'newContext') ||
+          (chain.root === 'playwright' && chain.mods.join('.') === 'request.newContext'))
+      )
+        contexts.add(node.name.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return contexts
+}
+
+type ApiRead = (node: ts.Node) => node is ts.CallExpression
+
+/**
+ * A call on the `request` fixture, `page.request` or a request context, or `fetch`, whose first argument names a path
+ * under `/api/`.
+ */
+function apiReader(sourceFile: ts.SourceFile): ApiRead {
+  const contexts = requestContexts(sourceFile)
+  return (node: ts.Node): node is ts.CallExpression => {
+    if (!ts.isCallExpression(node)) return false
+    const chain = dottedChain(node.expression)
+    const reader =
+      chain !== undefined &&
+      ((chain.root === 'fetch' && chain.mods.length === 0) ||
+        ((chain.root === 'request' || contexts.has(chain.root)) && chain.mods.length === 1) ||
+        (chain.root === 'page' && chain.mods.length === 2 && chain.mods[0] === 'request'))
+    const target = node.arguments[0]
+    return reader && target !== undefined && target.getText().includes('/api/')
+  }
 }
 
 /** `x` out of `await x`, `(x)`, `x as T`, `x satisfies T` and `x!`. */
@@ -353,62 +401,133 @@ function unwrap(node: ts.Expression): ts.Expression {
   return current
 }
 
-function mentions(node: ts.Node, names: Set<string>): boolean {
+function mentions(node: ts.Node, names: Set<string>, isApiRead: ApiRead): boolean {
   if (ts.isIdentifier(node) && names.has(node.text)) return true
   if (isApiRead(node)) return true
-  return ts.forEachChild(node, (child) => (mentions(child, names) ? true : undefined)) === true
+  return (
+    ts.forEachChild(node, (child) => (mentions(child, names, isApiRead) ? true : undefined)) ===
+    true
+  )
+}
+
+/** A body the journey rule reads: the spec file itself, or a support helper a test calls. */
+type Unit = { node: ts.Node; isApiRead: ApiRead }
+
+const SUPPORT = 'tests/e2e/support/'
+const MODULE_SUFFIXES = ['', '.ts', '.tsx', '.mts', '/index.ts']
+
+/** The exported function bodies of a module, by exported name. */
+function exportedFunctions(sourceFile: ts.SourceFile): Map<string, ts.Node> {
+  const found = new Map<string, ts.Node>()
+  const exported = (node: ts.Node): boolean =>
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isFunctionDeclaration(statement) &&
+      statement.name &&
+      statement.body &&
+      exported(statement)
+    ) {
+      found.set(statement.name.text, statement.body)
+    } else if (ts.isVariableStatement(statement) && exported(statement)) {
+      for (const d of statement.declarationList.declarations) {
+        const init = d.initializer
+        if (
+          ts.isIdentifier(d.name) &&
+          init &&
+          (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+        ) {
+          found.set(d.name.text, init.body)
+        }
+      }
+    }
+  }
+  return found
+}
+
+/**
+ * The functions a journey imports from `tests/e2e/support/**`, by local name, each with its body and the reads its
+ * own file makes; read from `root`, the repo the paths are relative to.
+ */
+function supportHelpers(sourceFile: ts.SourceFile, path: string, root: string): Map<string, Unit> {
+  const helpers = new Map<string, Unit>()
+  const parsed = new Map<string, { functions: Map<string, ts.Node>; isApiRead: ApiRead } | null>()
+  const load = (target: string): { functions: Map<string, ts.Node>; isApiRead: ApiRead } | null => {
+    if (!parsed.has(target)) {
+      const file = MODULE_SUFFIXES.map((suffix) => `${target}${suffix}`).find((candidate) => {
+        const absolute = resolve(root, candidate)
+        return existsSync(absolute) && statSync(absolute).isFile()
+      })
+      if (file === undefined) parsed.set(target, null)
+      else {
+        const helper = ts.createSourceFile(
+          file,
+          readFileSync(resolve(root, file), 'utf8'),
+          ts.ScriptTarget.Latest,
+          true,
+        )
+        parsed.set(target, { functions: exportedFunctions(helper), isApiRead: apiReader(helper) })
+      }
+    }
+    return parsed.get(target) ?? null
+  }
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue
+    const specifier = statement.moduleSpecifier.text
+    if (!specifier.startsWith('.')) continue
+    const target = posix.join(posix.dirname(path), specifier)
+    if (!target.startsWith(SUPPORT)) continue
+    const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue
+    const module = load(target)
+    if (module === null) continue
+    for (const element of bindings.elements) {
+      const body = module.functions.get((element.propertyName ?? element.name).text)
+      if (body !== undefined)
+        helpers.set(element.name.text, { node: body, isApiRead: module.isApiRead })
+    }
+  }
+  return helpers
 }
 
 /**
  * The journey rule (constitution rule 7) on one `tests/e2e/journeys/**` file: every test needs an assertion outside
  * C1, and the file needs an API read whose value, or its `.json()`, reaches an `expect()` as the subject or a matcher
- * argument. A read nothing asserts on is decoration, not evidence of what the user sees.
+ * argument. A read nothing asserts on is decoration, not evidence of what the user sees. Given `root`, a function a
+ * test calls that the file imports from `tests/e2e/support/**` counts as part of the test, one level deep.
  */
-export function journeyViolations(source: string, path: string): string[] {
+export function journeyViolations(source: string, path: string, root?: string): string[] {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  const helpers =
+    root === undefined ? new Map<string, Unit>() : supportHelpers(sourceFile, path, root)
   const violations: string[] = []
-  const fromApi = new Set<string>()
-  let reads = 0
-  let asserted = false
+  const called = new Set<Unit>()
 
-  const derived = (expression: ts.Expression): boolean => {
-    const e = unwrap(expression)
-    if (isApiRead(e)) return true
-    if (ts.isIdentifier(e)) return fromApi.has(e.text)
-    if (
-      ts.isCallExpression(e) &&
-      ts.isPropertyAccessExpression(e.expression) &&
-      e.expression.name.text === 'json'
-    ) {
-      return derived(e.expression.expression)
-    }
-    return false
-  }
+  const helperOf = (node: ts.Node): Unit | undefined =>
+    ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+      ? helpers.get(node.expression.text)
+      : undefined
 
-  const bind = (node: ts.Node): void => {
-    if (isApiRead(node)) reads += 1
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      if (derived(node.initializer)) fromApi.add(node.name.text)
-    }
-    ts.forEachChild(node, bind)
-  }
-  bind(sourceFile)
-
-  const judge = (node: ts.Node): void => {
+  const judgeTests = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
-      const matcher = matcherOf(node)
-      if (matcher !== undefined && mentions(node, fromApi)) asserted = true
       const site = testSite(node)
       if (site !== undefined && !site.skipped) {
         const kinds: Array<keyof Counts> = []
-        const collect = (child: ts.Node): void => {
+        const collect = (child: ts.Node, follow: boolean): void => {
           if (ts.isCallExpression(child)) {
             const name = matcherOf(child)
             if (name !== undefined) kinds.push(classifyMatcher(child, name))
+            const helper = follow ? helperOf(child) : undefined
+            if (helper !== undefined) {
+              called.add(helper)
+              collect(helper.node, false)
+            }
           }
-          ts.forEachChild(child, collect)
+          ts.forEachChild(child, (grand) => collect(grand, follow))
         }
-        node.arguments.forEach(collect)
+        node.arguments.forEach((argument) => collect(argument, true))
         if (!kinds.some((kind) => kind !== 'C1')) {
           const title = node.arguments[0]
           const name =
@@ -419,13 +538,54 @@ export function journeyViolations(source: string, path: string): string[] {
         }
       }
     }
-    ts.forEachChild(node, judge)
+    ts.forEachChild(node, judgeTests)
   }
-  judge(sourceFile)
+  judgeTests(sourceFile)
+
+  let reads = 0
+  let asserted = false
+  for (const { node: unit, isApiRead } of [
+    { node: sourceFile, isApiRead: apiReader(sourceFile) },
+    ...called,
+  ]) {
+    const fromApi = new Set<string>()
+    const derived = (expression: ts.Expression): boolean => {
+      const e = unwrap(expression)
+      if (isApiRead(e)) return true
+      if (ts.isIdentifier(e)) return fromApi.has(e.text)
+      if (
+        ts.isCallExpression(e) &&
+        ts.isPropertyAccessExpression(e.expression) &&
+        e.expression.name.text === 'json'
+      ) {
+        return derived(e.expression.expression)
+      }
+      return false
+    }
+    const bind = (node: ts.Node): void => {
+      if (isApiRead(node)) reads += 1
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+        if (derived(node.initializer)) fromApi.add(node.name.text)
+      }
+      ts.forEachChild(node, bind)
+    }
+    bind(unit)
+    const judge = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        matcherOf(node) !== undefined &&
+        mentions(node, fromApi, isApiRead)
+      ) {
+        asserted = true
+      }
+      ts.forEachChild(node, judge)
+    }
+    judge(unit)
+  }
 
   if (reads === 0) {
     violations.push(
-      `${path}: no API read (the request fixture, page.request or fetch to /api/); the journey rule needs one an expect() asserts on`,
+      `${path}: no API read (the request fixture, page.request, a request context or fetch to /api/); the journey rule needs one an expect() asserts on`,
     )
   } else if (!asserted) {
     violations.push(

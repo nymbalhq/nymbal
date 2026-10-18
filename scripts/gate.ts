@@ -518,7 +518,7 @@ function censusTrendStep(root: string, base: string): number {
   for (const path of touched.filter((p) => p.startsWith('tests/e2e/journeys/'))) {
     const absolute = resolve(root, path)
     if (existsSync(absolute))
-      violations.push(...journeyViolations(readFileSync(absolute, 'utf8'), path))
+      violations.push(...journeyViolations(readFileSync(absolute, 'utf8'), path, root))
   }
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
   process.stdout.write(
@@ -893,10 +893,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
   const lastFailed = input.rerun === undefined ? '' : ' --last-failed'
+  // `--last-failed` reads `.last-run.json` from the output dir, so each project keeps its own or the last one wins.
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target}${grep}${lastFailed}`,
+      `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
