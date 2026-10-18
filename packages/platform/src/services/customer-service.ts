@@ -7,6 +7,7 @@ import {
   type CustomerAddress,
   type Logger,
 } from '@nymbalhq/types'
+import type { ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 
@@ -35,57 +36,64 @@ export function createCustomerService(deps: {
   logger: Logger
 }): CustomerService {
   const { repos, publisher } = deps
+  const { store } = repos.customer
 
-  async function loadOrThrow(id: string): Promise<Customer & { passwordHash: string }> {
-    const c = await repos.customer.findById(id)
+  async function loadOrThrow(tx: ReadTx, id: string): Promise<Customer & { passwordHash: string }> {
+    const c = await repos.customer.findById(tx, id)
     if (!c) throw new NotFoundError('customer', id)
     return c
   }
 
   return {
     async getProfile(customerId) {
-      return stripPassword(await loadOrThrow(customerId))
+      return stripPassword(await store.read((tx) => loadOrThrow(tx, customerId)))
     },
     async updateProfile(customerId, patch) {
-      await loadOrThrow(customerId)
-      const now = new Date()
-      await repos.customer.update(customerId, { ...patch, updatedAt: now })
-      await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
-      const fresh = await loadOrThrow(customerId)
-      return stripPassword(fresh)
+      return store.transaction(async (tx) => {
+        await loadOrThrow(tx, customerId)
+        const now = new Date()
+        await repos.customer.update(tx, customerId, { ...patch, updatedAt: now })
+        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+        const fresh = await loadOrThrow(tx, customerId)
+        return stripPassword(fresh)
+      })
     },
     async listAddresses(customerId) {
-      const customer = await loadOrThrow(customerId)
+      const customer = await store.read((tx) => loadOrThrow(tx, customerId))
       return customer.addresses
     },
     async addAddress(customerId, addr) {
-      const customer = await loadOrThrow(customerId)
-      const newAddr: CustomerAddress = { ...addr, id: uuidv7() }
-      const defaultBilling = newAddr.isDefaultBilling
-      const defaultShipping = newAddr.isDefaultShipping
-      const addresses = customer.addresses.map((a) => ({
-        ...a,
-        isDefaultBilling: defaultBilling ? false : a.isDefaultBilling,
-        isDefaultShipping: defaultShipping ? false : a.isDefaultShipping,
-      }))
-      addresses.push(newAddr)
-      const now = new Date()
-      await repos.customer.update(customerId, { addresses, updatedAt: now })
-      await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
-      return newAddr
+      return store.transaction(async (tx) => {
+        const customer = await loadOrThrow(tx, customerId)
+        const newAddr: CustomerAddress = { ...addr, id: uuidv7() }
+        const defaultBilling = newAddr.isDefaultBilling
+        const defaultShipping = newAddr.isDefaultShipping
+        const addresses = customer.addresses.map((a) => ({
+          ...a,
+          isDefaultBilling: defaultBilling ? false : a.isDefaultBilling,
+          isDefaultShipping: defaultShipping ? false : a.isDefaultShipping,
+        }))
+        addresses.push(newAddr)
+        const now = new Date()
+        await repos.customer.update(tx, customerId, { addresses, updatedAt: now })
+        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+        return newAddr
+      })
     },
     async deleteAddress(customerId, addressId) {
-      const customer = await loadOrThrow(customerId)
-      const addresses = customer.addresses.filter((a) => a.id !== addressId)
-      if (addresses.length === customer.addresses.length) {
-        throw new NotFoundError('address', addressId)
-      }
-      if (!addresses.length) {
-        throw new ValidationError('Cannot remove last address')
-      }
-      const now = new Date()
-      await repos.customer.update(customerId, { addresses, updatedAt: now })
-      await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+      await store.transaction(async (tx) => {
+        const customer = await loadOrThrow(tx, customerId)
+        const addresses = customer.addresses.filter((a) => a.id !== addressId)
+        if (addresses.length === customer.addresses.length) {
+          throw new NotFoundError('address', addressId)
+        }
+        if (!addresses.length) {
+          throw new ValidationError('Cannot remove last address')
+        }
+        const now = new Date()
+        await repos.customer.update(tx, customerId, { addresses, updatedAt: now })
+        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+      })
     },
   }
 }

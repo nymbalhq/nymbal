@@ -1,5 +1,15 @@
 export { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
-export { createCommandStore, type CommandStore, type SqliteClient, type PostgresClient } from './db/command-store.js'
+export {
+  createCommandStore,
+  rawClients,
+  type CommandStore,
+  type ReadTx,
+  type Tx,
+  type RawClients,
+  type StoreRepository,
+  type SqliteClient,
+  type PostgresClient,
+} from './db/command-store.js'
 export { runMigrations, type MigrateOptions } from './db/migrate.js'
 // Legacy thin repositories (kept for seed + existing consumers).
 export {
@@ -19,10 +29,7 @@ export {
   type InMemoryDocumentStoreOptions,
 } from './document-store/in-memory.js'
 export { createDocumentStore } from './document-store/factory.js'
-export {
-  InProcessEventBus,
-  type InProcessEventBusOptions,
-} from './event-bus/in-process.js'
+export { InProcessEventBus, type InProcessEventBusOptions } from './event-bus/in-process.js'
 export { createEventBus } from './event-bus/factory.js'
 export {
   createEventBuilder,
@@ -48,7 +55,11 @@ export * from './services/index.js'
 export * from './adapters/index.js'
 export { createLogger, type CreateLoggerOptions } from './logger.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
-export { warmDocumentStore, type WarmDocumentStoreDeps, type WarmResult } from './warm-document-store.js'
+export {
+  warmDocumentStore,
+  type WarmDocumentStoreDeps,
+  type WarmResult,
+} from './warm-document-store.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

@@ -1,11 +1,4 @@
-import {
-  sqliteTable,
-  text,
-  integer,
-  uniqueIndex,
-  index,
-  primaryKey,
-} from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 // --- Categories ------------------------------------------------------------
 
@@ -36,8 +29,12 @@ export const products = sqliteTable(
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
     shortDescription: text('short_description').notNull().default(''),
-    status: text('status', { enum: ['draft', 'active', 'archived'] }).notNull().default('draft'),
-    type: text('type', { enum: ['simple', 'variable'] }).notNull().default('simple'),
+    status: text('status', { enum: ['draft', 'active', 'archived'] })
+      .notNull()
+      .default('draft'),
+    type: text('type', { enum: ['simple', 'variable'] })
+      .notNull()
+      .default('simple'),
     seoTitle: text('seo_title').notNull().default(''),
     seoDescription: text('seo_description').notNull().default(''),
     media: text('media').notNull().default('[]'),
@@ -67,7 +64,9 @@ export const variants = sqliteTable(
     stock: integer('stock').notNull().default(0),
     lowStockThreshold: integer('low_stock_threshold').notNull().default(0),
     options: text('options').notNull().default('[]'),
-    status: text('status', { enum: ['active', 'inactive'] }).notNull().default('active'),
+    status: text('status', { enum: ['active', 'inactive'] })
+      .notNull()
+      .default('active'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -179,6 +178,7 @@ export const orders = sqliteTable(
     sequenceUnique: uniqueIndex('orders_sequence_unique').on(t.sequence),
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
+    paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
   }),
 )
 
@@ -228,14 +228,7 @@ export const stockAdjustments = sqliteTable(
     variantId: text('variant_id').notNull(),
     adjustment: integer('adjustment').notNull(),
     reason: text('reason', {
-      enum: [
-        'sale',
-        'return',
-        'manual',
-        'import',
-        'reservation-commit',
-        'reservation-release',
-      ],
+      enum: ['sale', 'return', 'manual', 'import', 'reservation-commit', 'reservation-release'],
     }).notNull(),
     actor: text('actor').notNull(),
     previousQty: integer('previous_qty').notNull(),

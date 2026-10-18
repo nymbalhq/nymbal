@@ -28,10 +28,20 @@ export interface InventoryService {
     reason: StockAdjustmentReason,
     actor: string,
   ): Promise<{ newQty: number }>
-  reserveStock(variantId: string, qty: number, orderRef?: string | null, ttlSeconds?: number): Promise<ReserveStockResult>
-  releaseReservation(reservationId: string, reason: 'expired' | 'cancelled' | 'abandoned'): Promise<void>
+  reserveStock(
+    variantId: string,
+    qty: number,
+    orderRef?: string | null,
+    ttlSeconds?: number,
+  ): Promise<ReserveStockResult>
+  releaseReservation(
+    reservationId: string,
+    reason: 'expired' | 'cancelled' | 'abandoned',
+  ): Promise<void>
   commitReservation(reservationId: string, actor: string): Promise<void>
-  getStockStatus(variantId: string): Promise<{ stock: number; threshold: number; status: StockStatus }>
+  getStockStatus(
+    variantId: string,
+  ): Promise<{ stock: number; threshold: number; status: StockStatus }>
 }
 
 export interface CreateInventoryServiceDeps {
@@ -52,7 +62,11 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
   const { store, repos, publisher, logger } = deps
   const defaultTtl = deps.defaultReservationTtlSeconds ?? 15 * 60
 
-  async function emitThresholdEvents(variantId: string, newQty: number, threshold: number): Promise<void> {
+  async function emitThresholdEvents(
+    variantId: string,
+    newQty: number,
+    threshold: number,
+  ): Promise<void> {
     if (newQty <= 0) {
       await publisher.publish(EVT_INVENTORY_OUT_OF_STOCK, { variantId })
     } else if (newQty <= threshold) {
@@ -66,30 +80,33 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
 
   return {
     async adjustStock(variantId, delta, reason, actor) {
-      return store.transaction(async () => {
-        const variant = await repos.variant.findById(variantId)
+      return store.transaction(async (tx) => {
+        const variant = await repos.variant.findById(tx, variantId)
         if (!variant) throw new NotFoundError('variant', variantId)
-        const newQty = variant.stock + delta
-        if (newQty < 0) {
+        const now = new Date()
+        const newQty =
+          delta < 0
+            ? await repos.variant.decrementStock(tx, variant.id, -delta, now)
+            : await repos.variant.incrementStock(tx, variant.id, delta, now)
+        if (newQty === null) {
           throw new ValidationError(`Cannot reduce stock below zero (variant ${variantId})`, {
             context: { variantId, stock: variant.stock, delta },
           })
         }
-        const now = new Date()
-        await repos.variant.setStock(variant.id, newQty, now)
-        await repos.stockAdjustment.append({
+        const previousQty = newQty - delta
+        await repos.stockAdjustment.append(tx, {
           id: uuidv7(),
           variantId: variant.id,
           adjustment: delta,
           reason,
           actor,
-          previousQty: variant.stock,
+          previousQty,
           newQty,
           timestamp: now,
         })
         await publisher.publish(EVT_INVENTORY_CHANGED, {
           variantId: variant.id,
-          previousQty: variant.stock,
+          previousQty,
           newQty,
           reason,
         })
@@ -101,20 +118,23 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
 
     async reserveStock(variantId, qty, orderRef = null, ttlSeconds) {
       if (qty <= 0) throw new ValidationError(`Reservation qty must be positive, got ${qty}`)
-      return store.transaction(async () => {
-        const variant = await repos.variant.findById(variantId)
+      return store.transaction(async (tx) => {
+        const variant = await repos.variant.findById(tx, variantId)
         if (!variant) throw new NotFoundError('variant', variantId)
-        if (variant.stock < qty) {
-          throw new AdapterError('inventory.insufficient', `Insufficient stock for variant ${variantId}`, {
-            context: { variantId, requested: qty, available: variant.stock },
-          })
-        }
         const now = new Date()
+        const remaining = await repos.variant.decrementStock(tx, variant.id, qty, now)
+        if (remaining === null) {
+          throw new AdapterError(
+            'inventory.insufficient',
+            `Insufficient stock for variant ${variantId}`,
+            {
+              context: { variantId, requested: qty, available: variant.stock },
+            },
+          )
+        }
         const expiresAt = new Date(now.getTime() + (ttlSeconds ?? defaultTtl) * 1000)
         const reservationId = uuidv7()
-        const newQty = variant.stock - qty
-        await repos.variant.setStock(variant.id, newQty, now)
-        await repos.inventoryReservation.insert({
+        await repos.inventoryReservation.insert(tx, {
           reservationId,
           variantId: variant.id,
           qty,
@@ -130,45 +150,51 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
         })
         await publisher.publish(EVT_INVENTORY_CHANGED, {
           variantId: variant.id,
-          previousQty: variant.stock,
-          newQty,
+          previousQty: remaining + qty,
+          newQty: remaining,
           reason: 'manual',
         })
-        await emitThresholdEvents(variant.id, newQty, variant.lowStockThreshold)
+        await emitThresholdEvents(variant.id, remaining, variant.lowStockThreshold)
         return { reservationId, expiresAt: expiresAt.toISOString() }
       })
     },
 
     async releaseReservation(reservationId, reason) {
-      await store.transaction(async () => {
-        const reservation = await repos.inventoryReservation.findById(reservationId)
+      await store.transaction(async (tx) => {
+        const reservation = await repos.inventoryReservation.deleteById(tx, reservationId)
         if (!reservation) {
-          logger.debug({ reservationId }, 'reservation already released or never existed')
+          logger.debug(
+            { reservationId },
+            'reservation already released, committed or never existed',
+          )
           return
         }
-        const variant = await repos.variant.findById(reservation.variantId)
-        if (variant) {
-          const now = new Date()
-          const newQty = variant.stock + reservation.qty
-          await repos.variant.setStock(variant.id, newQty, now)
-          await repos.stockAdjustment.append({
+        const now = new Date()
+        const newQty = await repos.variant.incrementStock(
+          tx,
+          reservation.variantId,
+          reservation.qty,
+          now,
+        )
+        if (newQty !== null) {
+          const previousQty = newQty - reservation.qty
+          await repos.stockAdjustment.append(tx, {
             id: uuidv7(),
-            variantId: variant.id,
+            variantId: reservation.variantId,
             adjustment: reservation.qty,
             reason: 'reservation-release',
             actor: `system:release:${reason}`,
-            previousQty: variant.stock,
+            previousQty,
             newQty,
             timestamp: now,
           })
           await publisher.publish(EVT_INVENTORY_CHANGED, {
-            variantId: variant.id,
-            previousQty: variant.stock,
+            variantId: reservation.variantId,
+            previousQty,
             newQty,
             reason: 'reservation-release',
           })
         }
-        await repos.inventoryReservation.deleteById(reservation.reservationId)
         await publisher.publish(EVT_INVENTORY_RELEASED, {
           variantId: reservation.variantId,
           qty: reservation.qty,
@@ -179,13 +205,12 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
     },
 
     async commitReservation(reservationId, actor) {
-      await store.transaction(async () => {
-        const reservation = await repos.inventoryReservation.findById(reservationId)
+      await store.transaction(async (tx) => {
+        const reservation = await repos.inventoryReservation.deleteById(tx, reservationId)
         if (!reservation) throw new NotFoundError('reservation', reservationId)
-        const variant = await repos.variant.findById(reservation.variantId)
+        const variant = await repos.variant.findById(tx, reservation.variantId)
         if (!variant) throw new NotFoundError('variant', reservation.variantId)
-        const now = new Date()
-        await repos.stockAdjustment.append({
+        await repos.stockAdjustment.append(tx, {
           id: uuidv7(),
           variantId: variant.id,
           adjustment: -reservation.qty,
@@ -193,9 +218,8 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
           actor,
           previousQty: variant.stock + reservation.qty,
           newQty: variant.stock,
-          timestamp: now,
+          timestamp: new Date(),
         })
-        await repos.inventoryReservation.deleteById(reservation.reservationId)
         await publisher.publish(EVT_INVENTORY_RELEASED, {
           variantId: reservation.variantId,
           qty: reservation.qty,
@@ -206,7 +230,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
     },
 
     async getStockStatus(variantId) {
-      const variant = await repos.variant.findById(variantId)
+      const variant = await store.read((tx) => repos.variant.findById(tx, variantId))
       if (!variant) throw new NotFoundError('variant', variantId)
       return {
         stock: variant.stock,

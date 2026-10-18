@@ -53,6 +53,7 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
 
   const handle = setInterval(() => void tick(), intervalMs)
   return {
+    tick,
     stop() {
       clearInterval(handle)
       notifiedCarts.clear()

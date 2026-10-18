@@ -1,6 +1,13 @@
 import { asc, eq } from 'drizzle-orm'
 import type { OrderHistoryEntry, OrderStatus } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { fromTimestamp } from './json.js'
@@ -27,14 +34,15 @@ function rowToEntry(row: Record<string, unknown>): OrderHistoryEntry {
   }
 }
 
-export interface OrderHistoryRepository {
-  append(entry: OrderHistoryInsert): Promise<void>
-  listByOrder(orderId: string): Promise<OrderHistoryEntry[]>
+export interface OrderHistoryRepository extends StoreRepository {
+  append(tx: Tx, entry: OrderHistoryInsert): Promise<void>
+  listByOrder(tx: ReadTx, orderId: string): Promise<OrderHistoryEntry[]>
 }
 
 export function createOrderHistoryRepository(store: CommandStore): OrderHistoryRepository {
   return {
-    async append(entry) {
+    store,
+    async append(tx, entry) {
       const common = {
         id: entry.id,
         orderId: entry.orderId,
@@ -43,20 +51,20 @@ export function createOrderHistoryRepository(store: CommandStore): OrderHistoryR
         actor: entry.actor,
         note: entry.note ?? '',
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.orderHistory)
           .values({ ...common, timestamp: entry.timestamp.toISOString() })
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .insert(postgresSchema.orderHistory)
         .values({ ...common, timestamp: entry.timestamp })
     },
-    async listByOrder(orderId) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async listByOrder(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.orderHistory)
           .where(eq(sqliteSchema.orderHistory.orderId, orderId))
@@ -64,7 +72,7 @@ export function createOrderHistoryRepository(store: CommandStore): OrderHistoryR
           .all()
         return rows.map((r) => rowToEntry(r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.orderHistory)
         .where(eq(postgresSchema.orderHistory.orderId, orderId))

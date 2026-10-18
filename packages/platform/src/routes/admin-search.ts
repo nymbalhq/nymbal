@@ -29,12 +29,10 @@ export function registerAdminSearchRoute(
         const q = qRaw.toLowerCase()
 
         // Orders
-        const allOrders = await repos.order.list({ limit: 100 })
+        const allOrders = await repos.order.store.read((tx) => repos.order.list(tx, { limit: 100 }))
         const matchedOrders = allOrders
           .filter(
-            (o) =>
-              o.orderNumber.toLowerCase().includes(q) ||
-              o.email.toLowerCase().includes(q),
+            (o) => o.orderNumber.toLowerCase().includes(q) || o.email.toLowerCase().includes(q),
           )
           .slice(0, 5)
 
@@ -45,14 +43,14 @@ export function registerAdminSearchRoute(
           .slice(0, 5)
 
         // Customers — discover via orders
-        const allOrdersFull = await repos.order.list({ limit: 500 })
-        const customerIdSet = new Set<string>()
-        for (const o of allOrdersFull) {
-          if (o.customerId) customerIdSet.add(o.customerId)
-        }
-        const customerResults = await Promise.all(
-          [...customerIdSet].map((id) => repos.customer.findById(id)),
-        )
+        const customerResults = await repos.order.store.read(async (tx) => {
+          const allOrdersFull = await repos.order.list(tx, { limit: 500 })
+          const customerIdSet = new Set<string>()
+          for (const o of allOrdersFull) {
+            if (o.customerId) customerIdSet.add(o.customerId)
+          }
+          return Promise.all([...customerIdSet].map((id) => repos.customer.findById(tx, id)))
+        })
         const matchedCustomers = customerResults
           .filter((c): c is NonNullable<typeof c> => c !== null)
           .filter(

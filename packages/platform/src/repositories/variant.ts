@@ -1,6 +1,13 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Variant, VariantOption, VariantStatus, VariantDimensions } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { parseJson, fromTimestamp } from './json.js'
@@ -53,64 +60,68 @@ function rowToVariant(store: CommandStore['kind'], row: Record<string, unknown>)
   }
 }
 
-export interface VariantRepository {
-  findById(id: string): Promise<Variant | null>
-  findBySku(sku: string): Promise<Variant | null>
-  findByProduct(productId: string): Promise<Variant[]>
-  insert(v: VariantInsert): Promise<void>
-  update(id: string, patch: VariantUpdate): Promise<void>
-  setStock(id: string, newStock: number, updatedAt: Date): Promise<void>
-  delete(id: string): Promise<void>
+export interface VariantRepository extends StoreRepository {
+  findById(tx: ReadTx, id: string): Promise<Variant | null>
+  findBySku(tx: ReadTx, sku: string): Promise<Variant | null>
+  findByProduct(tx: ReadTx, productId: string): Promise<Variant[]>
+  insert(tx: Tx, v: VariantInsert): Promise<void>
+  update(tx: Tx, id: string, patch: VariantUpdate): Promise<void>
+  /** One conditional UPDATE: the new stock, or null when the variant is missing or holds fewer than `qty`. */
+  decrementStock(tx: Tx, id: string, qty: number, at: Date): Promise<number | null>
+  /** The new stock, or null when there is no such variant. */
+  incrementStock(tx: Tx, id: string, qty: number, at: Date): Promise<number | null>
+  delete(tx: Tx, id: string): Promise<void>
 }
 
 export function createVariantRepository(store: CommandStore): VariantRepository {
   return {
-    async findById(id) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    store,
+    async findById(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.variants)
           .where(eq(sqliteSchema.variants.id, id))
           .get()
         return row ? rowToVariant('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.variants)
         .where(eq(postgresSchema.variants.id, id))
       return row ? rowToVariant('postgres', row as Record<string, unknown>) : null
     },
-    async findBySku(sku) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    async findBySku(tx, sku) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.variants)
           .where(eq(sqliteSchema.variants.sku, sku))
           .get()
         return row ? rowToVariant('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.variants)
         .where(eq(postgresSchema.variants.sku, sku))
       return row ? rowToVariant('postgres', row as Record<string, unknown>) : null
     },
-    async findByProduct(productId) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async findByProduct(tx, productId) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.variants)
           .where(eq(sqliteSchema.variants.productId, productId))
           .all()
         return rows.map((r) => rowToVariant('sqlite', r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.variants)
         .where(eq(postgresSchema.variants.productId, productId))
       return rows.map((r) => rowToVariant('postgres', r as Record<string, unknown>))
     },
-    async insert(v) {
+    async insert(tx, v) {
       const common = {
         id: v.id,
         productId: v.productId,
@@ -123,8 +134,8 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         lowStockThreshold: v.lowStockThreshold ?? 0,
         status: v.status ?? 'active',
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.variants)
           .values({
             ...common,
@@ -136,15 +147,17 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
           .run()
         return
       }
-      await store.db.insert(postgresSchema.variants).values({
-        ...common,
-        dimensions: v.dimensions ?? null,
-        options: v.options,
-        createdAt: v.createdAt,
-        updatedAt: v.updatedAt,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.variants)
+        .values({
+          ...common,
+          dimensions: v.dimensions ?? null,
+          options: v.options,
+          createdAt: v.createdAt,
+          updatedAt: v.updatedAt,
+        })
     },
-    async update(id, patch) {
+    async update(tx, id, patch) {
       const pg: Record<string, unknown> = { updatedAt: patch.updatedAt }
       const sq: Record<string, unknown> = { updatedAt: patch.updatedAt.toISOString() }
       for (const k of [
@@ -168,35 +181,59 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         pg.options = patch.options
         sq.options = JSON.stringify(patch.options)
       }
-      if (store.kind === 'sqlite') {
-        store.db.update(sqliteSchema.variants).set(sq).where(eq(sqliteSchema.variants.id, id)).run()
-        return
-      }
-      await store.db
-        .update(postgresSchema.variants)
-        .set(pg)
-        .where(eq(postgresSchema.variants.id, id))
-    },
-    async setStock(id, newStock, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.variants)
-          .set({ stock: newStock, updatedAt: updatedAt.toISOString() })
+          .set(sq)
           .where(eq(sqliteSchema.variants.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.variants)
-        .set({ stock: newStock, updatedAt })
+        .set(pg)
         .where(eq(postgresSchema.variants.id, id))
     },
-    async delete(id) {
-      if (store.kind === 'sqlite') {
-        store.db.delete(sqliteSchema.variants).where(eq(sqliteSchema.variants.id, id)).run()
+    async decrementStock(tx, id, qty, at) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .update(sqliteSchema.variants)
+          .set({ stock: sql`${sqliteSchema.variants.stock} - ${qty}`, updatedAt: at.toISOString() })
+          .where(and(eq(sqliteSchema.variants.id, id), gte(sqliteSchema.variants.stock, qty)))
+          .returning({ stock: sqliteSchema.variants.stock })
+          .get()
+        return row ? Number(row.stock) : null
+      }
+      const [row] = await postgresDb(tx)
+        .update(postgresSchema.variants)
+        .set({ stock: sql`${postgresSchema.variants.stock} - ${qty}`, updatedAt: at })
+        .where(and(eq(postgresSchema.variants.id, id), gte(postgresSchema.variants.stock, qty)))
+        .returning({ stock: postgresSchema.variants.stock })
+      return row ? Number(row.stock) : null
+    },
+    async incrementStock(tx, id, qty, at) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .update(sqliteSchema.variants)
+          .set({ stock: sql`${sqliteSchema.variants.stock} + ${qty}`, updatedAt: at.toISOString() })
+          .where(eq(sqliteSchema.variants.id, id))
+          .returning({ stock: sqliteSchema.variants.stock })
+          .get()
+        return row ? Number(row.stock) : null
+      }
+      const [row] = await postgresDb(tx)
+        .update(postgresSchema.variants)
+        .set({ stock: sql`${postgresSchema.variants.stock} + ${qty}`, updatedAt: at })
+        .where(eq(postgresSchema.variants.id, id))
+        .returning({ stock: postgresSchema.variants.stock })
+      return row ? Number(row.stock) : null
+    },
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.variants).where(eq(sqliteSchema.variants.id, id)).run()
         return
       }
-      await store.db.delete(postgresSchema.variants).where(eq(postgresSchema.variants.id, id))
+      await postgresDb(tx).delete(postgresSchema.variants).where(eq(postgresSchema.variants.id, id))
     },
   }
 }

@@ -24,6 +24,7 @@ export function registerAdminDashboardRoute(
   deps: RegisterAdminDashboardRouteDeps,
 ): void {
   const { repos } = deps
+  const { store } = repos.order
 
   adapter.registerRoute(
     'GET',
@@ -33,11 +34,9 @@ export function registerAdminDashboardRoute(
         const startOfToday = new Date(new Date().setHours(0, 0, 0, 0))
 
         // Fetch recent orders (last 200 to compute today's stats)
-        const allOrders = await repos.order.list({ limit: 200 })
+        const allOrders = await store.read((tx) => repos.order.list(tx, { limit: 200 }))
 
-        const todayOrders = allOrders.filter(
-          (o) => new Date(o.createdAt) >= startOfToday,
-        )
+        const todayOrders = allOrders.filter((o) => new Date(o.createdAt) >= startOfToday)
 
         const paidStatuses = new Set(['confirmed', 'processing', 'shipped', 'delivered'])
         const shippedStatuses = new Set(['shipped', 'delivered'])
@@ -46,19 +45,23 @@ export function registerAdminDashboardRoute(
         const todayRevenueMinor = todayOrders
           .filter((o) => paidStatuses.has(o.status))
           .reduce((sum, o) => sum + o.totalMinor, 0)
-        const todayItemsShipped = todayOrders.filter((o) =>
-          shippedStatuses.has(o.status),
-        ).length
+        const todayItemsShipped = todayOrders.filter((o) => shippedStatuses.has(o.status)).length
 
         // Recent orders — last 10 overall
         const recentOrders = allOrders.slice(0, 10)
 
         // Low stock: get all products and check variants
-        const allProducts = await repos.product.list({ limit: 1000 })
+        const productVariants = await store.read(async (tx) => {
+          const products = await repos.product.list(tx, { limit: 1000 })
+          const out = []
+          for (const product of products) {
+            out.push({ product, variants: await repos.variant.findByProduct(tx, product.id) })
+          }
+          return out
+        })
         const lowStock: InventoryRow[] = []
 
-        for (const product of allProducts) {
-          const variants = await repos.variant.findByProduct(product.id)
+        for (const { product, variants } of productVariants) {
           for (const variant of variants) {
             if (variant.stock <= variant.lowStockThreshold) {
               lowStock.push({

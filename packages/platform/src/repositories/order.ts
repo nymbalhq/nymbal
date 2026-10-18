@@ -1,6 +1,13 @@
 import { desc, eq } from 'drizzle-orm'
 import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { parseJson, fromTimestamp } from './json.js'
@@ -53,52 +60,73 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
   }
 }
 
-export interface OrderRepository {
-  findById(id: string): Promise<Order | null>
-  findByOrderNumber(orderNumber: string): Promise<Order | null>
-  listByCustomer(customerId: string, limit?: number): Promise<Order[]>
-  list(opts?: { status?: OrderStatus; limit?: number; offset?: number }): Promise<Order[]>
-  insert(o: OrderInsert): Promise<void>
-  setStatus(id: string, status: OrderStatus, updatedAt: Date): Promise<void>
-  setPaymentIntent(id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
-  setNotes(id: string, notes: string, updatedAt: Date): Promise<void>
+export interface OrderRepository extends StoreRepository {
+  findById(tx: ReadTx, id: string): Promise<Order | null>
+  findByOrderNumber(tx: ReadTx, orderNumber: string): Promise<Order | null>
+  findByPaymentIntentId(tx: ReadTx, paymentIntentId: string): Promise<Order | null>
+  listByCustomer(tx: ReadTx, customerId: string, limit?: number): Promise<Order[]>
+  list(
+    tx: ReadTx,
+    opts?: { status?: OrderStatus; limit?: number; offset?: number },
+  ): Promise<Order[]>
+  insert(tx: Tx, o: OrderInsert): Promise<void>
+  setStatus(tx: Tx, id: string, status: OrderStatus, updatedAt: Date): Promise<void>
+  setPaymentIntent(tx: Tx, id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
+  setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
 }
 
 export function createOrderRepository(store: CommandStore): OrderRepository {
   return {
-    async findById(id) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    store,
+    async findById(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.orders)
           .where(eq(sqliteSchema.orders.id, id))
           .get()
         return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.orders)
         .where(eq(postgresSchema.orders.id, id))
       return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
     },
-    async findByOrderNumber(orderNumber) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    async findByOrderNumber(tx, orderNumber) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.orders)
           .where(eq(sqliteSchema.orders.orderNumber, orderNumber))
           .get()
         return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.orders)
         .where(eq(postgresSchema.orders.orderNumber, orderNumber))
       return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
     },
-    async listByCustomer(customerId, limit = 50) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async findByPaymentIntentId(tx, paymentIntentId) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select()
+          .from(sqliteSchema.orders)
+          .where(eq(sqliteSchema.orders.paymentIntentId, paymentIntentId))
+          .get()
+        return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
+      }
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(postgresSchema.orders)
+        .where(eq(postgresSchema.orders.paymentIntentId, paymentIntentId))
+        .limit(1)
+      return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
+    },
+    async listByCustomer(tx, customerId, limit = 50) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.orders)
           .where(eq(sqliteSchema.orders.customerId, customerId))
@@ -107,7 +135,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
           .all()
         return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.orders)
         .where(eq(postgresSchema.orders.customerId, customerId))
@@ -115,11 +143,11 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .limit(limit)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
     },
-    async list(opts = {}) {
+    async list(tx, opts = {}) {
       const limit = opts.limit ?? 100
       const offset = opts.offset ?? 0
-      if (store.kind === 'sqlite') {
-        const base = store.db.select().from(sqliteSchema.orders)
+      if (tx.kind === 'sqlite') {
+        const base = sqliteDb(tx).select().from(sqliteSchema.orders)
         const filtered = opts.status
           ? base.where(eq(sqliteSchema.orders.status, opts.status))
           : base
@@ -130,7 +158,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
           .all()
         return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
       }
-      const base = store.db.select().from(postgresSchema.orders)
+      const base = postgresDb(tx).select().from(postgresSchema.orders)
       const filtered = opts.status
         ? base.where(eq(postgresSchema.orders.status, opts.status))
         : base
@@ -140,7 +168,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .offset(offset)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
     },
-    async insert(o) {
+    async insert(tx, o) {
       const common = {
         id: o.id,
         orderNumber: o.orderNumber,
@@ -157,8 +185,8 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         notes: o.notes ?? '',
         paymentIntentId: o.paymentIntentId ?? null,
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.orders)
           .values({
             ...common,
@@ -172,54 +200,56 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
           .run()
         return
       }
-      await store.db.insert(postgresSchema.orders).values({
-        ...common,
-        billingAddress: o.billingAddress,
-        shippingAddress: o.shippingAddress,
-        lineItems: o.lineItems,
-        metadata: o.metadata ?? {},
-        createdAt: o.createdAt,
-        updatedAt: o.updatedAt,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.orders)
+        .values({
+          ...common,
+          billingAddress: o.billingAddress,
+          shippingAddress: o.shippingAddress,
+          lineItems: o.lineItems,
+          metadata: o.metadata ?? {},
+          createdAt: o.createdAt,
+          updatedAt: o.updatedAt,
+        })
     },
-    async setStatus(id, status, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setStatus(tx, id, status, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.orders)
           .set({ status, updatedAt: updatedAt.toISOString() })
           .where(eq(sqliteSchema.orders.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.orders)
         .set({ status, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
-    async setPaymentIntent(id, paymentIntentId, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setPaymentIntent(tx, id, paymentIntentId, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.orders)
           .set({ paymentIntentId, updatedAt: updatedAt.toISOString() })
           .where(eq(sqliteSchema.orders.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.orders)
         .set({ paymentIntentId, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
-    async setNotes(id, notes, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setNotes(tx, id, notes, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.orders)
           .set({ notes, updatedAt: updatedAt.toISOString() })
           .where(eq(sqliteSchema.orders.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.orders)
         .set({ notes, updatedAt })
         .where(eq(postgresSchema.orders.id, id))

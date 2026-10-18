@@ -57,7 +57,8 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const body = ctx.body as AddItemBody | undefined
       if (!body?.variantId) return fail('cart.invalid', 'variantId required', 400)
       const qty = body.qty ?? 1
-      const variant = await variantRepo.findById(body.variantId)
+      const { variantId } = body
+      const variant = await variantRepo.store.read((tx) => variantRepo.findById(tx, variantId))
       if (!variant) return fail('cart.variant_missing', 'variant not found', 404)
       if (variant.stock < qty) {
         return fail('cart.out_of_stock', 'insufficient stock', 409, {
@@ -65,7 +66,9 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
           available: variant.stock,
         })
       }
-      const product = await productRepo.findById(variant.productId)
+      const product = await productRepo.store.read((tx) =>
+        productRepo.findById(tx, variant.productId),
+      )
       if (!product) return fail('cart.product_missing', 'product not found', 404)
       const token = ctx.cookies[CART_COOKIE] ?? (await cart.getOrCreate()).token
       const updated = await cart.addItem(token, {

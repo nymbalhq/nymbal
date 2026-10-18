@@ -82,39 +82,21 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
   return {
     async beginCheckout(input) {
       const cartDoc = await loadValidCart(input.cartToken)
-      // Validate items against live stock
-      for (const item of cartDoc.items) {
-        const v = await repos.variant.findById(item.variantId)
-        if (!v) {
-          throw new CheckoutError('variant_missing', `Variant missing: ${item.variantId}`)
-        }
-        if (v.stock < item.qty) {
-          throw new CheckoutError(
-            'out_of_stock',
-            `Insufficient stock for ${item.variantName}: available ${v.stock}, requested ${item.qty}`,
-          )
-        }
-      }
-
-      // Reserve inventory
-      const reservationIds: string[] = []
-      try {
+      // A fast, readable refusal; the conditional decrement inside the transaction is what holds under concurrency.
+      await store.read(async (tx) => {
         for (const item of cartDoc.items) {
-          const r = await inventory.reserveStock(item.variantId, item.qty, null)
-          reservationIds.push(r.reservationId)
+          const v = await repos.variant.findById(tx, item.variantId)
+          if (!v) {
+            throw new CheckoutError('variant_missing', `Variant missing: ${item.variantId}`)
+          }
+          if (v.stock < item.qty) {
+            throw new CheckoutError(
+              'out_of_stock',
+              `Insufficient stock for ${item.variantName}: available ${v.stock}, requested ${item.qty}`,
+            )
+          }
         }
-      } catch (err) {
-        // release anything we managed to reserve
-        for (const id of reservationIds) {
-          await inventory.releaseReservation(id, 'cancelled').catch(() => undefined)
-        }
-        /* c8 ignore next 5 -- inventory.reserveStock never throws CheckoutError; guards future adapters */
-        throw err instanceof CheckoutError
-          ? err
-          : new CheckoutError('reservation_failed', 'Inventory reservation failed', {
-              cause: err,
-            })
-      }
+      })
 
       // Build line items snapshot
       const lineItems: OrderLineItem[] = cartDoc.items.map((item) => ({
@@ -132,27 +114,42 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       }))
       const subtotalMinor = cartDoc.subtotalMinor
       const totalMinor = subtotalMinor
-
-      // Create draft order (status=pending)
       const orderId = uuidv7()
-      const order = await orders.createFromCheckout({
-        orderId,
-        customerId: input.customerId ?? null,
-        email: input.email,
-        billingAddress: input.billingAddress,
-        shippingAddress: input.shippingAddress,
-        lineItems,
-        subtotalMinor,
-        taxTotalMinor: 0,
-        shippingTotalMinor: 0,
-        discountTotalMinor: 0,
-        totalMinor,
-        currency: cartDoc.currency,
-        ...(input.notes !== undefined && { notes: input.notes }),
-        metadata: { cartToken: cartDoc.token, reservationIds } satisfies DraftMetadata,
+
+      // The reservations and the draft order (status=pending) commit together or not at all.
+      const order = await store.transaction(async () => {
+        const reservationIds: string[] = []
+        for (const item of cartDoc.items) {
+          try {
+            const r = await inventory.reserveStock(item.variantId, item.qty, orderId)
+            reservationIds.push(r.reservationId)
+          } catch (err) {
+            /* c8 ignore next -- inventory.reserveStock never throws CheckoutError; guards future adapters */
+            if (err instanceof CheckoutError) throw err
+            throw new CheckoutError('reservation_failed', 'Inventory reservation failed', {
+              cause: err,
+            })
+          }
+        }
+        return orders.createFromCheckout({
+          orderId,
+          customerId: input.customerId ?? null,
+          email: input.email,
+          billingAddress: input.billingAddress,
+          shippingAddress: input.shippingAddress,
+          lineItems,
+          subtotalMinor,
+          taxTotalMinor: 0,
+          shippingTotalMinor: 0,
+          discountTotalMinor: 0,
+          totalMinor,
+          currency: cartDoc.currency,
+          ...(input.notes !== undefined && { notes: input.notes }),
+          metadata: { cartToken: cartDoc.token, reservationIds } satisfies DraftMetadata,
+        })
       })
 
-      // Create payment intent
+      // Create payment intent: a call to the payments adapter, so outside the transaction.
       const paymentIntentParams: Parameters<PaymentsAdapter['createPaymentIntent']>[0] = {
         amountMinor: totalMinor,
         currency: cartDoc.currency,
@@ -161,11 +158,9 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       }
       if (input.customerId != null) paymentIntentParams.customerId = input.customerId
       const paymentIntent = await payments.createPaymentIntent(paymentIntentParams)
-      await repos.order.setPaymentIntent(order.id, paymentIntent.id, new Date())
-      // Wire reservations to the order for sweeper context
-      for (const id of reservationIds) {
-        await repos.inventoryReservation.setOrderRef(id, order.id)
-      }
+      await store.transaction((tx) =>
+        repos.order.setPaymentIntent(tx, order.id, paymentIntent.id, new Date()),
+      )
       logger.info({ orderId: order.id, orderNumber: order.orderNumber }, 'checkout started')
       return {
         orderId: order.id,
@@ -177,12 +172,13 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     },
 
     async finalize(paymentIntentId, paidAmountMinor) {
-      return store.transaction(async () => {
-        // Locate the order by paymentIntentId.
-        const all = await repos.order.list({ status: 'pending', limit: 1000 })
-        const order = all.find((o) => o.paymentIntentId === paymentIntentId)
-        if (!order) {
-          throw new CheckoutError('finalize_failed', `No pending order for intent ${paymentIntentId}`)
+      const { updated, cartToken } = await store.transaction(async (tx) => {
+        const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
+        if (!order || order.status !== 'pending') {
+          throw new CheckoutError(
+            'finalize_failed',
+            `No pending order for intent ${paymentIntentId}`,
+          )
         }
         const metadata = order.metadata as Partial<DraftMetadata>
         const reservationIds = Array.isArray(metadata.reservationIds)
@@ -195,14 +191,25 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
         }
 
         // Transition order to confirmed
-        const updated = await orders.updateStatus(order.id, 'confirmed', 'system:checkout', 'payment captured')
+        const updated = await orders.updateStatus(
+          order.id,
+          'confirmed',
+          'system:checkout',
+          'payment captured',
+        )
 
         // Bump customer stats
         if (updated.customerId) {
-          await repos.customer.incrementStats(updated.customerId, 1, updated.totalMinor, new Date())
+          await repos.customer.incrementStats(
+            tx,
+            updated.customerId,
+            1,
+            updated.totalMinor,
+            new Date(),
+          )
         }
 
-        // Emit payment.captured + order.paid + cart.converted
+        // Emit payment.captured + order.paid
         await publisher.publish(EVT_PAYMENT_CAPTURED, {
           paymentId: paymentIntentId,
           orderId: updated.id,
@@ -215,29 +222,34 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
           amountMinor: paidAmountMinor,
           currency: updated.currency,
         })
-        if (metadata.cartToken) {
-          await cart.clear(metadata.cartToken)
-          await publisher.publish(EVT_CART_CONVERTED, {
-            cartId: metadata.cartToken,
-            orderId: updated.id,
-          })
-        }
-        logger.info({ orderId: updated.id, orderNumber: updated.orderNumber }, 'checkout finalized')
-        return { orderNumber: updated.orderNumber }
+        return { updated, cartToken: metadata.cartToken }
       })
+      // The cart lives in the document store: cleared once the order is committed, never inside the transaction.
+      if (cartToken) {
+        await cart.clear(cartToken)
+        await publisher.publish(EVT_CART_CONVERTED, {
+          cartId: cartToken,
+          orderId: updated.id,
+        })
+      }
+      logger.info({ orderId: updated.id, orderNumber: updated.orderNumber }, 'checkout finalized')
+      return { orderNumber: updated.orderNumber }
     },
 
     async cancel(orderId, reason) {
-      const order = await repos.order.findById(orderId)
-      if (!order) throw new NotFoundError('order', orderId)
-      const metadata = order.metadata as Partial<DraftMetadata>
-      const reservationIds = Array.isArray(metadata.reservationIds)
-        ? (metadata.reservationIds as string[])
-        : []
-      for (const rid of reservationIds) {
-        await inventory.releaseReservation(rid, 'cancelled').catch(() => undefined)
-      }
-      await orders.cancel(orderId, reason, 'system:checkout-cancel')
+      await store.transaction(async (tx) => {
+        const order = await repos.order.findById(tx, orderId)
+        if (!order) throw new NotFoundError('order', orderId)
+        const metadata = order.metadata as Partial<DraftMetadata>
+        const reservationIds = Array.isArray(metadata.reservationIds)
+          ? (metadata.reservationIds as string[])
+          : []
+        // A reservation already released or committed is a no-op here.
+        for (const rid of reservationIds) {
+          await inventory.releaseReservation(rid, 'cancelled')
+        }
+        await orders.cancel(orderId, reason, 'system:checkout-cancel')
+      })
     },
   }
 }

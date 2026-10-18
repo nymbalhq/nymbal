@@ -8,6 +8,13 @@
       "when": 1776875073175,
       "tag": "0000_glorious_vision",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792286470217,
+      "tag": "0001_tricky_glorian",
+      "breakpoints": true
     }
   ]
 }

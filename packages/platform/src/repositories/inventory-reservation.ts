@@ -1,6 +1,13 @@
 import { eq, lt } from 'drizzle-orm'
 import type { InventoryReservation } from '@nymbalhq/types'
-import type { CommandStore } from '../db/command-store.js'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { fromTimestamp } from './json.js'
@@ -25,20 +32,26 @@ function rowToReservation(row: Record<string, unknown>): InventoryReservation {
   }
 }
 
-export interface InventoryReservationRepository {
-  insert(r: ReservationInsert): Promise<void>
-  findById(reservationId: string): Promise<InventoryReservation | null>
-  findByVariant(variantId: string): Promise<InventoryReservation[]>
-  deleteById(reservationId: string): Promise<void>
-  deleteExpiredBefore(cutoff: Date): Promise<InventoryReservation[]>
-  setOrderRef(reservationId: string, orderRef: string): Promise<void>
+export interface InventoryReservationRepository extends StoreRepository {
+  insert(tx: Tx, r: ReservationInsert): Promise<void>
+  findById(tx: ReadTx, reservationId: string): Promise<InventoryReservation | null>
+  findByVariant(tx: ReadTx, variantId: string): Promise<InventoryReservation[]>
+  /** Deletes the reservation and returns the row it removed; null when none was there. Of two concurrent callers
+   *  only one gets the row, which is what makes a release and a commit of one reservation exclusive. */
+  deleteById(tx: Tx, reservationId: string): Promise<InventoryReservation | null>
+  /** Reservations whose expiry is before `at`; deletes nothing. */
+  findExpiredBefore(tx: ReadTx, at: Date): Promise<InventoryReservation[]>
+  setOrderRef(tx: Tx, reservationId: string, orderRef: string): Promise<void>
 }
 
-export function createInventoryReservationRepository(store: CommandStore): InventoryReservationRepository {
+export function createInventoryReservationRepository(
+  store: CommandStore,
+): InventoryReservationRepository {
   return {
-    async insert(r) {
-      if (store.kind === 'sqlite') {
-        store.db
+    store,
+    async insert(tx, r) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.inventoryReservations)
           .values({
             reservationId: r.reservationId,
@@ -51,93 +64,87 @@ export function createInventoryReservationRepository(store: CommandStore): Inven
           .run()
         return
       }
-      await store.db.insert(postgresSchema.inventoryReservations).values({
-        reservationId: r.reservationId,
-        variantId: r.variantId,
-        qty: r.qty,
-        orderRef: r.orderRef ?? null,
-        expiresAt: r.expiresAt,
-        createdAt: r.createdAt,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.inventoryReservations)
+        .values({
+          reservationId: r.reservationId,
+          variantId: r.variantId,
+          qty: r.qty,
+          orderRef: r.orderRef ?? null,
+          expiresAt: r.expiresAt,
+          createdAt: r.createdAt,
+        })
     },
-    async findById(reservationId) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    async findById(tx, reservationId) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.inventoryReservations)
           .where(eq(sqliteSchema.inventoryReservations.reservationId, reservationId))
           .get()
         return row ? rowToReservation(row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.inventoryReservations)
         .where(eq(postgresSchema.inventoryReservations.reservationId, reservationId))
       return row ? rowToReservation(row as Record<string, unknown>) : null
     },
-    async findByVariant(variantId) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async findByVariant(tx, variantId) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.inventoryReservations)
           .where(eq(sqliteSchema.inventoryReservations.variantId, variantId))
           .all()
         return rows.map((r) => rowToReservation(r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.inventoryReservations)
         .where(eq(postgresSchema.inventoryReservations.variantId, variantId))
       return rows.map((r) => rowToReservation(r as Record<string, unknown>))
     },
-    async deleteById(reservationId) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async deleteById(tx, reservationId) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .delete(sqliteSchema.inventoryReservations)
           .where(eq(sqliteSchema.inventoryReservations.reservationId, reservationId))
-          .run()
-        return
+          .returning()
+          .get()
+        return row ? rowToReservation(row as Record<string, unknown>) : null
       }
-      await store.db
+      const [row] = await postgresDb(tx)
         .delete(postgresSchema.inventoryReservations)
         .where(eq(postgresSchema.inventoryReservations.reservationId, reservationId))
+        .returning()
+      return row ? rowToReservation(row as Record<string, unknown>) : null
     },
-    async deleteExpiredBefore(cutoff) {
-      return store.transaction(async () => {
-        if (store.kind === 'sqlite') {
-          const rows = store.db
-            .select()
-            .from(sqliteSchema.inventoryReservations)
-            .where(lt(sqliteSchema.inventoryReservations.expiresAt, cutoff.toISOString()))
-            .all()
-          const out = rows.map((r) => rowToReservation(r as Record<string, unknown>))
-          store.db
-            .delete(sqliteSchema.inventoryReservations)
-            .where(lt(sqliteSchema.inventoryReservations.expiresAt, cutoff.toISOString()))
-            .run()
-          return out
-        }
-        const rows = await store.db
+    async findExpiredBefore(tx, at) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
-          .from(postgresSchema.inventoryReservations)
-          .where(lt(postgresSchema.inventoryReservations.expiresAt, cutoff))
-        const out = rows.map((r) => rowToReservation(r as Record<string, unknown>))
-        await store.db
-          .delete(postgresSchema.inventoryReservations)
-          .where(lt(postgresSchema.inventoryReservations.expiresAt, cutoff))
-        return out
-      })
+          .from(sqliteSchema.inventoryReservations)
+          .where(lt(sqliteSchema.inventoryReservations.expiresAt, at.toISOString()))
+          .all()
+        return rows.map((r) => rowToReservation(r as Record<string, unknown>))
+      }
+      const rows = await postgresDb(tx)
+        .select()
+        .from(postgresSchema.inventoryReservations)
+        .where(lt(postgresSchema.inventoryReservations.expiresAt, at))
+      return rows.map((r) => rowToReservation(r as Record<string, unknown>))
     },
-    async setOrderRef(reservationId, orderRef) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setOrderRef(tx, reservationId, orderRef) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.inventoryReservations)
           .set({ orderRef })
           .where(eq(sqliteSchema.inventoryReservations.reservationId, reservationId))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.inventoryReservations)
         .set({ orderRef })
         .where(eq(postgresSchema.inventoryReservations.reservationId, reservationId))

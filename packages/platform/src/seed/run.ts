@@ -3,15 +3,11 @@ import bcrypt from 'bcryptjs'
 const { hashSync } = bcrypt
 import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
-import type { CommandStore } from '../db/command-store.js'
+import { rawClients, type CommandStore } from '../db/command-store.js'
 import { createCategoryRepository } from '../db/repositories/categories.js'
 import { createProductRepository } from '../db/repositories/products.js'
 import { createEventBuilder } from '../events/builder.js'
-import {
-  EVT_CATEGORY_CREATED,
-  EVT_PRODUCT_CREATED,
-  EVT_CUSTOMER_CREATED,
-} from '@nymbalhq/types'
+import { EVT_CATEGORY_CREATED, EVT_PRODUCT_CREATED, EVT_CUSTOMER_CREATED } from '@nymbalhq/types'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { seedCategories, seedProducts, type SeedProduct } from './data.js'
@@ -50,7 +46,8 @@ async function insertVariants(
   }>,
 ): Promise<void> {
   if (rows.length === 0) return
-  if (store.kind === 'sqlite') {
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
     const values = rows.map((r) => ({
       id: r.id,
       productId: r.productId,
@@ -67,7 +64,7 @@ async function insertVariants(
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }))
-    store.db.insert(sqliteSchema.variants).values(values).run()
+    clients.db.insert(sqliteSchema.variants).values(values).run()
     return
   }
   const values = rows.map((r) => ({
@@ -86,7 +83,7 @@ async function insertVariants(
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }))
-  await store.db.insert(postgresSchema.variants).values(values)
+  await clients.db.insert(postgresSchema.variants).values(values)
 }
 
 async function insertProductCategories(
@@ -94,11 +91,12 @@ async function insertProductCategories(
   rows: Array<{ productId: string; categoryId: string }>,
 ): Promise<void> {
   if (rows.length === 0) return
-  if (store.kind === 'sqlite') {
-    store.db.insert(sqliteSchema.productCategories).values(rows).run()
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    clients.db.insert(sqliteSchema.productCategories).values(rows).run()
     return
   }
-  await store.db.insert(postgresSchema.productCategories).values(rows)
+  await clients.db.insert(postgresSchema.productCategories).values(rows)
 }
 
 async function insertCustomer(
@@ -115,8 +113,9 @@ async function insertCustomer(
   },
 ): Promise<void> {
   const meta = row.metadata ?? {}
-  if (store.kind === 'sqlite') {
-    store.db
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    clients.db
       .insert(sqliteSchema.customers)
       .values({
         id: row.id,
@@ -136,7 +135,7 @@ async function insertCustomer(
       .run()
     return
   }
-  await store.db.insert(postgresSchema.customers).values({
+  await clients.db.insert(postgresSchema.customers).values({
     id: row.id,
     email: row.email,
     passwordHash: row.passwordHash,
