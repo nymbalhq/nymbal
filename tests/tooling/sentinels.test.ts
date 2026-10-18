@@ -15,10 +15,12 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseSentinel, run, touchedPaths } from '../../scripts/sentinels'
 
 // Acceptance tests for P0-01 (sentinel runner): AC-12 to AC-19, and AC-22 to AC-24 and AC-27 (review round 1).
+// P1-10 AC-8 re-anchors AC-19 by content (no line numbers asserted) and tests that check against a fixture.
 // AC-13 to AC-18 build a throwaway git repo per test: a tiny module, a `node --test` suite that appends to a log
 // outside the repo every time it runs, and sentinel files committed under `sentinels/`.
 type Report = Awaited<ReturnType<typeof run>>
@@ -401,35 +403,28 @@ describe('AC-18: --only and --json', () => {
 describe('AC-19: the real sentinel set', () => {
   const SENTINEL_DIR = join(REPO, 'tests/sentinels')
 
-  /** Each sentinel's kind, the location its `where` must name, and what that location must contain. */
-  const EXPECTED: Record<
-    string,
-    { kind: 'present' | 'injected'; path: string; lines: [number, number]; marks: RegExp }
-  > = {
-    // S001-S004 became injected in P1-02: their lines and marks name the fixed code the patch breaks.
+  /** Each sentinel's kind, the file its `where` must name, and the content that file must hold at HEAD. */
+  const EXPECTED: Record<string, Anchor & { kind: 'present' | 'injected' }> = {
+    // S001-S004 became injected in P1-02: their marks name the fixed code the patch breaks.
     // P1-04 moved BEGIN IMMEDIATE into beginImmediate(); S001 still empties begin, commit and rollback.
     S001: {
       kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
-      lines: [347, 353],
       marks: /beginImmediate\(raw\)[\s\S]*raw\.exec\('COMMIT'\)[\s\S]*raw\.exec\('ROLLBACK'\)/,
     },
     S002: {
       kind: 'injected',
       path: 'packages/platform/src/repositories/variant.ts',
-      lines: [207, 212],
       marks: /gte\(postgresSchema\.variants\.stock, qty\)/,
     },
     S003: {
       kind: 'injected',
       path: 'packages/platform/src/repositories/variant.ts',
-      lines: [150, 151],
       marks: /postgresDb\(tx\)\s+\.insert\(postgresSchema\.variants\)/,
     },
     S004: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [347, 347],
       marks: /findByPaymentIntentId\(/,
     },
     // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
@@ -437,7 +432,6 @@ describe('AC-19: the real sentinel set', () => {
     S005: {
       kind: 'injected',
       path: 'packages/platform/src/events/publisher.ts',
-      lines: [68, 70],
       marks: /append\(/,
     },
     // S006 became injected in P1-04 and S010 is new: predicted against the spec's interface at lines the task does
@@ -445,7 +439,6 @@ describe('AC-19: the real sentinel set', () => {
     S006: {
       kind: 'injected',
       path: 'packages/platform/src/routes/cart.ts',
-      lines: [39, 39],
       marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
     // S007 became injected in P1-05: predicted against the spec's decision 4 step 3 (the amount and currency check
@@ -454,81 +447,68 @@ describe('AC-19: the real sentinel set', () => {
     S007: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [350, 353],
       marks:
         /paid\.amountMinor !== order\.totalMinor \|\|\s+paid\.currency\.toUpperCase\(\) !== order\.currency\.toUpperCase\(\)/,
     },
     S008: {
       kind: 'injected',
       path: 'packages/platform/src/app.ts',
-      lines: [57, 62],
       marks: /jwtSecret === DEFAULT_JWT_SECRET[\s\S]*config\.production_default_jwt_secret/,
     },
     S009: {
       kind: 'injected',
       path: 'packages/platform/src/warm-document-store.ts',
-      lines: [79, 79],
       marks: /eventBus\.replay\(events\)/,
     },
     S010: {
       kind: 'injected',
       path: 'packages/platform/src/sweepers/index.ts',
-      lines: [6, 9],
       marks: /startCartAbandonmentSweeper,/,
     },
     I101: {
       kind: 'injected',
       path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [169, 177],
       marks: /inventory\.insufficient/,
     },
     I102: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [198, 198],
       marks: /commitReservation/,
     },
     I103: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [281, 281],
       marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
     },
     I104: {
       kind: 'injected',
       path: 'packages/platform/src/handlers/idempotency.ts',
-      lines: [16, 22],
       marks: /repo\.seen\(tx, /,
     },
     I105: {
       kind: 'injected',
       path: 'packages/platform/src/services/auth-service.ts',
-      lines: [216, 216],
       marks: /revokedAt/,
     },
     // I106-I109 are new in P1-06, written against the guard, roles column, login limiter and registry as they landed.
     I106: {
       kind: 'injected',
       path: 'packages/http/src/fastify-adapter.ts',
-      lines: [103, 104],
       marks: /this\.#guard\.admit\(ctx, options\)/,
     },
     I107: {
       kind: 'injected',
       path: 'packages/platform/src/services/auth-service.ts',
-      lines: [111, 111],
       marks: /roles: customer\.roles,/,
     },
     I108: {
       kind: 'injected',
       path: 'packages/http/src/security-middleware.ts',
-      lines: [65, 67],
       marks: /`account:\$\{email\.toLowerCase\(\)\}`/,
     },
     I109: {
       kind: 'injected',
       path: 'packages/platform/src/routes/validated-adapter.ts',
-      lines: [22, 29],
       marks: /config\.route_schema_missing/,
     },
   }
@@ -552,44 +532,118 @@ describe('AC-19: the real sentinel set', () => {
   })
 
   it.each(Object.keys(EXPECTED))(
-    'AC-19: %s has the expected kind and its where names the defect line',
+    'AC-19: %s has the expected kind, its where names the defect file, which holds its marks at HEAD, and an injected patch applies there',
     (id) => {
       const want = EXPECTED[id]
       const got = loadAll().find((s) => s.sentinel.id === id)?.sentinel
       if (!want || !got) throw new Error(`sentinel ${id} missing from tests/sentinels`)
       expect(got.kind).toBe(want.kind)
-      const [from, to] = want.lines
-      const location = from === to ? `${want.path}:${from}` : `${want.path}:${from}-${to}`
-      expect(got.where).toContain(location)
-      // Read HEAD, not the working tree: the runner applies sentinels to the tree while this suite may run.
-      const named = git(REPO, 'show', `HEAD:${want.path}`)
-        .split('\n')
-        .slice(from - 1, to)
-        .join('\n')
-      expect(named, `${location} must still be the defect`).toMatch(want.marks)
+      expect(anchorProblems(REPO, got, want)).toEqual([])
       expect(
         want.kind !== 'present' || got.patch.trim() === '',
-        `a present sentinel is header only: ${location}`,
+        `a present sentinel is header only: ${got.where}`,
       ).toBe(true)
     },
   )
+})
 
-  it.each(Object.keys(EXPECTED).filter((id) => EXPECTED[id]?.kind === 'injected'))(
-    'AC-19: injected %s changes the file its where names and git apply --check --cached is clean',
-    (id) => {
-      const want = EXPECTED[id]
-      const got = loadAll().find((s) => s.sentinel.id === id)?.sentinel
-      if (!want || !got) throw new Error(`sentinel ${id} missing from tests/sentinels`)
-      expect(got.patch).toContain(`+++ b/${want.path}`)
-      // --cached checks against the index (HEAD), so an applied sentinel in the tree does not fail this.
-      const check = spawnSync('git', ['apply', '--check', '--cached', '-'], {
-        cwd: REPO,
-        input: got.patch,
-        encoding: 'utf8',
-      })
-      expect(check.status, check.stderr).toBe(0)
-    },
-  )
+type Anchor = { path: string; marks: RegExp }
+
+/**
+ * Why a sentinel is not anchored at `root`'s HEAD; empty when it is. Anchored by content: `where` names the file (a
+ * line range after it is informational), the file holds the marks somewhere, and an injected patch applies.
+ */
+function anchorProblems(root: string, sentinel: Sentinel, anchor: Anchor): string[] {
+  const problems: string[] = []
+  const file = (sentinel.where.split(/\s/)[0] ?? '').replace(/:\d+(?:-\d+)?$/, '')
+  if (file !== anchor.path) problems.push(`where names ${file}, not ${anchor.path}`)
+  let content = ''
+  try {
+    // HEAD, not the working tree: the runner applies sentinels to the tree while this suite may run.
+    content = git(root, 'show', `HEAD:${anchor.path}`)
+  } catch {
+    problems.push(`${anchor.path} is not in HEAD`)
+  }
+  if (!anchor.marks.test(content)) problems.push(`${anchor.path} no longer holds ${anchor.marks}`)
+  if (sentinel.kind === 'injected') {
+    if (!sentinel.patch.includes(`+++ b/${anchor.path}`))
+      problems.push(`the patch does not change ${anchor.path}`)
+    // --cached checks against the index (HEAD), so an applied sentinel in the tree does not fail this.
+    const check = spawnSync('git', ['apply', '--check', '--cached', '-'], {
+      cwd: root,
+      input: sentinel.patch,
+      encoding: 'utf8',
+    })
+    if (check.status !== 0)
+      problems.push(`the patch does not apply at HEAD: ${check.stderr.trim()}`)
+  }
+  return problems
+}
+
+describe('AC-8: sentinels are anchored by content, not by line', () => {
+  const TARGET = 'src/price.js'
+  // The target is mid-file: git apply pins a hunk that starts at line 1 to the top of the file, wherever it moved.
+  const BODY = [
+    '// Prices in minor units.',
+    "export const CURRENCY = 'GBP'",
+    '',
+    'export function price(qty, unit) {',
+    '  return qty * unit',
+    '}',
+    '',
+    'export function free() {',
+    '  return 0',
+    '}',
+    '',
+  ].join('\n')
+  /** The 0-based index of the target line in BODY. */
+  const TARGET_LINE = 4
+  const ANCHOR: Anchor = { path: TARGET, marks: /return qty \* unit/ }
+
+  /** A repo whose HEAD has the target code at line 5, and an injected sentinel whose where names that line. */
+  function anchoredRepo(): { repo: TempRepo; sentinel: Sentinel } {
+    const repo = makeRepo({ green: true })
+    commitFile(repo, TARGET, BODY)
+    const patch = patchFor(repo, TARGET, (s) => s.replace('qty * unit', 'qty + unit'))
+    const text = [
+      '# id: I900',
+      '# kind: injected',
+      '# defect: price adds instead of multiplying',
+      `# where: ${TARGET}:${TARGET_LINE + 1}`,
+      '# killed-by: test/price.test.js',
+      '',
+      patch,
+    ].join('\n')
+    return { repo, sentinel: parseSentinel(text, 'sentinels/I900-fixture.patch') }
+  }
+
+  it('AC-8: property: moving the target code down N lines keeps the check green, and the patch still lands on it', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 80 }), (n) => {
+        const { repo, sentinel } = anchoredRepo()
+        const above = Array.from({ length: n }, (_, i) => `// line ${i + 1} above the target`)
+        commitFile(repo, TARGET, `${above.join('\n')}\n${BODY}`)
+
+        expect(anchorProblems(repo.root, sentinel, ANCHOR)).toEqual([])
+        execFileSync('git', ['apply', '-'], { cwd: repo.root, input: sentinel.patch })
+        const moved = readFileSync(join(repo.root, TARGET), 'utf8').split('\n')
+        expect(moved[n + TARGET_LINE]).toBe('  return qty + unit')
+        expect(moved.slice(0, n)).toEqual(above)
+      }),
+      { numRuns: 8, examples: [[1], [40]] },
+    )
+  })
+
+  it('AC-8: deleting the target code turns the check red, naming the missing marks and the patch that no longer applies', () => {
+    const { repo, sentinel } = anchoredRepo()
+    const before = anchorProblems(repo.root, sentinel, ANCHOR)
+    commitFile(repo, TARGET, 'export function price(qty) {\n  return qty\n}\n')
+
+    const after = anchorProblems(repo.root, sentinel, ANCHOR)
+    expect(after.length).toBeGreaterThan(before.length)
+    expect(after.join('\n')).toMatch(/no longer holds/)
+    expect(after.join('\n')).toMatch(/does not apply/)
+  })
 })
 
 // ---------------------------------------------------------------------------------------------------------------

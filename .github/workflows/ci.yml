@@ -230,7 +230,43 @@ jobs:
         with:
           name: build-output
       # integration-postgres and proof-kit-services have their own job, with the services they need.
-      - run: pnpm vitest run --coverage --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'
+      # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
+      # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
+      # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
+      - name: Coverage (reported, not a gate)
+        run: |
+          rm -rf coverage reports/coverage-tests.json
+          status=0
+          pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
+            --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
+            --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**' || status=$?
+          node -e '
+            const fs = require("fs")
+            const out = ["## Coverage", ""]
+            if (fs.existsSync("coverage/coverage-summary.json")) {
+              const t = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8")).total
+              out.push("| metric | covered | total | % |", "|---|---:|---:|---:|")
+              for (const k of ["lines", "statements", "functions", "branches"]) {
+                out.push(`| ${k} | ${t[k].covered} | ${t[k].total} | ${t[k].pct}% |`)
+              }
+            } else {
+              out.push("No coverage summary: the run did not finish.")
+            }
+            if (process.argv[1] !== "0") out.push("", `Vitest exited ${process.argv[1]}; thresholds are reported, never blocking.`)
+            console.log(out.join("\n"))
+          ' "$status" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            node -e '
+              const fs = require("fs")
+              const f = "reports/coverage-tests.json"
+              const ok = fs.existsSync(f) && JSON.parse(fs.readFileSync(f, "utf8")).success === true
+              if (!ok) {
+                console.error("the coverage run failed: a test failed or the run crashed")
+                process.exit(1)
+              }
+              console.log("every test passed; the coverage threshold miss is reported, not blocking")
+            '
+          fi
 
   e2e-astro:
     name: E2E — Astro

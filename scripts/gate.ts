@@ -602,8 +602,8 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`)
 }
 
-/** Changed files that fall inside Stryker's `mutate` set (its own config is the source of that set). */
-async function mutateSet(root: string, changed: string[]): Promise<string[]> {
+/** The paths that fall inside Stryker's `mutate` set (its own config is the source of that set). */
+export async function mutateSet(root: string, changed: string[]): Promise<string[]> {
   const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
     default: { mutate: string[] }
   }
@@ -613,6 +613,31 @@ async function mutateSet(root: string, changed: string[]): Promise<string[]> {
     .map((g) => globToRegExp(g.slice(1)))
   return changed.filter(
     (path) => include.some((re) => re.test(path)) && !exclude.some((re) => re.test(path)),
+  )
+}
+
+/** A path whose change can move a mutation score without touching a mutated file: the platform's tests and Stryker's configs. */
+function isStrykerInput(path: string): boolean {
+  return (
+    path === 'stryker.config.mjs' ||
+    path === 'vitest.stryker.config.ts' ||
+    (path.startsWith('packages/platform/src/') && path.endsWith('.test.ts'))
+  )
+}
+
+/**
+ * The files Stryker mutates for this change set: the changed ones in the mutate set, or, when only its tests or
+ * configs changed, the whole set (incremental mode reuses every result those changes cannot have moved).
+ */
+export async function strykerTargets(root: string, changed: string[]): Promise<string[]> {
+  // A deleted file has nothing left to mutate.
+  const present = changed.filter((path) => existsSync(resolve(root, path)))
+  const mutated = await mutateSet(root, present)
+  if (mutated.length > 0 || !changed.some(isStrykerInput)) return mutated
+  const tracked = lines(git(root, ['ls-files']))
+  return mutateSet(
+    root,
+    tracked.filter((path) => existsSync(resolve(root, path))),
   )
 }
 
@@ -778,12 +803,13 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       ? {
           name: 'stryker',
           command: 'true',
-          skip: "no changed file in Stryker's mutate set",
+          skip: "no changed file in Stryker's mutate set, its platform tests or its configs",
           idle: true,
         }
       : {
+          // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
           name: 'stryker',
-          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))}`,
+          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
         },
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     { name: 'sentinels', command: `${postgres} pnpm sentinels` },
@@ -859,9 +885,7 @@ async function main(argv: string[]): Promise<number> {
   const base = resolveBase(root, values.base)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
-  // A deleted file has nothing left to mutate.
-  const present = changed.filter((path) => existsSync(resolve(root, path)))
-  const mutated = values.full ? await mutateSet(root, present) : []
+  const mutated = values.full ? await strykerTargets(root, changed) : []
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const { steps, budgetMs } = plan({
