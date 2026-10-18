@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -83,9 +83,27 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T
 }
 
-function check(report: unknown, ratchetPath: string): number {
+/** The tracked files in Stryker's mutate set, or undefined outside a git work tree, where nothing is tracked. */
+async function trackedMutateSet(root: string): Promise<string[] | undefined> {
+  const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+  if (inside.status !== 0) return undefined
+  const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n')
+  return (await mutateSet(root, tracked.filter(Boolean))).sort()
+}
+
+async function check(report: unknown, ratchetPath: string): Promise<number> {
   const ratchet = readJson<Ratchet>(ratchetPath)
   const { lower, rose } = compare(ratchet.files, scoreByFile(report))
+  // A file with no entry cannot fall, so it does not fail the check; the hint keeps the ratchet following the set.
+  const unheld = ((await trackedMutateSet(process.cwd())) ?? []).filter(
+    (path) => ratchet.files[path] === undefined,
+  )
+  for (const path of unheld) {
+    process.stdout.write(`no ratchet entry: ${path}\n`)
+  }
   for (const c of lower) {
     process.stdout.write(
       `below the ratchet: ${c.file} ${c.score.toFixed(2)} < ${c.ratchet.toFixed(2)} (down ${c.by.toFixed(2)})\n`,
@@ -96,9 +114,9 @@ function check(report: unknown, ratchetPath: string): number {
       `above the ratchet: ${c.file} ${c.score.toFixed(2)} > ${c.ratchet.toFixed(2)} (up ${c.by.toFixed(2)})\n`,
     )
   }
-  if (rose.length > 0) {
+  if (rose.length > 0 || unheld.length > 0) {
     process.stdout.write(
-      'raise the ratchet with: pnpm mutation:ratchet update --report <mutation.json>\n',
+      'bring the ratchet up to date with: pnpm mutation:ratchet update --report <mutation.json>\n',
     )
   }
   if (lower.length > 0) {
@@ -121,14 +139,21 @@ async function update(
   if (before === undefined && !total) {
     throw new Error(`${ratchetPath} does not exist: seed it with update --total from a full run`)
   }
+  const set = await trackedMutateSet(process.cwd())
+  if (set === undefined) {
+    throw new Error(`update reads Stryker's mutate set from git: run it inside the repository`)
+  }
+  // Entries follow the mutate set: a file renamed, deleted or no longer mutated loses its entry.
+  const inSet = new Set(set)
+  const follow = (scores: Scores): Scores =>
+    Object.fromEntries(Object.entries(scores).filter(([path]) => inSet.has(path)))
+  const dropped = Object.keys(before?.files ?? {}).filter((path) => !inSet.has(path))
+  const files = raise(follow(before?.files ?? {}), follow(scoreByFile(report)))
   let next: Ratchet
   if (total) {
     // The total stands for the whole mutate set, so a report from a run over part of it cannot set it.
-    const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split('\n')
     const reported = new Set(Object.keys((report as StrykerReport).files ?? {}))
-    const missing = (await mutateSet(process.cwd(), tracked.filter(Boolean))).filter(
-      (path) => !reported.has(path),
-    )
+    const missing = set.filter((path) => !reported.has(path))
     if (missing.length > 0) {
       process.stderr.write(
         `update --total needs a report covering the whole mutate set; missing:\n${missing.map((p) => `  ${p}\n`).join('')}`,
@@ -139,12 +164,15 @@ async function update(
       measuredAt: new Date().toISOString(),
       command,
       total: totalScore(report),
-      files: raise(before?.files ?? {}, scoreByFile(report)),
+      files,
     }
   } else {
-    next = { ...(before as Ratchet), files: raise(before?.files ?? {}, scoreByFile(report)) }
+    next = { ...(before as Ratchet), files }
   }
   writeFileSync(ratchetPath, `${JSON.stringify(next, null, 2)}\n`)
+  for (const path of dropped) {
+    process.stdout.write(`dropped (not in the mutate set): ${path}\n`)
+  }
   process.stdout.write(
     `wrote ${ratchetPath}: ${Object.keys(next.files).length} file(s), total ${next.total.toFixed(2)}\n`,
   )
