@@ -8,12 +8,12 @@ import {
   ValidationError,
   type Cart,
   type CartItem,
-  type DocumentStoreAdapter,
   type Logger,
 } from '@nymbalhq/types'
+import type { CommandStore, Tx } from '../db/command-store.js'
+import type { CartRepository } from '../repositories/cart.js'
 import type { EventPublisher } from '../events/publisher.js'
 
-const COLLECTION = 'carts'
 const TTL_SECONDS_DEFAULT = 60 * 60 * 24 * 30
 
 export interface CartService {
@@ -28,38 +28,44 @@ export interface CartService {
 }
 
 export interface CreateCartServiceDeps {
-  documentStore: DocumentStoreAdapter
+  store: CommandStore
+  carts: CartRepository
   publisher: EventPublisher
   logger: Logger
   currency: string
   ttlSeconds?: number
+  now?: () => Date
 }
 
 function calcSubtotal(items: CartItem[]): number {
   return items.reduce((sum, item) => sum + item.priceMinor * item.qty, 0)
 }
 
-function makeCart(token: string, customerId: string | null, currency: string, ttlSeconds: number): Cart {
-  const now = new Date()
-  const expires = new Date(now.getTime() + ttlSeconds * 1000)
-  return {
-    token,
-    customerId,
-    items: [],
-    subtotalMinor: 0,
-    currency,
-    expiresAt: expires.toISOString(),
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  }
-}
-
 export function createCartService(deps: CreateCartServiceDeps): CartService {
-  const { documentStore, publisher, currency } = deps
-  const ttlSeconds = deps.ttlSeconds ?? TTL_SECONDS_DEFAULT
+  const { store, carts, publisher, currency } = deps
+  const ttlMs = (deps.ttlSeconds ?? TTL_SECONDS_DEFAULT) * 1000
+  const now = deps.now ?? (() => new Date())
 
-  async function save(cart: Cart): Promise<void> {
-    await documentStore.put<Cart>(COLLECTION, cart.token, cart, { ttl: ttlSeconds })
+  /** A cart past its expiry reads as missing, whether or not the sweeper has deleted it yet. */
+  function live(cart: Cart | null, at: Date): cart is Cart {
+    return cart !== null && Date.parse(cart.expiresAt) > at.getTime()
+  }
+
+  /** The cart after a write at `at`: these items, and an expiry that slides to `at + ttl`. */
+  function written(cart: Cart, items: CartItem[], at: Date): Cart {
+    return {
+      ...cart,
+      items,
+      subtotalMinor: calcSubtotal(items),
+      updatedAt: at.toISOString(),
+      expiresAt: new Date(at.getTime() + ttlMs).toISOString(),
+    }
+  }
+
+  async function requireCart(tx: Tx, token: string, at: Date): Promise<Cart> {
+    const cart = await carts.lock(tx, token)
+    if (!live(cart, at)) throw new NotFoundError('cart', token)
+    return cart
   }
 
   async function emitUpdated(cart: Cart): Promise<void> {
@@ -70,139 +76,141 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     })
   }
 
-  async function requireCart(token: string): Promise<Cart> {
-    const cart = await documentStore.get<Cart>(COLLECTION, token)
-    if (!cart) throw new NotFoundError('cart', token)
-    return cart
+  /**
+   * One command on one cart, in one transaction: the row is held from the read to the write, so a concurrent command
+   * (another replica's included) waits and then sees this one's result, and the events commit with the write.
+   */
+  function command(token: string, change: (cart: Cart, at: Date) => Promise<Cart>): Promise<Cart> {
+    return store.transaction(async (tx) => {
+      const at = now()
+      const next = await change(await requireCart(tx, token, at), at)
+      await carts.put(tx, next)
+      await emitUpdated(next)
+      return next
+    })
   }
 
   return {
     async getOrCreate(token, customerId = null) {
-      const t = token ?? uuidv7()
-      const existing = await documentStore.get<Cart>(COLLECTION, t)
-      if (existing) return existing
-      const cart = makeCart(t, customerId, currency, ttlSeconds)
-      await save(cart)
-      await publisher.publish(EVT_CART_CREATED, { cartId: cart.token, token: cart.token })
-      return cart
+      return store.transaction(async (tx) => {
+        const at = now()
+        const { cart, created } = await carts.create(tx, {
+          token: token ?? uuidv7(),
+          customerId,
+          items: [],
+          subtotalMinor: 0,
+          currency,
+          expiresAt: new Date(at.getTime() + ttlMs).toISOString(),
+          createdAt: at.toISOString(),
+          updatedAt: at.toISOString(),
+        })
+        if (created) {
+          await publisher.publish(EVT_CART_CREATED, { cartId: cart.token, token: cart.token })
+        }
+        return cart
+      })
     },
 
     async get(token) {
-      return documentStore.get<Cart>(COLLECTION, token)
+      const at = now()
+      const cart = await store.read((tx) => carts.findByToken(tx, token))
+      return live(cart, at) ? cart : null
     },
 
     async addItem(token, item) {
-      const cart = await requireCart(token)
-      const qty = item.qty ?? 1
-      if (qty <= 0) throw new ValidationError(`qty must be positive, got ${qty}`)
-      const existing = cart.items.find((i) => i.variantId === item.variantId)
-      if (existing) {
-        existing.qty += qty
-      } else {
-        cart.items.push({
+      return command(token, async (cart, at) => {
+        const qty = item.qty ?? 1
+        if (qty <= 0) throw new ValidationError(`qty must be positive, got ${qty}`)
+        const onCart = cart.items.some((i) => i.variantId === item.variantId)
+        const items = onCart
+          ? cart.items.map((i) => (i.variantId === item.variantId ? { ...i, qty: i.qty + qty } : i))
+          : [
+              ...cart.items,
+              {
+                variantId: item.variantId,
+                productId: item.productId,
+                productName: item.productName,
+                variantName: item.variantName,
+                priceMinor: item.priceMinor,
+                imageUrl: item.imageUrl,
+                qty,
+              },
+            ]
+        await publisher.publish(EVT_CART_ITEM_ADDED, {
+          cartId: cart.token,
           variantId: item.variantId,
-          productId: item.productId,
-          productName: item.productName,
-          variantName: item.variantName,
-          priceMinor: item.priceMinor,
-          imageUrl: item.imageUrl,
           qty,
         })
-      }
-      cart.subtotalMinor = calcSubtotal(cart.items)
-      cart.updatedAt = new Date().toISOString()
-      await save(cart)
-      await publisher.publish(EVT_CART_ITEM_ADDED, {
-        cartId: cart.token,
-        variantId: item.variantId,
-        qty,
+        return written(cart, items, at)
       })
-      await emitUpdated(cart)
-      return cart
     },
 
     async updateItemQuantity(token, variantId, qty) {
       if (qty < 0) throw new ValidationError(`qty must be non-negative, got ${qty}`)
-      const cart = await requireCart(token)
-      const item = cart.items.find((i) => i.variantId === variantId)
-      if (!item) throw new NotFoundError('cart_item', variantId)
-      if (qty === 0) {
-        cart.items = cart.items.filter((i) => i.variantId !== variantId)
-        await publisher.publish(EVT_CART_ITEM_REMOVED, {
-          cartId: cart.token,
-          variantId,
-        })
-      } else {
-        item.qty = qty
-      }
-      cart.subtotalMinor = calcSubtotal(cart.items)
-      cart.updatedAt = new Date().toISOString()
-      await save(cart)
-      await emitUpdated(cart)
-      return cart
+      return command(token, async (cart, at) => {
+        if (!cart.items.some((i) => i.variantId === variantId)) {
+          throw new NotFoundError('cart_item', variantId)
+        }
+        if (qty === 0) {
+          await publisher.publish(EVT_CART_ITEM_REMOVED, { cartId: cart.token, variantId })
+          return written(
+            cart,
+            cart.items.filter((i) => i.variantId !== variantId),
+            at,
+          )
+        }
+        return written(
+          cart,
+          cart.items.map((i) => (i.variantId === variantId ? { ...i, qty } : i)),
+          at,
+        )
+      })
     },
 
     async removeItem(token, variantId) {
-      const cart = await requireCart(token)
-      const found = cart.items.some((i) => i.variantId === variantId)
-      cart.items = cart.items.filter((i) => i.variantId !== variantId)
-      cart.subtotalMinor = calcSubtotal(cart.items)
-      cart.updatedAt = new Date().toISOString()
-      await save(cart)
-      if (found) {
-        await publisher.publish(EVT_CART_ITEM_REMOVED, {
-          cartId: cart.token,
-          variantId,
-        })
-      }
-      await emitUpdated(cart)
-      return cart
+      return command(token, async (cart, at) => {
+        const items = cart.items.filter((i) => i.variantId !== variantId)
+        if (items.length < cart.items.length) {
+          await publisher.publish(EVT_CART_ITEM_REMOVED, { cartId: cart.token, variantId })
+        }
+        return written(cart, items, at)
+      })
     },
 
     async clear(token) {
-      const cart = await requireCart(token)
-      cart.items = []
-      cart.subtotalMinor = 0
-      cart.updatedAt = new Date().toISOString()
-      await save(cart)
-      await emitUpdated(cart)
-      return cart
+      return command(token, async (cart, at) => written(cart, [], at))
     },
 
     async attachCustomer(token, customerId) {
-      const cart = await requireCart(token)
-      cart.customerId = customerId
-      cart.updatedAt = new Date().toISOString()
-      await save(cart)
-      await emitUpdated(cart)
-      return cart
+      return command(token, async (cart, at) => ({ ...written(cart, cart.items, at), customerId }))
     },
 
     async merge(guestToken, customerToken) {
-      const guest = await documentStore.get<Cart>(COLLECTION, guestToken)
-      if (!guest) return requireCart(customerToken)
-      const customerCart = await documentStore.get<Cart>(COLLECTION, customerToken)
-      if (!customerCart) {
-        guest.token = customerToken
-        await save(guest)
-        await documentStore.delete(COLLECTION, guestToken)
-        await emitUpdated(guest)
-        return guest
-      }
-      for (const g of guest.items) {
-        const existing = customerCart.items.find((i) => i.variantId === g.variantId)
-        if (existing) {
-          existing.qty = Math.max(existing.qty, g.qty)
+      return store.transaction(async (tx) => {
+        const at = now()
+        const guest = await carts.lock(tx, guestToken)
+        if (!live(guest, at)) return requireCart(tx, customerToken, at)
+        const customerCart = await carts.lock(tx, customerToken)
+        let merged: Cart
+        if (live(customerCart, at)) {
+          const held = customerCart.items
+          const items = [
+            ...held.map((i) => {
+              const g = guest.items.find((x) => x.variantId === i.variantId)
+              return g ? { ...i, qty: Math.max(i.qty, g.qty) } : i
+            }),
+            ...guest.items.filter((g) => !held.some((i) => i.variantId === g.variantId)),
+          ]
+          merged = written(customerCart, items, at)
         } else {
-          customerCart.items.push(g)
+          // The guest cart takes the customer's token, replacing an expired cart there if there is one.
+          merged = written({ ...guest, token: customerToken }, guest.items, at)
         }
-      }
-      customerCart.subtotalMinor = calcSubtotal(customerCart.items)
-      customerCart.updatedAt = new Date().toISOString()
-      await save(customerCart)
-      await documentStore.delete(COLLECTION, guestToken)
-      await emitUpdated(customerCart)
-      return customerCart
+        await carts.remove(tx, guestToken)
+        await carts.put(tx, merged)
+        await emitUpdated(merged)
+        return merged
+      })
     },
   }
 }

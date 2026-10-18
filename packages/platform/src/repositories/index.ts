@@ -23,6 +23,7 @@ import {
 import { createReviewRepository, type ReviewRepository } from './review.js'
 import { createProcessedEventRepository, type ProcessedEventRepository } from './processed-event.js'
 import { createEventLogRepository, type EventLogRepository } from './event-log.js'
+import { createCartRepository, type CartRepository } from './cart.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -38,6 +39,7 @@ export * from './stock-adjustment.js'
 export * from './review.js'
 export * from './processed-event.js'
 export * from './event-log.js'
+export * from './cart.js'
 
 export interface Repositories {
   product: ProductRepository
@@ -54,6 +56,7 @@ export interface Repositories {
   review: ReviewRepository
   processedEvent: ProcessedEventRepository
   eventLog: EventLogRepository
+  cart: CartRepository
 }
 
 export function buildRepositories(
@@ -76,5 +79,6 @@ export function buildRepositories(
     review: createReviewRepository(commandStore),
     processedEvent: createProcessedEventRepository(commandStore),
     eventLog: createEventLogRepository(commandStore),
+    cart: createCartRepository(commandStore),
   }
 }

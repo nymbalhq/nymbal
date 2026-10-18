@@ -73,7 +73,6 @@ export async function createApp(
     config,
     store: platform.commandStore,
     repos,
-    documentStore: platform.documentStore,
     publisher,
     logger: logger.child({ layer: 'service' }),
     payments: adapters.payments,
@@ -108,7 +107,8 @@ export async function createApp(
       logger,
     }),
     startCartAbandonmentSweeper({
-      documentStore: platform.documentStore,
+      store: platform.commandStore,
+      carts: repos.cart,
       publisher,
       logger,
     }),

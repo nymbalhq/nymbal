@@ -22,6 +22,13 @@
       "when": 1792302105204,
       "tag": "0002_sloppy_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792310135268,
+      "tag": "0003_violet_violations",
+      "breakpoints": true
     }
   ]
 }

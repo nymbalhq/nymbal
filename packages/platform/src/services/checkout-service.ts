@@ -7,7 +7,6 @@ import {
   NotFoundError,
   type Address,
   type Cart,
-  type DocumentStoreAdapter,
   type Logger,
   type OrderLineItem,
   type PaymentsAdapter,
@@ -52,7 +51,6 @@ export interface CreateCheckoutServiceDeps {
   orders: OrderService
   inventory: InventoryService
   payments: PaymentsAdapter
-  documentStore: DocumentStoreAdapter
   currency: string
 }
 
@@ -172,7 +170,7 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     },
 
     async finalize(paymentIntentId, paidAmountMinor) {
-      const { updated, cartToken } = await store.transaction(async (tx) => {
+      const updated = await store.transaction(async (tx) => {
         const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
         if (!order || order.status !== 'pending') {
           throw new CheckoutError(
@@ -222,16 +220,19 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
           amountMinor: paidAmountMinor,
           currency: updated.currency,
         })
-        return { updated, cartToken: metadata.cartToken }
+
+        // The cart empties in the same commit as the payment it became. A cart that expired or was swept while the
+        // shopper paid is not a reason to refuse a paid order; cart.converted still records where the order came from.
+        const cartToken = metadata.cartToken
+        if (cartToken) {
+          if (await cart.get(cartToken)) await cart.clear(cartToken)
+          await publisher.publish(EVT_CART_CONVERTED, {
+            cartId: cartToken,
+            orderId: updated.id,
+          })
+        }
+        return updated
       })
-      // The cart lives in the document store: cleared once the order is committed, never inside the transaction.
-      if (cartToken) {
-        await cart.clear(cartToken)
-        await publisher.publish(EVT_CART_CONVERTED, {
-          cartId: cartToken,
-          orderId: updated.id,
-        })
-      }
       logger.info({ orderId: updated.id, orderNumber: updated.orderNumber }, 'checkout finalized')
       return { orderNumber: updated.orderNumber }
     },

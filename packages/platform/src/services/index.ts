@@ -1,9 +1,4 @@
-import type {
-  DocumentStoreAdapter,
-  Logger,
-  PaymentsAdapter,
-  SearchAdapter,
-} from '@nymbalhq/types'
+import type { Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
@@ -44,7 +39,6 @@ export interface BuildServicesDeps {
   config: NymbalConfig
   store: CommandStore
   repos: Repositories
-  documentStore: DocumentStoreAdapter
   publisher: EventPublisher
   logger: Logger
   payments: PaymentsAdapter
@@ -52,7 +46,7 @@ export interface BuildServicesDeps {
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, documentStore, publisher, logger, payments, searchAdapter } = deps
+  const { config, store, repos, publisher, logger, payments, searchAdapter } = deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -68,7 +62,8 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     orderNumberStart: config.commerce.orders.numberStart,
   })
   const cart = createCartService({
-    documentStore,
+    store,
+    carts: repos.cart,
     publisher,
     logger: logger.child({ service: 'cart' }),
     currency: config.store.currency,
@@ -82,7 +77,6 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     orders,
     inventory,
     payments,
-    documentStore,
     currency: config.store.currency,
   })
   return {
