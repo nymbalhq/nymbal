@@ -8,8 +8,11 @@ a real store running locally in under five minutes with zero external infrastruc
 ```bash
 npx create-nymbal-app my-store
 cd my-store
-nymbal dev
+npx nymbal dev
 ```
+
+`create-nymbal-app` installs with the package manager that ran it and seeds the demo content; pass
+`--no-install` to get the files only.
 
 That's it: `nymbal dev` migrates the local SQLite database, seeds realistic demo content on
 first run, warms the read models, starts the platform API on port 3001 and the Astro

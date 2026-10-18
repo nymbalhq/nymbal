@@ -42,8 +42,11 @@ export type BaseFailure = { reason: string; tail: string[] }
 
 export type Report = { results: Judgement[]; baseFailure?: BaseFailure }
 
-/** Playwright journeys need running servers, which a temporary worktree of the base does not have. */
-const NOT_RUNNABLE = /^tests\/e2e\//
+/**
+ * Playwright journeys and the scaffold check need running servers (the scaffold check a published, scaffolded store
+ * too), which a temporary worktree of the base does not have.
+ */
+const NOT_RUNNABLE = /^tests\/(e2e|scaffold)\//
 
 /** Suite output that means the base run collected no test, so its exit code says nothing about the file. */
 const NOTHING_RAN: Array<{ pattern: RegExp; note: string }> = [
@@ -346,7 +349,7 @@ export async function judge(opts: {
         results.push({
           path,
           verdict: 'not judged',
-          note: 'a Playwright journey needs running servers',
+          note: 'a Playwright journey or the scaffold check needs running servers',
         })
         continue
       }

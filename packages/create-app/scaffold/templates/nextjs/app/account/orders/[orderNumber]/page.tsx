@@ -3,71 +3,37 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useNymbalClient } from '@nymbalhq/react'
+import type { Order } from '@nymbalhq/types'
 import { formatPrice, formatDate } from '@/lib/format'
 import styles from '@/styles/pages/account.module.css'
 import confirmStyles from '@/styles/pages/confirmation.module.css'
 
-interface OrderAddress {
-  firstName: string
-  lastName: string
-  addressLine1: string
-  addressLine2?: string
-  city: string
-  region: string
-  postalCode: string
-  country: string
-}
-
-interface OrderLineItem {
-  variantId: string
-  productId: string
-  productName: string
-  variantName?: string
-  qty: number
-  lineTotalMinor: number
-  imageUrl?: string
-}
-
-interface OrderDetail {
-  id: string
-  orderNumber: string
-  status: string
-  email: string
-  billingAddress: OrderAddress
-  shippingAddress: OrderAddress
-  lineItems: OrderLineItem[]
-  subtotalMinor: number
-  taxTotalMinor: number
-  shippingTotalMinor: number
-  totalMinor: number
-  currency: string
-  createdAt?: string
-}
-
 export default function OrderDetailPage() {
-  const params = useParams<{ id: string }>()
-  const [order, setOrder] = useState<OrderDetail | null>(null)
+  const params = useParams<{ orderNumber: string }>()
+  const orderNumber = decodeURIComponent(params.orderNumber ?? '')
+  const client = useNymbalClient()
+  const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function loadOrder() {
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
-        const res = await fetch(`${apiUrl}/api/orders/${params.id}`, {
-          credentials: 'include',
-        })
-        if (res.ok) {
-          setOrder(await res.json())
-        }
-      } catch {
-        // silently fail
-      } finally {
-        setLoading(false)
-      }
+    if (!orderNumber) return
+    let active = true
+    client.customer.orders
+      .get(orderNumber)
+      .then((found) => {
+        if (active) setOrder(found)
+      })
+      .catch(() => {
+        if (active) setOrder(null)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
     }
-
-    if (params.id) loadOrder()
-  }, [params.id])
+  }, [client, orderNumber])
 
   if (loading) {
     return (
@@ -87,7 +53,11 @@ export default function OrderDetailPage() {
       <div>
         <h2 className={styles.pageTitle}>Order Not Found</h2>
         <p className="text-muted">This order could not be found.</p>
-        <Link href="/account/orders" className="btn btn-outline" style={{ marginTop: 'var(--nymbal-spacing-md)', display: 'inline-flex' }}>
+        <Link
+          href="/account/orders"
+          className="btn btn-outline"
+          style={{ marginTop: 'var(--nymbal-spacing-md)', display: 'inline-flex' }}
+        >
           Back to Orders
         </Link>
       </div>
@@ -95,20 +65,30 @@ export default function OrderDetailPage() {
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--nymbal-spacing-sm)', marginBottom: 'var(--nymbal-spacing-lg)' }}>
+    <div data-testid="order-detail">
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 'var(--nymbal-spacing-sm)',
+          marginBottom: 'var(--nymbal-spacing-lg)',
+        }}
+      >
         <h2 className={styles.pageTitle} style={{ marginBottom: 0 }}>
           Order #{order.orderNumber}
         </h2>
-        <span className={`${styles.orderStatus} ${styles.statusPending}`} style={{ textTransform: 'capitalize' }}>
+        <span
+          className={`${styles.orderStatus} ${styles.statusPending}`}
+          style={{ textTransform: 'capitalize' }}
+        >
           {order.status}
         </span>
       </div>
 
       {order.createdAt && (
-        <p className="text-sm text-muted mb-md">
-          Placed on {formatDate(order.createdAt)}
-        </p>
+        <p className="text-sm text-muted mb-md">Placed on {formatDate(order.createdAt)}</p>
       )}
 
       <div className={styles.formCard} style={{ marginBottom: 'var(--nymbal-spacing-lg)' }}>
@@ -161,7 +141,10 @@ export default function OrderDetailPage() {
 
       <div className={styles.formCard}>
         <h3 className={styles.formCardTitle}>Delivery Details</h3>
-        <div className={confirmStyles.addressGrid} style={{ marginTop: 'var(--nymbal-spacing-md)' }}>
+        <div
+          className={confirmStyles.addressGrid}
+          style={{ marginTop: 'var(--nymbal-spacing-md)' }}
+        >
           {order.shippingAddress && (
             <div className={confirmStyles.addressCard}>
               <h4 className={confirmStyles.addressTitle}>Shipping Address</h4>

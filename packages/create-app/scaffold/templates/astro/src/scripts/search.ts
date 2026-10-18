@@ -6,7 +6,11 @@ const queryLabel = document.getElementById('search-query-label')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
 
 /** Builds an element; dynamic values go in through setAttribute and text nodes, never through markup. */
-function el(tag: string, attrs: Record<string, string> = {}, ...children: (Node | string)[]): HTMLElement {
+function el(
+  tag: string,
+  attrs: Record<string, string> = {},
+  ...children: (Node | string)[]
+): HTMLElement {
   const node = document.createElement(tag)
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value)
   node.append(...children)
@@ -21,16 +25,22 @@ function renderProductCard(product: any): HTMLElement {
     (Array.isArray(product.media) && product.media[0]?.url) ??
     `https://picsum.photos/seed/${encodeURIComponent(slug)}/600/600`
   const price =
-    product.priceMinor != null
-      ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-      : ''
+    product.priceMinor != null ? formatPrice(product.priceMinor, product.currency ?? 'GBP') : ''
 
-  const body = el('div', { class: 'product-card-body' }, el('span', { class: 'product-card-name' }, name))
+  const body = el(
+    'div',
+    { class: 'product-card-body' },
+    el('span', { class: 'product-card-name' }, name),
+  )
   if (price) body.append(el('span', { class: 'product-card-price' }, price))
 
   return el(
     'a',
-    { href: `/product/${encodeURIComponent(slug)}`, class: 'product-card', 'data-testid': `product-card-${slug}` },
+    {
+      href: `/product/${encodeURIComponent(slug)}`,
+      class: 'product-card',
+      'data-testid': `product-card-${slug}`,
+    },
     el('img', {
       src: String(imageUrl),
       alt: name,
@@ -94,7 +104,11 @@ function renderResults() {
     el(
       'div',
       { class: 'search-results-header' },
-      el('span', { class: 'search-result-count' }, `${results.length} result${results.length === 1 ? '' : 's'}`),
+      el(
+        'span',
+        { class: 'search-result-count' },
+        `${results.length} result${results.length === 1 ? '' : 's'}`,
+      ),
     ),
     el('div', { class: 'product-grid' }, ...results.map(renderProductCard)),
   )
@@ -129,11 +143,3 @@ searchInput?.addEventListener('input', () => {
     window.history.replaceState({}, '', url.toString())
   }
 })
-
-// Handle search bar web component selection (navigates from dropdown selection)
-document.addEventListener('nymbal:search:selected', ((e: CustomEvent) => {
-  const query = e.detail?.query ?? e.detail?.product?.name
-  if (query) {
-    window.location.href = `/search?q=${encodeURIComponent(query)}`
-  }
-}) as EventListener)

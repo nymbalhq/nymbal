@@ -89,6 +89,9 @@
 }
 
 .order-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
   border: 1px solid var(--nymbal-color-border, #e4e4e7);
   border-radius: var(--nymbal-radius-lg, 0.75rem);
   overflow: hidden;
@@ -165,7 +168,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-lg, 1.5rem) var(--nymbal-spacing-md, 1rem);
+  padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-lg, 1.5rem)
+    var(--nymbal-spacing-md, 1rem);
 }
 
 .order-card-total {

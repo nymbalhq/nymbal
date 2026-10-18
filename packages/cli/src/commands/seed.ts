@@ -1,12 +1,15 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
 import { createPlatform, runSeed } from '@nymbalhq/platform'
 import { getCliVersion } from '../utils/version.js'
+import { migrateProject } from './migrate.js'
 
 export const seedCommand = defineCommand({
   meta: { name: 'seed', description: 'Re-seed demo content (products, categories)' },
   async run() {
-    const { config } = await loadConfig()
+    const { config, projectRoot } = await loadProject()
+    // A fresh project has no tables yet; `nymbal dev` migrates before it seeds, and so does this.
+    await migrateProject(config, projectRoot)
     const platform = createPlatform(config)
     try {
       const result = await runSeed({
@@ -18,7 +21,11 @@ export const seedCommand = defineCommand({
         version: getCliVersion(),
       })
       // eslint-disable-next-line no-console
-      console.log(`✓ seeded ${result.products} products across ${result.categories} categories`)
+      console.log(
+        result.alreadySeeded
+          ? '✓ demo content already present, nothing to seed'
+          : `✓ seeded ${result.products} products across ${result.categories} categories`,
+      )
     } finally {
       await platform.close()
     }

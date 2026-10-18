@@ -4,7 +4,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { NymbalProvider } from '@nymbalhq/react'
 import { registerClient, registerComponents } from '@nymbalhq/web-components'
 import '@nymbalhq/web-components/tokens.css'
-import { getNymbalClient } from '@/lib/client'
+import { getNymbalClient, restoreSession } from '@/lib/client'
 
 export function NymbalSetup({ children }: { children: ReactNode }) {
   const client = getNymbalClient()
@@ -15,6 +15,7 @@ export function NymbalSetup({ children }: { children: ReactNode }) {
       registerClient(client)
       registerComponents()
       client.cart.load()
+      void restoreSession()
       initialized.current = true
     }
   }, [client])

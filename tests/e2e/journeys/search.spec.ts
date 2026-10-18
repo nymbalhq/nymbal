@@ -5,21 +5,25 @@ test.describe('Search', () => {
     await page.goto('/search')
     // Accept any search input or results container visible on the page
     await expect(
-      page.locator('[data-testid="search-page-input"], [data-testid="search-results"], [data-testid="search-input"]').first(),
+      page
+        .locator(
+          '[data-testid="search-page-input"], [data-testid="search-results"], [data-testid="search-input"]',
+        )
+        .first(),
     ).toBeVisible({ timeout: 10000 })
   })
 
   test('searching a term shows results', async ({ page }) => {
     await page.goto('/search?q=wool')
-    await expect(
-      page.locator('[data-testid^="product-card-"]').first(),
-    ).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('[data-testid^="product-card-"]').first()).toBeVisible({
+      timeout: 15000,
+    })
   })
 
   test('search bar navigates to search page on submit', async ({ page }) => {
     await page.goto('/')
     const searchInput = page.locator('[data-testid="search-input"]')
-    if (await searchInput.count() === 0) {
+    if ((await searchInput.count()) === 0) {
       test.skip()
       return
     }
@@ -28,23 +32,30 @@ test.describe('Search', () => {
     await expect(page).toHaveURL(/\/search/, { timeout: 10000 })
   })
 
-  test('AC-3: search round-trip: type query shows results, clear query returns to the search empty state', async ({ page }) => {
+  test('AC-3: search round-trip: type query shows results, clear query returns to the search empty state', async ({
+    page,
+  }) => {
     await page.goto('/search')
     // Use the page-specific search input (Astro, server-rendered) or the header search bar (Next.js)
     const pageInput = page.getByTestId('search-page-input')
-    const searchInput = (await pageInput.count()) > 0 ? pageInput : page.getByTestId('search-input').first()
+    const searchInput =
+      (await pageInput.count()) > 0 ? pageInput : page.getByTestId('search-input').first()
     await expect(searchInput).toBeVisible({ timeout: 10000 })
     // The empty-query state both templates share
     const emptyState = page.getByRole('heading', { name: 'Search our store' })
 
     // Query results: page cards (Astro) or the search bar's result items (Next.js header)
-    const queryResults = page.locator('[data-testid^="product-card-"], [data-testid^="search-result-"]')
+    const queryResults = page.locator(
+      '[data-testid^="product-card-"], [data-testid^="search-result-"]',
+    )
     const productCards = page.locator('[data-testid^="product-card-"]')
 
     // Type a search query (wool matches several seeded products)
     await searchInput.fill('wool')
     await expect(queryResults.first()).toBeVisible({ timeout: 15000 })
-    const queryResultIds = await queryResults.evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))
+    const queryResultIds = await queryResults.evaluateAll((els) =>
+      els.map((el) => el.getAttribute('data-testid')),
+    )
     expect(queryResultIds.length).toBeGreaterThan(0)
 
     // Clear the query
@@ -75,5 +86,38 @@ test.describe('Search', () => {
     expect(xss).toBeUndefined()
     // The query is shown literally, as text
     await expect(page.getByText(payload).first()).toBeVisible()
+  })
+
+  // P1-09 AC-8: choosing a suggestion in the header search bar opens that product's page (Next pushed /products/<slug>,
+  // a 404). The term is a seeded product's name from the API's own search; the expected page is whichever suggestion is first.
+  test('AC-8: choosing the first header suggestion for a seeded product lands on that product page, HTTP 200', async ({
+    page,
+  }) => {
+    const api = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
+    const found = await page.request.get(`${api}/api/products/search?q=wool&limit=1`)
+    expect(found.status()).toBe(200)
+    const seeded = ((await found.json()) as { data: { items: Array<{ name: string }> } }).data
+      .items[0]
+    expect(seeded, 'no seeded product matches "wool"').toBeTruthy()
+
+    await page.goto('/')
+    const input = page.getByTestId('search-input').first()
+    await input.fill(seeded!.name)
+    const firstSuggestion = page.locator('[data-testid^="search-result-"]').first()
+    await expect(firstSuggestion).toHaveAttribute('data-slug', /\S/, { timeout: 15000 })
+    const slug = await firstSuggestion.getAttribute('data-slug')
+    const chosen = await page.request.get(`${api}/api/products/${encodeURIComponent(slug!)}`)
+    expect(chosen.status()).toBe(200)
+    const chosenName = ((await chosen.json()) as { data: { name: string } }).data.name
+
+    await input.press('ArrowDown')
+    await input.press('Enter')
+
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(chosenName, {
+      timeout: 15000,
+    })
+    expect(new URL(page.url()).pathname).toContain(slug!)
+    const landed = await page.request.get(page.url())
+    expect(landed.status()).toBe(200)
   })
 })

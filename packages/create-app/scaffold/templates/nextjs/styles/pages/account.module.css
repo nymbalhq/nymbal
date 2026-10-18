@@ -43,7 +43,8 @@
   color: var(--nymbal-color-text-muted);
   text-decoration: none;
   border-radius: var(--nymbal-radius-md);
-  transition: color var(--nymbal-transition-fast),
+  transition:
+    color var(--nymbal-transition-fast),
     background-color var(--nymbal-transition-fast);
 }
 
@@ -67,6 +68,12 @@
 
 .logoutLink {
   color: var(--nymbal-color-error);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
 }
 
 .logoutLink:hover {
