@@ -227,7 +227,7 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const original = await env.repos.customer.findByEmail('alice@example.com')
+    const original = await env.commandStore.read((tx) => env.repos.customer.findByEmail(tx, 'alice@example.com'))
     expect(original).toBeNull()
   })
 
@@ -240,7 +240,7 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const order = await env.repos.order.findByOrderNumber('WC-1000')
+    const order = await env.commandStore.read((tx) => env.repos.order.findByOrderNumber(tx, 'WC-1000'))
     expect(order?.status).toBe('delivered')
   })
 

@@ -406,29 +406,30 @@ describe('AC-19: the real sentinel set', () => {
     string,
     { kind: 'present' | 'injected'; path: string; lines: [number, number]; marks: RegExp }
   > = {
+    // S001-S004 became injected in P1-02: their lines and marks name the fixed code the patch breaks.
     S001: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
-      lines: [44, 50],
-      marks: /return fn\(db\)/,
+      lines: [60, 70],
+      marks: /BEGIN IMMEDIATE/,
     },
     S002: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [104, 116],
-      marks: /variant\.stock - qty/,
+      lines: [105, 115],
+      marks: /decrementStock\(/,
     },
     S003: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/repositories/variant.ts',
-      lines: [70, 70],
-      marks: /store\.db/,
+      lines: [120, 130],
+      marks: /postgresSchema\.variants/,
     },
     S004: {
-      kind: 'present',
+      kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [182, 183],
-      marks: /limit: 1000/,
+      lines: [200, 202],
+      marks: /findByPaymentIntentId\(/,
     },
     S005: {
       kind: 'present',

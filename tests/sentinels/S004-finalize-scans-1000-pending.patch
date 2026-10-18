@@ -1,5 +1,14 @@
 # id: S004
-# kind: present
-# defect: finalize lists at most 1000 pending orders and filters in JS, so the 1001st pending order cannot be finalised
-# where: packages/platform/src/services/checkout-service.ts:182-183
-# killed-by: P1-02 acceptance tests (findByPaymentIntentId)
+# kind: injected
+# defect: finalize lists at most 1000 pending orders and filters in JS instead of findByPaymentIntentId, so the 1001st pending order cannot be finalised
+# where: packages/platform/src/services/checkout-service.ts:200-202
+# killed-by: P1-02 acceptance tests (packages/platform/tests/integration/checkout-transaction.test.ts AC-11)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/checkout-transaction.test.ts
+diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
+--- a/packages/platform/src/services/checkout-service.ts
++++ b/packages/platform/src/services/checkout-service.ts
+@@ -200,2 +200,3 @@
+-        const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
++        const all = await repos.order.list(tx, { status: 'pending', limit: 1000 })
++        const order = all.find((o) => o.paymentIntentId === paymentIntentId)
+         if (!order) {

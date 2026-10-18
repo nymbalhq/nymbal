@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createCommandStore, type CommandStore } from '../../src/db/command-store.js'
+import { createCommandStore, rawClients, type CommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createProductRepository, type ProductInsert } from '../../src/repositories/product.js'
 
@@ -45,8 +45,9 @@ function postgresStore(database: string): CommandStore {
 }
 
 async function query<T>(sql: string): Promise<T[]> {
-  if (store.kind !== 'postgres') throw new Error('expected a postgres store')
-  const result = await store.pool.query(sql)
+  const clients = rawClients(store)
+  if (clients.kind !== 'postgres') throw new Error('expected a postgres store')
+  const result = await clients.pool.query(sql)
   return result.rows as T[]
 }
 
@@ -137,18 +138,20 @@ describe('AC-8: the command store on Postgres', () => {
       fc.asyncProperty(productArb, async (fields) => {
         n += 1
         const input: ProductInsert = { ...fields, id: `prod_${n}`, slug: `slug-${n}` }
-        await onPostgres.insert(input)
-        await onSqlite.insert(input)
+        await store.transaction((tx) => onPostgres.insert(tx, input))
+        await sqlite.transaction((tx) => onSqlite.insert(tx, input))
 
-        const fromPostgres = await onPostgres.findById(input.id)
-        const fromSqlite = await onSqlite.findById(input.id)
+        const fromPostgres = await store.read((tx) => onPostgres.findById(tx, input.id))
+        const fromSqlite = await sqlite.read((tx) => onSqlite.findById(tx, input.id))
         expect(fromPostgres).toEqual({
           ...input,
           createdAt: input.createdAt.toISOString(),
           updatedAt: input.updatedAt.toISOString(),
         })
         expect(fromPostgres).toEqual(fromSqlite)
-        expect(await onPostgres.findBySlug(input.slug)).toEqual(fromPostgres)
+        expect(await store.read((tx) => onPostgres.findBySlug(tx, input.slug))).toEqual(
+          fromPostgres,
+        )
       }),
       { numRuns: 25 },
     )

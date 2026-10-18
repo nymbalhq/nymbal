@@ -1,5 +1,19 @@
 # id: S002
-# kind: present
-# defect: reserveStock reads stock then writes stock - qty with no lock or conditional update, so concurrent reservations oversell; adjustStock has the same shape (68-79)
-# where: packages/platform/src/services/inventory-service.ts:104-116
-# killed-by: P1-02 acceptance tests
+# kind: injected
+# defect: reserveStock reads stock, computes stock - qty in JS and writes it back instead of one conditional decrement, so concurrent reservations under READ COMMITTED oversell (SQLite serialises its one connection, so Postgres catches this)
+# where: packages/platform/src/services/inventory-service.ts:105-115
+# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/inventory-concurrency.postgres.test.ts AC-3; checkout-race.postgres.test.ts AC-2)
+# suite: NYMBAL_TEST_POSTGRES_URL=postgres://postgres:nymbal@localhost:54329/nymbal pnpm vitest run --project integration-postgres packages/platform/tests/postgres/inventory-concurrency.postgres.test.ts
+diff --git a/packages/platform/src/services/inventory-service.ts b/packages/platform/src/services/inventory-service.ts
+--- a/packages/platform/src/services/inventory-service.ts
++++ b/packages/platform/src/services/inventory-service.ts
+@@ -105,6 +105,7 @@
+-        const remaining = await repos.variant.decrementStock(tx, variant.id, qty, now)
+-        if (remaining === null) {
++        if (variant.stock < qty) {
+           throw new AdapterError('inventory.insufficient', `Insufficient stock for variant ${variantId}`, {
+             context: { variantId, requested: qty, available: variant.stock },
+           })
+         }
++        await repos.variant.incrementStock(tx, variant.id, -qty, now)
++        const remaining = variant.stock - qty

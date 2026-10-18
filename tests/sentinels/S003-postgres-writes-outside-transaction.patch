@@ -1,5 +1,18 @@
 # id: S003
-# kind: present
-# defect: repositories write through store.db and transaction callbacks take no handle, so Postgres writes run outside the opened transaction
-# where: packages/platform/src/repositories/variant.ts:70 (and sibling repositories); callback at packages/platform/src/services/inventory-service.ts:104
-# killed-by: P1-02 acceptance tests
+# kind: injected
+# defect: a repository write goes through the raw Drizzle client (the pool) instead of the transaction's client, so on Postgres it commits on its own connection and survives the transaction's rollback
+# where: packages/platform/src/repositories/variant.ts:120-130
+# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/transactions.postgres.test.ts AC-5, AC-9)
+# suite: NYMBAL_TEST_POSTGRES_URL=postgres://postgres:nymbal@localhost:54329/nymbal pnpm vitest run --project integration-postgres packages/platform/tests/postgres/transactions.postgres.test.ts
+diff --git a/packages/platform/src/repositories/variant.ts b/packages/platform/src/repositories/variant.ts
+--- a/packages/platform/src/repositories/variant.ts
++++ b/packages/platform/src/repositories/variant.ts
+@@ -120,7 +120,7 @@
+-      await pg(tx).insert(postgresSchema.variants).values({
++      await rawClients(store).db.insert(postgresSchema.variants).values({
+         ...common,
+         dimensions: v.dimensions ?? null,
+         options: v.options,
+         createdAt: v.createdAt,
+         updatedAt: v.updatedAt,
+       })

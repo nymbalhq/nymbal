@@ -31,7 +31,7 @@ describe('Failed payment flow', () => {
     })
 
     // Stock decremented during beginCheckout (reservation)
-    const afterReserve = await env.repos.variant.findById(variant.id)
+    const afterReserve = await env.commandStore.read((tx) => env.repos.variant.findById(tx, variant.id))
     expect(afterReserve?.stock).toBe(3)
 
     // Simulating: client payment fails, finalize() is never called.
@@ -39,7 +39,7 @@ describe('Failed payment flow', () => {
     expect(started.paymentIntent.id).toBeTruthy()
 
     // Verify the reservation exists
-    const reservations = await env.repos.inventoryReservation.findByVariant(variant.id)
+    const reservations = await env.commandStore.read((tx) => env.repos.inventoryReservation.findByVariant(tx, variant.id))
     expect(reservations.length).toBeGreaterThan(0)
 
     await env.commandStore.close()
