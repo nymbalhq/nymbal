@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Customer, CustomerStats, Order, NoteEntry } from '@/types'
+import type { Customer, Order } from '@nymbalhq/types'
+import type { CustomerStats, NoteEntry } from '@/types'
 
 interface CustomerFilters {
   q?: string | undefined

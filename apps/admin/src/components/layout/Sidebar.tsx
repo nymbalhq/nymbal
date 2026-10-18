@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   ShoppingBag,
@@ -37,11 +37,9 @@ function PendingOrdersBadge() {
 export function Sidebar() {
   const { data: me } = useMe()
   const { logout } = useAuth()
-  const navigate = useNavigate()
 
   const handleLogout = () => {
-    logout()
-    navigate('/login')
+    void logout()
   }
 
   return (

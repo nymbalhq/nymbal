@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { ShoppingBag } from 'lucide-react'
-import type { Order } from '@/types'
+import type { Order } from '@nymbalhq/types'
 
 interface CustomerOrdersTableProps {
   orders: Order[] | undefined

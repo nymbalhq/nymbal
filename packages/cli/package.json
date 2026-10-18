@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
+    "@nymbalhq/admin": "workspace:*",
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/http": "workspace:*",
     "@nymbalhq/importers": "workspace:*",

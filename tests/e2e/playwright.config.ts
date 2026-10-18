@@ -2,7 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
-const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:5174/admin/'
+// The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api (P1-08).
+const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:3001/admin/'
 const isCI = !!process.env.CI
 const target = process.env.NYMBAL_E2E_TARGET
 const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
@@ -48,15 +49,10 @@ const nextjsServer = {
   },
 }
 
-const adminServer = {
-  command: 'pnpm --filter @nymbalhq/admin exec vite --port 5174',
-  url: 'http://localhost:5174/admin/',
-  cwd: '../..',
-  reuseExistingServer: false,
-  timeout: 60000,
-}
-
-/** The API and what the run needs: NYMBAL_E2E_TARGET names one target, otherwise both templates (or the admin). */
+/**
+ * The API and what the run needs: NYMBAL_E2E_TARGET names one target, otherwise both templates. The admin needs the
+ * API alone, which serves the built admin (`pnpm --filter @nymbalhq/admin build` first).
+ */
 function servers() {
   const targets = ['astro', 'nextjs', 'admin']
   if (target !== undefined && !targets.includes(target)) {
@@ -64,7 +60,7 @@ function servers() {
   }
   if (target === 'astro') return [apiServer, astroServer]
   if (target === 'nextjs') return [apiServer, nextjsServer]
-  if (isAdminE2E) return [apiServer, adminServer]
+  if (isAdminE2E) return [apiServer]
   return [apiServer, astroServer, nextjsServer]
 }
 

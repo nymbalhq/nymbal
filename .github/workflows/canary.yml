@@ -95,6 +95,9 @@ jobs:
         run: pnpm exec tsx scripts/canary-ready.ts --before "$RUNNER_TEMP/before.json" --after "$RUNNER_TEMP/after.json"
       - if: steps.ready.outputs.ready == 'true'
         run: pnpm build
+      # The root build covers packages/** only; the admin publishes its dist, which `nymbal dev` serves.
+      - if: steps.ready.outputs.ready == 'true'
+        run: pnpm --filter @nymbalhq/admin build
       - name: Publish to the canary tag
         if: steps.ready.outputs.ready == 'true'
         run: pnpm changeset publish --tag canary --no-git-tag

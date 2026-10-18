@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
-import type { ProductMedia } from '@/types'
+import type { ProductMedia } from '@nymbalhq/types'
 
 interface MediaUploaderProps {
   media: ProductMedia[]

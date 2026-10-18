@@ -1,7 +1,8 @@
 import { Mail, Phone, Calendar, ShoppingBag, TrendingUp } from 'lucide-react'
 import { formatMoney } from '@/lib/money'
 import { formatDate, formatRelative } from '@/lib/dates'
-import type { Customer, CustomerStats } from '@/types'
+import type { Customer } from '@nymbalhq/types'
+import type { CustomerStats } from '@/types'
 
 interface CustomerProfileCardProps {
   customer: Customer

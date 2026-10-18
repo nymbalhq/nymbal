@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Order, OrderWithHistory, OrderHistoryEntry, NoteEntry } from '@/types'
+import type { Order, OrderHistoryEntry } from '@nymbalhq/types'
+import type { OrderWithHistory, NoteEntry } from '@/types'
 
 interface OrderFilters {
   status?: string | undefined

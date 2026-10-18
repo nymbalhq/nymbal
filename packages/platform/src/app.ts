@@ -24,8 +24,16 @@ export interface NymbalApp {
   publisher: EventPublisher
   /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
   relay: Relay
-  attachHttp(adapter: HttpAdapter): Promise<void>
+  /**
+   * Registers the API on the adapter. The admin is served at /admin/ when `adminRoot` is passed (its dist directory,
+   * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
+   */
+  attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
   stop(): Promise<void>
+}
+
+export interface AttachHttpOptions {
+  adminRoot?: string | null
 }
 
 export interface CreateAppOptions extends CreatePlatformOptions {
@@ -151,7 +159,7 @@ export async function createApp(
     services,
     publisher,
     relay,
-    async attachHttp(adapter) {
+    async attachHttp(adapter, options = {}) {
       await adapters.security.applyMiddleware(adapter, config.security)
       const { registerAllRoutes } = await import('./routes/register.js')
       registerAllRoutes({
@@ -163,6 +171,8 @@ export async function createApp(
         documentStore: platform.documentStore,
         eventBus: platform.eventBus,
         publisher,
+        adminRoot:
+          options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
       })
     },
     async stop() {

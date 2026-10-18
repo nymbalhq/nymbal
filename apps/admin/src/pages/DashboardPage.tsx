@@ -8,7 +8,8 @@ import { useMe } from '@/hooks/useMe'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import type { InventoryRow, Order } from '@/types'
+import type { Order } from '@nymbalhq/types'
+import type { InventoryRow } from '@/types'
 
 function LiveIndicator() {
   return (
