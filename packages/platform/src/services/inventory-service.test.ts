@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { AdapterError, EVT_INVENTORY_CHANGED, EVT_INVENTORY_RESERVED, EVT_INVENTORY_RELEASED, EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK, NotFoundError, ValidationError } from '@nymbalhq/types'
+import {
+  AdapterError,
+  EVT_INVENTORY_CHANGED,
+  EVT_INVENTORY_RESERVED,
+  EVT_INVENTORY_RELEASED,
+  EVT_INVENTORY_LOW_STOCK,
+  EVT_INVENTORY_OUT_OF_STOCK,
+  NotFoundError,
+  ValidationError,
+} from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
-import { createEventPublisher } from '../events/publisher.js'
+import { createEventPublisher, createRelay } from '../index.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createProductService } from './product-service.js'
 import { createInventoryService } from './inventory-service.js'
 import { createLogger } from '../logger.js'
@@ -23,10 +33,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: { storeId: 'test', environment: 'development', version: '0.0.0', source: 'test' },
-  })
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const product = createProductService({ store: commandStore, repos, publisher, logger })
   const inventory = createInventoryService({ store: commandStore, repos, publisher, logger })
   return { commandStore, eventBus, product, inventory, repos }
@@ -38,7 +48,9 @@ async function createTestVariant(product: ReturnType<typeof createProductService
     name: 'Inventory Test',
     description: '',
     status: 'active',
-    variants: [{ sku: 'INV-1', name: 'Default', priceMinor: 1000, stock, lowStockThreshold: 3, options: [] }],
+    variants: [
+      { sku: 'INV-1', name: 'Default', priceMinor: 1000, stock, lowStockThreshold: 3, options: [] },
+    ],
   })
   return snap.variants[0]!
 }
@@ -48,7 +60,9 @@ describe('InventoryService', () => {
     const { commandStore, eventBus, product, inventory, repos } = await setup()
     const variant = await createTestVariant(product, 10)
     const changed: unknown[] = []
-    await eventBus.subscribe(EVT_INVENTORY_CHANGED, (e) => { changed.push(e.payload) })
+    await eventBus.subscribe(EVT_INVENTORY_CHANGED, (e) => {
+      changed.push(e.payload)
+    })
     const result = await inventory.adjustStock(variant.id, 5, 'manual', 'admin')
     expect(result.newQty).toBe(15)
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
@@ -68,7 +82,9 @@ describe('InventoryService', () => {
   it('adjustStock throws ValidationError when going below zero', async () => {
     const { commandStore, product, inventory } = await setup()
     const variant = await createTestVariant(product, 5)
-    await expect(inventory.adjustStock(variant.id, -10, 'manual', 'admin')).rejects.toThrow(ValidationError)
+    await expect(inventory.adjustStock(variant.id, -10, 'manual', 'admin')).rejects.toThrow(
+      ValidationError,
+    )
     await commandStore.close()
   })
 
@@ -82,7 +98,9 @@ describe('InventoryService', () => {
     const { commandStore, eventBus, product, inventory } = await setup()
     const variant = await createTestVariant(product, 5)
     const lowStock: unknown[] = []
-    await eventBus.subscribe(EVT_INVENTORY_LOW_STOCK, (e) => { lowStock.push(e.payload) })
+    await eventBus.subscribe(EVT_INVENTORY_LOW_STOCK, (e) => {
+      lowStock.push(e.payload)
+    })
     await inventory.adjustStock(variant.id, -3, 'manual', 'admin')
     await new Promise((r) => setTimeout(r, 10))
     expect(lowStock).toHaveLength(1)
@@ -93,7 +111,9 @@ describe('InventoryService', () => {
     const { commandStore, eventBus, product, inventory } = await setup()
     const variant = await createTestVariant(product, 3)
     const oos: unknown[] = []
-    await eventBus.subscribe(EVT_INVENTORY_OUT_OF_STOCK, (e) => { oos.push(e.payload) })
+    await eventBus.subscribe(EVT_INVENTORY_OUT_OF_STOCK, (e) => {
+      oos.push(e.payload)
+    })
     await inventory.adjustStock(variant.id, -3, 'manual', 'admin')
     await new Promise((r) => setTimeout(r, 10))
     expect(oos).toHaveLength(1)
@@ -104,7 +124,9 @@ describe('InventoryService', () => {
     const { commandStore, eventBus, product, inventory, repos } = await setup()
     const variant = await createTestVariant(product, 20)
     const reserved: unknown[] = []
-    await eventBus.subscribe(EVT_INVENTORY_RESERVED, (e) => { reserved.push(e.payload) })
+    await eventBus.subscribe(EVT_INVENTORY_RESERVED, (e) => {
+      reserved.push(e.payload)
+    })
     const result = await inventory.reserveStock(variant.id, 5)
     expect(result.reservationId).toBeTruthy()
     expect(result.expiresAt).toBeTruthy()
@@ -134,7 +156,9 @@ describe('InventoryService', () => {
     const variant = await createTestVariant(product, 10)
     const { reservationId } = await inventory.reserveStock(variant.id, 4)
     const released: unknown[] = []
-    await eventBus.subscribe(EVT_INVENTORY_RELEASED, (e) => { released.push(e.payload) })
+    await eventBus.subscribe(EVT_INVENTORY_RELEASED, (e) => {
+      released.push(e.payload)
+    })
     await inventory.releaseReservation(reservationId, 'cancelled')
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(fresh?.stock).toBe(10)
@@ -154,7 +178,9 @@ describe('InventoryService', () => {
     const variant = await createTestVariant(product, 10)
     const { reservationId } = await inventory.reserveStock(variant.id, 4)
     await inventory.commitReservation(reservationId, 'fulfillment')
-    const resAfter = await commandStore.read((tx) => repos.inventoryReservation.findById(tx, reservationId))
+    const resAfter = await commandStore.read((tx) =>
+      repos.inventoryReservation.findById(tx, reservationId),
+    )
     expect(resAfter).toBeNull()
     const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
     expect(fresh?.stock).toBe(6)

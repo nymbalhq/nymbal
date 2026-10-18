@@ -92,14 +92,18 @@ export async function registerCustomerProjection(
 
   await eventBus.subscribe(EVT_CUSTOMER_CREATED, onCreated as EventHandler, {
     name: 'customer-projection-created',
+    derived: true,
   })
   await eventBus.subscribe(EVT_CUSTOMER_UPDATED, onUpdated as EventHandler, {
     name: 'customer-projection-updated',
+    derived: true,
   })
   await eventBus.subscribe(EVT_CUSTOMER_DELETED, onDeleted as EventHandler, {
     name: 'customer-projection-deleted',
+    derived: true,
   })
   await eventBus.subscribe(EVT_ORDER_PAID, onOrderPaid as EventHandler, {
     name: 'customer-projection-order-paid',
+    derived: true,
   })
 }

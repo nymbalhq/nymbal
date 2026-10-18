@@ -1,0 +1,14 @@
+# id: S009
+# kind: injected
+# defect: warm-up hands its synthetic product, category, order and customer events to publishBatch instead of replay, so every subscriber hears them on every boot, side effects included: each restart re-sends every order confirmation and welcome email
+# where: packages/platform/src/warm-document-store.ts:79
+# killed-by: P1-03 acceptance tests (packages/platform/tests/integration/warm-up-derived.test.ts AC-10)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/warm-up-derived.test.ts
+diff --git a/packages/platform/src/warm-document-store.ts b/packages/platform/src/warm-document-store.ts
+--- a/packages/platform/src/warm-document-store.ts
++++ b/packages/platform/src/warm-document-store.ts
+@@ -78,3 +78,3 @@
+   if (events.length > 0) {
+-    await eventBus.replay(events)
++    await eventBus.publishBatch(events)
+   }

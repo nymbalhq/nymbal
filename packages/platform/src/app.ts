@@ -4,11 +4,13 @@ import { buildRepositories, type Repositories } from './repositories/index.js'
 import { buildAdapters, type AdapterRegistry } from './adapters/registry.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
+import { createRelay, type Relay } from './events/relay.js'
 import { registerHandlers } from './handlers/register.js'
 import { warmDocumentStore } from './warm-document-store.js'
 import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
+  startEventRetentionSweeper,
   type SweeperHandle,
 } from './sweepers/index.js'
 import type { HttpAdapter } from '@nymbalhq/types'
@@ -19,6 +21,8 @@ export interface NymbalApp {
   adapters: AdapterRegistry
   services: ServiceRegistry
   publisher: EventPublisher
+  /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
+  relay: Relay
   attachHttp(adapter: HttpAdapter): Promise<void>
   stop(): Promise<void>
 }
@@ -42,8 +46,17 @@ export async function createApp(
     documentStore: platform.documentStore,
     repos,
   })
+  const relay = createRelay({
+    store: platform.commandStore,
+    eventLog: repos.eventLog,
+    eventBus: platform.eventBus,
+    logger,
+  })
   const publisher = createEventPublisher({
     eventBus: platform.eventBus,
+    store: platform.commandStore,
+    eventLog: repos.eventLog,
+    relay,
     builderContext: {
       storeId: config.store.name,
       environment:
@@ -84,6 +97,10 @@ export async function createApp(
     version,
   })
 
+  // Events committed before a crash, or whose delivery failed, go out before the app serves anything.
+  await relay.drain()
+  relay.start()
+
   const sweepers: SweeperHandle[] = [
     startInventoryReservationSweeper({
       inventoryService: services.inventory,
@@ -95,6 +112,12 @@ export async function createApp(
       publisher,
       logger,
     }),
+    startEventRetentionSweeper({
+      store: platform.commandStore,
+      eventLog: repos.eventLog,
+      processedEvents: repos.processedEvent,
+      logger,
+    }),
   ]
 
   const app: NymbalApp = {
@@ -103,6 +126,7 @@ export async function createApp(
     adapters,
     services,
     publisher,
+    relay,
     async attachHttp(adapter) {
       await adapters.security.applyMiddleware(adapter, config.security)
       const { registerAllRoutes } = await import('./routes/register.js')
@@ -118,6 +142,7 @@ export async function createApp(
       })
     },
     async stop() {
+      await relay.stop()
       for (const s of sweepers) s.stop()
       await platform.close()
     },

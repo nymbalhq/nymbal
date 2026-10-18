@@ -64,8 +64,8 @@ class Scope {
   settled = false
   /** The first rejection of a joined block: the outermost rolls back even if a caller swallowed it. */
   failure: { error: unknown } | undefined
-  /** Deliveries held until the outermost commits. */
-  readonly held: Array<() => Promise<void>> = []
+  /** Sends held until the outermost commits; the same function held twice runs once. */
+  readonly held = new Set<() => Promise<void>>()
 
   constructor(
     readonly owner: object,
@@ -106,13 +106,14 @@ export function postgresDb(tx: ReadTx): PostgresClient {
 }
 
 /**
- * Runs `send` now, or, inside an open transaction, holds it until the outermost commits; a rollback drops it.
- * The publisher routes event delivery through here so subscribers only see committed writes.
+ * Runs `send` now, or, inside an open transaction, holds it until the outermost commits; a rollback drops it. The
+ * same function held more than once in one transaction runs once. The publisher drains the event relay through here,
+ * after the slot or connection is released, so subscribers only see committed writes.
  */
 export async function afterCommit(send: () => Promise<void>): Promise<void> {
   const scope = context.getStore()
   if (scope !== undefined && scope.writable && !scope.settled) {
-    scope.held.push(send)
+    scope.held.add(send)
     return
   }
   await send()
@@ -155,7 +156,7 @@ interface Connection {
   release(unusable?: Error): void
 }
 
-async function deliver(held: Array<() => Promise<void>>): Promise<void> {
+async function deliver(held: Iterable<() => Promise<void>>): Promise<void> {
   let failed: { error: unknown } | undefined
   for (const send of held) {
     try {

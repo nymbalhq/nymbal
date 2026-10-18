@@ -12,7 +12,8 @@ export function withIdempotency<T = unknown>(
   { repo, logger }: IdempotencyOptions,
 ): EventHandler<T> {
   return async (event: NymbalEvent<T>) => {
-    if (await repo.seen(handlerName, event.id)) {
+    const { store } = repo
+    if (await store.read((tx) => repo.seen(tx, handlerName, event.id))) {
       logger?.debug(
         { handlerName, eventId: event.id, type: event.type },
         'idempotency: skipping duplicate event',
@@ -20,6 +21,6 @@ export function withIdempotency<T = unknown>(
       return
     }
     await handler(event)
-    await repo.markProcessed(handlerName, event.id)
+    await store.transaction((tx) => repo.markProcessed(tx, handlerName, event.id, new Date()))
   }
 }

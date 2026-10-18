@@ -1,10 +1,5 @@
 import { AdapterError } from '@nymbalhq/types'
-import type {
-  DocumentStoreAdapter,
-  PutOptions,
-  QueryParams,
-  QueryResult,
-} from '@nymbalhq/types'
+import type { DocumentStoreAdapter, PutOptions, QueryParams, QueryResult } from '@nymbalhq/types'
 
 interface Entry {
   doc: unknown
@@ -95,7 +90,8 @@ export class InMemoryDocumentStore implements DocumentStoreAdapter {
     for (const [key, entry] of bucket) {
       if (this.#isExpired(entry)) continue
       const doc = entry.doc as Record<string, unknown>
-      if (doc[params.partitionKey.field] !== params.partitionKey.value) continue
+      const partition = params.partitionKey
+      if (partition.value !== '*' && doc[partition.field] !== partition.value) continue
       if (params.sortKey) {
         const value = doc[params.sortKey.field]
         if (!sortKeyMatches(value, params.sortKey.operator, params.sortKey.value)) continue

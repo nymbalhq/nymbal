@@ -47,12 +47,12 @@ export async function registerCategoryProjection(
     logger.debug({ slug: event.payload.slug }, 'category projection deleted')
   }
 
-  await eventBus.subscribe(
-    [EVT_CATEGORY_CREATED, EVT_CATEGORY_UPDATED],
-    onUpsert as EventHandler,
-    { name: 'category-projection-upsert' },
-  )
+  await eventBus.subscribe([EVT_CATEGORY_CREATED, EVT_CATEGORY_UPDATED], onUpsert as EventHandler, {
+    name: 'category-projection-upsert',
+    derived: true,
+  })
   await eventBus.subscribe(EVT_CATEGORY_DELETED, onDeleted as EventHandler, {
     name: 'category-projection-delete',
+    derived: true,
   })
 }

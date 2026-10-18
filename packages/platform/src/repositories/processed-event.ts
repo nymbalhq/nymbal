@@ -1,36 +1,65 @@
-import type { DocumentStoreAdapter } from '@nymbalhq/types'
+import { and, eq, lt } from 'drizzle-orm'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
+import * as sqliteSchema from '../db/schema/sqlite.js'
+import * as postgresSchema from '../db/schema/postgres.js'
 
-const COLLECTION = '_processed_events'
-
-export interface ProcessedEventEntry {
-  handlerName: string
-  eventId: string
-  processedAt: string
+/** Which handler has already run for which event id: what stops a side effect running twice, across restarts. */
+export interface ProcessedEventRepository extends StoreRepository {
+  seen(tx: ReadTx, handlerName: string, eventId: string): Promise<boolean>
+  /** Idempotent on (handlerName, eventId): a second call keeps the first record. */
+  markProcessed(tx: Tx, handlerName: string, eventId: string, at: Date): Promise<void>
+  /** Deletes records processed before `at`; returns how many. */
+  deleteBefore(tx: Tx, at: Date): Promise<number>
 }
 
-export interface ProcessedEventRepository {
-  seen(handlerName: string, eventId: string): Promise<boolean>
-  markProcessed(handlerName: string, eventId: string): Promise<void>
-}
-
-export function createProcessedEventRepository(
-  documentStore: DocumentStoreAdapter,
-  options: { ttlSeconds?: number } = {},
-): ProcessedEventRepository {
-  const ttl = options.ttlSeconds ?? 60 * 60 * 24 * 7
-  const key = (handler: string, eventId: string) => `${handler}::${eventId}`
+export function createProcessedEventRepository(store: CommandStore): ProcessedEventRepository {
+  const s = sqliteSchema.processedEvents
+  const p = postgresSchema.processedEvents
   return {
-    async seen(handlerName, eventId) {
-      const existing = await documentStore.get<ProcessedEventEntry>(COLLECTION, key(handlerName, eventId))
-      return existing !== null
+    store,
+    async seen(tx, handlerName, eventId) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ eventId: s.eventId })
+          .from(s)
+          .where(and(eq(s.handlerName, handlerName), eq(s.eventId, eventId)))
+          .get()
+        return row !== undefined
+      }
+      const rows = await postgresDb(tx)
+        .select({ eventId: p.eventId })
+        .from(p)
+        .where(and(eq(p.handlerName, handlerName), eq(p.eventId, eventId)))
+        .limit(1)
+      return rows.length > 0
     },
-    async markProcessed(handlerName, eventId) {
-      await documentStore.put<ProcessedEventEntry>(
-        COLLECTION,
-        key(handlerName, eventId),
-        { handlerName, eventId, processedAt: new Date().toISOString() },
-        { ttl },
-      )
+    async markProcessed(tx, handlerName, eventId, at) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
+          .insert(s)
+          .values({ handlerName, eventId, processedAt: at.toISOString() })
+          .onConflictDoNothing()
+          .run()
+        return
+      }
+      await postgresDb(tx)
+        .insert(p)
+        .values({ handlerName, eventId, processedAt: at })
+        .onConflictDoNothing()
+    },
+    async deleteBefore(tx, at) {
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx).delete(s).where(lt(s.processedAt, at.toISOString())).run().changes
+      }
+      const result = await postgresDb(tx).delete(p).where(lt(p.processedAt, at))
+      return result.rowCount ?? 0
     },
   }
 }

@@ -5,6 +5,7 @@ export interface PutOptions {
 }
 
 export interface QueryParams {
+  /** A `value` of `'*'` matches every document in the collection (a full scan). */
   partitionKey: { field: string; value: unknown }
   sortKey?: {
     field: string

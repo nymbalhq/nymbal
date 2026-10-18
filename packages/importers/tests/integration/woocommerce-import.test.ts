@@ -9,6 +9,7 @@ import {
   runMigrations,
   buildRepositories,
   createEventPublisher,
+  createRelay,
   createProductService,
   createCategoryService,
   createAuthService,
@@ -22,6 +23,7 @@ import {
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
 import { runWooCommerceImport } from '@nymbalhq/importers'
+import { wirePublisher } from '../../../platform/src/tests/publisher.js'
 
 const MIGRATIONS_ROOT = new URL('../../../platform/migrations', import.meta.url).pathname
 const FIXTURE_DIR = new URL('./fixtures', import.meta.url).pathname
@@ -31,7 +33,11 @@ async function loadFixture(name: string): Promise<unknown[]> {
   return JSON.parse(raw) as unknown[]
 }
 
-function mockJson(data: unknown, status: number, extraHeaders: Record<string, string> = {}): Response {
+function mockJson(
+  data: unknown,
+  status: number,
+  extraHeaders: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json', ...extraHeaders },
@@ -96,10 +102,11 @@ async function buildTestEnv() {
   const logger: Logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos: Repositories = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: { storeId: 'test', environment: 'development', version: '0.0.0', source: 'test' },
-  })
+  // The platform's dist factories: the store above comes from dist, and the outbox must share its module instance.
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
@@ -108,13 +115,20 @@ async function buildTestEnv() {
   const product = createProductService({ store: commandStore, repos, publisher, logger })
   const category = createCategoryService({ repos, publisher, logger })
   const auth = createAuthService({
-    repos, publisher, logger,
+    repos,
+    publisher,
+    logger,
     jwtSecret: 'test-secret-32-chars-long-xxxxx',
-    accessTtl: '15m', refreshTtl: '7d',
+    accessTtl: '15m',
+    refreshTtl: '7d',
   })
   const order = createOrderService({
-    store: commandStore, repos, publisher, logger,
-    orderNumberPrefix: 'WC', orderNumberStart: 1,
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    orderNumberPrefix: 'WC',
+    orderNumberStart: 1,
   })
 
   const services = { product, category, auth, order, search } as unknown as ServiceRegistry
@@ -147,7 +161,12 @@ describe('WooCommerce importer integration', () => {
   function opts(overrides: Partial<Parameters<typeof runWooCommerceImport>[0]> = {}) {
     return {
       credentials: DEFAULT_CREDS,
-      entities: ['categories' as const, 'products' as const, 'customers' as const, 'orders' as const],
+      entities: [
+        'categories' as const,
+        'products' as const,
+        'customers' as const,
+        'orders' as const,
+      ],
       ai: false,
       gdpr: false,
       fresh: true,
@@ -227,7 +246,9 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const original = await env.commandStore.read((tx) => env.repos.customer.findByEmail(tx, 'alice@example.com'))
+    const original = await env.commandStore.read((tx) =>
+      env.repos.customer.findByEmail(tx, 'alice@example.com'),
+    )
     expect(original).toBeNull()
   })
 
@@ -240,7 +261,9 @@ describe('WooCommerce importer integration', () => {
       adapters: env.adapters,
     })
 
-    const order = await env.commandStore.read((tx) => env.repos.order.findByOrderNumber(tx, 'WC-1000'))
+    const order = await env.commandStore.read((tx) =>
+      env.repos.order.findByOrderNumber(tx, 'WC-1000'),
+    )
     expect(order?.status).toBe('delivered')
   })
 
@@ -256,11 +279,14 @@ describe('WooCommerce importer integration', () => {
     })
     expect(r1.imported.products).toBe(2)
 
-    const r2 = await runWooCommerceImport({ ...importOpts, fresh: false }, {
-      services: env.services,
-      repos: env.repos,
-      adapters: env.adapters,
-    })
+    const r2 = await runWooCommerceImport(
+      { ...importOpts, fresh: false },
+      {
+        services: env.services,
+        repos: env.repos,
+        adapters: env.adapters,
+      },
+    )
     expect(r2.imported.products).toBe(2)
   })
 

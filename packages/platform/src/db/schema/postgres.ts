@@ -1,5 +1,6 @@
 import {
   pgTable,
+  bigserial,
   text,
   integer,
   timestamp,
@@ -275,6 +276,38 @@ export const reviews = pgTable(
   }),
 )
 
+// --- Event log (outbox) and handler idempotency ----------------------------
+
+export const events = pgTable(
+  'events',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    id: text('id').notNull(),
+    type: text('type').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    deadAt: timestamp('dead_at', { withTimezone: true }),
+  },
+  (t) => ({
+    idUnique: uniqueIndex('events_id_unique').on(t.id),
+    undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+  }),
+)
+
+export const processedEvents = pgTable(
+  'processed_events',
+  {
+    handlerName: text('handler_name').notNull(),
+    eventId: text('event_id').notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.handlerName, t.eventId] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -288,4 +321,6 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  events,
+  processedEvents,
 }

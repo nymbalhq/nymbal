@@ -15,6 +15,13 @@
       "when": 1792286470217,
       "tag": "0001_tricky_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792302104573,
+      "tag": "0002_puzzling_epoch",
+      "breakpoints": true
     }
   ]
 }

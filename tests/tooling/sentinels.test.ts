@@ -431,11 +431,13 @@ describe('AC-19: the real sentinel set', () => {
       lines: [176, 176],
       marks: /findByPaymentIntentId\(/,
     },
+    // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
+    // outbox as it landed, as P1-02 did for S001-S004.
     S005: {
-      kind: 'present',
-      path: 'packages/platform/src/db/command-store.ts',
-      lines: [112, 119],
-      marks: /scope\.held\.push\(send\)/,
+      kind: 'injected',
+      path: 'packages/platform/src/events/publisher.ts',
+      lines: [68, 70],
+      marks: /append\(/,
     },
     S006: {
       kind: 'present',
@@ -454,6 +456,12 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/config/src/schema.ts',
       lines: [73, 73],
       marks: /jwtSecret: .*\.default\('/,
+    },
+    S009: {
+      kind: 'injected',
+      path: 'packages/platform/src/warm-document-store.ts',
+      lines: [79, 79],
+      marks: /eventBus\.replay\(events\)/,
     },
     I101: {
       kind: 'injected',
@@ -476,8 +484,8 @@ describe('AC-19: the real sentinel set', () => {
     I104: {
       kind: 'injected',
       path: 'packages/platform/src/handlers/idempotency.ts',
-      lines: [15, 21],
-      marks: /repo\.seen\(/,
+      lines: [16, 22],
+      marks: /repo\.seen\(tx, /,
     },
     I105: {
       kind: 'injected',
@@ -497,7 +505,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S008 and I101-I105, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S009 and I101-I105, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {

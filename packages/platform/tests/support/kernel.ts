@@ -18,6 +18,7 @@ export type Dialect = 'sqlite' | 'postgres'
 
 export interface Kernel {
   dialect: Dialect
+  config: NymbalConfig
   app: NymbalApp
   store: NymbalApp['platform']['commandStore']
   repos: NymbalApp['repos']
@@ -60,13 +61,22 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
   })
 }
 
+/**
+ * `sqlitePath` reopens (or creates) a file the caller owns, so a test can stop one kernel and start another on the
+ * same database (P1-03's restart ACs); without it the kernel owns a temp dir and removes it on close.
+ */
 export async function createKernel(
-  opts: { dialect: 'sqlite' } | { dialect: 'postgres'; postgresUrl: string },
+  opts: { dialect: 'sqlite'; sqlitePath?: string } | { dialect: 'postgres'; postgresUrl: string },
 ): Promise<Kernel> {
   const config = kernelConfig(opts.dialect)
   const logger = createLogger({ pretty: false, level: 'error' })
-  const dir = opts.dialect === 'sqlite' ? mkdtempSync(join(tmpdir(), 'p1-02-kernel-')) : undefined
-  const target = opts.dialect === 'sqlite' ? join(dir!, 'store.sqlite') : opts.postgresUrl
+  const ownedPath = opts.dialect === 'sqlite' ? opts.sqlitePath : undefined
+  const dir =
+    opts.dialect === 'sqlite' && ownedPath === undefined
+      ? mkdtempSync(join(tmpdir(), 'p1-02-kernel-'))
+      : undefined
+  const target =
+    opts.dialect === 'sqlite' ? (ownedPath ?? join(dir!, 'store.sqlite')) : opts.postgresUrl
   const storage = opts.dialect === 'sqlite' ? { sqlitePath: target } : { postgresUrl: target }
 
   // createApp warms the document store from the tables, so they must exist before it runs.
@@ -80,6 +90,7 @@ export async function createKernel(
   const app = await createApp(config, { ...storage, logger })
   return {
     dialect: opts.dialect,
+    config,
     app,
     store: app.platform.commandStore,
     repos: app.repos,

@@ -6,7 +6,8 @@ import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore, rawClients } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
-import { createEventPublisher } from '../events/publisher.js'
+import { createEventPublisher, createRelay } from '../index.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createAuthService } from './auth-service.js'
 import { createLogger } from '../logger.js'
 
@@ -23,15 +24,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: {
-      storeId: 'test',
-      environment: 'development',
-      version: '0.0.0',
-      source: 'test',
-    },
-  })
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const auth = createAuthService({
     repos,
     publisher,
@@ -275,10 +271,10 @@ describe('AuthService', () => {
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({
-      eventBus: eb,
-      builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' },
-    })
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
     const auth = createAuthService({
       repos,
       publisher,
@@ -305,10 +301,10 @@ describe('AuthService', () => {
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({
-      eventBus: eb,
-      builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' },
-    })
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
     const auth = createAuthService({
       repos,
       publisher,
@@ -410,10 +406,10 @@ describe('AuthService', () => {
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({
-      eventBus: eb,
-      builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' },
-    })
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
     expect(() =>
       createAuthService({
         repos,
