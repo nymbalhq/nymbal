@@ -1,0 +1,18 @@
+# id: I107
+# kind: injected
+# defect: mintAccess takes token roles from free-form metadata.roles before the roles column
+# where: packages/platform/src/services/auth-service.ts:111
+# killed-by: packages/platform/tests/integration/roles-column.test.ts (AC-12)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/roles-column.test.ts
+diff --git a/packages/platform/src/services/auth-service.ts b/packages/platform/src/services/auth-service.ts
+--- a/packages/platform/src/services/auth-service.ts
++++ b/packages/platform/src/services/auth-service.ts
+@@ -108,7 +108,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
+     return new SignJWT({
+       sub: customer.id,
+       email: customer.email,
+-      roles: customer.roles,
++      roles: (customer.metadata.roles as Role[] | undefined) ?? customer.roles,
+       type: 'access',
+     } satisfies CustomerJwtPayload)
+       .setProtectedHeader({ alg: 'HS256' })

@@ -5,14 +5,27 @@ import type { TokenManager } from '../auth/token-manager.js'
 import type { Customer } from '@nymbalhq/types'
 
 const testCustomer: Customer = {
-  id: 'cust-1', email: 'test@example.com',
-  firstName: 'Jane', lastName: 'Doe', phone: '',
-  addresses: [], orderCount: 0, totalSpentMinor: 0,
-  metadata: {}, requiresPasswordReset: false,
-  createdAt: '', updatedAt: '',
+  id: 'cust-1',
+  email: 'test@example.com',
+  firstName: 'Jane',
+  lastName: 'Doe',
+  phone: '',
+  addresses: [],
+  orderCount: 0,
+  totalSpentMinor: 0,
+  metadata: {},
+  roles: ['customer'],
+  requiresPasswordReset: false,
+  createdAt: '',
+  updatedAt: '',
 }
 
-const testAuthResult = { customer: testCustomer, accessToken: 'tok', refreshToken: 'rtok', expiresIn: 900 }
+const testAuthResult = {
+  customer: testCustomer,
+  accessToken: 'tok',
+  refreshToken: 'rtok',
+  expiresIn: 900,
+}
 
 function makeAdapter(): CommerceAdapter {
   return {

@@ -506,6 +506,31 @@ describe('AC-19: the real sentinel set', () => {
       lines: [216, 216],
       marks: /revokedAt/,
     },
+    // I106-I109 are new in P1-06, written against the guard, roles column, login limiter and registry as they landed.
+    I106: {
+      kind: 'injected',
+      path: 'packages/http/src/fastify-adapter.ts',
+      lines: [108, 109],
+      marks: /this\.#guard\.admit\(ctx, options\)/,
+    },
+    I107: {
+      kind: 'injected',
+      path: 'packages/platform/src/services/auth-service.ts',
+      lines: [111, 111],
+      marks: /roles: customer\.roles,/,
+    },
+    I108: {
+      kind: 'injected',
+      path: 'packages/http/src/security-middleware.ts',
+      lines: [65, 67],
+      marks: /`account:\$\{email\.toLowerCase\(\)\}`/,
+    },
+    I109: {
+      kind: 'injected',
+      path: 'packages/platform/src/routes/validated-adapter.ts',
+      lines: [22, 29],
+      marks: /config\.route_schema_missing/,
+    },
   }
 
   function loadAll(): Array<{ file: string; sentinel: Sentinel }> {
@@ -518,7 +543,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I105, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I109, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {

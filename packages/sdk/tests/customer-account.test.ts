@@ -156,10 +156,17 @@ describe('AC-2: SDK customer orders against a running API', () => {
 
   it('AC-2: orders.list carries the API envelope meta.nextCursor for the same bearer, not a constant null', async () => {
     const buyer = await signedInShopper('Pager')
-    // Read the envelope ourselves with the same customer's own bearer token.
+    // Read the envelope ourselves with the same customer's own bearer token. Login is an unsafe route, so it carries
+    // the CSRF pair from GET /api/csrf like any other client.
+    const csrf = await fetch(`${store.baseUrl}/api/csrf`)
+    const { data: issued } = (await csrf.json()) as { data: { token: string } }
     const login = await fetch(`${store.baseUrl}/api/auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-csrf-token': issued.token,
+        cookie: `nymbal.csrf=${issued.token}`,
+      },
       body: JSON.stringify({ email: buyer.email, password: 'correct-horse-battery' }),
     })
     expect(login.status).toBe(200)
