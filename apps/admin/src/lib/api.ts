@@ -113,8 +113,13 @@ async function request<T>(
   const response = await fetchWithCsrf(url, init)
 
   if (response.status === 401) {
-    // An /api/auth/* 401 is an answer about credentials, never an expired access token.
-    if (!retried && !path.startsWith('/api/auth/') && (await renewedAfter401(token))) {
+    // An /api/auth/* 401 is an answer about credentials, and a call sent with no token had no session to renew.
+    if (
+      !retried &&
+      token !== null &&
+      !path.startsWith('/api/auth/') &&
+      (await renewedAfter401(token))
+    ) {
       return request<T>(method, path, body, query, true)
     }
     const errData = (await response.json().catch(() => ({}))) as Record<string, unknown>

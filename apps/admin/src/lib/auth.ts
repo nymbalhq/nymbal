@@ -30,18 +30,35 @@ export function onSessionLost(listener: () => void): () => void {
   }
 }
 
+/** Whether `token` belongs to an admin; anything else, an unreachable API included, is a no. */
+async function isAdminToken(token: string): Promise<boolean> {
+  try {
+    const response = await fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+    if (!response.ok) return false
+    const body = (await response.json()) as { data?: { roles?: string[] } }
+    return body.data?.roles?.includes('admin') ?? false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The refresh cookie is per host, so it may be a storefront customer's: the token it yields is adopted only after the
+ * admin role check.
+ */
 async function requestRefresh(): Promise<boolean> {
+  let token: string | undefined
   try {
     const response = await fetchWithCsrf('/api/auth/refresh', { method: 'POST' })
     if (!response.ok) return false
     const body = (await response.json()) as { data?: { accessToken?: string } }
-    const token = body.data?.accessToken
-    if (!token) return false
-    setToken(token)
-    return true
+    token = body.data?.accessToken
   } catch {
     return false
   }
+  if (!token || !(await isAdminToken(token))) return false
+  setToken(token)
+  return true
 }
 
 /**
@@ -64,20 +81,7 @@ export function refreshSession(): Promise<boolean> {
   return sharedRefresh(true)
 }
 
-/** At boot: a refresh, then the admin role check. Anything but an admin leaves the session signed out. */
-export async function restoreSession(): Promise<boolean> {
-  if (!(await sharedRefresh(false))) return false
-  try {
-    const response = await fetch('/api/admin/me', {
-      headers: { Authorization: `Bearer ${_token ?? ''}` },
-    })
-    if (response.ok) {
-      const body = (await response.json()) as { data?: { roles?: string[] } }
-      if (body.data?.roles?.includes('admin')) return true
-    }
-  } catch {
-    // An unreachable API is a signed-out boot, not a crash.
-  }
-  clearToken()
-  return false
+/** At boot: a refresh (role-checked like every refresh). A failure here is a signed-out boot, not a lost session. */
+export function restoreSession(): Promise<boolean> {
+  return sharedRefresh(false)
 }

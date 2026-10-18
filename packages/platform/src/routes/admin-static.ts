@@ -80,8 +80,11 @@ export function registerAdminStaticRoute(adapter: HttpAdapter, root: string | nu
       }
     }
 
-    // A missing asset is a 404; anything else is a client-side route, answered with the app.
-    if (MIME.has(extname(requestPath).toLowerCase())) return notFound()
+    // A missing asset is a 404; anything else is a client-side route, answered with the app. A missing index.html is
+    // an unbuilt admin, answered with the build hint.
+    if (requestPath !== 'index.html' && MIME.has(extname(requestPath).toLowerCase())) {
+      return notFound()
+    }
     const index = await fileWithin(base, 'index.html')
     if (index === null) return notFound(BUILD_HINT)
     return {

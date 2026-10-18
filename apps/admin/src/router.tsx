@@ -1,5 +1,6 @@
 import { createBrowserRouter, redirect } from 'react-router-dom'
 import { isAuthenticated, onSessionLost, restoreSession } from '@/lib/auth'
+import { queryClient } from '@/lib/query-client'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -111,5 +112,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
 )
 
 onSessionLost(() => {
+  // As logout does: the next sign-in must not see the lost session's cached data.
+  queryClient.clear()
   void router.navigate('/login')
 })
