@@ -461,7 +461,7 @@ describe('AC-19: the real sentinel set', () => {
     S008: {
       kind: 'injected',
       path: 'packages/platform/src/app.ts',
-      lines: [49, 54],
+      lines: [57, 62],
       marks: /jwtSecret === DEFAULT_JWT_SECRET[\s\S]*config\.production_default_jwt_secret/,
     },
     S009: {
