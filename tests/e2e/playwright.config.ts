@@ -19,8 +19,9 @@ const apiServer = {
   },
 }
 
+// --ignore-lock: Astro 7 backgrounds `astro dev` under an AI agent, and Playwright would see the exit.
 const astroServer = {
-  command: 'pnpm --filter @nymbalhq/template-astro dev',
+  command: 'pnpm --filter @nymbalhq/template-astro dev --ignore-lock',
   url: 'http://localhost:4321',
   cwd: '../..',
   reuseExistingServer: false,

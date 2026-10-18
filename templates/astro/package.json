@@ -15,15 +15,15 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@astrojs/node": "^8.3.4",
+    "@astrojs/node": "^11.1.8",
     "@nymbalhq/sdk": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "@nymbalhq/web-components": "workspace:*",
     "@stripe/stripe-js": "^4.0.0",
-    "astro": "^4.16.7"
+    "astro": "^7.4.0"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.4",
+    "@astrojs/check": "^0.9.10",
     "typescript": "^5.6.3"
   }
 }

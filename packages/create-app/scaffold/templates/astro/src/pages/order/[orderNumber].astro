@@ -90,9 +90,9 @@ const shippingAddress = order.shippingAddress
         <div class="confirmation-card">
           <h2 class="confirmation-card-title">Shipping Address</h2>
           <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
-            {shippingAddress.line1}<br />
-            {shippingAddress.line2 && <>{shippingAddress.line2}<br /></>}
-            {shippingAddress.city}, {shippingAddress.state} {shippingAddress.postcode}<br />
+            {shippingAddress.addressLine1}<br />
+            {shippingAddress.addressLine2 && <>{shippingAddress.addressLine2}<br /></>}
+            {shippingAddress.city}, {shippingAddress.region} {shippingAddress.postalCode}<br />
             {shippingAddress.country}
           </p>
         </div>

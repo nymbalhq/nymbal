@@ -15,17 +15,13 @@ export function SearchBarWrapper() {
     (event: CustomEvent<{ product: unknown }>) => {
       const product = event.detail.product as SearchProduct
       if (product?.slug) {
-        router.push(`/products/${product.slug}`)
+        router.push(`/product/${encodeURIComponent(product.slug)}`)
       }
     },
     [router],
   )
 
   return (
-    <SearchBar
-      placeholder="Search products..."
-      debounceMs={300}
-      onSearchSelect={handleSelect}
-    />
+    <SearchBar placeholder="Search products..." debounceMs={300} onSearchSelect={handleSelect} />
   )
 }

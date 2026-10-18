@@ -75,7 +75,7 @@ export function planTemplateLaunch(
     return {
       cwd: projectRoot,
       command: localBin,
-      args: ['dev', '--port', String(storefrontPort)],
+      args: ['dev', '--port', String(storefrontPort), ...foregroundArgs(template)],
       mode: 'flat',
     }
   }
@@ -85,7 +85,15 @@ export function planTemplateLaunch(
   return {
     cwd: projectRoot,
     command: 'pnpm',
-    args: ['--filter', filter, 'dev'],
+    args: ['--filter', filter, 'dev', ...foregroundArgs(template)],
     mode: 'filter',
   }
+}
+
+/**
+ * Astro 7 backgrounds `astro dev` when it detects an AI agent, so the launcher would see its child exit while the
+ * server lives on detached; --ignore-lock keeps it in the foreground. `next dev` rejects unknown options.
+ */
+function foregroundArgs(template: TemplateName): string[] {
+  return template === 'astro' ? ['--ignore-lock'] : []
 }

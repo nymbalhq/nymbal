@@ -1,4 +1,11 @@
-import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbalhq/types'
+import type {
+  Cart,
+  Customer,
+  CustomerAddress,
+  Order,
+  ReviewsResult,
+  ReviewResult,
+} from '@nymbalhq/types'
 import type {
   DenormalisedProduct,
   ProductListParams,
@@ -7,6 +14,8 @@ import type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  NewAddress,
+  OrderPage,
 } from '../types.js'
 
 export interface CommerceAdapter {
@@ -34,6 +43,11 @@ export interface CommerceAdapter {
     updateProfile(
       updates: Partial<Pick<Customer, 'firstName' | 'lastName' | 'phone'>>,
     ): Promise<Customer>
+    listAddresses(): Promise<CustomerAddress[]>
+    addAddress(address: NewAddress): Promise<CustomerAddress>
+    removeAddress(id: string): Promise<void>
+    listOrders(params?: { cursor?: string }): Promise<OrderPage>
+    getOrder(orderNumber: string): Promise<Order>
   }
   reviews: {
     getForProduct(

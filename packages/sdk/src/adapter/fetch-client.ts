@@ -41,6 +41,15 @@ export class FetchClient {
   }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return (await this.requestWithMeta<T>(method, path, body)).data
+  }
+
+  /** Like `request`, keeping the envelope's `meta` (pagination cursors live there). */
+  async requestWithMeta<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<{ data: T; meta: Record<string, unknown> }> {
     const response = await this.doFetch(method, path, body)
 
     if (response.status === 401 && this.onUnauthorized && !this.handlingUnauthorized) {
@@ -82,10 +91,12 @@ export class FetchClient {
     })
   }
 
-  private async parseResponse<T>(response: Response): Promise<T> {
+  private async parseResponse<T>(
+    response: Response,
+  ): Promise<{ data: T; meta: Record<string, unknown> }> {
     const text = await response.text()
     if (!text) {
-      return undefined as T
+      return { data: undefined as T, meta: {} }
     }
 
     const envelope = JSON.parse(text) as Envelope<T>
@@ -99,6 +110,6 @@ export class FetchClient {
       )
     }
 
-    return envelope.data as T
+    return { data: envelope.data as T, meta: envelope.meta ?? {} }
   }
 }

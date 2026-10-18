@@ -3,6 +3,7 @@ import type {
   Customer,
   Address,
   Facet,
+  Order,
   PaymentIntent,
   VariantOption,
 } from '@nymbalhq/types'
@@ -145,3 +146,9 @@ export interface AuthResult {
   expiresIn: number
 }
 
+export type NewAddress = Address & { isDefaultBilling?: boolean; isDefaultShipping?: boolean }
+
+export interface OrderPage {
+  items: Order[]
+  nextCursor: string | null
+}

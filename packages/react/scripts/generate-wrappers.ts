@@ -35,16 +35,18 @@ const COMPONENTS: ComponentDef[] = [
       { name: 'disabled', reactProp: 'disabled', type: 'boolean' },
     ],
     events: [
-      { name: 'nymbal:cart:item-added', reactProp: 'onItemAdded', detailType: '{ variantId: string }' },
+      {
+        name: 'nymbal:cart:item-added',
+        reactProp: 'onItemAdded',
+        detailType: '{ variantId: string }',
+      },
     ],
     hasChildren: true,
   },
   {
     tagName: 'nymbal-cart-drawer',
     reactName: 'CartDrawer',
-    attributes: [
-      { name: 'open', reactProp: 'open', type: 'boolean' },
-    ],
+    attributes: [{ name: 'open', reactProp: 'open', type: 'boolean' }],
     events: [
       { name: 'nymbal:cart:checkout-clicked', reactProp: 'onCheckoutClick', detailType: 'void' },
     ],
@@ -54,19 +56,19 @@ const COMPONENTS: ComponentDef[] = [
     tagName: 'nymbal-mini-cart',
     reactName: 'MiniCart',
     attributes: [],
-    events: [
-      { name: 'nymbal:mini-cart:clicked', reactProp: 'onClick', detailType: 'void' },
-    ],
+    events: [{ name: 'nymbal:mini-cart:clicked', reactProp: 'onClick', detailType: 'void' }],
     hasChildren: false,
   },
   {
     tagName: 'nymbal-variant-selector',
     reactName: 'VariantSelector',
-    attributes: [
-      { name: 'options', reactProp: 'options', type: 'json' },
-    ],
+    attributes: [{ name: 'options', reactProp: 'options', type: 'json' }],
     events: [
-      { name: 'nymbal:variant:selected', reactProp: 'onVariantSelected', detailType: '{ variant: unknown }' },
+      {
+        name: 'nymbal:variant:selected',
+        reactProp: 'onVariantSelected',
+        detailType: '{ variant: unknown }',
+      },
     ],
     hasChildren: false,
   },
@@ -79,7 +81,11 @@ const COMPONENTS: ComponentDef[] = [
       { name: 'max', reactProp: 'max', type: 'number' },
     ],
     events: [
-      { name: 'nymbal:quantity:changed', reactProp: 'onQuantityChange', detailType: '{ value: number }' },
+      {
+        name: 'nymbal:quantity:changed',
+        reactProp: 'onQuantityChange',
+        detailType: '{ value: number }',
+      },
     ],
     hasChildren: false,
   },
@@ -91,18 +97,24 @@ const COMPONENTS: ComponentDef[] = [
       { name: 'debounce-ms', reactProp: 'debounceMs', type: 'number' },
     ],
     events: [
-      { name: 'nymbal:search:selected', reactProp: 'onSearchSelect', detailType: '{ product: unknown }' },
+      {
+        name: 'nymbal:search:selected',
+        reactProp: 'onSearchSelect',
+        detailType: '{ product: unknown }',
+      },
     ],
     hasChildren: false,
   },
   {
     tagName: 'nymbal-product-filter',
     reactName: 'ProductFilter',
-    attributes: [
-      { name: 'facets', reactProp: 'facets', type: 'json' },
-    ],
+    attributes: [{ name: 'facets', reactProp: 'facets', type: 'json' }],
     events: [
-      { name: 'nymbal:filter:changed', reactProp: 'onFilterChange', detailType: '{ name: string; value: string }' },
+      {
+        name: 'nymbal:filter:changed',
+        reactProp: 'onFilterChange',
+        detailType: '{ name: string; value: string }',
+      },
     ],
     hasChildren: false,
   },
@@ -121,7 +133,14 @@ const COMPONENTS: ComponentDef[] = [
 function generatePropInterface(comp: ComponentDef): string {
   const lines: string[] = []
   for (const attr of comp.attributes) {
-    const tsType = attr.type === 'boolean' ? 'boolean' : attr.type === 'number' ? 'number' : attr.type === 'json' ? 'unknown' : 'string'
+    const tsType =
+      attr.type === 'boolean'
+        ? 'boolean'
+        : attr.type === 'number'
+          ? 'number'
+          : attr.type === 'json'
+            ? 'unknown'
+            : 'string'
     lines.push(`  ${attr.reactProp}?: ${tsType}`)
   }
   for (const evt of comp.events) {
@@ -197,7 +216,7 @@ ${attrEffects}
 ${eventEffects}
 
     return (
-      <${comp.tagName} ref={ref as React.LegacyRef<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <${comp.tagName} ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         ${childSlot}
       </${comp.tagName}>
     )
@@ -207,9 +226,10 @@ ${eventEffects}
 
 function generateIntrinsicElements(): string {
   const entries = COMPONENTS.map(
-    (c) => `      '${c.tagName}': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>`,
+    (c) =>
+      `      '${c.tagName}': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>`,
   ).join('\n')
-  return `declare global {
+  return `declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
 ${entries}
