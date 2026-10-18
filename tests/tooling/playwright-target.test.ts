@@ -60,7 +60,7 @@ const BUILD =
   /\bpnpm\s+(?:(?:-r|--recursive|(?:--filter|-F)(?:=|\s+)\S+)\s+)*(?:run\s+)?build(?::templates)?\b|\b(?:vite|astro|next|tsup)\s+build\b/
 
 describe('AC-3: NYMBAL_E2E_TARGET starts only that target and the API', () => {
-  it.each(['astro', 'nextjs', 'admin'])(
+  it.each(['astro', 'nextjs'])(
     'AC-3: with CI=1 and NYMBAL_E2E_TARGET=%s, the webServer list is the API and that target, once each, none built',
     async (target) => {
       const servers = await webServers({ CI: '1', NYMBAL_E2E_TARGET: target })
@@ -73,6 +73,38 @@ describe('AC-3: NYMBAL_E2E_TARGET starts only that target and the API', () => {
         ['api', target].sort(),
       )
       for (const server of servers) expect(server.command).not.toMatch(BUILD)
+    },
+  )
+})
+
+// P1-08 AC-1 (Interface, E2E): the admin is served by `nymbal dev --api-only` at <api>/admin/, so the admin target
+// starts the API alone (no Vite server), and both admin projects default their baseURL to the API's /admin/.
+const PRINT_ADMIN_BASE_URLS = `import(process.env.NYMBAL_TEST_CONFIG_URL).then((m) => {
+  const urls = (m.default.projects ?? []).filter((p) => p.name.startsWith('admin')).map((p) => p.use && p.use.baseURL)
+  process.stdout.write('\\n' + JSON.stringify(urls) + '\\n')
+})`
+
+describe('P1-08: the admin E2E runs against the admin the API serves', () => {
+  it.each([{ NYMBAL_E2E_TARGET: 'admin' }, { NYMBAL_E2E_ADMIN: 'true' }])(
+    'P1-08 AC-1: with CI=1 and %o, the webServer list is the API alone, not built, and the admin baseURL is http://localhost:3001/admin/',
+    async (selector) => {
+      const servers = await webServers({ CI: '1', ...selector })
+      expect(servers.map(kindsOf), JSON.stringify(servers.map((s) => s.command))).toEqual([['api']])
+      for (const server of servers) expect(server.command).not.toMatch(BUILD)
+
+      const base: NodeJS.ProcessEnv = { ...process.env }
+      for (const key of CONFIG_ENV) delete base[key]
+      const { stdout } = await exec(TSX, ['--eval', PRINT_ADMIN_BASE_URLS], {
+        cwd: E2E_DIR,
+        env: { ...base, CI: '1', ...selector, NYMBAL_TEST_CONFIG_URL: CONFIG_URL },
+      })
+      const urls = JSON.parse(stdout.trimEnd().split('\n').pop() ?? '[]') as string[]
+      expect(urls.length).toBeGreaterThan(0)
+      const api = servers[0]!.url ?? ''
+      for (const url of urls) {
+        expect(new URL(url).origin).toBe(new URL(api).origin)
+        expect(new URL(url).pathname).toBe('/admin/')
+      }
     },
   )
 })

@@ -227,3 +227,53 @@ describe('AC-11: a clean-machine scaffold', () => {
     )
   }, 45_000)
 })
+
+// P1-08 AC-13: the published admin, served by the scaffolded project's `nymbal dev` at <api>/admin/, and the admin
+// account the seed created from the credentials create-app wrote to the project's `.env` (decision 5). Kills: the
+// admin not published, not a dependency of `nymbal`, its dist not packed, or `.env` not read by the seed.
+
+function dotEnvValue(source: string, key: string): string | undefined {
+  const match = new RegExp(`^\\s*${key}\\s*=\\s*(.*?)\\s*$`, 'm').exec(source)
+  return match?.[1]?.replace(/^(['"])(.*)\1$/, '$2')
+}
+
+describe('P1-08 AC-13: the clean-machine admin', () => {
+  it('AC-13: GET <api>/admin/ is HTML that loads a script under /admin/assets/, and that script answers 200 text/javascript', async () => {
+    const page = await fetch(new URL('/admin/', API_URL))
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-type') ?? '').toMatch(/^text\/html/)
+    const html = await page.text()
+    const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]!)
+    const admin = scripts.filter((src) =>
+      new URL(src, new URL('/admin/', API_URL)).pathname.startsWith('/admin/assets/'),
+    )
+    expect(admin.length, `scripts in /admin/: ${JSON.stringify(scripts)}`).toBeGreaterThan(0)
+    for (const src of admin) {
+      const script = await fetch(new URL(src, new URL('/admin/', API_URL)))
+      expect(script.status, src).toBe(200)
+      expect(script.headers.get('content-type') ?? '', src).toMatch(/^text\/javascript/)
+      expect((await script.text()).length, src).toBeGreaterThan(0)
+    }
+  })
+
+  it("AC-13: POST /api/auth/login with the credentials in the project's .env returns a customer whose roles include admin", async () => {
+    const env = readFileSync(join(DIR, '.env'), 'utf8')
+    const email = dotEnvValue(env, 'NYMBAL_ADMIN_EMAIL')
+    const password = dotEnvValue(env, 'NYMBAL_ADMIN_PASSWORD')
+    expect(email, 'NYMBAL_ADMIN_EMAIL in .env').toBeDefined()
+    expect(password?.length ?? 0, 'NYMBAL_ADMIN_PASSWORD in .env').toBeGreaterThanOrEqual(22)
+
+    const api = apiClient()
+    const login = await api<{ customer: { email: string; roles: string[] } }>(
+      'POST',
+      '/api/auth/login',
+      {
+        email,
+        password,
+      },
+    )
+    expect(login.status, JSON.stringify(login.data)).toBe(200)
+    expect(login.data.customer.email).toBe(email)
+    expect(login.data.customer.roles).toContain('admin')
+  })
+})
