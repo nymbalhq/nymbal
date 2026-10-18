@@ -171,7 +171,13 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
         `Order ${order.id} has no line for reservation ${reservationId}`,
       )
     }
-    const retaken = await inventory.tryReserveStock(line.variantId, line.qty, order.id)
+    // A variant deleted since checkout has no stock to re-take.
+    const retaken = await inventory
+      .tryReserveStock(line.variantId, line.qty, order.id)
+      .catch((err: unknown) => {
+        if (err instanceof NotFoundError) return null
+        throw err
+      })
     if (retaken === null) throw new StockUnavailable(line.variantId)
     return retaken.reservationId
   }
@@ -356,7 +362,10 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
           return await store.savepoint(() => confirm(tx, paymentIntentId, paid, order))
         } catch (err) {
           if (err instanceof StockUnavailable) {
-            return outcome(order, `stock_unavailable: ${err.variantId}`)
+            // A concurrent writer may have confirmed the order with the units this re-take wanted.
+            const current = await repos.order.findById(tx, order.id)
+            if (current?.status !== 'pending') return settled(tx, paymentIntentId, current)
+            return outcome(current, `stock_unavailable: ${err.variantId}`)
           }
           if (!(err instanceof NoLongerPending)) throw err
         }
