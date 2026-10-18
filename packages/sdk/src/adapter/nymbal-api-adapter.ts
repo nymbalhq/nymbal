@@ -1,4 +1,11 @@
-import type { Cart, Customer, ReviewsResult, ReviewResult } from '@nymbalhq/types'
+import type {
+  Cart,
+  Customer,
+  CustomerAddress,
+  Order,
+  ReviewsResult,
+  ReviewResult,
+} from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
 import type {
@@ -9,6 +16,8 @@ import type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  NewAddress,
+  OrderPage,
 } from '../types.js'
 
 export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapter {
@@ -21,7 +30,10 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         return fetchClient.request<Cart>('POST', '/api/cart/items', { variantId, qty })
       },
       removeItem(variantId: string) {
-        return fetchClient.request<Cart>('DELETE', `/api/cart/items/${encodeURIComponent(variantId)}`)
+        return fetchClient.request<Cart>(
+          'DELETE',
+          `/api/cart/items/${encodeURIComponent(variantId)}`,
+        )
       },
       updateQuantity(variantId: string, qty: number) {
         return fetchClient.request<Cart>(
@@ -48,10 +60,7 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
         if (params?.category !== undefined) search.set('category', params.category)
         const qs = search.toString()
-        return fetchClient.request<ProductListResult>(
-          'GET',
-          `/api/products${qs ? `?${qs}` : ''}`,
-        )
+        return fetchClient.request<ProductListResult>('GET', `/api/products${qs ? `?${qs}` : ''}`)
       },
       search(query: string, params?: { limit?: number; cursor?: string }) {
         const search = new URLSearchParams()
@@ -92,6 +101,28 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       },
       updateProfile(updates: Partial<Pick<Customer, 'firstName' | 'lastName' | 'phone'>>) {
         return fetchClient.request<Customer>('PATCH', '/api/customers/me', updates)
+      },
+      listAddresses() {
+        return fetchClient.request<CustomerAddress[]>('GET', '/api/customers/me/addresses')
+      },
+      addAddress(address: NewAddress) {
+        return fetchClient.request<CustomerAddress>('POST', '/api/customers/me/addresses', address)
+      },
+      async removeAddress(id: string) {
+        await fetchClient.request<{ ok: boolean }>(
+          'DELETE',
+          `/api/customers/me/addresses/${encodeURIComponent(id)}`,
+        )
+      },
+      async listOrders(params?: { cursor?: string }): Promise<OrderPage> {
+        const qs =
+          params?.cursor !== undefined ? `?cursor=${encodeURIComponent(params.cursor)}` : ''
+        const { data, meta } = await fetchClient.requestWithMeta<Order[]>('GET', `/api/orders${qs}`)
+        const nextCursor = typeof meta.nextCursor === 'string' ? meta.nextCursor : null
+        return { items: data ?? [], nextCursor }
+      },
+      getOrder(orderNumber: string) {
+        return fetchClient.request<Order>('GET', `/api/orders/${encodeURIComponent(orderNumber)}`)
       },
     },
 

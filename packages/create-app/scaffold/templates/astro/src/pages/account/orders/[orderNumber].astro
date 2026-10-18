@@ -5,7 +5,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 ---
 
 <AccountLayout title="Order Detail">
-  <div id="order-detail-container" data-testid="order-detail" data-order-id={Astro.params.id}>
+  <div id="order-detail-container" data-testid="order-detail" data-order-number={Astro.params.orderNumber}>
     <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
       Loading order details...
     </p>
@@ -14,33 +14,25 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 
 <script>
   import { client } from '../../../lib/client.js'
-  import { formatPrice, formatDate } from '../../../lib/format.js'
+  import { escapeHtml, formatPrice, formatDate } from '../../../lib/format.js'
 
   const container = document.getElementById('order-detail-container')
-  const orderId = container?.dataset.orderId
+  const orderNumber = container?.dataset.orderNumber
 
   async function loadOrderDetail() {
-    if (!container || !orderId) return
+    if (!container || !orderNumber) return
 
     try {
-      const apiUrl = (import.meta as any).env?.PUBLIC_NYMBAL_API_URL ?? 'http://localhost:3001'
-      const state = client.auth.getState()
-      const token = state.token ?? state.accessToken
-
-      const res = await fetch(`${apiUrl}/api/orders/${orderId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-
-      if (!res.ok) throw new Error('Failed to load order')
-      const order = await res.json()
+      const order = await client.customer.orders.get(orderNumber)
+      const ship = order.shippingAddress
 
       container.innerHTML = `
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--nymbal-spacing-lg, 1.5rem); flex-wrap: wrap; gap: var(--nymbal-spacing-sm, 0.5rem);">
           <div>
-            <h1 class="account-page-title" style="margin-bottom: 0;">Order #${order.orderNumber}</h1>
+            <h1 class="account-page-title" style="margin-bottom: 0;">Order #${escapeHtml(order.orderNumber)}</h1>
             ${order.createdAt ? `<p class="account-page-subtitle" style="margin-top: var(--nymbal-spacing-xs, 0.25rem);">${formatDate(order.createdAt)}</p>` : ''}
           </div>
-          <span class="order-status status-${order.status}">${order.status}</span>
+          <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
         </div>
 
         <div class="confirmation-card">
@@ -48,11 +40,11 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
           <div class="confirmation-items" style="margin-top: 0; padding-top: 0; border-top: none;">
             ${(order.lineItems ?? [])
               .map(
-                (item: any) => `
+                (item) => `
               <div class="confirmation-item">
                 <span>
-                  <span class="confirmation-item-name">${item.productName}</span>
-                  ${item.variantName ? ` - ${item.variantName}` : ''}
+                  <span class="confirmation-item-name">${escapeHtml(item.productName)}</span>
+                  ${item.variantName ? ` - ${escapeHtml(item.variantName)}` : ''}
                   <span class="confirmation-item-qty"> x${item.qty}</span>
                 </span>
                 <span class="confirmation-item-price">${formatPrice(item.lineTotalMinor, order.currency)}</span>
@@ -86,14 +78,15 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
           </div>
         </div>
 
-        ${order.shippingAddress ? `
+        ${ship ? `
           <div class="confirmation-card">
             <h2 class="confirmation-card-title">Shipping Address</h2>
             <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
-              ${order.shippingAddress.line1}<br/>
-              ${order.shippingAddress.line2 ? order.shippingAddress.line2 + '<br/>' : ''}
-              ${order.shippingAddress.city}, ${order.shippingAddress.state} ${order.shippingAddress.postcode}<br/>
-              ${order.shippingAddress.country}
+              ${escapeHtml(`${ship.firstName} ${ship.lastName}`)}<br/>
+              ${escapeHtml(ship.addressLine1)}<br/>
+              ${ship.addressLine2 ? escapeHtml(ship.addressLine2) + '<br/>' : ''}
+              ${escapeHtml(`${ship.city}, ${ship.region} ${ship.postalCode}`)}<br/>
+              ${escapeHtml(ship.country)}
             </p>
           </div>
         ` : ''}

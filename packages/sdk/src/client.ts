@@ -8,6 +8,8 @@ import { createProductListStore, type ProductListStore } from './store/product-l
 import { createSearchStore, type SearchStore } from './store/search-store.js'
 import { createCheckoutStore, type CheckoutStore } from './store/checkout-store.js'
 import { createAuthStore, type AuthStore } from './store/auth-store.js'
+import type { CustomerAddress, Order } from '@nymbalhq/types'
+import type { NewAddress, OrderPage } from './types.js'
 
 export interface NymbalClientOptions {
   baseUrl: string
@@ -17,6 +19,19 @@ export interface NymbalClientOptions {
   getCartToken?: () => string | null
 }
 
+/** The signed-in customer's own account; every call sends the session's bearer token. */
+export interface CustomerAccount {
+  addresses: {
+    list(): Promise<CustomerAddress[]>
+    create(address: NewAddress): Promise<CustomerAddress>
+    remove(id: string): Promise<void>
+  }
+  orders: {
+    list(opts?: { cursor?: string }): Promise<OrderPage>
+    get(orderNumber: string): Promise<Order>
+  }
+}
+
 export interface NymbalClient {
   cart: CartStore
   product: ProductStore
@@ -24,6 +39,7 @@ export interface NymbalClient {
   search: SearchStore
   checkout: CheckoutStore
   auth: AuthStore
+  customer: CustomerAccount
   adapter: CommerceAdapter
   destroy(): void
 }
@@ -64,6 +80,18 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
   const checkout = createCheckoutStore(adapter)
   const auth = createAuthStore(adapter, tokenManager)
 
+  const customer: CustomerAccount = {
+    addresses: {
+      list: () => adapter.customers.listAddresses(),
+      create: (address) => adapter.customers.addAddress(address),
+      remove: (id) => adapter.customers.removeAddress(id),
+    },
+    orders: {
+      list: (opts) => adapter.customers.listOrders(opts),
+      get: (orderNumber) => adapter.customers.getOrder(orderNumber),
+    },
+  }
+
   tokenManager.scheduleRefresh(() => adapter.customers.refresh())
 
   function destroy(): void {
@@ -76,5 +104,5 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     tokenManager.destroy()
   }
 
-  return { cart, product, productList, search, checkout, auth, adapter, destroy }
+  return { cart, product, productList, search, checkout, auth, customer, adapter, destroy }
 }

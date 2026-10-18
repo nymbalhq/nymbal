@@ -1,18 +1,22 @@
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
-  const images = product.media?.length
-    ? product.media.map((m) => (typeof m === 'string' ? m : m.url))
-    : []
+  // The SDK types `media` as unknown: the projection stores either URLs or `{ url }` objects.
+  const media: unknown[] = Array.isArray(product.media) ? product.media : []
+  const images = media
+    .map((m) =>
+      typeof m === 'string'
+        ? m
+        : m && typeof m === 'object' && 'url' in m && typeof m.url === 'string'
+          ? m.url
+          : null,
+    )
+    .filter((url): url is string => url !== null)
 
   const sku = product.variants?.[0]?.sku ?? product.id
 
-  const lowPrice = product.priceRange
-    ? product.priceRange.min / 100
-    : product.priceMinor / 100
-  const highPrice = product.priceRange
-    ? product.priceRange.max / 100
-    : product.priceMinor / 100
+  const lowPrice = (product.priceRange?.minMinor ?? product.priceMinor ?? 0) / 100
+  const highPrice = (product.priceRange?.maxMinor ?? product.priceMinor ?? 0) / 100
 
   return {
     '@context': 'https://schema.org',

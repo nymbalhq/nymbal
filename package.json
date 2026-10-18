@@ -14,7 +14,7 @@
     "build:templates": "pnpm -r --filter './templates/**' build",
     "test": "vitest run --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'",
     "test:watch": "vitest",
-    "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck",
+    "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck && pnpm --filter @nymbalhq/template-astro typecheck",
     "typecheck:astro": "pnpm --filter @nymbalhq/template-astro typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -50,5 +50,23 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^3.0.0"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "next": {
+        "peerDependencies": {
+          "@types/react": "*",
+          "@types/react-dom": "*"
+        },
+        "peerDependenciesMeta": {
+          "@types/react": {
+            "optional": true
+          },
+          "@types/react-dom": {
+            "optional": true
+          }
+        }
+      }
+    }
   }
 }

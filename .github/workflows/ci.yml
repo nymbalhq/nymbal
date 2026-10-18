@@ -350,7 +350,7 @@ jobs:
         run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Astro dev server
         run: |
-          pnpm dev &
+          pnpm dev --ignore-lock &
           echo "ASTRO_WEB_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-astro
       - name: Wait for Astro dev server

@@ -70,7 +70,8 @@ describe('template-runner', () => {
     expect(plan.mode).toBe('flat')
     expect(plan.cwd).toBe(root)
     expect(plan.command).toBe(resolve(root, 'node_modules', '.bin', 'astro'))
-    expect(plan.args).toEqual(['dev', '--port', '4399'])
+    expect(plan.args[0]).toBe('dev')
+    expect(plan.args[plan.args.indexOf('--port') + 1]).toBe('4399')
     // It must NOT shell out to `pnpm --filter` (the old wrong-directory bug).
     expect(plan.command).not.toBe('pnpm')
     expect(plan.args).not.toContain('--filter')
@@ -94,7 +95,34 @@ describe('template-runner', () => {
     const plan = planTemplateLaunch(root, 'astro', 4399)
     expect(plan.mode).toBe('filter')
     expect(plan.command).toBe('pnpm')
-    expect(plan.args).toEqual(['--filter', '@nymbalhq/template-astro', 'dev'])
+    expect(plan.args.slice(0, 3)).toEqual(['--filter', '@nymbalhq/template-astro', 'dev'])
+  })
+
+  // P1-09 AC-9: Astro 7 backgrounds `astro dev` when it detects an AI agent (CLAUDECODE=1 and the like), so the
+  // launcher sees its child exit while the server lives on detached. Every astro launch we own passes --ignore-lock;
+  // `next dev` rejects an option it does not know, so the Next launch must not carry it.
+  it('AC-9: every astro launch, flat or filtered, passes --ignore-lock; a next launch does not', () => {
+    const flatAstro = makeProject({ configFile: 'astro.config.mjs', bins: ['astro'] })
+    const filtered = makeProject({})
+    const flatNext = makeProject({ configFile: 'next.config.mjs', bins: ['next'] })
+
+    const launches = {
+      flatAstro: planTemplateLaunch(flatAstro, 'astro', 4399).args,
+      filteredAstro: planTemplateLaunch(filtered, 'astro', 4399).args,
+      flatNext: planTemplateLaunch(flatNext, 'nextjs', 3007).args,
+      filteredNext: planTemplateLaunch(filtered, 'nextjs', 3007).args,
+    }
+
+    expect({
+      flatAstro: launches.flatAstro.includes('--ignore-lock'),
+      filteredAstro: launches.filteredAstro.includes('--ignore-lock'),
+      flatNext: launches.flatNext.includes('--ignore-lock'),
+      filteredNext: launches.filteredNext.includes('--ignore-lock'),
+    }).toEqual({ flatAstro: true, filteredAstro: true, flatNext: false, filteredNext: false })
+    // The flag is an argument to astro, after the script name, not an option pnpm itself would read.
+    expect(launches.filteredAstro.indexOf('--ignore-lock')).toBeGreaterThan(
+      launches.filteredAstro.indexOf('dev'),
+    )
   })
 
   it('resolves the symlinked package directory (pnpm workspace) for resolveLocalBin', () => {
