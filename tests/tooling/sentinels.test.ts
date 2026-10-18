@@ -429,7 +429,7 @@ describe('AC-19: the real sentinel set', () => {
     S004: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [174, 174],
+      lines: [175, 175],
       marks: /findByPaymentIntentId\(/,
     },
     // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
@@ -451,7 +451,7 @@ describe('AC-19: the real sentinel set', () => {
     S007: {
       kind: 'present',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [172, 235],
+      lines: [173, 242],
       marks: /finalize\(paymentIntentId, paidAmountMinor\)/,
     },
     S008: {
@@ -481,13 +481,13 @@ describe('AC-19: the real sentinel set', () => {
     I102: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [187, 189],
+      lines: [188, 190],
       marks: /commitReservation/,
     },
     I103: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [110, 110],
+      lines: [111, 111],
       marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
     },
     I104: {
