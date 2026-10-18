@@ -29,6 +29,8 @@ export interface SeedResult {
   variants: number
   customers: number
   admins: number
+  /** True when the demo products were already in the command store, so nothing was inserted. */
+  alreadySeeded: boolean
 }
 
 async function insertVariants(
@@ -164,6 +166,13 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     version,
     source: 'nymbal-seed',
   })
+
+  // Demo products are unique by slug, so their presence means an earlier seed ran: insert nothing.
+  const existing = await Promise.all(seedProducts.map((p) => productRepo.findBySlug(p.slug)))
+  if (existing.some((row) => row !== null)) {
+    logger.info({}, 'Demo content already present, seed skipped')
+    return { categories: 0, products: 0, variants: 0, customers: 0, admins: 0, alreadySeeded: true }
+  }
 
   const now = new Date()
 
@@ -422,5 +431,6 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     variants: variantInserts.length,
     customers: 1,
     admins: 1,
+    alreadySeeded: false,
   }
 }

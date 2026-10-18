@@ -159,6 +159,15 @@ export default defineConfig({
       },
       {
         test: {
+          // Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at
+          // collection without them). `scripts/scaffold-clean.sh <astro|nextjs>` sets both up; `pnpm test` excludes it.
+          name: 'scaffold-clean',
+          environment: 'node',
+          include: ['tests/scaffold/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'architecture',
           environment: 'node',
           include: ['tests/architecture/**/*.test.ts'],

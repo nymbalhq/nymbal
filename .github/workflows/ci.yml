@@ -329,7 +329,7 @@ jobs:
         with:
           name: build-output
       - name: Scaffold Astro project
-        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes
+        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes --no-install
       - name: Install Astro scaffold deps
         run: pnpm install --no-frozen-lockfile
         working-directory: smoke-astro
@@ -364,7 +364,7 @@ jobs:
           kill "$ASTRO_WEB_PID"
           kill "$ASTRO_API_PID"
       - name: Scaffold Next.js project
-        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes
+        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes --no-install
       - name: Install Next.js scaffold deps
         run: pnpm install --no-frozen-lockfile
         working-directory: smoke-nextjs
@@ -396,6 +396,34 @@ jobs:
         run: |
           kill "$NEXTJS_WEB_PID"
           kill "$NEXTJS_API_PID"
+
+  scaffold-clean:
+    name: Scaffold from a clean machine (${{ matrix.template }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [astro, nextjs]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The script builds and publishes every public package at a snapshot version to a local Verdaccio (Docker),
+      # scaffolds outside the checkout against it, and serves the store; nothing reaches npmjs and no token is used.
+      - name: Scaffold, install and serve from a local registry
+        shell: bash
+        env:
+          TEMPLATE: ${{ matrix.template }}
+        run: |
+          scripts/scaffold-clean.sh "$TEMPLATE" | tee scaffold-clean.log
+          grep '^scaffold-clean: ' scaffold-clean.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
 
   changeset:
     name: Changeset

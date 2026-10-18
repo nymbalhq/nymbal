@@ -1,13 +1,13 @@
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { loadConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
 import { NymbalError } from '@nymbalhq/types'
 
 export const configValidateCommand = defineCommand({
   meta: { name: 'config:validate', description: 'Validate nymbal.config.ts' },
   async run() {
     try {
-      const { config, path } = await loadConfig()
+      const { config, path } = await loadProject()
       // eslint-disable-next-line no-console
       console.log(pc.green(`✓ config valid`) + ` (${path})`)
       // eslint-disable-next-line no-console

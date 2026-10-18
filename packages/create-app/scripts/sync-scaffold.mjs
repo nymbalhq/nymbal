@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Syncs templates/astro and templates/nextjs into scaffold/templates/* so the scaffolder
 // always copies from a single canonical source. Also merges root-manifest deps/scripts and
-// rewrites workspace:* references to real semver versions baked from the monorepo.
+// rewrites workspace:* references to exact versions baked from the monorepo, and pins every Nymbal
+// package with `overrides` so a scaffolded project installs one version of each.
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,9 +32,14 @@ export const NYMBAL_PACKAGE_DIRS = [
   { name: '@nymbalhq/platform', dir: 'platform' },
   { name: '@nymbalhq/react', dir: 'react' },
   { name: '@nymbalhq/sdk', dir: 'sdk' },
+  { name: '@nymbalhq/stack', dir: 'stack' },
   { name: '@nymbalhq/types', dir: 'types' },
   { name: '@nymbalhq/web-components', dir: 'web-components' },
 ]
+
+// nymbal pins @nymbalhq/importers exactly itself, and it is outside the stack's fixed version group, so the
+// scaffold does not override it.
+const NOT_OVERRIDDEN = new Set(['@nymbalhq/importers'])
 
 const templates = [
   { name: 'astro', from: resolve(MONOREPO_ROOT, 'templates', 'astro') },
@@ -70,7 +76,7 @@ export async function readNymbalVersions() {
 }
 
 /**
- * Rewrites workspace:* values to ^version for @nymbalhq/* keys.
+ * Rewrites workspace:* values to the exact version for @nymbalhq/* keys.
  * Throws if a workspace:* key has no entry in the version map — fail-loud at build time.
  * @param {Record<string, string> | undefined} deps
  * @param {Record<string, string>} versions
@@ -87,7 +93,7 @@ export function rewriteWorkspaceVersions(deps, versions) {
           `No version found for "${key}" — add it to NYMBAL_PACKAGE_DIRS in sync-scaffold.mjs`,
         )
       }
-      result[key] = `^${version}`
+      result[key] = version
     } else {
       result[key] = val
     }
@@ -102,11 +108,13 @@ export function rewriteWorkspaceVersions(deps, versions) {
  * @param {Record<string, string>} versions
  */
 export function mergePackageJson(templatePkg, versions) {
-  // Deps from the old root-manifest that are injected into every flat project
+  // Deps from the old root-manifest that are injected into every flat project. The stack pins the rest of
+  // the runtime packages; it is absent from a version map that predates it.
   const rootDeps = {
-    nymbal: `^${versions['nymbal']}`,
-    '@nymbalhq/config': `^${versions['@nymbalhq/config']}`,
-    '@nymbalhq/platform': `^${versions['@nymbalhq/platform']}`,
+    nymbal: versions['nymbal'],
+    '@nymbalhq/config': versions['@nymbalhq/config'],
+    '@nymbalhq/platform': versions['@nymbalhq/platform'],
+    ...(versions['@nymbalhq/stack'] ? { '@nymbalhq/stack': versions['@nymbalhq/stack'] } : {}),
   }
 
   const templateDeps = rewriteWorkspaceVersions(
@@ -120,6 +128,13 @@ export function mergePackageJson(templatePkg, versions) {
 
   // Template wins on overlap (e.g. @nymbalhq/types present in both root and template)
   const dependencies = { ...rootDeps, ...templateDeps }
+
+  // Every Nymbal package resolves to the one version baked here, whichever package asks for it.
+  const overrides = Object.fromEntries(
+    Object.entries(versions).filter(
+      ([name]) => (name === 'nymbal' || name.startsWith('@nymbalhq/')) && !NOT_OVERRIDDEN.has(name),
+    ),
+  )
 
   return {
     name: templatePkg.name,
@@ -136,6 +151,8 @@ export function mergePackageJson(templatePkg, versions) {
     },
     dependencies,
     ...(templateDevDeps ? { devDependencies: templateDevDeps } : {}),
+    pnpm: { overrides },
+    overrides,
   }
 }
 
@@ -150,6 +167,7 @@ export async function main(destRoot = SCAFFOLD_TEMPLATES) {
   await mkdir(destRoot, { recursive: true })
 
   const versions = await readNymbalVersions()
+  const nodeVersion = await readFile(resolve(MONOREPO_ROOT, '.node-version'), 'utf8')
 
   for (const t of templates) {
     const dest = resolve(destRoot, t.name)
@@ -164,6 +182,8 @@ export async function main(destRoot = SCAFFOLD_TEMPLATES) {
     const templatePkg = JSON.parse(await readFile(pkgPath, 'utf8'))
     const mergedPkg = mergePackageJson(templatePkg, versions)
     await writeFile(pkgPath, JSON.stringify(mergedPkg, null, 2) + '\n', 'utf8')
+
+    await writeFile(resolve(dest, '_dot.node-version'), nodeVersion, 'utf8')
 
     // eslint-disable-next-line no-console
     console.log(`✓ synced ${dest}`)

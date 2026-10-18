@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build",
     "build:templates": "pnpm -r --filter './templates/**' build",
-    "test": "vitest run --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'",
+    "test": "vitest run --project '!integration-postgres' --exclude 'tests/scaffold/**' --exclude 'packages/proof-kit/tests/services/**'",
     "test:watch": "vitest",
     "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck",
     "typecheck:astro": "pnpm --filter @nymbalhq/template-astro typecheck",
@@ -23,7 +23,7 @@
     "dev": "pnpm --filter nymbal dev",
     "mutation": "stryker run",
     "census": "tsx scripts/test-census.ts",
-    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**'\"",
+    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'tests/scaffold/**' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**'\"",
     "gate": "tsx scripts/gate.ts",
     "gate:full": "tsx scripts/gate.ts --full"
   },
