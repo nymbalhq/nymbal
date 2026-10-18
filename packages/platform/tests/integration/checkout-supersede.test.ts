@@ -142,6 +142,7 @@ describe('P1-12 AC-12: superseding never strands money (sqlite)', () => {
       events: (await eventRows(raw)).length,
     })
     const before = await snapshot()
+    const logBefore = log.length
 
     const second = await submit(shop)
 
@@ -150,7 +151,8 @@ describe('P1-12 AC-12: superseding never strands money (sqlite)', () => {
     expect(error?.code).toBe('checkout.payment_in_progress')
     expect(error?.context?.orderNumber).toBe(old.orderNumber)
     expect(await snapshot()).toEqual(before)
-    expect(log.filter((entry) => entry.startsWith('create:'))).toEqual([])
+    const createdSince = log.slice(logBefore).filter((entry) => entry.startsWith('create:'))
+    expect(createdSince, log.join(' ')).toEqual([])
   })
 
   // Kills: the backstop missing: a capture for a cancelled order is recorded as not applied and the money is kept.
