@@ -65,16 +65,19 @@ function addressOf(tag: string): Address {
 }
 
 describe('AC-1: SDK customer addresses against a running API', () => {
-  it('AC-1: create then list round-trips addressLine1, region and postalCode; remove takes it out; another customer never sees it', async () => {
+  it('AC-1: create then list round-trips addressLine1, region and postalCode; remove takes one of two out and keeps the other; another customer never sees it', async () => {
     const owner = await signedInShopper('Owner')
     const other = await signedInShopper('Other')
     const input = addressOf(randomUUID().slice(0, 8))
+    // The platform refuses to remove a customer's last address, so a second one stays behind.
+    const kept = await owner.client.customer.addresses.create(addressOf(randomUUID().slice(0, 8)))
 
     const before = await owner.client.customer.addresses.list()
     const created = await owner.client.customer.addresses.create(input)
     const listed = await owner.client.customer.addresses.list()
 
     expect(listed.length).toBe(before.length + 1)
+    expect(created.id).not.toBe(kept.id)
     const found = listed.find((a) => a.id === created.id)
     expect(found).toBeDefined()
     expect({
@@ -94,6 +97,7 @@ describe('AC-1: SDK customer addresses against a running API', () => {
     await owner.client.customer.addresses.remove(created.id)
     const after = await owner.client.customer.addresses.list()
     expect(after.map((a) => a.id)).not.toContain(created.id)
+    expect(after.map((a) => a.id)).toContain(kept.id)
     expect(after.length).toBe(listed.length - 1)
   }, 30_000)
 })
