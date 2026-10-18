@@ -142,7 +142,7 @@ export async function createApp(
       })
     },
     async stop() {
-      relay.stop()
+      await relay.stop()
       for (const s of sweepers) s.stop()
       await platform.close()
     },

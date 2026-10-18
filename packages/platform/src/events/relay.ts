@@ -9,7 +9,9 @@ export interface Relay {
   drain(): Promise<void>
   /** Drains on an interval (the timer does not keep the process alive). */
   start(): void
-  stop(): void
+  /** Stops the interval and starts no new pass; resolves when the pass in flight, if any, has finished, so the
+   *  store can be closed without cutting a delivery off between the handler and its bookkeeping. */
+  stop(): Promise<void>
 }
 
 export interface CreateRelayOptions {
@@ -47,6 +49,8 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   const delivering = new AsyncLocalStorage<true>()
 
   let active = false
+  // Resolved when `active` turns false, i.e. after the last chained follow-up pass.
+  let idle: Deferred | undefined
   let followUp: Deferred | undefined
   let timer: ReturnType<typeof setInterval> | undefined
   let stopped = false
@@ -98,6 +102,8 @@ export function createRelay(opts: CreateRelayOptions): Relay {
       followUp = undefined
       if (next === undefined) {
         active = false
+        idle?.resolve()
+        idle = undefined
       } else {
         // Still active: nothing can start a second pass alongside this one.
         void run().then(next.resolve)
@@ -106,7 +112,10 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   }
 
   function request(): Promise<void> {
-    if (!active) return run()
+    if (!active) {
+      idle = deferred()
+      return run()
+    }
     followUp ??= deferred()
     return followUp.promise
   }
@@ -127,6 +136,9 @@ export function createRelay(opts: CreateRelayOptions): Relay {
       stopped = true
       if (timer !== undefined) clearInterval(timer)
       timer = undefined
+      // A subscriber that stops the app would otherwise wait on the pass that is waiting on it.
+      if (delivering.getStore() === true) return Promise.resolve()
+      return idle?.promise ?? Promise.resolve()
     },
   }
 }
