@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { EVT_CART_ABANDONED, type Cart, type NymbalEvent } from '@nymbalhq/types'
 import { startCartAbandonmentSweeper } from '../../src/sweepers/index.js'
 import { cartWith, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
@@ -7,15 +7,18 @@ import { openRaw, type RawReader } from '../support/raw.js'
 
 // P1-03 AC-9 on SQLite: an event published outside any transaction (cart.abandoned.v1 from the abandonment sweeper's
 // tick) is appended to the log and delivered from it; with the bus rejecting, the row stays for the relay.
+// Each test gets its own kernel: the sweeper announces every stale cart in the document store, so a cart left by an
+// earlier test would add rows (and relay retries) to the next one's assertions.
 
 const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
 
 let k: Kernel
 let raw: RawReader
 let failing: FailingBus | undefined
-const delivered: NymbalEvent<unknown>[] = []
+let delivered: NymbalEvent<unknown>[]
 
-beforeAll(async () => {
+beforeEach(async () => {
+  delivered = []
   k = await createKernel({ dialect: 'sqlite' })
   raw = openRaw(k.dialect, k.target)
   await k.eventBus.subscribe(EVT_CART_ABANDONED, (event) => {
@@ -23,12 +26,9 @@ beforeAll(async () => {
   })
 }, 60_000)
 
-afterEach(() => {
+afterEach(async () => {
   failing?.restore()
   failing = undefined
-})
-
-afterAll(async () => {
   await raw?.close()
   await k?.close()
 })

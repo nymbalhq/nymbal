@@ -7,7 +7,7 @@
 diff --git a/packages/platform/src/handlers/idempotency.ts b/packages/platform/src/handlers/idempotency.ts
 --- a/packages/platform/src/handlers/idempotency.ts
 +++ b/packages/platform/src/handlers/idempotency.ts
-@@ -13,14 +13,7 @@
+@@ -13,13 +13,6 @@
  ): EventHandler<T> {
    return async (event: NymbalEvent<T>) => {
      const { store } = repo

@@ -13,7 +13,7 @@ import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
 import { createEventPublisher, createRelay } from '../index.js'
-import { wirePublisher } from '../../tests/support/publisher.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createCartService } from './cart-service.js'
 import { createLogger } from '../logger.js'
 

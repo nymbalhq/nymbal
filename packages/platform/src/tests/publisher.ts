@@ -1,5 +1,5 @@
 import type { EventBusAdapter, Logger } from '@nymbalhq/types'
-import type { EventBuilderContext } from '../../src/events/builder.js'
+import type { EventBuilderContext } from '../events/builder.js'
 
 // The one place tests wire an event publisher (P1-03): the outbox is mandatory, so a publisher needs the command
 // store, the event log on that store and a relay that drains it onto the bus.

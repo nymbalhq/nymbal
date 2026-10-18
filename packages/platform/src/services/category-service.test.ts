@@ -12,7 +12,7 @@ import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
 import { createEventPublisher, createRelay } from '../index.js'
-import { wirePublisher } from '../../tests/support/publisher.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createCategoryService } from './category-service.js'
 import { createLogger } from '../logger.js'
 
@@ -76,7 +76,8 @@ describe('CategoryService', () => {
     const { service, commandStore } = await setup()
     const created = await service.create({ slug: 'shoes', name: 'Shoes' })
     const found = await service.getById(created.id)
-    expect(found.slug).toBe('shoes')
+    // A round trip through the repository loses nothing the caller was handed.
+    expect(found).toEqual(created)
     await commandStore.close()
   })
 
@@ -106,10 +107,16 @@ describe('CategoryService', () => {
     await eventBus.subscribe(EVT_CATEGORY_UPDATED, (e) => {
       events.push(e.payload)
     })
-    const created = await service.create({ slug: 'electro', name: 'Electronics' })
+    const created = await service.create({
+      slug: 'electro',
+      name: 'Electronics',
+      description: 'Gadgets',
+      position: 3,
+    })
     const updated = await service.update(created.id, { name: 'Consumer Electronics' })
-    expect(updated.name).toBe('Consumer Electronics')
-    expect(events).toHaveLength(1)
+    // A patch changes only the fields it names; the event carries the row the caller got back.
+    expect(updated).toEqual({ ...created, name: 'Consumer Electronics' })
+    expect(events).toEqual([{ category: updated }])
     await commandStore.close()
   })
 
@@ -125,10 +132,16 @@ describe('CategoryService', () => {
     await eventBus.subscribe(EVT_CATEGORY_DELETED, (e) => {
       events.push(e.payload)
     })
+    const kept = await service.create({ slug: 'to-keep', name: 'Keep Me' })
     const created = await service.create({ slug: 'to-delete', name: 'Delete Me' })
+    const before = await service.list()
     await service.delete(created.id)
+    const after = await service.list()
     await expect(service.getById(created.id)).rejects.toThrow(NotFoundError)
-    expect(events).toHaveLength(1)
+    // Exactly one row goes, and it is the one named: a delete without its id filter empties the table.
+    expect(after).toHaveLength(before.length - 1)
+    expect(after.map((c) => c.id)).toEqual([kept.id])
+    expect(events).toEqual([{ categoryId: created.id, slug: created.slug }])
     await commandStore.close()
   })
 

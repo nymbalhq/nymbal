@@ -23,7 +23,7 @@ import {
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
 import { runWooCommerceImport } from '@nymbalhq/importers'
-import { wirePublisher } from '../../../platform/tests/support/publisher.js'
+import { wirePublisher } from '../../../platform/src/tests/publisher.js'
 
 const MIGRATIONS_ROOT = new URL('../../../platform/migrations', import.meta.url).pathname
 const FIXTURE_DIR = new URL('./fixtures', import.meta.url).pathname

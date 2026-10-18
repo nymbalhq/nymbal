@@ -13,7 +13,7 @@ import { createLogger } from '../../src/logger.js'
 import { buildRepositories, type Repositories } from '../../src/repositories/index.js'
 import { startEventRetentionSweeper } from '../../src/sweepers/index.js'
 import { kernelConfig, MIGRATIONS_ROOT } from '../support/kernel.js'
-import { TEST_BUILDER_CONTEXT } from '../support/publisher.js'
+import { TEST_BUILDER_CONTEXT } from '../../src/tests/publisher.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // P1-03 AC-8 on SQLite: the retention sweeper's tick() deletes delivered events and processed-event records older than

@@ -431,12 +431,12 @@ describe('AC-19: the real sentinel set', () => {
       lines: [176, 176],
       marks: /findByPaymentIntentId\(/,
     },
-    // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, re-based once the
-    // outbox lands, as P1-02 did for S001-S004.
+    // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
+    // outbox as it landed, as P1-02 did for S001-S004.
     S005: {
       kind: 'injected',
       path: 'packages/platform/src/events/publisher.ts',
-      lines: [58, 64],
+      lines: [68, 70],
       marks: /append\(/,
     },
     S006: {

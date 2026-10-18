@@ -3,7 +3,7 @@ import type { NymbalEvent } from '@nymbalhq/types'
 import { createEventBuilder } from '../../../src/events/builder.js'
 import { withIdempotency } from '../../../src/handlers/idempotency.js'
 import type { Kernel } from '../kernel.js'
-import { TEST_BUILDER_CONTEXT } from '../publisher.js'
+import { TEST_BUILDER_CONTEXT } from '../../../src/tests/publisher.js'
 import { openRaw } from '../raw.js'
 
 // P1-03 AC-7 on one dialect: a withIdempotency handler sees an event id, the kernel stops, a new kernel opens the same
