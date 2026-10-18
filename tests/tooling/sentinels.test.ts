@@ -410,32 +410,32 @@ describe('AC-19: the real sentinel set', () => {
     S001: {
       kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
-      lines: [60, 70],
+      lines: [276, 282],
       marks: /BEGIN IMMEDIATE/,
     },
     S002: {
       kind: 'injected',
-      path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [105, 115],
-      marks: /decrementStock\(/,
+      path: 'packages/platform/src/repositories/variant.ts',
+      lines: [207, 212],
+      marks: /gte\(postgresSchema\.variants\.stock, qty\)/,
     },
     S003: {
       kind: 'injected',
       path: 'packages/platform/src/repositories/variant.ts',
-      lines: [120, 130],
-      marks: /postgresSchema\.variants/,
+      lines: [150, 151],
+      marks: /postgresDb\(tx\)\s+\.insert\(postgresSchema\.variants\)/,
     },
     S004: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [200, 202],
+      lines: [176, 176],
       marks: /findByPaymentIntentId\(/,
     },
     S005: {
       kind: 'present',
-      path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [125, 125],
-      marks: /publisher\.publish/,
+      path: 'packages/platform/src/db/command-store.ts',
+      lines: [112, 119],
+      marks: /scope\.held\.push\(send\)/,
     },
     S006: {
       kind: 'present',
@@ -446,7 +446,7 @@ describe('AC-19: the real sentinel set', () => {
     S007: {
       kind: 'present',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [179, 199],
+      lines: [174, 226],
       marks: /finalize\(paymentIntentId, paidAmountMinor\)/,
     },
     S008: {
@@ -458,19 +458,19 @@ describe('AC-19: the real sentinel set', () => {
     I101: {
       kind: 'injected',
       path: 'packages/platform/src/services/inventory-service.ts',
-      lines: [107, 111],
+      lines: [126, 134],
       marks: /inventory\.insufficient/,
     },
     I102: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [192, 194],
+      lines: [189, 191],
       marks: /commitReservation/,
     },
     I103: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
-      lines: [130, 130],
+      lines: [112, 112],
       marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
     },
     I104: {
@@ -482,7 +482,7 @@ describe('AC-19: the real sentinel set', () => {
     I105: {
       kind: 'injected',
       path: 'packages/platform/src/services/auth-service.ts',
-      lines: [208, 208],
+      lines: [216, 216],
       marks: /revokedAt/,
     },
   }
@@ -528,7 +528,7 @@ describe('AC-19: the real sentinel set', () => {
     },
   )
 
-  it.each(Object.keys(EXPECTED).filter((id) => id.startsWith('I')))(
+  it.each(Object.keys(EXPECTED).filter((id) => EXPECTED[id]?.kind === 'injected'))(
     'AC-19: injected %s changes the file its where names and git apply --check --cached is clean',
     (id) => {
       const want = EXPECTED[id]

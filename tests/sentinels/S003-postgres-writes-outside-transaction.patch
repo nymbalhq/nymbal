@@ -1,18 +1,26 @@
 # id: S003
 # kind: injected
 # defect: a repository write goes through the raw Drizzle client (the pool) instead of the transaction's client, so on Postgres it commits on its own connection and survives the transaction's rollback
-# where: packages/platform/src/repositories/variant.ts:120-130
-# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/transactions.postgres.test.ts AC-5, AC-9)
+# where: packages/platform/src/repositories/variant.ts:150-151
+# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/transactions.postgres.test.ts AC-5)
 # suite: NYMBAL_TEST_POSTGRES_URL=postgres://postgres:nymbal@localhost:54329/nymbal pnpm vitest run --project integration-postgres packages/platform/tests/postgres/transactions.postgres.test.ts
 diff --git a/packages/platform/src/repositories/variant.ts b/packages/platform/src/repositories/variant.ts
 --- a/packages/platform/src/repositories/variant.ts
 +++ b/packages/platform/src/repositories/variant.ts
-@@ -120,7 +120,7 @@
--      await pg(tx).insert(postgresSchema.variants).values({
-+      await rawClients(store).db.insert(postgresSchema.variants).values({
-         ...common,
-         dimensions: v.dimensions ?? null,
-         options: v.options,
-         createdAt: v.createdAt,
-         updatedAt: v.updatedAt,
-       })
+@@ -2,6 +2,7 @@
+ import type { Variant, VariantOption, VariantStatus, VariantDimensions } from '@nymbalhq/types'
+ import {
+   postgresDb,
++  rawClients,
+   sqliteDb,
+   type CommandStore,
+   type ReadTx,
+@@ -147,7 +148,7 @@
+           .run()
+         return
+       }
+-      await postgresDb(tx)
++      await (rawClients(store).db as ReturnType<typeof postgresDb>)
+         .insert(postgresSchema.variants)
+         .values({
+           ...common,

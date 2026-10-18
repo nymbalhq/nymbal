@@ -1,19 +1,32 @@
 # id: S002
 # kind: injected
-# defect: reserveStock reads stock, computes stock - qty in JS and writes it back instead of one conditional decrement, so concurrent reservations under READ COMMITTED oversell (SQLite serialises its one connection, so Postgres catches this)
-# where: packages/platform/src/services/inventory-service.ts:105-115
-# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/inventory-concurrency.postgres.test.ts AC-3; checkout-race.postgres.test.ts AC-2)
+# defect: the Postgres decrementStock behind reserveStock reads stock, computes stock - qty in JS and writes it back instead of one conditional UPDATE, so concurrent reservations under READ COMMITTED lose updates and oversell (SQLite serialises its one connection, so Postgres catches this)
+# where: packages/platform/src/repositories/variant.ts:207-212
+# killed-by: P1-02 acceptance tests (packages/platform/tests/postgres/inventory-concurrency.postgres.test.ts AC-3, AC-13)
 # suite: NYMBAL_TEST_POSTGRES_URL=postgres://postgres:nymbal@localhost:54329/nymbal pnpm vitest run --project integration-postgres packages/platform/tests/postgres/inventory-concurrency.postgres.test.ts
-diff --git a/packages/platform/src/services/inventory-service.ts b/packages/platform/src/services/inventory-service.ts
---- a/packages/platform/src/services/inventory-service.ts
-+++ b/packages/platform/src/services/inventory-service.ts
-@@ -105,6 +105,7 @@
--        const remaining = await repos.variant.decrementStock(tx, variant.id, qty, now)
--        if (remaining === null) {
-+        if (variant.stock < qty) {
-           throw new AdapterError('inventory.insufficient', `Insufficient stock for variant ${variantId}`, {
-             context: { variantId, requested: qty, available: variant.stock },
-           })
-         }
-+        await repos.variant.incrementStock(tx, variant.id, -qty, now)
-+        const remaining = variant.stock - qty
+diff --git a/packages/platform/src/repositories/variant.ts b/packages/platform/src/repositories/variant.ts
+--- a/packages/platform/src/repositories/variant.ts
++++ b/packages/platform/src/repositories/variant.ts
+@@ -204,12 +204,17 @@
+           .get()
+         return row ? Number(row.stock) : null
+       }
+-      const [row] = await postgresDb(tx)
++      const [current] = await postgresDb(tx)
++        .select({ stock: postgresSchema.variants.stock })
++        .from(postgresSchema.variants)
++        .where(eq(postgresSchema.variants.id, id))
++      if (!current || Number(current.stock) < qty) return null
++      const stock = Number(current.stock) - qty
++      await postgresDb(tx)
+         .update(postgresSchema.variants)
+-        .set({ stock: sql`${postgresSchema.variants.stock} - ${qty}`, updatedAt: at })
+-        .where(and(eq(postgresSchema.variants.id, id), gte(postgresSchema.variants.stock, qty)))
+-        .returning({ stock: postgresSchema.variants.stock })
+-      return row ? Number(row.stock) : null
++        .set({ stock, updatedAt: at })
++        .where(eq(postgresSchema.variants.id, id))
++      return stock
+     },
+     async incrementStock(tx, id, qty, at) {
+       if (tx.kind === 'sqlite') {
