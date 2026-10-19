@@ -199,17 +199,32 @@ describe('P1-08 AC-3: a placed order goes only into the lists whose filter admit
       ],
       [
         'order.refunded.v1',
-        (h, orderId) => h('order.refunded.v1', { orderId, amountMinor: 1000, reason: 'returned' }),
+        (h, orderId) => {
+          // P1-13 gives refund payloads refundId and currency and drops the partial's lineItems. Built apart from
+          // the call (no excess-property check), so the payload fits the event map before and after that change.
+          const payload = {
+            orderId,
+            refundId: 'refund-1',
+            amountMinor: 1000,
+            currency: 'GBP',
+            reason: 'returned',
+          }
+          h('order.refunded.v1', payload)
+        },
       ],
       [
         'order.partially_refunded.v1',
-        (h, orderId) =>
-          h('order.partially_refunded.v1', {
+        (h, orderId) => {
+          const payload = {
             orderId,
+            refundId: 'refund-2',
             amountMinor: 500,
+            currency: 'GBP',
             lineItems: [],
             reason: 'one item',
-          }),
+          }
+          h('order.partially_refunded.v1', payload)
+        },
       ],
     ]
 

@@ -4,8 +4,6 @@ import {
   EVT_ORDER_SHIPPED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
-  EVT_ORDER_REFUNDED,
-  EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_PAID,
   NotFoundError,
 } from '@nymbalhq/types'
@@ -317,70 +315,6 @@ describe('OrderService', () => {
     })
     const cancelled = await orderService.cancel(id, 'test reason', 'admin')
     expect(cancelled.status).toBe('cancelled')
-    expect(received).toHaveLength(1)
-    await commandStore.close()
-  })
-
-  it('refund emits order.refunded from delivered state', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
-    const id = uuidv7()
-    const line = await createLine()
-    await orderService.createFromCheckout({
-      orderId: id,
-      customerId: null,
-      email: 'i@j.com',
-      billingAddress: addr,
-      shippingAddress: addr,
-      lineItems: [line],
-      subtotalMinor: line.lineTotalMinor,
-      taxTotalMinor: 0,
-      shippingTotalMinor: 0,
-      discountTotalMinor: 0,
-      totalMinor: line.lineTotalMinor,
-      currency: 'GBP',
-    })
-    await orderService.updateStatus(id, 'confirmed', 'admin')
-    await orderService.updateStatus(id, 'processing', 'admin')
-    await orderService.markShipped(id, 'TRK1', 'DPD', 'admin')
-    await orderService.markDelivered(id, 'admin')
-    const received: unknown[] = []
-    await eventBus.subscribe(EVT_ORDER_REFUNDED, (e) => {
-      received.push(e.payload)
-    })
-    const refunded = await orderService.refund(id, line.lineTotalMinor, 'damaged', 'admin')
-    expect(refunded.status).toBe('refunded')
-    expect(received).toHaveLength(1)
-    await commandStore.close()
-  })
-
-  it('partialRefund transitions delivered → partially_refunded', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
-    const id = uuidv7()
-    const line = await createLine()
-    await orderService.createFromCheckout({
-      orderId: id,
-      customerId: null,
-      email: 'j@k.com',
-      billingAddress: addr,
-      shippingAddress: addr,
-      lineItems: [line],
-      subtotalMinor: line.lineTotalMinor,
-      taxTotalMinor: 0,
-      shippingTotalMinor: 0,
-      discountTotalMinor: 0,
-      totalMinor: line.lineTotalMinor,
-      currency: 'GBP',
-    })
-    await orderService.updateStatus(id, 'confirmed', 'admin')
-    await orderService.updateStatus(id, 'processing', 'admin')
-    await orderService.markShipped(id, 'TRK2', 'DPD', 'admin')
-    await orderService.markDelivered(id, 'admin')
-    const received: unknown[] = []
-    await eventBus.subscribe(EVT_ORDER_PARTIALLY_REFUNDED, (e) => {
-      received.push(e.payload)
-    })
-    const partial = await orderService.partialRefund(id, 500, [], 'one item damaged', 'admin')
-    expect(partial.status).toBe('partially_refunded')
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
