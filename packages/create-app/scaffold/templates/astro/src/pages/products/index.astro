@@ -6,10 +6,12 @@ import Breadcrumb from '../../components/Breadcrumb.astro'
 import ProductCard from '../../components/ProductCard.astro'
 import SortDropdown from '../../components/SortDropdown.astro'
 import Pagination from '../../components/Pagination.astro'
-import { fetchProducts, fetchCategories } from '../../lib/api'
+import { fetchProducts, fetchCategories, sortFromUrl } from '../../lib/api'
+
+const sort = sortFromUrl(Astro.url)
 
 const [productResult, categories] = await Promise.all([
-  fetchProducts({ limit: 24 }),
+  fetchProducts({ limit: 24, sort }),
   fetchCategories(),
 ])
 
@@ -34,7 +36,7 @@ const facets = productResult.facets ?? []
       </aside>
 
       <div class="plp-grid-area">
-        <SortDropdown />
+        <SortDropdown sort={sort} />
 
         <div class="product-grid" id="product-grid">
           {products.map((product) => (

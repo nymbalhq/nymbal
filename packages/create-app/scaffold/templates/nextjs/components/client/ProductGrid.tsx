@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
-import type { Category, Facet } from '@nymbalhq/types'
+import type { Category, Facet, ProductSortKey } from '@nymbalhq/types'
 import { useProductList } from '@nymbalhq/react'
 import { ProductFilter } from '@nymbalhq/react'
 import { ProductCard } from '@/components/server/ProductCard'
@@ -12,6 +12,7 @@ import styles from '@/styles/pages/plp.module.css'
 interface ProductGridProps {
   initialProducts: DenormalisedProduct[]
   initialCursor: string | null
+  initialSort: ProductSortKey
   categorySlug?: string
   categories: Category[]
 }
@@ -19,10 +20,11 @@ interface ProductGridProps {
 export function ProductGrid({
   initialProducts,
   initialCursor,
+  initialSort,
   categorySlug,
   categories,
 }: ProductGridProps) {
-  const { products, facets, pagination, loading, load, loadMore } = useProductList()
+  const { products, facets, pagination, loading, sort, load, loadMore, setSort } = useProductList()
   const [initialized, setInitialized] = useState(false)
   const [showMobileFilters, setShowMobileFilters] = useState(false)
   // Preserve the widest facet list seen so filter options never disappear during a
@@ -34,9 +36,20 @@ export function ProductGrid({
   )
 
   useEffect(() => {
-    load({ limit: 24, category: categorySlug })
+    load({ limit: 24, category: categorySlug, sort: initialSort })
     setInitialized(true)
-  }, [categorySlug, load])
+  }, [categorySlug, initialSort, load])
+
+  // The URL carries the sort, so a reload or a shared link renders the same order server-side.
+  const handleSort = useCallback(
+    (key: ProductSortKey) => {
+      const url = new URL(window.location.href)
+      url.searchParams.set('sort', key)
+      window.history.replaceState(window.history.state, '', url)
+      void setSort(key)
+    },
+    [setSort],
+  )
 
   // Keep stableFacets updated whenever the store returns a wider facet list.
   useEffect(() => {
@@ -85,7 +98,7 @@ export function ProductGrid({
           <span className={styles.resultCount}>
             {displayProducts.length} product{displayProducts.length !== 1 ? 's' : ''}
           </span>
-          <SortDropdown />
+          <SortDropdown value={initialized ? sort : initialSort} onChange={handleSort} />
         </div>
 
         {displayProducts.length > 0 ? (

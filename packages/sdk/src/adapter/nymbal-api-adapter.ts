@@ -59,6 +59,7 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         if (params?.limit !== undefined) search.set('limit', String(params.limit))
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
         if (params?.category !== undefined) search.set('category', params.category)
+        if (params?.sort !== undefined) search.set('sort', params.sort)
         const qs = search.toString()
         return fetchClient.request<ProductListResult>('GET', `/api/products${qs ? `?${qs}` : ''}`)
       },

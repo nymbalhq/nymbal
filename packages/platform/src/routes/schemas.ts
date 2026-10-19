@@ -1,4 +1,5 @@
 import { z, type ZodTypeAny } from 'zod'
+import { PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 
 /**
  * The input of one route: what `registerAllRoutes` parses before the handler runs, and what a tool definition is
@@ -128,8 +129,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/products': {
     name: 'products.list',
-    description: 'List products, optionally in one category.',
-    query: z.object({ limit: queryValue, cursor: queryValue, category: queryValue }),
+    description:
+      'List products, optionally in one category, in one of the sort orders (default newest).',
+    query: z.object({
+      limit: queryValue,
+      cursor: queryValue,
+      category: queryValue,
+      sort: z.enum(PRODUCT_SORT_KEYS).optional(),
+    }),
   },
   'GET /api/products/:slug': {
     name: 'products.get',

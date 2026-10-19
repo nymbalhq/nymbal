@@ -1,3 +1,4 @@
+import type { ProductSortKey } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
 
@@ -6,9 +7,11 @@ const sortSelect = document.getElementById('sort-select') as HTMLSelectElement |
 const loadMoreBtn = document.getElementById('load-more-btn')
 const countEl = document.getElementById('product-count')
 
-// Load initial from URL params
+// A category page carries its category in the path, which the server render puts on the grid; /products may carry
+// one in the query. The server render also selected the URL's sort in the dropdown.
 const urlParams = new URLSearchParams(window.location.search)
-const initialCategory = urlParams.get('category')
+const initialCategory = gridContainer?.dataset.category ?? urlParams.get('category') ?? undefined
+const initialSort = (sortSelect?.value ?? 'newest') as ProductSortKey
 
 function renderProductCard(product: any): string {
   const imageUrl =
@@ -76,33 +79,19 @@ function renderGrid() {
 // re-renders (sort, filter, load-more) and never fires with empty state while
 // SSR content is still the source of truth.
 async function init() {
-  if (initialCategory) {
-    await client.productList.applyFilter('category', initialCategory)
-  } else {
-    await client.productList.load({ limit: 24 })
-  }
+  await client.productList.load({ limit: 24, category: initialCategory, sort: initialSort })
   client.productList.subscribe(renderGrid)
 }
 
 void init()
 
-// Sort handler
+// The URL carries the sort, so a reload or a shared link renders the same order server-side.
 sortSelect?.addEventListener('change', () => {
-  const value = sortSelect.value
-  switch (value) {
-    case 'newest':
-      client.productList.setSort('createdAt', 'desc')
-      break
-    case 'price-asc':
-      client.productList.setSort('priceMinor', 'asc')
-      break
-    case 'price-desc':
-      client.productList.setSort('priceMinor', 'desc')
-      break
-    case 'name-asc':
-      client.productList.setSort('name', 'asc')
-      break
-  }
+  const sort = sortSelect.value as ProductSortKey
+  const url = new URL(window.location.href)
+  url.searchParams.set('sort', sort)
+  window.history.replaceState(window.history.state, '', url)
+  void client.productList.setSort(sort)
 })
 
 // Load more handler
