@@ -680,14 +680,19 @@ function isStrykerInput(path: string): boolean {
 }
 
 /**
- * The files Stryker mutates for this change set: the changed ones in the mutate set, or, when only its tests or
- * configs changed, the whole set (incremental mode reuses every result those changes cannot have moved).
+ * The files Stryker mutates for this change set: the whole mutate set whenever one of its tests or configs changed,
+ * otherwise the changed ones in the set. A changed test invalidates cached kills in files it did not change, and a
+ * `--mutate` narrowed to the changed sources leaves those unmeasured; incremental mode re-measures only the mutants
+ * the changed tests can move, so the whole set costs only those.
  */
 export async function strykerTargets(root: string, changed: string[]): Promise<string[]> {
-  // A deleted file has nothing left to mutate.
-  const present = changed.filter((path) => existsSync(resolve(root, path)))
-  const mutated = await mutateSet(root, present)
-  if (mutated.length > 0 || !changed.some(isStrykerInput)) return mutated
+  if (!changed.some(isStrykerInput)) {
+    // A deleted file has nothing left to mutate.
+    return mutateSet(
+      root,
+      changed.filter((path) => existsSync(resolve(root, path))),
+    )
+  }
   const tracked = lines(git(root, ['ls-files']))
   return mutateSet(
     root,
