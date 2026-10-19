@@ -13,6 +13,8 @@ export interface PaymentIntentParams {
   currency: string
   orderRef?: string
   customerId?: string
+  /** Where the provider sends its receipt (Stripe's `receipt_email`). */
+  receiptEmail?: string
   metadata?: Record<string, string>
 }
 
@@ -23,6 +25,15 @@ export interface PaymentIntent {
   currency: string
   status: PaymentStatus
   providerPayload?: Record<string, unknown>
+}
+
+/**
+ * What a checkout tells the shopper about their payment: `succeeded` once the order is confirmed, `requires_action`
+ * while the provider waits on the shopper (a Stripe confirmation), `failed` with the reason when it will not complete.
+ */
+export interface CheckoutPayment {
+  status: 'succeeded' | 'requires_action' | 'failed'
+  reason?: string
 }
 
 export interface PaymentCapture {
@@ -44,11 +55,7 @@ export interface Refund {
 export interface WebhookResult {
   verified: boolean
   eventId: string
-  kind:
-    | 'payment.captured'
-    | 'payment.failed'
-    | 'payment.refunded'
-    | 'ignored'
+  kind: 'payment.captured' | 'payment.failed' | 'payment.refunded' | 'ignored'
   paymentIntentId?: string
   amountMinor?: number
   currency?: string

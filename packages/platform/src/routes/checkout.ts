@@ -18,11 +18,7 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
       const cartToken = ctx.cookies[CART_COOKIE]
       if (!cartToken) return fail('checkout.no_cart', 'No active cart', 400)
       if (!body?.email || !body.billingAddress || !body.shippingAddress) {
-        return fail(
-          'checkout.invalid',
-          'email, billingAddress, shippingAddress are required',
-          400,
-        )
+        return fail('checkout.invalid', 'email, billingAddress, shippingAddress are required', 400)
       }
       const result = await checkout.beginCheckout({
         cartToken,
@@ -38,6 +34,8 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         paymentIntent: result.paymentIntent,
         currency: result.currency,
         totalMinor: result.totalMinor,
+        orderStatus: result.orderStatus,
+        payment: result.payment,
       })
     } catch (err) {
       return renderError(err)

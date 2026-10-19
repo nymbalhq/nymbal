@@ -52,7 +52,8 @@ async function createPendingOrder(
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
     headers: await csrf(request, API_URL),
     data: {
-      email: 'e2e-admin-orders@nymbal.dev',
+      // `+stub-pending` (P1-12 decision 7): the stub leaves the order pending for the admin to confirm.
+      email: 'e2e-admin-orders+stub-pending@nymbal.dev',
       billingAddress: address,
       shippingAddress: address,
     },

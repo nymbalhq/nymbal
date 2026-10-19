@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
@@ -8,6 +10,14 @@ const isCI = !!process.env.CI
 const target = process.env.NYMBAL_E2E_TARGET
 const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
 
+// Every run gets a database of its own, as CI's fresh checkout does: the repo-root nymbal.db keeps what earlier runs
+// created (products from `ownProduct`, orders), and a crashed run cleans nothing up. `dev` migrates and seeds an empty
+// file. Set here once and inherited by the workers, which load this file again; set it to reuse a database.
+const sqlitePath = (process.env.NYMBAL_E2E_SQLITE_PATH ??= join(
+  tmpdir(),
+  `nymbal-e2e-${Date.now()}-${process.pid}.db`,
+))
+
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
   command: 'node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only',
@@ -17,6 +27,7 @@ const apiServer = {
   timeout: 90000,
   env: {
     NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_SQLITE_PATH: sqlitePath,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }

@@ -35,6 +35,7 @@ export interface OrderCreateDraftInput {
   notes?: string
   metadata?: Record<string, unknown>
   paymentIntentId?: string | null
+  cartToken?: string | null
 }
 
 export interface OrderImportInput extends OrderCreateDraftInput {
@@ -134,6 +135,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           notes: input.notes ?? '',
           metadata: input.metadata ?? {},
           paymentIntentId: input.paymentIntentId ?? null,
+          cartToken: input.cartToken ?? null,
           createdAt: now,
           updatedAt: now,
         })

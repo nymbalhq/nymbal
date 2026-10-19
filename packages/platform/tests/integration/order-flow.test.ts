@@ -208,7 +208,8 @@ describe('Full order flow: cart → checkout → payment → order', () => {
 
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      email: 'buyer@test.com',
+      // `+stub-pending` (P1-12 decision 7): the payment fails, so the stub must not pay inline.
+      email: 'buyer+stub-pending@test.com',
       billingAddress: testAddr,
       shippingAddress: testAddr,
     })

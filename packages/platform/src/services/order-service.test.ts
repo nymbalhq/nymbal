@@ -470,4 +470,55 @@ describe('OrderService', () => {
     expect(order.orderNumber).toBe('WC-1002')
     await commandStore.close()
   })
+
+  // P1-12 decision 6. Defect: createFromCheckout drops the cart token (a resubmit then never finds its pending order and
+  // makes a second one), the pending lookup returns a settled order, or the converted lookup returns a pending or
+  // cancelled order, or an older one, so an emptied cart's 409 names the wrong order.
+  it("decision 6: a cart's pending order is found by its token, and its last converted order excludes pending and cancelled ones", async () => {
+    const { commandStore, orderService, repos } = await setup()
+    const token = uuidv7()
+    const other = uuidv7()
+    const place = async (cartToken: string) => {
+      const line = await createLine()
+      return orderService.createFromCheckout({
+        orderId: uuidv7(),
+        customerId: null,
+        email: 'cart@example.com',
+        billingAddress: addr,
+        shippingAddress: addr,
+        lineItems: [line],
+        subtotalMinor: line.lineTotalMinor,
+        taxTotalMinor: 0,
+        shippingTotalMinor: 0,
+        discountTotalMinor: 0,
+        totalMinor: line.lineTotalMinor,
+        currency: 'GBP',
+        cartToken,
+      })
+    }
+    const pendingOf = (t: string) =>
+      commandStore.read((tx) => repos.order.findPendingByCartToken(tx, t))
+    const convertedOf = (t: string) =>
+      commandStore.read((tx) => repos.order.findLastConvertedByCartToken(tx, t))
+
+    const older = await place(token)
+    expect((await pendingOf(token))?.id).toBe(older.id)
+    await orderService.updateStatus(older.id, 'confirmed', 'admin')
+    expect(await pendingOf(token)).toBeNull()
+    const converted = await place(token)
+    await orderService.updateStatus(converted.id, 'confirmed', 'admin')
+    const cancelled = await place(token)
+    await orderService.cancel(cancelled.id, 'changed my mind', 'admin')
+    const pending = await place(token)
+    const elsewhere = await place(other)
+
+    expect((await pendingOf(token))?.id).toBe(pending.id)
+    expect((await pendingOf(other))?.id).toBe(elsewhere.id)
+    expect(await pendingOf(uuidv7())).toBeNull()
+    // The newest order the cart became, past a later cancelled one and the pending one.
+    expect((await convertedOf(token))?.id).toBe(converted.id)
+    expect(converted.sequence).toBeGreaterThan(older.sequence)
+    expect(await convertedOf(other)).toBeNull()
+    await commandStore.close()
+  })
 })

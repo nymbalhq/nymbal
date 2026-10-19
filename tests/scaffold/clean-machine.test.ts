@@ -166,7 +166,8 @@ describe('AC-11: a clean-machine scaffold', () => {
     expect(shown.length, `none of ${names.length} seeded names in GET /`).toBeGreaterThan(0)
   })
 
-  it('AC-11: cart, checkout and a stub finalise over the API leave the order confirmed and stock down by the quantity', async () => {
+  // P1-12 AC-11: the stub pays inline, so the checkout alone confirms; no webhook call (P1-12 decision 8).
+  it('AC-11: cart and checkout over the API, with no webhook call, leave the order confirmed and stock down by the quantity', async () => {
     const api = apiClient()
     const qty = 2
     const listing = await api<{ items: ProductDoc[] }>('GET', '/api/products?limit=100')
@@ -182,32 +183,12 @@ describe('AC-11: a clean-machine scaffold', () => {
     const added = await api('POST', '/api/cart/items', { variantId, qty })
     expect(added.status, JSON.stringify(added.data)).toBe(200)
 
-    const checkout = await api<{
-      orderNumber: string
-      paymentIntent: { id: string }
-      totalMinor: number
-      currency: string
-    }>('POST', '/api/checkout', {
+    const checkout = await api<{ orderNumber: string }>('POST', '/api/checkout', {
       email: `clean-machine-${randomBytes(4).toString('hex')}@nymbal.dev`,
       billingAddress: address,
       shippingAddress: address,
     })
     expect(checkout.status, JSON.stringify(checkout.data)).toBe(200)
-
-    // The stub payments adapter verifies any signature; the route only needs the header (see proof-kit/payments).
-    // eslint-disable-next-line no-restricted-syntax -- native-stub has no confirmation path of its own yet; P1-12 gives it one and removes this webhook call.
-    const finalised = await fetch(new URL('/api/webhooks/stripe', API_URL), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'stripe-signature': 'scaffold-clean-stub' },
-      body: JSON.stringify({
-        id: `evt_${randomBytes(8).toString('hex')}`,
-        kind: 'payment.captured',
-        paymentIntentId: checkout.data.paymentIntent.id,
-        amountMinor: checkout.data.totalMinor,
-        currency: checkout.data.currency,
-      }),
-    })
-    expect(finalised.status, await finalised.clone().text()).toBe(200)
 
     // Projections are asynchronous: poll the read side until it settles, bounded.
     await vi.waitFor(

@@ -54,7 +54,8 @@ await services.cart.addItem(cart.token, {
 
 const started = await services.checkout.beginCheckout({
   cartToken: cart.token,
-  email: 'convert@p1-04.test',
+  // `+stub-pending` (P1-12 decision 7): the order stays pending, so the finalize below is the one that confirms it.
+  email: 'convert+stub-pending@p1-04.test',
   billingAddress: address,
   shippingAddress: address,
 })

@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, notInArray } from 'drizzle-orm'
 import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -31,6 +31,8 @@ export interface OrderInsert {
   notes?: string
   metadata?: Record<string, unknown>
   paymentIntentId?: string | null
+  /** The cart a checkout order was placed from. */
+  cartToken?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -64,6 +66,10 @@ export interface OrderRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Order | null>
   findByOrderNumber(tx: ReadTx, orderNumber: string): Promise<Order | null>
   findByPaymentIntentId(tx: ReadTx, paymentIntentId: string): Promise<Order | null>
+  /** The cart's pending order: at most one, by the partial unique index on `cart_token`. */
+  findPendingByCartToken(tx: ReadTx, cartToken: string): Promise<Order | null>
+  /** The newest order the cart became: neither pending nor cancelled. */
+  findLastConvertedByCartToken(tx: ReadTx, cartToken: string): Promise<Order | null>
   listByCustomer(tx: ReadTx, customerId: string, limit?: number): Promise<Order[]>
   list(
     tx: ReadTx,
@@ -133,6 +139,45 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .limit(1)
       return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
     },
+    async findPendingByCartToken(tx, cartToken) {
+      if (tx.kind === 'sqlite') {
+        const o = sqliteSchema.orders
+        const row = sqliteDb(tx)
+          .select()
+          .from(o)
+          .where(and(eq(o.cartToken, cartToken), eq(o.status, 'pending')))
+          .get()
+        return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
+      }
+      const o = postgresSchema.orders
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(o)
+        .where(and(eq(o.cartToken, cartToken), eq(o.status, 'pending')))
+      return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
+    },
+    async findLastConvertedByCartToken(tx, cartToken) {
+      const unconverted = ['pending', 'cancelled'] as const
+      if (tx.kind === 'sqlite') {
+        const o = sqliteSchema.orders
+        const row = sqliteDb(tx)
+          .select()
+          .from(o)
+          .where(and(eq(o.cartToken, cartToken), notInArray(o.status, [...unconverted])))
+          .orderBy(desc(o.sequence))
+          .limit(1)
+          .get()
+        return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
+      }
+      const o = postgresSchema.orders
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(o)
+        .where(and(eq(o.cartToken, cartToken), notInArray(o.status, [...unconverted])))
+        .orderBy(desc(o.sequence))
+        .limit(1)
+      return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
+    },
     async listByCustomer(tx, customerId, limit = 50) {
       if (tx.kind === 'sqlite') {
         const rows = sqliteDb(tx)
@@ -193,6 +238,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         currency: o.currency,
         notes: o.notes ?? '',
         paymentIntentId: o.paymentIntentId ?? null,
+        cartToken: o.cartToken ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)

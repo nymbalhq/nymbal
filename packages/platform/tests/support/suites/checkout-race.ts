@@ -76,7 +76,9 @@ export function checkoutRaceSuite(
         const outcome = await race(
           async (i) => {
             const res = await shoppers[i]!.call<{ orderId: string }>('POST', '/api/checkout', {
-              email: `buyer-${run}-${i}-${tag}@p1-02.test`,
+              // `+stub-pending` (P1-12 decision 7): the race is for the reservation; the orders stay pending so their
+              // reservation rows are what the run counts.
+              email: `buyer-${run}-${i}-${tag}+stub-pending@p1-02.test`,
               billingAddress: address,
               shippingAddress: address,
             })
@@ -91,7 +93,7 @@ export function checkoutRaceSuite(
         expect(outcome.won.length, `run ${run}: checkouts that succeeded`).toBe(UNITS)
 
         const stock = await stockOf(raw, variantId)
-        const orderRows = await raw.count('orders', 'email LIKE ?', [`%-${tag}@%`])
+        const orderRows = await raw.count('orders', 'email LIKE ?', [`%-${tag}+stub-pending@%`])
         const reserved = await raw.rows<{ qty: number }>(
           'SELECT qty FROM inventory_reservations WHERE variant_id = ?',
           [variantId],
@@ -177,7 +179,7 @@ export function checkoutRaceSuite(
           (i) =>
             services.checkout.beginCheckout({
               cartToken: carts[i]!,
-              email: `inproc-${run}-${i}-${tag}@p1-02.test`,
+              email: `inproc-${run}-${i}-${tag}+stub-pending@p1-02.test`,
               billingAddress: address,
               shippingAddress: address,
             }),

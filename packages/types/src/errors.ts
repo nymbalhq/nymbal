@@ -88,6 +88,7 @@ export class PaymentError extends NymbalError {
       | 'intent_failed'
       | 'capture_failed'
       | 'refund_failed'
+      | 'cancel_refused'
       | 'webhook_invalid'
       | 'not_configured',
     message: string,
@@ -101,6 +102,8 @@ export class CheckoutError extends NymbalError {
   constructor(
     code:
       | 'cart_empty'
+      | 'in_progress'
+      | 'payment_in_progress'
       | 'variant_missing'
       | 'out_of_stock'
       | 'reservation_failed'

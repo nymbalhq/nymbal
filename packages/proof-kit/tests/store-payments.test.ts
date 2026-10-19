@@ -61,11 +61,14 @@ describe('AC-12: finaliseStubPayment through the real webhook route', () => {
     })
     const started = await services.checkout.beginCheckout({
       cartToken: cart.token,
-      email: `paid-${randomUUID()}@proof-kit.test`,
+      // `+stub-pending` (P1-12 decision 7): pending with its reservation until the hook below pays it.
+      email: `paid-${randomUUID()}+stub-pending@proof-kit.test`,
       billingAddress: address,
       shippingAddress: address,
     })
-    const reservedBefore = await platform.commandStore.read((tx) => repos.inventoryReservation.findByVariant(tx, variant.id))
+    const reservedBefore = await platform.commandStore.read((tx) =>
+      repos.inventoryReservation.findByVariant(tx, variant.id),
+    )
 
     const paid: string[] = []
     await platform.eventBus.subscribe(EVT_ORDER_PAID, (event) => {
@@ -84,8 +87,14 @@ describe('AC-12: finaliseStubPayment through the real webhook route', () => {
     const order = await services.order.getByOrderNumber(started.orderNumber)
     expect(order.status).toBe('confirmed')
     expect(reservedBefore).toHaveLength(1)
-    expect(await platform.commandStore.read((tx) => repos.inventoryReservation.findByVariant(tx, variant.id))).toHaveLength(0)
-    expect((await platform.commandStore.read((tx) => repos.variant.findById(tx, variant.id)))?.stock).toBe(initialStock - qty)
+    expect(
+      await platform.commandStore.read((tx) =>
+        repos.inventoryReservation.findByVariant(tx, variant.id),
+      ),
+    ).toHaveLength(0)
+    expect(
+      (await platform.commandStore.read((tx) => repos.variant.findById(tx, variant.id)))?.stock,
+    ).toBe(initialStock - qty)
     expect(paid).toHaveLength(1)
 
     const again = await finaliseStubPayment(store.baseUrl, hook)

@@ -50,6 +50,16 @@ function mapStatus(status: Stripe.PaymentIntent.Status): PaymentStatus {
   }
 }
 
+function toIntent(intent: Stripe.PaymentIntent): PaymentIntent {
+  return {
+    id: intent.id,
+    clientSecret: intent.client_secret ?? '',
+    amountMinor: intent.amount,
+    currency: toIsoCurrency(intent.currency),
+    status: mapStatus(intent.status),
+  }
+}
+
 export function createStripePaymentsAdapter(deps: {
   logger: Logger
   config: StripePaymentsConfig
@@ -92,19 +102,14 @@ export function createStripePaymentsAdapter(deps: {
           amount: params.amountMinor,
           currency: params.currency.toLowerCase(),
           automatic_payment_methods: { enabled: true },
+          ...(params.receiptEmail !== undefined && { receipt_email: params.receiptEmail }),
           metadata: {
             ...(params.metadata ?? {}),
             ...(params.orderRef !== undefined ? { orderRef: params.orderRef } : {}),
             ...(params.customerId !== undefined ? { customerId: params.customerId } : {}),
           },
         })
-        return {
-          id: intent.id,
-          clientSecret: intent.client_secret ?? '',
-          amountMinor: intent.amount,
-          currency: toIsoCurrency(intent.currency),
-          status: mapStatus(intent.status),
-        }
+        return toIntent(intent)
       } catch (err) {
         throw new PaymentError('intent_failed', 'Stripe createPaymentIntent failed', { cause: err })
       }
@@ -147,12 +152,36 @@ export function createStripePaymentsAdapter(deps: {
       const intent = await stripeClient.paymentIntents.retrieve(intentId)
       return mapStatus(intent.status)
     },
+    async getPaymentIntent(intentId): Promise<PaymentIntent> {
+      try {
+        return toIntent(await stripeClient.paymentIntents.retrieve(intentId))
+      } catch (err) {
+        throw new PaymentError('intent_failed', 'Stripe getPaymentIntent failed', { cause: err })
+      }
+    },
+    async cancelPaymentIntent(intentId): Promise<void> {
+      try {
+        await stripeClient.paymentIntents.cancel(intentId)
+      } catch (err) {
+        // A cancel that lost a race with an earlier one of ours is done; anything else (processing, captured) stays.
+        const status = await stripeClient.paymentIntents
+          .retrieve(intentId)
+          .then((intent) => intent.status)
+          .catch(() => undefined)
+        if (status === 'canceled') return
+        throw new PaymentError('cancel_refused', `Stripe would not cancel ${intentId}`, {
+          cause: err,
+        })
+      }
+    },
     async parseWebhook(rawBody, signature): Promise<WebhookResult> {
       let event: Stripe.Event
       try {
         event = stripeClient.webhooks.constructEvent(rawBody, signature, cfg.webhookSecret)
       } catch (err) {
-        throw new PaymentError('webhook_invalid', 'Stripe webhook signature invalid', { cause: err })
+        throw new PaymentError('webhook_invalid', 'Stripe webhook signature invalid', {
+          cause: err,
+        })
       }
       const baseResult = { verified: true, eventId: event.id } as const
       switch (event.type) {

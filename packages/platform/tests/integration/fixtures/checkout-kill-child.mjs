@@ -65,7 +65,8 @@ if (mode === 'kill') {
 
 await services.checkout.beginCheckout({
   cartToken: cart.token,
-  email: 'kill@p1-02.test',
+  // `+stub-pending` (P1-12 decision 7): the control's footprint is the checkout's own, with no inline payment.
+  email: 'kill+stub-pending@p1-02.test',
   billingAddress: address,
   shippingAddress: address,
 })

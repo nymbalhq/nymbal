@@ -49,8 +49,9 @@ const templates = [
 // Entries excluded from the scaffold copy, matched by EXACT basename so that
 // *.astro page/component FILES are copied while the .astro CACHE DIRECTORY is not.
 // (A previous endsWith() filter excluded every *.astro file — see the filter
-// regression test in test/scaffold.test.ts.)
-const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next'])
+// regression test in test/scaffold.test.ts.) `tests` holds a template's own jsdom tests, run by the monorepo's
+// Vitest; a scaffolded store does not get them.
+const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next', 'tests'])
 
 /**
  * Predicate for fs.cp's filter option: returns true when the entry should be copied.

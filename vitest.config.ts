@@ -90,6 +90,10 @@ export default defineConfig({
         },
       },
       {
+        // The Next template's own `@/…` imports (its tsconfig paths).
+        resolve: {
+          alias: { '@': fileURLToPath(new URL('./templates/nextjs', import.meta.url)) },
+        },
         test: {
           name: 'templates',
           environment: 'node',

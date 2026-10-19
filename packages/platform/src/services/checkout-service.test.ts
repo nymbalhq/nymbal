@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import fc from 'fast-check'
 import {
   EVT_ORDER_PAID,
@@ -7,8 +7,13 @@ import {
   EVT_PAYMENT_FAILED,
   EVT_CART_CONVERTED,
   EVT_CART_UPDATED,
+  EVT_ORDER_CANCELLED,
   CheckoutError,
   NotFoundError,
+  PaymentError,
+  type PaymentIntentParams,
+  type PaymentsAdapter,
+  type PaymentStatus,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -667,7 +672,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
       ...(customerId !== undefined && { customerId }),
-      email: `${tag}@example.com`,
+      // `+stub-pending` (P1-12 decision 7): every finalize below meets a pending order, as a webhook would.
+      email: `${tag}+stub-pending@example.com`,
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
     })
@@ -805,7 +811,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
           ).toEqual({
             orderNumber: cancelled.started.orderNumber,
             finalized: false,
-            reason: 'order_not_pending: cancelled',
+            reason: 'order_cancelled_refunded',
           })
           expect(
             await env.checkout.finalize(confirmed.started.paymentIntent.id, wrongOrRight),
@@ -821,7 +827,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 
   // Defect: the status check is skipped, so a captured payment confirms a cancelled order and takes its stock.
-  it('AC-6b: a captured payment for a cancelled order is order_not_pending: cancelled, recorded, the order untouched', async () => {
+  // P1-12 AC-12 (decision 11): the capture is refunded and recorded as order_cancelled_refunded.
+  it('AC-6b: a captured payment for a cancelled order is order_cancelled_refunded, recorded, the order untouched', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
       { priceMinor: 700, stock: 4, qty: 1 },
@@ -829,7 +836,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     await env.checkout.cancel(started.orderId, 'admin cancelled')
     const stockBefore = await stockOf(env, variants[0]!.id)
     const historyBefore = await historyOf(env, started.orderId)
-    const reason = 'order_not_pending: cancelled'
+    const reason = 'order_cancelled_refunded'
 
     const result = await env.checkout.finalize(started.paymentIntent.id, paid)
 
@@ -1150,13 +1157,13 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 
   // Defect: the lost race confirms anyway, or records the snapshot's status (pending) instead of the one re-read.
-  it('AC-12: a delivery that loses the race to a cancel records order_not_pending: cancelled and undoes its commits', async () => {
+  it('AC-12: a delivery that loses the race to a cancel records order_cancelled_refunded and undoes its commits', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
       { priceMinor: 650, stock: 4, qty: 2 },
     ])
     const heldBefore = await reservationsOf(env, variants[0]!.id)
-    const reason = 'order_not_pending: cancelled'
+    const reason = 'order_cancelled_refunded'
 
     const result = await raceAfterRead(env, 'cancelled').finalize(started.paymentIntent.id, paid)
 
@@ -1170,6 +1177,586 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     expect(await commitsOf(env, variants[0]!.id)).toHaveLength(0)
     const notes = (await historyOf(env, started.orderId)).filter((h) => h.note.includes(reason))
     expect(notes.map((n) => [n.fromStatus, n.toStatus])).toEqual([['cancelled', 'cancelled']])
+    await env.commandStore.close()
+  })
+})
+
+describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review B1, M2, M3', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  type Line = { priceMinor: number; stock: number; qty: number }
+  const logger = createLogger({ pretty: false, level: 'error' })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  /** The stub provider, with what checkout asked of it recorded and any call replaced. */
+  function provider(over: (stub: PaymentsAdapter) => Partial<PaymentsAdapter> = () => ({})) {
+    const stub = createNativeStubPaymentsAdapter({ logger })
+    const o = over(stub)
+    const calls = {
+      created: [] as PaymentIntentParams[],
+      cancelled: [] as string[],
+      refunded: [] as string[],
+    }
+    const payments: PaymentsAdapter = {
+      ...stub,
+      ...o,
+      async createPaymentIntent(params) {
+        calls.created.push(params)
+        return (o.createPaymentIntent ?? stub.createPaymentIntent)(params)
+      },
+      async cancelPaymentIntent(id) {
+        calls.cancelled.push(id)
+        return (o.cancelPaymentIntent ?? stub.cancelPaymentIntent)(id)
+      },
+      async refund(id, amountMinor, reason) {
+        calls.refunded.push(id)
+        return stub.refund(id, amountMinor, reason)
+      },
+    }
+    return { stub, payments, calls }
+  }
+
+  function checkoutWith(env: Env, payments: PaymentsAdapter, repos: Env['repos'] = env.repos) {
+    return createCheckoutService({
+      store: env.commandStore,
+      repos,
+      publisher: env.publisher,
+      logger,
+      cart: env.cart,
+      orders: env.order,
+      inventory: env.inventory,
+      payments,
+      currency: 'GBP',
+    })
+  }
+
+  async function cartWith(env: Env, lines: Line[]) {
+    const tag = uuidv7().slice(-8)
+    const product = await env.product.create({
+      slug: `begin-${tag}`,
+      name: `Begin ${tag}`,
+      status: 'active',
+      variants: lines.map((l, i) => ({
+        sku: `BEG-${tag}-${i}`,
+        name: `V${i}`,
+        priceMinor: l.priceMinor,
+        stock: l.stock,
+        lowStockThreshold: 0,
+        options: [],
+      })),
+    })
+    const cart = await env.cart.getOrCreate()
+    for (const [i, variant] of product.variants.entries()) {
+      await env.cart.addItem(cart.token, {
+        variantId: variant.id,
+        productId: product.id,
+        productName: product.name,
+        variantName: variant.name,
+        priceMinor: variant.priceMinor,
+        imageUrl: '',
+        qty: lines[i]!.qty,
+      })
+    }
+    return { token: cart.token, product, variants: product.variants }
+  }
+
+  type Checkout = ReturnType<typeof createCheckoutService>
+  /** `+stub-pending` unless asked otherwise: the intent waits for the shopper. */
+  const begin = (
+    checkout: Checkout,
+    cartToken: string,
+    opts: { email?: string; customerId?: string } = {},
+  ) =>
+    checkout.beginCheckout({
+      cartToken,
+      email: opts.email ?? 'shopper+stub-pending@example.com',
+      ...(opts.customerId !== undefined && { customerId: opts.customerId }),
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+    })
+
+  const orderOf = async (env: Env, orderId: string) =>
+    (await env.commandStore.read((tx) => env.repos.order.findById(tx, orderId)))!
+  const stockOf = async (env: Env, variantId: string) =>
+    (await env.commandStore.read((tx) => env.repos.variant.findById(tx, variantId)))!.stock
+  async function events(env: Env, type: string, orderId: string) {
+    const all = await env.commandStore.read((tx) => env.repos.eventLog.listAll(tx))
+    return all
+      .map((l) => l.event)
+      .filter((e) => e.type === type)
+      .map((e) => e.payload as Record<string, unknown>)
+      .filter((p) => p.orderId === orderId || (p.order as { id?: string })?.id === orderId)
+  }
+
+  const STATUSES: PaymentStatus[] = [
+    'requires_payment_method',
+    'requires_confirmation',
+    'requires_action',
+    'processing',
+    'requires_capture',
+    'succeeded',
+    'cancelled',
+    'failed',
+  ]
+  const expectedOutcome = (s: PaymentStatus) =>
+    s === 'succeeded'
+      ? 'succeeded'
+      : s === 'failed' || s === 'cancelled'
+        ? 'failed'
+        : 'requires_action'
+  const orderStatusFor = {
+    succeeded: 'confirmed',
+    failed: 'cancelled',
+    requires_action: 'pending',
+  } as const
+
+  // Defect: a status mapped to the wrong outcome (a cancelled intent left pending, a `processing` one confirmed), the
+  // answer's orderStatus taken from the T1 snapshot instead of the store, or a failed intent's stock kept.
+  it('decision 2: every intent status at creation maps to its payment outcome, and the answer is the stored order', async () => {
+    const line = { priceMinor: 700, stock: 5, qty: 2 }
+    for (const status of STATUSES) {
+      const env = await setup()
+      const { payments } = provider((stub) => ({
+        async createPaymentIntent(params) {
+          return { ...(await stub.createPaymentIntent(params)), status }
+        },
+      }))
+      const { token, variants } = await cartWith(env, [line])
+      const started = await begin(checkoutWith(env, payments), token)
+      const outcome = expectedOutcome(status)
+      const stored = await orderOf(env, started.orderId)
+
+      const failed = outcome === 'failed'
+      const reason = `payment_${status}`
+
+      expect({ status, payment: started.payment }).toEqual({
+        status,
+        payment: failed ? { status: outcome, reason } : { status: outcome },
+      })
+      expect(started.orderStatus).toBe(stored.status)
+      expect(stored.status).toBe(orderStatusFor[outcome])
+      // Stock held (or committed) for a live order, back in full for a cancelled one.
+      const held = failed ? 0 : line.qty
+      expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - held)
+      // payment.failed only for an intent that failed at creation, with its reason.
+      expect((await events(env, EVT_PAYMENT_FAILED, started.orderId)).map((p) => p.reason)).toEqual(
+        failed ? [reason] : [],
+      )
+      await env.commandStore.close()
+    }
+  })
+
+  // Defect: the intent params lose the total, the receipt email the stub's triggers read, or the customer id (or send
+  // `customerId: null` to the provider for a guest).
+  it('decision 7: the intent is for the order total and receipt email, with a customer id only for a customer', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+    const a = await cartWith(env, [{ priceMinor: 450, stock: 5, qty: 3 }])
+    const customerId = uuidv7()
+    const forCustomer = await begin(checkout, a.token, { customerId })
+    const b = await cartWith(env, [{ priceMinor: 450, stock: 5, qty: 1 }])
+    const guest = await begin(checkout, b.token)
+
+    expect(calls.created.map((p) => p.amountMinor)).toEqual([
+      forCustomer.totalMinor,
+      guest.totalMinor,
+    ])
+    expect(calls.created[0]!.receiptEmail).toBe('shopper+stub-pending@example.com')
+    expect(calls.created[0]!.customerId).toBe(customerId)
+    expect('customerId' in calls.created[1]!).toBe(false)
+    await env.commandStore.close()
+  })
+
+  // Defect: a resubmit makes a second intent or order, reserves the lines again, or answers without the intent.
+  it('decision 6: a resubmit of the same cart answers its pending order and intent, and reserves, creates and publishes nothing', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 800, stock: 6, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+    const first = await begin(checkout, token)
+    const placedBefore = await events(env, EVT_ORDER_PLACED, first.orderId)
+
+    const again = await begin(checkout, token)
+
+    expect(again.orderId).toBe(first.orderId)
+    expect(again.paymentIntent.id).toBe(first.paymentIntent.id)
+    expect(again.payment).toEqual({ status: 'requires_action' })
+    expect(again.orderStatus).toBe('pending')
+    expect(calls.created).toHaveLength(1)
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    expect(await events(env, EVT_ORDER_PLACED, first.orderId)).toHaveLength(placedBefore.length)
+    await env.commandStore.close()
+  })
+
+  // Defect: answerExisting reports the provider's `succeeded` as the checkout's, though only finalize confirms.
+  it('M3: a resubmit whose intent the provider has since captured answers requires_action and leaves the order pending', async () => {
+    const env = await setup()
+    const { stub, payments } = provider()
+    const checkout = checkoutWith(env, payments)
+    const { token } = await cartWith(env, [{ priceMinor: 300, stock: 4, qty: 1 }])
+    const first = await begin(checkout, token)
+    await stub.capturePayment(first.paymentIntent.id)
+
+    const again = await begin(checkout, token)
+
+    expect(again.orderId).toBe(first.orderId)
+    expect(again.paymentIntent.status).toBe('succeeded')
+    expect(again.payment).toEqual({ status: 'requires_action' })
+    expect(again.orderStatus).toBe('pending')
+    expect((await orderOf(env, first.orderId)).status).toBe('pending')
+    await env.commandStore.close()
+  })
+
+  // Defect: a resubmit answers an order whose intent can never be paid (the cart is stranded), cancels it through the
+  // provider again, or leaves its reservation held beside the new one.
+  it('M3: a resubmit whose intent the provider failed or cancelled cancels that order with payment_<status> and places a fresh one', async () => {
+    for (const closedStatus of ['failed', 'cancelled'] as const) {
+      const env = await setup()
+      let closedId = ''
+      const { payments, calls } = provider((stub) => ({
+        async getPaymentIntent(id) {
+          const intent = await stub.getPaymentIntent(id)
+          return id === closedId ? { ...intent, status: closedStatus } : intent
+        },
+      }))
+      const checkout = checkoutWith(env, payments)
+      const line = { priceMinor: 300, stock: 4, qty: 1 }
+      const { token, variants } = await cartWith(env, [line])
+      const first = await begin(checkout, token)
+      closedId = first.paymentIntent.id
+
+      const again = await begin(checkout, token)
+
+      expect(again.orderId).not.toBe(first.orderId)
+      expect(again.paymentIntent.id).not.toBe(first.paymentIntent.id)
+      expect(again.orderStatus).toBe('pending')
+      expect((await orderOf(env, first.orderId)).status).toBe('cancelled')
+      expect((await events(env, EVT_ORDER_CANCELLED, first.orderId)).map((p) => p.reason)).toEqual([
+        `payment_${closedStatus}`,
+      ])
+      expect(calls.cancelled).toEqual([])
+      expect(calls.created).toHaveLength(2)
+      // One order's worth held: the closed order's release and the fresh order's reserve.
+      expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+      await env.commandStore.close()
+    }
+  })
+
+  type Edit = {
+    name: string
+    lines: Line[]
+    edit: (env: Env, token: string, ids: string[]) => Promise<void>
+  }
+  const edits: Edit[] = [
+    {
+      name: 'quantities swapped at the same total',
+      lines: [
+        { priceMinor: 100, stock: 9, qty: 1 },
+        { priceMinor: 100, stock: 9, qty: 2 },
+      ],
+      async edit(env, token, [a, b]) {
+        await env.cart.updateItemQuantity(token, a!, 2)
+        await env.cart.updateItemQuantity(token, b!, 1)
+      },
+    },
+    {
+      name: 'lines reordered at the same quantities and total',
+      lines: [
+        { priceMinor: 100, stock: 9, qty: 1 },
+        { priceMinor: 100, stock: 9, qty: 1 },
+      ],
+      async edit(env, token, [a]) {
+        const c = (await env.cart.get(token))!
+        const item = c.items.find((i) => i.variantId === a)!
+        await env.cart.removeItem(token, a!)
+        await env.cart.addItem(token, item)
+      },
+    },
+    {
+      name: 'unit prices swapped at the same total',
+      lines: [
+        { priceMinor: 100, stock: 9, qty: 1 },
+        { priceMinor: 200, stock: 9, qty: 1 },
+      ],
+      async edit(env, token) {
+        const c = (await env.commandStore.read((tx) => env.repos.cart.findByToken(tx, token)))!
+        const [x, y] = c.items
+        await env.commandStore.transaction((tx) =>
+          env.repos.cart.put(tx, {
+            ...c,
+            items: [
+              { ...x!, priceMinor: y!.priceMinor },
+              { ...y!, priceMinor: x!.priceMinor },
+            ],
+          }),
+        )
+      },
+    },
+    {
+      name: 'a free line removed at the same total',
+      lines: [
+        { priceMinor: 250, stock: 9, qty: 1 },
+        { priceMinor: 0, stock: 9, qty: 1 },
+      ],
+      async edit(env, token, [, free]) {
+        await env.cart.removeItem(token, free!)
+      },
+    },
+    {
+      name: 'a quantity raised',
+      lines: [{ priceMinor: 150, stock: 9, qty: 1 }],
+      async edit(env, token, [a]) {
+        await env.cart.updateItemQuantity(token, a!, 3)
+      },
+    },
+  ]
+
+  // Defect: sameLines ignores one of variant, quantity, unit price, line count or total, so a changed cart is answered
+  // with the old order and intent; or the old intent is not cancelled first (money stranded on a cancelled order).
+  for (const e of edits) {
+    it(`decision 11: a changed cart (${e.name}) cancels the old intent, then the old order, and places one for the new lines`, async () => {
+      const env = await setup()
+      const { payments, calls } = provider()
+      const checkout = checkoutWith(env, payments)
+      const { token, variants } = await cartWith(env, e.lines)
+      const first = await begin(checkout, token)
+      await e.edit(
+        env,
+        token,
+        variants.map((v) => v.id),
+      )
+
+      const again = await begin(checkout, token)
+
+      expect(again.orderId).not.toBe(first.orderId)
+      expect(calls.cancelled).toEqual([first.paymentIntent.id])
+      expect((await orderOf(env, first.orderId)).status).toBe('cancelled')
+      expect((await events(env, EVT_ORDER_CANCELLED, first.orderId)).map((p) => p.reason)).toEqual([
+        'superseded: the cart changed',
+      ])
+      const cart = (await env.commandStore.read((tx) => env.repos.cart.findByToken(tx, token)))!
+      const placed = await orderOf(env, again.orderId)
+      expect(placed.lineItems.map((l) => [l.variantId, l.qty, l.unitPriceMinor])).toEqual(
+        cart.items.map((i) => [i.variantId, i.qty, i.priceMinor]),
+      )
+      expect(again.totalMinor).toBe(cart.subtotalMinor)
+      // Only the new order's quantities are held.
+      for (const v of variants) {
+        const qty = cart.items.find((i) => i.variantId === v.id)?.qty ?? 0
+        expect(await stockOf(env, v.id)).toBe(v.stock - qty)
+      }
+      await env.commandStore.close()
+    })
+  }
+
+  // Defect: a refused cancel is ignored and the old order cancelled anyway (its capture then lands on a cancelled
+  // order), or any provider error is reported as payment_in_progress.
+  it('decision 11: a provider that refuses the cancel answers payment_in_progress naming the old order, and nothing changes', async () => {
+    const env = await setup()
+    const { payments, calls } = provider(() => ({
+      async cancelPaymentIntent(id) {
+        throw new PaymentError('cancel_refused', `intent ${id} is processing`)
+      },
+    }))
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 500, stock: 6, qty: 1 }
+    const { token, variants } = await cartWith(env, [line])
+    const first = await begin(checkout, token)
+    await env.cart.updateItemQuantity(token, variants[0]!.id, 2)
+
+    await expect(begin(checkout, token)).rejects.toMatchObject({
+      code: 'checkout.payment_in_progress',
+      context: { orderNumber: first.orderNumber },
+    })
+    expect((await orderOf(env, first.orderId)).status).toBe('pending')
+    expect(calls.created).toHaveLength(1)
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    await env.commandStore.close()
+  })
+
+  it('decision 11: any other provider error on the cancel is rethrown as it is, and nothing changes', async () => {
+    const env = await setup()
+    const { payments } = provider(() => ({
+      async cancelPaymentIntent() {
+        throw new PaymentError('intent_failed', 'provider unreachable')
+      },
+    }))
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 500, stock: 6, qty: 1 }
+    const { token, variants } = await cartWith(env, [line])
+    const first = await begin(checkout, token)
+    await env.cart.updateItemQuantity(token, variants[0]!.id, 2)
+
+    await expect(begin(checkout, token)).rejects.toMatchObject({ code: 'payment.intent_failed' })
+    expect((await orderOf(env, first.orderId)).status).toBe('pending')
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    await env.commandStore.close()
+  })
+
+  // Defect: a checkout that meets a newer changed order after every cancel loops for good, or gives up before trying.
+  it('decision 11: a checkout that keeps meeting a newer changed order gives up with in_progress after a bounded number of cancels', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const { token } = await cartWith(env, [{ priceMinor: 400, stock: 5, qty: 1 }])
+    const first = await begin(checkoutWith(env, payments), token)
+    const real = await orderOf(env, first.orderId)
+    let n = 0
+    // A busier writer: each pass under the lock finds a newer pending order for other lines, with its own intent.
+    const order: Env['repos']['order'] = {
+      ...env.repos.order,
+      async findPendingByCartToken() {
+        n += 1
+        return { ...real, paymentIntentId: `pi_busier_${n}`, totalMinor: real.totalMinor + n }
+      },
+    }
+    const checkout = checkoutWith(env, payments, { ...env.repos, order })
+
+    await expect(begin(checkout, token)).rejects.toMatchObject({ code: 'checkout.in_progress' })
+    expect(calls.cancelled.length).toBeGreaterThanOrEqual(1)
+    expect(calls.cancelled.length).toBeLessThan(10)
+    expect(calls.created).toHaveLength(1)
+    await env.commandStore.close()
+  })
+
+  /** A pending order with no intent: T2 failed after the provider made the intent. */
+  async function strandedOrder(env: Env, token: string) {
+    const { payments } = provider()
+    const failing: Env['repos']['order'] = {
+      ...env.repos.order,
+      async setPaymentIntent() {
+        throw new Error('T2 lost')
+      },
+    }
+    await expect(
+      begin(checkoutWith(env, payments, { ...env.repos, order: failing }), token),
+    ).rejects.toThrow('T2 lost')
+    const pending = await env.commandStore.read((tx) =>
+      env.repos.order.findPendingByCartToken(tx, token),
+    )
+    expect(pending?.paymentIntentId).toBeNull()
+    return pending!
+  }
+
+  // Defect: a stranded order holds its cart at in_progress for good (B1), or a young one is taken as abandoned and a
+  // second intent made while the first checkout is between T1 and T2.
+  it('B1: a pending order without an intent holds the cart at in_progress for 120 s, then is cancelled as abandoned and replaced', async () => {
+    const env = await setup()
+    const line = { priceMinor: 650, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+    const stranded = await strandedOrder(env, token)
+    const placedAt = Date.parse(stranded.createdAt)
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+
+    const now = vi.spyOn(Date, 'now').mockReturnValue(placedAt + 120_000)
+    await expect(begin(checkout, token)).rejects.toMatchObject({ code: 'checkout.in_progress' })
+    expect(calls.created).toHaveLength(0)
+    expect((await orderOf(env, stranded.id)).status).toBe('pending')
+
+    now.mockReturnValue(placedAt + 120_001)
+    const again = await begin(checkout, token)
+
+    expect(again.orderId).not.toBe(stranded.id)
+    expect(calls.created).toHaveLength(1)
+    expect((await orderOf(env, stranded.id)).status).toBe('cancelled')
+    expect((await events(env, EVT_ORDER_CANCELLED, stranded.id)).map((p) => p.reason)).toEqual([
+      'abandoned: no payment intent',
+    ])
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    await env.commandStore.close()
+  })
+
+  // Defect: an intent the provider failed to make leaves a pending order with no intent behind (the cart then answers
+  // in_progress), or its stock held.
+  it('decision 10: an intent the provider fails to create cancels the draft and releases its stock, so the cart can check out again', async () => {
+    const env = await setup()
+    let fail = true
+    const { payments, calls } = provider((stub) => ({
+      async createPaymentIntent(params) {
+        if (fail) throw new PaymentError('intent_failed', 'provider down')
+        return stub.createPaymentIntent(params)
+      },
+    }))
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 650, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    await expect(begin(checkout, token)).rejects.toMatchObject({ code: 'payment.intent_failed' })
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock)
+    const orphan = calls.created[0]!.orderRef!
+    expect((await orderOf(env, orphan)).status).toBe('cancelled')
+
+    fail = false
+    const again = await begin(checkout, token)
+    expect(again.orderId).not.toBe(orphan)
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    await env.commandStore.close()
+  })
+
+  // Defect: an inline capture that finalize did not confirm is left on a pending order, neither attached nor refunded,
+  // or the answer still says pending.
+  it('M2: an inline capture that finalize does not confirm is refunded, the order cancelled and its stock released', async () => {
+    const env = await setup()
+    const { payments, calls } = provider((stub) => ({
+      async createPaymentIntent(params) {
+        const intent = await stub.createPaymentIntent(params)
+        // The provider captured more than the order's total.
+        return { ...intent, amountMinor: params.amountMinor + 1, status: 'succeeded' }
+      },
+    }))
+    const line = { priceMinor: 650, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    const started = await begin(checkoutWith(env, payments), token, { email: 'paid@example.com' })
+
+    expect(calls.refunded).toEqual([started.paymentIntent.id])
+    expect(started.orderStatus).toBe('cancelled')
+    expect((await orderOf(env, started.orderId)).status).toBe('cancelled')
+    expect(started.payment.status).toBe('failed')
+    expect(started.payment.reason).toMatch(/^amount_mismatch: /)
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock)
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
+    await env.commandStore.close()
+  })
+
+  // Defect: an emptied cart's 409 names no order (the template cannot go to it), or names a later cancelled order
+  // instead of the one the cart became.
+  it("decision 6: an emptied cart's cart_empty names the order it became, never a later cancelled one", async () => {
+    const env = await setup()
+    const { payments } = provider()
+    const checkout = checkoutWith(env, payments)
+    const { token, variants, product } = await cartWith(env, [
+      { priceMinor: 900, stock: 9, qty: 1 },
+    ])
+    const neverOrdered = await env.cart.getOrCreate()
+    await expect(begin(checkout, neverOrdered.token)).rejects.toSatisfy(
+      (err: unknown) => err instanceof CheckoutError && err.context?.orderNumber === undefined,
+    )
+
+    const confirmed = await begin(checkout, token, { email: 'paid@example.com' })
+    expect(confirmed.orderStatus).toBe('confirmed')
+    const v = variants[0]!
+    await env.cart.addItem(token, {
+      variantId: v.id,
+      productId: product.id,
+      productName: product.name,
+      variantName: v.name,
+      priceMinor: v.priceMinor,
+      imageUrl: '',
+      qty: 1,
+    })
+    const declined = await begin(checkout, token, { email: 'shopper+stub-decline@example.com' })
+    expect(declined.orderStatus).toBe('cancelled')
+    await env.cart.removeItem(token, v.id)
+
+    await expect(begin(checkout, token)).rejects.toMatchObject({
+      code: 'checkout.cart_empty',
+      context: { orderNumber: confirmed.orderNumber },
+    })
     await env.commandStore.close()
   })
 })

@@ -22,6 +22,11 @@ export interface PaymentsAdapter extends CommerceAdapter {
   capturePayment(intentId: string, amountMinor?: number): Promise<PaymentCapture>
   refund(paymentId: string, amountMinor?: number, reason?: string): Promise<Refund>
   getPaymentStatus(intentId: string): Promise<PaymentStatus>
+  /** The intent as the provider holds it now, client secret included: what a shopper needs to pay it again. */
+  getPaymentIntent(intentId: string): Promise<PaymentIntent>
+  /** Cancels an intent that has not been paid; throws `PaymentError('cancel_refused')` when the provider will not
+   *  (the intent is processing or already captured). */
+  cancelPaymentIntent(intentId: string): Promise<void>
   parseWebhook(rawBody: Buffer | string, signature: string): Promise<WebhookResult>
 }
 

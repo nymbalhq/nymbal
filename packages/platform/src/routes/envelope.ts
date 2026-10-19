@@ -40,6 +40,8 @@ export function fail(
  */
 const CHECKOUT_STATUS: Record<string, number> = {
   'checkout.cart_empty': 409,
+  'checkout.in_progress': 409,
+  'checkout.payment_in_progress': 409,
   'checkout.out_of_stock': 409,
   'checkout.reservation_failed': 409,
   'checkout.variant_missing': 422,

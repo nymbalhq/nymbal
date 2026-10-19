@@ -135,7 +135,8 @@ describe('webhook outcomes', () => {
     expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock - qty)
   })
 
-  it('AC-6b: a captured event for a cancelled order gets 200 finalized: false, reason order_not_pending: cancelled, one payment.failed with the order id, a history note, the order stays cancelled, and a redelivery is deduped', async () => {
+  // P1-12 AC-12 (decision 11): the capture for a cancelled order is refunded and recorded as order_cancelled_refunded.
+  it('AC-6b: a captured event for a cancelled order gets 200 finalized: false, reason order_cancelled_refunded, one payment.failed with the order id, a history note, the order stays cancelled, and a redelivery is deduped', async () => {
     const seeded = await seedVariant(k, 3)
     const started = await checkoutOf(k, seeded, 1)
     await k.services.checkout.cancel(started.orderId, 'customer changed their mind')
@@ -146,15 +147,17 @@ describe('webhook outcomes', () => {
 
     expect(answer.status).toBe(200)
     expect(answer.data?.finalized).toBe(false)
-    expect(answer.data?.reason).toBe('order_not_pending: cancelled')
+    expect(answer.data?.reason).toBe('order_cancelled_refunded')
     const failed = await failedFor(raw, { orderId: started.orderId })
     expect(failed).toHaveLength(1)
     expect(failed[0]!).toMatchObject({
       paymentId: started.paymentIntent.id,
-      reason: 'order_not_pending: cancelled',
+      reason: 'order_cancelled_refunded',
     })
     expect(
-      (await historyNotes(raw, started.orderId)).some((n) => n.includes('order_not_pending')),
+      (await historyNotes(raw, started.orderId)).some((n) =>
+        n.includes('order_cancelled_refunded'),
+      ),
     ).toBe(true)
     expect(await orderStatus(raw, started.orderId)).toBe('cancelled')
     expect(await paidFor(raw, started.orderId)).toEqual([])

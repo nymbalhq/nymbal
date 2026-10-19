@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 // --- Categories ------------------------------------------------------------
@@ -171,6 +172,8 @@ export const orders = sqliteTable(
     notes: text('notes').notNull().default(''),
     metadata: text('metadata').notNull().default('{}'),
     paymentIntentId: text('payment_intent_id'),
+    /** The cart the order was placed from; null for imported orders. */
+    cartToken: text('cart_token'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -180,6 +183,10 @@ export const orders = sqliteTable(
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
     paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // One pending order per cart, whatever the checkout's lock does.
+    pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
+      .on(t.cartToken)
+      .where(sql`status = 'pending'`),
   }),
 )
 

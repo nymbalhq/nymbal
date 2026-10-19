@@ -9,6 +9,8 @@ type CheckoutCode = ConstructorParameters<typeof CheckoutError>[0]
 
 const checkoutStatus: Record<CheckoutCode, number> = {
   cart_empty: 409,
+  in_progress: 409,
+  payment_in_progress: 409,
   out_of_stock: 409,
   reservation_failed: 409,
   variant_missing: 422,
@@ -31,7 +33,7 @@ describe('renderError', () => {
     expect(rendered.status).toBeLessThan(other.status)
   })
 
-  it('AC-17: CheckoutError cart_empty, out_of_stock and reservation_failed render 409, variant_missing 422, finalize_failed 500, each with its own code', () => {
+  it('AC-17: CheckoutError cart_empty, in_progress, payment_in_progress, out_of_stock and reservation_failed render 409, variant_missing 422, finalize_failed 500, each with its own code', () => {
     for (const [code, status] of Object.entries(checkoutStatus) as Array<[CheckoutCode, number]>) {
       const error = new CheckoutError(code, code)
       const rendered = renderError(error) as Rendered

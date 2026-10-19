@@ -151,25 +151,25 @@ shippingForm?.addEventListener('submit', (e) => {
   showStep('payment')
 })
 
-// Stripe setup
+// Stripe setup. The env says only whether a Stripe client exists; the payment flow follows the server's answer.
 let stripe: any = null
 let cardElement: any = null
 
-const isStubPayments = (import.meta as any).env?.PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub'
+const stripeKey = import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY
+const isStubPayments =
+  import.meta.env.PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
 
 async function mountStripe() {
   if (isStubPayments) {
     const cardContainer = document.getElementById('stripe-card-element')
     if (cardContainer) {
-      cardContainer.innerHTML = '<p style="color: var(--nymbal-color-text-muted, #71717a); font-size: 0.875rem; margin: 0;">Test mode — payment skipped</p>'
+      cardContainer.innerHTML =
+        '<p style="color: var(--nymbal-color-text-muted, #71717a); font-size: 0.875rem; margin: 0;">Test mode — payment skipped</p>'
     }
     return
   }
   try {
     const { loadStripe } = await import('@stripe/stripe-js')
-    const stripeKey = (import.meta as any).env?.PUBLIC_STRIPE_PUBLISHABLE_KEY
-    if (!stripeKey) return
-
     stripe = await loadStripe(stripeKey)
     if (!stripe) return
 
@@ -199,10 +199,23 @@ paymentForm?.addEventListener('submit', async (e) => {
   e.preventDefault()
   hideError()
 
-  const submitBtn = paymentForm.querySelector('[data-testid="place-order"]') as HTMLButtonElement | null
+  const submitBtn = paymentForm.querySelector(
+    '[data-testid="place-order"]',
+  ) as HTMLButtonElement | null
   if (submitBtn) {
     submitBtn.disabled = true
     submitBtn.textContent = 'Processing...'
+  }
+  const stay = (message: string) => {
+    showError(message)
+    if (submitBtn) {
+      submitBtn.disabled = false
+      submitBtn.textContent = 'Place Order'
+    }
+  }
+  const leaveFor = (orderNumber: string) => {
+    client.checkout.reset()
+    window.location.href = `/order/${encodeURIComponent(orderNumber)}`
   }
 
   try {
@@ -225,42 +238,27 @@ paymentForm?.addEventListener('submit', async (e) => {
       })
     }
 
-    await client.checkout.submitPayment()
-
-    const state = client.checkout.getState()
-
-    if (state.paymentStatus === 'failed') {
-      showError(state.error ?? 'Payment failed.')
-      if (submitBtn) {
-        submitBtn.disabled = false
-        submitBtn.textContent = 'Place Order'
-      }
-      return
+    const result = await client.checkout.submitPayment()
+    if (result === null) {
+      // A resubmit of a cart that already became an order (Back, then Place Order) goes to that order.
+      const { placedOrderNumber, error } = client.checkout.getState()
+      if (placedOrderNumber) return leaveFor(placedOrderNumber)
+      return stay(error ?? 'Payment failed. Please try again.')
     }
-
-    if (!isStubPayments && stripe && cardElement && state.order?.paymentIntent?.clientSecret) {
-      const { error } = await stripe.confirmCardPayment(state.order.paymentIntent.clientSecret, {
+    if (result.payment.status === 'failed') {
+      return stay(client.checkout.getState().error ?? 'Payment failed. Please try again.')
+    }
+    // Without a Stripe client (a +stub-pending order) the order page shows it awaiting payment.
+    if (result.payment.status === 'requires_action' && stripe && cardElement) {
+      const { error } = await stripe.confirmCardPayment(result.paymentIntent.clientSecret, {
         payment_method: { card: cardElement },
       })
-      if (error) {
-        showError(error.message ?? 'Payment failed.')
-        if (submitBtn) {
-          submitBtn.disabled = false
-          submitBtn.textContent = 'Place Order'
-        }
-        return
-      }
+      if (error) return stay(error.message ?? 'Payment failed.')
+      client.checkout.markConfirmed()
     }
-
-    const orderNumber = state.order?.orderNumber
-    client.checkout.reset()
-    window.location.href = `/order/${orderNumber}`
+    leaveFor(result.orderNumber)
   } catch (err: any) {
-    showError(err.message ?? 'Payment failed. Please try again.')
-    if (submitBtn) {
-      submitBtn.disabled = false
-      submitBtn.textContent = 'Place Order'
-    }
+    stay(err.message ?? 'Payment failed. Please try again.')
   }
 })
 

@@ -18,10 +18,13 @@ export const SHIPPING_ADDRESS = {
   country: 'GB',
 }
 
-/** A real pending order through the API: a seeded in-stock variant into a cart, then checkout (native-stub). */
+/**
+ * A real pending order through the API: a seeded in-stock variant into a cart, then checkout (native-stub). The email's
+ * `+stub-pending` keeps the order pending (P1-12 decision 7); without it the stub pays inline.
+ */
 export async function placeOrder(
   request: APIRequestContext,
-  email = `e2e-p1-08-${Date.now()}-${Math.floor(Math.random() * 1e6)}@nymbal.dev`,
+  email = `e2e-p1-08-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
 ): Promise<{ orderId: string; orderNumber: string }> {
   const productsRes = await request.get(`${API_URL}/api/products?limit=50`)
   expect(productsRes.ok(), 'GET /api/products').toBe(true)
