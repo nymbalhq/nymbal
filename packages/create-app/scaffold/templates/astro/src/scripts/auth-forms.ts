@@ -1,4 +1,5 @@
 import { client } from '../lib/client.js'
+import { submitOnce } from '../lib/submit-once.js'
 
 function getRedirectUrl(): string {
   const params = new URLSearchParams(window.location.search)
@@ -23,8 +24,7 @@ function hideFormError(formId: string) {
 
 // Login form handler
 const loginForm = document.getElementById('login-form') as HTMLFormElement | null
-loginForm?.addEventListener('submit', async (e) => {
-  e.preventDefault()
+submitOnce(loginForm, async () => {
   hideFormError('login')
 
   const email = (document.getElementById('login-email') as HTMLInputElement)?.value
@@ -35,28 +35,24 @@ loginForm?.addEventListener('submit', async (e) => {
     return
   }
 
-  const submitBtn = loginForm.querySelector('[data-testid="login-submit"]') as HTMLButtonElement | null
-  if (submitBtn) {
-    submitBtn.disabled = true
-    submitBtn.textContent = 'Signing in...'
-  }
+  const submitBtn = loginForm?.querySelector(
+    '[data-testid="login-submit"]',
+  ) as HTMLButtonElement | null
+  if (submitBtn) submitBtn.textContent = 'Signing in...'
 
   try {
     await client.auth.login(email, password)
     window.location.href = getRedirectUrl()
+    return 'leaving'
   } catch (err: any) {
     showFormError('login', err.message ?? 'Invalid email or password.')
-    if (submitBtn) {
-      submitBtn.disabled = false
-      submitBtn.textContent = 'Sign In'
-    }
+    if (submitBtn) submitBtn.textContent = 'Sign In'
   }
 })
 
 // Register form handler
 const registerForm = document.getElementById('register-form') as HTMLFormElement | null
-registerForm?.addEventListener('submit', async (e) => {
-  e.preventDefault()
+submitOnce(registerForm, async () => {
   hideFormError('register')
 
   const email = (document.getElementById('register-email') as HTMLInputElement)?.value
@@ -70,20 +66,17 @@ registerForm?.addEventListener('submit', async (e) => {
     return
   }
 
-  const submitBtn = registerForm.querySelector('[data-testid="register-submit"]') as HTMLButtonElement | null
-  if (submitBtn) {
-    submitBtn.disabled = true
-    submitBtn.textContent = 'Creating account...'
-  }
+  const submitBtn = registerForm?.querySelector(
+    '[data-testid="register-submit"]',
+  ) as HTMLButtonElement | null
+  if (submitBtn) submitBtn.textContent = 'Creating account...'
 
   try {
     await client.auth.register({ email, password, firstName, lastName, phone })
     window.location.href = getRedirectUrl()
+    return 'leaving'
   } catch (err: any) {
     showFormError('register', err.message ?? 'Registration failed. Please try again.')
-    if (submitBtn) {
-      submitBtn.disabled = false
-      submitBtn.textContent = 'Create Account'
-    }
+    if (submitBtn) submitBtn.textContent = 'Create Account'
   }
 })
