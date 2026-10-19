@@ -157,9 +157,11 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: reports/mutation/stryker-incremental.json
-          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward.
-          key: stryker-incremental-v2-${{ github.sha }}
-          restore-keys: stryker-incremental-v2-
+          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward. The
+          # ratchet's hash does the same whenever an entry moves: its entries come from full runs, so a chain that
+          # carried older statuses forward could fail a file no change touched.
+          key: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-${{ github.sha }}
+          restore-keys: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-
       - name: Mutation
         run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
 
