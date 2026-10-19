@@ -135,7 +135,9 @@ jobs:
   mutation:
     name: Mutation — Stryker (incremental)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) is about 2,400 CPU-seconds:
+    # 4 min 50 s on 12 local cores, so roughly 10-13 min on this runner's 4.
+    timeout-minutes: 30
     needs: [build]
     steps:
       - uses: actions/checkout@v7
@@ -155,8 +157,11 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: reports/mutation/stryker-incremental.json
-          key: stryker-incremental-${{ github.sha }}
-          restore-keys: stryker-incremental-
+          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward. The
+          # ratchet's hash does the same whenever an entry moves: its entries come from full runs, so a chain that
+          # carried older statuses forward could fail a file no change touched.
+          key: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-${{ github.sha }}
+          restore-keys: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-
       - name: Mutation
         run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
 
