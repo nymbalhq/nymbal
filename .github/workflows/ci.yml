@@ -155,8 +155,9 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: reports/mutation/stryker-incremental.json
-          key: stryker-incremental-${{ github.sha }}
-          restore-keys: stryker-incremental-
+          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward.
+          key: stryker-incremental-v2-${{ github.sha }}
+          restore-keys: stryker-incremental-v2-
       - name: Mutation
         run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
 

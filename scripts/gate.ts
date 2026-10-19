@@ -693,10 +693,11 @@ export async function strykerTargets(root: string, changed: string[]): Promise<s
       changed.filter((path) => existsSync(resolve(root, path))),
     )
   }
+  // `changed` carries untracked files, which `ls-files` alone would drop from the set.
   const tracked = lines(git(root, ['ls-files']))
   return mutateSet(
     root,
-    tracked.filter((path) => existsSync(resolve(root, path))),
+    [...new Set([...tracked, ...changed])].filter((path) => existsSync(resolve(root, path))),
   )
 }
 
