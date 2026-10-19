@@ -225,9 +225,12 @@ export const orderRefunds = sqliteTable(
     reason: text('reason'),
     actor: text('actor').notNull(),
     createdAt: text('created_at').notNull(),
+    /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
+    requestId: text('request_id'),
   },
   (t) => ({
     orderIdx: index('order_refunds_order_idx').on(t.orderId),
+    requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
   }),
 )
 

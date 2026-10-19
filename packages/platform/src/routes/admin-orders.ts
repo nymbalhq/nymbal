@@ -274,11 +274,12 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as { amountMinor: number; reason?: string }
+        const body = ctx.body as { amountMinor: number; reason?: string; requestId?: string }
         const result = await refund.refund({
           orderId: id,
           amountMinor: body.amountMinor,
           ...(body.reason !== undefined && { reason: body.reason }),
+          ...(body.requestId !== undefined && { requestId: body.requestId }),
           actor: `admin:${ctx.auth!.userId}`,
         })
         return ok(result)

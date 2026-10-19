@@ -234,9 +234,12 @@ export const orderRefunds = pgTable(
     reason: text('reason'),
     actor: text('actor').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
+    requestId: text('request_id'),
   },
   (t) => ({
     orderIdx: index('order_refunds_order_idx').on(t.orderId),
+    requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
   }),
 )
 

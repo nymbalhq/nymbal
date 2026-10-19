@@ -285,9 +285,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
-    description: 'Refund part or all of what an order captured, through the payments provider.',
+    description:
+      'Refund part or all of what an order captured, through the payments provider. A repeated requestId answers the refund it made and moves no money.',
     params: orderIdParams,
-    body: z.object({ amountMinor: money.positive(), reason: z.string().optional() }),
+    body: z.object({
+      amountMinor: money.positive(),
+      reason: z.string().optional(),
+      requestId: z.string().uuid().optional(),
+    }),
   },
   'GET /api/admin/orders/:id/timeline': {
     name: 'admin.orders.timeline',

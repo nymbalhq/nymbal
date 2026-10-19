@@ -108,8 +108,10 @@ export class OrderConflictError extends NymbalError {
       | 'order.unpaid'
       | 'order.paid'
       | 'order.stock_unavailable'
+      | 'order.payment_in_progress'
       | 'refund.not_captured'
-      | 'refund.exceeds_captured',
+      | 'refund.exceeds_captured'
+      | 'refund.request_reused',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

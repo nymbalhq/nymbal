@@ -22,6 +22,8 @@ export interface OrderRefundInsert {
   reason: string | null
   actor: string
   createdAt: Date
+  /** The client's key for the request that made the refund; unique per order. */
+  requestId?: string | null
 }
 
 function rowToRefund(row: Record<string, unknown>): OrderRefund {
@@ -46,6 +48,8 @@ export interface OrderRefundRepository extends StoreRepository {
     id: string,
     outcome: { status: OrderRefundStatus; providerRefundId: string | null },
   ): Promise<boolean>
+  /** The order's refund made by the request `requestId`, or null. */
+  findByRequestId(tx: ReadTx, orderId: string, requestId: string): Promise<OrderRefund | null>
   /** The order's refunds, oldest first. */
   listByOrder(tx: ReadTx, orderId: string): Promise<OrderRefund[]>
   /** The refunds of each order, oldest first; an order without refunds is absent. */
@@ -102,6 +106,23 @@ export function createOrderRefundRepository(store: CommandStore): OrderRefundRep
         .set(outcome)
         .where(and(eq(r.id, id), eq(r.status, 'pending')))
       return (result.rowCount ?? 0) > 0
+    },
+    async findByRequestId(tx, orderId, requestId) {
+      if (tx.kind === 'sqlite') {
+        const r = sqliteSchema.orderRefunds
+        const row = sqliteDb(tx)
+          .select()
+          .from(r)
+          .where(and(eq(r.orderId, orderId), eq(r.requestId, requestId)))
+          .get()
+        return row ? rowToRefund(row as Record<string, unknown>) : null
+      }
+      const r = postgresSchema.orderRefunds
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(r)
+        .where(and(eq(r.orderId, orderId), eq(r.requestId, requestId)))
+      return row ? rowToRefund(row as Record<string, unknown>) : null
     },
     listByOrder(tx, orderId) {
       return list(tx, [orderId])

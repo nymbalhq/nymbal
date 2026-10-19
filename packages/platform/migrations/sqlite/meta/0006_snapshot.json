@@ -587,6 +587,13 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -596,6 +603,14 @@
             "order_id"
           ],
           "isUnique": false
+        },
+        "order_refunds_order_request_idx": {
+          "name": "order_refunds_order_request_idx",
+          "columns": [
+            "order_id",
+            "request_id"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {},

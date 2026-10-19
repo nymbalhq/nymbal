@@ -155,14 +155,17 @@ export function useRefundOrder() {
       orderId,
       amountMinor,
       reason,
+      requestId,
     }: {
       orderId: string
       amountMinor: number
       reason?: string
+      /** Sent again on a retry of the same refund, so the server makes it once. */
+      requestId: string
     }) =>
       api.post<RefundAnswer>(
         `/api/admin/orders/${orderId}/refund`,
-        reason ? { amountMinor, reason } : { amountMinor },
+        reason ? { amountMinor, reason, requestId } : { amountMinor, requestId },
       ),
     onSuccess: async (answer) => {
       await Promise.all([

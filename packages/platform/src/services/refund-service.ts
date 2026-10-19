@@ -32,6 +32,8 @@ export interface RefundInput {
   amountMinor: number
   reason?: string
   actor: string
+  /** The client's key for this request: a repeat on the order answers the refund the first one made. */
+  requestId?: string
 }
 
 export interface RefundResult {
@@ -44,7 +46,9 @@ export interface RefundService {
   /**
    * Refunds part or all of what the order captured, through the payments provider when the provider took the money.
    * The refund is held as a `pending` row under the order's lock, the provider is called outside any transaction with
-   * the row id as its idempotency key, and the row is settled under the lock again by the provider's answer.
+   * the row id as its idempotency key, and the row is settled under the lock again by the provider's answer. A
+   * `requestId` the order has already seen answers that refund as it stands and moves no money;
+   * `refund.request_reused` when the amount differs.
    */
   refund(input: RefundInput): Promise<RefundResult>
 }
@@ -107,13 +111,30 @@ export async function refreshRefunded(
 export function createRefundService(deps: CreateRefundServiceDeps): RefundService {
   const { store, repos, publisher, logger, payments } = deps
 
-  /** Step 1, under the order's lock: the refund is checked against what is refundable and held as a pending row. */
+  /**
+   * Step 1, under the order's lock: a repeated request answers its refund; otherwise the refund is checked against
+   * what is refundable and held as a pending row.
+   */
   async function hold(
     tx: Tx,
     input: RefundInput,
-  ): Promise<{ order: Order; row: OrderRefundInsert }> {
+  ): Promise<{ order: Order; row: OrderRefundInsert } | { repeat: RefundResult }> {
     const order = await repos.order.lock(tx, input.orderId)
     if (!order) throw new NotFoundError('order', input.orderId)
+    if (input.requestId !== undefined) {
+      const earlier = await repos.orderRefund.findByRequestId(tx, order.id, input.requestId)
+      if (earlier !== null) {
+        if (earlier.amountMinor !== input.amountMinor) {
+          throw new OrderConflictError(
+            'refund.request_reused',
+            `Request ${input.requestId} already refunded ${earlier.amountMinor} on order ${order.orderNumber}`,
+            { context: { amountMinor: input.amountMinor, earlierAmountMinor: earlier.amountMinor } },
+          )
+        }
+        const refunds = await repos.orderRefund.listByOrder(tx, order.id)
+        return { repeat: { order, payment: orderPayment(order, refunds), refund: earlier } }
+      }
+    }
     if (
       order.capturedMinor <= 0 ||
       (order.captureMethod === 'provider' && !order.paymentIntentId)
@@ -144,6 +165,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
       reason: input.reason ?? null,
       actor: input.actor,
       createdAt: new Date(),
+      requestId: input.requestId ?? null,
     }
     await repos.orderRefund.insert(tx, row)
     return { order, row }
@@ -263,7 +285,9 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
           context: { amountMinor: input.amountMinor },
         })
       }
-      const { order, row } = await store.transaction((tx) => hold(tx, input))
+      const held = await store.transaction((tx) => hold(tx, input))
+      if ('repeat' in held) return held.repeat
+      const { order, row } = held
       const settlement = await moveMoney(order, row)
       return store.transaction((tx) => settle(tx, order.id, row, settlement))
     },

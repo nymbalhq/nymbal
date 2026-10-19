@@ -7,10 +7,12 @@ CREATE TABLE `order_refunds` (
 	`status` text DEFAULT 'pending' NOT NULL,
 	`reason` text,
 	`actor` text NOT NULL,
-	`created_at` text NOT NULL
+	`created_at` text NOT NULL,
+	`request_id` text
 );
 --> statement-breakpoint
 CREATE INDEX `order_refunds_order_idx` ON `order_refunds` (`order_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `order_refunds_order_request_idx` ON `order_refunds` (`order_id`,`request_id`);--> statement-breakpoint
 ALTER TABLE `orders` ADD `captured_minor` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `orders` ADD `captured_at` text;--> statement-breakpoint
 ALTER TABLE `orders` ADD `refunded_minor` integer DEFAULT 0 NOT NULL;--> statement-breakpoint

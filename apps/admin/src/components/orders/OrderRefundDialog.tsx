@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -21,33 +21,60 @@ interface OrderRefundDialogProps {
   onClose: () => void
 }
 
+/** Why the server refused a refund, its amounts in the store's currency. */
+function refusalOf(err: unknown, currency: string): string {
+  if (!(err instanceof ApiError)) return 'The refund could not be made.'
+  const { amountMinor, refundableMinor } = err.context ?? {}
+  if (
+    err.code === 'refund.exceeds_captured' &&
+    typeof amountMinor === 'number' &&
+    typeof refundableMinor === 'number'
+  ) {
+    return `A refund of ${formatMoney(amountMinor, currency)} is more than the ${formatMoney(refundableMinor, currency)} left to refund.`
+  }
+  return err.message
+}
+
 /** A refund by amount: anything up to what is refundable, the whole of it being a full refund. */
 export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
   const { refundableMinor, currency } = order.payment
   const [amount, setAmount] = useState((refundableMinor / 100).toFixed(2))
   const [reason, setReason] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
+  // One refund request per dialog: a repeat of it (a double click, a retry after a lost answer) refunds once.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID())
+  // Set in the click itself: `isPending` reaches the button only after a render, too late for a double click.
+  const submitting = useRef(false)
+  const [busy, setBusy] = useState(false)
   const refundMutation = useRefundOrder()
 
   const amountMinor = parseMoney(amount)
   const valid = amountMinor !== null && amountMinor > 0 && amountMinor <= refundableMinor
 
   const handleRefund = async () => {
-    if (!valid || amountMinor === null) return
+    if (!valid || amountMinor === null || submitting.current) return
+    submitting.current = true
+    setBusy(true)
     setFailure(null)
     try {
       const answer = await refundMutation.mutateAsync({
         orderId: order.id,
         amountMinor,
+        requestId,
         ...(reason.trim() && { reason: reason.trim() }),
       })
       if (answer.refund.status === 'failed') {
+        // That request is answered: trying again is a new one.
+        setRequestId(crypto.randomUUID())
         setFailure('The payment provider refused the refund.')
         return
       }
       onClose()
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : 'The refund could not be made.')
+      setFailure(refusalOf(err, currency))
+    } finally {
+      submitting.current = false
+      setBusy(false)
     }
   }
 
@@ -118,10 +145,10 @@ export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
             variant="destructive"
             type="button"
             onClick={() => void handleRefund()}
-            disabled={!valid || refundMutation.isPending}
+            disabled={!valid || busy}
             data-testid={tid('order', 'refund-confirm')}
           >
-            {refundMutation.isPending
+            {busy
               ? 'Processing...'
               : `Refund ${amountMinor !== null ? formatMoney(amountMinor, currency) : ''}`}
           </Button>

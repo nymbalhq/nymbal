@@ -6,6 +6,7 @@ import {
   EVT_ORDER_SHIPPED,
   NotFoundError,
   OrderConflictError,
+  StatusTransitionError,
   ValidationError,
   assertOrderTransition,
   type Address,
@@ -190,14 +191,31 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     },
     async cancel(id, reason, actor) {
       return store.transaction(async (tx) => {
-        const order = await requireOrder(tx, id)
+        // Under the row lock no confirm commits between the paid check and the write.
+        const order = await repos.order.lock(tx, id)
+        if (!order) throw new NotFoundError('order', id)
         if (order.capturedMinor > 0) {
           throw new OrderConflictError(
             'order.paid',
             `Order ${order.orderNumber} is paid: refund it instead of cancelling`,
           )
         }
-        const fresh = await doTransition(tx, order, 'cancelled', actor, reason)
+        assertOrderTransition(order.status, 'cancelled')
+        const now = new Date()
+        if (!(await repos.order.setStatusIf(tx, order.id, order.status, 'cancelled', now))) {
+          const current = await requireOrder(tx, order.id)
+          throw new StatusTransitionError('order', current.status, 'cancelled')
+        }
+        await repos.orderHistory.append(tx, {
+          id: uuidv7(),
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: 'cancelled',
+          actor,
+          note: reason,
+          timestamp: now,
+        })
+        const fresh = await requireOrder(tx, order.id)
         await publisher.publish(EVT_ORDER_CANCELLED, { orderId: fresh.id, reason })
         return fresh
       })
