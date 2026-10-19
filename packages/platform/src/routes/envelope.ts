@@ -3,6 +3,8 @@ import {
   HttpError,
   NotFoundError,
   NymbalError,
+  OrderConflictError,
+  StatusTransitionError,
   ValidationError,
   type ResponseEnvelope,
 } from '@nymbalhq/types'
@@ -56,6 +58,10 @@ export function renderError(err: unknown): ResponseEnvelope<Envelope<never>> {
   }
   if (err instanceof ValidationError) {
     return fail(err.code, err.message, 400, err.context)
+  }
+  // A transition the table forbids, or money that does not allow the command: the caller's to fix, never a fault.
+  if (err instanceof StatusTransitionError || err instanceof OrderConflictError) {
+    return fail(err.code, err.message, 409, err.context)
   }
   if (err instanceof CheckoutError) {
     return fail(err.code, err.message, CHECKOUT_STATUS[err.code] ?? 500, err.context)

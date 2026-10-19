@@ -134,18 +134,46 @@ describe('AC-14: money and cart arbitraries', () => {
 })
 
 describe('AC-15: order path and transition arbitraries', () => {
-  it('AC-15: every adjacent pair of an arbOrderPath satisfies canTransitionOrder, and every OrderStatus appears across the runs', () => {
-    const seen = new Set<OrderStatus>()
+  it('AC-15: every adjacent pair of an arbOrderPath satisfies canTransitionOrder', () => {
     fc.assert(
       fc.property(arbOrderPath(), (path) => {
-        for (const status of path) seen.add(status)
+        expect(path[0]).toBe('pending')
         for (let i = 1; i < path.length; i += 1) {
           expect(canTransitionOrder(path[i - 1]!, path[i]!)).toBe(true)
         }
       }),
       { numRuns: RUNS },
     )
-    expect([...seen].sort()).toEqual([...STATUSES].sort())
+  })
+
+  // Coverage is checked deterministically: an unseeded run misses a deep status (delivered) by chance.
+  it('AC-15: every OrderStatus is reachable from pending through canTransitionOrder within maxSteps, and arbOrderPath produces each one', () => {
+    // Breadth-first search over canTransitionOrder: the depth at which each status is first reached.
+    const depth = new Map<OrderStatus, number>([['pending', 0]])
+    let frontier: OrderStatus[] = ['pending']
+    while (frontier.length > 0) {
+      const next: OrderStatus[] = []
+      for (const from of frontier) {
+        for (const to of STATUSES) {
+          if (!depth.has(to) && canTransitionOrder(from, to)) {
+            depth.set(to, depth.get(from)! + 1)
+            next.push(to)
+          }
+        }
+      }
+      frontier = next
+    }
+    expect([...depth.keys()].sort()).toEqual([...STATUSES].sort())
+    const DEFAULT_MAX_STEPS = 8
+    for (const d of depth.values()) expect(d).toBeLessThanOrEqual(DEFAULT_MAX_STEPS)
+
+    // Fixed seed, many samples: the result is the same on every run; a deep status reached at about 1 in 100
+    // paths is drawn dozens of times, so a change to the arbitrary's internals does not flip it.
+    const seen = new Set<OrderStatus>()
+    for (const path of fc.sample(arbOrderPath(), { seed: 1_301_301, numRuns: 5_000 })) {
+      for (const status of path) seen.add(status)
+    }
+    expect([...seen].sort()).toEqual([...depth.keys()].sort())
   })
 
   it('AC-15: arbOrderTransition({ valid: true }) always satisfies canTransitionOrder; { valid: false } never does', () => {

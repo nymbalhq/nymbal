@@ -1,15 +1,15 @@
 # id: S007
 # kind: injected
 # defect: finalize skips the amount and currency check, so any captured amount in any currency confirms the order
-# where: packages/platform/src/services/checkout-service.ts:515-518
+# where: packages/platform/src/services/checkout-service.ts:767-770
 # killed-by: P1-05 acceptance tests (packages/platform/tests/integration/underpayment.test.ts AC-3)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/underpayment.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -512,10 +512,7 @@
-       const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
-       if (order === null || order.status !== 'pending') return settled(tx, paymentIntentId, order)
+@@ -764,10 +764,7 @@
+         return settled(tx, paymentIntentId, order, paid)
+       }
        // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
 -      if (
 -        paid.amountMinor !== order.totalMinor ||

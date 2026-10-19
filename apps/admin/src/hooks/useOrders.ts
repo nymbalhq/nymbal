@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { Order, OrderHistoryEntry } from '@nymbalhq/types'
-import type { OrderWithHistory, NoteEntry } from '@/types'
+import type { OrderHistoryEntry } from '@nymbalhq/types'
+import type { AdminOrder, OrderWithHistory, NoteEntry, RefundAnswer } from '@/types'
 
 interface OrderFilters {
   status?: string | undefined
@@ -17,7 +17,11 @@ interface OrderFilters {
 export function useOrders(filters: OrderFilters = {}) {
   return useQuery({
     queryKey: ['orders', 'list', filters],
-    queryFn: () => api.get<Order[]>('/api/admin/orders', filters as Record<string, string | number | boolean | undefined | null>),
+    queryFn: () =>
+      api.get<AdminOrder[]>(
+        '/api/admin/orders',
+        filters as Record<string, string | number | boolean | undefined | null>,
+      ),
   })
 }
 
@@ -49,12 +53,21 @@ export function useOrderNotes(orderId: string) {
 export function useUpdateOrderStatus() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ orderId, action, body }: { orderId: string; action: string; body?: Record<string, unknown> }) => {
-      return api.post<Order>(`/api/admin/orders/${orderId}/${action}`, body)
+    mutationFn: async ({
+      orderId,
+      action,
+      body,
+    }: {
+      orderId: string
+      action: string
+      body?: Record<string, unknown>
+    }) => {
+      return api.post<AdminOrder>(`/api/admin/orders/${orderId}/${action}`, body)
     },
     onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
+      queryClient.setQueryData(
+        ['orders', 'detail', updatedOrder.orderNumber],
+        (old: OrderWithHistory | undefined) => (old ? { ...old, ...updatedOrder } : updatedOrder),
       )
       // Refetch the detail document so the status history/timeline stays in sync
       queryClient.invalidateQueries({ queryKey: ['orders', 'detail', updatedOrder.orderNumber] })
@@ -64,43 +77,35 @@ export function useUpdateOrderStatus() {
   })
 }
 
-export function useConfirmOrder() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (orderId: string) => api.post<Order>(`/api/admin/orders/${orderId}/confirm`),
-    onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
-      )
-      queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
-    },
-  })
-}
-
 export function useCancelOrder() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ orderId, reason }: { orderId: string; reason?: string }) =>
-      api.post<Order>(`/api/admin/orders/${orderId}/cancel`, { reason }),
+      api.post<AdminOrder>(`/api/admin/orders/${orderId}/cancel`, { reason }),
     onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
+      queryClient.setQueryData(
+        ['orders', 'detail', updatedOrder.orderNumber],
+        (old: OrderWithHistory | undefined) => (old ? { ...old, ...updatedOrder } : updatedOrder),
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
   })
 }
 
+/** Records a payment taken outside the store: a manual capture of the order's total, which confirms it. */
 export function useMarkPaidOrder() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderId, paymentIntentId, amountMinor, currency }: { orderId: string; paymentIntentId: string; amountMinor: number; currency: string }) =>
-      api.post<Order>(`/api/admin/orders/${orderId}/mark-paid`, { paymentIntentId, amountMinor, currency }),
+    mutationFn: ({ orderId, note }: { orderId: string; note?: string }) =>
+      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-paid`, note ? { note } : {}),
     onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
+      queryClient.setQueryData(
+        ['orders', 'detail', updatedOrder.orderNumber],
+        (old: OrderWithHistory | undefined) => (old ? { ...old, ...updatedOrder } : updatedOrder),
       )
+      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', updatedOrder.orderNumber] })
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
@@ -108,10 +113,12 @@ export function useMarkPaidOrder() {
 export function useMarkDeliveredOrder() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (orderId: string) => api.post<Order>(`/api/admin/orders/${orderId}/mark-delivered`),
+    mutationFn: (orderId: string) =>
+      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-delivered`),
     onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
+      queryClient.setQueryData(
+        ['orders', 'detail', updatedOrder.orderNumber],
+        (old: OrderWithHistory | undefined) => (old ? { ...old, ...updatedOrder } : updatedOrder),
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
@@ -121,43 +128,51 @@ export function useMarkDeliveredOrder() {
 export function useShipOrder() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderId, trackingNumber, carrier }: { orderId: string; trackingNumber: string; carrier: string }) =>
-      api.post<Order>(`/api/admin/orders/${orderId}/ship`, { trackingNumber, carrier }),
+    mutationFn: ({
+      orderId,
+      trackingNumber,
+      carrier,
+    }: {
+      orderId: string
+      trackingNumber: string
+      carrier: string
+    }) => api.post<AdminOrder>(`/api/admin/orders/${orderId}/ship`, { trackingNumber, carrier }),
     onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
+      queryClient.setQueryData(
+        ['orders', 'detail', updatedOrder.orderNumber],
+        (old: OrderWithHistory | undefined) => (old ? { ...old, ...updatedOrder } : updatedOrder),
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
   })
 }
 
+/** A refund of an amount up to what is refundable; the page is refetched before the mutation settles. */
 export function useRefundOrder() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderId, amountMinor, reason }: { orderId: string; amountMinor: number; reason?: string }) =>
-      api.post<Order>(`/api/admin/orders/${orderId}/refund`, { amountMinor, reason }),
-    onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
-      )
-      // Refetch the detail document so the status history/timeline stays in sync
-      queryClient.invalidateQueries({ queryKey: ['orders', 'detail', updatedOrder.orderNumber] })
-      queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
-    },
-  })
-}
-
-export function usePartialRefundOrder() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ orderId, amountMinor, reason, lineItems }: { orderId: string; amountMinor: number; reason?: string; lineItems: unknown[] }) =>
-      api.post<Order>(`/api/admin/orders/${orderId}/partial-refund`, { amountMinor, reason, lineItems }),
-    onSuccess: (updatedOrder) => {
-      queryClient.setQueryData(['orders', 'detail', updatedOrder.orderNumber], (old: OrderWithHistory | undefined) =>
-        old ? { ...old, ...updatedOrder } : updatedOrder
-      )
-      queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
+    mutationFn: ({
+      orderId,
+      amountMinor,
+      reason,
+      requestId,
+    }: {
+      orderId: string
+      amountMinor: number
+      reason?: string
+      /** Sent again on a retry of the same refund, so the server makes it once. */
+      requestId: string
+    }) =>
+      api.post<RefundAnswer>(
+        `/api/admin/orders/${orderId}/refund`,
+        reason ? { amountMinor, reason, requestId } : { amountMinor, requestId },
+      ),
+    onSuccess: async (answer) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['orders', 'detail', answer.order.orderNumber] }),
+        queryClient.invalidateQueries({ queryKey: ['orders', 'list'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ])
     },
   })
 }

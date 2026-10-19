@@ -1,4 +1,4 @@
-import { v7 as uuidv7 } from 'uuid'
+import { v5 as uuidv5, v7 as uuidv7 } from 'uuid'
 import {
   CheckoutError,
   EVT_CART_CONVERTED,
@@ -6,9 +6,13 @@ import {
   EVT_ORDER_PAID,
   EVT_PAYMENT_CAPTURED,
   EVT_PAYMENT_FAILED,
+  EVT_PAYMENT_REFUNDED,
   NotFoundError,
+  OrderConflictError,
   PaymentError,
+  StatusTransitionError,
   type Address,
+  type CaptureMethod,
   type Cart,
   type CheckoutPayment,
   type Logger,
@@ -22,9 +26,16 @@ import {
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { formatMoney } from '../money.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
 import type { CartService } from './cart-service.js'
+import {
+  PROVIDER_REFUND_REASON,
+  refreshRefunded,
+  settlementOf,
+  type Settlement,
+} from './refund-service.js'
 
 export interface BeginCheckoutInput {
   cartToken: string
@@ -72,6 +83,16 @@ export interface CheckoutService {
   cancel(orderId: string, reason: string): Promise<void>
 }
 
+/** The admin's side of a checkout: a payment taken outside the store. */
+export interface ManualPayments {
+  /**
+   * Records a payment the merchant took outside the store (a manual capture of the order's total) and confirms the
+   * pending order exactly as a provider capture does: its reservations committed (re-taken if released), stats,
+   * payment.captured and order.paid, the cart cleared. `order.stock_unavailable` when released stock is gone.
+   */
+  markPaid(orderId: string, actor: string, note?: string): Promise<Order>
+}
+
 export interface CreateCheckoutServiceDeps {
   store: CommandStore
   repos: Repositories
@@ -99,8 +120,30 @@ class StockUnavailable extends Error {
 /** The conditional confirm found the order no longer pending: a concurrent writer moved it first. */
 class NoLongerPending extends Error {}
 
+/** How a confirm records the capture, and who it says confirmed the order. */
+interface CaptureRecord {
+  method: CaptureMethod
+  actor: string
+  note: string
+}
+
+const PROVIDER_CAPTURE: CaptureRecord = {
+  method: 'provider',
+  actor: 'system:checkout',
+  note: 'payment captured',
+}
+
 const FINALIZE_ACTOR = 'system:checkout-finalize'
 const CANCEL_ACTOR = 'system:checkout-cancel'
+
+/** The outcome of a provider capture refunded because the merchant already holds the order's money. */
+const DUPLICATE_CAPTURE = 'duplicate_capture_refunded'
+
+/** The processed-event record, keyed by intent, of a duplicate capture already refunded and recorded. */
+const DUPLICATE_CAPTURE_HANDLER = 'checkout:duplicate-capture'
+
+/** The namespace of the idempotency keys derived from an intent for refunding its capture. */
+const CAPTURE_REFUND_NAMESPACE = '49e623d3-5784-4331-80e9-6f951d97f7c0'
 
 /** Cancels of a changed cart's earlier intent one checkout makes before it gives up to a busier writer. */
 const SUPERSEDE_ATTEMPTS = 3
@@ -138,7 +181,9 @@ function sameLines(order: Order, cart: Cart): boolean {
   })
 }
 
-export function createCheckoutService(deps: CreateCheckoutServiceDeps): CheckoutService {
+export function createCheckoutService(
+  deps: CreateCheckoutServiceDeps,
+): CheckoutService & ManualPayments {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
 
   /** An empty cart's refusal, naming the order the cart became when it became one. */
@@ -169,25 +214,34 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     tx: Tx,
     paymentIntentId: string,
     order: Order | null,
+    paid: CapturedPayment,
   ): Promise<FinalizeResult> {
     if (order === null) return recordOutcome(tx, paymentIntentId, null, 'no_order')
+    // The merchant already holds this order's money from outside the provider: the provider's capture is a second one.
+    if (order.captureMethod === 'manual' || order.captureMethod === 'import') {
+      return refundDuplicateCapture(tx, paymentIntentId, paid, order)
+    }
     // Idempotent on the order: a second event id or a concurrent delivery for a confirmed order changes nothing.
     if (order.status === 'confirmed') return { orderNumber: order.orderNumber, finalized: true }
     if (order.status === 'cancelled') {
-      // Money never stays without an order: a capture for a cancelled order goes back in full. A refund that fails
-      // throws, so the delivery is not recorded and the provider sends it again.
-      await payments.refund(paymentIntentId)
+      // Money never stays without an order: a capture for a cancelled order goes back in full, once (a capture already
+      // recorded on it was refunded with it, or is held as a pending or failed refund).
+      if (order.capturedMinor === 0) await refundCancelledCapture(paymentIntentId, paid, order)
       return recordOutcome(tx, paymentIntentId, order, 'order_cancelled_refunded')
     }
     return recordOutcome(tx, paymentIntentId, order, `order_not_pending: ${order.status}`)
   }
 
-  /** A captured payment that does not confirm its order: recorded, and nothing else changes. */
+  /**
+   * A captured payment that does not confirm its order: recorded, and nothing else changes. `detail` is for the
+   * merchant's note only; the event and the result carry the bare reason.
+   */
   async function recordOutcome(
     tx: Tx,
     paymentIntentId: string,
     order: Order | null,
     reason: string,
+    detail?: string,
   ): Promise<FinalizeResult> {
     await publisher.publish(EVT_PAYMENT_FAILED, {
       paymentId: paymentIntentId,
@@ -201,7 +255,7 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
         fromStatus: order.status,
         toStatus: order.status,
         actor: FINALIZE_ACTOR,
-        note: `captured payment not applied: ${reason}`,
+        note: `captured payment not applied: ${reason}${detail === undefined ? '' : ` (${detail})`}`,
         timestamp: new Date(),
       })
     }
@@ -240,11 +294,168 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     return retaken.reservationId
   }
 
+  /**
+   * The provider's refund of a capture, settled by its answer: a definite refusal is `failed`, an unknown outcome (a
+   * timeout, a provider fault) `pending` until it is reconciled, as the refund route settles one.
+   */
+  async function refundCapture(
+    paymentIntentId: string,
+    paid: CapturedPayment,
+    currency: string,
+    key: string,
+    context: Record<string, unknown>,
+  ): Promise<Settlement> {
+    try {
+      const answer = await payments.refund(
+        paymentIntentId,
+        paid.amountMinor,
+        PROVIDER_REFUND_REASON,
+        {
+          idempotencyKey: key,
+          currency,
+        },
+      )
+      const settlement = settlementOf(answer, { amountMinor: paid.amountMinor, currency })
+      if (settlement.mismatch) {
+        logger.error(
+          { ...context, answer: { amountMinor: answer.amountMinor, currency: answer.currency } },
+          'provider refund answer differs from the capture; left pending',
+        )
+      }
+      return settlement
+    } catch (err) {
+      if (err instanceof PaymentError && err.code === 'payment.refund_rejected') {
+        logger.error({ ...context, err }, 'provider refused the refund of a capture')
+        return { status: 'failed', providerRefundId: null, mismatch: false }
+      }
+      logger.error(
+        { ...context, err },
+        'capture refund outcome unknown; left pending until reconciled',
+      )
+      return { status: 'pending', providerRefundId: null, mismatch: false }
+    }
+  }
+
+  /**
+   * A capture whose order is cancelled, refunded in full and recorded as both a capture and an equal refund, so the
+   * cancelled order nets to zero. The capture and a `pending` refund row are written before the provider is asked, the
+   * row's id its idempotency key, so an outcome the shop cannot know stays recorded and the delivery is recorded once.
+   * The key is derived from the intent, which captures once: a delivery retried after a crash asks with the same key.
+   * The provider is asked for the captured amount and the order's currency by name, as every refund is. Joins the
+   * caller's transaction when there is one.
+   */
+  async function refundCancelledCapture(
+    paymentIntentId: string,
+    paid: CapturedPayment,
+    order: Order,
+  ): Promise<void> {
+    const refundId = uuidv5(`cancelled-capture:${paymentIntentId}`, CAPTURE_REFUND_NAMESPACE)
+    const held = await store.transaction(async (tx) => {
+      const locked = await repos.order.lock(tx, order.id)
+      // A concurrent delivery recorded this capture first.
+      if (locked === null || locked.capturedMinor > 0) return false
+      const now = new Date()
+      await repos.order.recordCapture(tx, order.id, {
+        amountMinor: paid.amountMinor,
+        method: 'provider',
+        at: now,
+      })
+      await repos.orderRefund.insert(tx, {
+        id: refundId,
+        orderId: order.id,
+        amountMinor: paid.amountMinor,
+        currency: order.currency,
+        providerRefundId: null,
+        status: 'pending',
+        reason: 'captured for a cancelled order',
+        actor: 'system:checkout',
+        createdAt: now,
+      })
+      return true
+    })
+    if (!held) return
+    const settlement = await refundCapture(paymentIntentId, paid, order.currency, refundId, {
+      orderId: order.id,
+      refundId,
+    })
+    if (settlement.status === 'pending') return
+    await store.transaction(async (tx) => {
+      await repos.order.lock(tx, order.id)
+      await repos.orderRefund.settle(tx, refundId, {
+        status: settlement.status,
+        providerRefundId: settlement.providerRefundId,
+      })
+      await refreshRefunded(repos, tx, order.id, new Date())
+      if (settlement.status === 'succeeded') {
+        await publisher.publish(EVT_PAYMENT_REFUNDED, {
+          paymentId: paymentIntentId,
+          orderId: order.id,
+          refundId,
+          amountMinor: paid.amountMinor,
+          currency: order.currency,
+        })
+      }
+    })
+  }
+
+  /**
+   * A provider capture for an order the merchant was already paid for outside the provider (marked paid, or imported):
+   * refunded in full, once per intent, and recorded as an outcome. The order's captured and refunded amounts keep
+   * meaning the money the merchant holds, so neither changes. An unknown outcome throws: the delivery is not recorded,
+   * and the provider's redelivery asks again under the same key.
+   */
+  async function refundDuplicateCapture(
+    tx: Tx,
+    paymentIntentId: string,
+    paid: CapturedPayment,
+    order: Order,
+  ): Promise<FinalizeResult> {
+    if (await repos.processedEvent.seen(tx, DUPLICATE_CAPTURE_HANDLER, paymentIntentId)) {
+      return { orderNumber: order.orderNumber, finalized: false, reason: DUPLICATE_CAPTURE }
+    }
+    const key = uuidv5(`duplicate-capture:${paymentIntentId}`, CAPTURE_REFUND_NAMESPACE)
+    const settlement = await refundCapture(
+      paymentIntentId,
+      paid,
+      paid.currency.toUpperCase(),
+      key,
+      {
+        orderId: order.id,
+        idempotencyKey: key,
+      },
+    )
+    if (settlement.status === 'pending' && !settlement.mismatch) {
+      throw new CheckoutError(
+        'finalize_failed',
+        `The refund of a second capture of order ${order.orderNumber} has no known outcome`,
+        { context: { orderNumber: order.orderNumber } },
+      )
+    }
+    await repos.processedEvent.markProcessed(
+      tx,
+      DUPLICATE_CAPTURE_HANDLER,
+      paymentIntentId,
+      new Date(),
+    )
+    const reason =
+      settlement.status === 'succeeded'
+        ? DUPLICATE_CAPTURE
+        : `duplicate_capture_refund_${settlement.status}`
+    return recordOutcome(
+      tx,
+      paymentIntentId,
+      order,
+      reason,
+      `capture of ${formatMoney(paid.amountMinor, paid.currency)}`,
+    )
+  }
+
   async function confirm(
     tx: Tx,
     paymentIntentId: string,
     paid: CapturedPayment,
     order: Order,
+    capture: CaptureRecord,
   ): Promise<FinalizeResult> {
     const metadata = order.metadata as Partial<DraftMetadata>
     const reservationIds = Array.isArray(metadata.reservationIds)
@@ -260,17 +471,22 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
     if (!(await repos.order.setStatusIf(tx, order.id, 'pending', 'confirmed', now))) {
       throw new NoLongerPending()
     }
+    await repos.order.recordCapture(tx, order.id, {
+      amountMinor: paid.amountMinor,
+      method: capture.method,
+      at: now,
+    })
     await repos.orderHistory.append(tx, {
       id: uuidv7(),
       orderId: order.id,
       fromStatus: 'pending',
       toStatus: 'confirmed',
-      actor: 'system:checkout',
-      note: 'payment captured',
+      actor: capture.actor,
+      note: capture.note,
       timestamp: now,
     })
     if (order.customerId) {
-      await repos.customer.incrementStats(tx, order.customerId, 1, order.totalMinor, now)
+      await repos.customer.incrementStats(tx, order.customerId, 1, paid.amountMinor, now)
     }
 
     await publisher.publish(EVT_PAYMENT_CAPTURED, {
@@ -525,11 +741,15 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       }
     })
     // A capture that did not confirm its still-pending order goes back in full, after the commit and outside any
-    // transaction (finalize already refunded one whose order was cancelled). The draft is cancelled first: a refund
-    // that throws then leaves a cancelled order, which the webhook's backstop refunds, never a pending one to confirm.
+    // transaction (finalize already refunded one whose order was cancelled). The draft is cancelled first, so the
+    // capture is recorded on a cancelled order with its refund, never left on a pending one to confirm.
     if (unconfirmed !== null && answer.orderStatus === 'pending') {
       await cancelDraft(order.id, unconfirmed)
-      await payments.refund(intent.id)
+      await refundCancelledCapture(
+        intent.id,
+        { amountMinor: intent.amountMinor, currency: intent.currency },
+        order,
+      )
       return { ...answer, orderStatus: 'cancelled' }
     }
     return answer
@@ -540,7 +760,9 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       const outcome = (order: Order | null, reason: string) =>
         recordOutcome(tx, paymentIntentId, order, reason)
       const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
-      if (order === null || order.status !== 'pending') return settled(tx, paymentIntentId, order)
+      if (order === null || order.status !== 'pending') {
+        return settled(tx, paymentIntentId, order, paid)
+      }
       // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
       if (
         paid.amountMinor !== order.totalMinor ||
@@ -554,18 +776,20 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
       }
       try {
         // Behind a savepoint: when stock is gone or the order moved first, whatever the earlier lines took is undone.
-        return await store.savepoint(() => confirm(tx, paymentIntentId, paid, order))
+        return await store.savepoint(() =>
+          confirm(tx, paymentIntentId, paid, order, PROVIDER_CAPTURE),
+        )
       } catch (err) {
         if (err instanceof StockUnavailable) {
           // A concurrent writer may have confirmed the order with the units this re-take wanted.
           const current = await repos.order.findById(tx, order.id)
-          if (current?.status !== 'pending') return settled(tx, paymentIntentId, current)
+          if (current?.status !== 'pending') return settled(tx, paymentIntentId, current, paid)
           return outcome(current, `stock_unavailable: ${err.variantId}`)
         }
         if (!(err instanceof NoLongerPending)) throw err
       }
       // Another delivery (or an admin) moved the order between the read and the write.
-      return settled(tx, paymentIntentId, await repos.order.findById(tx, order.id))
+      return settled(tx, paymentIntentId, await repos.order.findById(tx, order.id), paid)
     })
   }
 
@@ -596,6 +820,53 @@ export function createCheckoutService(deps: CreateCheckoutServiceDeps): Checkout
 
     async cancel(orderId, reason) {
       await cancelDraft(orderId, reason)
+    },
+
+    async markPaid(orderId, actor, note) {
+      // The order's intent is closed with the provider before the payment is recorded, outside any transaction: left
+      // open, the shopper could still pay it and be charged twice.
+      const found = await store.read((tx) => repos.order.findById(tx, orderId))
+      if (!found) throw new NotFoundError('order', orderId)
+      if (found.status !== 'pending') {
+        throw new StatusTransitionError('order', found.status, 'confirmed')
+      }
+      if (found.paymentIntentId) {
+        try {
+          await payments.cancelPaymentIntent(found.paymentIntentId)
+        } catch (err) {
+          if (!(err instanceof PaymentError && err.code === 'payment.cancel_refused')) throw err
+          throw new OrderConflictError(
+            'order.payment_in_progress',
+            `The payment for order ${found.orderNumber} is under way with the provider`,
+            { cause: err, context: { orderNumber: found.orderNumber } },
+          )
+        }
+      }
+      return store.transaction(async (tx) => {
+        const order = await repos.order.lock(tx, orderId)
+        if (!order) throw new NotFoundError('order', orderId)
+        if (order.status !== 'pending') {
+          throw new StatusTransitionError('order', order.status, 'confirmed')
+        }
+        const capture: CaptureRecord = {
+          method: 'manual',
+          actor,
+          note: note ? `payment recorded manually: ${note}` : 'payment recorded manually',
+        }
+        const paid = { amountMinor: order.totalMinor, currency: order.currency }
+        try {
+          // No provider took this payment: the events name none.
+          await confirm(tx, '', paid, order, capture)
+        } catch (err) {
+          if (!(err instanceof StockUnavailable)) throw err
+          throw new OrderConflictError(
+            'order.stock_unavailable',
+            `The stock order ${order.orderNumber} held has gone to another order`,
+            { context: { variantId: err.variantId } },
+          )
+        }
+        return (await repos.order.findById(tx, order.id))!
+      })
     },
   }
 }

@@ -12,20 +12,13 @@ import {
   type OrderPaidV1Payload,
   type OrderShippedV1Payload,
 } from '@nymbalhq/types'
+import { formatMoney } from '../../money.js'
 import { withIdempotency } from '../idempotency.js'
 import type { OrderRepository } from '../../repositories/order.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 
 /** The handler name of the order-placed email's records: one per order, whatever number of order.paid it gets. */
 const ORDER_PAID_EMAIL = 'email:order-paid'
-
-/** `totalMinor` in the currency's own minor units: 1999 GBP is 19.99, 1999 JPY is 1999. */
-function formatTotal(totalMinor: number, currency: string): string {
-  const code = currency.toUpperCase()
-  const format = new Intl.NumberFormat('en-GB', { style: 'currency', currency: code })
-  const digits = format.resolvedOptions().maximumFractionDigits ?? 2
-  return format.format(totalMinor / 10 ** digits)
-}
 
 export interface RegisterEmailHandlerDeps {
   eventBus: EventBusAdapter
@@ -40,7 +33,7 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
   const { eventBus, email, logger, processedEventRepo, orderRepo, storeName } = deps
 
   // Sent on payment, never at placement: an unpaid order (or an imported one) emails nobody. Keyed per order, so a
-  // mark-paid after the payment sends nothing more.
+  // second order.paid for the order (a redelivered or replayed event) sends nothing more.
   const onOrderPaid: EventHandler<OrderPaidV1Payload> = async (event) => {
     const { orderId } = event.payload
     const { store } = processedEventRepo
@@ -56,7 +49,7 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
       vars: {
         orderNumber: order.orderNumber,
         customerName: order.billingAddress.firstName,
-        totalFormatted: formatTotal(order.totalMinor, order.currency),
+        totalFormatted: formatMoney(order.totalMinor, order.currency),
       },
     })
     await store.transaction((tx) =>

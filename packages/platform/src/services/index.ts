@@ -10,8 +10,13 @@ import { createCustomerService, type CustomerService } from './customer-service.
 import { createAuthService, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
 import { createInventoryService, type InventoryService } from './inventory-service.js'
-import { createCheckoutService, type CheckoutService } from './checkout-service.js'
+import {
+  createCheckoutService,
+  type CheckoutService,
+  type ManualPayments,
+} from './checkout-service.js'
 import { createSearchService, type SearchService } from './search-service.js'
+import { createRefundService, type RefundService } from './refund-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -22,6 +27,7 @@ export * from './order-service.js'
 export * from './inventory-service.js'
 export * from './checkout-service.js'
 export * from './search-service.js'
+export * from './refund-service.js'
 
 export interface ServiceRegistry {
   product: ProductService
@@ -31,7 +37,8 @@ export interface ServiceRegistry {
   auth: AuthService
   order: OrderService
   inventory: InventoryService
-  checkout: CheckoutService
+  checkout: CheckoutService & ManualPayments
+  refund: RefundService
   search: SearchService
 }
 
@@ -108,6 +115,13 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     order: orders,
     inventory,
     checkout,
+    refund: createRefundService({
+      store,
+      repos,
+      publisher,
+      logger: logger.child({ service: 'refund' }),
+      payments,
+    }),
     search: createSearchService({
       adapter: searchAdapter,
       logger: logger.child({ service: 'search' }),

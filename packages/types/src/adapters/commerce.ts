@@ -16,11 +16,24 @@ export interface CommerceAdapter extends AdapterBase {
 
 // --- Payments ---------------------------------------------------------------
 
+export interface RefundOptions {
+  /** The same key on a retry makes the provider refund at most once. */
+  idempotencyKey?: string
+  /** The order's currency: what a provider that no longer holds the payment answers in. */
+  currency?: string
+}
+
 export interface PaymentsAdapter extends CommerceAdapter {
   readonly kind: 'payments'
   createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent>
   capturePayment(intentId: string, amountMinor?: number): Promise<PaymentCapture>
-  refund(paymentId: string, amountMinor?: number, reason?: string): Promise<Refund>
+  /** Throws `PaymentError('refund_rejected')` when no money moved, `PaymentError('refund_unknown')` when it may have. */
+  refund(
+    paymentId: string,
+    amountMinor?: number,
+    reason?: string,
+    opts?: RefundOptions,
+  ): Promise<Refund>
   getPaymentStatus(intentId: string): Promise<PaymentStatus>
   /** The intent as the provider holds it now, client secret included: what a shopper needs to pay it again. */
   getPaymentIntent(intentId: string): Promise<PaymentIntent>

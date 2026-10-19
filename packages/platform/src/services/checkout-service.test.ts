@@ -8,9 +8,14 @@ import {
   EVT_CART_CONVERTED,
   EVT_CART_UPDATED,
   EVT_ORDER_CANCELLED,
+  EVT_PAYMENT_REFUNDED,
   CheckoutError,
   NotFoundError,
+  OrderConflictError,
   PaymentError,
+  StatusTransitionError,
+  type Refund,
+  type RefundOptions,
   type PaymentIntentParams,
   type PaymentsAdapter,
   type PaymentStatus,
@@ -85,6 +90,7 @@ async function setup() {
     checkout,
     inventory,
     order,
+    payments,
     publisher,
     repos,
   }
@@ -504,7 +510,8 @@ describe('CheckoutService', () => {
     })
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      email: 'cancel@example.com',
+      // Pending, so the order holds no capture and may be cancelled (P1-13 decision 4).
+      email: 'cancel+stub-pending@example.com',
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
     })
@@ -799,6 +806,32 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     await env.checkout.cancel(cancelled.started.orderId, 'admin cancelled')
     const confirmed = await placeOrder(env, [{ priceMinor: 540, stock: 3, qty: 1 }])
     await env.checkout.finalize(confirmed.started.paymentIntent.id, confirmed.paid)
+    // The cancelled leg's backstop refunds whatever amount it is handed; the provider answers it, so a generated amount
+    // the stub would refuse still reaches the status check.
+    const answering: PaymentsAdapter = {
+      ...env.payments,
+      async refund(paymentId, amountMinor, reason, opts) {
+        return {
+          refundId: `re_d4_${uuidv7()}`,
+          paymentId,
+          amountMinor: amountMinor ?? 0,
+          currency: opts?.currency ?? 'GBP',
+          reason: reason ?? null,
+          status: 'succeeded',
+        }
+      },
+    }
+    const backstop = createCheckoutService({
+      store: env.commandStore,
+      repos: env.repos,
+      publisher: env.publisher,
+      logger: createLogger({ pretty: false, level: 'error' }),
+      cart: env.cart,
+      orders: env.order,
+      inventory: env.inventory,
+      payments: answering,
+      currency: 'GBP',
+    })
 
     await fc.assert(
       fc.asyncProperty(
@@ -806,13 +839,13 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
         fc.constantFrom('GBP', 'usd'),
         async (amountMinor, currency) => {
           const wrongOrRight = { amountMinor, currency }
-          expect(
-            await env.checkout.finalize(cancelled.started.paymentIntent.id, wrongOrRight),
-          ).toEqual({
-            orderNumber: cancelled.started.orderNumber,
-            finalized: false,
-            reason: 'order_cancelled_refunded',
-          })
+          expect(await backstop.finalize(cancelled.started.paymentIntent.id, wrongOrRight)).toEqual(
+            {
+              orderNumber: cancelled.started.orderNumber,
+              finalized: false,
+              reason: 'order_cancelled_refunded',
+            },
+          )
           expect(
             await env.checkout.finalize(confirmed.started.paymentIntent.id, wrongOrRight),
           ).toEqual({ orderNumber: confirmed.started.orderNumber, finalized: true })
@@ -834,6 +867,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
       { priceMinor: 700, stock: 4, qty: 1 },
     ])
     await env.checkout.cancel(started.orderId, 'admin cancelled')
+    // The shopper's payment lands after the cancel: the provider now holds the intent captured.
+    await env.payments.capturePayment(started.paymentIntent.id)
     const stockBefore = await stockOf(env, variants[0]!.id)
     const historyBefore = await historyOf(env, started.orderId)
     const reason = 'order_cancelled_refunded'
@@ -1703,9 +1738,12 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
     const env = await setup()
     const { payments, calls } = provider((stub) => ({
       async createPaymentIntent(params) {
-        const intent = await stub.createPaymentIntent(params)
-        // The provider captured more than the order's total.
-        return { ...intent, amountMinor: params.amountMinor + 1, status: 'succeeded' }
+        // The provider captured more than the order's total, and holds that capture to refund.
+        const intent = await stub.createPaymentIntent({
+          ...params,
+          amountMinor: params.amountMinor + 1,
+        })
+        return { ...intent, status: 'succeeded' }
       },
     }))
     const line = { priceMinor: 650, stock: 5, qty: 2 }
@@ -1772,3 +1810,543 @@ function makeAddr() {
     country: 'GB',
   }
 }
+
+// P1-13 (spec P1-13-admin-truth-about-money): decision 2's mark-paid as a manual capture through `confirm` (B4) that
+// first closes the order's intent (diff review B1), the backstop that refunds a provider capture of an order already
+// paid outside the provider, the cancelled-capture refund recorded before the provider is asked (diff review M3), and
+// `refundCapture`'s mapping of the provider's outcome. The integration suites pin these through the routes; Stryker
+// mutates this file against the unit project only.
+describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and the cancelled-capture refund', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+  type Line = { priceMinor: number; stock: number; qty: number }
+  const logger = createLogger({ pretty: false, level: 'silent' })
+
+  interface RefundCall {
+    paymentId: string
+    amountMinor: number | undefined
+    reason: string | undefined
+    opts: RefundOptions | undefined
+  }
+  const echo = async (c: RefundCall): Promise<Refund> => ({
+    refundId: `re_${uuidv7()}`,
+    paymentId: c.paymentId,
+    amountMinor: c.amountMinor ?? 0,
+    currency: c.opts?.currency ?? 'GBP',
+    reason: c.reason ?? null,
+    status: 'succeeded',
+  })
+  const failing = (err: Error) => async (): Promise<Refund> => {
+    throw err
+  }
+
+  /** The stub provider with its refunds and cancels scripted and recorded. */
+  function withProvider(env: Env, inventory: Env['inventory'] = env.inventory) {
+    const stub = createNativeStubPaymentsAdapter({ logger })
+    const script = {
+      refund: echo as (c: RefundCall) => Promise<Refund>,
+      cancel: (id: string) => stub.cancelPaymentIntent(id),
+    }
+    const calls = { refunds: [] as RefundCall[], cancelled: [] as string[] }
+    const payments: PaymentsAdapter = {
+      ...stub,
+      async refund(paymentId, amountMinor, reason, opts) {
+        const call = { paymentId, amountMinor, reason, opts }
+        calls.refunds.push(call)
+        return script.refund(call)
+      },
+      async cancelPaymentIntent(id) {
+        calls.cancelled.push(id)
+        return script.cancel(id)
+      },
+    }
+    const checkout = createCheckoutService({
+      store: env.commandStore,
+      repos: env.repos,
+      publisher: env.publisher,
+      logger,
+      cart: env.cart,
+      orders: env.order,
+      inventory,
+      payments,
+      currency: 'GBP',
+    })
+    return { stub, script, calls, checkout }
+  }
+  type Provider = ReturnType<typeof withProvider>
+
+  /** A pending order whose intent waits for the shopper (`+stub-pending`). */
+  async function pendingOrder(
+    env: Env,
+    p: Provider,
+    lines: Line[] = [{ priceMinor: 1250, stock: 5, qty: 2 }],
+  ) {
+    const tag = uuidv7().slice(-8)
+    const product = await env.product.create({
+      slug: `paid-${tag}`,
+      name: `Paid ${tag}`,
+      status: 'active',
+      variants: lines.map((l, i) => ({
+        sku: `PAID-${tag}-${i}`,
+        name: `V${i}`,
+        priceMinor: l.priceMinor,
+        stock: l.stock,
+        lowStockThreshold: 0,
+        options: [],
+      })),
+    })
+    const cart = await env.cart.getOrCreate()
+    for (const [i, variant] of product.variants.entries()) {
+      await env.cart.addItem(cart.token, {
+        variantId: variant.id,
+        productId: product.id,
+        productName: product.name,
+        variantName: variant.name,
+        priceMinor: variant.priceMinor,
+        imageUrl: '',
+        qty: lines[i]!.qty,
+      })
+    }
+    const started = await p.checkout.beginCheckout({
+      cartToken: cart.token,
+      email: `${tag}+stub-pending@example.com`,
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+    })
+    const paid = { amountMinor: started.totalMinor, currency: started.currency }
+    return { started, variants: product.variants, paid, intent: started.paymentIntent.id }
+  }
+
+  const read = <T>(
+    env: Env,
+    fn: (tx: Parameters<Parameters<Env['commandStore']['read']>[0]>[0]) => Promise<T>,
+  ) => env.commandStore.read(fn)
+  const orderOf = async (env: Env, id: string) =>
+    (await read(env, (tx) => env.repos.order.findById(tx, id)))!
+  const historyOf = (env: Env, id: string) =>
+    read(env, (tx) => env.repos.orderHistory.listByOrder(tx, id))
+  const rowsOf = (env: Env, id: string) =>
+    read(env, (tx) => env.repos.orderRefund.listByOrder(tx, id))
+  const stockOf = async (env: Env, variantId: string) =>
+    (await read(env, (tx) => env.repos.variant.findById(tx, variantId)))!.stock
+  async function events(env: Env, type: string, orderId: string) {
+    const all = await read(env, (tx) => env.repos.eventLog.listAll(tx))
+    return all
+      .map((l) => l.event)
+      .filter((e) => e.type === type)
+      .map((e) => e.payload as Record<string, unknown>)
+      .filter((p) => p.orderId === orderId)
+  }
+  const refusal = (p: Promise<unknown>) => p.then(() => null).catch((e: unknown) => e)
+
+  // Defect (diff review B1): the intent is left open, or cancelled after the payment is recorded; (B4) mark-paid
+  // confirms without committing the reservations, records no manual capture, or names a provider payment in its events.
+  it('AC-2: mark-paid closes the intent first, then confirms through confirm as a manual capture of the total', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const line = { priceMinor: 1250, stock: 5, qty: 2 }
+    const { started, variants, intent } = await pendingOrder(env, p, [line])
+    let pendingWhenCancelled: string | undefined
+    p.script.cancel = async (id) => {
+      pendingWhenCancelled = (await orderOf(env, started.orderId)).status
+      return p.stub.cancelPaymentIntent(id)
+    }
+
+    const order = await p.checkout.markPaid(started.orderId, 'admin:1', 'cash at the till')
+
+    expect(p.calls.cancelled).toEqual([intent])
+    expect(pendingWhenCancelled).toBe('pending')
+    expect(await p.stub.getPaymentStatus(intent)).toBe('cancelled')
+    expect(order.status).toBe('confirmed')
+    expect(order.capturedMinor).toBe(order.totalMinor)
+    expect(order.captureMethod).toBe('manual')
+    expect(order.capturedAt).not.toBeNull()
+    expect(order.refundedMinor).toBe(0)
+    const last = (await historyOf(env, started.orderId)).at(-1)!
+    expect(last).toMatchObject({
+      fromStatus: 'pending',
+      toStatus: 'confirmed',
+      actor: 'admin:1',
+      note: 'payment recorded manually: cash at the till',
+    })
+    // The reservation is committed: the units stay taken, and no reservation is left for the sweeper to release.
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    expect(
+      await read(env, (tx) => env.repos.inventoryReservation.findByVariant(tx, variants[0]!.id)),
+    ).toHaveLength(0)
+    expect(await events(env, EVT_PAYMENT_CAPTURED, started.orderId)).toEqual([
+      { paymentId: '', orderId: started.orderId, amountMinor: order.totalMinor, currency: 'GBP' },
+    ])
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toEqual([
+      {
+        orderId: started.orderId,
+        paymentIntentId: '',
+        amountMinor: order.totalMinor,
+        currency: 'GBP',
+      },
+    ])
+
+    // Without a note the history says only that, and an order with no intent asks the provider nothing.
+    const draftId = uuidv7()
+    await env.order.createFromCheckout({
+      orderId: draftId,
+      customerId: null,
+      email: 'draft@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      lineItems: [],
+      subtotalMinor: 800,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor: 800,
+      currency: 'GBP',
+    })
+    const draft = await p.checkout.markPaid(draftId, 'admin:2')
+    expect(draft.capturedMinor).toBe(draft.totalMinor)
+    expect((await historyOf(env, draftId)).at(-1)!.note).toBe('payment recorded manually')
+    expect(p.calls.cancelled).toEqual([intent])
+    await env.commandStore.close()
+  })
+
+  // Defect (diff review B1): a refused cancel is ignored and the order is confirmed while the shopper's payment goes
+  // through (charged twice), or any other provider error is swallowed or dressed as payment_in_progress.
+  it('diff B1: a cancel the provider refuses answers order.payment_in_progress and changes nothing; any other error is rethrown', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const { started, intent } = await pendingOrder(env, p)
+    await p.stub.capturePayment(intent)
+    const historyBefore = await historyOf(env, started.orderId)
+
+    const err = await refusal(p.checkout.markPaid(started.orderId, 'admin:1'))
+    expect(err).toBeInstanceOf(OrderConflictError)
+    expect(err).toMatchObject({
+      code: 'order.payment_in_progress',
+      context: { orderNumber: started.orderNumber },
+    })
+    expect((err as Error).cause).toBeInstanceOf(PaymentError)
+
+    const fault = new PaymentError('intent_failed', 'provider down')
+    p.script.cancel = async () => {
+      throw fault
+    }
+    expect(await refusal(p.checkout.markPaid(started.orderId, 'admin:1'))).toBe(fault)
+
+    const after = await orderOf(env, started.orderId)
+    expect(after.status).toBe('pending')
+    expect(after.capturedMinor).toBe(0)
+    expect(await historyOf(env, started.orderId)).toEqual(historyBefore)
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
+    await env.commandStore.close()
+  })
+
+  // Defect: mark-paid of a missing or non-pending order reaches the provider, or confirms an order that a concurrent
+  // writer moved while the intent was being cancelled.
+  it('AC-2: mark-paid of an unknown or non-pending order, or one moved during the cancel, refuses and records nothing', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    expect(await refusal(p.checkout.markPaid(uuidv7(), 'admin:1'))).toBeInstanceOf(NotFoundError)
+
+    const first = await pendingOrder(env, p)
+    await p.checkout.markPaid(first.started.orderId, 'admin:1')
+    const again = await refusal(p.checkout.markPaid(first.started.orderId, 'admin:1'))
+    expect(again).toBeInstanceOf(StatusTransitionError)
+    expect(again).toMatchObject({ context: { fromStatus: 'confirmed', toStatus: 'confirmed' } })
+    expect(p.calls.cancelled).toEqual([first.intent])
+
+    const raced = await pendingOrder(env, p)
+    p.script.cancel = async (id) => {
+      await env.checkout.cancel(raced.started.orderId, 'shopper gave up')
+      return p.stub.cancelPaymentIntent(id)
+    }
+    const moved = await refusal(p.checkout.markPaid(raced.started.orderId, 'admin:1'))
+    expect(moved).toBeInstanceOf(StatusTransitionError)
+    expect(moved).toMatchObject({ context: { fromStatus: 'cancelled' } })
+    const after = await orderOf(env, raced.started.orderId)
+    expect(after.status).toBe('cancelled')
+    expect(after.capturedMinor).toBe(0)
+    await env.commandStore.close()
+  })
+
+  // Defect (B4): a released line whose stock is gone confirms anyway (an oversell), or the refusal is not a 409 naming
+  // the variant; or any other fault in confirm is dressed as stock_unavailable.
+  it('AC-2: mark-paid whose released stock is gone answers order.stock_unavailable naming the variant, and the order stays pending', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const line = { priceMinor: 700, stock: 3, qty: 3 }
+    const { started, variants } = await pendingOrder(env, p, [line])
+    const v = variants[0]!
+    const [held] = await read(env, (tx) => env.repos.inventoryReservation.findByVariant(tx, v.id))
+    await env.inventory.releaseReservation(held!.reservationId, 'expired')
+    await env.inventory.reserveStock(v.id, line.stock, 'another-order')
+
+    const err = await refusal(p.checkout.markPaid(started.orderId, 'admin:1'))
+    expect(err).toBeInstanceOf(OrderConflictError)
+    expect(err).toMatchObject({ code: 'order.stock_unavailable', context: { variantId: v.id } })
+    const after = await orderOf(env, started.orderId)
+    expect(after.status).toBe('pending')
+    expect(after.capturedMinor).toBe(0)
+    expect(await stockOf(env, v.id)).toBe(0)
+
+    const fault = new Error('database is locked')
+    const broken = withProvider(env, {
+      ...env.inventory,
+      async commitReservation() {
+        throw fault
+      },
+    })
+    const other = await pendingOrder(env, broken)
+    expect(await refusal(broken.checkout.markPaid(other.started.orderId, 'admin:1'))).toBe(fault)
+    expect((await orderOf(env, other.started.orderId)).status).toBe('pending')
+    await env.commandStore.close()
+  })
+
+  // Defect (diff review B1 backstop): a provider capture of an order the merchant already holds money for is taken as
+  // done (kept twice), refunded more than once per intent, refunded in the capture's lower-case currency, or recorded
+  // in the order's captured and refunded amounts.
+  it('diff B1: a provider capture of a manual or import order is refunded once per intent and recorded as duplicate_capture_refunded', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const manual = await pendingOrder(env, p)
+    await p.checkout.markPaid(manual.started.orderId, 'admin:1')
+    const before = await orderOf(env, manual.started.orderId)
+    const paid = { amountMinor: manual.paid.amountMinor, currency: 'gbp' }
+
+    const first = await p.checkout.finalize(manual.intent, paid)
+    const second = await p.checkout.finalize(manual.intent, paid)
+
+    expect(first).toEqual({
+      orderNumber: manual.started.orderNumber,
+      finalized: false,
+      reason: 'duplicate_capture_refunded',
+    })
+    expect(second).toEqual(first)
+    expect(p.calls.refunds).toHaveLength(1)
+    expect(p.calls.refunds[0]).toMatchObject({
+      paymentId: manual.intent,
+      amountMinor: paid.amountMinor,
+      reason: 'requested_by_customer',
+      opts: { currency: 'GBP' },
+    })
+    const after = await orderOf(env, manual.started.orderId)
+    expect([after.capturedMinor, after.refundedMinor, after.captureMethod, after.status]).toEqual([
+      before.capturedMinor,
+      before.refundedMinor,
+      'manual',
+      'confirmed',
+    ])
+    expect(await rowsOf(env, manual.started.orderId)).toHaveLength(0)
+    expect(await events(env, EVT_PAYMENT_FAILED, manual.started.orderId)).toEqual([
+      { paymentId: manual.intent, orderId: manual.started.orderId, reason: first.reason },
+    ])
+    expect((await historyOf(env, manual.started.orderId)).at(-1)!.note).toMatch(
+      /^captured payment not applied: duplicate_capture_refunded \(capture of .*\d.*\)$/,
+    )
+
+    // An imported order is held the same way; a provider-confirmed order is not refunded at all.
+    const imported = await env.order.importOrder({
+      orderId: uuidv7(),
+      orderNumber: `WC-${uuidv7().slice(-10)}`,
+      status: 'confirmed',
+      customerId: null,
+      email: 'wc@example.com',
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      lineItems: [],
+      subtotalMinor: 4400,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor: 4400,
+      currency: 'GBP',
+      paymentIntentId: 'pi_stub_imported',
+      capturedMinor: 4400,
+      captureMethod: 'import',
+      createdAt: new Date(),
+    })
+    const fromImport = await p.checkout.finalize('pi_stub_imported', {
+      amountMinor: 4400,
+      currency: 'GBP',
+    })
+    expect(fromImport.reason).toBe('duplicate_capture_refunded')
+    const provider = await pendingOrder(env, p)
+    await p.checkout.finalize(provider.intent, provider.paid)
+    expect(await p.checkout.finalize(provider.intent, provider.paid)).toEqual({
+      orderNumber: provider.started.orderNumber,
+      finalized: true,
+    })
+    expect(p.calls.refunds.map((c) => c.paymentId)).toEqual([manual.intent, 'pi_stub_imported'])
+    const keys = p.calls.refunds.map((c) => c.opts?.idempotencyKey)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect((await orderOf(env, imported.id)).capturedMinor).toBe(imported.capturedMinor)
+    await env.commandStore.close()
+  })
+
+  // Defect: an unknown refund outcome is recorded as done (the redelivery never asks again, money may be kept twice)
+  // or retried under a new key (refunded twice); a refusal or a mismatched answer is retried for ever or recorded as
+  // refunded.
+  it('diff B1: the backstop throws on an unknown outcome and the redelivery asks again under the same key; failed and pending are recorded once', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const held = async () => {
+      const o = await pendingOrder(env, p)
+      await p.checkout.markPaid(o.started.orderId, 'admin:1')
+      return o
+    }
+
+    const unknown = await held()
+    p.script.refund = failing(new PaymentError('refund_unknown', 'timeout'))
+    const err = await refusal(p.checkout.finalize(unknown.intent, unknown.paid))
+    expect(err).toBeInstanceOf(CheckoutError)
+    expect(err).toMatchObject({
+      code: 'checkout.finalize_failed',
+      context: { orderNumber: unknown.started.orderNumber },
+    })
+    expect(await events(env, EVT_PAYMENT_FAILED, unknown.started.orderId)).toHaveLength(0)
+    p.script.refund = echo
+    const retried = await p.checkout.finalize(unknown.intent, unknown.paid)
+    expect(retried.reason).toBe('duplicate_capture_refunded')
+    const [asked, again] = p.calls.refunds
+    expect(again!.opts?.idempotencyKey).toBe(asked!.opts?.idempotencyKey)
+
+    const outcomes: Array<[string, (c: RefundCall) => Promise<Refund>, string]> = [
+      [
+        'rejected',
+        failing(new PaymentError('refund_rejected', 'no')),
+        'duplicate_capture_refund_failed',
+      ],
+      [
+        'another amount',
+        async (c) => ({ ...(await echo(c)), amountMinor: (c.amountMinor ?? 0) - 1 }),
+        'duplicate_capture_refund_pending',
+      ],
+    ]
+    for (const [, answer, reason] of outcomes) {
+      const o = await held()
+      p.script.refund = answer
+      const callsBefore = p.calls.refunds.length
+      expect((await p.checkout.finalize(o.intent, o.paid)).reason).toBe(reason)
+      expect((await p.checkout.finalize(o.intent, o.paid)).reason).toBe(
+        'duplicate_capture_refunded',
+      )
+      expect(p.calls.refunds.length).toBe(callsBefore + 1)
+      expect(await events(env, EVT_PAYMENT_FAILED, o.started.orderId)).toEqual([
+        { paymentId: o.intent, orderId: o.started.orderId, reason },
+      ])
+    }
+    await env.commandStore.close()
+  })
+
+  // Defect (diff review M3, decision 4 "a cancelled order nets to zero"): the capture or its refund row is not written,
+  // the key is not the row's id (or is the same for every intent), a second delivery refunds again, or the refund is
+  // published without succeeding.
+  it('AC-13: a capture for a cancelled order is recorded with a refund row keyed by its id, refunded once, and nets to zero', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const orders = [await pendingOrder(env, p), await pendingOrder(env, p)]
+    for (const o of orders) await p.checkout.cancel(o.started.orderId, 'shopper gave up')
+
+    for (const o of orders) {
+      const result = await p.checkout.finalize(o.intent, o.paid)
+      expect(result.reason).toBe('order_cancelled_refunded')
+      await p.checkout.finalize(o.intent, o.paid)
+    }
+
+    expect(p.calls.refunds).toHaveLength(orders.length)
+    const keys = p.calls.refunds.map((c) => c.opts?.idempotencyKey)
+    expect(new Set(keys).size).toBe(orders.length)
+    for (const [i, o] of orders.entries()) {
+      const after = await orderOf(env, o.started.orderId)
+      const rows = await rowsOf(env, o.started.orderId)
+      expect(rows).toHaveLength(1)
+      const [row] = rows
+      expect(p.calls.refunds[i]).toMatchObject({
+        paymentId: o.intent,
+        amountMinor: o.paid.amountMinor,
+        opts: { idempotencyKey: row!.id, currency: 'GBP' },
+      })
+      expect(row).toMatchObject({
+        amountMinor: o.paid.amountMinor,
+        currency: 'GBP',
+        status: 'succeeded',
+        actor: 'system:checkout',
+        reason: 'captured for a cancelled order',
+      })
+      expect(row!.providerRefundId).toMatch(/^re_/)
+      expect(after.status).toBe('cancelled')
+      expect(after.captureMethod).toBe('provider')
+      expect(after.capturedMinor).toBe(o.paid.amountMinor)
+      expect(after.refundedMinor).toBe(after.capturedMinor)
+      expect(await events(env, EVT_PAYMENT_REFUNDED, o.started.orderId)).toEqual([
+        {
+          paymentId: o.intent,
+          orderId: o.started.orderId,
+          refundId: row!.id,
+          amountMinor: o.paid.amountMinor,
+          currency: 'GBP',
+        },
+      ])
+      expect((await historyOf(env, o.started.orderId)).at(-1)!.note).toBe(
+        'captured payment not applied: order_cancelled_refunded',
+      )
+    }
+    await env.commandStore.close()
+  })
+
+  // Defect: refundCapture settles an unknown outcome (a timeout, any other fault) as failed, so the shop believes no
+  // money moved; or a refusal or mismatched answer is counted as refunded.
+  it("AC-13: the cancelled capture's row is failed only on refund_rejected, and stays pending on any unknown outcome or mismatch", async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const cases: Array<[(c: RefundCall) => Promise<Refund>, string, string | null]> = [
+      [failing(new PaymentError('refund_rejected', 'no')), 'failed', null],
+      [failing(new PaymentError('refund_unknown', 'timeout')), 'pending', null],
+      [failing(new PaymentError('capture_failed', 'odd')), 'pending', null],
+      [
+        failing(Object.assign(new Error('reset'), { code: 'payment.refund_rejected' })),
+        'pending',
+        null,
+      ],
+      [async (c) => ({ ...(await echo(c)), refundId: 're_x', currency: 'EUR' }), 'pending', null],
+      [async (c) => ({ ...(await echo(c)), refundId: 're_y', status: 'pending' }), 'pending', null],
+    ]
+    for (const [answer, status, providerRefundId] of cases) {
+      const o = await pendingOrder(env, p)
+      await p.checkout.cancel(o.started.orderId, 'gave up')
+      p.script.refund = answer
+      const result = await p.checkout.finalize(o.intent, o.paid)
+      expect(result.reason).toBe('order_cancelled_refunded')
+      const [row] = await rowsOf(env, o.started.orderId)
+      expect(row!.status).toBe(status)
+      // A row left pending is not settled, so it holds no provider id until it is reconciled.
+      expect(row!.providerRefundId).toBe(providerRefundId)
+      const after = await orderOf(env, o.started.orderId)
+      expect(after.capturedMinor).toBe(o.paid.amountMinor)
+      expect(after.refundedMinor).toBe(0)
+      expect(await events(env, EVT_PAYMENT_REFUNDED, o.started.orderId)).toHaveLength(0)
+    }
+    await env.commandStore.close()
+  })
+
+  // Defect: settled treats every non-pending, non-confirmed order as cancelled (refunding a shipped order's capture)
+  // or loses the status from the recorded reason.
+  it('decision 4 check order: a delivery for a processing order records order_not_pending with its status and refunds nothing', async () => {
+    const env = await setup()
+    const p = withProvider(env)
+    const o = await pendingOrder(env, p)
+    await p.checkout.finalize(o.intent, o.paid)
+    await env.order.updateStatus(o.started.orderId, 'processing', 'admin:1')
+
+    const result = await p.checkout.finalize(o.intent, o.paid)
+    expect(result).toEqual({
+      orderNumber: o.started.orderNumber,
+      finalized: false,
+      reason: 'order_not_pending: processing',
+    })
+    expect(p.calls.refunds).toHaveLength(0)
+    expect(await rowsOf(env, o.started.orderId)).toHaveLength(0)
+    expect((await historyOf(env, o.started.orderId)).at(-1)!.note).toBe(
+      'captured payment not applied: order_not_pending: processing',
+    )
+    await env.commandStore.close()
+  })
+})

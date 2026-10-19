@@ -1,5 +1,5 @@
 import type { Category } from '../domain/category.js'
-import type { Order, OrderLineItem } from '../domain/order.js'
+import type { Order } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 
@@ -64,13 +64,16 @@ export interface OrderCancelledV1Payload {
 }
 export interface OrderRefundedV1Payload {
   orderId: string
+  refundId: string
   amountMinor: number
+  currency: string
   reason: string
 }
 export interface OrderPartiallyRefundedV1Payload {
   orderId: string
+  refundId: string
   amountMinor: number
-  lineItems: OrderLineItem[]
+  currency: string
   reason: string
 }
 
@@ -153,7 +156,9 @@ export interface PaymentFailedV1Payload {
 export interface PaymentRefundedV1Payload {
   paymentId: string
   orderId: string
+  refundId: string
   amountMinor: number
+  currency: string
 }
 
 export interface AdapterErrorV1Payload {

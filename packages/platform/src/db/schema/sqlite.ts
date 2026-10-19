@@ -174,6 +174,11 @@ export const orders = sqliteTable(
     paymentIntentId: text('payment_intent_id'),
     /** The cart the order was placed from; null for imported orders. */
     cartToken: text('cart_token'),
+    capturedMinor: integer('captured_minor').notNull().default(0),
+    capturedAt: text('captured_at'),
+    /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -203,6 +208,29 @@ export const orderHistory = sqliteTable(
   },
   (t) => ({
     orderIdx: index('order_history_order_idx').on(t.orderId),
+  }),
+)
+
+export const orderRefunds = sqliteTable(
+  'order_refunds',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id').notNull(),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull(),
+    providerRefundId: text('provider_refund_id'),
+    status: text('status', { enum: ['pending', 'succeeded', 'failed'] })
+      .notNull()
+      .default('pending'),
+    reason: text('reason'),
+    actor: text('actor').notNull(),
+    createdAt: text('created_at').notNull(),
+    /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
+    requestId: text('request_id'),
+  },
+  (t) => ({
+    orderIdx: index('order_refunds_order_idx').on(t.orderId),
+    requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
   }),
 )
 

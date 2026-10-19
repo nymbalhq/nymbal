@@ -161,9 +161,17 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
     const stub = k.app.adapters.payments
     const payments: PaymentsAdapter = {
       ...stub,
-      async refund(paymentId, amountMinor, reason) {
+      // The intent is this test's own, not the stub's, so the provider answer is the test's too.
+      async refund(paymentId, amountMinor, reason, opts) {
         refunded.push(paymentId)
-        return stub.refund(paymentId, amountMinor, reason)
+        return {
+          refundId: `re_ac4_${randomUUID()}`,
+          paymentId,
+          amountMinor: amountMinor ?? 0,
+          currency: opts?.currency ?? k.config.store.currency,
+          reason: reason ?? null,
+          status: 'succeeded',
+        }
       },
       async createPaymentIntent(params) {
         // The reservation lapses while the shopper pays, and another shopper takes every unit it gave back.

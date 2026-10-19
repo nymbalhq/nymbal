@@ -26,11 +26,118 @@ import { OrderStatusSelect } from '@/components/orders/OrderStatusSelect'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel'
 import { OrderRefundDialog } from '@/components/orders/OrderRefundDialog'
-import { useOrder, useOrderNotes, useConfirmOrder, useCancelOrder, useMarkDeliveredOrder, useShipOrder } from '@/hooks/useOrders'
+import {
+  useOrder,
+  useOrderNotes,
+  useMarkPaidOrder,
+  useCancelOrder,
+  useMarkDeliveredOrder,
+  useShipOrder,
+} from '@/hooks/useOrders'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
-import type { Order } from '@nymbalhq/types'
+import { cn } from '@/lib/utils'
+import type { CaptureMethod, Order, OrderPayment, OrderRefund } from '@nymbalhq/types'
+
+const PAYMENT_STATE_LABELS: Record<OrderPayment['state'], string> = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  partially_refunded: 'Partially refunded',
+  refunded: 'Refunded',
+}
+
+const PAYMENT_STATE_STYLES: Record<OrderPayment['state'], string> = {
+  unpaid: 'bg-zinc-100 text-zinc-700',
+  paid: 'bg-green-100 text-green-700',
+  partially_refunded: 'bg-amber-100 text-amber-700',
+  refunded: 'bg-orange-100 text-orange-700',
+}
+
+const CAPTURE_METHOD_LABELS: Record<CaptureMethod, string> = {
+  provider: 'Payment provider',
+  manual: 'Recorded manually',
+  import: 'Imported',
+}
+
+const REFUND_STATUS_LABELS: Record<OrderRefund['status'], string> = {
+  pending: 'Refund pending',
+  succeeded: 'Refunded',
+  failed: 'Failed',
+}
+
+/** What was captured and refunded, from the stored amounts alone: never from the intent or the status. */
+function PaymentPanel({ order }: { order: Order & { payment: OrderPayment } }) {
+  const { payment } = order
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payment</h3>
+        <span
+          className={cn(
+            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+            PAYMENT_STATE_STYLES[payment.state],
+          )}
+          data-testid={tid('order', 'payment-state')}
+        >
+          {PAYMENT_STATE_LABELS[payment.state]}
+        </span>
+      </div>
+      <dl className="space-y-1.5 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-zinc-500">Captured</dt>
+          <dd className="font-mono text-zinc-700" data-testid={tid('order', 'captured')}>
+            {formatMoney(payment.capturedMinor, payment.currency)}
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-zinc-500">Refunded</dt>
+          <dd className="font-mono text-zinc-700" data-testid={tid('order', 'refunded')}>
+            {formatMoney(payment.refundedMinor, payment.currency)}
+          </dd>
+        </div>
+        <div className="flex justify-between font-semibold">
+          <dt className="text-zinc-700">Net</dt>
+          <dd className="font-mono text-zinc-900" data-testid={tid('order', 'net')}>
+            {formatMoney(payment.capturedMinor - payment.refundedMinor, payment.currency)}
+          </dd>
+        </div>
+        {order.captureMethod && (
+          <div className="flex justify-between">
+            <dt className="text-zinc-500">Method</dt>
+            <dd className="text-zinc-700">{CAPTURE_METHOD_LABELS[order.captureMethod]}</dd>
+          </div>
+        )}
+        {order.paymentIntentId && (
+          <div className="flex justify-between">
+            <dt className="text-zinc-500">Intent ID</dt>
+            <dd className="font-mono text-xs text-zinc-600 truncate max-w-[120px]">
+              {order.paymentIntentId}
+            </dd>
+          </div>
+        )}
+      </dl>
+      {payment.refunds.length > 0 && (
+        <ul className="space-y-1 border-t border-zinc-100 pt-2 text-sm">
+          {payment.refunds.map((refund) => (
+            <li
+              key={refund.id}
+              className="flex justify-between gap-2"
+              data-testid={tid('order', 'refund-row', refund.id)}
+            >
+              <span className="text-zinc-500">
+                {REFUND_STATUS_LABELS[refund.status]} · {formatDate(refund.createdAt)}
+              </span>
+              <span className="font-mono text-zinc-700">
+                {formatMoney(refund.amountMinor, refund.currency)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function AddressBlock({ address, label }: { address: Order['billingAddress']; label: string }) {
   return (
@@ -58,7 +165,7 @@ export function OrderDetailPage() {
 
   const { data: order, isLoading } = useOrder(orderNumber ?? '')
   const { data: notes = [] } = useOrderNotes(order?.id ?? '')
-  const confirmOrder = useConfirmOrder()
+  const markPaid = useMarkPaidOrder()
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
   const shipOrder = useShipOrder()
@@ -94,8 +201,12 @@ export function OrderDetailPage() {
   }
 
   const primaryAction = () => {
-    if (order.status === 'pending')
-      return { label: 'Confirm Order', icon: CheckCircle, action: () => void confirmOrder.mutateAsync(order.id) }
+    if (order.status === 'pending' && order.payment.capturedMinor === 0)
+      return {
+        label: 'Record payment',
+        icon: CheckCircle,
+        action: () => void markPaid.mutateAsync({ orderId: order.id }),
+      }
     if (order.status === 'processing')
       return {
         label: 'Mark Shipped',
@@ -108,7 +219,11 @@ export function OrderDetailPage() {
           }),
       }
     if (order.status === 'shipped')
-      return { label: 'Mark Delivered', icon: CheckCircle, action: () => void markDelivered.mutateAsync(order.id) }
+      return {
+        label: 'Mark Delivered',
+        icon: CheckCircle,
+        action: () => void markDelivered.mutateAsync(order.id),
+      }
     return null
   }
 
@@ -149,7 +264,7 @@ export function OrderDetailPage() {
                 Resend confirmation
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              {(order.status === 'delivered') && (
+              {order.payment.refundableMinor > 0 && (
                 <DropdownMenuItem
                   onClick={() => setShowRefund(true)}
                   className="gap-2"
@@ -162,7 +277,10 @@ export function OrderDetailPage() {
               <DropdownMenuItem
                 onClick={() => void cancelOrder.mutateAsync({ orderId: order.id })}
                 className="gap-2 text-red-600"
-                disabled={['cancelled', 'refunded', 'delivered'].includes(order.status)}
+                disabled={
+                  order.payment.capturedMinor > 0 ||
+                  ['cancelled', 'refunded', 'delivered'].includes(order.status)
+                }
               >
                 <XCircle className="h-4 w-4" />
                 Cancel order
@@ -183,6 +301,7 @@ export function OrderDetailPage() {
           orderId={order.id}
           currentStatus={order.status}
           orderNumber={order.orderNumber}
+          capturedMinor={order.payment.capturedMinor}
         />
       </div>
 
@@ -213,7 +332,9 @@ export function OrderDetailPage() {
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-zinc-800">{item.productName}</p>
-                    <p className="text-xs text-zinc-400">{item.variantName} · {item.sku}</p>
+                    <p className="text-xs text-zinc-400">
+                      {item.variantName} · {item.sku}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="font-mono text-sm text-zinc-700">
@@ -230,29 +351,39 @@ export function OrderDetailPage() {
             <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-3 space-y-1">
               <div className="flex justify-between text-sm text-zinc-500">
                 <span>Subtotal</span>
-                <span className="font-mono">{formatMoney(order.subtotalMinor, order.currency)}</span>
+                <span className="font-mono">
+                  {formatMoney(order.subtotalMinor, order.currency)}
+                </span>
               </div>
               {order.taxTotalMinor > 0 && (
                 <div className="flex justify-between text-sm text-zinc-500">
                   <span>Tax</span>
-                  <span className="font-mono">{formatMoney(order.taxTotalMinor, order.currency)}</span>
+                  <span className="font-mono">
+                    {formatMoney(order.taxTotalMinor, order.currency)}
+                  </span>
                 </div>
               )}
               {order.shippingTotalMinor > 0 && (
                 <div className="flex justify-between text-sm text-zinc-500">
                   <span>Shipping</span>
-                  <span className="font-mono">{formatMoney(order.shippingTotalMinor, order.currency)}</span>
+                  <span className="font-mono">
+                    {formatMoney(order.shippingTotalMinor, order.currency)}
+                  </span>
                 </div>
               )}
               {order.discountTotalMinor > 0 && (
                 <div className="flex justify-between text-sm text-green-600">
                   <span>Discount</span>
-                  <span className="font-mono">-{formatMoney(order.discountTotalMinor, order.currency)}</span>
+                  <span className="font-mono">
+                    -{formatMoney(order.discountTotalMinor, order.currency)}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between border-t border-zinc-200 pt-2 text-sm font-semibold text-zinc-800">
                 <span>Total</span>
-                <span className="font-mono text-base">{formatMoney(order.totalMinor, order.currency)}</span>
+                <span className="font-mono text-base">
+                  {formatMoney(order.totalMinor, order.currency)}
+                </span>
               </div>
             </div>
           </div>
@@ -266,7 +397,9 @@ export function OrderDetailPage() {
                     <MessageSquare className="h-3.5 w-3.5" />
                     Notes
                     {notes.length > 0 && (
-                      <span className="rounded-full bg-zinc-100 px-1.5 text-[10px]">{notes.length}</span>
+                      <span className="rounded-full bg-zinc-100 px-1.5 text-[10px]">
+                        {notes.length}
+                      </span>
                     )}
                   </TabsTrigger>
                   <TabsTrigger
@@ -297,7 +430,9 @@ export function OrderDetailPage() {
         <div className="col-span-2 space-y-4">
           {/* Customer */}
           <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Customer</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Customer
+            </h3>
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
                 {(order.email[0] ?? '?').toUpperCase()}
@@ -327,32 +462,7 @@ export function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Payment */}
-          <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Payment</h3>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Status</span>
-                <span className="font-medium text-zinc-700">
-                  {order.paymentIntentId ? 'Paid' : 'Unpaid'}
-                </span>
-              </div>
-              {order.paymentIntentId && (
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Intent ID</span>
-                  <span className="font-mono text-xs text-zinc-600 truncate max-w-[120px]">
-                    {order.paymentIntentId}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold">
-                <span className="text-zinc-700">Total charged</span>
-                <span className="font-mono text-zinc-900">
-                  {formatMoney(order.totalMinor, order.currency)}
-                </span>
-              </div>
-            </div>
-          </div>
+          <PaymentPanel order={order} />
 
           {/* Notes */}
           {order.notes && (
@@ -366,12 +476,7 @@ export function OrderDetailPage() {
         </div>
       </div>
 
-      {showRefund && (
-        <OrderRefundDialog
-          order={order}
-          onClose={() => setShowRefund(false)}
-        />
-      )}
+      {showRefund && <OrderRefundDialog order={order} onClose={() => setShowRefund(false)} />}
     </div>
   )
 }

@@ -11,6 +11,7 @@
     "packages/platform/src/repositories/inventory-reservation.ts": 54.9,
     "packages/platform/src/repositories/json.ts": 51.85,
     "packages/platform/src/repositories/order-history.ts": 76.92,
+    "packages/platform/src/repositories/order-refund.ts": 78.57,
     "packages/platform/src/repositories/order-sequence.ts": 52,
     "packages/platform/src/repositories/order.ts": 53.1,
     "packages/platform/src/repositories/processed-event.ts": 0,
@@ -30,6 +31,7 @@
     "packages/platform/src/services/inventory-service.ts": 65.38,
     "packages/platform/src/services/order-service.ts": 67.61,
     "packages/platform/src/services/product-service.ts": 53.68,
+    "packages/platform/src/services/refund-service.ts": 82.44,
     "packages/platform/src/services/search-service.ts": 100
   }
 }

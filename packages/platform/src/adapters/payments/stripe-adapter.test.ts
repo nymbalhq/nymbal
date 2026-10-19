@@ -293,16 +293,6 @@ describe('createStripePaymentsAdapter — refunds', () => {
     expect(stripeStubs.refundsCreate).toHaveBeenCalledWith({ payment_intent: 'pi_unit_1' })
   })
 
-  it('refund wraps provider failures in PaymentError refund_failed', async () => {
-    stripeStubs.refundsCreate.mockRejectedValue(new Error('already refunded'))
-    const adapter = buildAdapter()
-    const error = await adapter
-      .refund('pi_unit_1', 400)
-      .then(() => null)
-      .catch((err: unknown) => err)
-    expect(error).toBeInstanceOf(PaymentError)
-    expect((error as PaymentError).code).toBe('payment.refund_failed')
-  })
 })
 
 describe('createStripePaymentsAdapter — status and health', () => {

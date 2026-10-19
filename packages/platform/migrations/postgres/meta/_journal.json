@@ -43,6 +43,13 @@
       "when": 1792361576997,
       "tag": "0005_natural_nico_minoru",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792397472998,
+      "tag": "0006_minor_dragon_man",
+      "breakpoints": true
     }
   ]
 }
