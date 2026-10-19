@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCartRoutes, type RegisterCartRoutesDeps } from './cart.js'
-import type { HttpAdapter, RouteHandler, Cart, CartItem } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Cart, CartItem } from '@nymbalhq/types'
 
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()
@@ -38,8 +38,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -75,12 +81,22 @@ function makeCartItem(overrides?: Partial<CartItem>): CartItem {
   }
 }
 
+/** The repositories' store: `read` runs its callback at once with a handle the stubbed `findById` ignores. */
+const stubStore = {
+  kind: 'sqlite',
+  read: (fn: (tx: unknown) => Promise<unknown>) => fn({ kind: 'sqlite' }),
+  transaction: (fn: (tx: unknown) => Promise<unknown>) => fn({ kind: 'sqlite' }),
+  close: async () => {},
+}
+
 function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRoutesDeps {
   return {
     cart: {
       getOrCreate: vi.fn().mockResolvedValue(makeCart()),
       get: vi.fn().mockResolvedValue(null),
-      addItem: vi.fn().mockResolvedValue(makeCart({ items: [makeCartItem()], subtotalMinor: 1000 })),
+      addItem: vi
+        .fn()
+        .mockResolvedValue(makeCart({ items: [makeCartItem()], subtotalMinor: 1000 })),
       updateItemQuantity: vi.fn().mockResolvedValue(makeCart()),
       removeItem: vi.fn().mockResolvedValue(makeCart()),
       clear: vi.fn().mockResolvedValue(makeCart()),
@@ -88,6 +104,7 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
       attachCustomer: vi.fn().mockResolvedValue(makeCart()),
     },
     productRepo: {
+      store: stubStore,
       findById: vi.fn().mockResolvedValue({
         id: 'prod-1',
         name: 'Test Product',
@@ -95,6 +112,7 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
       }),
     } as unknown as RegisterCartRoutesDeps['productRepo'],
     variantRepo: {
+      store: stubStore,
       findById: vi.fn().mockResolvedValue({
         id: 'var-1',
         productId: 'prod-1',
@@ -181,6 +199,7 @@ describe('POST /api/cart/items', () => {
   it('returns 404 when variant is not found', async () => {
     const deps = makeDeps({
       variantRepo: {
+        store: stubStore,
         findById: vi.fn().mockResolvedValue(null),
       } as unknown as RegisterCartRoutesDeps['variantRepo'],
     })
@@ -194,8 +213,13 @@ describe('POST /api/cart/items', () => {
   it('returns 409 when stock is insufficient', async () => {
     const deps = makeDeps({
       variantRepo: {
+        store: stubStore,
         findById: vi.fn().mockResolvedValue({
-          id: 'var-1', productId: 'prod-1', name: 'Default', priceMinor: 1000, stock: 2,
+          id: 'var-1',
+          productId: 'prod-1',
+          name: 'Default',
+          priceMinor: 1000,
+          stock: 2,
         }),
       } as unknown as RegisterCartRoutesDeps['variantRepo'],
     })
@@ -227,6 +251,7 @@ describe('POST /api/cart/items', () => {
   it('returns 404 when product is not found', async () => {
     const deps = makeDeps({
       productRepo: {
+        store: stubStore,
         findById: vi.fn().mockResolvedValue(null),
       } as unknown as RegisterCartRoutesDeps['productRepo'],
     })

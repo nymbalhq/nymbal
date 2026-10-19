@@ -1,5 +1,5 @@
-import type { AiAdapter } from '@nymbal/types'
-import type { ProductService } from '@nymbal/platform'
+import type { AiAdapter } from '@nymbalhq/types'
+import type { ProductService } from '@nymbalhq/platform'
 import { isThinContent } from './mappers/product.js'
 
 export interface EnrichmentStats {

@@ -5,7 +5,7 @@ import {
   type EventHandler,
   type InventoryChangedV1Payload,
   type Logger,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { VariantRepository } from '../../repositories/variant.js'
 import type { ProductRepository } from '../../repositories/product.js'
 import type { ProductCategoryRepository } from '../../repositories/product-category.js'
@@ -29,15 +29,14 @@ export async function registerInventoryProjection(
 
   const handler: EventHandler<InventoryChangedV1Payload> = async (event) => {
     const { variantId, newQty } = event.payload
-    const variant = await variantRepo.findById(variantId)
-    if (!variant) return
-    const product = await productRepo.findById(variant.productId)
+    const product = await variantRepo.store.read(async (tx) => {
+      const variant = await variantRepo.findById(tx, variantId)
+      return variant ? productRepo.findById(tx, variant.productId) : null
+    })
     if (!product) return
     const doc = await documentStore.get<DenormalisedProduct>(PRODUCTS, product.slug)
     if (!doc) return
-    const variants = doc.variants.map((v) =>
-      v.id === variantId ? { ...v, stock: newQty } : v,
-    )
+    const variants = doc.variants.map((v) => (v.id === variantId ? { ...v, stock: newQty } : v))
     const inStock = variants.some((v) => v.stock > 0)
     await documentStore.put<DenormalisedProduct>(PRODUCTS, product.slug, {
       ...doc,
@@ -49,5 +48,6 @@ export async function registerInventoryProjection(
 
   await eventBus.subscribe(EVT_INVENTORY_CHANGED, handler as EventHandler, {
     name: 'inventory-projection',
+    derived: true,
   })
 }

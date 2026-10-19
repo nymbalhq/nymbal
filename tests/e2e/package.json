@@ -1,5 +1,5 @@
 {
-  "name": "@nymbal/e2e",
+  "name": "@nymbalhq/e2e",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,9 @@
     "smoke": "node smoke.mjs"
   },
   "dependencies": {
-    "@nymbal/config": "workspace:*",
-    "@nymbal/http": "workspace:*",
-    "@nymbal/platform": "workspace:*"
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/http": "workspace:*",
+    "@nymbalhq/platform": "workspace:*"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",

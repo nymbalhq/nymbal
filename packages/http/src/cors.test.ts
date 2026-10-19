@@ -1,10 +1,19 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 
 const logger = {
-  trace() {}, debug() {}, info() {}, warn() {},
-  error() {}, child() { return this },
+  trace() {},
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+  child() {
+    return this
+  },
 }
+
+const security = securitySchema.parse({ adapter: 'middleware' })
 
 let openAdapters: FastifyHttpAdapter[] = []
 
@@ -15,8 +24,11 @@ afterEach(async () => {
   openAdapters = []
 })
 
-async function startAdapter(cors: { allowedOrigins: string[]; credentials: boolean }): Promise<{ adapter: FastifyHttpAdapter; port: number }> {
-  const a = new FastifyHttpAdapter({ logger, cors })
+async function startAdapter(cors: {
+  allowedOrigins: string[]
+  credentials: boolean
+}): Promise<{ adapter: FastifyHttpAdapter; port: number }> {
+  const a = new FastifyHttpAdapter({ logger, cors, security })
   a.registerRoute('GET', '/api/test', async () => ({ status: 200, body: { ok: true } }))
   await a.start(0)
   openAdapters.push(a)
@@ -25,7 +37,10 @@ async function startAdapter(cors: { allowedOrigins: string[]; credentials: boole
 
 describe('FastifyHttpAdapter CORS', () => {
   it('sets Access-Control-Allow-Origin for a matching origin', async () => {
-    const { port } = await startAdapter({ allowedOrigins: ['http://localhost:4321'], credentials: true })
+    const { port } = await startAdapter({
+      allowedOrigins: ['http://localhost:4321'],
+      credentials: true,
+    })
     const res = await fetch(`http://127.0.0.1:${port}/api/test`, {
       headers: { Origin: 'http://localhost:4321' },
     })
@@ -34,7 +49,10 @@ describe('FastifyHttpAdapter CORS', () => {
   })
 
   it('sets Access-Control-Allow-Credentials: true when credentials is true', async () => {
-    const { port } = await startAdapter({ allowedOrigins: ['http://localhost:4321'], credentials: true })
+    const { port } = await startAdapter({
+      allowedOrigins: ['http://localhost:4321'],
+      credentials: true,
+    })
     const res = await fetch(`http://127.0.0.1:${port}/api/test`, {
       headers: { Origin: 'http://localhost:4321' },
     })
@@ -42,7 +60,10 @@ describe('FastifyHttpAdapter CORS', () => {
   })
 
   it('does not set CORS headers for an origin not in the allowlist', async () => {
-    const { port } = await startAdapter({ allowedOrigins: ['http://localhost:4321'], credentials: true })
+    const { port } = await startAdapter({
+      allowedOrigins: ['http://localhost:4321'],
+      credentials: true,
+    })
     const res = await fetch(`http://127.0.0.1:${port}/api/test`, {
       headers: { Origin: 'http://evil.example.com' },
     })
@@ -51,7 +72,10 @@ describe('FastifyHttpAdapter CORS', () => {
   })
 
   it('responds 204 to an OPTIONS preflight for an allowed origin', async () => {
-    const { port } = await startAdapter({ allowedOrigins: ['http://localhost:3000'], credentials: true })
+    const { port } = await startAdapter({
+      allowedOrigins: ['http://localhost:3000'],
+      credentials: true,
+    })
     const res = await fetch(`http://127.0.0.1:${port}/api/test`, {
       method: 'OPTIONS',
       headers: {
@@ -74,7 +98,7 @@ describe('FastifyHttpAdapter CORS', () => {
   })
 
   it('does not add CORS headers when cors option is omitted', async () => {
-    const a = new FastifyHttpAdapter({ logger })
+    const a = new FastifyHttpAdapter({ logger, security })
     a.registerRoute('GET', '/api/test', async () => ({ status: 200, body: { ok: true } }))
     await a.start(0)
     openAdapters.push(a)

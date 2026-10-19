@@ -1,4 +1,20 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
+
+// Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
+// without them), so it exists only when `scripts/scaffold-clean.sh <astro|nextjs>` has set them. Every other run
+// (`pnpm test`, coverage, `nymbal test`, tests-fail-on-base) then cannot select it.
+const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
+  ? [
+      {
+        test: {
+          name: 'scaffold-clean',
+          environment: 'node' as const,
+          include: ['tests/scaffold/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
 
 export default defineConfig({
   test: {
@@ -74,6 +90,10 @@ export default defineConfig({
         },
       },
       {
+        // The Next template's own `@/…` imports (its tsconfig paths).
+        resolve: {
+          alias: { '@': fileURLToPath(new URL('./templates/nextjs', import.meta.url)) },
+        },
         test: {
           name: 'templates',
           environment: 'node',
@@ -103,6 +123,35 @@ export default defineConfig({
       },
       {
         test: {
+          // Needs a Postgres server (NYMBAL_TEST_POSTGRES_URL; `docker compose up -d --wait` starts one). It is
+          // left out of the default run: `pnpm test` excludes it and `pnpm gate:full` runs it.
+          name: 'integration-postgres',
+          environment: 'node',
+          include: ['packages/platform/tests/postgres/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
+          name: 'proof-kit',
+          environment: 'node',
+          include: ['packages/proof-kit/tests/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
+          // Needs Postgres and Mailpit (NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_MAILPIT_URL; `docker compose up -d --wait`
+          // starts both). Left out of the default run like integration-postgres: `pnpm test` excludes it and
+          // `pnpm gate:full` runs it.
+          name: 'proof-kit-services',
+          environment: 'node',
+          include: ['packages/proof-kit/tests/services/**/*.test.ts'],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
           name: 'importers-unit',
           environment: 'node',
           include: [
@@ -121,6 +170,9 @@ export default defineConfig({
         },
       },
       {
+        resolve: {
+          alias: { '@': fileURLToPath(new URL('./apps/admin/src', import.meta.url)) },
+        },
         test: {
           name: 'admin',
           environment: 'jsdom',
@@ -128,11 +180,20 @@ export default defineConfig({
           setupFiles: ['apps/admin/src/tests/setup.ts'],
         },
       },
+      ...scaffoldClean,
       {
         test: {
           name: 'architecture',
           environment: 'node',
           include: ['tests/architecture/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'tooling',
+          environment: 'node',
+          include: ['tests/tooling/**/*.test.ts'],
+          testTimeout: 60000,
         },
       },
     ],
@@ -150,6 +211,7 @@ export default defineConfig({
         '**/tests/**',
         'packages/test-factories/**',
         'packages/contract-tests/**',
+        'packages/proof-kit/**',
       ],
       thresholds: {
         'packages/platform/src/services/*-service.ts': { lines: 100, branches: 100 },

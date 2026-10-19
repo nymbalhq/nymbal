@@ -4,7 +4,11 @@ export class NymbalError extends Error {
   readonly code: string
   readonly context: ErrorContext
 
-  constructor(code: string, message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
+  constructor(
+    code: string,
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
     super(message, options.cause !== undefined ? { cause: options.cause } : undefined)
     this.name = this.constructor.name
     this.code = code
@@ -17,8 +21,11 @@ export class NymbalError extends Error {
 }
 
 export class ConfigError extends NymbalError {
-  constructor(message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
-    super('config.invalid', message, options)
+  constructor(
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext; code?: `config.${string}` } = {},
+  ) {
+    super(options.code ?? 'config.invalid', message, options)
   }
 }
 
@@ -77,7 +84,16 @@ export class AuthError extends HttpError {
 
 export class PaymentError extends NymbalError {
   constructor(
-    code: 'intent_failed' | 'capture_failed' | 'refund_failed' | 'webhook_invalid' | 'not_configured',
+    code:
+      | 'intent_failed'
+      | 'capture_failed'
+      // A definite refusal: no money moved.
+      | 'refund_rejected'
+      // An outcome the shop cannot know (a timeout, a provider fault): money may have moved.
+      | 'refund_unknown'
+      | 'cancel_refused'
+      | 'webhook_invalid'
+      | 'not_configured',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {
@@ -85,9 +101,34 @@ export class PaymentError extends NymbalError {
   }
 }
 
+/** A command the order's money does not allow (confirm unpaid, cancel paid, refund beyond the capture). */
+export class OrderConflictError extends NymbalError {
+  constructor(
+    code:
+      | 'order.unpaid'
+      | 'order.paid'
+      | 'order.stock_unavailable'
+      | 'order.payment_in_progress'
+      | 'refund.not_captured'
+      | 'refund.exceeds_captured'
+      | 'refund.request_reused',
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(code, message, options)
+  }
+}
+
 export class CheckoutError extends NymbalError {
   constructor(
-    code: 'cart_empty' | 'variant_missing' | 'out_of_stock' | 'reservation_failed' | 'finalize_failed',
+    code:
+      | 'cart_empty'
+      | 'in_progress'
+      | 'payment_in_progress'
+      | 'variant_missing'
+      | 'out_of_stock'
+      | 'reservation_failed'
+      | 'finalize_failed',
     message: string,
     options: { cause?: unknown; context?: ErrorContext } = {},
   ) {

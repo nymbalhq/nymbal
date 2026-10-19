@@ -1,8 +1,13 @@
 {
-  "name": "@nymbal/config",
+  "name": "@nymbalhq/config",
   "version": "0.1.0",
   "description": "Typed configuration surface for Nymbal",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/config"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -27,7 +32,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nymbal/types": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "jiti": "^2.4.0",
     "zod": "^3.23.8"
   },

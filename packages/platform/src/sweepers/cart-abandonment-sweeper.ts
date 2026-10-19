@@ -1,51 +1,62 @@
-import {
-  EVT_CART_ABANDONED,
-  type Cart,
-  type DocumentStoreAdapter,
-  type Logger,
-} from '@nymbal/types'
+import { EVT_CART_ABANDONED, type Logger } from '@nymbalhq/types'
+import type { CommandStore } from '../db/command-store.js'
+import type { CartRepository } from '../repositories/cart.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { SweeperHandle } from './inventory-reservation-sweeper.js'
 
 export interface CartAbandonmentSweeperDeps {
-  documentStore: DocumentStoreAdapter
+  store: CommandStore
+  carts: CartRepository
   publisher: EventPublisher
   logger: Logger
   intervalMs?: number
   inactivityMs?: number
+  /** Carts claimed per transaction; a tick runs as many as it takes to reach every due cart. */
+  batchSize?: number
+  now?: () => Date
 }
 
-const COLLECTION = 'carts'
-
+/**
+ * Deletes expired carts, then notifies each cart idle past `inactivityMs` once per inactivity period. The notice is
+ * a durable claim on the cart row, committed with its `cart.abandoned` event, so a restart or another replica's
+ * sweeper does not notify the same period again; a cart write clears the claim.
+ */
 export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): SweeperHandle {
+  const { store, carts, publisher } = deps
   const intervalMs = deps.intervalMs ?? 5 * 60_000
   const inactivityMs = deps.inactivityMs ?? 24 * 60 * 60_000
+  const batchSize = deps.batchSize ?? 500
+  const now = deps.now ?? (() => new Date())
   const logger = deps.logger.child({ sweeper: 'cart-abandonment' })
-  const notifiedCarts = new Set<string>()
 
   async function tick(): Promise<void> {
-    const cutoff = Date.now() - inactivityMs
     try {
-      // In-memory doc store doesn't support range-by-updatedAt; scan all.
-      const result = await deps.documentStore.query<Cart>(COLLECTION, {
-        partitionKey: { field: 'currency', value: '*' },
-        limit: 1000,
-      })
+      const at = now()
+      const window = { at, cutoff: new Date(at.getTime() - inactivityMs) }
+      // Expired carts go first, so a cart past its expiry is never notified.
+      const expired = await store.transaction((tx) => carts.deleteExpired(tx, at))
       let abandoned = 0
-      for (const cart of result.items) {
-        if (notifiedCarts.has(cart.token)) continue
-        if (!cart.items.length) continue
-        const updated = new Date(cart.updatedAt).getTime()
-        if (updated < cutoff) {
-          await deps.publisher.publish(EVT_CART_ABANDONED, {
-            cartId: cart.token,
-            lastActivityAt: cart.updatedAt,
-          })
-          notifiedCarts.add(cart.token)
-          abandoned += 1
-        }
+      // Pages follow the token order rather than "whatever is still unclaimed", so a pass ends even when another
+      // sweeper holds or has taken some of the rows.
+      let after: string | undefined
+      for (;;) {
+        const page = await store.transaction(async (tx) => {
+          const tokens = await carts.listAbandoned(tx, window, { after, limit: batchSize })
+          for (const token of tokens) {
+            const claimed = await carts.claimAbandoned(tx, token, window)
+            if (claimed === null) continue
+            await publisher.publish(EVT_CART_ABANDONED, {
+              cartId: claimed.token,
+              lastActivityAt: claimed.lastActivityAt,
+            })
+            abandoned += 1
+          }
+          return tokens
+        })
+        if (page.length < batchSize) break
+        after = page[page.length - 1]
       }
-      if (abandoned > 0) logger.info({ abandoned }, 'abandoned carts detected')
+      if (expired > 0 || abandoned > 0) logger.info({ expired, abandoned }, 'carts swept')
     } catch (err) {
       logger.error({ err }, 'cart-abandonment sweep failed')
     }
@@ -53,9 +64,9 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
 
   const handle = setInterval(() => void tick(), intervalMs)
   return {
+    tick,
     stop() {
       clearInterval(handle)
-      notifiedCarts.clear()
     },
   }
 }

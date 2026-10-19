@@ -1,0 +1,22 @@
+// P0-05 AC-2 lint fixture: linted as a Vitest test file by tests/tooling/test-lint-rules.test.ts. Each line marked
+// `lint: <rule>` must be reported by that rule. Not run by any test runner (the .fixture suffix).
+import { describe, expect, it } from 'vitest'
+
+describe('lint fixture', () => {
+  it('asserts nothing', () => { // lint: vitest/expect-expect
+    const total = 1 + 1
+    void total
+  })
+
+  it('asserts only on one branch', () => {
+    const value = Number(process.env['LINT_FIXTURE_VALUE'] ?? '1')
+    if (value > 0) {
+      expect(value).toBeGreaterThan(0) // lint: vitest/no-conditional-expect
+    }
+  })
+
+  it('asserts unconditionally', () => {
+    const value = Number(process.env['LINT_FIXTURE_VALUE'] ?? '1')
+    expect(value).toBeGreaterThan(0)
+  })
+})

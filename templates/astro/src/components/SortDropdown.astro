@@ -1,12 +1,26 @@
 ---
+import type { ProductSortKey } from '@nymbalhq/types'
+
+interface Props {
+  sort: ProductSortKey
+}
+
+const { sort } = Astro.props
+
+const OPTIONS: Array<{ value: ProductSortKey; label: string }> = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'price-asc', label: 'Price: Low to High' },
+  { value: 'price-desc', label: 'Price: High to Low' },
+  { value: 'name-asc', label: 'Name: A to Z' },
+  { value: 'name-desc', label: 'Name: Z to A' },
+]
 ---
 
 <div class="plp-sort-bar">
   <label for="sort-select">Sort by</label>
   <select id="sort-select" data-testid="sort-dropdown">
-    <option value="newest">Newest</option>
-    <option value="price-asc">Price: Low to High</option>
-    <option value="price-desc">Price: High to Low</option>
-    <option value="name-asc">Name: A-Z</option>
+    {OPTIONS.map((option) => (
+      <option value={option.value} selected={option.value === sort}>{option.label}</option>
+    ))}
   </select>
 </div>

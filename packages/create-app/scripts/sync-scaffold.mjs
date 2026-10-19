@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Syncs templates/astro and templates/nextjs into scaffold/templates/* so the scaffolder
 // always copies from a single canonical source. Also merges root-manifest deps/scripts and
-// rewrites workspace:* references to real semver versions baked from the monorepo.
+// rewrites workspace:* references to exact versions baked from the monorepo, and pins every Nymbal
+// package with `overrides` so a scaffolded project installs one version of each.
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,25 +14,32 @@ const PACKAGES_DIR = resolve(MONOREPO_ROOT, 'packages')
 const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 
 // Packages explicitly excluded from the scaffold dep map (dev/testing packages, not runtime deps).
-// If a new @nymbal/* package appears in the monorepo and is NOT intended as a scaffold dep,
+// If a new @nymbalhq/* package appears in the monorepo and is NOT intended as a scaffold dep,
 // add it here so the coverage test knows it's intentionally absent.
 export const NON_SCAFFOLD_PACKAGES = new Set([
-  '@nymbal/contract-tests',
-  '@nymbal/test-factories',
+  '@nymbalhq/contract-tests',
+  '@nymbalhq/proof-kit',
+  '@nymbalhq/test-factories',
 ])
 
-// Static list of publishable @nymbal/* packages. Add an entry here when a new package ships.
+// Static list of publishable scaffold dependencies (@nymbalhq/* and the `nymbal` CLI).
+// Add an entry here when a new package ships.
 export const NYMBAL_PACKAGE_DIRS = [
-  { name: '@nymbal/cli', dir: 'cli' },
-  { name: '@nymbal/config', dir: 'config' },
-  { name: '@nymbal/http', dir: 'http' },
-  { name: '@nymbal/importers', dir: 'importers' },
-  { name: '@nymbal/platform', dir: 'platform' },
-  { name: '@nymbal/react', dir: 'react' },
-  { name: '@nymbal/sdk', dir: 'sdk' },
-  { name: '@nymbal/types', dir: 'types' },
-  { name: '@nymbal/web-components', dir: 'web-components' },
+  { name: 'nymbal', dir: 'cli' },
+  { name: '@nymbalhq/config', dir: 'config' },
+  { name: '@nymbalhq/http', dir: 'http' },
+  { name: '@nymbalhq/importers', dir: 'importers' },
+  { name: '@nymbalhq/platform', dir: 'platform' },
+  { name: '@nymbalhq/react', dir: 'react' },
+  { name: '@nymbalhq/sdk', dir: 'sdk' },
+  { name: '@nymbalhq/stack', dir: 'stack' },
+  { name: '@nymbalhq/types', dir: 'types' },
+  { name: '@nymbalhq/web-components', dir: 'web-components' },
 ]
+
+// nymbal pins @nymbalhq/importers exactly itself, and it is outside the stack's fixed version group, so the
+// scaffold does not override it.
+const NOT_OVERRIDDEN = new Set(['@nymbalhq/importers'])
 
 const templates = [
   { name: 'astro', from: resolve(MONOREPO_ROOT, 'templates', 'astro') },
@@ -41,8 +49,9 @@ const templates = [
 // Entries excluded from the scaffold copy, matched by EXACT basename so that
 // *.astro page/component FILES are copied while the .astro CACHE DIRECTORY is not.
 // (A previous endsWith() filter excluded every *.astro file — see the filter
-// regression test in test/scaffold.test.ts.)
-const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next'])
+// regression test in test/scaffold.test.ts.) `tests` holds a template's own jsdom tests, run by the monorepo's
+// Vitest; a scaffolded store does not get them.
+const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next', 'tests'])
 
 /**
  * Predicate for fs.cp's filter option: returns true when the entry should be copied.
@@ -68,7 +77,7 @@ export async function readNymbalVersions() {
 }
 
 /**
- * Rewrites workspace:* values to ^version for @nymbal/* keys.
+ * Rewrites workspace:* values to the exact version for @nymbalhq/* keys.
  * Throws if a workspace:* key has no entry in the version map — fail-loud at build time.
  * @param {Record<string, string> | undefined} deps
  * @param {Record<string, string>} versions
@@ -78,14 +87,14 @@ export function rewriteWorkspaceVersions(deps, versions) {
   /** @type {Record<string, string>} */
   const result = {}
   for (const [key, val] of Object.entries(deps)) {
-    if (val === 'workspace:*' && key.startsWith('@nymbal/')) {
+    if (val === 'workspace:*' && key.startsWith('@nymbalhq/')) {
       const version = versions[key]
       if (!version) {
         throw new Error(
           `No version found for "${key}" — add it to NYMBAL_PACKAGE_DIRS in sync-scaffold.mjs`,
         )
       }
-      result[key] = `^${version}`
+      result[key] = version
     } else {
       result[key] = val
     }
@@ -100,11 +109,13 @@ export function rewriteWorkspaceVersions(deps, versions) {
  * @param {Record<string, string>} versions
  */
 export function mergePackageJson(templatePkg, versions) {
-  // Deps from the old root-manifest that are injected into every flat project
+  // Deps from the old root-manifest that are injected into every flat project. The stack pins the rest of
+  // the runtime packages; it is absent from a version map that predates it.
   const rootDeps = {
-    '@nymbal/cli': `^${versions['@nymbal/cli']}`,
-    '@nymbal/config': `^${versions['@nymbal/config']}`,
-    '@nymbal/platform': `^${versions['@nymbal/platform']}`,
+    nymbal: versions['nymbal'],
+    '@nymbalhq/config': versions['@nymbalhq/config'],
+    '@nymbalhq/platform': versions['@nymbalhq/platform'],
+    ...(versions['@nymbalhq/stack'] ? { '@nymbalhq/stack': versions['@nymbalhq/stack'] } : {}),
   }
 
   const templateDeps = rewriteWorkspaceVersions(
@@ -116,8 +127,15 @@ export function mergePackageJson(templatePkg, versions) {
     versions,
   )
 
-  // Template wins on overlap (e.g. @nymbal/types present in both root and template)
+  // Template wins on overlap (e.g. @nymbalhq/types present in both root and template)
   const dependencies = { ...rootDeps, ...templateDeps }
+
+  // Every Nymbal package resolves to the one version baked here, whichever package asks for it.
+  const overrides = Object.fromEntries(
+    Object.entries(versions).filter(
+      ([name]) => (name === 'nymbal' || name.startsWith('@nymbalhq/')) && !NOT_OVERRIDDEN.has(name),
+    ),
+  )
 
   return {
     name: templatePkg.name,
@@ -134,6 +152,8 @@ export function mergePackageJson(templatePkg, versions) {
     },
     dependencies,
     ...(templateDevDeps ? { devDependencies: templateDevDeps } : {}),
+    pnpm: { overrides },
+    overrides,
   }
 }
 
@@ -148,6 +168,7 @@ export async function main(destRoot = SCAFFOLD_TEMPLATES) {
   await mkdir(destRoot, { recursive: true })
 
   const versions = await readNymbalVersions()
+  const nodeVersion = await readFile(resolve(MONOREPO_ROOT, '.node-version'), 'utf8')
 
   for (const t of templates) {
     const dest = resolve(destRoot, t.name)
@@ -162,6 +183,8 @@ export async function main(destRoot = SCAFFOLD_TEMPLATES) {
     const templatePkg = JSON.parse(await readFile(pkgPath, 'utf8'))
     const mergedPkg = mergePackageJson(templatePkg, versions)
     await writeFile(pkgPath, JSON.stringify(mergedPkg, null, 2) + '\n', 'utf8')
+
+    await writeFile(resolve(dest, '_dot.node-version'), nodeVersion, 'utf8')
 
     // eslint-disable-next-line no-console
     console.log(`✓ synced ${dest}`)

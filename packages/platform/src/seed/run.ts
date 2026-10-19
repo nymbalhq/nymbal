@@ -1,17 +1,14 @@
+import { inArray } from 'drizzle-orm'
 import { v7 as uuidv7 } from 'uuid'
 import bcrypt from 'bcryptjs'
 const { hashSync } = bcrypt
-import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
-import type { CommandStore } from '../db/command-store.js'
+import type { DocumentStoreAdapter, EventBusAdapter, Logger, Role } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { rawClients, type CommandStore } from '../db/command-store.js'
 import { createCategoryRepository } from '../db/repositories/categories.js'
 import { createProductRepository } from '../db/repositories/products.js'
 import { createEventBuilder } from '../events/builder.js'
-import {
-  EVT_CATEGORY_CREATED,
-  EVT_PRODUCT_CREATED,
-  EVT_CUSTOMER_CREATED,
-} from '@nymbal/types'
+import { EVT_CATEGORY_CREATED, EVT_PRODUCT_CREATED, EVT_CUSTOMER_CREATED } from '@nymbalhq/types'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { seedCategories, seedProducts, type SeedProduct } from './data.js'
@@ -33,6 +30,8 @@ export interface SeedResult {
   variants: number
   customers: number
   admins: number
+  /** True when any demo row was already in the command store, so nothing was inserted. */
+  alreadySeeded: boolean
 }
 
 async function insertVariants(
@@ -50,7 +49,8 @@ async function insertVariants(
   }>,
 ): Promise<void> {
   if (rows.length === 0) return
-  if (store.kind === 'sqlite') {
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
     const values = rows.map((r) => ({
       id: r.id,
       productId: r.productId,
@@ -67,7 +67,7 @@ async function insertVariants(
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }))
-    store.db.insert(sqliteSchema.variants).values(values).run()
+    clients.db.insert(sqliteSchema.variants).values(values).run()
     return
   }
   const values = rows.map((r) => ({
@@ -86,7 +86,7 @@ async function insertVariants(
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }))
-  await store.db.insert(postgresSchema.variants).values(values)
+  await clients.db.insert(postgresSchema.variants).values(values)
 }
 
 async function insertProductCategories(
@@ -94,11 +94,64 @@ async function insertProductCategories(
   rows: Array<{ productId: string; categoryId: string }>,
 ): Promise<void> {
   if (rows.length === 0) return
-  if (store.kind === 'sqlite') {
-    store.db.insert(sqliteSchema.productCategories).values(rows).run()
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    clients.db.insert(sqliteSchema.productCategories).values(rows).run()
     return
   }
-  await store.db.insert(postgresSchema.productCategories).values(rows)
+  await clients.db.insert(postgresSchema.productCategories).values(rows)
+}
+
+/**
+ * Any demo row (category slug, product slug, seeded customer email) means an earlier seed ran, in full or in part.
+ * Each is unique, so inserting the demo again would fail on the first collision: skip instead.
+ */
+async function demoRowsPresent(store: CommandStore, emails: string[]): Promise<boolean> {
+  const categorySlugs = seedCategories.map((c) => c.slug)
+  const productSlugs = seedProducts.map((p) => p.slug)
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    const { categories, products, customers } = sqliteSchema
+    return (
+      clients.db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(inArray(categories.slug, categorySlugs))
+        .limit(1)
+        .all().length > 0 ||
+      clients.db
+        .select({ id: products.id })
+        .from(products)
+        .where(inArray(products.slug, productSlugs))
+        .limit(1)
+        .all().length > 0 ||
+      clients.db
+        .select({ id: customers.id })
+        .from(customers)
+        .where(inArray(customers.email, emails))
+        .limit(1)
+        .all().length > 0
+    )
+  }
+  const { categories, products, customers } = postgresSchema
+  const [category, product, customer] = await Promise.all([
+    clients.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(inArray(categories.slug, categorySlugs))
+      .limit(1),
+    clients.db
+      .select({ id: products.id })
+      .from(products)
+      .where(inArray(products.slug, productSlugs))
+      .limit(1),
+    clients.db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(inArray(customers.email, emails))
+      .limit(1),
+  ])
+  return category.length > 0 || product.length > 0 || customer.length > 0
 }
 
 async function insertCustomer(
@@ -109,14 +162,15 @@ async function insertCustomer(
     passwordHash: string
     firstName: string
     lastName: string
-    metadata?: Record<string, unknown>
+    roles?: Role[]
     createdAt: Date
     updatedAt: Date
   },
 ): Promise<void> {
-  const meta = row.metadata ?? {}
-  if (store.kind === 'sqlite') {
-    store.db
+  const roles = row.roles ?? ['customer']
+  const clients = rawClients(store)
+  if (clients.kind === 'sqlite') {
+    clients.db
       .insert(sqliteSchema.customers)
       .values({
         id: row.id,
@@ -128,7 +182,8 @@ async function insertCustomer(
         addresses: '[]',
         orderCount: 0,
         totalSpentMinor: 0,
-        metadata: JSON.stringify(meta),
+        metadata: '{}',
+        roles: JSON.stringify(roles),
         requiresPasswordReset: false,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
@@ -136,7 +191,7 @@ async function insertCustomer(
       .run()
     return
   }
-  await store.db.insert(postgresSchema.customers).values({
+  await clients.db.insert(postgresSchema.customers).values({
     id: row.id,
     email: row.email,
     passwordHash: row.passwordHash,
@@ -146,7 +201,8 @@ async function insertCustomer(
     addresses: [],
     orderCount: 0,
     totalSpentMinor: 0,
-    metadata: meta,
+    metadata: {},
+    roles,
     requiresPasswordReset: false,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -165,6 +221,13 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     version,
     source: 'nymbal-seed',
   })
+
+  const demoEmail = 'demo@nymbal.dev'
+  const adminEmail = process.env['NYMBAL_ADMIN_EMAIL'] ?? 'admin@nymbal.local'
+  if (await demoRowsPresent(commandStore, [demoEmail, adminEmail])) {
+    logger.info({}, 'Demo content already present, seed skipped')
+    return { categories: 0, products: 0, variants: 0, customers: 0, admins: 0, alreadySeeded: true }
+  }
 
   const now = new Date()
 
@@ -228,7 +291,7 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   // Demo customer — password: nymbal
   const demoCustomer = {
     id: uuidv7(),
-    email: 'demo@nymbal.dev',
+    email: demoEmail,
     passwordHash: hashSync('nymbal', 10),
     firstName: 'Demo',
     lastName: 'User',
@@ -238,15 +301,15 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   await insertCustomer(commandStore, demoCustomer)
 
   // Admin user — email and password from env, defaults for dev
-  const adminEmail = process.env['NYMBAL_ADMIN_EMAIL'] ?? 'admin@nymbal.local'
   const adminPassword = process.env['NYMBAL_ADMIN_PASSWORD'] ?? 'nymbal-admin-dev'
+  const adminRoles: Role[] = ['admin']
   const adminCustomer = {
     id: uuidv7(),
     email: adminEmail,
     passwordHash: hashSync(adminPassword, 10),
     firstName: 'Admin',
     lastName: 'User',
-    metadata: { roles: ['admin'] },
+    roles: adminRoles,
     createdAt: now,
     updatedAt: now,
   }
@@ -423,5 +486,6 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     variants: variantInserts.length,
     customers: 1,
     admins: 1,
+    alreadySeeded: false,
   }
 }

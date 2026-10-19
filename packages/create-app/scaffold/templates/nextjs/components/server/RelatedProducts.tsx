@@ -1,5 +1,5 @@
 import { ProductCard } from './ProductCard'
-import type { DenormalisedProduct } from '@nymbal/sdk'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 interface RelatedProductsProps {
   products: DenormalisedProduct[]
@@ -19,6 +19,7 @@ export function RelatedProducts({ products }: RelatedProductsProps) {
               slug: product.slug,
               name: product.name,
               priceMinor: product.priceMinor ?? null,
+              priceRange: product.priceRange ?? null,
               currency: product.currency ?? null,
               media: product.media,
             }}

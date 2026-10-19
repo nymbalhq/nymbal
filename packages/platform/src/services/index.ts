@@ -1,10 +1,5 @@
-import type {
-  DocumentStoreAdapter,
-  Logger,
-  PaymentsAdapter,
-  SearchAdapter,
-} from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -15,8 +10,13 @@ import { createCustomerService, type CustomerService } from './customer-service.
 import { createAuthService, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
 import { createInventoryService, type InventoryService } from './inventory-service.js'
-import { createCheckoutService, type CheckoutService } from './checkout-service.js'
+import {
+  createCheckoutService,
+  type CheckoutService,
+  type ManualPayments,
+} from './checkout-service.js'
 import { createSearchService, type SearchService } from './search-service.js'
+import { createRefundService, type RefundService } from './refund-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -27,6 +27,7 @@ export * from './order-service.js'
 export * from './inventory-service.js'
 export * from './checkout-service.js'
 export * from './search-service.js'
+export * from './refund-service.js'
 
 export interface ServiceRegistry {
   product: ProductService
@@ -36,7 +37,8 @@ export interface ServiceRegistry {
   auth: AuthService
   order: OrderService
   inventory: InventoryService
-  checkout: CheckoutService
+  checkout: CheckoutService & ManualPayments
+  refund: RefundService
   search: SearchService
 }
 
@@ -44,7 +46,6 @@ export interface BuildServicesDeps {
   config: NymbalConfig
   store: CommandStore
   repos: Repositories
-  documentStore: DocumentStoreAdapter
   publisher: EventPublisher
   logger: Logger
   payments: PaymentsAdapter
@@ -52,7 +53,7 @@ export interface BuildServicesDeps {
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, documentStore, publisher, logger, payments, searchAdapter } = deps
+  const { config, store, repos, publisher, logger, payments, searchAdapter } = deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -68,7 +69,8 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     orderNumberStart: config.commerce.orders.numberStart,
   })
   const cart = createCartService({
-    documentStore,
+    store,
+    carts: repos.cart,
     publisher,
     logger: logger.child({ service: 'cart' }),
     currency: config.store.currency,
@@ -82,7 +84,6 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     orders,
     inventory,
     payments,
-    documentStore,
     currency: config.store.currency,
   })
   return {
@@ -114,6 +115,13 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     order: orders,
     inventory,
     checkout,
+    refund: createRefundService({
+      store,
+      repos,
+      publisher,
+      logger: logger.child({ service: 'refund' }),
+      payments,
+    }),
     search: createSearchService({
       adapter: searchAdapter,
       logger: logger.child({ service: 'search' }),

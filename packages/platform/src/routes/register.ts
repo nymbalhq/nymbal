@@ -1,5 +1,5 @@
-import type { HttpAdapter, DocumentStoreAdapter, EventBusAdapter } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { HttpAdapter, DocumentStoreAdapter, EventBusAdapter } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { ServiceRegistry } from '../services/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { Repositories } from '../repositories/index.js'
@@ -16,6 +16,7 @@ import { registerAdminRoutes } from './admin.js'
 import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
 import { registerStripeWebhookRoute } from './webhooks-stripe.js'
+import { validatedAdapter } from './validated-adapter.js'
 
 export interface RegisterAllRoutesDeps {
   config: NymbalConfig
@@ -26,17 +27,26 @@ export interface RegisterAllRoutesDeps {
   documentStore: DocumentStoreAdapter
   eventBus: EventBusAdapter
   publisher: EventPublisher
+  /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
+  adminRoot?: string | null | undefined
 }
 
 export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
-  const { config, adapter, services, adapters, repos, documentStore, eventBus, publisher } = deps
+  const { config, services, adapters, repos, documentStore, eventBus, publisher } = deps
+  const adapter = validatedAdapter(deps.adapter)
 
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
   registerAuthRoutes(adapter, services.auth)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
-  registerProductRoutes(adapter, documentStore, config.store.name, adapters.reviews, services.search)
+  registerProductRoutes(
+    adapter,
+    documentStore,
+    config.store.name,
+    adapters.reviews,
+    services.search,
+  )
   registerCartRoutes(adapter, {
     cart: services.cart,
     productRepo: repos.product,
@@ -60,13 +70,9 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     payments: adapters.payments,
     checkout: services.checkout,
     publisher,
-    documentStore,
+    store: repos.processedEvent.store,
+    processedEvents: repos.processedEvent,
+    orders: repos.order,
   })
-
-  if (process.env['NODE_ENV'] === 'production') {
-    const adminDistPath =
-      process.env['NYMBAL_ADMIN_DIST'] ??
-      new URL('../../../../apps/admin/dist', import.meta.url).pathname
-    registerAdminStaticRoute(adapter, adminDistPath)
-  }
+  if (deps.adminRoot !== undefined) registerAdminStaticRoute(adapter, deps.adminRoot)
 }

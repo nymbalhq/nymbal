@@ -1,0 +1,36 @@
+// AC-4: 6 assertions are C2 (property); the last test's 1 assertion is C4. 6 tests.
+import { fc, it, test } from '@fast-check/vitest'
+import { expect } from 'vitest'
+
+test('sync property with inner expects', () => {
+  fc.assert(
+    fc.property(fc.integer(), fc.integer(), (a, b) => {
+      expect(a + b).toBe(b + a)
+      expect(a).toBeDefined()
+    }),
+  )
+})
+
+test('async property', async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.nat(), async (n) => {
+      await expect(Promise.resolve(n)).resolves.toBeGreaterThanOrEqual(0)
+    }),
+  )
+})
+
+test('property with no inner expect', () => {
+  fc.assert(fc.property(fc.nat(), (n) => n >= 0))
+})
+
+test.prop([fc.string()])('test.prop', (s) => {
+  expect(s.length).toBeGreaterThanOrEqual(0)
+})
+
+it.prop([fc.nat()])('it.prop', (n) => {
+  expect(n).toBe(n)
+})
+
+test('outside any property', () => {
+  expect(1).toBe(1)
+})

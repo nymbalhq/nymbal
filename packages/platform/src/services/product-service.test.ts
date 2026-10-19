@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { EVT_PRODUCT_CREATED, EVT_PRODUCT_PUBLISHED, NotFoundError, ValidationError } from '@nymbal/types'
+import {
+  EVT_PRODUCT_CREATED,
+  EVT_PRODUCT_PUBLISHED,
+  NotFoundError,
+  ValidationError,
+} from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
-import { createEventPublisher } from '../events/publisher.js'
+import { createEventPublisher, createRelay } from '../index.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
 import { v7 as uuidv7 } from 'uuid'
@@ -27,15 +33,10 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: {
-      storeId: 'test',
-      environment: 'development',
-      version: '0.0.0-test',
-      source: 'test',
-    },
-  })
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const service = createProductService({ store: commandStore, repos, publisher, logger })
   return { service, repos, eventBus, commandStore, documentStore, publisher, logger }
 }
@@ -111,8 +112,11 @@ describe('ProductService', () => {
     const { service, commandStore } = await setup()
     const variantId = uuidv7()
     const snap = await service.create({
-      slug: 'explicit-vid', name: 'Explicit',
-      variants: [{ id: variantId, sku: 'EV-1', name: 'Custom', priceMinor: 500, stock: 1, options: [] }],
+      slug: 'explicit-vid',
+      name: 'Explicit',
+      variants: [
+        { id: variantId, sku: 'EV-1', name: 'Custom', priceMinor: 500, stock: 1, options: [] },
+      ],
     })
     expect(snap.variants[0]!.id).toBe(variantId)
     await commandStore.close()
@@ -121,12 +125,21 @@ describe('ProductService', () => {
   it('create with categoryIds attaches categories', async () => {
     const { service, repos, commandStore } = await setup()
     const categoryId = uuidv7()
-    await repos.category.insert({
-      id: categoryId, slug: 'test-cat', name: 'Test Category',
-      description: '', parentId: null,
-      createdAt: new Date(),
+    await commandStore.transaction((tx) =>
+      repos.category.insert(tx, {
+        id: categoryId,
+        slug: 'test-cat',
+        name: 'Test Category',
+        description: '',
+        parentId: null,
+        createdAt: new Date(),
+      }),
+    )
+    const snap = await service.create({
+      slug: 'with-category',
+      name: 'With Category',
+      categoryIds: [categoryId],
     })
-    const snap = await service.create({ slug: 'with-category', name: 'With Category', categoryIds: [categoryId] })
     expect(snap.categoryIds).toContain(categoryId)
     await commandStore.close()
   })
@@ -150,10 +163,26 @@ describe('ProductService', () => {
     const { service, repos, commandStore } = await setup()
     const catA = uuidv7()
     const catB = uuidv7()
-    for (const [id, slug] of [[catA, 'cat-a'], [catB, 'cat-b']] as [string, string][]) {
-      await repos.category.insert({ id, slug, name: slug, description: '', parentId: null, createdAt: new Date() })
+    for (const [id, slug] of [
+      [catA, 'cat-a'],
+      [catB, 'cat-b'],
+    ] as [string, string][]) {
+      await commandStore.transaction((tx) =>
+        repos.category.insert(tx, {
+          id,
+          slug,
+          name: slug,
+          description: '',
+          parentId: null,
+          createdAt: new Date(),
+        }),
+      )
     }
-    const created = await service.create({ slug: 'cat-swap', name: 'Cat Swap', categoryIds: [catA] })
+    const created = await service.create({
+      slug: 'cat-swap',
+      name: 'Cat Swap',
+      categoryIds: [catA],
+    })
     const updated = await service.update(created.id, { categoryIds: [catB] })
     expect(updated.categoryIds).toContain(catB)
     expect(updated.categoryIds).not.toContain(catA)
@@ -163,7 +192,8 @@ describe('ProductService', () => {
   it('delete removes product and its variants', async () => {
     const { service, commandStore } = await setup()
     const created = await service.create({
-      slug: 'del-test', name: 'To Delete',
+      slug: 'del-test',
+      name: 'To Delete',
       variants: [{ sku: 'DEL-1', name: 'Default', priceMinor: 100, stock: 1, options: [] }],
     })
     await service.delete(created.id)
@@ -179,7 +209,11 @@ describe('ProductService', () => {
 
   it('publish does nothing when product is already active', async () => {
     const { service, commandStore } = await setup()
-    const created = await service.create({ slug: 'already-active', name: 'Active', status: 'active' })
+    const created = await service.create({
+      slug: 'already-active',
+      name: 'Active',
+      status: 'active',
+    })
     await service.publish(created.id)
     const fresh = await service.getById(created.id)
     expect(fresh.status).toBe('active')

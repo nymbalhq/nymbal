@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { PaymentsAdapter } from '@nymbal/types'
+import type { PaymentsAdapter } from '@nymbalhq/types'
 
 export function runPaymentsContract(build: () => PaymentsAdapter): void {
   describe('PaymentsAdapter contract', () => {

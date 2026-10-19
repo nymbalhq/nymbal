@@ -44,11 +44,8 @@ const breadcrumb = breadcrumbJsonLd([
   { name: product.name, url: `${Astro.url.origin}/product/${product.slug}` },
 ])
 
-const variantOptions = product.variants?.map((v: any) => ({
-  id: v.id,
-  name: v.name,
-  options: v.options ?? [],
-})) ?? []
+// The selector derives its option groups from the product's variants.
+const hasVariantChoice = (product.variants?.length ?? 0) > 1
 ---
 
 <BaseLayout title={`${product.name} | Nymbal`} description={product.shortDescription ?? product.description ?? ''} jsonLd={jsonLd}>
@@ -75,10 +72,8 @@ const variantOptions = product.variants?.map((v: any) => ({
         <StockBadge stock={stock} />
 
         <div class="pdp-actions">
-          {variantOptions.length > 1 && (
-            <nymbal-variant-selector
-              options={JSON.stringify(variantOptions)}
-            ></nymbal-variant-selector>
+          {hasVariantChoice && (
+            <nymbal-variant-selector></nymbal-variant-selector>
           )}
 
           <div class="pdp-add-row">

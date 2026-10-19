@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { fetchProducts, fetchCategories } from '@/lib/api'
+import { fetchProducts, fetchCategories, sortFromSearchParams } from '@/lib/api'
 import { Breadcrumb } from '@/components/server/Breadcrumb'
 import { ProductGrid } from '@/components/client/ProductGrid'
 import styles from '@/styles/pages/plp.module.css'
@@ -9,9 +9,14 @@ export const metadata: Metadata = {
   description: 'Browse our full collection of products.',
 }
 
-export default async function ProductsPage() {
+interface ProductsPageProps {
+  searchParams: Promise<{ sort?: string | string[] }>
+}
+
+export default async function ProductsPage({ searchParams }: ProductsPageProps) {
+  const sort = sortFromSearchParams(await searchParams)
   const [{ items, nextCursor }, categories] = await Promise.all([
-    fetchProducts({ limit: 24 }),
+    fetchProducts({ limit: 24, sort }),
     fetchCategories(),
   ])
 
@@ -27,6 +32,7 @@ export default async function ProductsPage() {
       <ProductGrid
         initialProducts={items}
         initialCursor={nextCursor}
+        initialSort={sort}
         categories={categories}
       />
     </div>

@@ -1,0 +1,192 @@
+name: Release
+
+# A merge to main with pending changesets versions the changed packages, publishes them to npm `latest` with
+# provenance, tags them, writes GitHub release notes from the changelogs, and opens a main -> dev back-merge pull
+# request. A fix merged straight to main gets the same back-merge pull request. Needs two repository secrets:
+#   RELEASE_TOKEN  fine-grained token (or App token) with contents and pull-requests write: the release commit, the
+#                  tags and the back-merge pull request are made with it so their checks run
+#   NPM_TOKEN      npm granular token with publish rights on @nymbalhq/*, nymbal and create-nymbal-app
+# Without a secret the dependent steps are skipped with a notice. Publishing, tags and releases skip what exists, so
+# re-running a run whose publish failed completes the release.
+
+on:
+  push:
+    branches: [main]
+
+# The release commit re-triggers this workflow; it finds no changesets, so it only publishes what is missing (nothing)
+# and checks the back-merge.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+env:
+  PNPM_VERSION: '9.12.3'
+
+jobs:
+  detect:
+    name: Detect changesets and tokens
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changesets: ${{ steps.scan.outputs.changesets }}
+      release_token: ${{ steps.tokens.outputs.release_token }}
+      npm_token: ${{ steps.tokens.outputs.npm_token }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: scan
+        name: Look for pending changesets
+        run: |
+          pending=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
+          if [ "$pending" -gt 0 ]; then
+            echo "changesets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changesets=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pending changesets, nothing to release."
+          fi
+      - id: tokens
+        name: Check release secrets
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$RELEASE_TOKEN" ]; then
+            echo "release_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RELEASE_TOKEN is not set: skipping the release commit, tags and back-merge pull request."
+          fi
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "npm_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::NPM_TOKEN is not set: skipping the npm publish."
+          fi
+
+  version:
+    name: Version and commit the release
+    needs: detect
+    if: needs.detect.outputs.changesets == 'true' && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version packages
+        run: pnpm changeset version
+      # The build rewrites the scaffold templates with the new versions; they ship in the release commit.
+      - run: pnpm build
+      - name: Commit the release to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): version packages"
+          git push origin HEAD:main
+
+  # Runs on every push to main with the tokens, whether or not this push carried changesets: publishing, tagging and
+  # releasing skip whatever already exists, so re-running a failed run (or the next push) completes the release.
+  publish:
+    name: Publish, tag and release
+    needs: [detect, version]
+    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      # The branch tip, not the pushed sha: it holds the release commit, on a re-run too.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      # After versioning: the CLI reads its version from package.json and the scaffold bakes the versions in.
+      - run: pnpm build
+      # The root build covers packages/** only; the admin publishes its dist, which `nymbal dev` serves.
+      - run: pnpm --filter @nymbalhq/admin build
+      - name: Publish to npm
+        run: pnpm changeset publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+      # changeset publish tags only what it published in this run; a version an earlier, failed run published is
+      # tagged here instead.
+      - name: Tag released versions that have no tag
+        run: |
+          set -euo pipefail
+          pnpm -r list --json --depth -1 \
+            | jq -r '.[] | select(.private != true) | "\(.name)@\(.version)"' \
+            | while read -r tag; do
+                git rev-parse -q --verify "refs/tags/$tag" > /dev/null && continue
+                if npm view "$tag" version > /dev/null 2>&1; then git tag "$tag"; fi
+              done
+      - name: Push tags
+        run: git push origin --tags
+      - name: Create GitHub releases from the changelogs
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          pnpm -r list --json --depth -1 > "$RUNNER_TEMP/packages.json"
+          for tag in $(git tag --points-at HEAD); do
+            if gh release view "$tag" > /dev/null 2>&1; then continue; fi
+            name="${tag%@*}"
+            version="${tag##*@}"
+            dir=$(jq -r --arg n "$name" '.[] | select(.name == $n) | .path' "$RUNNER_TEMP/packages.json")
+            notes=""
+            if [ -n "$dir" ] && [ -f "$dir/CHANGELOG.md" ]; then
+              notes=$(awk -v h="## $version" '$0 == h { on = 1; next } /^## / { on = 0 } on' "$dir/CHANGELOG.md")
+            fi
+            [ -n "$notes" ] || notes="Released $tag."
+            gh release create "$tag" --verify-tag --title "$tag" --notes "$notes"
+          done
+
+  back-merge:
+    name: Back-merge main into dev
+    needs: [detect, publish]
+    # Every push to main, the release commit included: the job opens nothing when dev already has main or a
+    # back-merge pull request is open.
+    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open a main -> dev pull request if none is open
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ahead=$(gh api "repos/$REPO/compare/dev...main" --jq .ahead_by)
+          if [ "$ahead" -eq 0 ]; then
+            echo "::notice::dev already contains main, no back-merge needed."
+            exit 0
+          fi
+          open=$(gh pr list --repo "$REPO" --base dev --head main --state open --json number --jq length)
+          if [ "$open" -gt 0 ]; then
+            echo "::notice::A main -> dev pull request is already open."
+            exit 0
+          fi
+          gh pr create --repo "$REPO" --base dev --head main \
+            --title "chore: back-merge main into dev" \
+            --body "Brings the release commit and any fixes merged to main back into dev. Merge with a merge commit, never squash."

@@ -1,4 +1,4 @@
-import type { DocumentStoreAdapter, RouteHandler } from '@nymbal/types'
+import type { DocumentStoreAdapter, RouteHandler } from '@nymbalhq/types'
 
 export interface ProductListItem {
   id: string

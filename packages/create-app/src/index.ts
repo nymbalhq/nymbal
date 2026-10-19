@@ -2,7 +2,8 @@ import { cp, readFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
 import pc from 'picocolors'
 
@@ -17,7 +18,66 @@ interface Answers {
   currency: 'GBP' | 'USD' | 'EUR'
   template: 'astro' | 'nextjs'
   seedDemo: boolean
-  includeMobile: boolean
+}
+
+/**
+ * Runs a command in `cwd` (with `env` when given, else the process environment) and rejects on a non-zero exit.
+ * Injected into `main` so tests do not shell out.
+ */
+export type Runner = (
+  cmd: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+) => Promise<void>
+
+/** The port `renderConfig` gives the API, which serves the admin at /admin/. */
+const API_PORT = 3001
+
+interface AdminCredentials {
+  email: string
+  password: string
+}
+
+/** A fresh admin password per project (128 bits, base64url), so no two stores share the seed's default. */
+function newAdminCredentials(): AdminCredentials {
+  return { email: 'admin@nymbal.local', password: randomBytes(16).toString('base64url') }
+}
+
+/** `.env` holds the admin credentials the seed (and a first `nymbal dev`) creates the admin from. */
+async function writeAdminEnv(dir: string, admin: AdminCredentials): Promise<void> {
+  const lines = [
+    '# The admin account the seed creates. Keep this file out of version control (.gitignore lists it).',
+    `NYMBAL_ADMIN_EMAIL=${admin.email}`,
+    `NYMBAL_ADMIN_PASSWORD=${admin.password}`,
+    '',
+  ]
+  await writeFile(resolve(dir, '.env'), lines.join('\n'), { encoding: 'utf8', mode: 0o600 })
+}
+
+function adminSignIn(admin: AdminCredentials): string[] {
+  return [
+    `Admin: http://localhost:${API_PORT}/admin/`,
+    `  email     ${admin.email}`,
+    `  password  ${admin.password} (saved in .env)`,
+  ]
+}
+
+export interface MainDeps {
+  run?: Runner
+}
+
+/**
+ * The `packageManager` field for the package manager that launched us (`npm_config_user_agent`), read when called.
+ * Without a usable user agent it is the installed npm; undefined when npm cannot be run either.
+ */
+function packageManagerField(): string | undefined {
+  const token = (process.env['npm_config_user_agent'] ?? '').split(' ')[0] ?? ''
+  const match = /^(npm|pnpm|yarn|bun)\/(\d+\.\d+\.\d+\S*)$/.exec(token)
+  if (match) return `${match[1]}@${match[2]}`
+  const npm = spawnSync('npm', ['-v'], { encoding: 'utf8', shell: process.platform === 'win32' })
+  const version = npm.status === 0 ? npm.stdout.trim() : ''
+  return version ? `npm@${version}` : undefined
 }
 
 export function detectPackageManager(): PackageManager {
@@ -66,37 +126,80 @@ function devCmd(pm: PackageManager): string {
   }
 }
 
-interface CliFlags {
+const TEMPLATES = ['astro', 'nextjs'] as const
+const CURRENCIES = ['GBP', 'USD', 'EUR'] as const
+
+export interface CliFlags {
   name?: string
-  template?: 'astro' | 'nextjs'
-  currency?: 'GBP' | 'USD' | 'EUR'
+  template?: (typeof TEMPLATES)[number]
+  currency?: (typeof CURRENCIES)[number]
   yes: boolean
+  /** Present (false) only with `--no-install`. */
+  install?: boolean
 }
 
-function parseCliFlags(argv: string[]): CliFlags {
+/** A command-line flag that is missing its value or names a value outside the allowed set. */
+export class CliFlagError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CliFlagError'
+  }
+}
+
+function oneOf<T extends string>(flag: string, value: string, allowed: readonly T[]): T {
+  if ((allowed as readonly string[]).includes(value)) return value as T
+  throw new CliFlagError(`Unknown ${flag} "${value}". Allowed: ${allowed.join(', ')}`)
+}
+
+/** Parses process.argv (node and script first): --name, --template and --currency take `--flag v` or `--flag=v`. */
+export function parseCliFlags(argv: string[]): CliFlags {
   const flags: CliFlags = { yes: false }
   const args = argv.slice(2)
+  let positional: string | undefined
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
     if (arg === '--yes' || arg === '-y') {
       flags.yes = true
-    } else if (arg.startsWith('--name=')) {
-      flags.name = arg.slice('--name='.length)
-    } else if (arg.startsWith('--template=')) {
-      const t = arg.slice('--template='.length)
-      if (t === 'astro' || t === 'nextjs') flags.template = t
-    } else if (arg.startsWith('--currency=')) {
-      const c = arg.slice('--currency='.length)
-      if (c === 'GBP' || c === 'USD' || c === 'EUR') flags.currency = c
-    } else if (!arg.startsWith('-') && !flags.name) {
-      flags.name = arg
+      continue
+    }
+    if (arg === '--no-install') {
+      flags.install = false
+      continue
+    }
+    const match = /^--(name|template|currency)(?:=(.*))?$/s.exec(arg)
+    if (match) {
+      const flag = match[1]!
+      let value = match[2]
+      if (value === undefined) {
+        const next = args[i + 1]
+        if (next === undefined || next.startsWith('-')) throw new CliFlagError(`--${flag} needs a value`)
+        value = next
+        i++
+      }
+      if (flag === 'name') flags.name = value
+      else if (flag === 'template') flags.template = oneOf('--template', value, TEMPLATES)
+      else flags.currency = oneOf('--currency', value, CURRENCIES)
+    } else if (!arg.startsWith('-') && positional === undefined) {
+      positional = arg
     }
   }
+  if (flags.name === undefined && positional !== undefined) flags.name = positional
   return flags
 }
 
-export async function main(): Promise<void> {
-  const flags = parseCliFlags(process.argv)
+export async function main(
+  argv: string[] = process.argv,
+  deps: MainDeps = {},
+): Promise<void> {
+  const run = deps.run ?? runCmd
+  let flags: CliFlags
+  try {
+    flags = parseCliFlags(argv)
+  } catch (err) {
+    if (!(err instanceof CliFlagError)) throw err
+    process.stderr.write(`Error: ${err.message}\n`)
+    process.exit(1)
+  }
 
   const pm = detectPackageManager()
 
@@ -112,7 +215,6 @@ export async function main(): Promise<void> {
       currency: flags.currency ?? 'GBP',
       template: flags.template ?? 'astro',
       seedDemo: true,
-      includeMobile: false,
     }
     const targetDir = resolve(process.cwd(), answers.directory)
     if (existsSync(targetDir)) {
@@ -125,16 +227,22 @@ export async function main(): Promise<void> {
       await mkdir(targetDir, { recursive: true })
     }
     await scaffold(targetDir, answers)
+    const admin = newAdminCredentials()
+    await writeAdminEnv(targetDir, admin)
     process.stdout.write(`Created ${answers.directory}\n`)
+    if (flags.install !== false) {
+      await installAndSeed(targetDir, pm, answers.seedDemo, run, admin)
+    } else {
+      process.stdout.write(`Next: cd ${answers.directory} && ${installCmd(pm)[0]} install\n`)
+    }
+    process.stdout.write(`${adminSignIn(admin).join('\n')}\n`)
     return
   }
 
-  const argvName = !flags.name && process.argv[2] && !process.argv[2]!.startsWith('-') ? process.argv[2] : flags.name
-
   intro(pc.cyan(pc.bold('◆ create-nymbal-app')))
 
-  const name = argvName
-    ? argvName
+  const name = flags.name
+    ? flags.name
     : ((await text({
         message: 'Store name',
         placeholder: 'My Store',
@@ -177,17 +285,13 @@ export async function main(): Promise<void> {
 
   if (isCancel(seedDemo)) return cancel('Cancelled')
 
-  const includeMobile = (await confirm({
-    message: 'Include mobile app? (placeholder for v1.0)',
-    initialValue: false,
-  })) as boolean | symbol
-
-  if (isCancel(includeMobile)) return cancel('Cancelled')
-
-  const shouldInstall = (await confirm({
-    message: 'Install dependencies now?',
-    initialValue: true,
-  })) as boolean | symbol
+  const shouldInstall =
+    flags.install === false
+      ? false
+      : ((await confirm({
+          message: 'Install dependencies now?',
+          initialValue: true,
+        })) as boolean | symbol)
 
   if (isCancel(shouldInstall)) return cancel('Cancelled')
 
@@ -197,7 +301,6 @@ export async function main(): Promise<void> {
     currency: currency as 'GBP' | 'USD' | 'EUR',
     template: template as 'astro' | 'nextjs',
     seedDemo: seedDemo as boolean,
-    includeMobile: includeMobile as boolean,
   }
 
   const targetDir = resolve(process.cwd(), answers.directory)
@@ -214,12 +317,11 @@ export async function main(): Promise<void> {
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
+  const admin = newAdminCredentials()
+  await writeAdminEnv(targetDir, admin)
 
   if (shouldInstall) {
-    await installDeps(targetDir, pm)
-    if (answers.seedDemo) {
-      await runSeed(targetDir, pm)
-    }
+    await installAndSeed(targetDir, pm, answers.seedDemo, run, admin)
   }
 
   const cmd = devCmd(pm)
@@ -232,7 +334,34 @@ export async function main(): Promise<void> {
   }
   nextSteps.push(`  ${pc.cyan(cmd)}`)
 
-  outro([pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps].join('\n'))
+  outro(
+    [pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps, '', ...adminSignIn(admin)].join(
+      '\n',
+    ),
+  )
+}
+
+/** Install with the detected package manager, then seed through the project's own `nymbal` bin. */
+async function installAndSeed(
+  dir: string,
+  pm: PackageManager,
+  seedDemo: boolean,
+  run: Runner,
+  admin: AdminCredentials,
+): Promise<void> {
+  const [installBin, installArgs] = installCmd(pm)
+  process.stdout.write(`Running ${installBin} install (this may take a moment)...\n`)
+  await run(installBin, installArgs, dir)
+  if (seedDemo) {
+    process.stdout.write('Seeding demo content...\n')
+    const [seedBin, seedArgs] = seedCmd(pm)
+    // Explicit, so a value exported in the shell cannot replace the one in .env and the outro.
+    await run(seedBin, seedArgs, dir, {
+      ...process.env,
+      NYMBAL_ADMIN_EMAIL: admin.email,
+      NYMBAL_ADMIN_PASSWORD: admin.password,
+    })
+  }
 }
 
 export async function scaffold(dir: string, answers: Answers): Promise<void> {
@@ -261,6 +390,8 @@ async function patchPackageJson(dir: string, name: string): Promise<void> {
   const pkg = JSON.parse(await readFile(pkgPath, 'utf8')) as Record<string, unknown>
   pkg['name'] = name
   pkg['private'] = true
+  const packageManager = packageManagerField()
+  if (packageManager) pkg['packageManager'] = packageManager
   await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8')
 }
 
@@ -290,7 +421,7 @@ async function renameDotFiles(dir: string): Promise<void> {
 }
 
 function renderConfig(answers: Answers): string {
-  return `import { defineConfig, env } from '@nymbal/config'
+  return `import { defineConfig, env } from '@nymbalhq/config'
 
 export default defineConfig({
   store: {
@@ -329,13 +460,7 @@ export default defineConfig({
   },
 
   commerce: {
-    payments: {
-      provider: 'stripe',
-      config: {
-        secretKey: env('STRIPE_SECRET_KEY', 'sk_test_placeholder'),
-        webhookSecret: env('STRIPE_WEBHOOK_SECRET', 'whsec_placeholder'),
-      },
-    },
+    payments: { provider: 'native' },
     email: { provider: 'native' },
     reviews: { provider: 'native' },
     search: { provider: 'native' },
@@ -347,7 +472,7 @@ export default defineConfig({
 
   http: {
     adapter: 'fastify',
-    port: 3001,
+    port: ${API_PORT},
   },
 
   deployment: {
@@ -383,21 +508,9 @@ function toDirectoryName(name: string): string {
     .replace(/\s+/g, '-')
 }
 
-async function installDeps(dir: string, pm: PackageManager): Promise<void> {
-  const [cmd, args] = installCmd(pm)
-  note(pc.dim(`Running ${cmd} install (this may take a moment)...`), 'Installing')
-  await runCmd(cmd, args, dir)
-}
-
-async function runSeed(dir: string, pm: PackageManager): Promise<void> {
-  note(pc.dim('Seeding demo content...'), 'Seeding')
-  const [cmd, args] = seedCmd(pm)
-  await runCmd(cmd, args, dir)
-}
-
-function runCmd(cmd: string, args: string[], cwd: string): Promise<void> {
+const runCmd: Runner = (cmd, args, cwd, env = process.env) => {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell: false })
+    const child = spawn(cmd, args, { cwd, env, stdio: 'inherit', shell: false })
     child.on('error', reject)
     child.on('exit', (code) => {
       if (code === 0) return resolve()

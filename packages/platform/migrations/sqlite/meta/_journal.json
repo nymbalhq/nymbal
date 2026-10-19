@@ -8,6 +8,48 @@
       "when": 1776875073175,
       "tag": "0000_glorious_vision",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792286470217,
+      "tag": "0001_tricky_glorian",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792302104573,
+      "tag": "0002_puzzling_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792310134659,
+      "tag": "0003_fantastic_captain_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792325872767,
+      "tag": "0004_remarkable_shriek",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792361576359,
+      "tag": "0005_conscious_speedball",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792397455388,
+      "tag": "0006_flat_psylocke",
+      "breakpoints": true
     }
   ]
 }

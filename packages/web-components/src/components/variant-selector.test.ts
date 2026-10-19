@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setupMockClient, createMockClient, type createMockStore } from '../testing/index.js'
 import { registerClient } from '../registry.js'
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 
 beforeEach(() => {
   setupMockClient()

@@ -1,18 +1,31 @@
 import { describe, it, expect, vi } from 'vitest'
+import fc from 'fast-check'
 import { createCheckoutStore } from './checkout-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { Address } from '@nymbal/types'
+import type { Address } from '@nymbalhq/types'
 
 const addr: Address = {
-  firstName: 'Jane', lastName: 'Doe',
-  addressLine1: '1 Test St', city: 'London',
-  region: 'England', postalCode: 'SW1A 1AA', country: 'GB',
+  firstName: 'Jane',
+  lastName: 'Doe',
+  addressLine1: '1 Test St',
+  city: 'London',
+  region: 'England',
+  postalCode: 'SW1A 1AA',
+  country: 'GB',
 }
 
 const orderResult = {
-  orderId: 'ord-1', orderNumber: 'ORD-001',
-  paymentIntent: { id: 'pi_1', clientSecret: 'secret', amountMinor: 1000, currency: 'GBP', status: 'requires_payment_method' as const },
-  totalMinor: 1000, currency: 'GBP',
+  orderId: 'ord-1',
+  orderNumber: 'ORD-001',
+  paymentIntent: {
+    id: 'pi_1',
+    clientSecret: 'secret',
+    amountMinor: 1000,
+    currency: 'GBP',
+    status: 'requires_payment_method' as const,
+  },
+  totalMinor: 1000,
+  currency: 'GBP',
 }
 
 function makeAdapter(): CommerceAdapter {
@@ -50,7 +63,13 @@ describe('CheckoutStore', () => {
 
   it('setShippingMethod advances step to payment', () => {
     const store = createCheckoutStore(makeAdapter())
-    store.setShippingMethod({ carrier: 'Royal Mail', service: 'Standard', amountMinor: 0, currency: 'GBP', estimatedDays: 3 })
+    store.setShippingMethod({
+      carrier: 'Royal Mail',
+      service: 'Standard',
+      amountMinor: 0,
+      currency: 'GBP',
+      estimatedDays: 3,
+    })
     expect(store.getState().step).toBe('payment')
   })
 
@@ -59,18 +78,6 @@ describe('CheckoutStore', () => {
     await store.submitPayment()
     expect(store.getState().error).toBeTruthy()
     expect(store.getState().paymentStatus).toBe('idle')
-  })
-
-  it('submitPayment calls adapter.checkout.create when addresses set', async () => {
-    const adapter = makeAdapter()
-    const store = createCheckoutStore(adapter)
-    store.setEmail('buyer@example.com')
-    store.setShippingAddress(addr)
-    store.setBillingAddress(addr)
-    await store.submitPayment()
-    expect(adapter.checkout.create).toHaveBeenCalled()
-    expect(store.getState().paymentStatus).toBe('succeeded')
-    expect(store.getState().order).toBeTruthy()
   })
 
   it('submitPayment on failure sets paymentStatus failed', async () => {
@@ -92,5 +99,86 @@ describe('CheckoutStore', () => {
     expect(store.getState().step).toBe('contact')
     expect(store.getState().email).toBe('')
     expect(store.getState().shippingAddress).toBeNull()
+  })
+})
+
+// P1-12 AC-5 (decision 3): the store tells the truth. `paymentStatus` is what the server said about the payment, not
+// "the order was created"; `submitPayment()` resolves to the server's checkout result (null when there is none); a
+// template calls `markConfirmed()` once Stripe's confirmation succeeds. Kills: `succeeded` set on any 200, a
+// Stripe-pending checkout redirected as paid, and a result only reachable through a stale render snapshot.
+describe('AC-5: CheckoutStore follows the server payment status', () => {
+  type ServerStatus = 'succeeded' | 'requires_action' | 'failed'
+
+  function serverResult(status: ServerStatus, orderNumber = 'NYM-5001') {
+    return {
+      orderId: `ord-${orderNumber}`,
+      orderNumber,
+      paymentIntent: {
+        id: `pi_${orderNumber}`,
+        clientSecret: `pi_${orderNumber}_secret`,
+        amountMinor: 4200,
+        currency: 'GBP',
+        status: status === 'requires_action' ? ('requires_payment_method' as const) : status,
+      },
+      currency: 'GBP',
+      totalMinor: 4200,
+      orderStatus:
+        status === 'succeeded' ? 'confirmed' : status === 'failed' ? 'cancelled' : 'pending',
+      payment: status === 'failed' ? { status, reason: 'stub_declined' } : { status },
+    }
+  }
+
+  function readyStore(result: unknown) {
+    const adapter = {
+      checkout: { create: vi.fn().mockResolvedValue(result) },
+    } as unknown as CommerceAdapter
+    const store = createCheckoutStore(adapter)
+    store.setEmail('buyer@example.com')
+    store.setShippingAddress(addr)
+    store.setBillingAddress(addr)
+    return store
+  }
+
+  it('AC-5: for any server payment status, paymentStatus after submitPayment is that status and submitPayment resolves to the server result', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom<ServerStatus>('succeeded', 'requires_action', 'failed'),
+        fc.stringMatching(/^NYM-[0-9]{4}$/),
+        async (status, orderNumber) => {
+          const result = serverResult(status, orderNumber)
+          const store = readyStore(result)
+          const resolved = await store.submitPayment()
+          expect(store.getState().paymentStatus).toBe(result.payment.status)
+          expect(resolved).toEqual(result)
+          expect(store.getState().order?.orderNumber).toBe(result.orderNumber)
+        },
+      ),
+      { numRuns: 30 },
+    )
+  })
+
+  it('AC-5: a Stripe checkout (requires_action) is not succeeded until markConfirmed, then it is', async () => {
+    const store = readyStore(serverResult('requires_action'))
+    await store.submitPayment()
+    const beforeConfirm = store.getState().paymentStatus
+    expect(beforeConfirm).toBe('requires_action')
+
+    store.markConfirmed()
+
+    expect(store.getState().paymentStatus).toBe('succeeded')
+    expect(store.getState().paymentStatus).not.toBe(beforeConfirm)
+  })
+
+  it('AC-5: submitPayment resolves to null when there is no result: addresses missing, or the request rejected', async () => {
+    const missing = createCheckoutStore(makeAdapter())
+    const rejecting = makeAdapter()
+    vi.mocked(rejecting.checkout.create).mockRejectedValueOnce(new Error('network down'))
+    const rejected = createCheckoutStore(rejecting)
+    rejected.setShippingAddress(addr)
+    rejected.setBillingAddress(addr)
+
+    expect(await missing.submitPayment()).toBeNull()
+    expect(await rejected.submitPayment()).toBeNull()
+    expect(rejected.getState().paymentStatus).toBe('failed')
   })
 })

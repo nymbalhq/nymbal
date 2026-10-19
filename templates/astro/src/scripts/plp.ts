@@ -1,38 +1,43 @@
+import type { ProductSortKey } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
-import { formatPrice } from '../lib/format.js'
+import { escapeHtml, formatPrice } from '../lib/format.js'
 
 const gridContainer = document.getElementById('product-grid')
 const sortSelect = document.getElementById('sort-select') as HTMLSelectElement | null
 const loadMoreBtn = document.getElementById('load-more-btn')
 const countEl = document.getElementById('product-count')
 
-// Load initial from URL params
+// A category page carries its category in the path, which the server render puts on the grid; /products may carry
+// one in the query. The server render also selected the URL's sort in the dropdown.
 const urlParams = new URLSearchParams(window.location.search)
-const initialCategory = urlParams.get('category')
+const initialCategory = gridContainer?.dataset.category ?? urlParams.get('category') ?? undefined
+const initialSort = (sortSelect?.value ?? 'newest') as ProductSortKey
 
 function renderProductCard(product: any): string {
   const imageUrl =
     product.imageUrl ??
     (Array.isArray(product.media) && product.media[0]?.url) ??
     `https://picsum.photos/seed/${product.slug}/600/600`
-  const price =
-    product.priceMinor != null
-      ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-      : ''
+  // The "from" price, which the price sorts order by.
+  const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
+  const price = fromMinor != null ? formatPrice(fromMinor, product.currency ?? 'GBP') : ''
+
+  const slug = escapeHtml(product.slug)
+  const name = escapeHtml(product.name)
 
   return `
-    <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
+    <a href="/product/${slug}" class="product-card" data-testid="product-card-${slug}">
       <img
-        src="${imageUrl}"
-        alt="${product.name}"
+        src="${escapeHtml(imageUrl)}"
+        alt="${name}"
         class="product-card-image"
         loading="lazy"
         width="600"
         height="600"
       />
       <div class="product-card-body">
-        <span class="product-card-name">${product.name}</span>
-        ${price ? `<span class="product-card-price">${price}</span>` : ''}
+        <span class="product-card-name">${name}</span>
+        ${price ? `<span class="product-card-price">${escapeHtml(price)}</span>` : ''}
       </div>
     </a>
   `
@@ -72,37 +77,30 @@ function renderGrid() {
   }
 }
 
-// Await the initial load before subscribing so the subscription only handles
-// re-renders (sort, filter, load-more) and never fires with empty state while
-// SSR content is still the source of truth.
+// The first load's own answer is the server-rendered grid, so it is not re-rendered: subscribing after it keeps the
+// subscription to re-renders (sort, filter, load-more). A sort or filter chosen while it was in flight reached the
+// store with nothing subscribed, so that state is rendered here.
 async function init() {
-  if (initialCategory) {
-    await client.productList.applyFilter('category', initialCategory)
-  } else {
-    await client.productList.load({ limit: 24 })
-  }
+  await client.productList.load({ limit: 24, category: initialCategory, sort: initialSort })
   client.productList.subscribe(renderGrid)
+  const state = client.productList.getState()
+  const filters = Object.entries(state.filters)
+  const changed =
+    state.sort !== initialSort ||
+    filters.length !== (initialCategory === undefined ? 0 : 1) ||
+    filters.some(([name, value]) => name !== 'category' || value !== initialCategory)
+  if (state.loading || changed) renderGrid()
 }
 
 void init()
 
-// Sort handler
+// The URL carries the sort, so a reload or a shared link renders the same order server-side.
 sortSelect?.addEventListener('change', () => {
-  const value = sortSelect.value
-  switch (value) {
-    case 'newest':
-      client.productList.setSort('createdAt', 'desc')
-      break
-    case 'price-asc':
-      client.productList.setSort('priceMinor', 'asc')
-      break
-    case 'price-desc':
-      client.productList.setSort('priceMinor', 'desc')
-      break
-    case 'name-asc':
-      client.productList.setSort('name', 'asc')
-      break
-  }
+  const sort = sortSelect.value as ProductSortKey
+  const url = new URL(window.location.href)
+  url.searchParams.set('sort', sort)
+  window.history.replaceState(window.history.state, '', url)
+  void client.productList.setSort(sort)
 })
 
 // Load more handler

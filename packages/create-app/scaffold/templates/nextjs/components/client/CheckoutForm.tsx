@@ -1,19 +1,23 @@
 'use client'
 
-import { useState, useCallback, useEffect, type FormEvent } from 'react'
+import { useState, useCallback, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCheckout, useCart } from '@nymbal/react'
+import { useCheckout, useCart, useNymbalClient } from '@nymbalhq/react'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/checkout.module.css'
 
+// The env says only whether a Stripe client exists; the payment flow follows the server's answer.
 const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
 const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
 const stripePromise = isStub ? null : loadStripe(stripeKey)
 
-import type { Address } from '@nymbal/types'
-type AddressFields = Pick<Address, 'firstName' | 'lastName' | 'addressLine1' | 'city' | 'region' | 'postalCode' | 'country'> & { addressLine2: string }
+import type { Address } from '@nymbalhq/types'
+type AddressFields = Pick<
+  Address,
+  'firstName' | 'lastName' | 'addressLine1' | 'city' | 'region' | 'postalCode' | 'country'
+> & { addressLine2: string }
 
 const emptyAddress: AddressFields = {
   firstName: '',
@@ -157,6 +161,7 @@ function AddressFormFields({
 
 function CheckoutFormInner() {
   const router = useRouter()
+  const client = useNymbalClient()
   const checkout = useCheckout()
   const cart = useCart()
   const stripe = useStripe()
@@ -172,29 +177,13 @@ function CheckoutFormInner() {
 
   const cartCurrency = cart.currency ?? 'GBP'
 
-  useEffect(() => {
-    if (checkout.paymentStatus === 'succeeded' && checkout.order) {
-      router.push(`/order/${checkout.order.orderNumber}`)
-    }
-    if (checkout.paymentStatus === 'failed' && checkout.error) {
-      setError(checkout.error)
-      setProcessing(false)
-    }
-  }, [checkout.paymentStatus, checkout.order, checkout.error, router])
+  const updateShipping = useCallback((field: keyof AddressFields, value: string) => {
+    setShippingAddress((prev) => ({ ...prev, [field]: value }))
+  }, [])
 
-  const updateShipping = useCallback(
-    (field: keyof AddressFields, value: string) => {
-      setShippingAddress((prev) => ({ ...prev, [field]: value }))
-    },
-    [],
-  )
-
-  const updateBilling = useCallback(
-    (field: keyof AddressFields, value: string) => {
-      setBillingAddress((prev) => ({ ...prev, [field]: value }))
-    },
-    [],
-  )
+  const updateBilling = useCallback((field: keyof AddressFields, value: string) => {
+    setBillingAddress((prev) => ({ ...prev, [field]: value }))
+  }, [])
 
   const handleContact = useCallback(
     (e: FormEvent) => {
@@ -214,7 +203,12 @@ function CheckoutFormInner() {
     (e: FormEvent) => {
       e.preventDefault()
       setError(null)
-      if (!shippingAddress.addressLine1 || !shippingAddress.city || !shippingAddress.postalCode || !shippingAddress.country) {
+      if (
+        !shippingAddress.addressLine1 ||
+        !shippingAddress.city ||
+        !shippingAddress.postalCode ||
+        !shippingAddress.country
+      ) {
         setError('Please complete your shipping address.')
         return
       }
@@ -260,19 +254,33 @@ function CheckoutFormInner() {
         country: billing.country,
       })
 
-      try {
-        await checkout.submitPayment()
+      const stay = (message: string) => {
+        setError(message)
+        setProcessing(false)
+      }
+      const leaveFor = (orderNumber: string) => {
+        router.push(`/order/${encodeURIComponent(orderNumber)}`)
+      }
 
-        if (!isStub && stripe && elements && checkout.order?.paymentIntent?.clientSecret) {
+      try {
+        // The submit's own result, never the render-time snapshot, which still holds the state from before it.
+        const result = await checkout.submitPayment()
+        if (result === null) {
+          // A resubmit of a cart that already became an order (Back, then Place Order) goes to that order.
+          const { placedOrderNumber, error: submitError } = client.checkout.getState()
+          if (placedOrderNumber) return leaveFor(placedOrderNumber)
+          return stay(submitError ?? 'Something went wrong.')
+        }
+        if (result.payment.status === 'failed') {
+          return stay(client.checkout.getState().error ?? 'Payment failed.')
+        }
+        // Without a Stripe client (a +stub-pending order) the order page shows it awaiting payment.
+        if (result.payment.status === 'requires_action' && !isStub && stripe && elements) {
           const cardEl = elements.getElement(CardElement)
-          if (!cardEl) {
-            setError('Card element not found.')
-            setProcessing(false)
-            return
-          }
+          if (!cardEl) return stay('Card element not found.')
 
           const { error: stripeError } = await stripe.confirmCardPayment(
-            checkout.order.paymentIntent.clientSecret,
+            result.paymentIntent.clientSecret,
             {
               payment_method: {
                 card: cardEl,
@@ -291,193 +299,218 @@ function CheckoutFormInner() {
             },
           )
 
-          if (stripeError) {
-            setError(stripeError.message ?? 'Payment failed.')
-            setProcessing(false)
-            return
-          }
+          if (stripeError) return stay(stripeError.message ?? 'Payment failed.')
+          checkout.markConfirmed()
         }
+        leaveFor(result.orderNumber)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong.')
-        setProcessing(false)
+        stay(err instanceof Error ? err.message : 'Something went wrong.')
       }
     },
-    [stripe, elements, email, shippingAddress, billingAddress, sameAsShipping, checkout],
+    [
+      stripe,
+      elements,
+      email,
+      shippingAddress,
+      billingAddress,
+      sameAsShipping,
+      checkout,
+      client,
+      router,
+    ],
   )
 
-  if (processing) {
-    return (
-      <div className={styles.processing}>
-        <div className="spinner spinner-lg" role="status" />
-        <p className={styles.processingText}>Processing your order...</p>
-      </div>
-    )
-  }
-
   return (
-    <div className={`container ${styles.page}`}>
-      <h1 className={styles.pageTitle}>Checkout</h1>
-      <StepIndicator current={step} />
-
-      <div className={styles.layout}>
-        <div className={styles.formArea}>
-          {error && (
-            <div className={styles.paymentError} role="alert">{error}</div>
-          )}
-
-          {step === 0 && (
-            <form onSubmit={handleContact}>
-              <div className={styles.formSection}>
-                <h2 className={styles.formSectionTitle}>Contact Information</h2>
-                <div className="form-group">
-                  <label htmlFor="checkout-email">Email Address</label>
-                  <input
-                    id="contact-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    data-testid="contact-email"
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                  />
-                </div>
-              </div>
-              <div className={styles.formActions}>
-                <span />
-                <button type="submit" className="btn btn-primary" data-testid="contact-continue">
-                  Continue to Shipping
-                </button>
-              </div>
-            </form>
-          )}
-
-          {step === 1 && (
-            <form onSubmit={handleShipping}>
-              <div className={styles.formSection} data-testid="shipping-address">
-                <h2 className={styles.formSectionTitle}>Shipping Address</h2>
-                <AddressFormFields
-                  prefix="shipping"
-                  values={shippingAddress}
-                  onChange={updateShipping}
-                />
-              </div>
-              <div className={styles.formActions}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setStep(0)}
-                >
-                  Back
-                </button>
-                <button type="submit" className="btn btn-primary" data-testid="shipping-continue">
-                  Continue to Payment
-                </button>
-              </div>
-            </form>
-          )}
-
-          {step === 2 && (
-            <form onSubmit={handlePlaceOrder}>
-              <div className={styles.formSection}>
-                <h2 className={styles.formSectionTitle}>Billing Address</h2>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--nymbal-spacing-sm)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={sameAsShipping}
-                    onChange={(e) => setSameAsShipping(e.target.checked)}
-                    style={{ width: 'auto' }}
-                  />
-                  Same as shipping address
-                </label>
-                {!sameAsShipping && (
-                  <div data-testid="billing-address" style={{ marginTop: 'var(--nymbal-spacing-md)' }}>
-                    <AddressFormFields
-                      prefix="bill"
-                      values={billingAddress}
-                      onChange={updateBilling}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className={styles.formSection} style={{ marginTop: 'var(--nymbal-spacing-lg)' }}>
-                <h2 className={styles.formSectionTitle}>Payment</h2>
-                {isStub ? (
-                  <div className={styles.paymentElement} data-testid="card-element">
-                    <p style={{ color: 'var(--nymbal-color-text-muted, #9ca3af)', fontSize: '0.875rem', margin: 0 }}>
-                      Test mode — payment skipped
-                    </p>
-                  </div>
-                ) : (
-                  <div className={styles.paymentElement} data-testid="card-element">
-                    <CardElement
-                      options={{
-                        style: {
-                          base: {
-                            fontSize: '16px',
-                            color: '#1a1a1a',
-                            '::placeholder': { color: '#9ca3af' },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className={styles.formActions}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setStep(1)}
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={(!isStub && !stripe) || processing}
-                  data-testid="place-order"
-                >
-                  Place Order
-                </button>
-              </div>
-            </form>
-          )}
+    <>
+      {processing && (
+        <div className={styles.processing}>
+          <div className="spinner spinner-lg" role="status" />
+          <p className={styles.processingText}>Processing your order...</p>
         </div>
+      )}
+      {/* Hidden, not unmounted, while processing: Stripe confirms with the mounted card element. */}
+      <div
+        className={`container ${styles.page}`}
+        style={processing ? { display: 'none' } : undefined}
+      >
+        <h1 className={styles.pageTitle}>Checkout</h1>
+        <StepIndicator current={step} />
 
-        <aside className={styles.orderSummary}>
-          <h2 className={styles.orderSummaryTitle}>Order Summary</h2>
-          {cart.items?.map((item) => (
-            <div key={item.variantId} className={styles.orderItem}>
-              {item.imageUrl && (
-                <div className={styles.orderItemImage}>
-                  <img src={item.imageUrl} alt={item.productName} />
-                </div>
-              )}
-              <div className={styles.orderItemInfo}>
-                <p className={styles.orderItemName}>{item.productName}</p>
-                <p className={styles.orderItemQty}>Qty: {item.qty}</p>
+        <div className={styles.layout}>
+          <div className={styles.formArea}>
+            {error && (
+              <div className={styles.paymentError} role="alert">
+                {error}
               </div>
-              <span className={styles.orderItemPrice}>
-                {formatPrice(item.priceMinor * item.qty, cartCurrency)}
+            )}
+
+            {step === 0 && (
+              <form onSubmit={handleContact}>
+                <div className={styles.formSection}>
+                  <h2 className={styles.formSectionTitle}>Contact Information</h2>
+                  <div className="form-group">
+                    <label htmlFor="checkout-email">Email Address</label>
+                    <input
+                      id="contact-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      data-testid="contact-email"
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                    />
+                  </div>
+                </div>
+                <div className={styles.formActions}>
+                  <span />
+                  <button type="submit" className="btn btn-primary" data-testid="contact-continue">
+                    Continue to Shipping
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {step === 1 && (
+              <form onSubmit={handleShipping}>
+                <div className={styles.formSection} data-testid="shipping-address">
+                  <h2 className={styles.formSectionTitle}>Shipping Address</h2>
+                  <AddressFormFields
+                    prefix="shipping"
+                    values={shippingAddress}
+                    onChange={updateShipping}
+                  />
+                </div>
+                <div className={styles.formActions}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setStep(0)}>
+                    Back
+                  </button>
+                  <button type="submit" className="btn btn-primary" data-testid="shipping-continue">
+                    Continue to Payment
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {step === 2 && (
+              <form onSubmit={handlePlaceOrder}>
+                <div className={styles.formSection}>
+                  <h2 className={styles.formSectionTitle}>Billing Address</h2>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--nymbal-spacing-sm)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sameAsShipping}
+                      onChange={(e) => setSameAsShipping(e.target.checked)}
+                      style={{ width: 'auto' }}
+                    />
+                    Same as shipping address
+                  </label>
+                  {!sameAsShipping && (
+                    <div
+                      data-testid="billing-address"
+                      style={{ marginTop: 'var(--nymbal-spacing-md)' }}
+                    >
+                      <AddressFormFields
+                        prefix="bill"
+                        values={billingAddress}
+                        onChange={updateBilling}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  className={styles.formSection}
+                  style={{ marginTop: 'var(--nymbal-spacing-lg)' }}
+                >
+                  <h2 className={styles.formSectionTitle}>Payment</h2>
+                  {isStub ? (
+                    <div className={styles.paymentElement} data-testid="card-element">
+                      <p
+                        style={{
+                          color: 'var(--nymbal-color-text-muted, #9ca3af)',
+                          fontSize: '0.875rem',
+                          margin: 0,
+                        }}
+                      >
+                        Test mode — payment skipped
+                      </p>
+                    </div>
+                  ) : (
+                    <div className={styles.paymentElement} data-testid="card-element">
+                      <CardElement
+                        options={{
+                          style: {
+                            base: {
+                              fontSize: '16px',
+                              color: '#1a1a1a',
+                              '::placeholder': { color: '#9ca3af' },
+                            },
+                          },
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.formActions}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setStep(1)}>
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={(!isStub && !stripe) || processing}
+                    data-testid="place-order"
+                  >
+                    Place Order
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          <aside className={styles.orderSummary}>
+            <h2 className={styles.orderSummaryTitle}>Order Summary</h2>
+            {cart.items?.map((item) => (
+              <div key={item.variantId} className={styles.orderItem}>
+                {item.imageUrl && (
+                  <div className={styles.orderItemImage}>
+                    <img src={item.imageUrl} alt={item.productName} />
+                  </div>
+                )}
+                <div className={styles.orderItemInfo}>
+                  <p className={styles.orderItemName}>{item.productName}</p>
+                  <p className={styles.orderItemQty}>Qty: {item.qty}</p>
+                </div>
+                <span className={styles.orderItemPrice}>
+                  {formatPrice(item.priceMinor * item.qty, cartCurrency)}
+                </span>
+              </div>
+            ))}
+            <hr className={styles.summaryDivider} />
+            <div className={styles.summaryRow}>
+              <span>Subtotal</span>
+              <span data-testid="cart-subtotal">
+                {formatPrice(cart.subtotalMinor ?? 0, cartCurrency)}
               </span>
             </div>
-          ))}
-          <hr className={styles.summaryDivider} />
-          <div className={styles.summaryRow}>
-            <span>Subtotal</span>
-            <span data-testid="cart-subtotal">{formatPrice(cart.subtotalMinor ?? 0, cartCurrency)}</span>
-          </div>
-          <hr className={styles.summaryDivider} />
-          <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
-            <span>Total</span>
-            <span>{formatPrice(cart.subtotalMinor ?? 0, cartCurrency)}</span>
-          </div>
-        </aside>
+            <hr className={styles.summaryDivider} />
+            <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
+              <span>Total</span>
+              <span>{formatPrice(cart.subtotalMinor ?? 0, cartCurrency)}</span>
+            </div>
+          </aside>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

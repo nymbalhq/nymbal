@@ -2,141 +2,397 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths-ignore:
       - 'docs/**'
       - '*.md'
 
 env:
   PNPM_VERSION: '9.12.3'
-  NODE_VERSION: '22'
+  # The base every gate.ts call diffs against: the target branch on a pull request, the previous tip on a push.
+  GATE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
 
 jobs:
-  lint:
-    name: Lint & typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm lint
-      - run: pnpm typecheck
-
-  unit:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm vitest run --project platform-unit --project sdk --project web-components --project react --project factories --project config --project types --project admin
-
-  integration:
-    name: Integration tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm vitest run --project platform-integration
-
-  contracts:
-    name: Contract tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm vitest run --project contracts-native
-
-  coverage:
-    name: Coverage gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm vitest run --coverage
-
   build:
-    name: Build all packages + templates
+    name: Build all packages, templates and admin
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm build:templates
-      - run: pnpm --filter @nymbal/admin build
+      - run: pnpm --filter @nymbalhq/admin build
+      # The one artefact every other job downloads; nothing downstream builds.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: |
+            packages/*/dist
+            templates/astro/dist
+            templates/astro/.astro
+            templates/nextjs/.next
+            !templates/nextjs/.next/cache
+            apps/admin/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  gate:
+    name: Gate — lint, typecheck, tests, census trend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Gate
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --no-build --base "$GATE_BASE"
+
+  integration:
+    name: Integration — Postgres, Redis, contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    env:
+      NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nymbal
+          POSTGRES_DB: nymbal
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Postgres integration
+        run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
+      - name: Proof kit services (Postgres race, Mailpit sink)
+        run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
+      - name: Platform and importers integration, contracts
+        run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
+
+  mutation:
+    name: Mutation — Stryker (incremental)
+    runs-on: ubuntu-latest
+    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
+    # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
+    timeout-minutes: 45
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - uses: actions/cache@v6
+        with:
+          path: reports/mutation/stryker-incremental.json
+          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward. The
+          # ratchet's hash does the same whenever an entry moves: its entries come from full runs, so a chain that
+          # carried older statuses forward could fail a file no change touched.
+          key: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-${{ github.sha }}
+          restore-keys: stryker-incremental-v2-${{ hashFiles('mutation-ratchet.json') }}-
+      - name: Mutation
+        run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
+
+  sentinels:
+    name: Sentinels and tests-fail-on-base
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build]
+    # tests-fail-on-base runs every project against the base, so a new Postgres or Mailpit test needs its server here
+    # too, or it fails on base for want of one.
+    env:
+      NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nymbal
+          POSTGRES_DB: nymbal
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Sentinels
+        run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels all --no-build --services external --base "$GATE_BASE"
+
+  coverage:
+    name: Coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      # integration-postgres and proof-kit-services have their own job, with the services they need.
+      # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
+      # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
+      # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
+      - name: Coverage (reported, not a gate)
+        run: |
+          rm -rf coverage reports/coverage-tests.json
+          status=0
+          pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
+            --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
+            --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**' || status=$?
+          node -e '
+            const fs = require("fs")
+            const out = ["## Coverage", ""]
+            if (fs.existsSync("coverage/coverage-summary.json")) {
+              const t = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8")).total
+              out.push("| metric | covered | total | % |", "|---|---:|---:|---:|")
+              for (const k of ["lines", "statements", "functions", "branches"]) {
+                out.push(`| ${k} | ${t[k].covered} | ${t[k].total} | ${t[k].pct}% |`)
+              }
+            } else {
+              out.push("No coverage summary: the run did not finish.")
+            }
+            if (process.argv[1] !== "0") out.push("", `Vitest exited ${process.argv[1]}; thresholds are reported, never blocking.`)
+            console.log(out.join("\n"))
+          ' "$status" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            node -e '
+              const fs = require("fs")
+              const f = "reports/coverage-tests.json"
+              const ok = fs.existsSync(f) && JSON.parse(fs.readFileSync(f, "utf8")).success === true
+              if (!ok) {
+                console.error("the coverage run failed: a test failed or the run crashed")
+                process.exit(1)
+              }
+              console.log("every test passed; the coverage threshold miss is reported, not blocking")
+            '
+          fi
+
+  e2e-astro:
+    name: E2E — Astro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro (functional, visual, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs:
+    name: E2E — Next.js
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js (functional, visual, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs" --no-build --base "$GATE_BASE"
+
+  e2e-admin:
+    name: E2E — Admin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Admin (functional, visual, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
 
   scaffold-smoke:
     name: Scaffold smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
       - name: Scaffold Astro project
-        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes
+        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes --no-install
       - name: Install Astro scaffold deps
         run: pnpm install --no-frozen-lockfile
+        working-directory: smoke-astro
+      - name: Migrate database (Astro)
+        run: pnpm exec nymbal migrate
         working-directory: smoke-astro
       - name: Seed demo content (Astro)
         run: pnpm exec nymbal seed
         working-directory: smoke-astro
+      - name: Start the API (Astro)
+        run: |
+          pnpm exec nymbal dev --api-only &
+          echo "ASTRO_API_PID=$!" >> "$GITHUB_ENV"
+        working-directory: smoke-astro
+        env:
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+      - name: Wait for the API (Astro)
+        run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Astro dev server
-        run: pnpm dev &
+        run: |
+          pnpm dev --ignore-lock &
+          echo "ASTRO_WEB_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-astro
       - name: Wait for Astro dev server
         run: npx wait-on http://localhost:4321 --timeout 60000
@@ -144,290 +400,87 @@ jobs:
         run: curl -fsS http://localhost:4321/ | grep "nymbal:project-override homepage"
       - name: Smoke check Astro
         run: node tools/scaffold-smoke-check.mjs --port 4321
-      - name: Stop Astro dev server
-        run: pkill -f "astro dev" || true
+      - name: Stop Astro dev server and API
+        run: |
+          kill "$ASTRO_WEB_PID"
+          kill "$ASTRO_API_PID"
       - name: Scaffold Next.js project
-        run: node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes
+        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes --no-install
       - name: Install Next.js scaffold deps
         run: pnpm install --no-frozen-lockfile
         working-directory: smoke-nextjs
-      - name: Seed demo content
+      - name: Migrate database (Next.js)
+        run: pnpm exec nymbal migrate
+        working-directory: smoke-nextjs
+      - name: Seed demo content (Next.js)
         run: pnpm exec nymbal seed
         working-directory: smoke-nextjs
+      - name: Start the API (Next.js)
+        run: |
+          pnpm exec nymbal dev --api-only &
+          echo "NEXTJS_API_PID=$!" >> "$GITHUB_ENV"
+        working-directory: smoke-nextjs
+        env:
+          NYMBAL_PAYMENTS_PROVIDER: native-stub
+      - name: Wait for the API (Next.js)
+        run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Next.js dev server
-        run: pnpm dev &
+        run: |
+          pnpm dev &
+          echo "NEXTJS_WEB_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-nextjs
       - name: Wait for Next.js dev server
         run: npx wait-on http://localhost:3000 --timeout 60000
       - name: Smoke check Next.js
         run: node tools/scaffold-smoke-check.mjs --port 3000
-      - name: Stop Next.js dev server
-        run: pkill -f "next dev" || true
-
-  e2e-astro:
-    name: E2E — Astro
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Run E2E (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep-invert "@visual|@a11y"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  e2e-nextjs:
-    name: E2E — Next.js
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Run E2E (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep-invert "@visual|@a11y"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  visual-astro:
-    name: Visual regression — Astro
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Visual regression (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@visual"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  visual-nextjs:
-    name: Visual regression — Next.js
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Visual regression (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@visual"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  a11y-astro:
-    name: Accessibility — Astro
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Accessibility scan (Astro)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project astro --grep "@a11y"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  a11y-nextjs:
-    name: Accessibility — Next.js
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Accessibility scan (Next.js)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project nextjs --grep "@a11y"
-        env:
-          CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  e2e-admin:
-    name: E2E — Admin
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright browsers
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Run E2E (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep-invert "@visual|@a11y"
-        env:
-          CI: true
-          NYMBAL_E2E_ADMIN: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  visual-admin:
-    name: Visual regression — Admin
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Visual regression (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --project admin-mobile --grep "@visual"
-        env:
-          CI: true
-          NYMBAL_E2E_ADMIN: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  a11y-admin:
-    name: Accessibility — Admin
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - name: Install Playwright
-        run: pnpm --filter @nymbal/e2e exec playwright install --with-deps chromium
-      - name: Accessibility scan (Admin)
-        run: pnpm --filter @nymbal/e2e exec playwright test --project admin --grep "@a11y"
-        env:
-          CI: true
-          NYMBAL_E2E_ADMIN: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
-
-  perf-astro:
-    name: Performance — Astro
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm build:templates
-      - name: Run Lighthouse CI (Astro)
+      - name: Stop Next.js dev server and API
         run: |
-          pnpm --filter @nymbal/template-astro preview &
-          sleep 5
-          pnpm lhci autorun
-        env:
-          CI: true
-          NYMBAL_TEMPLATE: astro
+          kill "$NEXTJS_WEB_PID"
+          kill "$NEXTJS_API_PID"
 
-  perf-nextjs:
-    name: Performance — Next.js
+  scaffold-clean:
+    name: Scaffold from a clean machine (${{ matrix.template }})
     runs-on: ubuntu-latest
-    needs: [build]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [astro, nextjs]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm build:templates
-      - name: Run Lighthouse CI (Next.js)
-        run: |
-          pnpm --filter @nymbal/template-nextjs start &
-          sleep 5
-          pnpm lhci autorun
+      # The script builds and publishes every public package at a snapshot version to a local Verdaccio (Docker),
+      # scaffolds outside the checkout against it, and serves the store; nothing reaches npmjs and no token is used.
+      - name: Scaffold, install and serve from a local registry
+        shell: bash
         env:
-          CI: true
-          NYMBAL_TEMPLATE: nextjs
+          TEMPLATE: ${{ matrix.template }}
+        run: |
+          scripts/scaffold-clean.sh "$TEMPLATE" | tee scaffold-clean.log
+          grep '^scaffold-clean: ' scaffold-clean.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  changeset:
+    name: Changeset
+    # The main -> dev back-merge carries no changes of its own.
+    if: github.event_name == 'pull_request' && github.head_ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm changeset status --since=origin/${{ github.base_ref }}

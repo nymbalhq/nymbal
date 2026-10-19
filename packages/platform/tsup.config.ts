@@ -8,8 +8,8 @@ export default defineConfig({
   sourcemap: true,
   target: 'node22',
   external: [
-    '@nymbal/types',
-    '@nymbal/config',
+    '@nymbalhq/types',
+    '@nymbalhq/config',
     'better-sqlite3',
     'drizzle-orm',
     'pg',

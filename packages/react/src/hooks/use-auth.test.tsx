@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { NymbalProvider } from '../context.js'
 import { useAuth } from './use-auth.js'
-import type { NymbalClient, AuthState } from '@nymbal/sdk'
+import type { NymbalClient, AuthState } from '@nymbalhq/sdk'
 import type { ReactNode } from 'react'
 
 function makeAuthStore(initial: Partial<AuthState> = {}) {

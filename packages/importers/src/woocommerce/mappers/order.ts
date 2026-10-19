@@ -1,5 +1,5 @@
-import type { Address, OrderLineItem, OrderStatus } from '@nymbal/types'
-import type { OrderImportInput } from '@nymbal/platform'
+import type { Address, OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import type { OrderImportInput } from '@nymbalhq/platform'
 import type { WcOrder, WcAddress } from '../client.js'
 import { v7 as uuidv7 } from 'uuid'
 
@@ -19,6 +19,9 @@ const STATUS_MAP: Record<string, OrderStatus> = {
   refunded: 'refunded',
   failed: 'cancelled',
 }
+
+/** WooCommerce statuses whose order was paid; a refunded order was paid, then refunded in full. */
+const PAID_STATUSES = new Set(['processing', 'completed', 'refunded'])
 
 function mapAddress(a: WcAddress): Address {
   const addr: Address = {
@@ -93,6 +96,12 @@ export function mapOrder(
       },
     },
     createdAt: new Date(wc.date_created),
+  }
+  // A free order took no money: nothing captured.
+  if (PAID_STATUSES.has(wc.status) && totalMinor > 0) {
+    result.capturedMinor = totalMinor
+    result.refundedMinor = wc.status === 'refunded' ? totalMinor : 0
+    result.captureMethod = 'import'
   }
   if (wc.customer_note) result.notes = wc.customer_note
   return result

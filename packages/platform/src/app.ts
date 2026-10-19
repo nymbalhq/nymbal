@@ -1,17 +1,20 @@
-import type { NymbalConfig } from '@nymbal/config'
+import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import { ConfigError } from '@nymbalhq/types'
 import { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
-import { buildAdapters, type AdapterRegistry } from './adapters/registry.js'
+import { buildAdapters, paymentsAdapterFor, type AdapterRegistry } from './adapters/registry.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
+import { createRelay, type Relay } from './events/relay.js'
 import { registerHandlers } from './handlers/register.js'
 import { warmDocumentStore } from './warm-document-store.js'
 import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
+  startEventRetentionSweeper,
   type SweeperHandle,
 } from './sweepers/index.js'
-import type { HttpAdapter } from '@nymbal/types'
+import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
   platform: Platform
@@ -19,18 +22,51 @@ export interface NymbalApp {
   adapters: AdapterRegistry
   services: ServiceRegistry
   publisher: EventPublisher
-  attachHttp(adapter: HttpAdapter): Promise<void>
+  /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
+  relay: Relay
+  /**
+   * Registers the API on the adapter. The admin is served at /admin/ when `adminRoot` is passed (its dist directory,
+   * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
+   */
+  attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
   stop(): Promise<void>
+}
+
+export interface AttachHttpOptions {
+  adminRoot?: string | null
 }
 
 export interface CreateAppOptions extends CreatePlatformOptions {
   version?: string
 }
 
+/**
+ * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
+ * tokens with the schema's published default secret. Checked before anything opens the store.
+ */
+function refuseUnsafeProduction(config: NymbalConfig): void {
+  if (process.env.NODE_ENV !== 'production') return
+  const provider = config.commerce.payments.provider
+  if (paymentsAdapterFor(provider) === 'native-stub') {
+    throw new ConfigError(
+      `Payments provider "${provider}" resolves to the stub adapter, which verifies no webhook signature; ` +
+        'configure a real payments provider for production.',
+      { code: 'config.production_stub_payments', context: { provider } },
+    )
+  }
+  if (config.security.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+    throw new ConfigError(
+      'security.auth.jwtSecret is the schema default; set a secret of your own for production.',
+      { code: 'config.production_default_jwt_secret' },
+    )
+  }
+}
+
 export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
 ): Promise<NymbalApp> {
+  refuseUnsafeProduction(config)
   const platform = createPlatform(config, options)
   const version = options.version ?? '0.1.0'
   const logger = platform.logger
@@ -42,8 +78,17 @@ export async function createApp(
     documentStore: platform.documentStore,
     repos,
   })
+  const relay = createRelay({
+    store: platform.commandStore,
+    eventLog: repos.eventLog,
+    eventBus: platform.eventBus,
+    logger,
+  })
   const publisher = createEventPublisher({
     eventBus: platform.eventBus,
+    store: platform.commandStore,
+    eventLog: repos.eventLog,
+    relay,
     builderContext: {
       storeId: config.store.name,
       environment:
@@ -60,7 +105,6 @@ export async function createApp(
     config,
     store: platform.commandStore,
     repos,
-    documentStore: platform.documentStore,
     publisher,
     logger: logger.child({ layer: 'service' }),
     payments: adapters.payments,
@@ -84,6 +128,10 @@ export async function createApp(
     version,
   })
 
+  // Events committed before a crash, or whose delivery failed, go out before the app serves anything.
+  await relay.drain()
+  relay.start()
+
   const sweepers: SweeperHandle[] = [
     startInventoryReservationSweeper({
       inventoryService: services.inventory,
@@ -91,8 +139,15 @@ export async function createApp(
       logger,
     }),
     startCartAbandonmentSweeper({
-      documentStore: platform.documentStore,
+      store: platform.commandStore,
+      carts: repos.cart,
       publisher,
+      logger,
+    }),
+    startEventRetentionSweeper({
+      store: platform.commandStore,
+      eventLog: repos.eventLog,
+      processedEvents: repos.processedEvent,
       logger,
     }),
   ]
@@ -103,7 +158,8 @@ export async function createApp(
     adapters,
     services,
     publisher,
-    async attachHttp(adapter) {
+    relay,
+    async attachHttp(adapter, options = {}) {
       await adapters.security.applyMiddleware(adapter, config.security)
       const { registerAllRoutes } = await import('./routes/register.js')
       registerAllRoutes({
@@ -115,9 +171,12 @@ export async function createApp(
         documentStore: platform.documentStore,
         eventBus: platform.eventBus,
         publisher,
+        adminRoot:
+          options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
       })
     },
     async stop() {
+      await relay.stop()
       for (const s of sweepers) s.stop()
       await platform.close()
     },

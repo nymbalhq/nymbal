@@ -12,7 +12,7 @@ import {
   type PaymentsAdapter,
   type Refund,
   type WebhookResult,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 export interface StripePaymentsConfig {
   secretKey: string
@@ -47,6 +47,31 @@ function mapStatus(status: Stripe.PaymentIntent.Status): PaymentStatus {
       return status === 'canceled' ? 'cancelled' : (status as PaymentStatus)
     default:
       return 'failed'
+  }
+}
+
+function refundStatus(status: string | null): Refund['status'] {
+  if (status === 'succeeded') return 'succeeded'
+  if (status === 'failed' || status === 'canceled') return 'failed'
+  return 'pending'
+}
+
+/**
+ * Stripe refused the refund outright (a card error, an invalid request): no money moved. Anything else (an API error,
+ * a timeout, a dropped connection) leaves the outcome unknown.
+ */
+function isDefiniteRefusal(err: unknown): boolean {
+  const type = (err as { type?: unknown } | null)?.type
+  return type === 'StripeCardError' || type === 'StripeInvalidRequestError'
+}
+
+function toIntent(intent: Stripe.PaymentIntent): PaymentIntent {
+  return {
+    id: intent.id,
+    clientSecret: intent.client_secret ?? '',
+    amountMinor: intent.amount,
+    currency: toIsoCurrency(intent.currency),
+    status: mapStatus(intent.status),
   }
 }
 
@@ -92,19 +117,14 @@ export function createStripePaymentsAdapter(deps: {
           amount: params.amountMinor,
           currency: params.currency.toLowerCase(),
           automatic_payment_methods: { enabled: true },
+          ...(params.receiptEmail !== undefined && { receipt_email: params.receiptEmail }),
           metadata: {
             ...(params.metadata ?? {}),
             ...(params.orderRef !== undefined ? { orderRef: params.orderRef } : {}),
             ...(params.customerId !== undefined ? { customerId: params.customerId } : {}),
           },
         })
-        return {
-          id: intent.id,
-          clientSecret: intent.client_secret ?? '',
-          amountMinor: intent.amount,
-          currency: toIsoCurrency(intent.currency),
-          status: mapStatus(intent.status),
-        }
+        return toIntent(intent)
       } catch (err) {
         throw new PaymentError('intent_failed', 'Stripe createPaymentIntent failed', { cause: err })
       }
@@ -124,35 +144,66 @@ export function createStripePaymentsAdapter(deps: {
         throw new PaymentError('capture_failed', 'Stripe capturePayment failed', { cause: err })
       }
     },
-    async refund(paymentId, amountMinor, reason): Promise<Refund> {
+    async refund(paymentId, amountMinor, reason, opts): Promise<Refund> {
+      const params: Stripe.RefundCreateParams = {
+        payment_intent: paymentId,
+        ...(amountMinor !== undefined && { amount: amountMinor }),
+        ...(reason !== undefined && { reason: reason as Stripe.RefundCreateParams.Reason }),
+      }
       try {
-        const refund = await stripeClient.refunds.create({
-          payment_intent: paymentId,
-          ...(amountMinor !== undefined && { amount: amountMinor }),
-          ...(reason !== undefined && { reason: reason as Stripe.RefundCreateParams.Reason }),
-        })
+        const refund =
+          opts?.idempotencyKey === undefined
+            ? await stripeClient.refunds.create(params)
+            : await stripeClient.refunds.create(params, { idempotencyKey: opts.idempotencyKey })
         return {
           refundId: refund.id,
           paymentId,
           amountMinor: refund.amount,
           currency: toIsoCurrency(refund.currency),
           reason: refund.reason ?? null,
-          status: (refund.status ?? 'pending') as Refund['status'],
+          status: refundStatus(refund.status),
         }
       } catch (err) {
-        throw new PaymentError('refund_failed', 'Stripe refund failed', { cause: err })
+        if (isDefiniteRefusal(err)) {
+          throw new PaymentError('refund_rejected', 'Stripe refused the refund', { cause: err })
+        }
+        throw new PaymentError('refund_unknown', 'Stripe refund outcome unknown', { cause: err })
       }
     },
     async getPaymentStatus(intentId): Promise<PaymentStatus> {
       const intent = await stripeClient.paymentIntents.retrieve(intentId)
       return mapStatus(intent.status)
     },
+    async getPaymentIntent(intentId): Promise<PaymentIntent> {
+      try {
+        return toIntent(await stripeClient.paymentIntents.retrieve(intentId))
+      } catch (err) {
+        throw new PaymentError('intent_failed', 'Stripe getPaymentIntent failed', { cause: err })
+      }
+    },
+    async cancelPaymentIntent(intentId): Promise<void> {
+      try {
+        await stripeClient.paymentIntents.cancel(intentId)
+      } catch (err) {
+        // A cancel that lost a race with an earlier one of ours is done; anything else (processing, captured) stays.
+        const status = await stripeClient.paymentIntents
+          .retrieve(intentId)
+          .then((intent) => intent.status)
+          .catch(() => undefined)
+        if (status === 'canceled') return
+        throw new PaymentError('cancel_refused', `Stripe would not cancel ${intentId}`, {
+          cause: err,
+        })
+      }
+    },
     async parseWebhook(rawBody, signature): Promise<WebhookResult> {
       let event: Stripe.Event
       try {
         event = stripeClient.webhooks.constructEvent(rawBody, signature, cfg.webhookSecret)
       } catch (err) {
-        throw new PaymentError('webhook_invalid', 'Stripe webhook signature invalid', { cause: err })
+        throw new PaymentError('webhook_invalid', 'Stripe webhook signature invalid', {
+          cause: err,
+        })
       }
       const baseResult = { verified: true, eventId: event.id } as const
       switch (event.type) {

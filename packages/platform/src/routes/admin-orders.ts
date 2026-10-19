@@ -1,5 +1,15 @@
-import type { HttpAdapter, OrderLineItem, OrderStatus } from '@nymbal/types'
+import {
+  OrderConflictError,
+  canTransitionOrder,
+  type HttpAdapter,
+  type Order,
+  type OrderPayment,
+  type OrderStatus,
+} from '@nymbalhq/types'
+import type { ReadTx } from '../db/command-store.js'
 import type { OrderService } from '../services/order-service.js'
+import type { ManualPayments } from '../services/checkout-service.js'
+import { orderPayment, type RefundService } from '../services/refund-service.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
@@ -12,8 +22,13 @@ export interface NoteEntry {
 
 export interface RegisterAdminOrdersRoutesDeps {
   order: OrderService
+  checkout: ManualPayments
+  refund: RefundService
   repos: Repositories
 }
+
+/** An order as the admin reads it: with what was actually paid and refunded. */
+type AdminOrder = Order & { payment: OrderPayment }
 
 function parseNotes(rawNotes: string, createdAt: string): NoteEntry[] {
   if (!rawNotes) return []
@@ -31,7 +46,30 @@ export function registerAdminOrdersRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminOrdersRoutesDeps,
 ): void {
-  const { order, repos } = deps
+  const { order, checkout, refund, repos } = deps
+  const { store } = repos.order
+
+  async function withPayments(tx: ReadTx, orders: Order[]): Promise<AdminOrder[]> {
+    const refunds = await repos.orderRefund.listByOrders(
+      tx,
+      orders.map((o) => o.id),
+    )
+    return orders.map((o) => ({ ...o, payment: orderPayment(o, refunds.get(o.id) ?? []) }))
+  }
+
+  /** The order a command left, as the admin reads it. */
+  async function adminOrder(fresh: Order): Promise<AdminOrder> {
+    const [read] = await store.read((tx) => withPayments(tx, [fresh]))
+    return read!
+  }
+
+  // Try direct id lookup first, then orderNumber
+  async function findOrder(tx: ReadTx, idOrNumber: string): Promise<Order | null> {
+    return (
+      (await repos.order.findById(tx, idOrNumber)) ??
+      (await repos.order.findByOrderNumber(tx, idOrNumber))
+    )
+  }
 
   // GET /api/admin/orders
   adapter.registerRoute(
@@ -56,7 +94,7 @@ export function registerAdminOrdersRoutes(
           offset: 0,
         }
         if (statusRaw) listOpts.status = statusRaw as OrderStatus
-        let orders = await repos.order.list(listOpts)
+        let orders = await store.read((tx) => repos.order.list(tx, listOpts))
 
         // In-memory filters
         if (dateFrom) {
@@ -71,22 +109,19 @@ export function registerAdminOrdersRoutes(
           const lc = customer.toLowerCase()
           orders = orders.filter(
             (o) =>
-              (o.customerId ?? '').toLowerCase().includes(lc) ||
-              o.email.toLowerCase().includes(lc),
+              (o.customerId ?? '').toLowerCase().includes(lc) || o.email.toLowerCase().includes(lc),
           )
         }
         if (search) {
           const lc = search.toLowerCase()
           orders = orders.filter(
-            (o) =>
-              o.orderNumber.toLowerCase().includes(lc) ||
-              o.email.toLowerCase().includes(lc),
+            (o) => o.orderNumber.toLowerCase().includes(lc) || o.email.toLowerCase().includes(lc),
           )
         }
 
         // Pagination slice
         const page = orders.slice(offset, offset + limit)
-        return ok(page)
+        return ok(await store.read((tx) => withPayments(tx, page)))
       } catch (err) {
         return renderError(err)
       }
@@ -101,10 +136,14 @@ export function registerAdminOrdersRoutes(
       try {
         const orderNumber = ctx.params.orderNumber
         if (!orderNumber) return fail('admin.invalid', 'orderNumber required', 400)
-        const found = await repos.order.findByOrderNumber(orderNumber)
-        if (!found) return fail('orders.not_found', `Order not found: ${orderNumber}`, 404)
-        const history = await repos.orderHistory.listByOrder(found.id)
-        return ok({ ...found, history })
+        const detail = await store.read(async (tx) => {
+          const found = await repos.order.findByOrderNumber(tx, orderNumber)
+          if (!found) return null
+          const [read] = await withPayments(tx, [found])
+          return { ...read!, history: await repos.orderHistory.listByOrder(tx, found.id) }
+        })
+        if (!detail) return fail('orders.not_found', `Order not found: ${orderNumber}`, 404)
+        return ok(detail)
       } catch (err) {
         return renderError(err)
       }
@@ -119,8 +158,16 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
+        // Only money confirms an order: an unpaid one is confirmed by recording its payment (mark-paid).
+        const current = await order.getById(id)
+        if (canTransitionOrder(current.status, 'confirmed') && current.capturedMinor === 0) {
+          throw new OrderConflictError(
+            'order.unpaid',
+            `Order ${current.orderNumber} is unpaid: record its payment to confirm it`,
+          )
+        }
         const fresh = await order.updateStatus(id, 'confirmed', `admin:${ctx.auth!.userId}`)
-        return ok(fresh)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -136,7 +183,7 @@ export function registerAdminOrdersRoutes(
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
         const fresh = await order.updateStatus(id, 'processing', `admin:${ctx.auth!.userId}`)
-        return ok(fresh)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -154,7 +201,7 @@ export function registerAdminOrdersRoutes(
         const body = ctx.body as { reason?: string } | undefined
         const reason = body?.reason ?? 'Cancelled by admin'
         const fresh = await order.cancel(id, reason, `admin:${ctx.auth!.userId}`)
-        return ok(fresh)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -169,27 +216,9 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as {
-          paymentIntentId?: string
-          amountMinor?: number
-          currency?: string
-        } | undefined
-        if (!body?.paymentIntentId) {
-          return fail('orders.invalid', 'paymentIntentId required', 400)
-        }
-        if (body.amountMinor == null) {
-          return fail('orders.invalid', 'amountMinor required', 400)
-        }
-        if (!body.currency) {
-          return fail('orders.invalid', 'currency required', 400)
-        }
-        const fresh = await order.markPaid(
-          id,
-          body.paymentIntentId,
-          body.amountMinor,
-          body.currency,
-        )
-        return ok(fresh)
+        const body = ctx.body as { note?: string } | undefined
+        const fresh = await checkout.markPaid(id, `admin:${ctx.auth!.userId}`, body?.note)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -205,7 +234,7 @@ export function registerAdminOrdersRoutes(
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
         const fresh = await order.markDelivered(id, `admin:${ctx.auth!.userId}`)
-        return ok(fresh)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -230,7 +259,7 @@ export function registerAdminOrdersRoutes(
           body.carrier,
           `admin:${ctx.auth!.userId}`,
         )
-        return ok(fresh)
+        return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)
       }
@@ -245,45 +274,15 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as { amountMinor?: number; reason?: string } | undefined
-        if (!body?.amountMinor) return fail('orders.invalid', 'amountMinor required', 400)
-        const fresh = await order.refund(
-          id,
-          body.amountMinor,
-          body.reason ?? 'admin refund',
-          `admin:${ctx.auth!.userId}`,
-        )
-        return ok(fresh)
-      } catch (err) {
-        return renderError(err)
-      }
-    }),
-  )
-
-  // POST /api/admin/orders/:id/partial-refund
-  adapter.registerRoute(
-    'POST',
-    '/api/admin/orders/:id/partial-refund',
-    requireRole('admin', async (ctx) => {
-      try {
-        const id = ctx.params.id
-        if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as {
-          amountMinor?: number
-          reason?: string
-          lineItems?: OrderLineItem[]
-        } | undefined
-        if (body?.amountMinor == null) {
-          return fail('orders.invalid', 'amountMinor required', 400)
-        }
-        const fresh = await order.partialRefund(
-          id,
-          body.amountMinor,
-          body.lineItems ?? [],
-          body.reason ?? 'partial refund',
-          `admin:${ctx.auth!.userId}`,
-        )
-        return ok(fresh)
+        const body = ctx.body as { amountMinor: number; reason?: string; requestId?: string }
+        const result = await refund.refund({
+          orderId: id,
+          amountMinor: body.amountMinor,
+          ...(body.reason !== undefined && { reason: body.reason }),
+          ...(body.requestId !== undefined && { requestId: body.requestId }),
+          actor: `admin:${ctx.auth!.userId}`,
+        })
+        return ok(result)
       } catch (err) {
         return renderError(err)
       }
@@ -298,11 +297,11 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        // Try direct id lookup first, then orderNumber
-        let found = await repos.order.findById(id)
-        if (!found) found = await repos.order.findByOrderNumber(id)
-        if (!found) return fail('orders.not_found', `Order not found: ${id}`, 404)
-        const history = await repos.orderHistory.listByOrder(found.id)
+        const history = await store.read(async (tx) => {
+          const found = await findOrder(tx, id)
+          return found ? repos.orderHistory.listByOrder(tx, found.id) : null
+        })
+        if (!history) return fail('orders.not_found', `Order not found: ${id}`, 404)
         return ok(history)
       } catch (err) {
         return renderError(err)
@@ -318,8 +317,7 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        let found = await repos.order.findById(id)
-        if (!found) found = await repos.order.findByOrderNumber(id)
+        const found = await store.read((tx) => findOrder(tx, id))
         if (!found) return fail('orders.not_found', `Order not found: ${id}`, 404)
         const notes = parseNotes(found.notes, found.createdAt)
         return ok(notes)
@@ -341,19 +339,19 @@ export function registerAdminOrdersRoutes(
         if (!body?.body?.trim()) {
           return fail('orders.invalid', 'note body required', 400)
         }
-        let found = await repos.order.findById(id)
-        if (!found) found = await repos.order.findByOrderNumber(id)
-        if (!found) return fail('orders.not_found', `Order not found: ${id}`, 404)
-
-        const existing = parseNotes(found.notes, found.createdAt)
         const newNote: NoteEntry = {
           body: body.body.trim(),
           actor: `admin:${ctx.auth!.userId}`,
           at: new Date().toISOString(),
         }
-        const updated = [...existing, newNote]
-        const now = new Date()
-        await repos.order.setNotes(found.id, JSON.stringify(updated), now)
+        const noted = await store.transaction(async (tx) => {
+          const found = await findOrder(tx, id)
+          if (!found) return false
+          const updated = [...parseNotes(found.notes, found.createdAt), newNote]
+          await repos.order.setNotes(tx, found.id, JSON.stringify(updated), new Date())
+          return true
+        })
+        if (!noted) return fail('orders.not_found', `Order not found: ${id}`, 404)
         return ok({ note: newNote })
       } catch (err) {
         return renderError(err)

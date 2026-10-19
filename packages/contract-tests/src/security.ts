@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SecurityAdapter, SecurityConfigLike } from '@nymbal/types'
+import type { SecurityAdapter, SecurityConfigLike } from '@nymbalhq/types'
 
 const testConfig: SecurityConfigLike = {
   rateLimit: {

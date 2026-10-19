@@ -1,5 +1,6 @@
 import { NymbalElement } from '../base-element.js'
 import { injectStyles } from '../styles.js'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 const STYLES = `
 nymbal-search-bar {
@@ -82,20 +83,31 @@ export class NymbalSearchBar extends NymbalElement {
         resultsHtml = `<div class="nymbal-search-results" data-testid="search-results"><div class="nymbal-search-loading">Searching...</div></div>`
       } else if (state.results.length > 0) {
         resultsHtml = `<div class="nymbal-search-results" data-testid="search-results">
-          ${state.results.map((product, i) => `
-            <div class="nymbal-search-result-item" data-testid="search-result-${product.slug}" data-slug="${product.slug}" aria-selected="${i === this.selectedIndex}">
+          ${state.results
+            .map(
+              (product, i) => `
+            <div class="nymbal-search-result-item" data-testid="search-result-${this.esc(product.slug)}" data-slug="${this.esc(product.slug)}" aria-selected="${i === this.selectedIndex}">
               <div class="nymbal-search-result-name">${this.esc(product.name)}</div>
               ${product.priceMinor !== null ? `<div class="nymbal-search-result-price">${this.formatPrice(product.priceMinor, product.currency ?? 'USD')}</div>` : ''}
             </div>
-          `).join('')}
+          `,
+            )
+            .join('')}
         </div>`
       }
     }
 
     this.innerHTML = `
-      <input data-testid="search-input" type="search" placeholder="${placeholder}" value="${this.esc(state.query)}" autocomplete="off" role="combobox" aria-expanded="${state.results.length > 0}" aria-haspopup="listbox">
+      <input data-testid="search-input" type="search" placeholder="${this.esc(placeholder)}" value="${this.esc(state.query)}" autocomplete="off" role="combobox" aria-expanded="${state.results.length > 0}" aria-haspopup="listbox">
       ${resultsHtml}
     `
+
+    this.querySelectorAll<HTMLElement>('.nymbal-search-result-item').forEach((item, i) => {
+      item.addEventListener('click', () => {
+        const product = state.results[i]
+        if (product) this.select(product)
+      })
+    })
 
     const input = this.querySelector('input')!
     input.addEventListener('input', () => {
@@ -126,14 +138,7 @@ export class NymbalSearchBar extends NymbalElement {
         e.preventDefault()
         const selected = this.selectedIndex >= 0 ? results[this.selectedIndex] : undefined
         if (selected) {
-          this.dispatchEvent(
-            new CustomEvent('nymbal:search:selected', {
-              bubbles: true,
-              composed: true,
-              detail: { product: selected, query: selected.name },
-            }),
-          )
-          this.client.search.clearSearch()
+          this.select(selected)
         } else {
           const query = input.value.trim()
           if (query) {
@@ -145,6 +150,17 @@ export class NymbalSearchBar extends NymbalElement {
         this.selectedIndex = -1
       }
     })
+  }
+
+  private select(product: DenormalisedProduct): void {
+    this.dispatchEvent(
+      new CustomEvent('nymbal:search:selected', {
+        bubbles: true,
+        composed: true,
+        detail: { product, query: product.name },
+      }),
+    )
+    this.client.search.clearSearch()
   }
 
   attributeChangedCallback(): void {
@@ -159,10 +175,14 @@ export class NymbalSearchBar extends NymbalElement {
     }
   }
 
+  /** Escapes a value for both text and quoted-attribute contexts. */
   private esc(str: string): string {
-    const div = document.createElement('div')
-    div.textContent = str
-    return div.innerHTML
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
   }
 
   private formatPrice(minor: number, currency: string): string {

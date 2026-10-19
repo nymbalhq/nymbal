@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm'
 import {
   pgTable,
+  bigserial,
   text,
   integer,
   timestamp,
@@ -42,7 +44,9 @@ export const products = pgTable(
     status: text('status', { enum: ['draft', 'active', 'archived'] })
       .notNull()
       .default('draft'),
-    type: text('type', { enum: ['simple', 'variable'] }).notNull().default('simple'),
+    type: text('type', { enum: ['simple', 'variable'] })
+      .notNull()
+      .default('simple'),
     seoTitle: text('seo_title').notNull().default(''),
     seoDescription: text('seo_description').notNull().default(''),
     media: jsonb('media').notNull().default([]),
@@ -113,6 +117,7 @@ export const customers = pgTable(
     orderCount: integer('order_count').notNull().default(0),
     totalSpentMinor: integer('total_spent_minor').notNull().default(0),
     metadata: jsonb('metadata').notNull().default({}),
+    roles: jsonb('roles').notNull().default(['customer']),
     requiresPasswordReset: boolean('requires_password_reset').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
@@ -176,6 +181,13 @@ export const orders = pgTable(
     notes: text('notes').notNull().default(''),
     metadata: jsonb('metadata').notNull().default({}),
     paymentIntentId: text('payment_intent_id'),
+    /** The cart the order was placed from; null for imported orders. */
+    cartToken: text('cart_token'),
+    capturedMinor: integer('captured_minor').notNull().default(0),
+    capturedAt: timestamp('captured_at', { withTimezone: true }),
+    /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -184,6 +196,11 @@ export const orders = pgTable(
     sequenceUnique: uniqueIndex('orders_sequence_unique').on(t.sequence),
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
+    paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // One pending order per cart, whatever the checkout's lock does.
+    pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
+      .on(t.cartToken)
+      .where(sql`status = 'pending'`),
   }),
 )
 
@@ -200,6 +217,29 @@ export const orderHistory = pgTable(
   },
   (t) => ({
     orderIdx: index('order_history_order_idx').on(t.orderId),
+  }),
+)
+
+export const orderRefunds = pgTable(
+  'order_refunds',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id').notNull(),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull(),
+    providerRefundId: text('provider_refund_id'),
+    status: text('status', { enum: ['pending', 'succeeded', 'failed'] })
+      .notNull()
+      .default('pending'),
+    reason: text('reason'),
+    actor: text('actor').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
+    requestId: text('request_id'),
+  },
+  (t) => ({
+    orderIdx: index('order_refunds_order_idx').on(t.orderId),
+    requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
   }),
 )
 
@@ -233,14 +273,7 @@ export const stockAdjustments = pgTable(
     variantId: text('variant_id').notNull(),
     adjustment: integer('adjustment').notNull(),
     reason: text('reason', {
-      enum: [
-        'sale',
-        'return',
-        'manual',
-        'import',
-        'reservation-commit',
-        'reservation-release',
-      ],
+      enum: ['sale', 'return', 'manual', 'import', 'reservation-commit', 'reservation-release'],
     }).notNull(),
     actor: text('actor').notNull(),
     previousQty: integer('previous_qty').notNull(),
@@ -279,6 +312,61 @@ export const reviews = pgTable(
   }),
 )
 
+// --- Carts -----------------------------------------------------------------
+
+export const carts = pgTable(
+  'carts',
+  {
+    token: text('token').primaryKey(),
+    customerId: text('customer_id'),
+    currency: text('currency').notNull(),
+    items: jsonb('items').notNull().default([]),
+    lineCount: integer('line_count').notNull().default(0),
+    subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
+    abandonedNotifiedAt: timestamp('abandoned_notified_at', { withTimezone: true }),
+  },
+  (t) => ({
+    expiresIdx: index('carts_expires_idx').on(t.expiresAt),
+    updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+  }),
+)
+
+// --- Event log (outbox) and handler idempotency ----------------------------
+
+export const events = pgTable(
+  'events',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    id: text('id').notNull(),
+    type: text('type').notNull(),
+    envelope: jsonb('envelope').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    deadAt: timestamp('dead_at', { withTimezone: true }),
+  },
+  (t) => ({
+    idUnique: uniqueIndex('events_id_unique').on(t.id),
+    undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+  }),
+)
+
+export const processedEvents = pgTable(
+  'processed_events',
+  {
+    handlerName: text('handler_name').notNull(),
+    eventId: text('event_id').notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.handlerName, t.eventId] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -292,4 +380,7 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  carts,
+  events,
+  processedEvents,
 }

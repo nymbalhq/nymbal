@@ -1,5 +1,6 @@
-import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbal/sdk'
-import type { Category, Order } from '@nymbal/types'
+import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbalhq/sdk'
+import { DEFAULT_PRODUCT_SORT, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import type { Category, Order, ProductSortKey } from '@nymbalhq/types'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -7,11 +8,13 @@ export async function fetchProducts(params?: {
   limit?: number
   cursor?: string
   category?: string
+  sort?: ProductSortKey
 }): Promise<ProductListResult> {
   const url = new URL('/api/products', API_URL)
   if (params?.limit) url.searchParams.set('limit', String(params.limit))
   if (params?.cursor) url.searchParams.set('cursor', params.cursor)
   if (params?.category) url.searchParams.set('category', params.category)
+  if (params?.sort) url.searchParams.set('sort', params.sort)
 
   try {
     const res = await fetch(url.toString(), { cache: 'no-store' })
@@ -22,6 +25,12 @@ export async function fetchProducts(params?: {
     console.error('[api] fetchProducts failed', err)
     return { items: [], nextCursor: null }
   }
+}
+
+/** The sort a listing URL asks for; a missing or unknown `?sort=` is the default. */
+export function sortFromSearchParams(params: { sort?: string | string[] }): ProductSortKey {
+  const sort = Array.isArray(params.sort) ? params.sort[0] : params.sort
+  return PRODUCT_SORT_KEYS.find((key) => key === sort) ?? DEFAULT_PRODUCT_SORT
 }
 
 export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {

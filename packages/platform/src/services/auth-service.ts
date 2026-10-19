@@ -11,8 +11,9 @@ import {
   type CustomerAddress,
   type Logger,
   type Role,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { Repositories } from '../repositories/index.js'
+import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
 
 export interface AuthTokens {
@@ -97,17 +98,17 @@ function stripPassword(c: Customer & { passwordHash: string }): Customer {
 
 export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
   const { repos, publisher, logger, jwtSecret, accessTtl, refreshTtl } = deps
+  const { store } = repos.customer
   const issuer = deps.issuer ?? 'nymbal'
   const secretKey = new TextEncoder().encode(jwtSecret)
   const accessTtlMs = parseDurationToMs(accessTtl)
   const refreshTtlMs = parseDurationToMs(refreshTtl)
 
-  async function mintAccess(customer: Customer): Promise<string> {
-    const roles: Role[] = (customer.metadata.roles as Role[] | undefined) ?? ['customer']
+  async function mintAccess(customer: CustomerWithHash): Promise<string> {
     return new SignJWT({
       sub: customer.id,
       email: customer.email,
-      roles,
+      roles: customer.roles,
       type: 'access',
     } satisfies CustomerJwtPayload)
       .setProtectedHeader({ alg: 'HS256' })
@@ -133,16 +134,18 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       .sign(secretKey)
   }
 
-  async function issueTokens(customer: Customer): Promise<AuthTokens> {
+  async function issueTokens(customer: CustomerWithHash): Promise<AuthTokens> {
     const jti = uuidv7()
     const refreshToken = await mintRefresh(customer, jti)
-    await repos.refreshToken.insert({
-      id: jti,
-      customerId: customer.id,
-      tokenHash: hashRefresh(refreshToken),
-      expiresAt: new Date(Date.now() + refreshTtlMs),
-      createdAt: new Date(),
-    })
+    await store.transaction((tx) =>
+      repos.refreshToken.insert(tx, {
+        id: jti,
+        customerId: customer.id,
+        tokenHash: hashRefresh(refreshToken),
+        expiresAt: new Date(Date.now() + refreshTtlMs),
+        createdAt: new Date(),
+      }),
+    )
     const accessToken = await mintAccess(customer)
     return {
       accessToken,
@@ -156,34 +159,37 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       if (!input.email.includes('@')) throw new ValidationError('invalid email')
       if (input.password.length < 8) throw new ValidationError('password must be ≥ 8 characters')
       const email = input.email.toLowerCase()
-      const existing = await repos.customer.findByEmail(email)
+      const existing = await store.read((tx) => repos.customer.findByEmail(tx, email))
       if (existing) {
         throw new AuthError('invalid_credentials', 'An account with this email already exists')
       }
       const id = uuidv7()
       const passwordHash = await bcryptHash(input.password, 10)
       const now = new Date()
-      await repos.customer.insert({
-        id,
-        email,
-        passwordHash,
-        ...(input.firstName !== undefined && { firstName: input.firstName }),
-        ...(input.lastName !== undefined && { lastName: input.lastName }),
-        ...(input.phone !== undefined && { phone: input.phone }),
-        createdAt: now,
-        updatedAt: now,
+      const customer = await store.transaction(async (tx) => {
+        await repos.customer.insert(tx, {
+          id,
+          email,
+          passwordHash,
+          ...(input.firstName !== undefined && { firstName: input.firstName }),
+          ...(input.lastName !== undefined && { lastName: input.lastName }),
+          ...(input.phone !== undefined && { phone: input.phone }),
+          createdAt: now,
+          updatedAt: now,
+        })
+        const inserted = await repos.customer.findById(tx, id)
+        /* c8 ignore next -- defensive: customer was inserted in this transaction */
+        if (!inserted) throw new Error('customer disappeared after insert')
+        await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
+        return inserted
       })
-      const customer = await repos.customer.findById(id)
-      /* c8 ignore next -- defensive: customer was inserted in this transaction */
-      if (!customer) throw new Error('customer disappeared after insert')
       const tokens = await issueTokens(customer)
-      await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
       logger.info({ customerId: id }, 'customer registered')
       return { customer: stripPassword(customer), tokens }
     },
 
     async login(email, password) {
-      const customer = await repos.customer.findByEmail(email.toLowerCase())
+      const customer = await store.read((tx) => repos.customer.findByEmail(tx, email.toLowerCase()))
       if (!customer) throw new AuthError('invalid_credentials', 'Invalid email or password')
       const ok = await bcryptCompare(password, customer.passwordHash)
       if (!ok) throw new AuthError('invalid_credentials', 'Invalid email or password')
@@ -203,25 +209,29 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       if (payload.type !== 'refresh' || !payload.jti || !payload.sub) {
         throw new AuthError('token_invalid', 'not a refresh token')
       }
-      const record = await repos.refreshToken.findById(payload.jti)
+      const jti = payload.jti
+      const customerId = payload.sub
+      const record = await store.read((tx) => repos.refreshToken.findById(tx, jti))
       if (!record) throw new AuthError('token_invalid', 'refresh token unknown')
       if (record.revokedAt) throw new AuthError('token_invalid', 'refresh token revoked')
       if (record.tokenHash !== hashRefresh(refreshToken)) {
         // A mismatch means replay with an older token — revoke chain.
-        await repos.refreshToken.revokeAllForCustomer(payload.sub)
+        await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
         throw new AuthError('token_invalid', 'refresh token mismatch; revoking chain')
       }
-      const customer = await repos.customer.findById(payload.sub)
+      const customer = await store.read((tx) => repos.customer.findById(tx, customerId))
       if (!customer) throw new AuthError('token_invalid', 'customer missing')
       const nextJti = uuidv7()
       const nextRefresh = await mintRefresh(customer, nextJti)
-      await repos.refreshToken.rotate(payload.jti, {
-        id: nextJti,
-        customerId: customer.id,
-        tokenHash: hashRefresh(nextRefresh),
-        expiresAt: new Date(Date.now() + refreshTtlMs),
-        createdAt: new Date(),
-      })
+      await store.transaction((tx) =>
+        repos.refreshToken.rotate(tx, jti, {
+          id: nextJti,
+          customerId: customer.id,
+          tokenHash: hashRefresh(nextRefresh),
+          expiresAt: new Date(Date.now() + refreshTtlMs),
+          createdAt: new Date(),
+        }),
+      )
       const accessToken = await mintAccess(customer)
       return {
         accessToken,
@@ -234,7 +244,8 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       try {
         const verified = await jwtVerify(refreshToken, secretKey, { issuer })
         const payload = verified.payload as CustomerJwtPayload
-        if (payload.jti) await repos.refreshToken.revoke(payload.jti)
+        const { jti } = payload
+        if (jti) await store.transaction((tx) => repos.refreshToken.revoke(tx, jti))
       } catch {
         // ignore — already invalid
       }
@@ -255,28 +266,32 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
     async importCustomer(input) {
       if (!input.email.includes('@')) throw new ValidationError('invalid email')
       const email = input.email.toLowerCase()
-      const existing = await repos.customer.findByEmail(email)
-      if (existing) return stripPassword(existing)
-      const id = uuidv7()
-      const now = new Date()
-      await repos.customer.insert({
-        id,
-        email,
-        passwordHash: 'IMPORTED_NO_PASSWORD',
-        requiresPasswordReset: true,
-        ...(input.firstName !== undefined && { firstName: input.firstName }),
-        ...(input.lastName !== undefined && { lastName: input.lastName }),
-        ...(input.phone !== undefined && { phone: input.phone }),
-        ...(input.addresses !== undefined && { addresses: input.addresses }),
-        ...(input.metadata !== undefined && { metadata: input.metadata }),
-        createdAt: now,
-        updatedAt: now,
+      const customer = await store.transaction(async (tx) => {
+        const existing = await repos.customer.findByEmail(tx, email)
+        if (existing) return existing
+        const id = uuidv7()
+        const now = new Date()
+        await repos.customer.insert(tx, {
+          id,
+          email,
+          passwordHash: 'IMPORTED_NO_PASSWORD',
+          requiresPasswordReset: true,
+          ...(input.firstName !== undefined && { firstName: input.firstName }),
+          ...(input.lastName !== undefined && { lastName: input.lastName }),
+          ...(input.phone !== undefined && { phone: input.phone }),
+          ...(input.addresses !== undefined && { addresses: input.addresses }),
+          ...(input.metadata !== undefined && { metadata: input.metadata }),
+          roles: ['customer'],
+          createdAt: now,
+          updatedAt: now,
+        })
+        const inserted = await repos.customer.findById(tx, id)
+        /* c8 ignore next -- defensive: customer was inserted above */
+        if (!inserted) throw new Error('customer disappeared after insert')
+        await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
+        logger.info({ customerId: id }, 'customer imported')
+        return inserted
       })
-      const customer = await repos.customer.findById(id)
-      /* c8 ignore next -- defensive: customer was inserted above */
-      if (!customer) throw new Error('customer disappeared after insert')
-      await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
-      logger.info({ customerId: id }, 'customer imported')
       return stripPassword(customer)
     },
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerCheckoutRoutes } from './checkout.js'
-import type { HttpAdapter, RouteHandler, Address } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Address } from '@nymbalhq/types'
 import type { CheckoutService } from '../services/checkout-service.js'
 
 function makeAdapter() {
@@ -38,8 +38,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -70,6 +76,9 @@ const checkoutResult = {
   },
   currency: 'GBP',
   totalMinor: 2000,
+  // P1-12 decision 2: the payment outcome travels with the result.
+  orderStatus: 'pending' as const,
+  payment: { status: 'requires_action' as const },
 }
 
 function makeCheckoutService(overrides?: Partial<CheckoutService>): CheckoutService {
@@ -87,7 +96,11 @@ describe('POST /api/checkout', () => {
     registerCheckoutRoutes(adapter, makeCheckoutService())
 
     const resp = await invoke('POST', '/api/checkout', {
-      body: { email: 'test@example.com', billingAddress: testAddress, shippingAddress: testAddress },
+      body: {
+        email: 'test@example.com',
+        billingAddress: testAddress,
+        shippingAddress: testAddress,
+      },
     })
     expect(resp.status).toBe(400)
     const body = resp.body as { error: { code: string } }

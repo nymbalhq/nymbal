@@ -23,7 +23,7 @@ export async function loadState(statePath: string): Promise<ImportState | null> 
 }
 
 export function freshState(): ImportState {
-  return { ...EMPTY_STATE, startedAt: new Date().toISOString() }
+  return { ...structuredClone(EMPTY_STATE), startedAt: new Date().toISOString() }
 }
 
 export async function saveState(statePath: string, state: ImportState): Promise<void> {

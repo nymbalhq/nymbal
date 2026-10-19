@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { EmailAdapter } from '@nymbal/types'
+import type { EmailAdapter } from '@nymbalhq/types'
 
 export function runEmailContract(build: () => EmailAdapter): void {
   describe('EmailAdapter contract', () => {

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useCart, QuantitySelector } from '@nymbal/react'
+import { useCart, QuantitySelector } from '@nymbalhq/react'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/cart.module.css'
 

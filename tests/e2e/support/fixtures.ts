@@ -1,4 +1,25 @@
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+
+function isLocalUrl(url: URL): boolean {
+  if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'about:') return true
+  if (!LOCAL_HOSTS.has(url.hostname)) return false
+  // Next.js serves remote images through its optimizer, which fetches the remote host server-side
+  if (url.pathname === '/_next/image') {
+    const target = url.searchParams.get('url')
+    if (target && /^[a-z][a-z0-9+.-]*:/i.test(target)) return isLocalUrl(new URL(target))
+  }
+  return true
+}
+
+/**
+ * Aborts every request to a host other than localhost (AC-12), so screenshots do not depend on the network.
+ * Call before the first navigation.
+ */
+export async function blockExternalRequests(page: Page): Promise<void> {
+  await page.route((url) => !isLocalUrl(url), (route) => route.abort('blockedbyclient'))
+}
 
 export const test = base.extend<{ autoFailOnErrors: void }>({
   autoFailOnErrors: [async ({ page }, use) => {

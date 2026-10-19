@@ -1,6 +1,13 @@
 import { eq, sql } from 'drizzle-orm'
-import type { Customer, CustomerAddress } from '@nymbal/types'
-import type { CommandStore } from '../db/command-store.js'
+import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { parseJson, fromTimestamp } from './json.js'
@@ -14,6 +21,8 @@ export interface CustomerInsert {
   phone?: string
   addresses?: CustomerAddress[]
   metadata?: Record<string, unknown>
+  /** Defaults to `['customer']`; only seed and admin code pass anything else. */
+  roles?: Role[]
   requiresPasswordReset?: boolean
   createdAt: Date
   updatedAt: Date
@@ -30,7 +39,10 @@ export interface CustomerUpdate {
   updatedAt: Date
 }
 
-function rowToCustomer(store: CommandStore['kind'], row: Record<string, unknown>): Customer & { passwordHash: string } {
+function rowToCustomer(
+  store: CommandStore['kind'],
+  row: Record<string, unknown>,
+): CustomerWithHash {
   return {
     id: String(row.id),
     email: String(row.email),
@@ -42,68 +54,86 @@ function rowToCustomer(store: CommandStore['kind'], row: Record<string, unknown>
     orderCount: Number(row.orderCount ?? 0),
     totalSpentMinor: Number(row.totalSpentMinor ?? 0),
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
+    roles: parseJson<Role[]>(store, row.roles, ['customer']),
     requiresPasswordReset: Boolean(row.requiresPasswordReset),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
 }
 
-export type CustomerWithHash = Customer & { passwordHash: string }
+/** A stored customer: its roles column is always read. */
+export type CustomerWithHash = Customer & { passwordHash: string; roles: Role[] }
 
-export interface CustomerRepository {
-  findById(id: string): Promise<CustomerWithHash | null>
-  findByEmail(email: string): Promise<CustomerWithHash | null>
-  list(opts?: { limit?: number; offset?: number }): Promise<CustomerWithHash[]>
-  insert(c: CustomerInsert): Promise<void>
-  update(id: string, patch: CustomerUpdate): Promise<void>
-  incrementStats(id: string, deltaOrders: number, deltaSpentMinor: number, updatedAt: Date): Promise<void>
-  delete(id: string): Promise<void>
+export interface CustomerRepository extends StoreRepository {
+  findById(tx: ReadTx, id: string): Promise<CustomerWithHash | null>
+  findByEmail(tx: ReadTx, email: string): Promise<CustomerWithHash | null>
+  list(tx: ReadTx, opts?: { limit?: number; offset?: number }): Promise<CustomerWithHash[]>
+  insert(tx: Tx, c: CustomerInsert): Promise<void>
+  update(tx: Tx, id: string, patch: CustomerUpdate): Promise<void>
+  incrementStats(
+    tx: Tx,
+    id: string,
+    deltaOrders: number,
+    deltaSpentMinor: number,
+    updatedAt: Date,
+  ): Promise<void>
+  delete(tx: Tx, id: string): Promise<void>
 }
 
 export function createCustomerRepository(store: CommandStore): CustomerRepository {
   return {
-    async findById(id) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    store,
+    async findById(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.customers)
           .where(eq(sqliteSchema.customers.id, id))
           .get()
         return row ? rowToCustomer('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.customers)
         .where(eq(postgresSchema.customers.id, id))
       return row ? rowToCustomer('postgres', row as Record<string, unknown>) : null
     },
-    async findByEmail(email) {
+    async findByEmail(tx, email) {
       const normalized = email.toLowerCase()
-      if (store.kind === 'sqlite') {
-        const row = store.db
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.customers)
           .where(eq(sqliteSchema.customers.email, normalized))
           .get()
         return row ? rowToCustomer('sqlite', row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.customers)
         .where(eq(postgresSchema.customers.email, normalized))
       return row ? rowToCustomer('postgres', row as Record<string, unknown>) : null
     },
-    async list(opts = {}) {
+    async list(tx, opts = {}) {
       const limit = opts.limit ?? 1000
       const offset = opts.offset ?? 0
-      if (store.kind === 'sqlite') {
-        const rows = store.db.select().from(sqliteSchema.customers).limit(limit).offset(offset).all()
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
+          .select()
+          .from(sqliteSchema.customers)
+          .limit(limit)
+          .offset(offset)
+          .all()
         return rows.map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
       }
-      const rows = await store.db.select().from(postgresSchema.customers).limit(limit).offset(offset)
+      const rows = await postgresDb(tx)
+        .select()
+        .from(postgresSchema.customers)
+        .limit(limit)
+        .offset(offset)
       return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
     },
-    async insert(c) {
+    async insert(tx, c) {
       const email = c.email.toLowerCase()
       const common = {
         id: c.id,
@@ -116,31 +146,41 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         totalSpentMinor: 0,
         requiresPasswordReset: c.requiresPasswordReset ?? false,
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.customers)
           .values({
             ...common,
             addresses: JSON.stringify(c.addresses ?? []),
             metadata: JSON.stringify(c.metadata ?? {}),
+            roles: JSON.stringify(c.roles ?? ['customer']),
             createdAt: c.createdAt.toISOString(),
             updatedAt: c.updatedAt.toISOString(),
           })
           .run()
         return
       }
-      await store.db.insert(postgresSchema.customers).values({
-        ...common,
-        addresses: c.addresses ?? [],
-        metadata: c.metadata ?? {},
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.customers)
+        .values({
+          ...common,
+          addresses: c.addresses ?? [],
+          metadata: c.metadata ?? {},
+          roles: c.roles ?? ['customer'],
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        })
     },
-    async update(id, patch) {
+    async update(tx, id, patch) {
       const pg: Record<string, unknown> = { updatedAt: patch.updatedAt }
       const sq: Record<string, unknown> = { updatedAt: patch.updatedAt.toISOString() }
-      for (const k of ['firstName', 'lastName', 'phone', 'passwordHash', 'requiresPasswordReset'] as const) {
+      for (const k of [
+        'firstName',
+        'lastName',
+        'phone',
+        'passwordHash',
+        'requiresPasswordReset',
+      ] as const) {
         if (patch[k] !== undefined) {
           pg[k] = patch[k]
           sq[k] = patch[k]
@@ -154,22 +194,22 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         pg.metadata = patch.metadata
         sq.metadata = JSON.stringify(patch.metadata)
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.customers)
           .set(sq)
           .where(eq(sqliteSchema.customers.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.customers)
         .set(pg)
         .where(eq(postgresSchema.customers.id, id))
     },
-    async incrementStats(id, deltaOrders, deltaSpent, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async incrementStats(tx, id, deltaOrders, deltaSpent, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.customers)
           .set({
             orderCount: sql`${sqliteSchema.customers.orderCount} + ${deltaOrders}`,
@@ -180,7 +220,7 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.customers)
         .set({
           orderCount: sql`${postgresSchema.customers.orderCount} + ${deltaOrders}`,
@@ -189,12 +229,14 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         })
         .where(eq(postgresSchema.customers.id, id))
     },
-    async delete(id) {
-      if (store.kind === 'sqlite') {
-        store.db.delete(sqliteSchema.customers).where(eq(sqliteSchema.customers.id, id)).run()
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.customers).where(eq(sqliteSchema.customers.id, id)).run()
         return
       }
-      await store.db.delete(postgresSchema.customers).where(eq(postgresSchema.customers.id, id))
+      await postgresDb(tx)
+        .delete(postgresSchema.customers)
+        .where(eq(postgresSchema.customers.id, id))
     },
   }
 }

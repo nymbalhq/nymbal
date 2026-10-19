@@ -14,7 +14,7 @@ import { SeoPreview } from '@/components/products/SeoPreview'
 import { AiEnrichButton } from '@/components/products/AiEnrichButton'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { tid } from '@/lib/testid'
-import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@/types'
+import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@nymbalhq/types'
 
 const DEFAULT_PRODUCT: Partial<ProductSnapshot> = {
   name: '',

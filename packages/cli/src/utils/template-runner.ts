@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { NymbalConfig } from '@nymbal/config'
+import type { NymbalConfig } from '@nymbalhq/config'
 
 export type TemplateName = 'astro' | 'nextjs'
 
@@ -18,14 +18,14 @@ export interface TemplateLaunch {
 }
 
 export function templateFilterFor(template: NymbalConfig['template']): string {
-  return template === 'astro' ? '@nymbal/template-astro' : '@nymbal/template-nextjs'
+  return template === 'astro' ? '@nymbalhq/template-astro' : '@nymbalhq/template-nextjs'
 }
 
 /**
  * A flat scaffold (create-nymbal-app output) places the storefront AT the
  * project root: the framework config and a `dev` script live in projectRoot.
  * In that layout we must run the dev server in projectRoot directly — NOT via
- * `pnpm --filter @nymbal/template-astro`, which would match the workspace
+ * `pnpm --filter @nymbalhq/template-astro`, which would match the workspace
  * template package (the wrong directory) inside a monorepo, or match nothing at
  * all outside one.
  */
@@ -75,7 +75,7 @@ export function planTemplateLaunch(
     return {
       cwd: projectRoot,
       command: localBin,
-      args: ['dev', '--port', String(storefrontPort)],
+      args: ['dev', '--port', String(storefrontPort), ...foregroundArgs(template)],
       mode: 'flat',
     }
   }
@@ -85,7 +85,15 @@ export function planTemplateLaunch(
   return {
     cwd: projectRoot,
     command: 'pnpm',
-    args: ['--filter', filter, 'dev'],
+    args: ['--filter', filter, 'dev', ...foregroundArgs(template)],
     mode: 'filter',
   }
+}
+
+/**
+ * Astro 7 backgrounds `astro dev` when it detects an AI agent, so the launcher would see its child exit while the
+ * server lives on detached; --ignore-lock keeps it in the foreground. `next dev` rejects unknown options.
+ */
+function foregroundArgs(template: TemplateName): string[] {
+  return template === 'astro' ? ['--ignore-lock'] : []
 }

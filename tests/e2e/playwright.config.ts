@@ -1,10 +1,80 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
-const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:5174/admin/'
+// The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api (P1-08).
+const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:3001/admin/'
 const isCI = !!process.env.CI
-const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true'
+const target = process.env.NYMBAL_E2E_TARGET
+const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
+
+// Every run gets a database of its own, as CI's fresh checkout does: the repo-root nymbal.db keeps what earlier runs
+// created (products from `ownProduct`, orders), and a crashed run cleans nothing up. `dev` migrates and seeds an empty
+// file. Set here once and inherited by the workers, which load this file again; set it to reuse a database.
+const sqlitePath = (process.env.NYMBAL_E2E_SQLITE_PATH ??= join(
+  tmpdir(),
+  `nymbal-e2e-${Date.now()}-${process.pid}.db`,
+))
+
+// Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
+const apiServer = {
+  command: 'node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only',
+  url: 'http://localhost:3001/health',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 90000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_SQLITE_PATH: sqlitePath,
+  },
+  gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
+}
+
+// --ignore-lock: Astro 7 backgrounds `astro dev` under an AI agent, and Playwright would see the exit.
+const astroServer = {
+  command: 'pnpm --filter @nymbalhq/template-astro dev --ignore-lock',
+  url: 'http://localhost:4321',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 60000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_API_URL: 'http://localhost:3001',
+    PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
+  },
+}
+
+const nextjsServer = {
+  command: 'pnpm --filter @nymbalhq/template-nextjs dev',
+  url: 'http://localhost:3000',
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 60000,
+  env: {
+    NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
+    NYMBAL_API_URL: 'http://localhost:3001',
+    NEXT_PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
+  },
+}
+
+/**
+ * The API and what the run needs: NYMBAL_E2E_TARGET names one target, otherwise both templates. The admin needs the
+ * API alone, which serves the built admin (`pnpm --filter @nymbalhq/admin build` first).
+ */
+function servers() {
+  const targets = ['astro', 'nextjs', 'admin']
+  if (target !== undefined && !targets.includes(target)) {
+    throw new Error(`NYMBAL_E2E_TARGET must be one of ${targets.join(', ')}; got "${target}"`)
+  }
+  if (target === 'astro') return [apiServer, astroServer]
+  if (target === 'nextjs') return [apiServer, nextjsServer]
+  if (isAdminE2E) return [apiServer]
+  return [apiServer, astroServer, nextjsServer]
+}
 
 export default defineConfig({
   testDir: './journeys',
@@ -39,7 +109,7 @@ export default defineConfig({
       name: 'astro-mobile',
       testIgnore: ['**/journeys/admin/**'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: astroURL,
       },
       grep: /@visual/,
@@ -48,7 +118,7 @@ export default defineConfig({
       name: 'nextjs-mobile',
       testIgnore: ['**/journeys/admin/**'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: nextjsURL,
       },
       grep: /@visual/,
@@ -65,64 +135,11 @@ export default defineConfig({
       name: 'admin-mobile',
       testMatch: ['**/journeys/admin/**/*.spec.ts'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['Pixel 7'],
         baseURL: adminURL,
       },
       grep: /@visual/,
     },
   ],
-  ...(isCI ? { webServer: [
-    ...(isAdminE2E ? [] : [
-      {
-        command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
-        url: 'http://localhost:3001/health',
-        reuseExistingServer: false,
-        timeout: 90000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/template-astro dev',
-        url: 'http://localhost:4321',
-        reuseExistingServer: false,
-        timeout: 60000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NYMBAL_API_URL: 'http://localhost:3001',
-          PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/template-nextjs dev',
-        url: 'http://localhost:3000',
-        reuseExistingServer: false,
-        timeout: 60000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-          NYMBAL_API_URL: 'http://localhost:3001',
-          NEXT_PUBLIC_NYMBAL_API_URL: 'http://localhost:3001',
-        },
-      },
-    ]),
-    ...(isAdminE2E ? [
-      {
-        command: 'node packages/cli/bin/nymbal.mjs dev --api-only',
-        url: 'http://localhost:3001/health',
-        reuseExistingServer: false,
-        timeout: 90000,
-        env: {
-          NYMBAL_PAYMENTS_PROVIDER: 'native-stub',
-        },
-      },
-      {
-        command: 'pnpm --filter @nymbal/admin exec vite --port 5174',
-        url: 'http://localhost:5174/admin/',
-        reuseExistingServer: false,
-        timeout: 60000,
-      },
-    ] : []),
-  ] } : {}),
+  ...(isCI ? { webServer: servers() } : {}),
 })

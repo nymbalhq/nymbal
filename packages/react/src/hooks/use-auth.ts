@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { Customer } from '@nymbal/types'
-import type { AuthState, RegisterParams } from '@nymbal/sdk'
+import type { Customer } from '@nymbalhq/types'
+import type { AuthState, RegisterParams } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseAuthReturn extends AuthState {

@@ -1,4 +1,4 @@
-import type { Customer, CustomerAddress } from '@nymbal/types'
+import type { Customer, CustomerAddress } from '@nymbalhq/types'
 import { createAddress } from './order.js'
 import { nextId, isoDate } from './prng.js'
 
@@ -24,6 +24,7 @@ export function createCustomer(overrides?: Partial<Customer>): Customer {
     orderCount: 0,
     totalSpentMinor: 0,
     metadata: {},
+    roles: ['customer'],
     requiresPasswordReset: false,
     createdAt: isoDate(),
     updatedAt: isoDate(),

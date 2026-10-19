@@ -1,0 +1,12 @@
+// AC-8: 4 prints (log, log, info, debug); warn and error are not prints. 1 test, 1 C4.
+import { expect, test } from 'vitest'
+
+test('prints', () => {
+  console.log('state', state)
+  console.log(order)
+  console.info('step two')
+  console.debug(cart)
+  console.warn('not a print')
+  console.error('not a print')
+  expect(order.status).toBe('paid')
+})

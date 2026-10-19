@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { NymbalEvent } from '@nymbal/types'
+import type { NymbalEvent } from '@nymbalhq/types'
 
 export interface ProjectionContractOptions {
   /**

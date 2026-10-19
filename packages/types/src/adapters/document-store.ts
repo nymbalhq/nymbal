@@ -5,12 +5,18 @@ export interface PutOptions {
 }
 
 export interface QueryParams {
+  /** A `value` of `'*'` matches every document in the collection (a full scan). */
   partitionKey: { field: string; value: unknown }
   sortKey?: {
     field: string
     operator: 'eq' | 'gt' | 'lt' | 'between'
     value: unknown
   }
+  /**
+   * Orders the results without filtering them; `field` may be a dotted path (`priceRange.minMinor`). Ties break by
+   * document key, ascending, so the order is total. A cursor issued under one `orderBy` is refused under another.
+   */
+  orderBy?: { field: string; direction: 'asc' | 'desc'; nulls?: 'last' }
   limit?: number
   cursor?: string
   ascending?: boolean

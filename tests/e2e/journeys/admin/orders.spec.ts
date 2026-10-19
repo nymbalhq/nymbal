@@ -1,11 +1,14 @@
-import type { APIRequestContext, Page } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
+import { csrf } from '../../support/csrf'
+import { placeOrder, signInAsAdmin } from '../../support/admin'
+import { adminToken } from '../../support/checkout'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
 const ADMIN_PASSWORD = process.env.NYMBAL_ADMIN_PASSWORD ?? 'nymbal-admin-dev'
 
-// Canonical Address shape from @nymbal/types (firstName/lastName/addressLine1/region).
+// Canonical Address shape from @nymbalhq/types (firstName/lastName/addressLine1/region).
 const address = {
   firstName: 'Avery',
   lastName: 'Quinn',
@@ -38,6 +41,7 @@ async function createPendingOrder(
     const variantId = product.variants?.[0]?.id
     if (!variantId) continue
     const addRes = await request.post(`${API_URL}/api/cart/items`, {
+      headers: await csrf(request, API_URL),
       data: { variantId, qty: 1 },
     })
     if (addRes.ok()) {
@@ -48,8 +52,10 @@ async function createPendingOrder(
   expect(added, 'a seeded variant should be added to the cart').toBe(true)
 
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
+    headers: await csrf(request, API_URL),
     data: {
-      email: 'e2e-admin-orders@nymbal.dev',
+      // `+stub-pending` (P1-12 decision 7): the stub leaves the order pending for the admin to confirm.
+      email: 'e2e-admin-orders+stub-pending@nymbal.dev',
       billingAddress: address,
       shippingAddress: address,
     },
@@ -63,15 +69,6 @@ async function createPendingOrder(
     orderId: checkoutBody.data.orderId,
     orderNumber: checkoutBody.data.orderNumber,
   }
-}
-
-async function adminAccessToken(request: APIRequestContext): Promise<string> {
-  const res = await request.post(`${API_URL}/api/auth/login`, {
-    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  })
-  expect(res.ok(), 'admin API login should succeed').toBe(true)
-  const body = (await res.json()) as { data: { accessToken: string } }
-  return body.data.accessToken
 }
 
 // The admin access token is held in memory only, so every full page load
@@ -92,83 +89,312 @@ async function openOrderDetail(page: Page, orderNumber: string): Promise<void> {
   await expect(page.getByTestId('admin-order-detail')).toBeVisible({ timeout: 15000 })
 }
 
+// P1-13 AC-10 and AC-11: the admin shows what was actually paid and refunded, from the order's stored amounts, and the
+// admin API agrees at every step. Orders come from the storefront API (a `+stub-pending` order stays unpaid; any other
+// email is paid inline by the stub), each journey its own. They replace the journey that confirmed a never-paid order
+// and refunded it with no amount (decision 8).
+
+interface PaymentRead {
+  state: 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
+  capturedMinor: number
+  refundedMinor: number
+  refundableMinor: number
+  currency: string
+  refunds: Array<{ id: string; amountMinor: number; status: string }>
+}
+
+interface OrderRead {
+  orderNumber: string
+  status: string
+  totalMinor: number
+  currency: string
+  payment: PaymentRead
+}
+
+/** The amount as the admin formats it (`apps/admin/src/lib/money.ts`). */
+function money(amountMinor: number, currency: string): string {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).format(amountMinor / 100)
+}
+
+/** Text that ends with exactly this amount: no digit before it, so £9.99 never matches £19.99. */
+function endsWithAmount(amountMinor: number, currency: string): RegExp {
+  const escaped = money(amountMinor, currency).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^\\d.,])${escaped}\\s*$`)
+}
+
+const LABEL: Record<PaymentRead['state'], RegExp> = {
+  unpaid: /^\s*Unpaid\s*$/i,
+  paid: /^\s*Paid\s*$/i,
+  partially_refunded: /^\s*Partially refunded\s*$/i,
+  refunded: /^\s*Refunded\s*$/i,
+}
+
+/** An email the stub pays inline (no `+stub-pending`), unique to one journey. */
+function paidEmail(kind: string): string {
+  return `e2e-p1-13-${kind}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@nymbal.dev`
+}
+
+async function readOrder(
+  request: APIRequestContext,
+  token: string,
+  orderNumber: string,
+): Promise<OrderRead> {
+  const res = await request.get(`${API_URL}/api/admin/orders/${orderNumber}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  expect(res.ok(), `GET /api/admin/orders/${orderNumber}: ${await res.text()}`).toBe(true)
+  return ((await res.json()) as { data: OrderRead }).data
+}
+
+/** The detail page's Payment panel agrees with the admin API's read of the same order. */
+async function expectPaymentPanel(page: Page, read: OrderRead): Promise<void> {
+  const { payment } = read
+  await expect(page.getByTestId('admin-order-payment-state')).toHaveText(LABEL[payment.state], {
+    timeout: 15_000,
+  })
+  await expect(page.getByTestId('admin-order-captured')).toHaveText(
+    endsWithAmount(payment.capturedMinor, payment.currency),
+  )
+  await expect(page.getByTestId('admin-order-refunded')).toHaveText(
+    endsWithAmount(payment.refundedMinor, payment.currency),
+  )
+  await expect(page.getByTestId('admin-order-net')).toHaveText(
+    endsWithAmount(payment.capturedMinor - payment.refundedMinor, payment.currency),
+  )
+}
+
+async function openDetail(page: Page, orderNumber: string): Promise<void> {
+  await page.goto(`orders/${orderNumber}`)
+  await expect(page.getByTestId('admin-order-detail')).toContainText(orderNumber, {
+    timeout: 15_000,
+  })
+}
+
+const REFUND_POST = /\/api\/admin\/orders\/[^/]+\/refund$/
+
+/**
+ * Counts the page's refund POSTs from here on; `settled()` waits until every one sent has been answered, so a read
+ * after it sees whatever a second (double-clicked) POST did, whichever way the page or the API keeps it to one refund.
+ */
+function watchRefundPosts(page: Page): { settled(): Promise<void> } {
+  let sent = 0
+  let answered = 0
+  const isRefund = (r: { method(): string; url(): string }) =>
+    r.method() === 'POST' && REFUND_POST.test(new URL(r.url()).pathname)
+  const onSent = (r: { method(): string; url(): string }) => {
+    if (isRefund(r)) sent += 1
+  }
+  const onAnswered = (r: { method(): string; url(): string }) => {
+    if (isRefund(r)) answered += 1
+  }
+  page.on('request', onSent)
+  page.on('requestfinished', onAnswered)
+  page.on('requestfailed', onAnswered)
+  return {
+    async settled() {
+      await expect
+        .poll(() => sent - answered, { message: 'refund POSTs still in flight' })
+        .toBe(0)
+      page.off('request', onSent)
+      page.off('requestfinished', onAnswered)
+      page.off('requestfailed', onAnswered)
+    },
+  }
+}
+
+/** The refund dialog, by amount only (decision 8), entered in major units as the admin enters prices. */
+async function refundThroughDialog(
+  page: Page,
+  amountMinor: number,
+  confirm: 'click' | 'dblclick' = 'click',
+): Promise<void> {
+  const posts = watchRefundPosts(page)
+  await page.getByTestId('admin-order-actions').click()
+  await page.getByTestId('admin-order-action-refund').click()
+  const dialog = page.getByTestId('admin-order-refund-dialog')
+  await expect(dialog).toBeVisible()
+  await page.getByTestId('admin-order-refund-amount').fill((amountMinor / 100).toFixed(2))
+  await page.getByTestId('admin-order-refund-reason').fill('Returned by the customer')
+  await page.getByTestId('admin-order-refund-confirm')[confirm]()
+  await expect(dialog).toBeHidden({ timeout: 15_000 })
+  await posts.settled()
+}
+
 test.describe('Admin orders', () => {
-  test('view order, change status, and refund end-to-end', async ({ page, request }) => {
+  // Kills: "Paid" read from the intent every order has from checkout start, and Captured shown as the order total
+  // whatever was paid.
+  test('AC-10: a +stub-pending order shows Unpaid with Captured 0 and offers neither a refund nor confirmed; a paid stub order shows Paid with Captured = its total; the list Payment column agrees for both', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    const unpaid = await placeOrder(request)
+    // A second shopper, with a cart of their own: from the same cart the paid checkout would supersede the pending order.
+    const shopper = await playwrightRequest.newContext()
+    let paid: Awaited<ReturnType<typeof placeOrder>>
+    try {
+      paid = await placeOrder(shopper, paidEmail('paid'))
+    } finally {
+      await shopper.dispose()
+    }
+    const token = await adminToken(request)
+    const unpaidRead = await readOrder(request, token, unpaid.orderNumber)
+    const paidRead = await readOrder(request, token, paid.orderNumber)
+    expect(unpaidRead.payment?.state).toBe('unpaid')
+    expect(unpaidRead.payment?.capturedMinor).toBe(0)
+    expect(paidRead.payment?.state).toBe('paid')
+    expect(paidRead.payment?.capturedMinor).toBe(paidRead.totalMinor)
+
+    await signInAsAdmin(page)
+    await openDetail(page, unpaid.orderNumber)
+    await expectPaymentPanel(page, unpaidRead)
+    await page.getByTestId('admin-order-actions').click()
+    await expect(page.getByTestId('admin-order-action-refund')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    // A pending order is confirmed by recording a payment, never by the status select (M5).
+    await page.getByTestId('admin-order-status-select').click()
+    await expect(page.getByTestId('admin-order-status-option-confirmed')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+
+    await openDetail(page, paid.orderNumber)
+    await expectPaymentPanel(page, paidRead)
+    await expect(page.getByTestId('admin-order-captured')).toHaveText(
+      endsWithAmount(paidRead.totalMinor, paidRead.currency),
+    )
+
+    await page.goto('orders')
+    for (const read of [unpaidRead, paidRead]) {
+      await page.getByPlaceholder('Search orders...').fill(read.orderNumber)
+      await expect(page.getByTestId(`admin-orders-payment-${read.orderNumber}`)).toHaveText(
+        LABEL[read.payment.state],
+        { timeout: 15_000 },
+      )
+    }
+  })
+
+  // Kills: a refund that changes only the label (no amount moved or shown), and a page that disagrees with the API.
+  test('AC-11: a partial refund shows Partially refunded, Refunded = the amount, Net = captured − refunded and a refund row; refunding the rest shows Refunded with Net 0; GET /api/admin/orders/:n agrees at each step and after a reload', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(180_000)
-    const { orderId, orderNumber } = await createPendingOrder(request)
+    const order = await placeOrder(request, paidEmail('refund'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment?.capturedMinor
+    expect(captured).toBe(start.totalMinor)
+    const part = Math.max(1, Math.floor(captured / 3))
+    expect(part).toBeLessThan(captured)
 
-    await loginAsAdmin(page)
-    await openOrderDetail(page, orderNumber)
-    const badge = page.getByTestId('admin-order-status-badge')
-    await expect(badge).toHaveText('Pending')
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await expectPaymentPanel(page, start)
 
-    // pending → confirmed via the status select
-    await page.getByTestId('admin-order-status-select').click()
-    await page.getByTestId('admin-order-status-option-confirmed').click()
-    await expect(badge).toHaveText('Confirmed', { timeout: 15000 })
-    await page.getByTestId('admin-order-tab-timeline').click()
-    await expect(page.getByTestId('admin-order-timeline-entry-pending')).toBeVisible({
-      timeout: 15000,
-    })
-    await expect(page.getByTestId('admin-order-timeline-entry-confirmed')).toBeVisible({
-      timeout: 15000,
-    })
+    // The store walk at 6b529da (`standing.submit-once-admin`): a double click on "Refund" refunded twice. Kills: the
+    // dialog's pending guard losing to a fast double click, with no requestId to keep the repeat to one refund.
+    await refundThroughDialog(page, part, 'dblclick')
 
-    // confirmed → processing via the status select
-    await page.getByTestId('admin-order-status-select').click()
-    await page.getByTestId('admin-order-status-option-processing').click()
-    await expect(badge).toHaveText('Processing', { timeout: 15000 })
-    await expect(page.getByTestId('admin-order-timeline-entry-processing')).toBeVisible({
-      timeout: 15000,
-    })
+    const afterPart = await readOrder(request, token, order.orderNumber)
+    expect(afterPart.payment.state).toBe('partially_refunded')
+    expect(afterPart.payment.refundedMinor).toBe(part)
+    expect(afterPart.payment.capturedMinor).toBe(captured)
+    expect(afterPart.payment.refundableMinor).toBe(captured - part)
+    expect(afterPart.payment.refunds.map((r) => [r.amountMinor, r.status])).toEqual([
+      [part, 'succeeded'],
+    ])
+    await expectPaymentPanel(page, afterPart)
+    await expect(
+      page.getByTestId(`admin-order-refund-row-${afterPart.payment.refunds[0]!.id}`),
+    ).toContainText(money(part, afterPart.payment.currency))
 
-    // processing → shipped via the admin API (the ship action requires
-    // tracking details the status select does not collect)
-    const token = await adminAccessToken(request)
-    const shipRes = await request.post(`${API_URL}/api/admin/orders/${orderId}/ship`, {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { trackingNumber: 'TRK-E2E-0001', carrier: 'DHL' },
-    })
-    expect(shipRes.ok(), 'POST /api/admin/orders/:id/ship should succeed').toBe(true)
+    await refundThroughDialog(page, captured - part)
 
+    const afterAll = await readOrder(request, token, order.orderNumber)
+    expect(afterAll.payment.state).toBe('refunded')
+    expect(afterAll.payment.refundedMinor).toBe(captured)
+    expect(afterAll.payment.refundableMinor).toBe(0)
+    expect(afterAll.status).toBe('refunded')
+    await expectPaymentPanel(page, afterAll)
+    await expect(page.getByTestId('admin-order-net')).toHaveText(
+      endsWithAmount(0, afterAll.payment.currency),
+    )
+    await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Refunded')
+    for (const refund of afterAll.payment.refunds) {
+      await expect(page.getByTestId(`admin-order-refund-row-${refund.id}`)).toContainText(
+        money(refund.amountMinor, afterAll.payment.currency),
+      )
+    }
+
+    // After a full reload the page comes from the API's stored amounts, not the client's cache.
     await page.reload()
-    await loginAsAdmin(page)
-    await openOrderDetail(page, orderNumber)
-    await expect(badge).toHaveText('Shipped')
-
-    // shipped → delivered via the status select
-    await page.getByTestId('admin-order-status-select').click()
-    await page.getByTestId('admin-order-status-option-delivered').click()
-    await expect(badge).toHaveText('Delivered', { timeout: 15000 })
-    await page.getByTestId('admin-order-tab-timeline').click()
-    await expect(page.getByTestId('admin-order-timeline-entry-shipped')).toBeVisible({
-      timeout: 15000,
+    await expect(page.getByTestId('admin-order-detail')).toContainText(order.orderNumber, {
+      timeout: 15_000,
     })
-    await expect(page.getByTestId('admin-order-timeline-entry-delivered')).toBeVisible({
-      timeout: 15000,
-    })
+    await expectPaymentPanel(page, await readOrder(request, token, order.orderNumber))
+  })
 
-    // delivered → refunded via the actions menu + refund dialog
+  // The store walk at 6b529da: a refund the server refuses showed its reason in minor units ("4000"), not money.
+  // The dialog goes stale the way the walk found it: the realtime stream is down, and the order is refunded elsewhere
+  // after the dialog opened, so the dialog still offers the whole capture and the server refuses it. Kills: the
+  // refusal's amounts shown as raw minor units.
+  test('Store walk: a refund the server refuses from a stale dialog (over refundable) shows its reason in the store’s currency, not minor units, and moves no money', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    await page.route('**/api/admin/events**', (route) => route.abort())
+    const order = await placeOrder(request, paidEmail('stale-refund'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment.capturedMinor
+    const currency = start.payment.currency
+    expect(captured).toBe(start.totalMinor)
+    const part = Math.max(1, Math.floor(captured / 3))
+    expect(part).toBeLessThan(captured)
+
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await expectPaymentPanel(page, start)
     await page.getByTestId('admin-order-actions').click()
     await page.getByTestId('admin-order-action-refund').click()
-    await expect(page.getByTestId('admin-order-refund-dialog')).toBeVisible()
-    await page.getByTestId('admin-order-refund-reason').fill('Customer returned the parcel')
-    await page.getByTestId('admin-order-refund-confirm').click()
-    await expect(page.getByTestId('admin-order-refund-dialog')).toBeHidden({ timeout: 15000 })
-    await expect(badge).toHaveText('Refunded', { timeout: 15000 })
-    await expect(page.getByTestId('admin-order-timeline-entry-refunded')).toBeVisible({
-      timeout: 15000,
-    })
+    const dialog = page.getByTestId('admin-order-refund-dialog')
+    await expect(dialog).toBeVisible()
+    await page.getByTestId('admin-order-refund-amount').fill((captured / 100).toFixed(2))
 
-    // Full reload: the refunded state must come back from the API read
-    // model, not from client-side cache.
-    await page.reload()
-    await loginAsAdmin(page)
-    await openOrderDetail(page, orderNumber)
-    await expect(badge).toHaveText('Refunded')
-    await page.getByTestId('admin-order-tab-timeline').click()
-    await expect(page.getByTestId('admin-order-timeline-entry-delivered')).toBeVisible()
-    await expect(page.getByTestId('admin-order-timeline-entry-refunded')).toBeVisible()
+    // Another admin refunds part of the order while this dialog is open.
+    const elsewhere = await request.post(`${API_URL}/api/admin/orders/${order.orderId}/refund`, {
+      headers: { ...(await csrf(request, API_URL)), authorization: `Bearer ${token}` },
+      data: { amountMinor: part },
+    })
+    expect(elsewhere.status(), await elsewhere.text()).toBe(200)
+
+    const refusal = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && REFUND_POST.test(new URL(r.url()).pathname),
+    )
+    await page.getByTestId('admin-order-refund-confirm').click()
+    const refused = await refusal
+    expect(refused.status()).toBe(409)
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      'refund.exceeds_captured',
+    )
+
+    const reason = dialog.getByRole('alert')
+    await expect(reason).toContainText(money(captured, currency))
+    await expect(reason).toContainText(money(captured - part, currency))
+    const text = (await reason.textContent()) ?? ''
+    for (const minor of [captured, captured - part]) {
+      expect(text, `the reason shows ${minor} as minor units`).not.toMatch(
+        new RegExp(`(^|[^\\d.,])${minor}([^\\d.,]|$)`),
+      )
+    }
+
+    const after = await readOrder(request, token, order.orderNumber)
+    expect(after.payment.refundedMinor).toBe(part)
+    expect(after.payment.refundableMinor).toBe(captured - after.payment.refundedMinor)
   })
 
   test('orders list page is accessible @a11y', async ({ page, request }) => {
@@ -180,9 +406,7 @@ test.describe('Admin orders', () => {
       timeout: 15000,
     })
     const AxeBuilder = (await import('@axe-core/playwright')).default
-    const results = await new AxeBuilder({ page })
-      .disableRules(['color-contrast'])
-      .analyze()
+    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()
     expect(results.violations).toEqual([])
   })
 
@@ -193,9 +417,7 @@ test.describe('Admin orders', () => {
     await openOrderDetail(page, orderNumber)
     await expect(page.getByTestId('admin-order-status-badge')).toHaveText('Pending')
     const AxeBuilder = (await import('@axe-core/playwright')).default
-    const results = await new AxeBuilder({ page })
-      .disableRules(['color-contrast'])
-      .analyze()
+    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze()
     expect(results.violations).toEqual([])
   })
 })

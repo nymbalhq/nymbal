@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryDocumentStore } from './in-memory.js'
-import { AdapterError } from '@nymbal/types'
+import { AdapterError } from '@nymbalhq/types'
 
 describe('InMemoryDocumentStore', () => {
   it('put and get round-trip', async () => {

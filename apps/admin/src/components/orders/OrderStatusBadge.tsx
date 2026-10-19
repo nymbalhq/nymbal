@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import type { OrderStatus } from '@/types'
+import type { OrderStatus } from '@nymbalhq/types'
 
 interface OrderStatusBadgeProps {
   status: OrderStatus

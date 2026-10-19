@@ -1,4 +1,4 @@
-import type { SearchAdapter, SearchParams, SearchResult, Logger } from '@nymbal/types'
+import type { SearchAdapter, SearchParams, SearchResult, Logger } from '@nymbalhq/types'
 
 export interface SearchService {
   products(query: string, params?: SearchParams): Promise<SearchResult>

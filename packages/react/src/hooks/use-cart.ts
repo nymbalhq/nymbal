@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { CartState } from '@nymbal/sdk'
+import type { CartState } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseCartReturn extends CartState {

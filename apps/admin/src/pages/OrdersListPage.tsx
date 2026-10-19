@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { MoreHorizontal, Search, Filter, Package, Trash2, CheckCheck } from 'lucide-react'
 import {
-  MoreHorizontal,
-  Search,
-  Filter,
-  Package,
-  Trash2,
-  CheckCheck,
-} from 'lucide-react'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -27,7 +27,7 @@ import { formatMoney } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { OrderStatus } from '@/types'
+import { paymentState, type OrderStatus, type PaymentState } from '@nymbalhq/types'
 
 const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -37,7 +37,16 @@ const STATUS_FILTERS: { label: string; value: OrderStatus | 'all' }[] = [
   { label: 'Shipped', value: 'shipped' },
   { label: 'Delivered', value: 'delivered' },
   { label: 'Cancelled', value: 'cancelled' },
+  { label: 'Refunded', value: 'refunded' },
+  { label: 'Partially refunded', value: 'partially_refunded' },
 ]
+
+const PAYMENT_LABELS: Record<PaymentState, string> = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  partially_refunded: 'Partially refunded',
+  refunded: 'Refunded',
+}
 
 export function OrdersListPage() {
   const navigate = useNavigate()
@@ -96,7 +105,7 @@ export function OrdersListPage() {
                 'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                 statusFilter === f.value
                   ? 'bg-zinc-900 text-white'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200',
               )}
             >
               {f.label}
@@ -124,15 +133,21 @@ export function OrdersListPage() {
       {/* Bulk action bar */}
       {selected.size > 0 && (
         <div className="flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5">
-          <span className="text-sm font-medium text-blue-700">
-            {selected.size} selected
-          </span>
+          <span className="text-sm font-medium text-blue-700">{selected.size} selected</span>
           <div className="flex items-center gap-2 ml-auto">
-            <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs border-blue-200 text-blue-700 hover:bg-blue-100">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs border-blue-200 text-blue-700 hover:bg-blue-100"
+            >
               <CheckCheck className="h-3.5 w-3.5" />
               Confirm All
             </Button>
-            <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs border-red-200 text-red-600 hover:bg-red-50">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs border-red-200 text-red-600 hover:bg-red-50"
+            >
               <Trash2 className="h-3.5 w-3.5" />
               Cancel All
             </Button>
@@ -152,7 +167,11 @@ export function OrdersListPage() {
           <EmptyState
             icon={<Package className="h-5 w-5" />}
             title="No orders found"
-            description={search || statusFilter !== 'all' ? 'Try adjusting your filters.' : 'Orders will appear here as they come in.'}
+            description={
+              search || statusFilter !== 'all'
+                ? 'Try adjusting your filters.'
+                : 'Orders will appear here as they come in.'
+            }
           />
         ) : (
           <Table>
@@ -168,6 +187,7 @@ export function OrdersListPage() {
                 <TableHead>Order #</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Payment</TableHead>
                 <TableHead className="text-center">Items</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Date</TableHead>
@@ -182,10 +202,7 @@ export function OrdersListPage() {
                   key={order.id}
                   data-testid={tid('orders', 'row', order.orderNumber)}
                   data-state={selected.has(order.id) ? 'selected' : undefined}
-                  className={cn(
-                    'cursor-pointer',
-                    selected.has(order.id) && 'bg-blue-50/50'
-                  )}
+                  className={cn('cursor-pointer', selected.has(order.id) && 'bg-blue-50/50')}
                 >
                   <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -209,13 +226,30 @@ export function OrdersListPage() {
                   <TableCell onClick={() => navigate(`/orders/${order.orderNumber}`)}>
                     <OrderStatusBadge status={order.status} />
                   </TableCell>
-                  <TableCell className="text-center text-zinc-500" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
+                  {/* From the stored amounts: a row a realtime event placed has no payment read yet. */}
+                  <TableCell
+                    className="text-sm text-zinc-600"
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
+                    data-testid={tid('orders', 'payment', order.orderNumber)}
+                  >
+                    {PAYMENT_LABELS[paymentState(order)]}
+                  </TableCell>
+                  <TableCell
+                    className="text-center text-zinc-500"
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
+                  >
                     {order.lineItems.length}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
+                  <TableCell
+                    className="text-right font-mono text-sm"
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
+                  >
                     {formatMoney(order.totalMinor, order.currency)}
                   </TableCell>
-                  <TableCell className="text-right text-sm text-zinc-400" onClick={() => navigate(`/orders/${order.orderNumber}`)}>
+                  <TableCell
+                    className="text-right text-sm text-zinc-400"
+                    onClick={() => navigate(`/orders/${order.orderNumber}`)}
+                  >
                     {formatRelative(order.createdAt)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>

@@ -3,6 +3,7 @@ dist/
 build/
 .astro/
 .next/
+next-env.d.ts
 coverage/
 *.log
 .DS_Store

@@ -1,5 +1,5 @@
 import { useSyncExternalStore, useEffect } from 'react'
-import type { ProductState, DenormalisedVariant } from '@nymbal/sdk'
+import type { ProductState, DenormalisedVariant } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseProductReturn extends ProductState {

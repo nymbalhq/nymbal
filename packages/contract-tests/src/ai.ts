@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { AiAdapter } from '@nymbal/types'
+import type { AiAdapter } from '@nymbalhq/types'
 
 export function runAiContract(build: () => AiAdapter): void {
   describe('AiAdapter contract', () => {

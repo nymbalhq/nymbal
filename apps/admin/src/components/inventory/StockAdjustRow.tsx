@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tid } from '@/lib/testid'
-import type { StockAdjustmentReason, InventoryRow } from '@/types'
+import type { StockAdjustmentReason } from '@nymbalhq/types'
+import type { InventoryRow } from '@/types'
 
 const REASONS: { value: StockAdjustmentReason; label: string }[] = [
   { value: 'manual', label: 'Manual' },

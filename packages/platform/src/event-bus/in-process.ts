@@ -6,8 +6,8 @@ import type {
   Subscription,
   SubscriptionConfig,
   Logger,
-} from '@nymbal/types'
-import { ValidationError } from '@nymbal/types'
+} from '@nymbalhq/types'
+import { ValidationError } from '@nymbalhq/types'
 
 interface Registration {
   id: string
@@ -30,9 +30,25 @@ export class InProcessEventBus implements EventBusAdapter {
   }
 
   async publish<T>(event: NymbalEvent<T>): Promise<void> {
+    await this.#deliver(event, () => true)
+  }
+
+  async publishBatch(events: NymbalEvent<unknown>[]): Promise<void> {
+    for (const event of events) {
+      await this.publish(event)
+    }
+  }
+
+  async replay(events: NymbalEvent<unknown>[]): Promise<void> {
+    for (const event of events) {
+      await this.#deliver(event, (r) => r.config?.derived === true)
+    }
+  }
+
+  async #deliver<T>(event: NymbalEvent<T>, eligible: (r: Registration) => boolean): Promise<void> {
     this.#validate(event)
-    const matches = Array.from(this.#registrations.values()).filter((r) =>
-      r.regexes.some((re) => re.test(event.type)),
+    const matches = Array.from(this.#registrations.values()).filter(
+      (r) => eligible(r) && r.regexes.some((re) => re.test(event.type)),
     )
     await Promise.all(
       matches.map(async (r) => {
@@ -46,12 +62,6 @@ export class InProcessEventBus implements EventBusAdapter {
         }
       }),
     )
-  }
-
-  async publishBatch(events: NymbalEvent<unknown>[]): Promise<void> {
-    for (const event of events) {
-      await this.publish(event)
-    }
   }
 
   async subscribe(

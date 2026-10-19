@@ -1,0 +1,16 @@
+// P0-05 AC-2 lint fixture: linted as a Playwright journey by tests/tooling/test-lint-rules.test.ts. Each line
+// marked `lint: <rule>` must be reported by that rule. Not run by any test runner (the .fixture suffix).
+import { expect, test } from '@playwright/test'
+
+test('sleeps, then asserts on a snapshot of the page', async ({ page }) => {
+  await page.goto('/products')
+  await page.locator('[data-testid="sort-dropdown"]').selectOption('price-asc')
+  await page.waitForTimeout(800) // lint: playwright/no-wait-for-timeout
+  expect(await page.locator('[data-testid="product-count"]').isVisible()).toBe(true) // lint: playwright/prefer-web-first-assertions
+})
+
+test('waits on the outcome', async ({ page }) => {
+  await page.goto('/products')
+  await page.locator('[data-testid="sort-dropdown"]').selectOption('price-asc')
+  await expect(page.locator('[data-testid="product-count"]')).toBeVisible()
+})

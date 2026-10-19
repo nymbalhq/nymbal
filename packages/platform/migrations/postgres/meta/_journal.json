@@ -8,6 +8,48 @@
       "when": 1776875073819,
       "tag": "0000_tearful_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792286470820,
+      "tag": "0001_neat_zeigeist",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792302105204,
+      "tag": "0002_sloppy_mad_thinker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792310135268,
+      "tag": "0003_violet_violations",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792325873393,
+      "tag": "0004_white_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792361576997,
+      "tag": "0005_natural_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792397472998,
+      "tag": "0006_minor_dragon_man",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
-import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import { registerCategoryProjection } from './projections/category-projection.js'
@@ -65,13 +65,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     email: adapters.email,
     logger: handlerLogger.child({ handler: 'email' }),
     processedEventRepo: repos.processedEvent,
+    orderRepo: repos.order,
     storeName: config.store.name,
   })
   await registerSearchHandler({
     eventBus,
     search: adapters.search,
-    logger: handlerLogger.child({ handler: 'search' }),
-    processedEventRepo: repos.processedEvent,
   })
   await registerReviewsHandler({
     eventBus,

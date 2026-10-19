@@ -7,7 +7,7 @@ if (!container) throw new Error('Missing #cart-content')
 function renderCart() {
   const state = client.cart.getState()
   const items = state.items ?? []
-  const currency = items[0]?.currency ?? 'GBP'
+  const currency = state.currency || 'GBP'
 
   if (items.length === 0) {
     container!.innerHTML = `
@@ -20,10 +20,7 @@ function renderCart() {
     return
   }
 
-  const subtotal = items.reduce(
-    (sum: number, item: any) => sum + item.priceMinor * item.qty,
-    0,
-  )
+  const subtotal = items.reduce((sum: number, item: any) => sum + item.priceMinor * item.qty, 0)
 
   const itemsHtml = items
     .map(

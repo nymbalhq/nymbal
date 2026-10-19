@@ -1,4 +1,4 @@
-import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbal/types'
+import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import { nextId, isoDate, randInt } from './prng.js'
 
 export function createAddress(overrides?: Partial<Address>): Address {
@@ -58,6 +58,10 @@ export function createOrder(overrides?: Partial<Order>): Order {
     notes: '',
     metadata: {},
     paymentIntentId: null,
+    capturedMinor: 0,
+    capturedAt: null,
+    refundedMinor: 0,
+    captureMethod: null,
     createdAt: isoDate(),
     updatedAt: isoDate(),
     ...overrides,

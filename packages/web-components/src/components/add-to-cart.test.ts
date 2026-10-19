@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 
 let client: NymbalClient
 

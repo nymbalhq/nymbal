@@ -1,4 +1,4 @@
-import type { DenormalisedProduct } from '@nymbal/sdk'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 
 export interface BreadcrumbItem {
   name: string

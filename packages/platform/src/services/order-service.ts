@@ -2,20 +2,21 @@ import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_ORDER_CANCELLED,
   EVT_ORDER_DELIVERED,
-  EVT_ORDER_PAID,
-  EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_PLACED,
-  EVT_ORDER_REFUNDED,
   EVT_ORDER_SHIPPED,
   NotFoundError,
+  OrderConflictError,
+  StatusTransitionError,
+  ValidationError,
   assertOrderTransition,
   type Address,
+  type CaptureMethod,
   type Logger,
   type Order,
   type OrderLineItem,
   type OrderStatus,
-} from '@nymbal/types'
-import type { CommandStore } from '../db/command-store.js'
+} from '@nymbalhq/types'
+import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 
@@ -35,12 +36,17 @@ export interface OrderCreateDraftInput {
   notes?: string
   metadata?: Record<string, unknown>
   paymentIntentId?: string | null
+  cartToken?: string | null
 }
 
 export interface OrderImportInput extends OrderCreateDraftInput {
   orderNumber: string
   status: OrderStatus
   createdAt: Date
+  /** What the imported order was paid, taken as captured when it was placed; nothing when absent. */
+  capturedMinor?: number
+  refundedMinor?: number
+  captureMethod?: CaptureMethod | null
 }
 
 export interface OrderService {
@@ -52,16 +58,8 @@ export interface OrderService {
   updateStatus(id: string, toStatus: OrderStatus, actor: string, note?: string): Promise<Order>
   markShipped(id: string, trackingNumber: string, carrier: string, actor: string): Promise<Order>
   markDelivered(id: string, actor: string): Promise<Order>
+  /** Refuses with `order.paid` once anything is captured: a paid order is refunded, never cancelled. */
   cancel(id: string, reason: string, actor: string): Promise<Order>
-  refund(id: string, amountMinor: number, reason: string, actor: string): Promise<Order>
-  partialRefund(
-    id: string,
-    amountMinor: number,
-    lineItems: OrderLineItem[],
-    reason: string,
-    actor: string,
-  ): Promise<Order>
-  markPaid(id: string, paymentIntentId: string, amountMinor: number, currency: string): Promise<Order>
 }
 
 export interface CreateOrderServiceDeps {
@@ -76,13 +74,14 @@ export interface CreateOrderServiceDeps {
 export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
   const { store, repos, publisher } = deps
 
-  async function requireOrder(id: string): Promise<Order> {
-    const order = await repos.order.findById(id)
+  async function requireOrder(tx: ReadTx, id: string): Promise<Order> {
+    const order = await repos.order.findById(tx, id)
     if (!order) throw new NotFoundError('order', id)
     return order
   }
 
   async function doTransition(
+    tx: Tx,
     order: Order,
     toStatus: OrderStatus,
     actor: string,
@@ -90,28 +89,26 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
   ): Promise<Order> {
     assertOrderTransition(order.status, toStatus)
     const now = new Date()
-    await store.transaction(async () => {
-      await repos.order.setStatus(order.id, toStatus, now)
-      await repos.orderHistory.append({
-        id: uuidv7(),
-        orderId: order.id,
-        fromStatus: order.status,
-        toStatus,
-        actor,
-        note,
-        timestamp: now,
-      })
+    await repos.order.setStatus(tx, order.id, toStatus, now)
+    await repos.orderHistory.append(tx, {
+      id: uuidv7(),
+      orderId: order.id,
+      fromStatus: order.status,
+      toStatus,
+      actor,
+      note,
+      timestamp: now,
     })
-    return requireOrder(order.id)
+    return requireOrder(tx, order.id)
   }
 
   return {
     async createFromCheckout(input) {
-      return store.transaction(async () => {
-        const sequence = await repos.orderSequence.nextSequence(deps.orderNumberStart)
+      return store.transaction(async (tx) => {
+        const sequence = await repos.orderSequence.nextSequence(tx, deps.orderNumberStart)
         const orderNumber = `${deps.orderNumberPrefix}-${sequence + 1}`
         const now = new Date()
-        await repos.order.insert({
+        await repos.order.insert(tx, {
           id: input.orderId,
           orderNumber,
           sequence,
@@ -130,10 +127,11 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           notes: input.notes ?? '',
           metadata: input.metadata ?? {},
           paymentIntentId: input.paymentIntentId ?? null,
+          cartToken: input.cartToken ?? null,
           createdAt: now,
           updatedAt: now,
         })
-        await repos.orderHistory.append({
+        await repos.orderHistory.append(tx, {
           id: uuidv7(),
           orderId: input.orderId,
           fromStatus: null,
@@ -142,88 +140,104 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           note: 'order draft created',
           timestamp: now,
         })
-        const fresh = await requireOrder(input.orderId)
+        const fresh = await requireOrder(tx, input.orderId)
         await publisher.publish(EVT_ORDER_PLACED, { order: fresh })
         return fresh
       })
     },
 
     async getById(id) {
-      return requireOrder(id)
+      return store.read((tx) => requireOrder(tx, id))
     },
     async getByOrderNumber(orderNumber) {
-      const order = await repos.order.findByOrderNumber(orderNumber)
+      const order = await store.read((tx) => repos.order.findByOrderNumber(tx, orderNumber))
       if (!order) throw new NotFoundError('order', orderNumber)
       return order
     },
     async listByCustomer(customerId) {
-      return repos.order.listByCustomer(customerId)
+      return store.read((tx) => repos.order.listByCustomer(tx, customerId))
     },
     async updateStatus(id, toStatus, actor, note = '') {
-      const order = await requireOrder(id)
-      return doTransition(order, toStatus, actor, note)
+      return store.transaction(async (tx) => {
+        const order = await requireOrder(tx, id)
+        return doTransition(tx, order, toStatus, actor, note)
+      })
     },
     async markShipped(id, trackingNumber, carrier, actor) {
-      const order = await requireOrder(id)
-      const fresh = await doTransition(order, 'shipped', actor, `Shipped via ${carrier}: ${trackingNumber}`)
-      await publisher.publish(EVT_ORDER_SHIPPED, {
-        orderId: fresh.id,
-        trackingNumber,
-        carrier,
+      return store.transaction(async (tx) => {
+        const order = await requireOrder(tx, id)
+        const fresh = await doTransition(
+          tx,
+          order,
+          'shipped',
+          actor,
+          `Shipped via ${carrier}: ${trackingNumber}`,
+        )
+        await publisher.publish(EVT_ORDER_SHIPPED, {
+          orderId: fresh.id,
+          trackingNumber,
+          carrier,
+        })
+        return fresh
       })
-      return fresh
     },
     async markDelivered(id, actor) {
-      const order = await requireOrder(id)
-      const fresh = await doTransition(order, 'delivered', actor, 'Delivered')
-      await publisher.publish(EVT_ORDER_DELIVERED, { orderId: fresh.id })
-      return fresh
+      return store.transaction(async (tx) => {
+        const order = await requireOrder(tx, id)
+        const fresh = await doTransition(tx, order, 'delivered', actor, 'Delivered')
+        await publisher.publish(EVT_ORDER_DELIVERED, { orderId: fresh.id })
+        return fresh
+      })
     },
     async cancel(id, reason, actor) {
-      const order = await requireOrder(id)
-      const fresh = await doTransition(order, 'cancelled', actor, reason)
-      await publisher.publish(EVT_ORDER_CANCELLED, { orderId: fresh.id, reason })
-      return fresh
-    },
-    async refund(id, amountMinor, reason, actor) {
-      const order = await requireOrder(id)
-      const fresh = await doTransition(order, 'refunded', actor, reason)
-      await publisher.publish(EVT_ORDER_REFUNDED, {
-        orderId: fresh.id,
-        amountMinor,
-        reason,
+      return store.transaction(async (tx) => {
+        // Under the row lock no confirm commits between the paid check and the write.
+        const order = await repos.order.lock(tx, id)
+        if (!order) throw new NotFoundError('order', id)
+        if (order.capturedMinor > 0) {
+          throw new OrderConflictError(
+            'order.paid',
+            `Order ${order.orderNumber} is paid: refund it instead of cancelling`,
+          )
+        }
+        assertOrderTransition(order.status, 'cancelled')
+        const now = new Date()
+        if (!(await repos.order.setStatusIf(tx, order.id, order.status, 'cancelled', now))) {
+          const current = await requireOrder(tx, order.id)
+          throw new StatusTransitionError('order', current.status, 'cancelled')
+        }
+        await repos.orderHistory.append(tx, {
+          id: uuidv7(),
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus: 'cancelled',
+          actor,
+          note: reason,
+          timestamp: now,
+        })
+        const fresh = await requireOrder(tx, order.id)
+        await publisher.publish(EVT_ORDER_CANCELLED, { orderId: fresh.id, reason })
+        return fresh
       })
-      return fresh
     },
-    async partialRefund(id, amountMinor, lineItems, reason, actor) {
-      const order = await requireOrder(id)
-      const fresh = await doTransition(order, 'partially_refunded', actor, reason)
-      await publisher.publish(EVT_ORDER_PARTIALLY_REFUNDED, {
-        orderId: fresh.id,
-        amountMinor,
-        lineItems,
-        reason,
-      })
-      return fresh
-    },
-    async markPaid(id, paymentIntentId, amountMinor, currency) {
-      const order = await requireOrder(id)
-      await repos.order.setPaymentIntent(order.id, paymentIntentId, new Date())
-      // status transition pending → confirmed happens in CheckoutService.finalize;
-      // here we just emit the event.
-      await publisher.publish(EVT_ORDER_PAID, {
-        orderId: order.id,
-        paymentIntentId,
-        amountMinor,
-        currency,
-      })
-      return requireOrder(order.id)
-    },
-
     async importOrder(input) {
-      return store.transaction(async () => {
-        const sequence = await repos.orderSequence.nextSequence(deps.orderNumberStart)
-        await repos.order.insert({
+      const capturedMinor = input.capturedMinor ?? 0
+      const refundedMinor = input.refundedMinor ?? 0
+      if (
+        !(
+          0 <= refundedMinor &&
+          refundedMinor <= capturedMinor &&
+          capturedMinor <= input.totalMinor
+        ) ||
+        capturedMinor > 0 !== (input.captureMethod != null)
+      ) {
+        throw new ValidationError('imported payment amounts are inconsistent', {
+          context: { capturedMinor, refundedMinor, totalMinor: input.totalMinor },
+        })
+      }
+      return store.transaction(async (tx) => {
+        const sequence = await repos.orderSequence.nextSequence(tx, deps.orderNumberStart)
+        await repos.order.insert(tx, {
           id: input.orderId,
           orderNumber: input.orderNumber,
           sequence,
@@ -242,10 +256,18 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           notes: input.notes ?? '',
           metadata: input.metadata ?? {},
           paymentIntentId: input.paymentIntentId ?? null,
+          ...(input.captureMethod != null && {
+            capture: {
+              amountMinor: capturedMinor,
+              method: input.captureMethod,
+              at: input.createdAt,
+              refundedMinor,
+            },
+          }),
           createdAt: input.createdAt,
           updatedAt: input.createdAt,
         })
-        const fresh = await requireOrder(input.orderId)
+        const fresh = await requireOrder(tx, input.orderId)
         await publisher.publish(EVT_ORDER_PLACED, { order: fresh })
         return fresh
       })

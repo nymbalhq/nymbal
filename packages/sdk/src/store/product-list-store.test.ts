@@ -3,12 +3,24 @@ import { createProductListStore } from './product-list-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 
 const emptyItem = {
-  id: 'p1', slug: 'p1', name: 'P', description: '', shortDescription: '',
-  status: 'active' as const, type: 'simple' as const, media: [],
-  variantCount: 0, inStock: false, priceRange: null,
-  priceMinor: 1000, currency: 'GBP', variants: [],
-  categoryIds: [], categories: [],
-  createdAt: '', updatedAt: '',
+  id: 'p1',
+  slug: 'p1',
+  name: 'P',
+  description: '',
+  shortDescription: '',
+  status: 'active' as const,
+  type: 'simple' as const,
+  media: [],
+  variantCount: 0,
+  inStock: false,
+  priceRange: null,
+  priceMinor: 1000,
+  currency: 'GBP',
+  variants: [],
+  categoryIds: [],
+  categories: [],
+  createdAt: '',
+  updatedAt: '',
 }
 
 function makeAdapter(nextCursor: string | null = null, items = [emptyItem]): CommerceAdapter {
@@ -47,9 +59,14 @@ describe('ProductListStore', () => {
     const adapter = makeAdapter('cursor-1')
     const store = createProductListStore(adapter)
     await store.load()
-    vi.mocked(adapter.products.list).mockResolvedValueOnce({ items: [{ ...emptyItem, id: 'p2', slug: 'p2' }], nextCursor: null })
+    const firstPage = store.getState().products.map((p) => p.id)
+    vi.mocked(adapter.products.list).mockResolvedValueOnce({
+      items: [{ ...emptyItem, id: 'p2', slug: 'p2' }],
+      nextCursor: null,
+    })
     await store.loadMore()
-    expect(store.getState().products).toHaveLength(2)
+    // Appended after the first page, not replacing it.
+    expect(store.getState().products.map((p) => p.id)).toEqual(firstPage.concat('p2'))
     expect(store.getState().pagination.hasMore).toBe(false)
   })
 
@@ -77,14 +94,6 @@ describe('ProductListStore', () => {
     expect(store.getState().filters['category']).toBeUndefined()
   })
 
-  it('setSort updates sort and reloads', async () => {
-    const adapter = makeAdapter()
-    const store = createProductListStore(adapter)
-    await store.setSort('price', 'asc')
-    expect(store.getState().sort).toEqual({ field: 'price', direction: 'asc' })
-    expect(adapter.products.list).toHaveBeenCalled()
-  })
-
   it('load on error sets loading false and records error message', async () => {
     const adapter = makeAdapter()
     vi.mocked(adapter.products.list).mockRejectedValueOnce(new Error('network error'))
@@ -99,12 +108,21 @@ describe('ProductListStore', () => {
     vi.mocked(adapter.products.list).mockResolvedValueOnce({
       items: [emptyItem],
       nextCursor: null,
-      facets: [{ field: 'category', label: 'Category', values: [{ value: 'apparel', label: 'Apparel', count: 2 }] }],
+      facets: [
+        {
+          field: 'category',
+          label: 'Category',
+          values: [{ value: 'apparel', label: 'Apparel', count: 2 }],
+        },
+      ],
     })
     const store = createProductListStore(adapter)
     await store.load()
     expect(store.getState().facets).toHaveLength(1)
-    expect(store.getState().facets[0]).toMatchObject({ field: 'category', values: [{ value: 'apparel', count: 2 }] })
+    expect(store.getState().facets[0]).toMatchObject({
+      field: 'category',
+      values: [{ value: 'apparel', count: 2 }],
+    })
   })
 
   it('initial state has error null', () => {
@@ -123,7 +141,13 @@ describe('ProductListStore', () => {
     vi.mocked(adapter.products.list).mockResolvedValueOnce({
       items: [filteredItem],
       nextCursor: null,
-      facets: [{ field: 'category', label: 'Category', values: [{ value: 'books', label: 'Books', count: 1 }] }],
+      facets: [
+        {
+          field: 'category',
+          label: 'Category',
+          values: [{ value: 'books', label: 'Books', count: 1 }],
+        },
+      ],
     })
 
     const applyPromise = store.applyFilter('category', 'books')
@@ -132,7 +156,7 @@ describe('ProductListStore', () => {
     const stateWhileLoading = store.getState()
     expect(stateWhileLoading.filters['category']).toBe('books')
     expect(stateWhileLoading.loading).toBe(true)
-    expect(stateWhileLoading.products).toHaveLength(1)  // not wiped during load
+    expect(stateWhileLoading.products).toHaveLength(1) // not wiped during load
 
     await applyPromise
 

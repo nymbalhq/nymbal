@@ -11,7 +11,7 @@ import {
   type ProductSnapshot,
   type ProductCreatedV1Payload,
   type ProductUpdatedV1Payload,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 const PRODUCTS = 'products'
 const PRODUCTS_BY_CATEGORY = 'products-by-category'
@@ -113,10 +113,14 @@ export interface RegisterProductProjectionDeps {
   currency: string
 }
 
-export async function registerProductProjection(deps: RegisterProductProjectionDeps): Promise<void> {
+export async function registerProductProjection(
+  deps: RegisterProductProjectionDeps,
+): Promise<void> {
   const { eventBus, documentStore, logger, storeId, currency } = deps
 
-  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (event) => {
+  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (
+    event,
+  ) => {
     const { product } = event.payload
     const categories = await resolveCategories(product.categoryIds, documentStore, storeId)
     const doc = denormalise(product, storeId, currency, categories)
@@ -131,7 +135,9 @@ export async function registerProductProjection(deps: RegisterProductProjectionD
     logger.debug({ slug: product.slug, eventType: event.type }, 'product projected')
   }
 
-  const onDelete: EventHandler<ProductDeletedV1Payload> = async (event: NymbalEvent<ProductDeletedV1Payload>) => {
+  const onDelete: EventHandler<ProductDeletedV1Payload> = async (
+    event: NymbalEvent<ProductDeletedV1Payload>,
+  ) => {
     const { productId, slug } = event.payload
     const existing = await documentStore.get<DenormalisedProduct>(PRODUCTS, slug)
     if (existing) {
@@ -146,12 +152,12 @@ export async function registerProductProjection(deps: RegisterProductProjectionD
     logger.debug({ productId, slug }, 'product projection deleted')
   }
 
-  await eventBus.subscribe(
-    [EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED],
-    onUpsert as EventHandler,
-    { name: 'product-projection-upsert' },
-  )
+  await eventBus.subscribe([EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED], onUpsert as EventHandler, {
+    name: 'product-projection-upsert',
+    derived: true,
+  })
   await eventBus.subscribe(EVT_PRODUCT_DELETED, onDelete as EventHandler, {
     name: 'product-projection-delete',
+    derived: true,
   })
 }

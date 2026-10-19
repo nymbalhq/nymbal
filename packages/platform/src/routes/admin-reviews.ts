@@ -1,4 +1,4 @@
-import type { HttpAdapter, ReviewsAdapter } from '@nymbal/types'
+import type { HttpAdapter, ReviewsAdapter } from '@nymbalhq/types'
 import type { ReviewRepository } from '../repositories/review.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
@@ -20,7 +20,7 @@ export function registerAdminReviewsRoutes(
     '/api/admin/reviews',
     requireRole('admin', async () => {
       try {
-        const pending = await reviewRepo.listByStatus('pending')
+        const pending = await reviewRepo.store.read((tx) => reviewRepo.listByStatus(tx, 'pending'))
         return ok(pending)
       } catch (err) {
         return renderError(err)
@@ -40,11 +40,9 @@ export function registerAdminReviewsRoutes(
         if (!body?.status || !['approved', 'rejected'].includes(body.status)) {
           return fail('reviews.invalid', 'status must be approved|rejected', 400)
         }
-        await reviewRepo.setModerationStatus(
-          id,
-          body.status,
-          `admin:${ctx.auth!.userId}`,
-          new Date(),
+        const status = body.status
+        await reviewRepo.store.transaction((tx) =>
+          reviewRepo.setModerationStatus(tx, id, status, `admin:${ctx.auth!.userId}`, new Date()),
         )
         return ok({ ok: true })
       } catch (err) {

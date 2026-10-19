@@ -1,0 +1,24 @@
+# id: I101
+# kind: injected
+# defect: remove the insufficient-stock throw in reserveStock
+# where: packages/platform/src/services/inventory-service.ts:169-177
+# killed-by: packages/platform/src/services/inventory-service.test.ts
+diff --git a/packages/platform/src/services/inventory-service.ts b/packages/platform/src/services/inventory-service.ts
+--- a/packages/platform/src/services/inventory-service.ts
++++ b/packages/platform/src/services/inventory-service.ts
+@@ -166,15 +166,6 @@
+
+     async reserveStock(variantId, qty, orderRef = null, ttlSeconds) {
+       const taken = await take(variantId, qty, orderRef, ttlSeconds)
+-      if ('available' in taken) {
+-        throw new AdapterError(
+-          'inventory.insufficient',
+-          `Insufficient stock for variant ${variantId}`,
+-          {
+-            context: { variantId, requested: qty, available: taken.available },
+-          },
+-        )
+-      }
+       return taken
+     },
+

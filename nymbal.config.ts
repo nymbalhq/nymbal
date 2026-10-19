@@ -15,9 +15,18 @@ export default {
   },
   security: {
     adapter: 'middleware',
-    rateLimit: {},
+    // The E2E suite registers and logs in many times from 127.0.0.1; the built-in limits would refuse it.
+    rateLimit: {
+      '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
+      '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+    },
     botProtection: { mode: 'managed', allowList: [] },
-    headers: { hsts: true, contentSecurityPolicy: 'strict', referrerPolicy: 'strict-origin-when-cross-origin', xFrameOptions: 'deny' },
+    headers: {
+      hsts: true,
+      contentSecurityPolicy: 'strict',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      xFrameOptions: 'deny',
+    },
     csrf: true,
   },
   commerce: {

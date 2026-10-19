@@ -1,4 +1,4 @@
-import { test, expect } from '../../support/fixtures'
+import { blockExternalRequests, expect, test } from '../../support/fixtures'
 
 test.describe('Admin login', () => {
   test('login form renders', async ({ page }) => {
@@ -21,6 +21,8 @@ test.describe('Admin login', () => {
   })
 
   test('login page snapshot @visual', async ({ page }) => {
+    // AC-12: screenshots must not depend on external hosts
+    await blockExternalRequests(page)
     await page.goto('login')
     await expect(page.getByTestId('admin-login-form')).toBeVisible()
     await expect(page).toHaveScreenshot('admin-login.png', { fullPage: true })

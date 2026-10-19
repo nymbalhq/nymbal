@@ -1,5 +1,5 @@
 {
-  "name": "nymbal",
+  "name": "nymbal-monorepo",
   "version": "0.1.0",
   "private": true,
   "description": "Open source enterprise commerce platform",
@@ -12,25 +12,38 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build",
     "build:templates": "pnpm -r --filter './templates/**' build",
-    "test": "vitest run",
+    "test": "vitest run --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'",
     "test:watch": "vitest",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck && pnpm --filter @nymbalhq/template-astro typecheck",
+    "typecheck:astro": "pnpm --filter @nymbalhq/template-astro typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
-    "dev": "pnpm --filter @nymbal/cli dev"
+    "dev": "pnpm --filter nymbal dev",
+    "mutation": "stryker run",
+    "mutation:ratchet": "tsx scripts/mutation-ratchet.ts",
+    "census": "tsx scripts/test-census.ts",
+    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**'\"",
+    "gate": "tsx scripts/gate.ts",
+    "gate:full": "tsx scripts/gate.ts --full"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
+    "@lhci/cli": "0.15.1",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.9.0",
     "@typescript-eslint/eslint-plugin": "^8.12.2",
     "@typescript-eslint/parser": "^8.12.2",
     "@vitest/coverage-v8": "^3.0.0",
+    "@vitest/eslint-plugin": "1.6.27",
     "eslint": "^9.14.0",
     "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-playwright": "2.12.1",
+    "fast-check": "^4.10.2",
     "happy-dom": "^16.0.0",
     "jsdom": "^29.0.2",
     "prettier": "^3.3.3",
@@ -38,5 +51,23 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^3.0.0"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "next": {
+        "peerDependencies": {
+          "@types/react": "*",
+          "@types/react-dom": "*"
+        },
+        "peerDependenciesMeta": {
+          "@types/react": {
+            "optional": true
+          },
+          "@types/react-dom": {
+            "optional": true
+          }
+        }
+      }
+    }
   }
 }

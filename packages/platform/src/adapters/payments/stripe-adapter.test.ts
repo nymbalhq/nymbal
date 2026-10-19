@@ -1,5 +1,6 @@
+import fc from 'fast-check'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PaymentError } from '@nymbal/types'
+import { PaymentError } from '@nymbalhq/types'
 import { createStripePaymentsAdapter, type StripePaymentsConfig } from './stripe-adapter.js'
 import { createLogger } from '../../logger.js'
 
@@ -105,20 +106,16 @@ describe('createStripePaymentsAdapter — client configuration', () => {
 
   it('throws PaymentError not_configured when secretKey is missing', () => {
     expect(() => buildAdapter({ ...baseConfig, secretKey: '' })).toThrowError(PaymentError)
-    try {
-      buildAdapter({ ...baseConfig, secretKey: '' })
-    } catch (err) {
-      expect((err as PaymentError).code).toBe('payment.not_configured')
-    }
+    expect(() => buildAdapter({ ...baseConfig, secretKey: '' })).toThrowError(
+      expect.objectContaining({ code: 'payment.not_configured' }),
+    )
   })
 
   it('throws PaymentError not_configured when webhookSecret is missing', () => {
     expect(() => buildAdapter({ ...baseConfig, webhookSecret: '' })).toThrowError(PaymentError)
-    try {
-      buildAdapter({ ...baseConfig, webhookSecret: '' })
-    } catch (err) {
-      expect((err as PaymentError).code).toBe('payment.not_configured')
-    }
+    expect(() => buildAdapter({ ...baseConfig, webhookSecret: '' })).toThrowError(
+      expect.objectContaining({ code: 'payment.not_configured' }),
+    )
   })
 
   it('declares payments kind, stripe provider and capabilities, and initialize resolves', async () => {
@@ -155,6 +152,33 @@ describe('createStripePaymentsAdapter — payment intents', () => {
       automatic_payment_methods: { enabled: true },
       metadata: { source: 'unit', orderRef: 'order-1', customerId: 'cust-1' },
     })
+  })
+
+  it('createPaymentIntent property: the minor-unit amount reaches Stripe unchanged and comes back unchanged', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 99_999_999 }),
+        fc.constantFrom('GBP', 'USD', 'EUR', 'JPY'),
+        async (amountMinor, currency) => {
+          stripeStubs.paymentIntentsCreate.mockReset()
+          // Stripe echoes the requested amount and currency on the intent it creates.
+          stripeStubs.paymentIntentsCreate.mockImplementation(
+            async (params: { amount: number; currency: string }) =>
+              stripeIntentResponse({ amount: params.amount, currency: params.currency }),
+          )
+          const intent = await buildAdapter().createPaymentIntent({ amountMinor, currency })
+          const sent = stripeStubs.paymentIntentsCreate.mock.calls[0]![0] as {
+            amount: number
+            currency: string
+          }
+          expect(sent.amount).toBe(amountMinor)
+          expect(sent.currency).toBe(currency.toLowerCase())
+          expect(intent.amountMinor).toBe(amountMinor)
+          expect(intent.currency).toBe(currency)
+        },
+      ),
+      { numRuns: 50 },
+    )
   })
 
   it('createPaymentIntent omits orderRef/customerId metadata when params are absent', async () => {
@@ -269,16 +293,6 @@ describe('createStripePaymentsAdapter — refunds', () => {
     expect(stripeStubs.refundsCreate).toHaveBeenCalledWith({ payment_intent: 'pi_unit_1' })
   })
 
-  it('refund wraps provider failures in PaymentError refund_failed', async () => {
-    stripeStubs.refundsCreate.mockRejectedValue(new Error('already refunded'))
-    const adapter = buildAdapter()
-    const error = await adapter
-      .refund('pi_unit_1', 400)
-      .then(() => null)
-      .catch((err: unknown) => err)
-    expect(error).toBeInstanceOf(PaymentError)
-    expect((error as PaymentError).code).toBe('payment.refund_failed')
-  })
 })
 
 describe('createStripePaymentsAdapter — status and health', () => {

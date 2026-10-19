@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 
 export function runDocumentStoreContract(build: () => DocumentStoreAdapter): void {
   describe('DocumentStoreAdapter contract', () => {

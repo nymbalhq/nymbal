@@ -1,13 +1,15 @@
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { loadConfig } from '@nymbal/config'
-import { createApp, runSeed, createCommandStore, runMigrations } from '@nymbal/platform'
-import { createHttpServer } from '@nymbal/http'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
+import { createApp, runSeed } from '@nymbalhq/platform'
+import { createHttpServer } from '@nymbalhq/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
 import { findFreePort } from '../utils/port.js'
 import { planTemplateLaunch } from '../utils/template-runner.js'
-import { resolveMigrations } from './migrate.js'
+import { migrateProject } from './migrate.js'
+import { resolveAdminRoot } from '../admin.js'
 
 /** Default storefront dev-server port per template (matches the scaffold scripts). */
 export function defaultStorefrontPort(template: 'astro' | 'nextjs'): number {
@@ -34,6 +36,36 @@ export function preferredStorefrontPort(
     if (Number.isInteger(parsed) && parsed > 0) return parsed
   }
   return defaultStorefrontPort(template)
+}
+
+/**
+ * The environment the storefront dev server starts with. The client-side variables must be set before it starts, and
+ * both templates skip Stripe when the payments provider variable says `native-stub`, which is every provider but
+ * `stripe`.
+ */
+export function storefrontEnv(
+  config: NymbalConfig,
+  apiUrl: string,
+  storefrontPort: number,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const stubPayments =
+    config.commerce.payments.provider === 'stripe'
+      ? {}
+      : {
+          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub', // Astro
+          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub', // Next.js
+        }
+  return {
+    ...baseEnv,
+    NYMBAL_API_URL: apiUrl,
+    PUBLIC_NYMBAL_API_URL: apiUrl, // Astro
+    NEXT_PUBLIC_NYMBAL_API_URL: apiUrl, // Next.js
+    // The framework also reads the port flag; the env var keeps the scaffold
+    // config (astro.config.mjs) in sync when it honours NYMBAL_STOREFRONT_PORT.
+    NYMBAL_STOREFRONT_PORT: String(storefrontPort),
+    ...stubPayments,
+  }
 }
 
 export const devCommand = defineCommand({
@@ -68,17 +100,11 @@ export const devCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const { config, projectRoot } = await loadConfig()
+    const { config, projectRoot } = await loadProject()
     const version = getCliVersion()
 
     // Auto-migrate on startup so a fresh clone works without running `nymbal migrate` first
-    const migrationsRoot = resolveMigrations(projectRoot)
-    const migrateStore = createCommandStore(config)
-    try {
-      await runMigrations(migrateStore, { migrationsRoot })
-    } finally {
-      await migrateStore.close()
-    }
+    await migrateProject(config, projectRoot)
 
     const app = await createApp(config, { version })
     const { platform } = app
@@ -107,7 +133,16 @@ export const devCommand = defineCommand({
       documentStore: platform.documentStore,
       version,
     })
-    await app.attachHttp(http.adapter)
+    const adminRoot = resolveAdminRoot()
+    if (adminRoot === null) {
+      // eslint-disable-next-line no-console
+      console.log(
+        pc.yellow(
+          '→ The admin is not built, so /admin/ answers 404: run `pnpm --filter @nymbalhq/admin build`.',
+        ),
+      )
+    }
+    await app.attachHttp(http.adapter, { adminRoot })
     await http.start()
 
     if (args.apiOnly) {
@@ -158,16 +193,7 @@ export const devCommand = defineCommand({
 
     const templateProc = run(launch.command, launch.args, {
       cwd: launch.cwd,
-      env: {
-        ...process.env,
-        NYMBAL_API_URL: apiUrl,
-        // Client-side env vars for each framework (must be set before the dev server starts)
-        PUBLIC_NYMBAL_API_URL: apiUrl, // Astro
-        NEXT_PUBLIC_NYMBAL_API_URL: apiUrl, // Next.js
-        // The framework also reads the port flag; the env var keeps the scaffold
-        // config (astro.config.mjs) in sync when it honours NYMBAL_STOREFRONT_PORT.
-        NYMBAL_STOREFRONT_PORT: String(storefrontPort),
-      },
+      env: storefrontEnv(config, apiUrl, storefrontPort),
     })
 
     const shutdown = async (signal: string) => {

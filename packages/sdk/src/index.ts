@@ -1,5 +1,5 @@
 export { createNymbalClient } from './client.js'
-export type { NymbalClient, NymbalClientOptions } from './client.js'
+export type { NymbalClient, NymbalClientOptions, CustomerAccount } from './client.js'
 
 export { createStore } from './store/create-store.js'
 export type { Store, Listener } from './store/create-store.js'
@@ -47,6 +47,12 @@ export type {
   CheckoutResult,
   RegisterParams,
   AuthResult,
+  NewAddress,
+  OrderPage,
 } from './types.js'
 
-export type { ReviewsResult as ReviewsListResult, ReviewResult as ReviewSubmitResult } from '@nymbal/types'
+export type {
+  ProductSortKey,
+  ReviewsResult as ReviewsListResult,
+  ReviewResult as ReviewSubmitResult,
+} from '@nymbalhq/types'

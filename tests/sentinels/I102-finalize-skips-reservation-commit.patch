@@ -1,0 +1,16 @@
+# id: I102
+# kind: injected
+# defect: finalize no longer commits the order reservations
+# where: packages/platform/src/services/checkout-service.ts:198
+# killed-by: packages/platform/src/services/checkout-service.test.ts
+diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
+--- a/packages/platform/src/services/checkout-service.ts
++++ b/packages/platform/src/services/checkout-service.ts
+@@ -195,7 +195,6 @@
+     // Committing makes the reservation's decrement permanent, with its stock-adjustment row.
+     for (const [index, reservationId] of reservationIds.entries()) {
+       const reservation = await reservationFor(tx, order, reservationId, index)
+-      await inventory.commitReservation(reservation, FINALIZE_ACTOR)
+     }
+
+     const now = new Date()

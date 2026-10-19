@@ -11,6 +11,17 @@ export function formatMoney(amountMinor: number, currency: string): string {
 }
 
 /**
+ * The minor units of an amount typed in major units, as formatMoney shows it: parseMoney('12.34') -> 1234.
+ * Null for anything that is not a non-negative amount with at most two decimals.
+ */
+export function parseMoney(input: string): number | null {
+  const text = input.trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null
+  const [whole = '0', fraction = ''] = text.split('.')
+  return Number(whole) * 100 + Number(fraction.padEnd(2, '0'))
+}
+
+/**
  * formatMoneyCompact(120000, 'GBP') -> '£1.2k'
  */
 export function formatMoneyCompact(amountMinor: number, currency: string): string {

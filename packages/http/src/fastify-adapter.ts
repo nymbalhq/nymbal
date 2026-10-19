@@ -14,8 +14,10 @@ import type {
   SseEvent,
   StreamContext,
   StreamHandler,
-} from '@nymbal/types'
-import { HttpError, NymbalError } from '@nymbal/types'
+} from '@nymbalhq/types'
+import { HttpError, NymbalError } from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 
 export interface CorsOptions {
   allowedOrigins: string[]
@@ -24,6 +26,9 @@ export interface CorsOptions {
 
 export interface FastifyAdapterOptions {
   logger: Logger
+  /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
+  security: NymbalConfig['security']
+  /** Whether `X-Forwarded-For` sets the request IP. Off unless a trusted proxy sits in front. */
   trustProxy?: boolean
   cors?: CorsOptions
 }
@@ -31,6 +36,7 @@ export interface FastifyAdapterOptions {
 export class FastifyHttpAdapter implements HttpAdapter {
   readonly #app: FastifyInstance
   readonly #logger: Logger
+  readonly #guard: SecurityGuard
   readonly #middlewares: MiddlewareHandler[] = []
   readonly #defaultHeaders: Record<string, string> = {}
   #started = false
@@ -38,11 +44,25 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
+    this.#guard = createSecurityGuard(options.security)
     this.#app = Fastify({
       logger: false,
-      trustProxy: options.trustProxy ?? true,
+      trustProxy: options.trustProxy ?? false,
       disableRequestLogging: true,
       genReqId: () => uuidv7(),
+    })
+    // A signed webhook is verified against the bytes sent, so a route registered with `rawBody` keeps them. The
+    // body is still parsed by Fastify's own JSON parser, with its poisoning settings and its 400s.
+    const parseJson = this.#app.getDefaultJsonParser(
+      this.#app.initialConfig.onProtoPoisoning ?? 'error',
+      this.#app.initialConfig.onConstructorPoisoning ?? 'error',
+    )
+    this.#app.removeContentTypeParser('application/json')
+    this.#app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
+      const buffer = body as Buffer
+      const config = req.routeOptions.config as { routeOptions?: RouteOptions } | undefined
+      if (config?.routeOptions?.rawBody === true) req.rawBody = buffer
+      parseJson(req, buffer.toString('utf8'), done)
     })
     void this.#app.register(fastifyCookie)
     if (options.cors && options.cors.allowedOrigins.length > 0) {
@@ -52,6 +72,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
       })
     }
+    // The token a client on another origin of the same site echoes in `x-csrf-token`: it cannot read this cookie.
+    this.registerRoute('GET', '/api/csrf', (ctx) => this.#guard.issueToken(ctx))
   }
 
   get boundPort(): number {
@@ -67,23 +89,26 @@ export class FastifyHttpAdapter implements HttpAdapter {
     if (this.#started) {
       throw new Error('Cannot register routes after the server has started')
     }
-    const routeConfig: { method: HttpMethod; url: string; handler: (req: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply>; config: { routeOptions: RouteOptions }; bodyLimit?: number } = {
+    const routeConfig: {
+      method: HttpMethod
+      url: string
+      handler: (req: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply>
+      config: { routeOptions: RouteOptions }
+      bodyLimit?: number
+    } = {
       method,
       url: path,
       handler: async (req, reply) => {
         const ctx = this.#buildContext(req, options?.rawBody ?? false)
+        const refused = this.#guard.admit(ctx, options)
+        if (refused) return this.#applyEnvelope(reply, refused)
+        let envelope: ResponseEnvelope
         try {
-          for (const mw of this.#middlewares) {
-            const out = await mw(ctx)
-            if (out) {
-              return this.#applyEnvelope(reply, out)
-            }
-          }
-          const envelope = await handler(ctx)
-          return this.#applyEnvelope(reply, envelope)
+          envelope = await this.#runMiddlewaresThen(ctx, handler)
         } catch (err) {
-          return this.#applyEnvelope(reply, this.#renderError(err, ctx))
+          envelope = this.#renderError(err, ctx)
         }
+        return this.#applyEnvelope(reply, this.#guard.finish(ctx, envelope))
       },
       config: { routeOptions: options ?? {} },
     }
@@ -104,6 +129,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
       url: path,
       handler: async (req, reply) => {
         const ctx = this.#buildContext(req, false)
+        const refused = this.#guard.admit(ctx, options)
+        if (refused) return this.#applyEnvelope(reply, refused)
         try {
           for (const mw of this.#middlewares) {
             const out = await mw(ctx)
@@ -148,8 +175,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
             let line = ''
             if (event.id !== undefined) line += `id: ${event.id}\n`
             if (event.event !== undefined) line += `event: ${event.event}\n`
-            const data =
-              typeof event.data === 'string' ? event.data : JSON.stringify(event.data)
+            const data = typeof event.data === 'string' ? event.data : JSON.stringify(event.data)
             line += `data: ${data}\n\n`
             reply.raw.write(line)
           },
@@ -196,9 +222,16 @@ export class FastifyHttpAdapter implements HttpAdapter {
     this.#started = false
   }
 
+  async #runMiddlewaresThen(ctx: RequestContext, handler: RouteHandler): Promise<ResponseEnvelope> {
+    for (const mw of this.#middlewares) {
+      const out = await mw(ctx)
+      if (out) return out
+    }
+    return handler(ctx)
+  }
+
   #buildContext(req: FastifyRequest, includeRawBody: boolean): RequestContext {
-    const correlationId =
-      (req.headers['x-correlation-id'] as string | undefined) ?? req.id
+    const correlationId = (req.headers['x-correlation-id'] as string | undefined) ?? req.id
     const logger = this.#logger.child({ requestId: req.id, correlationId })
     const ctx: RequestContext = {
       method: req.method as HttpMethod,

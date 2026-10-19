@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { NymbalProvider } from '../context.js'
 import { useCart } from './use-cart.js'
-import type { NymbalClient, CartState } from '@nymbal/sdk'
+import type { NymbalClient, CartState } from '@nymbalhq/sdk'
 import type { ReactNode } from 'react'
 
 function makeCartStore(initialState: Partial<CartState> = {}) {

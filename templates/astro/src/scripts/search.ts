@@ -5,6 +5,54 @@ const resultsContainer = document.getElementById('search-results')
 const queryLabel = document.getElementById('search-query-label')
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null
 
+/** Builds an element; dynamic values go in through setAttribute and text nodes, never through markup. */
+function el(
+  tag: string,
+  attrs: Record<string, string> = {},
+  ...children: (Node | string)[]
+): HTMLElement {
+  const node = document.createElement(tag)
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value)
+  node.append(...children)
+  return node
+}
+
+function renderProductCard(product: any): HTMLElement {
+  const slug = String(product.slug ?? '')
+  const name = String(product.name ?? '')
+  const imageUrl =
+    product.imageUrl ??
+    (Array.isArray(product.media) && product.media[0]?.url) ??
+    `https://picsum.photos/seed/${encodeURIComponent(slug)}/600/600`
+  const price =
+    product.priceMinor != null ? formatPrice(product.priceMinor, product.currency ?? 'GBP') : ''
+
+  const body = el(
+    'div',
+    { class: 'product-card-body' },
+    el('span', { class: 'product-card-name' }, name),
+  )
+  if (price) body.append(el('span', { class: 'product-card-price' }, price))
+
+  return el(
+    'a',
+    {
+      href: `/product/${encodeURIComponent(slug)}`,
+      class: 'product-card',
+      'data-testid': `product-card-${slug}`,
+    },
+    el('img', {
+      src: String(imageUrl),
+      alt: name,
+      class: 'product-card-image',
+      loading: 'lazy',
+      width: '600',
+      height: '600',
+    }),
+    body,
+  )
+}
+
 function renderResults() {
   const state = client.search.getState()
   const results = state.results ?? []
@@ -16,7 +64,7 @@ function renderResults() {
   // Update query label
   if (queryLabel) {
     if (query) {
-      queryLabel.innerHTML = `Results for <strong>"${query}"</strong>`
+      queryLabel.replaceChildren('Results for ', el('strong', {}, `"${query}"`))
       queryLabel.style.display = ''
     } else {
       queryLabel.style.display = 'none'
@@ -52,44 +100,18 @@ function renderResults() {
     return
   }
 
-  const cardsHtml = results
-    .map((product: any) => {
-      const imageUrl =
-        product.imageUrl ??
-        (Array.isArray(product.media) && product.media[0]?.url) ??
-        `https://picsum.photos/seed/${product.slug}/600/600`
-      const price =
-        product.priceMinor != null
-          ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-          : ''
-
-      return `
-        <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
-          <img
-            src="${imageUrl}"
-            alt="${product.name}"
-            class="product-card-image"
-            loading="lazy"
-            width="600"
-            height="600"
-          />
-          <div class="product-card-body">
-            <span class="product-card-name">${product.name}</span>
-            ${price ? `<span class="product-card-price">${price}</span>` : ''}
-          </div>
-        </a>
-      `
-    })
-    .join('')
-
-  resultsContainer.innerHTML = `
-    <div class="search-results-header">
-      <span class="search-result-count">${results.length} result${results.length === 1 ? '' : 's'}</span>
-    </div>
-    <div class="product-grid">
-      ${cardsHtml}
-    </div>
-  `
+  resultsContainer.replaceChildren(
+    el(
+      'div',
+      { class: 'search-results-header' },
+      el(
+        'span',
+        { class: 'search-result-count' },
+        `${results.length} result${results.length === 1 ? '' : 's'}`,
+      ),
+    ),
+    el('div', { class: 'product-grid' }, ...results.map(renderProductCard)),
+  )
 }
 
 client.search.subscribe(renderResults)
@@ -121,11 +143,3 @@ searchInput?.addEventListener('input', () => {
     window.history.replaceState({}, '', url.toString())
   }
 })
-
-// Handle search bar web component selection (navigates from dropdown selection)
-document.addEventListener('nymbal:search:selected', ((e: CustomEvent) => {
-  const query = e.detail?.query ?? e.detail?.product?.name
-  if (query) {
-    window.location.href = `/search?q=${encodeURIComponent(query)}`
-  }
-}) as EventListener)

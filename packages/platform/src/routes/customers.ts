@@ -1,4 +1,4 @@
-import { type HttpAdapter } from '@nymbal/types'
+import { type HttpAdapter } from '@nymbalhq/types'
 import type { CustomerService } from '../services/customer-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireAuth } from './role-middleware.js'

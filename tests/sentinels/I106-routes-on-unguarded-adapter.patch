@@ -1,0 +1,27 @@
+# id: I106
+# kind: injected
+# defect: routes are registered on an unguarded adapter: no rate limit or CSRF check runs before auth and the handler
+# where: packages/http/src/fastify-adapter.ts:103-104 (and :132-133, the stream route)
+# killed-by: packages/platform/tests/integration/route-registry-guard.test.ts (AC-1)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/route-registry-guard.test.ts packages/platform/tests/integration/csrf-guard.test.ts
+diff --git a/packages/http/src/fastify-adapter.ts b/packages/http/src/fastify-adapter.ts
+--- a/packages/http/src/fastify-adapter.ts
++++ b/packages/http/src/fastify-adapter.ts
+@@ -100,8 +100,6 @@ export class FastifyHttpAdapter implements HttpAdapter {
+       url: path,
+       handler: async (req, reply) => {
+         const ctx = this.#buildContext(req, options?.rawBody ?? false)
+-        const refused = this.#guard.admit(ctx, options)
+-        if (refused) return this.#applyEnvelope(reply, refused)
+         let envelope: ResponseEnvelope
+         try {
+           envelope = await this.#runMiddlewaresThen(ctx, handler)
+@@ -129,8 +127,6 @@ export class FastifyHttpAdapter implements HttpAdapter {
+       url: path,
+       handler: async (req, reply) => {
+         const ctx = this.#buildContext(req, false)
+-        const refused = this.#guard.admit(ctx, options)
+-        if (refused) return this.#applyEnvelope(reply, refused)
+         try {
+           for (const mw of this.#middlewares) {
+             const out = await mw(ctx)

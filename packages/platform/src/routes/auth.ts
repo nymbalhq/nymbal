@@ -3,7 +3,7 @@ import {
   type HttpAdapter,
   type ResponseEnvelope,
   type ResponseCookie,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { AuthService } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 

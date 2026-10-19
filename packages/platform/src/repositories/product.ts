@@ -1,6 +1,13 @@
 import { eq } from 'drizzle-orm'
-import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbal/types'
-import type { CommandStore } from '../db/command-store.js'
+import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbalhq/types'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { parseJson, serialiseJson, fromTimestamp } from './json.js'
@@ -52,54 +59,58 @@ function rowToProduct(store: CommandStore['kind'], row: Record<string, unknown>)
   }
 }
 
-export interface ProductRepository {
-  findById(id: string): Promise<Product | null>
-  findBySlug(slug: string): Promise<Product | null>
-  list(opts?: { status?: ProductStatus; limit?: number; offset?: number }): Promise<Product[]>
-  insert(p: ProductInsert): Promise<void>
-  update(id: string, patch: ProductUpdate): Promise<void>
-  delete(id: string): Promise<void>
-  setStatus(id: string, status: ProductStatus, updatedAt: Date): Promise<void>
+export interface ProductRepository extends StoreRepository {
+  findById(tx: ReadTx, id: string): Promise<Product | null>
+  findBySlug(tx: ReadTx, slug: string): Promise<Product | null>
+  list(
+    tx: ReadTx,
+    opts?: { status?: ProductStatus; limit?: number; offset?: number },
+  ): Promise<Product[]>
+  insert(tx: Tx, p: ProductInsert): Promise<void>
+  update(tx: Tx, id: string, patch: ProductUpdate): Promise<void>
+  delete(tx: Tx, id: string): Promise<void>
+  setStatus(tx: Tx, id: string, status: ProductStatus, updatedAt: Date): Promise<void>
 }
 
 export function createProductRepository(store: CommandStore): ProductRepository {
-  async function _find(column: 'id' | 'slug', value: string): Promise<Product | null> {
-    if (store.kind === 'sqlite') {
+  async function _find(tx: ReadTx, column: 'id' | 'slug', value: string): Promise<Product | null> {
+    if (tx.kind === 'sqlite') {
       const col = column === 'id' ? sqliteSchema.products.id : sqliteSchema.products.slug
-      const row = store.db.select().from(sqliteSchema.products).where(eq(col, value)).get()
-      return row ? rowToProduct(store.kind, row as Record<string, unknown>) : null
+      const row = sqliteDb(tx).select().from(sqliteSchema.products).where(eq(col, value)).get()
+      return row ? rowToProduct(tx.kind, row as Record<string, unknown>) : null
     }
     const col = column === 'id' ? postgresSchema.products.id : postgresSchema.products.slug
-    const [row] = await store.db.select().from(postgresSchema.products).where(eq(col, value))
-    return row ? rowToProduct(store.kind, row as Record<string, unknown>) : null
+    const [row] = await postgresDb(tx).select().from(postgresSchema.products).where(eq(col, value))
+    return row ? rowToProduct(tx.kind, row as Record<string, unknown>) : null
   }
 
   return {
-    async findById(id) {
-      return _find('id', id)
+    store,
+    async findById(tx, id) {
+      return _find(tx, 'id', id)
     },
-    async findBySlug(slug) {
-      return _find('slug', slug)
+    async findBySlug(tx, slug) {
+      return _find(tx, 'slug', slug)
     },
-    async list(opts = {}) {
+    async list(tx, opts = {}) {
       const limit = opts.limit ?? 100
       const offset = opts.offset ?? 0
-      if (store.kind === 'sqlite') {
-        const base = store.db.select().from(sqliteSchema.products)
+      if (tx.kind === 'sqlite') {
+        const base = sqliteDb(tx).select().from(sqliteSchema.products)
         const filtered = opts.status
           ? base.where(eq(sqliteSchema.products.status, opts.status))
           : base
         const rows = filtered.limit(limit).offset(offset).all()
         return rows.map((r) => rowToProduct('sqlite', r as Record<string, unknown>))
       }
-      const base = store.db.select().from(postgresSchema.products)
+      const base = postgresDb(tx).select().from(postgresSchema.products)
       const filtered = opts.status
         ? base.where(eq(postgresSchema.products.status, opts.status))
         : base
       const rows = await filtered.limit(limit).offset(offset)
       return rows.map((r) => rowToProduct('postgres', r as Record<string, unknown>))
     },
-    async insert(p) {
+    async insert(tx, p) {
       const common = {
         id: p.id,
         slug: p.slug,
@@ -111,8 +122,8 @@ export function createProductRepository(store: CommandStore): ProductRepository 
         seoTitle: p.seoTitle ?? '',
         seoDescription: p.seoDescription ?? '',
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.products)
           .values({
             ...common,
@@ -124,15 +135,17 @@ export function createProductRepository(store: CommandStore): ProductRepository 
           .run()
         return
       }
-      await store.db.insert(postgresSchema.products).values({
-        ...common,
-        media: p.media ?? [],
-        metadata: p.metadata ?? {},
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.products)
+        .values({
+          ...common,
+          media: p.media ?? [],
+          metadata: p.metadata ?? {},
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        })
     },
-    async update(id, patch) {
+    async update(tx, id, patch) {
       const pg: Record<string, unknown> = { updatedAt: patch.updatedAt }
       const sq: Record<string, unknown> = { updatedAt: patch.updatedAt.toISOString() }
       if (patch.name !== undefined) {
@@ -171,32 +184,36 @@ export function createProductRepository(store: CommandStore): ProductRepository 
         pg.metadata = patch.metadata
         sq.metadata = JSON.stringify(patch.metadata)
       }
-      if (store.kind === 'sqlite') {
-        store.db.update(sqliteSchema.products).set(sq).where(eq(sqliteSchema.products.id, id)).run()
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
+          .update(sqliteSchema.products)
+          .set(sq)
+          .where(eq(sqliteSchema.products.id, id))
+          .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.products)
         .set(pg)
         .where(eq(postgresSchema.products.id, id))
     },
-    async delete(id) {
-      if (store.kind === 'sqlite') {
-        store.db.delete(sqliteSchema.products).where(eq(sqliteSchema.products.id, id)).run()
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.products).where(eq(sqliteSchema.products.id, id)).run()
         return
       }
-      await store.db.delete(postgresSchema.products).where(eq(postgresSchema.products.id, id))
+      await postgresDb(tx).delete(postgresSchema.products).where(eq(postgresSchema.products.id, id))
     },
-    async setStatus(id, status, updatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setStatus(tx, id, status, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.products)
           .set({ status, updatedAt: updatedAt.toISOString() })
           .where(eq(sqliteSchema.products.id, id))
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.products)
         .set({ status, updatedAt })
         .where(eq(postgresSchema.products.id, id))

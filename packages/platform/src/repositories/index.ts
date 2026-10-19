@@ -1,18 +1,30 @@
-import type { DocumentStoreAdapter } from '@nymbal/types'
+import type { DocumentStoreAdapter } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import { createProductRepository, type ProductRepository } from './product.js'
 import { createVariantRepository, type VariantRepository } from './variant.js'
 import { createCategoryRepository, type CategoryRepository } from './category.js'
-import { createProductCategoryRepository, type ProductCategoryRepository } from './product-category.js'
+import {
+  createProductCategoryRepository,
+  type ProductCategoryRepository,
+} from './product-category.js'
 import { createCustomerRepository, type CustomerRepository } from './customer.js'
 import { createRefreshTokenRepository, type RefreshTokenRepository } from './refresh-token.js'
 import { createOrderRepository, type OrderRepository } from './order.js'
 import { createOrderHistoryRepository, type OrderHistoryRepository } from './order-history.js'
+import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
-import { createInventoryReservationRepository, type InventoryReservationRepository } from './inventory-reservation.js'
-import { createStockAdjustmentRepository, type StockAdjustmentRepository } from './stock-adjustment.js'
+import {
+  createInventoryReservationRepository,
+  type InventoryReservationRepository,
+} from './inventory-reservation.js'
+import {
+  createStockAdjustmentRepository,
+  type StockAdjustmentRepository,
+} from './stock-adjustment.js'
 import { createReviewRepository, type ReviewRepository } from './review.js'
 import { createProcessedEventRepository, type ProcessedEventRepository } from './processed-event.js'
+import { createEventLogRepository, type EventLogRepository } from './event-log.js'
+import { createCartRepository, type CartRepository } from './cart.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -22,11 +34,14 @@ export * from './customer.js'
 export * from './refresh-token.js'
 export * from './order.js'
 export * from './order-history.js'
+export * from './order-refund.js'
 export * from './order-sequence.js'
 export * from './inventory-reservation.js'
 export * from './stock-adjustment.js'
 export * from './review.js'
 export * from './processed-event.js'
+export * from './event-log.js'
+export * from './cart.js'
 
 export interface Repositories {
   product: ProductRepository
@@ -37,16 +52,20 @@ export interface Repositories {
   refreshToken: RefreshTokenRepository
   order: OrderRepository
   orderHistory: OrderHistoryRepository
+  orderRefund: OrderRefundRepository
   orderSequence: OrderSequenceRepository
   inventoryReservation: InventoryReservationRepository
   stockAdjustment: StockAdjustmentRepository
   review: ReviewRepository
   processedEvent: ProcessedEventRepository
+  eventLog: EventLogRepository
+  cart: CartRepository
 }
 
 export function buildRepositories(
   commandStore: CommandStore,
-  documentStore: DocumentStoreAdapter,
+  // Every repository is command-store backed; the parameter stays so existing callers keep compiling.
+  _documentStore: DocumentStoreAdapter,
 ): Repositories {
   return {
     product: createProductRepository(commandStore),
@@ -57,10 +76,13 @@ export function buildRepositories(
     refreshToken: createRefreshTokenRepository(commandStore),
     order: createOrderRepository(commandStore),
     orderHistory: createOrderHistoryRepository(commandStore),
+    orderRefund: createOrderRefundRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
     inventoryReservation: createInventoryReservationRepository(commandStore),
     stockAdjustment: createStockAdjustmentRepository(commandStore),
     review: createReviewRepository(commandStore),
-    processedEvent: createProcessedEventRepository(documentStore),
+    processedEvent: createProcessedEventRepository(commandStore),
+    eventLog: createEventLogRepository(commandStore),
+    cart: createCartRepository(commandStore),
   }
 }

@@ -1,12 +1,23 @@
 import {
+  DEFAULT_PRODUCT_SORT,
   NotFoundError,
   type DocumentStoreAdapter,
+  type ProductSortKey,
+  type QueryParams,
   type Facet,
   type HttpAdapter,
   type ReviewsAdapter,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
+
+const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
+  newest: { field: 'createdAt', direction: 'desc' },
+  'price-asc': { field: 'priceRange.minMinor', direction: 'asc', nulls: 'last' },
+  'price-desc': { field: 'priceRange.minMinor', direction: 'desc', nulls: 'last' },
+  'name-asc': { field: 'name', direction: 'asc' },
+  'name-desc': { field: 'name', direction: 'desc' },
+}
 
 function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
   const counts = new Map<string, { name: string; count: number }>()
@@ -77,27 +88,30 @@ export function registerProductRoutes(
       const cursor = Array.isArray(rawCursor) ? rawCursor[0] : rawCursor
       const rawCategory = ctx.query.category
       const category = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory
+      // The schema admits only a known key.
+      const sort = (ctx.query.sort as ProductSortKey | undefined) ?? DEFAULT_PRODUCT_SORT
+      const orderBy = ORDER_BY[sort]
 
       const result = await (category
         ? documentStore.query('products-by-category', {
             partitionKey: { field: 'partitionKey', value: `category:${category}` },
+            orderBy,
             limit,
             ...(cursor !== undefined && { cursor }),
           })
         : documentStore.query('products', {
             partitionKey: { field: 'storeId', value: storeName },
+            orderBy,
             limit,
             ...(cursor !== undefined && { cursor }),
           }))
 
-      // Always build facets from the full product catalog so all filter options
-      // remain visible regardless of the active category filter.
-      const allResult = category
-        ? await documentStore.query('products', {
-            partitionKey: { field: 'storeId', value: storeName },
-            limit: 1000,
-          })
-        : result
+      // Facets come from the full catalogue, never the page: a page holds only some of each category (the newest
+      // products lead the default order), so its counts would understate what a filter returns.
+      const allResult = await documentStore.query('products', {
+        partitionKey: { field: 'storeId', value: storeName },
+        limit: 1000,
+      })
       const categoryFacet = buildCategoryFacet(allResult.items as Array<Record<string, unknown>>)
       return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
@@ -128,7 +142,10 @@ export function registerProductRoutes(
         : 20
       const rawCursor = ctx.query.cursor
       const cursor = Array.isArray(rawCursor) ? rawCursor[0] : rawCursor
-      const result = await reviewsAdapter.getProductReviews(id, { limit, ...(cursor && { cursor }) })
+      const result = await reviewsAdapter.getProductReviews(id, {
+        limit,
+        ...(cursor && { cursor }),
+      })
       return ok(result)
     } catch (err) {
       return renderError(err)

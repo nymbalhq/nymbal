@@ -1,160 +1,28 @@
-// All admin-specific types for Nymbal admin dashboard
+// Admin-only view shapes. Every shape the admin shares with the kernel is imported from @nymbalhq/types.
+import type {
+  Customer,
+  Order,
+  OrderHistoryEntry,
+  OrderPayment,
+  OrderRefund,
+  StockStatus,
+  VariantOption,
+} from '@nymbalhq/types'
 
-export type OrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'processing'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled'
-  | 'refunded'
-  | 'partially_refunded'
-
-export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  pending: ['confirmed', 'cancelled'],
-  confirmed: ['processing', 'cancelled'],
-  processing: ['shipped', 'cancelled'],
-  shipped: ['delivered'],
-  delivered: ['refunded', 'partially_refunded'],
-  cancelled: [],
-  refunded: [],
-  partially_refunded: ['refunded'],
+/** An order as the admin API answers it: with what was actually paid and refunded. */
+export interface AdminOrder extends Order {
+  payment: OrderPayment
 }
 
-export interface Address {
-  line1: string
-  line2?: string
-  city: string
-  state: string
-  postalCode: string
-  country: string
-}
-
-export interface OrderLineItem {
-  variantId: string
-  productId: string
-  productName: string
-  variantName: string
-  sku: string
-  qty: number
-  unitPriceMinor: number
-  lineSubtotalMinor: number
-  lineTaxMinor: number
-  lineTotalMinor: number
-  imageUrl: string
-}
-
-export interface Order {
-  id: string
-  orderNumber: string
-  sequence: number
-  customerId: string | null
-  status: OrderStatus
-  email: string
-  billingAddress: Address
-  shippingAddress: Address
-  lineItems: OrderLineItem[]
-  subtotalMinor: number
-  taxTotalMinor: number
-  shippingTotalMinor: number
-  discountTotalMinor: number
-  totalMinor: number
-  currency: string
-  notes: string
-  metadata: Record<string, unknown>
-  paymentIntentId: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-export interface OrderHistoryEntry {
-  id: string
-  orderId: string
-  fromStatus: OrderStatus | null
-  toStatus: OrderStatus
-  actor: string
-  note: string
-  timestamp: string
-}
-
-export interface OrderWithHistory extends Order {
+export interface OrderWithHistory extends AdminOrder {
   history: OrderHistoryEntry[]
 }
 
-export type ProductStatus = 'draft' | 'active' | 'archived'
-export type ProductType = 'simple' | 'variable'
-
-export interface ProductMedia {
-  url: string
-  altText: string
-  position: number
-}
-
-export interface VariantOption {
-  name: string
-  value: string
-}
-
-export interface Variant {
-  id: string
-  productId: string
-  sku: string
-  name: string
-  priceMinor: number
-  compareAtPriceMinor: number | null
-  stock: number
-  lowStockThreshold: number
-  options: VariantOption[]
-  status: 'active' | 'inactive'
-  createdAt: string
-  updatedAt: string
-}
-
-export interface Product {
-  id: string
-  slug: string
-  name: string
-  description: string
-  shortDescription: string
-  status: ProductStatus
-  type: ProductType
-  seoTitle: string
-  seoDescription: string
-  media: ProductMedia[]
-  metadata: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-}
-
-export interface ProductSnapshot extends Product {
-  variants: Variant[]
-  categoryIds: string[]
-}
-
-export interface CustomerAddress {
-  id?: string
-  line1: string
-  line2?: string
-  city: string
-  state: string
-  postalCode: string
-  country: string
-  isDefault?: boolean
-}
-
-export interface Customer {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  phone: string
-  addresses: CustomerAddress[]
-  orderCount: number
-  totalSpentMinor: number
-  metadata: Record<string, unknown>
-  requiresPasswordReset: boolean
-  createdAt: string
-  updatedAt: string
+/** POST /api/admin/orders/:id/refund */
+export interface RefundAnswer {
+  order: Order
+  payment: OrderPayment
+  refund: OrderRefund
 }
 
 export interface CustomerStats {
@@ -165,8 +33,6 @@ export interface CustomerStats {
   lastOrderAt: string | null
 }
 
-export type InventoryStatus = 'in_stock' | 'low_stock' | 'out_of_stock'
-
 export interface InventoryRow {
   variantId: string
   productId: string
@@ -175,7 +41,7 @@ export interface InventoryRow {
   options: VariantOption[]
   stock: number
   threshold: number
-  status: InventoryStatus
+  status: StockStatus
   updatedAt: string
 }
 
@@ -183,25 +49,6 @@ export interface NoteEntry {
   body: string
   actor: string
   at: string
-}
-
-export type StockAdjustmentReason =
-  | 'sale'
-  | 'return'
-  | 'manual'
-  | 'import'
-  | 'reservation-commit'
-  | 'reservation-release'
-
-export interface StockAdjustment {
-  id: string
-  variantId: string
-  adjustment: number
-  reason: StockAdjustmentReason
-  actor: string
-  previousQty: number
-  newQty: number
-  timestamp: string
 }
 
 export interface AdminMe {

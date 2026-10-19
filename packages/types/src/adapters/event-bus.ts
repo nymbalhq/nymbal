@@ -11,6 +11,8 @@ export interface SubscriptionConfig {
   deadLetterQueue?: string
   batchSize?: number
   name?: string
+  /** The subscriber only maintains derived state (a projection, a search index): it also receives `replay`. */
+  derived?: boolean
 }
 
 export interface Subscription {
@@ -22,6 +24,8 @@ export interface Subscription {
 export interface EventBusAdapter {
   publish<T>(event: NymbalEvent<T>): Promise<void>
   publishBatch(events: NymbalEvent<unknown>[]): Promise<void>
+  /** Delivers to `derived` subscriptions only, so rebuilding derived state never triggers side effects. */
+  replay(events: NymbalEvent<unknown>[]): Promise<void>
   subscribe(
     eventPattern: string | string[],
     handler: EventHandler,

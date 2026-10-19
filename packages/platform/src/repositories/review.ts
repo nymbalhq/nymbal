@@ -1,6 +1,13 @@
 import { and, desc, eq } from 'drizzle-orm'
-import type { Review, ReviewModerationStatus } from '@nymbal/types'
-import type { CommandStore } from '../db/command-store.js'
+import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
+import {
+  postgresDb,
+  sqliteDb,
+  type CommandStore,
+  type ReadTx,
+  type StoreRepository,
+  type Tx,
+} from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { fromTimestamp } from './json.js'
@@ -33,41 +40,60 @@ function rowToReview(row: Record<string, unknown>): Review {
   }
 }
 
-export interface ReviewRepository {
-  findById(id: string): Promise<Review | null>
-  listByProduct(productId: string, status?: ReviewModerationStatus, limit?: number): Promise<Review[]>
-  listByStatus(status: ReviewModerationStatus, limit?: number): Promise<Review[]>
-  insert(r: ReviewInsert): Promise<void>
-  setModerationStatus(id: string, status: ReviewModerationStatus, moderatedBy: string, moderatedAt: Date): Promise<void>
-  aggregateByProduct(productId: string): Promise<{ average: number; count: number; histogram: Record<'1' | '2' | '3' | '4' | '5', number> }>
+export interface ReviewRepository extends StoreRepository {
+  findById(tx: ReadTx, id: string): Promise<Review | null>
+  listByProduct(
+    tx: ReadTx,
+    productId: string,
+    status?: ReviewModerationStatus,
+    limit?: number,
+  ): Promise<Review[]>
+  listByStatus(tx: ReadTx, status: ReviewModerationStatus, limit?: number): Promise<Review[]>
+  insert(tx: Tx, r: ReviewInsert): Promise<void>
+  setModerationStatus(
+    tx: Tx,
+    id: string,
+    status: ReviewModerationStatus,
+    moderatedBy: string,
+    moderatedAt: Date,
+  ): Promise<void>
+  aggregateByProduct(
+    tx: ReadTx,
+    productId: string,
+  ): Promise<{
+    average: number
+    count: number
+    histogram: Record<'1' | '2' | '3' | '4' | '5', number>
+  }>
 }
 
 export function createReviewRepository(store: CommandStore): ReviewRepository {
   return {
-    async findById(id) {
-      if (store.kind === 'sqlite') {
-        const row = store.db
+    store,
+    async findById(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
           .select()
           .from(sqliteSchema.reviews)
           .where(eq(sqliteSchema.reviews.id, id))
           .get()
         return row ? rowToReview(row as Record<string, unknown>) : null
       }
-      const [row] = await store.db
+      const [row] = await postgresDb(tx)
         .select()
         .from(postgresSchema.reviews)
         .where(eq(postgresSchema.reviews.id, id))
       return row ? rowToReview(row as Record<string, unknown>) : null
     },
-    async listByProduct(productId, status, limit = 50) {
-      if (store.kind === 'sqlite') {
+    async listByProduct(tx, productId, status, limit = 50) {
+      if (tx.kind === 'sqlite') {
         const cond = status
           ? and(
               eq(sqliteSchema.reviews.productId, productId),
               eq(sqliteSchema.reviews.moderationStatus, status),
             )
           : eq(sqliteSchema.reviews.productId, productId)
-        const rows = store.db
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.reviews)
           .where(cond)
@@ -82,7 +108,7 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
             eq(postgresSchema.reviews.moderationStatus, status),
           )
         : eq(postgresSchema.reviews.productId, productId)
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.reviews)
         .where(cond)
@@ -90,9 +116,9 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .limit(limit)
       return rows.map((r) => rowToReview(r as Record<string, unknown>))
     },
-    async listByStatus(status, limit = 100) {
-      if (store.kind === 'sqlite') {
-        const rows = store.db
+    async listByStatus(tx, status, limit = 100) {
+      if (tx.kind === 'sqlite') {
+        const rows = sqliteDb(tx)
           .select()
           .from(sqliteSchema.reviews)
           .where(eq(sqliteSchema.reviews.moderationStatus, status))
@@ -101,7 +127,7 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
           .all()
         return rows.map((r) => rowToReview(r as Record<string, unknown>))
       }
-      const rows = await store.db
+      const rows = await postgresDb(tx)
         .select()
         .from(postgresSchema.reviews)
         .where(eq(postgresSchema.reviews.moderationStatus, status))
@@ -109,7 +135,7 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .limit(limit)
       return rows.map((r) => rowToReview(r as Record<string, unknown>))
     },
-    async insert(r) {
+    async insert(tx, r) {
       const common = {
         id: r.id,
         productId: r.productId,
@@ -120,8 +146,8 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         body: r.body,
         moderationStatus: r.moderationStatus ?? 'pending',
       }
-      if (store.kind === 'sqlite') {
-        store.db
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .insert(sqliteSchema.reviews)
           .values({
             ...common,
@@ -132,16 +158,18 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
           .run()
         return
       }
-      await store.db.insert(postgresSchema.reviews).values({
-        ...common,
-        submittedAt: r.submittedAt,
-        moderatedAt: null,
-        moderatedBy: null,
-      })
+      await postgresDb(tx)
+        .insert(postgresSchema.reviews)
+        .values({
+          ...common,
+          submittedAt: r.submittedAt,
+          moderatedAt: null,
+          moderatedBy: null,
+        })
     },
-    async setModerationStatus(id, status, moderatedBy, moderatedAt) {
-      if (store.kind === 'sqlite') {
-        store.db
+    async setModerationStatus(tx, id, status, moderatedBy, moderatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
           .update(sqliteSchema.reviews)
           .set({
             moderationStatus: status,
@@ -152,13 +180,13 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
           .run()
         return
       }
-      await store.db
+      await postgresDb(tx)
         .update(postgresSchema.reviews)
         .set({ moderationStatus: status, moderatedBy, moderatedAt })
         .where(eq(postgresSchema.reviews.id, id))
     },
-    async aggregateByProduct(productId) {
-      const approved = await this.listByProduct(productId, 'approved', 1000)
+    async aggregateByProduct(tx, productId) {
+      const approved = await this.listByProduct(tx, productId, 'approved', 1000)
       const histogram: Record<'1' | '2' | '3' | '4' | '5', number> = {
         '1': 0,
         '2': 0,
@@ -168,7 +196,9 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
       }
       let total = 0
       for (const r of approved) {
-        const bucket = String(Math.max(1, Math.min(5, Math.round(r.rating)))) as keyof typeof histogram
+        const bucket = String(
+          Math.max(1, Math.min(5, Math.round(r.rating))),
+        ) as keyof typeof histogram
         histogram[bucket] += 1
         total += r.rating
       }

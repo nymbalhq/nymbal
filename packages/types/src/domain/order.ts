@@ -10,11 +10,12 @@ export type OrderStatus =
   | 'refunded'
   | 'partially_refunded'
 
+// A captured order is refunded from any status between confirmed and delivered; a partial refund leaves room for more.
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['processing', 'cancelled'],
-  processing: ['shipped', 'cancelled'],
-  shipped: ['delivered'],
+  confirmed: ['processing', 'cancelled', 'refunded', 'partially_refunded'],
+  processing: ['shipped', 'cancelled', 'refunded', 'partially_refunded'],
+  shipped: ['delivered', 'refunded', 'partially_refunded'],
   delivered: ['refunded', 'partially_refunded'],
   cancelled: [],
   refunded: [],
@@ -77,8 +78,61 @@ export interface Order {
   notes: string
   metadata: Record<string, unknown>
   paymentIntentId: string | null
+  /** Money taken for the order, in minor units of its currency; 0 while nothing is captured. */
+  capturedMinor: number
+  capturedAt: string | null
+  /** Σ of the order's succeeded refunds (or, for an import or a pre-refund-table order, what was refunded then). */
+  refundedMinor: number
+  captureMethod: CaptureMethod | null
   createdAt: string
   updatedAt: string
+}
+
+/** Who took the money: the payments provider, the merchant recording an offline payment, or an imported history. */
+export type CaptureMethod = 'provider' | 'manual' | 'import'
+
+export type OrderRefundStatus = 'pending' | 'succeeded' | 'failed'
+
+/** One refund of an order. `pending` until the provider's answer settles it, and counted against what is refundable. */
+export interface OrderRefund {
+  id: string
+  orderId: string
+  amountMinor: number
+  currency: string
+  providerRefundId: string | null
+  status: OrderRefundStatus
+  reason: string | null
+  actor: string
+  createdAt: string
+}
+
+export type PaymentState = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
+
+/** What the admin shows about an order's money: derived from the stored amounts and refunds alone. */
+export interface OrderPayment {
+  state: PaymentState
+  capturedMinor: number
+  refundedMinor: number
+  refundableMinor: number
+  currency: string
+  refunds: OrderRefund[]
+}
+
+export function paymentState(order: Pick<Order, 'capturedMinor' | 'refundedMinor'>): PaymentState {
+  if (order.capturedMinor <= 0) return 'unpaid'
+  if (order.refundedMinor <= 0) return 'paid'
+  return order.refundedMinor < order.capturedMinor ? 'partially_refunded' : 'refunded'
+}
+
+/** What can still be refunded: the capture less what was refunded and what is still pending with the provider. */
+export function refundableMinor(
+  order: Pick<Order, 'capturedMinor' | 'refundedMinor'>,
+  refunds: ReadonlyArray<Pick<OrderRefund, 'amountMinor' | 'status'>>,
+): number {
+  const pending = refunds
+    .filter((r) => r.status === 'pending')
+    .reduce((sum, r) => sum + r.amountMinor, 0)
+  return Math.max(0, order.capturedMinor - order.refundedMinor - pending)
 }
 
 export interface OrderHistoryEntry {

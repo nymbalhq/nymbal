@@ -1,4 +1,4 @@
-import type { HttpAdapter, StockAdjustmentReason, VariantOption } from '@nymbal/types'
+import type { HttpAdapter, StockAdjustmentReason, VariantOption } from '@nymbalhq/types'
 import type { InventoryService } from '../services/inventory-service.js'
 import type { ProductService } from '../services/product-service.js'
 import type { Repositories } from '../repositories/index.js'
@@ -83,9 +83,7 @@ export function registerAdminInventoryRoutes(
         if (search) {
           const lc = search.toLowerCase()
           rows = rows.filter(
-            (r) =>
-              r.sku.toLowerCase().includes(lc) ||
-              r.productName.toLowerCase().includes(lc),
+            (r) => r.sku.toLowerCase().includes(lc) || r.productName.toLowerCase().includes(lc),
           )
         }
 
@@ -138,7 +136,9 @@ export function registerAdminInventoryRoutes(
       try {
         const variantId = ctx.params.variantId
         if (!variantId) return fail('admin.invalid', 'variantId required', 400)
-        const history = await repos.stockAdjustment.listByVariant(variantId, 100)
+        const history = await repos.stockAdjustment.store.read((tx) =>
+          repos.stockAdjustment.listByVariant(tx, variantId, 100),
+        )
         return ok(history)
       } catch (err) {
         return renderError(err)

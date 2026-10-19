@@ -1,11 +1,15 @@
 import type {
   CartItem,
+  CheckoutPayment,
   Customer,
   Address,
   Facet,
+  Order,
+  OrderStatus,
   PaymentIntent,
+  ProductSortKey,
   VariantOption,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 
 // --- Denormalised product (matches platform document store projection) ------
 
@@ -61,7 +65,7 @@ export interface ProductListState {
   products: DenormalisedProduct[]
   facets: Facet[]
   filters: Record<string, string | string[]>
-  sort: { field: string; direction: 'asc' | 'desc' } | null
+  sort: ProductSortKey
   pagination: { cursor: string | null; hasMore: boolean }
   loading: boolean
   error: string | null
@@ -90,9 +94,12 @@ export interface CheckoutState {
   shippingAddress: Address | null
   billingAddress: Address | null
   shippingMethod: ShippingMethod | null
-  paymentStatus: 'idle' | 'processing' | 'succeeded' | 'failed'
+  /** What the server said about the payment; `succeeded` only once the order is paid. */
+  paymentStatus: 'idle' | 'processing' | 'requires_action' | 'succeeded' | 'failed'
   error: string | null
   order: { orderId: string; orderNumber: string; paymentIntent: PaymentIntent } | null
+  /** The order this cart already became, when the server refused a resubmit and named it. */
+  placedOrderNumber: string | null
 }
 
 export interface AuthState {
@@ -108,6 +115,7 @@ export interface ProductListParams {
   limit?: number
   cursor?: string
   category?: string
+  sort?: ProductSortKey
 }
 
 export interface ProductListResult {
@@ -129,6 +137,8 @@ export interface CheckoutResult {
   paymentIntent: PaymentIntent
   currency: string
   totalMinor: number
+  orderStatus: OrderStatus
+  payment: CheckoutPayment
 }
 
 export interface RegisterParams {
@@ -145,3 +155,9 @@ export interface AuthResult {
   expiresIn: number
 }
 
+export type NewAddress = Address & { isDefaultBilling?: boolean; isDefaultShipping?: boolean }
+
+export interface OrderPage {
+  items: Order[]
+  nextCursor: string | null
+}

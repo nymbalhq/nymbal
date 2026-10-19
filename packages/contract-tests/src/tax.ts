@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { TaxAdapter } from '@nymbal/types'
+import type { TaxAdapter } from '@nymbalhq/types'
 
 export function runTaxContract(build: () => TaxAdapter): void {
   describe('TaxAdapter contract', () => {

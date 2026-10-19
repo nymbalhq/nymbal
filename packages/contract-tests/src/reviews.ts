@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { ReviewsAdapter } from '@nymbal/types'
+import type { ReviewsAdapter } from '@nymbalhq/types'
 
 export function runReviewsContract(build: () => ReviewsAdapter): void {
   describe('ReviewsAdapter contract', () => {

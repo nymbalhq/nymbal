@@ -1,4 +1,4 @@
-import type { NymbalClient } from '@nymbal/sdk'
+import type { NymbalClient } from '@nymbalhq/sdk'
 import { registerClient } from '../registry.js'
 
 export function createMockStore<S>(initialState: S) {
@@ -29,7 +29,7 @@ export function createMockClient(): NymbalClient {
   })
   const productStore = createMockStore({ product: null, selectedVariant: null, loading: false, error: null })
   const searchStore = createMockStore({ query: '', results: [], total: 0, loading: false })
-  const productListStore = createMockStore({ products: [], facets: [], filters: {}, sort: null, pagination: { cursor: null, hasMore: false }, loading: false, error: null })
+  const productListStore = createMockStore({ products: [], facets: [], filters: {}, sort: 'newest' as const, pagination: { cursor: null, hasMore: false }, loading: false, error: null })
   const authStore = createMockStore({ customer: null, isAuthenticated: false, loading: false, error: null })
   const checkoutStore = createMockStore({ step: 'contact' as const, email: '', shippingAddress: null, billingAddress: null, shippingMethod: null, paymentStatus: 'idle' as const, error: null, order: null })
 

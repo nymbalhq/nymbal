@@ -1,8 +1,10 @@
-import type { Logger } from '@nymbal/types'
+import type { Logger } from '@nymbalhq/types'
 import type { InventoryService } from '../services/inventory-service.js'
 import type { InventoryReservationRepository } from '../repositories/inventory-reservation.js'
 
 export interface SweeperHandle {
+  /** One sweep, awaited; the interval calls it. */
+  tick(): Promise<void>
   stop(): void
 }
 
@@ -23,17 +25,18 @@ export function startInventoryReservationSweeper(
     if (running) return
     running = true
     try {
-      const expired = await deps.reservationRepo.deleteExpiredBefore(new Date())
+      const { store } = deps.reservationRepo
+      const now = new Date()
+      const expired = await store.read((tx) => deps.reservationRepo.findExpiredBefore(tx, now))
       if (expired.length > 0) {
         logger.info({ count: expired.length }, 'releasing expired reservations')
       }
       for (const r of expired) {
-        // Individually release — avoids touching the tx mid-scan.
-        await deps.inventoryService
-          .releaseReservation(r.reservationId, 'expired')
-          .catch((err) => {
-            logger.error({ err, reservationId: r.reservationId }, 'failed to release')
-          })
+        // releaseReservation deletes the row and restores its stock in one transaction; one that a commit or another
+        // release already took is a no-op.
+        await deps.inventoryService.releaseReservation(r.reservationId, 'expired').catch((err) => {
+          logger.error({ err, reservationId: r.reservationId }, 'failed to release')
+        })
       }
     } finally {
       running = false
@@ -43,6 +46,7 @@ export function startInventoryReservationSweeper(
     void tick()
   }, intervalMs)
   return {
+    tick,
     stop() {
       clearInterval(handle)
     },

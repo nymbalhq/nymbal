@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { v7 as uuidv7 } from 'uuid'
-import type { CustomerAddress } from '@nymbal/types'
-import type { ImportCustomerInput } from '@nymbal/platform'
+import type { CustomerAddress } from '@nymbalhq/types'
+import type { ImportCustomerInput } from '@nymbalhq/platform'
 import type { WcCustomer, WcAddress } from '../client.js'
 
 function mapAddress(a: WcAddress): CustomerAddress {

@@ -1,4 +1,4 @@
-import type { InventoryReservation, StockAdjustment, StockAdjustmentReason } from '@nymbal/types'
+import type { InventoryReservation, StockAdjustment, StockAdjustmentReason } from '@nymbalhq/types'
 import { nextId, isoDate, randInt } from './prng.js'
 
 export function createInventoryReservation(

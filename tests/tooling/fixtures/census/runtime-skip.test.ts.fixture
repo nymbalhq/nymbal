@@ -1,0 +1,21 @@
+// AC-25: 4 test sites (a, b, c, named skip); 1 skipped. The runtime skips inside bodies are not test sites.
+import { expect, test } from '@playwright/test'
+
+test('a skips itself at runtime', async ({ page }) => {
+  test.skip()
+  await expect(page).toHaveURL('/')
+})
+
+test('b skips on a condition', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'webkit lacks the API')
+  await expect(page).toHaveURL('/cart')
+})
+
+test('c is marked fixme at runtime', async ({ page }) => {
+  test.fixme()
+  await expect(page).toHaveURL('/checkout')
+})
+
+test.skip('named skip', async ({ page }) => {
+  await expect(page).toHaveURL('/admin')
+})

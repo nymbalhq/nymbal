@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { Address } from '@nymbal/types'
-import type { CheckoutState, ShippingMethod } from '@nymbal/sdk'
+import type { Address } from '@nymbalhq/types'
+import type { CheckoutResult, CheckoutState, ShippingMethod } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseCheckoutReturn extends CheckoutState {
@@ -8,7 +8,8 @@ export interface UseCheckoutReturn extends CheckoutState {
   setShippingAddress: (address: Address) => void
   setBillingAddress: (address: Address) => void
   setShippingMethod: (method: ShippingMethod) => void
-  submitPayment: () => Promise<void>
+  submitPayment: () => Promise<CheckoutResult | null>
+  markConfirmed: () => void
   reset: () => void
 }
 
@@ -26,6 +27,7 @@ export function useCheckout(): UseCheckoutReturn {
     setBillingAddress: client.checkout.setBillingAddress,
     setShippingMethod: client.checkout.setShippingMethod,
     submitPayment: client.checkout.submitPayment,
+    markConfirmed: client.checkout.markConfirmed,
     reset: client.checkout.reset,
   }
 }

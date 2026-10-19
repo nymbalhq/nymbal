@@ -1,4 +1,4 @@
-import type { Customer } from '@nymbal/types'
+import type { Customer } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { TokenManager } from '../auth/token-manager.js'
 import type { AuthState, RegisterParams } from '../types.js'

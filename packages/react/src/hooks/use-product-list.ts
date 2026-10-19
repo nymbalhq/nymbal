@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { ProductListState, ProductListParams } from '@nymbal/sdk'
+import type { ProductListState, ProductListParams, ProductSortKey } from '@nymbalhq/sdk'
 import { useNymbalClient } from '../context.js'
 
 export interface UseProductListReturn extends ProductListState {
@@ -7,7 +7,7 @@ export interface UseProductListReturn extends ProductListState {
   loadMore: () => Promise<void>
   applyFilter: (name: string, value: string | string[]) => Promise<void>
   removeFilter: (name: string) => Promise<void>
-  setSort: (field: string, direction: 'asc' | 'desc') => Promise<void>
+  setSort: (sort: ProductSortKey) => Promise<void>
 }
 
 export function useProductList(): UseProductListReturn {

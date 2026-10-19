@@ -1,6 +1,10 @@
+'use client'
+
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { AuthGuard } from '@/components/client/AuthGuard'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAuth } from '@nymbalhq/react'
+import { AuthGuard, PUBLIC_AUTH_PATHS } from '@/components/client/AuthGuard'
 import styles from '@/styles/pages/account.module.css'
 
 const NAV_LINKS = [
@@ -11,6 +15,19 @@ const NAV_LINKS = [
 ]
 
 export default function AccountLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { logout } = useAuth()
+
+  if (PUBLIC_AUTH_PATHS.includes(pathname)) {
+    return <>{children}</>
+  }
+
+  async function signOut() {
+    await logout()
+    router.push('/account/login')
+  }
+
   return (
     <AuthGuard>
       <div className={`container ${styles.page}`}>
@@ -18,21 +35,18 @@ export default function AccountLayout({ children }: { children: ReactNode }) {
           <aside className={styles.sidebar}>
             <nav className={styles.sidebarNav} aria-label="Account navigation">
               {NAV_LINKS.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={styles.sidebarLink}
-                >
+                <Link key={link.href} href={link.href} className={styles.sidebarLink}>
                   {link.label}
                 </Link>
               ))}
               <hr className={styles.sidebarDivider} />
-              <Link
-                href="/account/login"
+              <button
+                type="button"
+                onClick={signOut}
                 className={`${styles.sidebarLink} ${styles.logoutLink}`}
               >
                 Sign Out
-              </Link>
+              </button>
             </nav>
           </aside>
           <div className={styles.content}>{children}</div>

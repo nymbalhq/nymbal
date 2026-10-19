@@ -10,8 +10,8 @@ import type {
   SecurityAdapter,
   ShippingAdapter,
   TaxAdapter,
-} from '@nymbal/types'
-import type { NymbalConfig } from '@nymbal/config'
+} from '@nymbalhq/types'
+import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
 import { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
 import {
@@ -50,11 +50,18 @@ export interface BuildAdaptersDeps {
   repos: Repositories
 }
 
+/**
+ * The `providerName` of the payments adapter a configured provider resolves to. A provider with no adapter of its
+ * own falls back to the stub, which verifies no webhook signature.
+ */
+export function paymentsAdapterFor(provider: string): 'stripe' | 'native-stub' {
+  return provider === 'stripe' ? 'stripe' : 'native-stub'
+}
+
 export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterRegistry> {
   const { config, logger, documentStore, repos } = deps
-  const paymentsProvider = config.commerce.payments.provider
   const payments: PaymentsAdapter =
-    paymentsProvider === 'stripe'
+    paymentsAdapterFor(config.commerce.payments.provider) === 'stripe'
       ? createStripePaymentsAdapter({
           logger: logger.child({ adapter: 'payments' }),
           config: (config.commerce.payments.config ?? {}) as unknown as StripePaymentsConfig,
@@ -65,7 +72,7 @@ export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterReg
     logger: logger.child({ adapter: 'email' }),
     config: (config.commerce.email.config ?? {}) as NativeEmailAdapterConfig,
   })
-  await email.initialize(email ? config.commerce.email.config ?? {} : {})
+  await email.initialize(email ? (config.commerce.email.config ?? {}) : {})
 
   const search = createNativeSearchAdapter({
     documentStore,
@@ -85,7 +92,8 @@ export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterReg
     aiProvider === 'anthropic'
       ? createAnthropicAiAdapter({
           apiKey: process.env['ANTHROPIC_API_KEY'] ?? '',
-          model: (config.commerce.ai?.config?.['model'] as string | undefined) ?? 'claude-sonnet-4-6',
+          model:
+            (config.commerce.ai?.config?.['model'] as string | undefined) ?? 'claude-sonnet-4-6',
           logger: logger.child({ adapter: 'ai' }),
         })
       : createNativeAiAdapter(logger)

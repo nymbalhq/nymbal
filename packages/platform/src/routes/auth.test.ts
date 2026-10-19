@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { registerAuthRoutes } from './auth.js'
-import type { HttpAdapter, RouteHandler, Customer } from '@nymbal/types'
+import type { HttpAdapter, RouteHandler, Customer } from '@nymbalhq/types'
 import type { AuthService, AuthTokens } from '../services/auth-service.js'
 
 function makeAdapter() {
@@ -38,8 +38,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -58,6 +64,7 @@ const testCustomer: Customer = {
   orderCount: 0,
   totalSpentMinor: 0,
   metadata: {},
+  roles: ['customer'],
   requiresPasswordReset: false,
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
@@ -75,7 +82,9 @@ function makeAuthService(overrides?: Partial<AuthService>): AuthService {
     login: vi.fn().mockResolvedValue({ customer: testCustomer, tokens: testTokens }),
     refresh: vi.fn().mockResolvedValue({ ...testTokens, accessToken: 'new-access-tok' }),
     logout: vi.fn().mockResolvedValue(undefined),
-    verifyAccessToken: vi.fn().mockResolvedValue({ sub: 'cust-1', email: 'test@example.com', roles: ['customer'] }),
+    verifyAccessToken: vi
+      .fn()
+      .mockResolvedValue({ sub: 'cust-1', email: 'test@example.com', roles: ['customer'] }),
     importCustomer: vi.fn().mockResolvedValue(testCustomer),
     ...overrides,
   }
@@ -113,7 +122,9 @@ describe('POST /api/auth/register', () => {
       body: { email: 'new@example.com', password: 'pass123' },
     })
     expect(resp.status).toBe(201)
-    const body = resp.body as { data: { customer: Customer; accessToken: string; expiresIn: number } }
+    const body = resp.body as {
+      data: { customer: Customer; accessToken: string; expiresIn: number }
+    }
     expect(body.data.customer.email).toBe('test@example.com')
     expect(body.data.accessToken).toBe('access-tok')
     expect(body.data.expiresIn).toBe(900)
@@ -126,9 +137,9 @@ describe('POST /api/auth/register', () => {
     const resp = await invoke('POST', '/api/auth/register', {
       body: { email: 'new@example.com', password: 'pass123' },
     })
-    const refreshCookie = (resp.cookies as Array<{ name: string; value: string; httpOnly: boolean }> | undefined)?.find(
-      (c) => c.name === 'nymbal.refresh',
-    )
+    const refreshCookie = (
+      resp.cookies as Array<{ name: string; value: string; httpOnly: boolean }> | undefined
+    )?.find((c) => c.name === 'nymbal.refresh')
     expect(refreshCookie).toBeTruthy()
     expect(refreshCookie?.value).toBe('refresh-tok')
     expect(refreshCookie?.httpOnly).toBe(true)
@@ -182,7 +193,9 @@ describe('POST /api/auth/login', () => {
       body: { email: 'test@example.com', password: 'pass123' },
     })
     expect(resp.status).toBe(200)
-    const body = resp.body as { data: { customer: Customer; accessToken: string; expiresIn: number } }
+    const body = resp.body as {
+      data: { customer: Customer; accessToken: string; expiresIn: number }
+    }
     expect(body.data.customer.email).toBe('test@example.com')
     expect(body.data.accessToken).toBe('access-tok')
     expect(service.login).toHaveBeenCalledWith('test@example.com', 'pass123')
@@ -195,9 +208,9 @@ describe('POST /api/auth/login', () => {
     const resp = await invoke('POST', '/api/auth/login', {
       body: { email: 'test@example.com', password: 'pass123' },
     })
-    const refreshCookie = (resp.cookies as Array<{ name: string; value: string }> | undefined)?.find(
-      (c) => c.name === 'nymbal.refresh',
-    )
+    const refreshCookie = (
+      resp.cookies as Array<{ name: string; value: string }> | undefined
+    )?.find((c) => c.name === 'nymbal.refresh')
     expect(refreshCookie?.value).toBe('refresh-tok')
   })
 
@@ -281,9 +294,9 @@ describe('POST /api/auth/logout', () => {
     const resp = await invoke('POST', '/api/auth/logout', {
       cookies: { 'nymbal.refresh': 'refresh-tok' },
     })
-    const refreshCookie = (resp.cookies as Array<{ name: string; value: string; maxAge: number }> | undefined)?.find(
-      (c) => c.name === 'nymbal.refresh',
-    )
+    const refreshCookie = (
+      resp.cookies as Array<{ name: string; value: string; maxAge: number }> | undefined
+    )?.find((c) => c.name === 'nymbal.refresh')
     expect(refreshCookie?.maxAge).toBe(0)
   })
 })

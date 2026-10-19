@@ -1,11 +1,5 @@
-import {
-  sqliteTable,
-  text,
-  integer,
-  uniqueIndex,
-  index,
-  primaryKey,
-} from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
+import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from 'drizzle-orm/sqlite-core'
 
 // --- Categories ------------------------------------------------------------
 
@@ -36,8 +30,12 @@ export const products = sqliteTable(
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
     shortDescription: text('short_description').notNull().default(''),
-    status: text('status', { enum: ['draft', 'active', 'archived'] }).notNull().default('draft'),
-    type: text('type', { enum: ['simple', 'variable'] }).notNull().default('simple'),
+    status: text('status', { enum: ['draft', 'active', 'archived'] })
+      .notNull()
+      .default('draft'),
+    type: text('type', { enum: ['simple', 'variable'] })
+      .notNull()
+      .default('simple'),
     seoTitle: text('seo_title').notNull().default(''),
     seoDescription: text('seo_description').notNull().default(''),
     media: text('media').notNull().default('[]'),
@@ -67,7 +65,9 @@ export const variants = sqliteTable(
     stock: integer('stock').notNull().default(0),
     lowStockThreshold: integer('low_stock_threshold').notNull().default(0),
     options: text('options').notNull().default('[]'),
-    status: text('status', { enum: ['active', 'inactive'] }).notNull().default('active'),
+    status: text('status', { enum: ['active', 'inactive'] })
+      .notNull()
+      .default('active'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -106,6 +106,7 @@ export const customers = sqliteTable(
     orderCount: integer('order_count').notNull().default(0),
     totalSpentMinor: integer('total_spent_minor').notNull().default(0),
     metadata: text('metadata').notNull().default('{}'),
+    roles: text('roles').notNull().default('["customer"]'),
     requiresPasswordReset: integer('requires_password_reset', { mode: 'boolean' })
       .notNull()
       .default(false),
@@ -171,6 +172,13 @@ export const orders = sqliteTable(
     notes: text('notes').notNull().default(''),
     metadata: text('metadata').notNull().default('{}'),
     paymentIntentId: text('payment_intent_id'),
+    /** The cart the order was placed from; null for imported orders. */
+    cartToken: text('cart_token'),
+    capturedMinor: integer('captured_minor').notNull().default(0),
+    capturedAt: text('captured_at'),
+    /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
+    refundedMinor: integer('refunded_minor').notNull().default(0),
+    captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -179,6 +187,11 @@ export const orders = sqliteTable(
     sequenceUnique: uniqueIndex('orders_sequence_unique').on(t.sequence),
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
+    paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // One pending order per cart, whatever the checkout's lock does.
+    pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
+      .on(t.cartToken)
+      .where(sql`status = 'pending'`),
   }),
 )
 
@@ -195,6 +208,29 @@ export const orderHistory = sqliteTable(
   },
   (t) => ({
     orderIdx: index('order_history_order_idx').on(t.orderId),
+  }),
+)
+
+export const orderRefunds = sqliteTable(
+  'order_refunds',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id').notNull(),
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull(),
+    providerRefundId: text('provider_refund_id'),
+    status: text('status', { enum: ['pending', 'succeeded', 'failed'] })
+      .notNull()
+      .default('pending'),
+    reason: text('reason'),
+    actor: text('actor').notNull(),
+    createdAt: text('created_at').notNull(),
+    /** The client's key for one refund request: a repeat of it on the order answers the refund it made. */
+    requestId: text('request_id'),
+  },
+  (t) => ({
+    orderIdx: index('order_refunds_order_idx').on(t.orderId),
+    requestIdx: uniqueIndex('order_refunds_order_request_idx').on(t.orderId, t.requestId),
   }),
 )
 
@@ -228,14 +264,7 @@ export const stockAdjustments = sqliteTable(
     variantId: text('variant_id').notNull(),
     adjustment: integer('adjustment').notNull(),
     reason: text('reason', {
-      enum: [
-        'sale',
-        'return',
-        'manual',
-        'import',
-        'reservation-commit',
-        'reservation-release',
-      ],
+      enum: ['sale', 'return', 'manual', 'import', 'reservation-commit', 'reservation-release'],
     }).notNull(),
     actor: text('actor').notNull(),
     previousQty: integer('previous_qty').notNull(),
@@ -274,6 +303,61 @@ export const reviews = sqliteTable(
   }),
 )
 
+// --- Carts -----------------------------------------------------------------
+
+export const carts = sqliteTable(
+  'carts',
+  {
+    token: text('token').primaryKey(),
+    customerId: text('customer_id'),
+    currency: text('currency').notNull(),
+    items: text('items').notNull().default('[]'),
+    lineCount: integer('line_count').notNull().default(0),
+    subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    /** Set by the abandonment sweeper's claim; every cart write clears it, starting a new inactivity period. */
+    abandonedNotifiedAt: text('abandoned_notified_at'),
+  },
+  (t) => ({
+    expiresIdx: index('carts_expires_idx').on(t.expiresAt),
+    updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+  }),
+)
+
+// --- Event log (outbox) and handler idempotency ----------------------------
+
+export const events = sqliteTable(
+  'events',
+  {
+    seq: integer('seq').primaryKey({ autoIncrement: true }),
+    id: text('id').notNull(),
+    type: text('type').notNull(),
+    envelope: text('envelope').notNull(),
+    createdAt: text('created_at').notNull(),
+    deliveredAt: text('delivered_at'),
+    attempts: integer('attempts').notNull().default(0),
+    deadAt: text('dead_at'),
+  },
+  (t) => ({
+    idUnique: uniqueIndex('events_id_unique').on(t.id),
+    undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+  }),
+)
+
+export const processedEvents = sqliteTable(
+  'processed_events',
+  {
+    handlerName: text('handler_name').notNull(),
+    eventId: text('event_id').notNull(),
+    processedAt: text('processed_at').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.handlerName, t.eventId] }),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -287,4 +371,7 @@ export const schema = {
   inventoryReservations,
   stockAdjustments,
   reviews,
+  carts,
+  events,
+  processedEvents,
 }

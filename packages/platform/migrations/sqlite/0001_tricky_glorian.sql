@@ -1,0 +1,1 @@
+CREATE INDEX `orders_payment_intent_idx` ON `orders` (`payment_intent_id`);

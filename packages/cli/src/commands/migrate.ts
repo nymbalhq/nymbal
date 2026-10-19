@@ -1,24 +1,30 @@
 import { defineCommand } from 'citty'
-import { loadConfig } from '@nymbal/config'
-import { createCommandStore, runMigrations } from '@nymbal/platform'
+import type { NymbalConfig } from '@nymbalhq/config'
+import { loadProject } from '../utils/project.js'
+import { createCommandStore, runMigrations } from '@nymbalhq/platform'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
 export const migrateCommand = defineCommand({
   meta: { name: 'migrate', description: 'Run database migrations (Drizzle)' },
   async run() {
-    const { config, projectRoot } = await loadConfig()
-    const store = createCommandStore(config)
-    try {
-      const migrationsRoot = resolveMigrations(projectRoot)
-      await runMigrations(store, { migrationsRoot })
-      // eslint-disable-next-line no-console
-      console.log(`✓ migrations applied (${store.kind})`)
-    } finally {
-      await store.close()
-    }
+    const { config, projectRoot } = await loadProject()
+    const kind = await migrateProject(config, projectRoot)
+    // eslint-disable-next-line no-console
+    console.log(`✓ migrations applied (${kind})`)
   },
 })
+
+/** Applies the project's migrations to its command store; the store is closed again before returning. */
+export async function migrateProject(config: NymbalConfig, projectRoot: string): Promise<string> {
+  const store = createCommandStore(config)
+  try {
+    await runMigrations(store, { migrationsRoot: resolveMigrations(projectRoot) })
+    return store.kind
+  } finally {
+    await store.close()
+  }
+}
 
 export function resolveMigrations(projectRoot: string): string {
   // 1. Project-local override (scaffolded projects or custom migrations)
@@ -29,16 +35,16 @@ export function resolveMigrations(projectRoot: string): string {
   const monorepoDev = resolve(projectRoot, 'packages/platform/migrations')
   if (existsSync(monorepoDev)) return monorepoDev
 
-  // 3. Published package: node_modules/@nymbal/platform/migrations
+  // 3. Published package: node_modules/@nymbalhq/platform/migrations
   //
-  // We must NOT use `require.resolve('@nymbal/platform/package.json')` nor
-  // `require.resolve('@nymbal/platform')`: the package's `exports` map is
+  // We must NOT use `require.resolve('@nymbalhq/platform/package.json')` nor
+  // `require.resolve('@nymbalhq/platform')`: the package's `exports` map is
   // ESM-only and does not expose `./package.json`, so CJS resolution throws
   // (ERR_PACKAGE_PATH_NOT_EXPORTED / "No exports main defined"). Instead we
   // locate the installed package directory directly under node_modules, which
   // is independent of the exports map and works for symlinked (pnpm workspace)
   // and flat installs alike.
-  const pkgDir = resolvePackageDir(projectRoot, '@nymbal/platform')
+  const pkgDir = resolvePackageDir(projectRoot, '@nymbalhq/platform')
   if (pkgDir) {
     const pkgMigrations = resolve(pkgDir, 'migrations')
     if (existsSync(pkgMigrations)) return pkgMigrations

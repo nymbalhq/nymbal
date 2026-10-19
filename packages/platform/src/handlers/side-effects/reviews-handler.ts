@@ -5,7 +5,7 @@ import {
   type Logger,
   type OrderDeliveredV1Payload,
   type ReviewsAdapter,
-} from '@nymbal/types'
+} from '@nymbalhq/types'
 import { withIdempotency } from '../idempotency.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 

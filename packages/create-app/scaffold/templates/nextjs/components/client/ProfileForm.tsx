@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
-import { useAuth } from '@nymbal/react'
+import { useAuth } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
 export function ProfileForm() {
@@ -50,9 +50,7 @@ export function ProfileForm() {
           Profile updated successfully.
         </div>
       )}
-      {error && (
-        <div className={`${styles.alert} ${styles.alertError}`}>{error}</div>
-      )}
+      {error && <div className={`${styles.alert} ${styles.alertError}`}>{error}</div>}
 
       <div className={styles.formCard}>
         <h3 className={styles.formCardTitle}>Personal Information</h3>
@@ -62,6 +60,7 @@ export function ProfileForm() {
               <label htmlFor="profile-first-name">First Name</label>
               <input
                 id="profile-first-name"
+                data-testid="profile-firstName"
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
@@ -72,6 +71,7 @@ export function ProfileForm() {
               <label htmlFor="profile-last-name">Last Name</label>
               <input
                 id="profile-last-name"
+                data-testid="profile-lastName"
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
@@ -101,11 +101,7 @@ export function ProfileForm() {
             </div>
           </div>
           <div className={styles.formActions}>
-            <button
-              type="submit"
-              className={styles.saveButton}
-              disabled={saving}
-            >
+            <button type="submit" className={styles.saveButton} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>

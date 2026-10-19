@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbal/types'
+import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbalhq/types'
 import { SignJWT } from 'jose'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
-import { createCommandStore } from '../db/command-store.js'
+import { createCommandStore, rawClients } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
-import { createEventPublisher } from '../events/publisher.js'
+import { createEventPublisher, createRelay } from '../index.js'
+import { wirePublisher } from '../tests/publisher.js'
 import { createAuthService } from './auth-service.js'
 import { createLogger } from '../logger.js'
 
@@ -23,12 +24,14 @@ async function setup() {
   const logger = createLogger({ pretty: false, level: 'error' })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(commandStore, documentStore)
-  const publisher = createEventPublisher({
-    eventBus,
-    builderContext: { storeId: 'test', environment: 'development', version: '0.0.0', source: 'test' },
-  })
+  const publisher = wirePublisher(
+    { createEventPublisher, createRelay },
+    { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
+  ).publisher
   const auth = createAuthService({
-    repos, publisher, logger,
+    repos,
+    publisher,
+    logger,
     jwtSecret: 'test-secret-32-characters-long-x',
     accessTtl: '15m',
     refreshTtl: '7d',
@@ -40,10 +43,14 @@ describe('AuthService', () => {
   it('register creates customer and emits customer.created', async () => {
     const { auth, eventBus, commandStore } = await setup()
     const events: unknown[] = []
-    await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => { events.push(e.payload) })
+    await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => {
+      events.push(e.payload)
+    })
     const { customer, tokens } = await auth.register({
-      email: 'jane@example.com', password: 'password123',
-      firstName: 'Jane', lastName: 'Doe',
+      email: 'jane@example.com',
+      password: 'password123',
+      firstName: 'Jane',
+      lastName: 'Doe',
     })
     expect(customer.email).toBe('jane@example.com')
     expect(customer.firstName).toBe('Jane')
@@ -56,7 +63,9 @@ describe('AuthService', () => {
   it('register stores optional phone when provided', async () => {
     const { auth, commandStore } = await setup()
     const { customer } = await auth.register({
-      email: 'phone@test.com', password: 'password123', phone: '+441234567890',
+      email: 'phone@test.com',
+      password: 'password123',
+      phone: '+441234567890',
     })
     expect(customer.phone).toBe('+441234567890')
     await commandStore.close()
@@ -64,20 +73,26 @@ describe('AuthService', () => {
 
   it('register rejects invalid email', async () => {
     const { auth, commandStore } = await setup()
-    await expect(auth.register({ email: 'notanemail', password: 'password123' })).rejects.toThrow(ValidationError)
+    await expect(auth.register({ email: 'notanemail', password: 'password123' })).rejects.toThrow(
+      ValidationError,
+    )
     await commandStore.close()
   })
 
   it('register rejects password shorter than 8 chars', async () => {
     const { auth, commandStore } = await setup()
-    await expect(auth.register({ email: 'short@test.com', password: '1234567' })).rejects.toThrow(ValidationError)
+    await expect(auth.register({ email: 'short@test.com', password: '1234567' })).rejects.toThrow(
+      ValidationError,
+    )
     await commandStore.close()
   })
 
   it('register rejects duplicate email', async () => {
     const { auth, commandStore } = await setup()
     await auth.register({ email: 'dup@test.com', password: 'password123' })
-    await expect(auth.register({ email: 'dup@test.com', password: 'password456' })).rejects.toThrow(AuthError)
+    await expect(auth.register({ email: 'dup@test.com', password: 'password456' })).rejects.toThrow(
+      AuthError,
+    )
     await commandStore.close()
   })
 
@@ -155,6 +170,10 @@ describe('AuthService', () => {
     const payload = await auth.verifyAccessToken(tokens.accessToken)
     expect(payload.email).toBe('verify@test.com')
     expect(payload.type).toBe('access')
+    // The token lives for the configured accessTtl (15m); iat and exp are each truncated to the second.
+    const lifetimeSeconds = payload.exp! - payload.iat!
+    expect(lifetimeSeconds).toBeGreaterThanOrEqual(15 * 60 - 1)
+    expect(lifetimeSeconds).toBeLessThanOrEqual(15 * 60)
     await commandStore.close()
   })
 
@@ -178,13 +197,20 @@ describe('AuthService', () => {
       firstName: 'Import',
       lastName: 'Test',
       phone: '+441234567890',
-      addresses: [{
-        id: 'addr-1',
-        firstName: 'Import', lastName: 'Test',
-        addressLine1: '1 Import St', city: 'London',
-        region: 'England', postalCode: 'SW1A 1AA', country: 'GB',
-        isDefaultBilling: false, isDefaultShipping: false,
-      }],
+      addresses: [
+        {
+          id: 'addr-1',
+          firstName: 'Import',
+          lastName: 'Test',
+          addressLine1: '1 Import St',
+          city: 'London',
+          region: 'England',
+          postalCode: 'SW1A 1AA',
+          country: 'GB',
+          isDefaultBilling: false,
+          isDefaultShipping: false,
+        },
+      ],
       metadata: { source: 'woocommerce', wcId: 42 },
     })
     expect(customer.email).toBe('imported@test.com')
@@ -238,13 +264,25 @@ describe('AuthService', () => {
       { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
       { sqlitePath: ':memory:' },
     )
-    await runMigrations(commandStore2, { migrationsRoot: new URL('../../migrations', import.meta.url).pathname })
+    await runMigrations(commandStore2, {
+      migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
+    })
     const ds = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({ eventBus: eb, builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' } })
-    const auth = createAuthService({ repos, publisher, logger, jwtSecret: 'test-secret-32-characters-long-x', accessTtl: '500ms', refreshTtl: '1h' })
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
+    const auth = createAuthService({
+      repos,
+      publisher,
+      logger,
+      jwtSecret: 'test-secret-32-characters-long-x',
+      accessTtl: '500ms',
+      refreshTtl: '1h',
+    })
     const { tokens } = await auth.register({ email: 'ms-unit@test.com', password: 'password123' })
     expect(tokens.accessToken).toBeTruthy()
     await commandStore2.close()
@@ -256,13 +294,25 @@ describe('AuthService', () => {
       { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
       { sqlitePath: ':memory:' },
     )
-    await runMigrations(commandStore2, { migrationsRoot: new URL('../../migrations', import.meta.url).pathname })
+    await runMigrations(commandStore2, {
+      migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
+    })
     const ds = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({ eventBus: eb, builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' } })
-    const auth = createAuthService({ repos, publisher, logger, jwtSecret: 'test-secret-32-characters-long-x', accessTtl: '900s', refreshTtl: '604800s' })
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
+    const auth = createAuthService({
+      repos,
+      publisher,
+      logger,
+      jwtSecret: 'test-secret-32-characters-long-x',
+      accessTtl: '900s',
+      refreshTtl: '604800s',
+    })
     const { tokens } = await auth.register({ email: 's-unit@test.com', password: 'password123' })
     expect(tokens.accessToken).toBeTruthy()
     await commandStore2.close()
@@ -275,7 +325,11 @@ describe('AuthService', () => {
     const jti = 'no-record-jti-' + Date.now()
     const secret = new TextEncoder().encode('test-secret-32-characters-long-x')
     const ghostJwt = await new SignJWT({
-      sub: customer.id, email: customer.email, roles: ['customer'] as const, type: 'refresh' as const, jti,
+      sub: customer.id,
+      email: customer.email,
+      roles: ['customer'] as const,
+      type: 'refresh' as const,
+      jti,
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -289,10 +343,14 @@ describe('AuthService', () => {
 
   it('refresh rejects valid token when customer has been deleted', async () => {
     const { auth, commandStore } = await setup()
-    const { customer, tokens } = await auth.register({ email: 'deleted@test.com', password: 'password123' })
+    const { customer, tokens } = await auth.register({
+      email: 'deleted@test.com',
+      password: 'password123',
+    })
     // Delete the customer directly from the DB to simulate account deletion
-    if (commandStore.kind === 'sqlite') {
-      commandStore.raw.prepare('DELETE FROM customers WHERE id = ?').run(customer.id)
+    const clients = rawClients(commandStore)
+    if (clients.kind === 'sqlite') {
+      clients.raw.prepare('DELETE FROM customers WHERE id = ?').run(customer.id)
     }
     await expect(auth.refresh(tokens.refreshToken)).rejects.toThrow(AuthError)
     await commandStore.close()
@@ -302,11 +360,18 @@ describe('AuthService', () => {
     // Construct a valid refresh JWT with a known jti, but insert a record into the DB
     // with a different tokenHash — simulates the token-replay / chain-revocation path
     const { auth, repos, commandStore } = await setup()
-    const { customer } = await auth.register({ email: 'hashmismatch@test.com', password: 'password123' })
+    const { customer } = await auth.register({
+      email: 'hashmismatch@test.com',
+      password: 'password123',
+    })
     const jti = 'test-replay-jti-' + Date.now()
     const secret = new TextEncoder().encode('test-secret-32-characters-long-x')
     const replayJwt = await new SignJWT({
-      sub: customer.id, email: customer.email, roles: ['customer'] as const, type: 'refresh' as const, jti,
+      sub: customer.id,
+      email: customer.email,
+      roles: ['customer'] as const,
+      type: 'refresh' as const,
+      jti,
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -315,12 +380,15 @@ describe('AuthService', () => {
       .setExpirationTime(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
       .sign(secret)
     // Insert a record whose tokenHash does NOT match the JWT above
-    await repos.refreshToken.insert({
-      id: jti, customerId: customer.id,
-      tokenHash: 'intentionally-wrong-hash-to-trigger-mismatch',
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      createdAt: new Date(),
-    })
+    await commandStore.transaction((tx) =>
+      repos.refreshToken.insert(tx, {
+        id: jti,
+        customerId: customer.id,
+        tokenHash: 'intentionally-wrong-hash-to-trigger-mismatch',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+      }),
+    )
     await expect(auth.refresh(replayJwt)).rejects.toThrow(AuthError)
     await commandStore.close()
   })
@@ -331,13 +399,27 @@ describe('AuthService', () => {
       { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
       { sqlitePath: ':memory:' },
     )
-    await runMigrations(commandStore2, { migrationsRoot: new URL('../../migrations', import.meta.url).pathname })
+    await runMigrations(commandStore2, {
+      migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
+    })
     const ds = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const logger = createLogger({ pretty: false, level: 'error' })
     const eb = new InProcessEventBus({ logger })
     const repos = buildRepositories(commandStore2, ds)
-    const publisher = createEventPublisher({ eventBus: eb, builderContext: { storeId: 't', environment: 'development', version: '0.0.0', source: 't' } })
-    expect(() => createAuthService({ repos, publisher, logger, jwtSecret: 'test-secret-32-characters-long-x', accessTtl: 'invalid', refreshTtl: '7d' })).toThrow(ValidationError)
+    const publisher = wirePublisher(
+      { createEventPublisher, createRelay },
+      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
+    ).publisher
+    expect(() =>
+      createAuthService({
+        repos,
+        publisher,
+        logger,
+        jwtSecret: 'test-secret-32-characters-long-x',
+        accessTtl: 'invalid',
+        refreshTtl: '7d',
+      }),
+    ).toThrow(ValidationError)
     await commandStore2.close()
   })
 })
