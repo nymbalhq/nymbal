@@ -56,7 +56,9 @@ function LiveTicker() {
           Live
         </span>
       </span>
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+      {/* Clipped, not scrollable: a scroll region would need its own tab stop, and the
+          three newest events are a glance, not something to page through. */}
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
         {recent.map((event) => (
           <span
             key={event.id}
