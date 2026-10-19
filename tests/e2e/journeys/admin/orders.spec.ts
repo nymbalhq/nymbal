@@ -174,16 +174,54 @@ async function openDetail(page: Page, orderNumber: string): Promise<void> {
   })
 }
 
+const REFUND_POST = /\/api\/admin\/orders\/[^/]+\/refund$/
+
+/**
+ * Counts the page's refund POSTs from here on; `settled()` waits until every one sent has been answered, so a read
+ * after it sees whatever a second (double-clicked) POST did, whichever way the page or the API keeps it to one refund.
+ */
+function watchRefundPosts(page: Page): { settled(): Promise<void> } {
+  let sent = 0
+  let answered = 0
+  const isRefund = (r: { method(): string; url(): string }) =>
+    r.method() === 'POST' && REFUND_POST.test(new URL(r.url()).pathname)
+  const onSent = (r: { method(): string; url(): string }) => {
+    if (isRefund(r)) sent += 1
+  }
+  const onAnswered = (r: { method(): string; url(): string }) => {
+    if (isRefund(r)) answered += 1
+  }
+  page.on('request', onSent)
+  page.on('requestfinished', onAnswered)
+  page.on('requestfailed', onAnswered)
+  return {
+    async settled() {
+      await expect
+        .poll(() => sent - answered, { message: 'refund POSTs still in flight' })
+        .toBe(0)
+      page.off('request', onSent)
+      page.off('requestfinished', onAnswered)
+      page.off('requestfailed', onAnswered)
+    },
+  }
+}
+
 /** The refund dialog, by amount only (decision 8), entered in major units as the admin enters prices. */
-async function refundThroughDialog(page: Page, amountMinor: number): Promise<void> {
+async function refundThroughDialog(
+  page: Page,
+  amountMinor: number,
+  confirm: 'click' | 'dblclick' = 'click',
+): Promise<void> {
+  const posts = watchRefundPosts(page)
   await page.getByTestId('admin-order-actions').click()
   await page.getByTestId('admin-order-action-refund').click()
   const dialog = page.getByTestId('admin-order-refund-dialog')
   await expect(dialog).toBeVisible()
   await page.getByTestId('admin-order-refund-amount').fill((amountMinor / 100).toFixed(2))
   await page.getByTestId('admin-order-refund-reason').fill('Returned by the customer')
-  await page.getByTestId('admin-order-refund-confirm').click()
+  await page.getByTestId('admin-order-refund-confirm')[confirm]()
   await expect(dialog).toBeHidden({ timeout: 15_000 })
+  await posts.settled()
 }
 
 test.describe('Admin orders', () => {
@@ -256,7 +294,9 @@ test.describe('Admin orders', () => {
     await openDetail(page, order.orderNumber)
     await expectPaymentPanel(page, start)
 
-    await refundThroughDialog(page, part)
+    // The store walk at 6b529da (`standing.submit-once-admin`): a double click on "Refund" refunded twice. Kills: the
+    // dialog's pending guard losing to a fast double click, with no requestId to keep the repeat to one refund.
+    await refundThroughDialog(page, part, 'dblclick')
 
     const afterPart = await readOrder(request, token, order.orderNumber)
     expect(afterPart.payment.state).toBe('partially_refunded')
@@ -295,6 +335,66 @@ test.describe('Admin orders', () => {
       timeout: 15_000,
     })
     await expectPaymentPanel(page, await readOrder(request, token, order.orderNumber))
+  })
+
+  // The store walk at 6b529da: a refund the server refuses showed its reason in minor units ("4000"), not money.
+  // The dialog goes stale the way the walk found it: the realtime stream is down, and the order is refunded elsewhere
+  // after the dialog opened, so the dialog still offers the whole capture and the server refuses it. Kills: the
+  // refusal's amounts shown as raw minor units.
+  test('Store walk: a refund the server refuses from a stale dialog (over refundable) shows its reason in the store’s currency, not minor units, and moves no money', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    await page.route('**/api/admin/events**', (route) => route.abort())
+    const order = await placeOrder(request, paidEmail('stale-refund'))
+    const token = await adminToken(request)
+    const start = await readOrder(request, token, order.orderNumber)
+    const captured = start.payment.capturedMinor
+    const currency = start.payment.currency
+    expect(captured).toBe(start.totalMinor)
+    const part = Math.max(1, Math.floor(captured / 3))
+    expect(part).toBeLessThan(captured)
+
+    await signInAsAdmin(page)
+    await openDetail(page, order.orderNumber)
+    await expectPaymentPanel(page, start)
+    await page.getByTestId('admin-order-actions').click()
+    await page.getByTestId('admin-order-action-refund').click()
+    const dialog = page.getByTestId('admin-order-refund-dialog')
+    await expect(dialog).toBeVisible()
+    await page.getByTestId('admin-order-refund-amount').fill((captured / 100).toFixed(2))
+
+    // Another admin refunds part of the order while this dialog is open.
+    const elsewhere = await request.post(`${API_URL}/api/admin/orders/${order.orderId}/refund`, {
+      headers: { ...(await csrf(request, API_URL)), authorization: `Bearer ${token}` },
+      data: { amountMinor: part },
+    })
+    expect(elsewhere.status(), await elsewhere.text()).toBe(200)
+
+    const refusal = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && REFUND_POST.test(new URL(r.url()).pathname),
+    )
+    await page.getByTestId('admin-order-refund-confirm').click()
+    const refused = await refusal
+    expect(refused.status()).toBe(409)
+    expect(((await refused.json()) as { error: { code: string } }).error.code).toBe(
+      'refund.exceeds_captured',
+    )
+
+    const reason = dialog.getByRole('alert')
+    await expect(reason).toContainText(money(captured, currency))
+    await expect(reason).toContainText(money(captured - part, currency))
+    const text = (await reason.textContent()) ?? ''
+    for (const minor of [captured, captured - part]) {
+      expect(text, `the reason shows ${minor} as minor units`).not.toMatch(
+        new RegExp(`(^|[^\\d.,])${minor}([^\\d.,]|$)`),
+      )
+    }
+
+    const after = await readOrder(request, token, order.orderNumber)
+    expect(after.payment.refundedMinor).toBe(part)
+    expect(after.payment.refundableMinor).toBe(captured - after.payment.refundedMinor)
   })
 
   test('orders list page is accessible @a11y', async ({ page, request }) => {
