@@ -13,6 +13,7 @@ import { deliverCapture, type WebhookAnswer } from '../webhooks.js'
 // is parked behind it (Postgres: a backend of this database waits on a lock; SQLite: the confirm has reached the kernel
 // and takes its turn on the store's queue). Kills: cancel's `order.paid` guard read without the row lock and an
 // unconditional status write, so a confirm committed in between is overwritten to `cancelled` with its money captured.
+// Run on Postgres only: SQLite's single writer queue serialises the cancel and the confirm, so the race cannot happen.
 
 const PARKED_DEADLINE_MS = 15_000
 const POLL_MS = 5
