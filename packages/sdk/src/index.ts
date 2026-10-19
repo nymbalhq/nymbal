@@ -52,6 +52,7 @@ export type {
 } from './types.js'
 
 export type {
+  ProductSortKey,
   ReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,
 } from '@nymbalhq/types'

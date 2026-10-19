@@ -1,3 +1,4 @@
+import { DEFAULT_PRODUCT_SORT, type ProductSortKey } from '@nymbalhq/types'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { ProductListState, ProductListParams } from '../types.js'
 import { createStore } from './create-store.js'
@@ -6,7 +7,7 @@ const INITIAL_STATE: ProductListState = {
   products: [],
   facets: [],
   filters: {},
-  sort: null,
+  sort: DEFAULT_PRODUCT_SORT,
   pagination: { cursor: null, hasMore: false },
   loading: false,
   error: null,
@@ -19,17 +20,19 @@ export interface ProductListStore {
   loadMore(): Promise<void>
   applyFilter(name: string, value: string | string[]): Promise<void>
   removeFilter(name: string): Promise<void>
-  setSort(field: string, direction: 'asc' | 'desc'): Promise<void>
+  setSort(sort: ProductSortKey): Promise<void>
   destroy(): void
 }
 
 export function createProductListStore(adapter: CommerceAdapter): ProductListStore {
   const store = createStore<ProductListState>(INITIAL_STATE)
   let lastLimit: number | undefined
+  // Only the latest request's answer may reach the state: an older one carries another sort's items and cursor.
+  let generation = 0
 
   function buildParams(): ProductListParams {
     const state = store.getState()
-    const params: ProductListParams = {}
+    const params: ProductListParams = { sort: state.sort }
     if (lastLimit !== undefined) params.limit = lastLimit
     const category = state.filters['category']
     if (typeof category === 'string') {
@@ -38,11 +41,22 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
     return params
   }
 
+  /** With params, they become the listing's category and sort, so `setSort` and `loadMore` keep them. */
   async function load(params?: ProductListParams): Promise<void> {
-    if (params?.limit !== undefined) lastLimit = params.limit
+    if (params !== undefined) {
+      if (params.limit !== undefined) lastLimit = params.limit
+      const filters = { ...store.getState().filters }
+      if (params.category !== undefined) filters['category'] = params.category
+      else delete filters['category']
+      store.setState({ filters, sort: params.sort ?? DEFAULT_PRODUCT_SORT })
+    }
+    const request = buildParams()
+    if (params?.cursor !== undefined) request.cursor = params.cursor
+    const current = ++generation
     store.setState({ loading: true })
     try {
-      const result = await adapter.products.list(params ?? buildParams())
+      const result = await adapter.products.list(request)
+      if (current !== generation) return
       store.setState({
         products: result.items,
         facets: result.facets ?? store.getState().facets,
@@ -51,6 +65,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         error: null,
       })
     } catch (err) {
+      if (current !== generation) return
       console.error('[ProductListStore] load failed', err)
       store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -59,6 +74,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
   async function loadMore(): Promise<void> {
     const state = store.getState()
     if (!state.pagination.hasMore || state.loading) return
+    const current = ++generation
     store.setState({ loading: true })
     try {
       const params = buildParams()
@@ -66,6 +82,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         params.cursor = state.pagination.cursor
       }
       const result = await adapter.products.list(params)
+      if (current !== generation) return
       store.setState({
         products: [...state.products, ...result.items],
         pagination: { cursor: result.nextCursor, hasMore: result.nextCursor !== null },
@@ -73,6 +90,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         error: null,
       })
     } catch (err) {
+      if (current !== generation) return
       console.error('[ProductListStore] loadMore failed', err)
       store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -91,8 +109,8 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
     await load()
   }
 
-  async function setSort(field: string, direction: 'asc' | 'desc'): Promise<void> {
-    store.setState({ sort: { field, direction } })
+  async function setSort(sort: ProductSortKey): Promise<void> {
+    store.setState({ sort })
     await load()
   }
 

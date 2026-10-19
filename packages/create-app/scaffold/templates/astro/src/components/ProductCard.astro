@@ -6,6 +6,7 @@ interface Props {
     slug: string
     name: string
     priceMinor: number | null
+    priceRange?: { minMinor: number } | null
     currency: string | null
     media: any
     imageUrl?: string
@@ -17,10 +18,10 @@ const imageUrl =
   product.imageUrl ??
   (Array.isArray(product.media) && product.media[0]?.url) ??
   `https://picsum.photos/seed/${product.slug}/600/600`
+// The "from" price, which the price sorts order by.
+const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
 const price =
-  product.priceMinor != null
-    ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-    : ''
+  fromMinor != null ? formatPrice(fromMinor, product.currency ?? 'GBP') : ''
 ---
 
 <a

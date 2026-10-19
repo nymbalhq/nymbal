@@ -2,9 +2,9 @@ import { expect, test } from '../support/fixtures'
 
 test.describe('Cart interactions', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to a product page
-    await page.goto('/products')
-    await page.locator('[data-testid^="product-card-"]').first().click()
+    // A fixed seeded product: the first card on /products is, under the newest default, whatever another journey
+    // created last, and that journey may assert its stock.
+    await page.goto('/product/ceramic-mug')
     await page.waitForSelector('[data-testid="add-to-cart"]')
   })
 

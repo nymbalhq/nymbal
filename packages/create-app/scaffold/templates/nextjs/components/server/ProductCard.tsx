@@ -8,6 +8,7 @@ interface ProductCardProps {
     slug: string
     name: string
     priceMinor: number | null
+    priceRange?: { minMinor: number } | null
     currency: string | null
     media?: unknown
     imageUrl?: string
@@ -25,6 +26,8 @@ function getImageUrl(product: ProductCardProps['product']): string | null {
 
 export function ProductCard({ product }: ProductCardProps) {
   const imageUrl = getImageUrl(product)
+  // The "from" price, which the price sorts order by.
+  const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
 
   return (
     <Link
@@ -47,10 +50,8 @@ export function ProductCard({ product }: ProductCardProps) {
       </div>
       <div className={styles.productInfo}>
         <p className={styles.productName}>{product.name}</p>
-        {product.priceMinor != null && product.currency && (
-          <p className={styles.productPrice}>
-            {formatPrice(product.priceMinor, product.currency)}
-          </p>
+        {fromMinor != null && product.currency && (
+          <p className={styles.productPrice}>{formatPrice(fromMinor, product.currency)}</p>
         )}
       </div>
     </Link>

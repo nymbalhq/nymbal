@@ -7,6 +7,7 @@ import type {
   Order,
   OrderStatus,
   PaymentIntent,
+  ProductSortKey,
   VariantOption,
 } from '@nymbalhq/types'
 
@@ -64,7 +65,7 @@ export interface ProductListState {
   products: DenormalisedProduct[]
   facets: Facet[]
   filters: Record<string, string | string[]>
-  sort: { field: string; direction: 'asc' | 'desc' } | null
+  sort: ProductSortKey
   pagination: { cursor: string | null; hasMore: boolean }
   loading: boolean
   error: string | null
@@ -114,6 +115,7 @@ export interface ProductListParams {
   limit?: number
   cursor?: string
   category?: string
+  sort?: ProductSortKey
 }
 
 export interface ProductListResult {

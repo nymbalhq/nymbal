@@ -45,6 +45,7 @@ export default async function HomePage() {
                   slug: product.slug,
                   name: product.name,
                   priceMinor: product.priceMinor ?? null,
+                  priceRange: product.priceRange ?? null,
                   currency: product.currency ?? null,
                   media: product.media,
                 }}
@@ -52,9 +53,7 @@ export default async function HomePage() {
             ))}
           </div>
         ) : (
-          <p className="text-muted text-center">
-            No products available yet. Check back soon.
-          </p>
+          <p className="text-muted text-center">No products available yet. Check back soon.</p>
         )}
       </section>
 

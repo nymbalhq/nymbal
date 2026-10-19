@@ -1,44 +1,35 @@
 'use client'
 
-import { useCallback } from 'react'
-import { useProductList } from '@nymbalhq/react'
+import type { ProductSortKey } from '@nymbalhq/types'
 import styles from '@/styles/pages/plp.module.css'
 
-const SORT_OPTIONS: Record<string, { field: string; direction: 'asc' | 'desc' }> = {
-  'price-asc': { field: 'price', direction: 'asc' },
-  'price-desc': { field: 'price', direction: 'desc' },
-  'name-asc': { field: 'name', direction: 'asc' },
-  'name-desc': { field: 'name', direction: 'desc' },
-  newest: { field: 'createdAt', direction: 'desc' },
+const OPTIONS: Array<{ value: ProductSortKey; label: string }> = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'price-asc', label: 'Price: Low to High' },
+  { value: 'price-desc', label: 'Price: High to Low' },
+  { value: 'name-asc', label: 'Name: A to Z' },
+  { value: 'name-desc', label: 'Name: Z to A' },
+]
+
+interface SortDropdownProps {
+  value: ProductSortKey
+  onChange: (sort: ProductSortKey) => void
 }
 
-export function SortDropdown() {
-  const { setSort } = useProductList()
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const option = SORT_OPTIONS[e.target.value]
-      if (option) {
-        setSort(option.field, option.direction)
-      }
-    },
-    [setSort],
-  )
-
+export function SortDropdown({ value, onChange }: SortDropdownProps) {
   return (
     <select
       className={styles.sortSelect}
-      onChange={handleChange}
-      defaultValue=""
+      value={value}
+      onChange={(e) => onChange(e.target.value as ProductSortKey)}
       data-testid="sort-dropdown"
       aria-label="Sort products"
     >
-      <option value="">Sort by</option>
-      <option value="price-asc">Price: Low to High</option>
-      <option value="price-desc">Price: High to Low</option>
-      <option value="name-asc">Name: A to Z</option>
-      <option value="name-desc">Name: Z to A</option>
-      <option value="newest">Newest</option>
+      {OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
     </select>
   )
 }
