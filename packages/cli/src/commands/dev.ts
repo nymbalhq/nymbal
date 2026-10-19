@@ -10,6 +10,7 @@ import { findFreePort } from '../utils/port.js'
 import { planTemplateLaunch } from '../utils/template-runner.js'
 import { migrateProject } from './migrate.js'
 import { resolveAdminRoot } from '../admin.js'
+import { runShutdown, SHUTDOWN_BOUND_MS, type ShutdownStep } from '../utils/shutdown.js'
 
 /** Default storefront dev-server port per template (matches the scaffold scripts). */
 export function defaultStorefrontPort(template: 'astro' | 'nextjs'): number {
@@ -68,6 +69,16 @@ export function storefrontEnv(
   }
 }
 
+/** The API port: `--port` when given, else the config's `http.port`. */
+function apiPort(config: NymbalConfig, flagPort: string | undefined): number {
+  if (flagPort === undefined || flagPort.trim() === '') return config.http.port
+  const port = Number(flagPort)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`--port must be an integer from 1 to 65535, got "${flagPort}"`)
+  }
+  return port
+}
+
 export const devCommand = defineCommand({
   meta: {
     name: 'dev',
@@ -91,6 +102,10 @@ export const devCommand = defineCommand({
       description: 'Start only the API server (skip template dev server)',
       default: false,
     },
+    port: {
+      type: 'string',
+      description: "Port for the API server (default: the config's http.port)",
+    },
     storefrontPort: {
       type: 'string',
       alias: 'storefront-port',
@@ -100,7 +115,10 @@ export const devCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const { config, projectRoot } = await loadProject()
+    const loaded = await loadProject()
+    const { projectRoot } = loaded
+    const port = apiPort(loaded.config, args.port)
+    const config: NymbalConfig = { ...loaded.config, http: { ...loaded.config.http, port } }
     const version = getCliVersion()
 
     // Auto-migrate on startup so a fresh clone works without running `nymbal migrate` first
@@ -145,12 +163,21 @@ export const devCommand = defineCommand({
     await app.attachHttp(http.adapter, { adminRoot })
     await http.start()
 
+    const stopApi: ShutdownStep[] = [
+      { name: 'http.stop', run: () => http.stop() },
+      { name: 'app.stop', run: () => app.stop() },
+    ]
+    const shutdownWith = (steps: ShutdownStep[]): Promise<never> =>
+      runShutdown(steps, {
+        boundMs: SHUTDOWN_BOUND_MS,
+        logger: platform.logger,
+        exit: (code) => process.exit(code),
+      })
+
     if (args.apiOnly) {
-      const shutdown = async (signal: string) => {
+      const shutdown = (signal: string) => {
         platform.logger.info({ signal }, 'Shutting down API')
-        await http.stop().catch(() => {})
-        await app.stop().catch(() => {})
-        process.exit(0)
+        return shutdownWith(stopApi)
       }
       process.on('SIGINT', () => void shutdown('SIGINT'))
       process.on('SIGTERM', () => void shutdown('SIGTERM'))
@@ -196,22 +223,28 @@ export const devCommand = defineCommand({
       env: storefrontEnv(config, apiUrl, storefrontPort),
     })
 
-    const shutdown = async (signal: string) => {
+    let shuttingDown = false
+    const shutdown = (signal: string) => {
+      shuttingDown = true
       platform.logger.info({ signal }, 'Shutting down')
-      try {
-        templateProc.child.kill('SIGINT')
-      } catch {
-        // ignore
-      }
-      await http.stop().catch(() => {})
-      await app.stop().catch(() => {})
-      process.exit(0)
+      return shutdownWith([
+        {
+          name: 'storefront.kill',
+          run: async () => {
+            templateProc.child.kill('SIGINT')
+          },
+        },
+        ...stopApi,
+      ])
     }
     process.on('SIGINT', () => void shutdown('SIGINT'))
     process.on('SIGTERM', () => void shutdown('SIGTERM'))
 
     const templateExit = await templateProc.done
     platform.logger.info({ code: templateExit }, 'Template process exited')
+    // A Ctrl-C reaches the storefront too, so it exits during the signal's own shutdown, which ends the process.
+    // Calling `runShutdown` again would count as a repeat signal and exit 1 at once.
+    if (shuttingDown) return
     await shutdown('template-exit')
   },
 })

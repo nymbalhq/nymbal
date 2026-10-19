@@ -33,13 +33,19 @@ export interface FastifyAdapterOptions {
   cors?: CorsOptions
 }
 
+/** How long a stream ended at shutdown may take to flush before its socket is destroyed regardless. */
+const STREAM_END_BOUND_MS = 500
+
 export class FastifyHttpAdapter implements HttpAdapter {
   readonly #app: FastifyInstance
   readonly #logger: Logger
   readonly #guard: SecurityGuard
   readonly #middlewares: MiddlewareHandler[] = []
   readonly #defaultHeaders: Record<string, string> = {}
+  /** Ends each open stream for shutdown; a stream removes itself once its close callbacks have run. */
+  readonly #openStreams = new Set<() => void>()
   #started = false
+  #stopping = false
   #boundPort = 0
 
   constructor(options: FastifyAdapterOptions) {
@@ -63,6 +69,12 @@ export class FastifyHttpAdapter implements HttpAdapter {
       const config = req.routeOptions.config as { routeOptions?: RouteOptions } | undefined
       if (config?.routeOptions?.rawBody === true) req.rawBody = buffer
       parseJson(req, buffer.toString('utf8'), done)
+    })
+    // Fastify's `close()` waits for every open connection, and a stream never ends by itself. `preClose` runs after
+    // Fastify answers new requests 503 and before `server.close()`, so no stream can hold the close once it has run.
+    this.#app.addHook('preClose', async () => {
+      this.#stopping = true
+      for (const endStream of this.#openStreams) endStream()
     })
     void this.#app.register(fastifyCookie)
     if (options.cors && options.cors.allowedOrigins.length > 0) {
@@ -141,7 +153,18 @@ export class FastifyHttpAdapter implements HttpAdapter {
         } catch (err) {
           return this.#applyEnvelope(reply, this.#renderError(err, ctx))
         }
-        reply.raw.writeHead(200, {
+        // Routed before Fastify began closing, but its middlewares finished after the open streams were ended.
+        if (this.#stopping) {
+          return this.#applyEnvelope(reply, {
+            status: 503,
+            headers: { connection: 'close' },
+            body: { error: { code: 'unavailable', message: 'Server is shutting down' } },
+          })
+        }
+        const raw = reply.raw
+        // Taken now: a finished response detaches from its socket before `end`'s callback runs.
+        const socket = req.raw.socket
+        raw.writeHead(200, {
           ...this.#defaultHeaders,
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache, no-transform',
@@ -150,15 +173,32 @@ export class FastifyHttpAdapter implements HttpAdapter {
         })
         reply.hijack()
         const closeCallbacks: Array<() => void> = []
+        let ending = false
         let closed = false
-        const close = (): void => {
-          if (closed) return
-          closed = true
+        const end = (then?: () => void): void => {
+          if (ending) return
+          ending = true
           try {
-            reply.raw.end()
+            raw.end(then)
           } catch {
             // ignore
           }
+        }
+        // A clean end, so the client sees a complete response, then the keep-alive socket goes too: it would hold
+        // `server.close()` open. The bound covers a socket whose end never flushes.
+        const endForShutdown = (): void => {
+          const bound = setTimeout(() => socket.destroy(), STREAM_END_BOUND_MS)
+          bound.unref()
+          end(() => {
+            clearTimeout(bound)
+            socket.destroy()
+          })
+        }
+        const close = (): void => {
+          end()
+          if (closed) return
+          closed = true
+          this.#openStreams.delete(endForShutdown)
           for (const cb of closeCallbacks) {
             try {
               cb()
@@ -169,15 +209,16 @@ export class FastifyHttpAdapter implements HttpAdapter {
         }
         req.raw.on('close', close)
         req.raw.on('error', close)
+        this.#openStreams.add(endForShutdown)
         const stream: StreamContext = {
           send(event: SseEvent): void {
-            if (closed) return
+            if (ending) return
             let line = ''
             if (event.id !== undefined) line += `id: ${event.id}\n`
             if (event.event !== undefined) line += `event: ${event.event}\n`
             const data = typeof event.data === 'string' ? event.data : JSON.stringify(event.data)
             line += `data: ${data}\n\n`
-            reply.raw.write(line)
+            raw.write(line)
           },
           close,
           onClose(cb: () => void): void {
