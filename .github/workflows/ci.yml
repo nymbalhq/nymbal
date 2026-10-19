@@ -135,9 +135,9 @@ jobs:
   mutation:
     name: Mutation — Stryker (incremental)
     runs-on: ubuntu-latest
-    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) is about 2,400 CPU-seconds:
-    # 4 min 50 s on 12 local cores, so roughly 10-13 min on this runner's 4.
-    timeout-minutes: 30
+    # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
+    # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
+    timeout-minutes: 45
     needs: [build]
     steps:
       - uses: actions/checkout@v7
