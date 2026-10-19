@@ -29,6 +29,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # The API serves the admin from apps/admin/dist (P1-08), which `pnpm build` does not build.
+      - run: pnpm --filter @nymbalhq/admin build
 
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium

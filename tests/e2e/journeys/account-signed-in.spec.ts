@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
+import { adminToken, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
 
 // P1-09 acceptance (AC-5, AC-6, AC-7): a shopper who signs in sees their own account on either storefront, and
@@ -59,6 +60,7 @@ function signOutControl(page: Page) {
 test.describe('Signed-in account', () => {
   test('AC-5: the dashboard, profile, addresses and orders show the signed-in customer’s own data, and an order opens by its number', async ({
     page,
+    request,
   }) => {
     test.setTimeout(90_000)
     const shopper = newShopper()
@@ -96,9 +98,10 @@ test.describe('Signed-in account', () => {
     await expect(list).toContainText(postalCode)
     await expect(cards).toHaveCount(before + 1)
 
-    // An order placed while signed in (stub payments).
-    await page.goto('/products')
-    await page.locator('[data-testid^="product-card-"]').first().click()
+    // An order placed while signed in (stub payments), for a product of this test's own: the first card on /products
+    // is, under the newest default, whatever another journey created last, and that journey asserts its stock.
+    const product = await ownProduct(request, await adminToken(request), 5)
+    await page.goto(`/product/${product.slug}`)
     const productName = (await page.getByTestId('product-title').innerText()).trim()
     expect(productName.length).toBeGreaterThan(0)
     await page.getByTestId('add-to-cart').click()

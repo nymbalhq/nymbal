@@ -51,3 +51,14 @@ export interface Product {
   createdAt: string
   updatedAt: string
 }
+
+/** The orders a product listing can be requested in; ties break by slug, ascending. */
+export const PRODUCT_SORT_KEYS = [
+  'newest',
+  'price-asc',
+  'price-desc',
+  'name-asc',
+  'name-desc',
+] as const
+export type ProductSortKey = (typeof PRODUCT_SORT_KEYS)[number]
+export const DEFAULT_PRODUCT_SORT: ProductSortKey = 'newest'
