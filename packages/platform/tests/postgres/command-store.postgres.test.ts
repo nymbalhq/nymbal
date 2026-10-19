@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
-import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createCommandStore, rawClients, type CommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createProductRepository, type ProductInsert } from '../../src/repositories/product.js'
+import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 
 // Acceptance tests for P0-02 AC-8 and AC-9: the `integration-postgres` Vitest project.
 // AC-9: the file refuses to load without NYMBAL_TEST_POSTGRES_URL, so a missing database fails the project; it can
@@ -13,14 +13,7 @@ import { createProductRepository, type ProductInsert } from '../../src/repositor
 // AC-8: each run creates its own database on that server, so "runMigrations applies the migrations" is observed
 // from an empty database, and the same products written to SQLite and Postgres must read back equal.
 
-const URL_VAR = 'NYMBAL_TEST_POSTGRES_URL'
-const serverUrl = process.env[URL_VAR]
-if (serverUrl === undefined || serverUrl.trim() === '') {
-  throw new Error(
-    `${URL_VAR} is not set: the integration-postgres project needs a Postgres server ` +
-      `(pnpm gate:full starts one with docker compose; e.g. ${URL_VAR}=postgres://postgres:nymbal@localhost:54329/nymbal)`,
-  )
-}
+const serverUrl = postgresServerUrl()
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url))
 const JOURNAL = JSON.parse(
@@ -29,19 +22,21 @@ const JOURNAL = JSON.parse(
   entries: unknown[]
 }
 
-const dbName = `nymbal_test_${process.pid}_${Date.now()}`
-let admin: pg.Pool
+let db: TestDatabase | undefined
 let store: CommandStore
 let sqlite: CommandStore
+// Every Postgres store this file opens. The database is dropped WITH (FORCE), which terminates any connection still
+// open to it; an idle pooled client terminated that way emits an error nobody handles, so each store is closed first.
+const opened: CommandStore[] = []
 
-function postgresStore(database: string): CommandStore {
-  const url = new URL(serverUrl!)
-  url.pathname = `/${database}`
-  return createCommandStore(
+function postgresStore(url: string): CommandStore {
+  const opening = createCommandStore(
     // @ts-expect-error minimal config
     { infrastructure: { commandStore: 'postgres' }, store: { name: 'test', currency: 'GBP' } },
-    { postgresUrl: url.toString() },
+    { postgresUrl: url },
   )
+  opened.push(opening)
+  return opening
 }
 
 async function query<T>(sql: string): Promise<T[]> {
@@ -52,9 +47,8 @@ async function query<T>(sql: string): Promise<T[]> {
 }
 
 beforeAll(async () => {
-  admin = new pg.Pool({ connectionString: serverUrl })
-  await admin.query(`CREATE DATABASE ${dbName}`)
-  store = postgresStore(dbName)
+  db = await createDatabase(serverUrl, 'command_store')
+  store = postgresStore(db.url)
   sqlite = createCommandStore(
     // @ts-expect-error minimal config
     { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
@@ -64,12 +58,10 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await store?.close()
+  await Promise.all(opened.splice(0).map((s) => s.close()))
   await sqlite?.close()
-  if (admin) {
-    await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`)
-    await admin.end()
-  }
+  // close() resolves before each pooled client's socket has gone; drop() waits until the server has let them go.
+  await db?.drop()
 })
 
 describe('AC-8: the command store on Postgres', () => {
@@ -78,7 +70,7 @@ describe('AC-8: the command store on Postgres', () => {
     const [row] = await query<{ db: string; one: number }>(
       'SELECT current_database() AS db, 1 AS one',
     )
-    expect(row).toEqual({ db: dbName, one: 1 })
+    expect(row).toEqual({ db: db!.name, one: 1 })
   })
 
   it('AC-8: runMigrations applies every Postgres migration to an empty database and creates products', async () => {
