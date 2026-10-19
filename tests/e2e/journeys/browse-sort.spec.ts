@@ -275,4 +275,59 @@ test.describe('Browse: sort', () => {
       }).toPass({ timeout: GRID_TIMEOUT })
     }
   })
+
+  // Store walk (browse.sort): a shopper who sorts before the listing script's own first request has answered. The
+  // first browser `GET /api/products?` is held until the price-desc answer has arrived (or 5 s at most), so that
+  // answer lands while the first is still in flight. Kills: the script subscribing its grid render only after its first
+  // load resolves, so the sorted answer reaches the state with nothing rendering it and the grid keeps the server's
+  // newest order under a dropdown and URL that say price-desc.
+  test('AC-7: a sort chosen while the first listing request is still in flight renders the grid in GET /api/products?sort=<key> order', async ({
+    page,
+    request,
+  }) => {
+    const known = await knownSlugs(request)
+
+    const isListing = (url: string) => /\/api\/products\?/.test(url)
+    let sortedArrived!: () => void
+    const sorted = new Promise<void>((resolve) => {
+      sortedArrived = resolve
+    })
+    page.on('requestfinished', (req) => {
+      if (isListing(req.url()) && /[?&]sort=price-desc(&|$)/.test(req.url())) sortedArrived()
+    })
+    let firstHeld!: () => void
+    const held = new Promise<void>((resolve) => {
+      firstHeld = resolve
+    })
+    await page.route(
+      (url) => isListing(url.toString()),
+      async (route) => {
+        firstHeld()
+        await Promise.race([sorted, new Promise((resolve) => setTimeout(resolve, 5_000))])
+        await route.continue()
+      },
+      { times: 1 },
+    )
+
+    await page.goto('/products', { waitUntil: 'domcontentloaded' })
+    // The listing's client code is running (Astro's script at load, Next's grid once hydrated) and its first request
+    // has not answered: the shopper sorts now.
+    await held
+    await page.getByTestId('sort-dropdown').selectOption('price-desc')
+    await page.waitForLoadState('networkidle')
+
+    await expect(page.getByTestId('sort-dropdown')).toHaveValue('price-desc')
+    await expect(page).toHaveURL(/[?&]sort=price-desc(&|$)/)
+    await expect(async () => {
+      const grid = await gridSlugs(page)
+      const products = await apiProducts(request, { sort: 'price-desc' })
+      const { shown, expected } = knownPrefix(
+        grid,
+        products.map((p) => p.slug),
+        known,
+      )
+      expect(grid.length).toBeGreaterThanOrEqual(Math.min(PAGE, known.size))
+      expect(shown).toEqual(expected)
+    }).toPass({ timeout: GRID_TIMEOUT })
+  })
 })
