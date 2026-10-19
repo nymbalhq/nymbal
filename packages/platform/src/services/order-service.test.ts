@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import fc from 'fast-check'
 import {
   EVT_ORDER_PLACED,
   EVT_ORDER_SHIPPED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
   NotFoundError,
+  OrderConflictError,
+  StatusTransitionError,
+  ValidationError,
+  type CaptureMethod,
+  type OrderStatus,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -426,5 +432,224 @@ describe('OrderService', () => {
     expect(converted.sequence).toBeGreaterThan(older.sequence)
     expect(await convertedOf(other)).toBeNull()
     await commandStore.close()
+  })
+})
+
+// P1-13 (spec P1-13-admin-truth-about-money): decision 4's "a captured order cannot be cancelled" with the diff
+// review's B2 (the paid check and the write under the row lock, the write conditional), and decision 2's imported
+// capture. The integration suites pin these through the routes; these pin them where Stryker mutates the service.
+describe('OrderService: P1-13 cancel of a paid order and imported captures', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function importWith(
+    env: Env,
+    money: {
+      totalMinor: number
+      capturedMinor?: number
+      refundedMinor?: number
+      captureMethod?: CaptureMethod | null
+    },
+    extra: { status?: OrderStatus; notes?: string; paymentIntentId?: string } = {},
+  ) {
+    const line = await createLine(money.totalMinor, 1)
+    return env.orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: `WC-${uuidv7().slice(-12)}`,
+      status: extra.status ?? 'confirmed',
+      customerId: null,
+      email: 'import@example.com',
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: money.totalMinor,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor: money.totalMinor,
+      currency: 'GBP',
+      createdAt: new Date('2024-03-01T09:30:00Z'),
+      ...(money.capturedMinor !== undefined && { capturedMinor: money.capturedMinor }),
+      ...(money.refundedMinor !== undefined && { refundedMinor: money.refundedMinor }),
+      ...(money.captureMethod !== undefined && { captureMethod: money.captureMethod }),
+      ...(extra.notes !== undefined && { notes: extra.notes }),
+      ...(extra.paymentIntentId !== undefined && { paymentIntentId: extra.paymentIntentId }),
+    })
+  }
+
+  const historyOf = (env: Env, orderId: string) =>
+    env.commandStore.read((tx) => env.repos.orderHistory.listByOrder(tx, orderId))
+  async function cancelledEvents(env: Env, orderId: string) {
+    const all = await env.commandStore.read((tx) => env.repos.eventLog.listAll(tx))
+    return all.filter(
+      (l) =>
+        l.event.type === EVT_ORDER_CANCELLED &&
+        (l.event.payload as { orderId?: string }).orderId === orderId,
+    )
+  }
+
+  // Defect: the paid guard is dropped or tests the wrong amount (`>= 0`, `< 0`), so an admin cancels money away.
+  it('AC-6 (B1): cancel of an order with anything captured refuses order.paid and changes nothing; with nothing captured it cancels', async () => {
+    const env = await setup()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 50_000 }),
+        fc.integer({ min: 0, max: 50_000 }),
+        async (totalMinor, rawCaptured) => {
+          const capturedMinor = rawCaptured % (totalMinor + 1)
+          const order = await importWith(env, {
+            totalMinor,
+            capturedMinor,
+            ...(capturedMinor > 0 && { captureMethod: 'manual' as const }),
+          })
+          const historyBefore = (await historyOf(env, order.id)).length
+          const paid = capturedMinor > 0
+          const outcome = await env.orderService.cancel(order.id, 'changed mind', 'admin:1').then(
+            (o) => o.status,
+            (e: unknown) => (e instanceof OrderConflictError ? e.code : e),
+          )
+          expect(outcome).toBe(paid ? 'order.paid' : 'cancelled')
+          expect((await env.orderService.getById(order.id)).status).toBe(
+            paid ? order.status : 'cancelled',
+          )
+          expect((await historyOf(env, order.id)).length).toBe(historyBefore + (paid ? 0 : 1))
+          expect((await cancelledEvents(env, order.id)).length).toBe(paid ? 0 : 1)
+        },
+      ),
+      { numRuns: 25 },
+    )
+    await env.commandStore.close()
+  })
+
+  // Defect: the missing order falls through to a TypeError on `order.capturedMinor` instead of a 404.
+  it('AC-6: cancel of an unknown order is NotFoundError', async () => {
+    const env = await setup()
+    await expect(env.orderService.cancel(uuidv7(), 'x', 'admin:1')).rejects.toBeInstanceOf(
+      NotFoundError,
+    )
+    await env.commandStore.close()
+  })
+
+  // Defect (B2): the write is unconditional, or a lost conditional write is ignored, so a confirm that commits between
+  // the read and the write is overwritten to cancelled; or the refusal names the stale status instead of the current.
+  it('AC-6 (B2): a cancel whose conditional write loses to a concurrent confirm refuses with the current status and writes nothing', async () => {
+    const env = await setup()
+    const order = await importWith(env, { totalMinor: 4200 }, { status: 'pending' })
+    const historyBefore = (await historyOf(env, order.id)).length
+    // The concurrent writer: the order is confirmed just before the conditional write runs.
+    const racing = {
+      ...env.repos,
+      order: {
+        ...env.repos.order,
+        async setStatusIf(...args: Parameters<Env['repos']['order']['setStatusIf']>) {
+          const [tx, id, , , at] = args
+          await env.repos.order.setStatus(tx, id, 'confirmed', at)
+          return env.repos.order.setStatusIf(...args)
+        },
+      },
+    }
+    const service = createOrderService({
+      store: env.commandStore,
+      repos: racing,
+      publisher: wirePublisher(
+        { createEventPublisher, createRelay },
+        {
+          store: env.commandStore,
+          eventLog: env.repos.eventLog,
+          eventBus: env.eventBus,
+          logger: createLogger({ pretty: false, level: 'error' }),
+        },
+      ).publisher,
+      logger: createLogger({ pretty: false, level: 'error' }),
+      orderNumberPrefix: 'TEST',
+      orderNumberStart: 1000,
+    })
+    const err = await service.cancel(order.id, 'too late', 'admin:1').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(StatusTransitionError)
+    expect((err as StatusTransitionError).context).toMatchObject({
+      fromStatus: 'confirmed',
+      toStatus: 'cancelled',
+    })
+    // The simulated confirm ran inside the cancel's transaction, so the refusal rolls it back with everything else.
+    expect((await env.orderService.getById(order.id)).status).toBe(order.status)
+    expect((await historyOf(env, order.id)).length).toBe(historyBefore)
+    expect(await cancelledEvents(env, order.id)).toHaveLength(0)
+    await env.commandStore.close()
+  })
+
+  // Defect: any bound of 0 <= refunded <= captured <= total is dropped or flipped, or a capture is accepted without a
+  // method (or a method without a capture), so an import writes amounts the payment state cannot read.
+  it('decision 2: importOrder accepts the amounts exactly when 0 <= refunded <= captured <= total and a method names a capture', async () => {
+    const env = await setup()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 10_000 }),
+        fc.integer({ min: -2, max: 10_002 }),
+        fc.integer({ min: -2, max: 10_002 }),
+        fc.constantFrom<CaptureMethod | null>('import', 'manual', 'provider', null),
+        async (totalMinor, capturedMinor, refundedMinor, captureMethod) => {
+          const valid =
+            0 <= refundedMinor &&
+            refundedMinor <= capturedMinor &&
+            capturedMinor <= totalMinor &&
+            capturedMinor > 0 === (captureMethod !== null)
+          const result = await importWith(env, {
+            totalMinor,
+            capturedMinor,
+            refundedMinor,
+            captureMethod,
+          }).then(
+            (o) => ({
+              capturedMinor: o.capturedMinor,
+              refundedMinor: o.refundedMinor,
+              captureMethod: o.captureMethod,
+            }),
+            (e: unknown) => (e instanceof ValidationError ? { refused: e.context } : e),
+          )
+          expect(result).toEqual(
+            valid
+              ? { capturedMinor, refundedMinor, captureMethod }
+              : { refused: { capturedMinor, refundedMinor, totalMinor } },
+          )
+        },
+      ),
+      {
+        numRuns: 120,
+        examples: [
+          [100, 100, 100, 'import'],
+          [100, 101, 0, 'import'],
+          [100, 50, 51, 'import'],
+          [100, 50, -1, 'import'],
+          [100, 50, 0, null],
+          [100, 0, 0, 'import'],
+          [100, 0, 0, null],
+        ],
+      },
+    )
+    await env.commandStore.close()
+  })
+
+  // Defect: the capture is dropped, stamped now instead of when the order was placed, or the optional fields default
+  // to something other than nothing (notes, intent, no capture).
+  it("decision 2: an imported capture is recorded at the order's placing, and an import without one records nothing", async () => {
+    const env = await setup()
+    const paid = await importWith(
+      env,
+      { totalMinor: 3100, capturedMinor: 3100, refundedMinor: 1100, captureMethod: 'import' },
+      { notes: 'from woo', paymentIntentId: 'pi_wc_77' },
+    )
+    expect(paid.capturedAt).toBe(paid.createdAt)
+    expect(paid.refundedMinor).toBe(paid.capturedMinor - 2000)
+    expect(paid.notes).toBe('from woo')
+    expect(paid.paymentIntentId).toBe('pi_wc_77')
+
+    const bare = await importWith(env, { totalMinor: 900 })
+    expect(bare.capturedMinor).toBe(0)
+    expect(bare.refundedMinor).toBe(0)
+    expect(bare.captureMethod).toBeNull()
+    expect(bare.capturedAt).toBeNull()
+    expect(bare.notes).toBe('')
+    expect(bare.paymentIntentId).toBeNull()
+    expect(bare.metadata).toEqual({})
+    await env.commandStore.close()
   })
 })
