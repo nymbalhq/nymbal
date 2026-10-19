@@ -67,7 +67,8 @@ function main(argv: string[]): number {
   if (values.base === undefined) throw new Error('usage: changeset-needed.ts --base <ref>')
   const root = git(process.cwd(), ['rev-parse', '--show-toplevel']).trim()
   // The pull request's own changes: from where it left the base, as `changeset status --since` reads them.
-  const changed = git(root, ['diff', '--name-only', `${values.base}...HEAD`])
+  // Without renames, a move out of a package source path lists the path it left, not only where it landed.
+  const changed = git(root, ['diff', '--name-only', '--no-renames', `${values.base}...HEAD`])
     .split('\n')
     .filter(Boolean)
   if (!needsChangeset(changed, publishedPackageDirs(root))) {

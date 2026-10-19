@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from 'node:child_process'
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -210,6 +210,18 @@ describe('AC-5: scripts/changeset-needed.ts', () => {
       expect(calls[0]).toMatch(new RegExp(`--since[= ]${base}\\b`))
       expect(run.code, run.output).toBe(fakeExit)
     }
+  })
+
+  it('AC-5: moving a source file into tests/ still defers to `changeset status`: the source path left the package', async () => {
+    const { repo } = changesetRepo({ 'packages/platform/src/helpers.ts': 'export const h = 1\n' })
+    const base = git(repo.root, 'rev-parse', 'HEAD')
+    mkdirSync(join(repo.root, 'packages/platform/tests'))
+    git(repo.root, 'mv', 'packages/platform/src/helpers.ts', 'packages/platform/tests/helpers.ts')
+    git(repo.root, 'commit', '-q', '-m', 'move')
+    const run = await changesetNeeded(repo, base, 1)
+    expect(run.output).not.toMatch(/not needed/)
+    expect(statusCalls(repo).length, run.output).toBe(1)
+    expect(run.code, run.output).toBe(1)
   })
 
   it("AC-5: ci.yml's Changeset job runs the script against the pull request's base, not changeset status itself", () => {
