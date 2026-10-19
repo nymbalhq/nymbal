@@ -40,7 +40,7 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
   const { eventBus, email, logger, processedEventRepo, orderRepo, storeName } = deps
 
   // Sent on payment, never at placement: an unpaid order (or an imported one) emails nobody. Keyed per order, so a
-  // mark-paid after the payment sends nothing more.
+  // second order.paid for the order (a redelivered or replayed event) sends nothing more.
   const onOrderPaid: EventHandler<OrderPaidV1Payload> = async (event) => {
     const { orderId } = event.payload
     const { store } = processedEventRepo

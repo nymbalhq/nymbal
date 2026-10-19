@@ -11,6 +11,7 @@ import { createCustomerRepository, type CustomerRepository } from './customer.js
 import { createRefreshTokenRepository, type RefreshTokenRepository } from './refresh-token.js'
 import { createOrderRepository, type OrderRepository } from './order.js'
 import { createOrderHistoryRepository, type OrderHistoryRepository } from './order-history.js'
+import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
 import {
   createInventoryReservationRepository,
@@ -33,6 +34,7 @@ export * from './customer.js'
 export * from './refresh-token.js'
 export * from './order.js'
 export * from './order-history.js'
+export * from './order-refund.js'
 export * from './order-sequence.js'
 export * from './inventory-reservation.js'
 export * from './stock-adjustment.js'
@@ -50,6 +52,7 @@ export interface Repositories {
   refreshToken: RefreshTokenRepository
   order: OrderRepository
   orderHistory: OrderHistoryRepository
+  orderRefund: OrderRefundRepository
   orderSequence: OrderSequenceRepository
   inventoryReservation: InventoryReservationRepository
   stockAdjustment: StockAdjustmentRepository
@@ -73,6 +76,7 @@ export function buildRepositories(
     refreshToken: createRefreshTokenRepository(commandStore),
     order: createOrderRepository(commandStore),
     orderHistory: createOrderHistoryRepository(commandStore),
+    orderRefund: createOrderRefundRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
     inventoryReservation: createInventoryReservationRepository(commandStore),
     stockAdjustment: createStockAdjustmentRepository(commandStore),

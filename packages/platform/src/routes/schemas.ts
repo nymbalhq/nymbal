@@ -69,20 +69,6 @@ const productFields = {
   categoryIds: z.array(z.string()).optional(),
 }
 
-const orderLineItem = z.object({
-  variantId: z.string(),
-  productId: z.string(),
-  productName: z.string(),
-  variantName: z.string(),
-  sku: z.string(),
-  qty: z.number().int(),
-  unitPriceMinor: money,
-  lineSubtotalMinor: money,
-  lineTaxMinor: money,
-  lineTotalMinor: money,
-  imageUrl: z.string(),
-})
-
 const noteBody = z.object({ body: z.string().min(1) })
 /** A refresh token in the body, or none: the cookie carries it for a browser. */
 const optionalRefresh = z.object({ refreshToken: z.string().optional() }).optional()
@@ -257,7 +243,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/confirm': {
     name: 'admin.orders.confirm',
-    description: 'Move an order to confirmed.',
+    description:
+      'Move a paid order to confirmed; an unpaid order is refused (record its payment instead).',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/process': {
@@ -267,19 +254,16 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/cancel': {
     name: 'admin.orders.cancel',
-    description: 'Cancel an order, with an optional reason.',
+    description: 'Cancel an order nothing was captured for, with an optional reason.',
     params: orderIdParams,
     body: z.object({ reason: z.string().optional() }).optional(),
   },
   'POST /api/admin/orders/:id/mark-paid': {
     name: 'admin.orders.markPaid',
-    description: 'Record a payment taken outside the store.',
+    description:
+      "Record a payment of the order's total taken outside the store, confirming the order.",
     params: orderIdParams,
-    body: z.object({
-      paymentIntentId: z.string().min(1),
-      amountMinor: money,
-      currency: z.string().min(1),
-    }),
+    body: z.object({ note: z.string().optional() }).optional(),
   },
   'POST /api/admin/orders/:id/mark-delivered': {
     name: 'admin.orders.markDelivered',
@@ -294,19 +278,9 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
-    description: 'Refund an order in full.',
+    description: 'Refund part or all of what an order captured, through the payments provider.',
     params: orderIdParams,
     body: z.object({ amountMinor: money.positive(), reason: z.string().optional() }),
-  },
-  'POST /api/admin/orders/:id/partial-refund': {
-    name: 'admin.orders.partialRefund',
-    description: 'Refund part of an order, optionally naming its lines.',
-    params: orderIdParams,
-    body: z.object({
-      amountMinor: money,
-      reason: z.string().optional(),
-      lineItems: z.array(orderLineItem).optional(),
-    }),
   },
   'GET /api/admin/orders/:id/timeline': {
     name: 'admin.orders.timeline',

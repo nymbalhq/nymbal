@@ -2,14 +2,14 @@ import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_ORDER_CANCELLED,
   EVT_ORDER_DELIVERED,
-  EVT_ORDER_PAID,
-  EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_PLACED,
-  EVT_ORDER_REFUNDED,
   EVT_ORDER_SHIPPED,
   NotFoundError,
+  OrderConflictError,
+  ValidationError,
   assertOrderTransition,
   type Address,
+  type CaptureMethod,
   type Logger,
   type Order,
   type OrderLineItem,
@@ -42,6 +42,10 @@ export interface OrderImportInput extends OrderCreateDraftInput {
   orderNumber: string
   status: OrderStatus
   createdAt: Date
+  /** What the imported order was paid, taken as captured when it was placed; nothing when absent. */
+  capturedMinor?: number
+  refundedMinor?: number
+  captureMethod?: CaptureMethod | null
 }
 
 export interface OrderService {
@@ -53,21 +57,8 @@ export interface OrderService {
   updateStatus(id: string, toStatus: OrderStatus, actor: string, note?: string): Promise<Order>
   markShipped(id: string, trackingNumber: string, carrier: string, actor: string): Promise<Order>
   markDelivered(id: string, actor: string): Promise<Order>
+  /** Refuses with `order.paid` once anything is captured: a paid order is refunded, never cancelled. */
   cancel(id: string, reason: string, actor: string): Promise<Order>
-  refund(id: string, amountMinor: number, reason: string, actor: string): Promise<Order>
-  partialRefund(
-    id: string,
-    amountMinor: number,
-    lineItems: OrderLineItem[],
-    reason: string,
-    actor: string,
-  ): Promise<Order>
-  markPaid(
-    id: string,
-    paymentIntentId: string,
-    amountMinor: number,
-    currency: string,
-  ): Promise<Order>
 }
 
 export interface CreateOrderServiceDeps {
@@ -200,53 +191,32 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async cancel(id, reason, actor) {
       return store.transaction(async (tx) => {
         const order = await requireOrder(tx, id)
+        if (order.capturedMinor > 0) {
+          throw new OrderConflictError(
+            'order.paid',
+            `Order ${order.orderNumber} is paid: refund it instead of cancelling`,
+          )
+        }
         const fresh = await doTransition(tx, order, 'cancelled', actor, reason)
         await publisher.publish(EVT_ORDER_CANCELLED, { orderId: fresh.id, reason })
         return fresh
       })
     },
-    async refund(id, amountMinor, reason, actor) {
-      return store.transaction(async (tx) => {
-        const order = await requireOrder(tx, id)
-        const fresh = await doTransition(tx, order, 'refunded', actor, reason)
-        await publisher.publish(EVT_ORDER_REFUNDED, {
-          orderId: fresh.id,
-          amountMinor,
-          reason,
-        })
-        return fresh
-      })
-    },
-    async partialRefund(id, amountMinor, lineItems, reason, actor) {
-      return store.transaction(async (tx) => {
-        const order = await requireOrder(tx, id)
-        const fresh = await doTransition(tx, order, 'partially_refunded', actor, reason)
-        await publisher.publish(EVT_ORDER_PARTIALLY_REFUNDED, {
-          orderId: fresh.id,
-          amountMinor,
-          lineItems,
-          reason,
-        })
-        return fresh
-      })
-    },
-    async markPaid(id, paymentIntentId, amountMinor, currency) {
-      return store.transaction(async (tx) => {
-        const order = await requireOrder(tx, id)
-        await repos.order.setPaymentIntent(tx, order.id, paymentIntentId, new Date())
-        // status transition pending → confirmed happens in CheckoutService.finalize;
-        // here we just emit the event.
-        await publisher.publish(EVT_ORDER_PAID, {
-          orderId: order.id,
-          paymentIntentId,
-          amountMinor,
-          currency,
-        })
-        return requireOrder(tx, order.id)
-      })
-    },
-
     async importOrder(input) {
+      const capturedMinor = input.capturedMinor ?? 0
+      const refundedMinor = input.refundedMinor ?? 0
+      if (
+        !(
+          0 <= refundedMinor &&
+          refundedMinor <= capturedMinor &&
+          capturedMinor <= input.totalMinor
+        ) ||
+        capturedMinor > 0 !== (input.captureMethod != null)
+      ) {
+        throw new ValidationError('imported payment amounts are inconsistent', {
+          context: { capturedMinor, refundedMinor, totalMinor: input.totalMinor },
+        })
+      }
       return store.transaction(async (tx) => {
         const sequence = await repos.orderSequence.nextSequence(tx, deps.orderNumberStart)
         await repos.order.insert(tx, {
@@ -268,6 +238,14 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           notes: input.notes ?? '',
           metadata: input.metadata ?? {},
           paymentIntentId: input.paymentIntentId ?? null,
+          ...(input.captureMethod != null && {
+            capture: {
+              amountMinor: capturedMinor,
+              method: input.captureMethod,
+              at: input.createdAt,
+              refundedMinor,
+            },
+          }),
           createdAt: input.createdAt,
           updatedAt: input.createdAt,
         })

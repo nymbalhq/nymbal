@@ -38,13 +38,14 @@ export function registerAdminDashboardRoute(
 
         const todayOrders = allOrders.filter((o) => new Date(o.createdAt) >= startOfToday)
 
-        const paidStatuses = new Set(['confirmed', 'processing', 'shipped', 'delivered'])
         const shippedStatuses = new Set(['shipped', 'delivered'])
 
         const todayOrderCount = todayOrders.length
-        const todayRevenueMinor = todayOrders
-          .filter((o) => paidStatuses.has(o.status))
-          .reduce((sum, o) => sum + o.totalMinor, 0)
+        // Revenue is the money kept: what was captured less what was refunded, whatever the status says.
+        const todayRevenueMinor = todayOrders.reduce(
+          (sum, o) => sum + o.capturedMinor - o.refundedMinor,
+          0,
+        )
         const todayItemsShipped = todayOrders.filter((o) => shippedStatuses.has(o.status)).length
 
         // Recent orders — last 10 overall

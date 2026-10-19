@@ -1,5 +1,5 @@
 import { and, desc, eq, notInArray } from 'drizzle-orm'
-import type { Address, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
+import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -33,8 +33,16 @@ export interface OrderInsert {
   paymentIntentId?: string | null
   /** The cart a checkout order was placed from. */
   cartToken?: string | null
+  /** An imported order's money; a checkout order starts with nothing captured. */
+  capture?: OrderCapture & { refundedMinor: number }
   createdAt: Date
   updatedAt: Date
+}
+
+export interface OrderCapture {
+  amountMinor: number
+  method: CaptureMethod
+  at: Date
 }
 
 function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): Order {
@@ -57,6 +65,10 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
     notes: String(row.notes ?? ''),
     metadata: parseJson<Record<string, unknown>>(store, row.metadata, {}),
     paymentIntentId: (row.paymentIntentId as string | null) ?? null,
+    capturedMinor: Number(row.capturedMinor ?? 0),
+    capturedAt: row.capturedAt == null ? null : fromTimestamp(row.capturedAt),
+    refundedMinor: Number(row.refundedMinor ?? 0),
+    captureMethod: (row.captureMethod as CaptureMethod | null) ?? null,
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
   }
@@ -64,6 +76,9 @@ function rowToOrder(store: CommandStore['kind'], row: Record<string, unknown>): 
 
 export interface OrderRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Order | null>
+  /** The order, read under its row lock until the transaction ends (Postgres `FOR UPDATE`; on SQLite the open
+   *  `BEGIN IMMEDIATE` transaction already holds every write). */
+  lock(tx: Tx, id: string): Promise<Order | null>
   findByOrderNumber(tx: ReadTx, orderNumber: string): Promise<Order | null>
   findByPaymentIntentId(tx: ReadTx, paymentIntentId: string): Promise<Order | null>
   /** The cart's pending order: at most one, by the partial unique index on `cart_token`. */
@@ -87,6 +102,8 @@ export interface OrderRepository extends StoreRepository {
     updatedAt: Date,
   ): Promise<boolean>
   setPaymentIntent(tx: Tx, id: string, paymentIntentId: string, updatedAt: Date): Promise<void>
+  recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
+  setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
   setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
 }
 
@@ -106,6 +123,22 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .select()
         .from(postgresSchema.orders)
         .where(eq(postgresSchema.orders.id, id))
+      return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
+    },
+    async lock(tx, id) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select()
+          .from(sqliteSchema.orders)
+          .where(eq(sqliteSchema.orders.id, id))
+          .get()
+        return row ? rowToOrder('sqlite', row as Record<string, unknown>) : null
+      }
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(postgresSchema.orders)
+        .where(eq(postgresSchema.orders.id, id))
+        .for('update')
       return row ? rowToOrder('postgres', row as Record<string, unknown>) : null
     },
     async findByOrderNumber(tx, orderNumber) {
@@ -239,6 +272,9 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         notes: o.notes ?? '',
         paymentIntentId: o.paymentIntentId ?? null,
         cartToken: o.cartToken ?? null,
+        capturedMinor: o.capture?.amountMinor ?? 0,
+        refundedMinor: o.capture?.refundedMinor ?? 0,
+        captureMethod: o.capture?.method ?? null,
       }
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
@@ -249,6 +285,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
             shippingAddress: JSON.stringify(o.shippingAddress),
             lineItems: JSON.stringify(o.lineItems),
             metadata: JSON.stringify(o.metadata ?? {}),
+            capturedAt: o.capture?.at.toISOString() ?? null,
             createdAt: o.createdAt.toISOString(),
             updatedAt: o.updatedAt.toISOString(),
           })
@@ -263,6 +300,7 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
           shippingAddress: o.shippingAddress,
           lineItems: o.lineItems,
           metadata: o.metadata ?? {},
+          capturedAt: o.capture?.at ?? null,
           createdAt: o.createdAt,
           updatedAt: o.updatedAt,
         })
@@ -310,6 +348,39 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
       await postgresDb(tx)
         .update(postgresSchema.orders)
         .set({ paymentIntentId, updatedAt })
+        .where(eq(postgresSchema.orders.id, id))
+    },
+    async recordCapture(tx, id, capture) {
+      const values = {
+        capturedMinor: capture.amountMinor,
+        captureMethod: capture.method,
+      }
+      if (tx.kind === 'sqlite') {
+        const at = capture.at.toISOString()
+        sqliteDb(tx)
+          .update(sqliteSchema.orders)
+          .set({ ...values, capturedAt: at, updatedAt: at })
+          .where(eq(sqliteSchema.orders.id, id))
+          .run()
+        return
+      }
+      await postgresDb(tx)
+        .update(postgresSchema.orders)
+        .set({ ...values, capturedAt: capture.at, updatedAt: capture.at })
+        .where(eq(postgresSchema.orders.id, id))
+    },
+    async setRefunded(tx, id, refundedMinor, updatedAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
+          .update(sqliteSchema.orders)
+          .set({ refundedMinor, updatedAt: updatedAt.toISOString() })
+          .where(eq(sqliteSchema.orders.id, id))
+          .run()
+        return
+      }
+      await postgresDb(tx)
+        .update(postgresSchema.orders)
+        .set({ refundedMinor, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
     },
     async setNotes(tx, id, notes, updatedAt) {

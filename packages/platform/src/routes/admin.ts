@@ -19,15 +19,17 @@ export interface RegisterAdminRoutesDeps {
   adapters: AdapterRegistry
 }
 
-export function registerAdminRoutes(
-  adapter: HttpAdapter,
-  deps: RegisterAdminRoutesDeps,
-): void {
+export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRoutesDeps): void {
   const { config, services, repos, adapters } = deps
 
   registerAdminMeRoute(adapter, { config })
   registerAdminDashboardRoute(adapter, { repos, config })
-  registerAdminOrdersRoutes(adapter, { order: services.order, repos })
+  registerAdminOrdersRoutes(adapter, {
+    order: services.order,
+    checkout: services.checkout,
+    refund: services.refund,
+    repos,
+  })
   registerAdminProductsRoutes(adapter, { product: services.product, ai: adapters.ai })
   registerAdminInventoryRoutes(adapter, {
     inventory: services.inventory,

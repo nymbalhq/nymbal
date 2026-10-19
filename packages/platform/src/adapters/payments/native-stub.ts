@@ -21,6 +21,13 @@ interface StubIntent {
   currency: string
   status: PaymentStatus
   orderRef?: string
+  refundedMinor: number
+}
+
+const STUB_ID_PREFIX = 'pi_stub_'
+
+function rejected(message: string): PaymentError {
+  return new PaymentError('refund_rejected', message)
 }
 
 /**
@@ -49,7 +56,8 @@ function toIntent(intent: StubIntent): PaymentIntent {
 /**
  * Deterministic payments adapter for local development without Stripe keys.
  * Every intent succeeds at creation unless the receipt email asks otherwise (`statusFor`); webhook verification is a
- * no-op.
+ * no-op. Refunds follow a provider's rules for the intents this process holds (captured, and never beyond the
+ * capture); an intent of its own lost to a restart is refunded as asked, the shop's refundable check being the guard.
  */
 export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): PaymentsAdapter {
   const { logger } = deps
@@ -64,12 +72,13 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
     healthCheck: () => okHealth('stub — always healthy'),
 
     async createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent> {
-      const id = `pi_stub_${uuidv7()}`
+      const id = `${STUB_ID_PREFIX}${uuidv7()}`
       const intent: StubIntent = {
         id,
         amountMinor: params.amountMinor,
         currency: params.currency,
         status: statusFor(params.receiptEmail),
+        refundedMinor: 0,
         ...(params.orderRef !== undefined && { orderRef: params.orderRef }),
       }
       intents.set(id, intent)
@@ -89,16 +98,31 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
       }
     },
 
-    async refund(paymentId, amountMinor, reason): Promise<Refund> {
-      const intent = intents.get(paymentId)
-      return {
+    async refund(paymentId, amountMinor, reason, opts): Promise<Refund> {
+      if (!paymentId.startsWith(STUB_ID_PREFIX)) throw rejected(`${paymentId} is not a stub intent`)
+      const answer = (amount: number, currency: string): Refund => ({
         refundId: `re_stub_${uuidv7()}`,
         paymentId,
-        amountMinor: amountMinor ?? intent?.amountMinor ?? 0,
-        currency: intent?.currency ?? 'usd',
+        amountMinor: amount,
+        currency,
         reason: reason ?? null,
         status: 'succeeded',
+      })
+      const intent = intents.get(paymentId)
+      if (!intent) {
+        if (amountMinor === undefined || amountMinor <= 0 || opts?.currency === undefined) {
+          throw rejected(`intent ${paymentId} is no longer held: name the amount and currency`)
+        }
+        return answer(amountMinor, opts.currency)
       }
+      if (intent.status !== 'succeeded') throw rejected(`intent ${paymentId} was never captured`)
+      const left = intent.amountMinor - intent.refundedMinor
+      const amount = amountMinor ?? left
+      if (amount <= 0 || amount > left) {
+        throw rejected(`refund of ${amount} exceeds the ${left} left on intent ${paymentId}`)
+      }
+      intent.refundedMinor += amount
+      return answer(amount, intent.currency)
     },
 
     async getPaymentStatus(intentId) {
@@ -131,6 +155,10 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
           amountMinor?: number
           currency?: string
         }
+        // A stub webhook stands in for the shopper paying a waiting intent: the stub now holds it captured.
+        const held =
+          event.paymentIntentId === undefined ? undefined : intents.get(event.paymentIntentId)
+        if (held !== undefined && event.kind === 'payment.captured') held.status = 'succeeded'
         return {
           verified: true,
           eventId: event.id ?? `evt_stub_${uuidv7()}`,

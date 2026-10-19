@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useUpdateOrderStatus } from '@/hooks/useOrders'
+import { useMarkPaidOrder, useUpdateOrderStatus } from '@/hooks/useOrders'
 import { ORDER_STATUS_TRANSITIONS } from '@nymbalhq/types'
 import type { OrderStatus } from '@nymbalhq/types'
 import { tid } from '@/lib/testid'
@@ -17,7 +17,12 @@ interface OrderStatusSelectProps {
   orderId: string
   currentStatus: OrderStatus
   orderNumber: string
+  /** What the order captured: a paid order is refunded through the refund dialog, never cancelled. */
+  capturedMinor: number
 }
+
+/** The select's value for recording a payment taken outside the store (mark-paid), which confirms a pending order. */
+const RECORD_PAYMENT = 'record-payment'
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: 'Pending',
@@ -36,18 +41,39 @@ const ACTION_MAP: Partial<Record<OrderStatus, string>> = {
   shipped: 'ship',
   delivered: 'mark-delivered',
   cancelled: 'cancel',
-  refunded: 'refund',
 }
 
-export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: OrderStatusSelectProps) {
+/**
+ * The moves the select offers: refunds go through the refund dialog, only money confirms an order (Record payment),
+ * and an order that captured anything is never cancelled.
+ */
+function offeredStatuses(currentStatus: OrderStatus, capturedMinor: number): OrderStatus[] {
+  return ORDER_STATUS_TRANSITIONS[currentStatus].filter(
+    (status) =>
+      status !== 'refunded' &&
+      status !== 'partially_refunded' &&
+      status !== 'confirmed' &&
+      !(status === 'cancelled' && capturedMinor > 0),
+  )
+}
+
+export function OrderStatusSelect({
+  orderId,
+  currentStatus,
+  orderNumber,
+  capturedMinor,
+}: OrderStatusSelectProps) {
   const queryClient = useQueryClient()
-  const { mutateAsync: updateStatus, isPending } = useUpdateOrderStatus()
+  const { mutateAsync: updateStatus, isPending: isUpdating } = useUpdateOrderStatus()
+  const { mutateAsync: markPaid, isPending: isRecording } = useMarkPaidOrder()
   const [optimisticStatus, setOptimisticStatus] = useState<OrderStatus | null>(null)
 
-  const nextStatuses = ORDER_STATUS_TRANSITIONS[currentStatus]
+  const nextStatuses = offeredStatuses(currentStatus, capturedMinor)
+  const canRecordPayment = currentStatus === 'pending' && capturedMinor === 0
   const displayStatus = optimisticStatus ?? currentStatus
+  const isPending = isUpdating || isRecording
 
-  if (nextStatuses.length === 0) {
+  if (nextStatuses.length === 0 && !canRecordPayment) {
     return (
       <span className="text-sm text-zinc-500 font-medium capitalize">
         {STATUS_LABELS[currentStatus]}
@@ -56,12 +82,12 @@ export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: Order
   }
 
   const handleChange = async (value: string) => {
-    const newStatus = value as OrderStatus
-    const action = ACTION_MAP[newStatus] ?? newStatus
+    const newStatus = value === RECORD_PAYMENT ? 'confirmed' : (value as OrderStatus)
     setOptimisticStatus(newStatus)
 
     try {
-      await updateStatus({ orderId, action })
+      if (value === RECORD_PAYMENT) await markPaid({ orderId })
+      else await updateStatus({ orderId, action: ACTION_MAP[newStatus] ?? newStatus })
     } catch (err) {
       console.error('[OrderStatusSelect] status update failed', err)
       setOptimisticStatus(null)
@@ -70,11 +96,7 @@ export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: Order
   }
 
   return (
-    <Select
-      value={displayStatus}
-      onValueChange={(v) => void handleChange(v)}
-      disabled={isPending}
-    >
+    <Select value={displayStatus} onValueChange={(v) => void handleChange(v)} disabled={isPending}>
       <SelectTrigger
         className={cn('w-44 h-8 text-xs', isPending && 'opacity-50')}
         aria-label="Order status"
@@ -90,6 +112,14 @@ export function OrderStatusSelect({ orderId, currentStatus, orderNumber }: Order
         >
           {STATUS_LABELS[currentStatus]} (current)
         </SelectItem>
+        {canRecordPayment && (
+          <SelectItem
+            value={RECORD_PAYMENT}
+            data-testid={tid('order', 'status-option', RECORD_PAYMENT)}
+          >
+            Record payment
+          </SelectItem>
+        )}
         {nextStatuses.map((status) => (
           <SelectItem
             key={status}

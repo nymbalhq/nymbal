@@ -6,228 +6,126 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
-import { useRefundOrder, usePartialRefundOrder } from '@/hooks/useOrders'
-import { formatMoney } from '@/lib/money'
+import { useRefundOrder } from '@/hooks/useOrders'
+import { ApiError } from '@/lib/api'
+import { formatMoney, parseMoney } from '@/lib/money'
 import { tid } from '@/lib/testid'
-import type { Order, OrderLineItem } from '@nymbalhq/types'
+import type { AdminOrder } from '@/types'
 
 interface OrderRefundDialogProps {
-  order: Order
+  order: AdminOrder
   onClose: () => void
 }
 
-interface LineItemSelection {
-  selected: boolean
-  qty: number
-}
-
+/** A refund by amount: anything up to what is refundable, the whole of it being a full refund. */
 export function OrderRefundDialog({ order, onClose }: OrderRefundDialogProps) {
+  const { refundableMinor, currency } = order.payment
+  const [amount, setAmount] = useState((refundableMinor / 100).toFixed(2))
   const [reason, setReason] = useState('')
-  const [lineSelections, setLineSelections] = useState<Record<string, LineItemSelection>>(
-    Object.fromEntries(
-      order.lineItems.map((item) => [item.variantId, { selected: false, qty: item.qty }])
-    )
-  )
-
+  const [failure, setFailure] = useState<string | null>(null)
   const refundMutation = useRefundOrder()
-  const partialRefundMutation = usePartialRefundOrder()
 
-  const calculatePartialAmount = () => {
-    return order.lineItems.reduce((acc, item) => {
-      const sel = lineSelections[item.variantId]
-      if (!sel?.selected) return acc
-      const qty = Math.min(sel.qty, item.qty)
-      return acc + (item.unitPriceMinor * qty)
-    }, 0)
-  }
+  const amountMinor = parseMoney(amount)
+  const valid = amountMinor !== null && amountMinor > 0 && amountMinor <= refundableMinor
 
-  const handleFullRefund = async () => {
-    const refundArgs: { orderId: string; amountMinor: number; reason?: string } = {
-      orderId: order.id,
-      amountMinor: order.totalMinor,
+  const handleRefund = async () => {
+    if (!valid || amountMinor === null) return
+    setFailure(null)
+    try {
+      const answer = await refundMutation.mutateAsync({
+        orderId: order.id,
+        amountMinor,
+        ...(reason.trim() && { reason: reason.trim() }),
+      })
+      if (answer.refund.status === 'failed') {
+        setFailure('The payment provider refused the refund.')
+        return
+      }
+      onClose()
+    } catch (err) {
+      setFailure(err instanceof ApiError ? err.message : 'The refund could not be made.')
     }
-    if (reason) refundArgs.reason = reason
-    await refundMutation.mutateAsync(refundArgs)
-    onClose()
   }
-
-  const handlePartialRefund = async () => {
-    const selectedItems = order.lineItems
-      .filter((item) => lineSelections[item.variantId]?.selected)
-      .map((item) => ({
-        variantId: item.variantId,
-        qty: lineSelections[item.variantId]?.qty ?? item.qty,
-      }))
-
-    if (selectedItems.length === 0) return
-
-    const partialArgs: { orderId: string; amountMinor: number; reason?: string; lineItems: unknown[] } = {
-      orderId: order.id,
-      amountMinor: calculatePartialAmount(),
-      lineItems: selectedItems,
-    }
-    if (reason) partialArgs.reason = reason
-    await partialRefundMutation.mutateAsync(partialArgs)
-    onClose()
-  }
-
-  const partialAmount = calculatePartialAmount()
-  const hasSelection = Object.values(lineSelections).some((s) => s.selected)
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl" data-testid={tid('order', 'refund-dialog')}>
+      <DialogContent className="max-w-md" data-testid={tid('order', 'refund-dialog')}>
         <DialogHeader>
           <DialogTitle>Refund Order #{order.orderNumber}</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="full">
-          <TabsList>
-            <TabsTrigger value="full">Full Refund</TabsTrigger>
-            <TabsTrigger value="partial">Partial Refund</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="full" className="space-y-4 mt-4">
-            <div className="rounded-md border border-zinc-200 p-4 bg-zinc-50">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-600">Total refund amount</span>
-                <span className="font-mono text-lg font-semibold text-zinc-900">
-                  {formatMoney(order.totalMinor, order.currency)}
-                </span>
-              </div>
+        <div className="space-y-4">
+          <div className="rounded-md border border-zinc-200 p-3 bg-zinc-50">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-600">Refundable</span>
+              <span className="font-mono font-semibold text-zinc-900">
+                {formatMoney(refundableMinor, currency)}
+              </span>
             </div>
-            <div className="space-y-1.5">
-              <Label>Reason (optional)</Label>
-              <Textarea
-                placeholder="Enter refund reason..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={3}
-                data-testid={tid('order', 'refund-reason')}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="refund-amount">Amount ({currency})</Label>
+            <div className="flex gap-2">
+              <Input
+                id="refund-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                aria-invalid={!valid}
+                data-testid={tid('order', 'refund-amount')}
               />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
               <Button
-                variant="destructive"
-                onClick={() => void handleFullRefund()}
-                disabled={refundMutation.isPending}
-                data-testid={tid('order', 'refund-confirm')}
+                variant="outline"
+                type="button"
+                onClick={() => setAmount((refundableMinor / 100).toFixed(2))}
               >
-                {refundMutation.isPending ? 'Processing...' : 'Issue Full Refund'}
+                Full refund
               </Button>
-            </DialogFooter>
-          </TabsContent>
-
-          <TabsContent value="partial" className="space-y-4 mt-4">
-            <div className="rounded-md border border-zinc-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 border-b border-zinc-200">
-                  <tr>
-                    <th className="w-8 px-3 py-2"></th>
-                    <th className="px-3 py-2 text-left text-xs uppercase tracking-wider text-zinc-500 font-medium">Item</th>
-                    <th className="px-3 py-2 text-right text-xs uppercase tracking-wider text-zinc-500 font-medium">Qty</th>
-                    <th className="px-3 py-2 text-right text-xs uppercase tracking-wider text-zinc-500 font-medium">Unit Price</th>
-                    <th className="px-3 py-2 text-right text-xs uppercase tracking-wider text-zinc-500 font-medium">Refund</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.lineItems.map((item: OrderLineItem) => {
-                    const sel = lineSelections[item.variantId] ?? { selected: false, qty: item.qty }
-                    return (
-                      <tr key={item.variantId} className="border-b border-zinc-100 last:border-0">
-                        <td className="px-3 py-2">
-                          <Checkbox
-                            checked={sel.selected}
-                            onCheckedChange={(checked) => {
-                              setLineSelections((prev) => ({
-                                ...prev,
-                                [item.variantId]: { ...prev[item.variantId] ?? { qty: item.qty }, selected: !!checked },
-                              }))
-                            }}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <p className="font-medium text-zinc-900">{item.productName}</p>
-                          <p className="text-xs text-zinc-500">{item.variantName}</p>
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {sel.selected ? (
-                            <input
-                              type="number"
-                              min={1}
-                              max={item.qty}
-                              value={sel.qty}
-                              onChange={(e) => {
-                                const v = Math.min(item.qty, Math.max(1, parseInt(e.target.value) || 1))
-                                setLineSelections((prev) => ({
-                                  ...prev,
-                                  [item.variantId]: { ...prev[item.variantId] ?? { selected: true }, qty: v },
-                                }))
-                              }}
-                              className="w-16 rounded border border-zinc-200 px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          ) : (
-                            <span className="text-zinc-500">{item.qty}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-sm">
-                          {formatMoney(item.unitPriceMinor, order.currency)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-sm font-medium">
-                          {sel.selected
-                            ? formatMoney(item.unitPriceMinor * sel.qty, order.currency)
-                            : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
             </div>
-
-            {partialAmount > 0 && (
-              <div className="rounded-md border border-zinc-200 p-3 bg-zinc-50">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-600">Partial refund amount</span>
-                  <span className="font-mono text-base font-semibold text-zinc-900">
-                    {formatMoney(partialAmount, order.currency)}
-                  </span>
-                </div>
-              </div>
+            {!valid && (
+              <p className="text-xs text-red-600">
+                Enter an amount above 0 and up to {formatMoney(refundableMinor, currency)}.
+              </p>
             )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="refund-reason">Reason (optional)</Label>
+            <Textarea
+              id="refund-reason"
+              placeholder="Enter refund reason..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              data-testid={tid('order', 'refund-reason')}
+            />
+          </div>
+          {failure && (
+            <p role="alert" className="text-sm text-red-600">
+              {failure}
+            </p>
+          )}
+        </div>
 
-            <div className="space-y-1.5">
-              <Label>Reason <span className="text-red-500">*</span></Label>
-              <Textarea
-                placeholder="Reason required for partial refunds..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                rows={2}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => void handlePartialRefund()}
-                disabled={!hasSelection || !reason.trim() || partialRefundMutation.isPending}
-              >
-                {partialRefundMutation.isPending ? 'Processing...' : `Refund ${formatMoney(partialAmount, order.currency)}`}
-              </Button>
-            </DialogFooter>
-          </TabsContent>
-        </Tabs>
+        <DialogFooter>
+          <Button variant="outline" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            type="button"
+            onClick={() => void handleRefund()}
+            disabled={!valid || refundMutation.isPending}
+            data-testid={tid('order', 'refund-confirm')}
+          >
+            {refundMutation.isPending
+              ? 'Processing...'
+              : `Refund ${amountMinor !== null ? formatMoney(amountMinor, currency) : ''}`}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

@@ -3,12 +3,26 @@ import type {
   Customer,
   Order,
   OrderHistoryEntry,
+  OrderPayment,
+  OrderRefund,
   StockStatus,
   VariantOption,
 } from '@nymbalhq/types'
 
-export interface OrderWithHistory extends Order {
+/** An order as the admin API answers it: with what was actually paid and refunded. */
+export interface AdminOrder extends Order {
+  payment: OrderPayment
+}
+
+export interface OrderWithHistory extends AdminOrder {
   history: OrderHistoryEntry[]
+}
+
+/** POST /api/admin/orders/:id/refund */
+export interface RefundAnswer {
+  order: Order
+  payment: OrderPayment
+  refund: OrderRefund
 }
 
 export interface CustomerStats {
