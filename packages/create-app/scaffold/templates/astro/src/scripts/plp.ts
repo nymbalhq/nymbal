@@ -1,6 +1,6 @@
 import type { ProductSortKey } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
-import { formatPrice } from '../lib/format.js'
+import { escapeHtml, formatPrice } from '../lib/format.js'
 
 const gridContainer = document.getElementById('product-grid')
 const sortSelect = document.getElementById('sort-select') as HTMLSelectElement | null
@@ -22,19 +22,22 @@ function renderProductCard(product: any): string {
   const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
   const price = fromMinor != null ? formatPrice(fromMinor, product.currency ?? 'GBP') : ''
 
+  const slug = escapeHtml(product.slug)
+  const name = escapeHtml(product.name)
+
   return `
-    <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">
+    <a href="/product/${slug}" class="product-card" data-testid="product-card-${slug}">
       <img
-        src="${imageUrl}"
-        alt="${product.name}"
+        src="${escapeHtml(imageUrl)}"
+        alt="${name}"
         class="product-card-image"
         loading="lazy"
         width="600"
         height="600"
       />
       <div class="product-card-body">
-        <span class="product-card-name">${product.name}</span>
-        ${price ? `<span class="product-card-price">${price}</span>` : ''}
+        <span class="product-card-name">${name}</span>
+        ${price ? `<span class="product-card-price">${escapeHtml(price)}</span>` : ''}
       </div>
     </a>
   `
@@ -74,12 +77,19 @@ function renderGrid() {
   }
 }
 
-// Await the initial load before subscribing so the subscription only handles
-// re-renders (sort, filter, load-more) and never fires with empty state while
-// SSR content is still the source of truth.
+// The first load's own answer is the server-rendered grid, so it is not re-rendered: subscribing after it keeps the
+// subscription to re-renders (sort, filter, load-more). A sort or filter chosen while it was in flight reached the
+// store with nothing subscribed, so that state is rendered here.
 async function init() {
   await client.productList.load({ limit: 24, category: initialCategory, sort: initialSort })
   client.productList.subscribe(renderGrid)
+  const state = client.productList.getState()
+  const filters = Object.entries(state.filters)
+  const changed =
+    state.sort !== initialSort ||
+    filters.length !== (initialCategory === undefined ? 0 : 1) ||
+    filters.some(([name, value]) => name !== 'category' || value !== initialCategory)
+  if (state.loading || changed) renderGrid()
 }
 
 void init()
