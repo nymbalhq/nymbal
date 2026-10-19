@@ -1,6 +1,14 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
@@ -656,15 +664,20 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`)
 }
 
+type StrykerConfig = { mutate: string[]; incrementalFile?: string }
+
+async function strykerConfig(root: string): Promise<StrykerConfig> {
+  const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
+    default: StrykerConfig
+  }
+  return config.default
+}
+
 /** The paths that fall inside Stryker's `mutate` set (its own config is the source of that set). */
 export async function mutateSet(root: string, changed: string[]): Promise<string[]> {
-  const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
-    default: { mutate: string[] }
-  }
-  const include = config.default.mutate.filter((g) => !g.startsWith('!')).map(globToRegExp)
-  const exclude = config.default.mutate
-    .filter((g) => g.startsWith('!'))
-    .map((g) => globToRegExp(g.slice(1)))
+  const { mutate } = await strykerConfig(root)
+  const include = mutate.filter((g) => !g.startsWith('!')).map(globToRegExp)
+  const exclude = mutate.filter((g) => g.startsWith('!')).map((g) => globToRegExp(g.slice(1)))
   return changed.filter(
     (path) => include.some((re) => re.test(path)) && !exclude.some((re) => re.test(path)),
   )
@@ -683,21 +696,75 @@ function isStrykerInput(path: string): boolean {
  * The files Stryker mutates for this change set: the whole mutate set whenever one of its tests or configs changed,
  * otherwise the changed ones in the set. A changed test invalidates cached kills in files it did not change, and a
  * `--mutate` narrowed to the changed sources leaves those unmeasured; incremental mode re-measures only the mutants
- * the changed tests can move, so the whole set costs only those.
+ * the changed tests can move, so the whole set costs only those. `remeasured` (the files whose ratchet entry moved)
+ * are mutated as well, whatever changed.
  */
-export async function strykerTargets(root: string, changed: string[]): Promise<string[]> {
-  if (!changed.some(isStrykerInput)) {
-    // A deleted file has nothing left to mutate.
-    return mutateSet(
-      root,
-      changed.filter((path) => existsSync(resolve(root, path))),
-    )
-  }
+export async function strykerTargets(
+  root: string,
+  changed: string[],
+  remeasured: string[] = [],
+): Promise<string[]> {
   // `changed` carries untracked files, which `ls-files` alone would drop from the set.
-  const tracked = lines(git(root, ['ls-files']))
+  const candidates = changed.some(isStrykerInput)
+    ? [...lines(git(root, ['ls-files'])), ...changed]
+    : changed
+  // A deleted file has nothing left to mutate.
   return mutateSet(
     root,
-    [...new Set([...tracked, ...changed])].filter((path) => existsSync(resolve(root, path))),
+    [...new Set([...candidates, ...remeasured])].filter((path) => existsSync(resolve(root, path))),
+  )
+}
+
+const RATCHET = 'mutation-ratchet.json'
+
+function ratchetFiles(text: string): Record<string, unknown> {
+  if (text.trim() === '') return {}
+  return (JSON.parse(text) as { files?: Record<string, unknown> }).files ?? {}
+}
+
+/**
+ * The files whose entry in the head's mutation-ratchet.json is new or differs from the base's (both given as text;
+ * an empty text is a ratchet with no entries). Their cached mutant statuses predate the entry, so they are measured
+ * fresh; every other file keeps its cache.
+ */
+export function ratchetChanges(base: string, head: string): string[] {
+  const before = ratchetFiles(base)
+  return Object.entries(ratchetFiles(head))
+    .filter(([path, score]) => !Object.hasOwn(before, path) || before[path] !== score)
+    .map(([path]) => path)
+}
+
+/** `ratchetChanges` between the ratchet at `base` and the one in the working tree. */
+function ratchetChangesSince(root: string, base: string): string[] {
+  const path = resolve(root, RATCHET)
+  const head = existsSync(path) ? readFileSync(path, 'utf8') : ''
+  const atBase =
+    git(root, ['ls-tree', '--name-only', base, '--', RATCHET]).trim() === ''
+      ? ''
+      : git(root, ['show', `${base}:${RATCHET}`])
+  return atBase === head ? [] : ratchetChanges(atBase, head)
+}
+
+/** Stryker's own default, when its config names no incremental file. */
+const STRYKER_INCREMENTAL_DEFAULT = 'reports/stryker-incremental.json'
+
+/** Drops `files` from Stryker's incremental report, so its next run measures their mutants afresh. */
+async function pruneIncremental(root: string, files: string[]): Promise<void> {
+  const report = resolve(
+    root,
+    (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT,
+  )
+  if (!existsSync(report)) {
+    process.stderr.write(`stryker: no incremental report at ${relative(root, report)} to prune\n`)
+    return
+  }
+  const data = JSON.parse(readFileSync(report, 'utf8')) as { files?: Record<string, unknown> }
+  const cached = data.files ?? {}
+  const dropped = files.filter((path) => Object.hasOwn(cached, path))
+  for (const path of dropped) delete cached[path]
+  writeFileSync(report, JSON.stringify(data))
+  process.stderr.write(
+    `stryker: ratchet entries moved, measured afresh: ${files.join(', ')} (${dropped.length} in the cache)\n`,
   )
 }
 
@@ -706,6 +773,8 @@ export type PlanInput = {
   base: string
   changed: string[]
   mutated: string[]
+  /** Files in `mutated` whose cached mutants the stryker step drops first (`ratchetChanges`). None when not given. */
+  remeasured?: string[] | undefined
   /** Run only these steps, in plan order. A name the plan does not have is an error. */
   only?: string[] | undefined
   /** `compose` starts the services here; `external` expects them to exist (CI services) at `postgresUrl`. */
@@ -845,6 +914,11 @@ function select(steps: StepSpec[], input: PlanInput): StepSpec[] {
 
 export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } {
   const { full, base, changed, mutated } = input
+  const remeasured = input.remeasured ?? []
+  const prune =
+    remeasured.length === 0
+      ? ''
+      : `${SCRIPT} incremental-prune ${shellWord(remeasured.join(','))} && `
   const selection = full
     ? { mode: 'all' as const, reason: 'gate:full runs every test' }
     : selectTests(changed)
@@ -949,7 +1023,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : {
           // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
           name: 'stryker',
-          command: `pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
+          command: `${prune}pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
         },
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     sentinels,
@@ -1123,6 +1197,11 @@ async function main(argv: string[]): Promise<number> {
   })
   const root = repoRoot()
   const [subcommand, subBase] = positionals
+  if (subcommand === 'incremental-prune') {
+    if (subBase === undefined) throw new Error('usage: gate.ts incremental-prune <file,…>')
+    await pruneIncremental(root, subBase.split(','))
+    return 0
+  }
   if (subcommand !== undefined) {
     // A step judges against the base the gate passed it, never one looked up again from origin/*.
     if (subBase === undefined) throw new Error(`usage: gate.ts ${subcommand} <base>`)
@@ -1149,7 +1228,9 @@ async function main(argv: string[]): Promise<number> {
   const base = resolveBase(root, values.base)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
-  const mutated = values.full ? await strykerTargets(root, changed) : []
+  const moved = values.full ? ratchetChangesSince(root, base) : []
+  const mutated = values.full ? await strykerTargets(root, changed, moved) : []
+  const remeasured = moved.filter((path) => mutated.includes(path))
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const sentinelsDir = resolve(root, 'tests/sentinels')
@@ -1163,6 +1244,7 @@ async function main(argv: string[]): Promise<number> {
     base,
     changed,
     mutated,
+    remeasured,
     ...(only === undefined ? {} : { only }),
     services: values.services,
     ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
@@ -1220,7 +1302,12 @@ async function main(argv: string[]): Promise<number> {
   return exitCode
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Real paths on both sides: run through a symlinked scripts/, the unresolved path would never match and a step's
+// subcommand would exit 0 having done nothing.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (error: unknown) => {
