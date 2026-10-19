@@ -89,6 +89,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version packages
         run: pnpm changeset version
+      # `@nymbalhq/stack` pins exact versions, so the bump changes the lockfile too; without it the publish job's
+      # frozen install refuses the release commit.
+      - run: pnpm install --lockfile-only
       # The build rewrites the scaffold templates with the new versions; they ship in the release commit.
       - run: pnpm build
       - name: Commit the release to main
