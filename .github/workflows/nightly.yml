@@ -213,7 +213,7 @@ jobs:
           name: build-output
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Functional, visual and a11y, mobile
+      - name: Visual, mobile
         run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile
       - name: Upload the Playwright results
         if: always()
