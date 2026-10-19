@@ -55,6 +55,10 @@ test.describe('Cart interactions', () => {
     await page.goto('/cart')
     const full = (await (await page.request.get(`${API_URL}/api/cart`)).json()) as ApiCart
     expect(full.data.items.length).toBeGreaterThan(0)
+    await expect(page.locator('main').locator('[data-testid^="cart-item-"]')).toHaveCount(
+      full.data.items.length,
+      { timeout: 10000 },
+    )
     for (const item of full.data.items) {
       await expect(page.locator('main').getByTestId(`cart-item-${item.variantId}`)).toContainText(
         item.productName,

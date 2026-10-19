@@ -88,6 +88,19 @@ test.describe('Browse catalog', () => {
     for (const [i, slug] of shown.entries()) {
       await expect(cards.nth(i)).toContainText(bySlug.get(slug)!.name)
     }
+
+    // A shown card's link reaches that card's product page. The last card, so a link built from the wrong card or a
+    // wrong path (`/products/…`) does not land on the product the shopper clicked.
+    const target = shown.length - 1
+    const slug = shown[target]!
+    await cards.nth(target).click()
+    await expect(page).toHaveURL(new RegExp(`/product/${slug}$`), { timeout: 15000 })
+    const served = (await (
+      await page.request.get(`${API_URL}/api/products/${slug}`)
+    ).json()) as ApiProduct
+    await expect(page.getByTestId('product-title')).toHaveText(served.data.name, {
+      timeout: 15000,
+    })
   })
 
   // One product of the test's own per stock state (out, low, in), so no other journey moves its stock.
