@@ -414,7 +414,12 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
       expect(rows).toHaveLength(1)
       const row = rows[0]!
       expect(calls).toEqual([
-        [order.paymentIntent.id, amountMinor, 'requested_by_customer', { idempotencyKey: row.id }],
+        [
+          order.paymentIntent.id,
+          amountMinor,
+          'requested_by_customer',
+          { idempotencyKey: row.id, currency: order.currency },
+        ],
       ])
       expect(row.status).toBe('succeeded')
       expect(row.amountMinor).toBe(amountMinor)

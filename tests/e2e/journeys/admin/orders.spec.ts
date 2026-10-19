@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
 import { csrf } from '../../support/csrf'
 import { placeOrder, signInAsAdmin } from '../../support/admin'
@@ -195,7 +195,14 @@ test.describe('Admin orders', () => {
   }) => {
     test.setTimeout(120_000)
     const unpaid = await placeOrder(request)
-    const paid = await placeOrder(request, paidEmail('paid'))
+    // A second shopper, with a cart of their own: from the same cart the paid checkout would supersede the pending order.
+    const shopper = await playwrightRequest.newContext()
+    let paid: Awaited<ReturnType<typeof placeOrder>>
+    try {
+      paid = await placeOrder(shopper, paidEmail('paid'))
+    } finally {
+      await shopper.dispose()
+    }
     const token = await adminToken(request)
     const unpaidRead = await readOrder(request, token, unpaid.orderNumber)
     const paidRead = await readOrder(request, token, paid.orderNumber)

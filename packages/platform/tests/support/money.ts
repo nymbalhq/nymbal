@@ -148,5 +148,5 @@ export type RefundCall = [
   paymentId: string,
   amountMinor: number | undefined,
   reason: string | undefined,
-  opts: { idempotencyKey?: string } | undefined,
+  opts: { idempotencyKey?: string; currency?: string } | undefined,
 ]

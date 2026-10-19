@@ -85,6 +85,7 @@ async function setup() {
     checkout,
     inventory,
     order,
+    payments,
     publisher,
     repos,
   }
@@ -504,7 +505,8 @@ describe('CheckoutService', () => {
     })
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      email: 'cancel@example.com',
+      // Pending, so the order holds no capture and may be cancelled (P1-13 decision 4).
+      email: 'cancel+stub-pending@example.com',
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
     })
@@ -799,6 +801,32 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     await env.checkout.cancel(cancelled.started.orderId, 'admin cancelled')
     const confirmed = await placeOrder(env, [{ priceMinor: 540, stock: 3, qty: 1 }])
     await env.checkout.finalize(confirmed.started.paymentIntent.id, confirmed.paid)
+    // The cancelled leg's backstop refunds whatever amount it is handed; the provider answers it, so a generated amount
+    // the stub would refuse still reaches the status check.
+    const answering: PaymentsAdapter = {
+      ...env.payments,
+      async refund(paymentId, amountMinor, reason, opts) {
+        return {
+          refundId: `re_d4_${uuidv7()}`,
+          paymentId,
+          amountMinor: amountMinor ?? 0,
+          currency: opts?.currency ?? 'GBP',
+          reason: reason ?? null,
+          status: 'succeeded',
+        }
+      },
+    }
+    const backstop = createCheckoutService({
+      store: env.commandStore,
+      repos: env.repos,
+      publisher: env.publisher,
+      logger: createLogger({ pretty: false, level: 'error' }),
+      cart: env.cart,
+      orders: env.order,
+      inventory: env.inventory,
+      payments: answering,
+      currency: 'GBP',
+    })
 
     await fc.assert(
       fc.asyncProperty(
@@ -807,7 +835,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
         async (amountMinor, currency) => {
           const wrongOrRight = { amountMinor, currency }
           expect(
-            await env.checkout.finalize(cancelled.started.paymentIntent.id, wrongOrRight),
+            await backstop.finalize(cancelled.started.paymentIntent.id, wrongOrRight),
           ).toEqual({
             orderNumber: cancelled.started.orderNumber,
             finalized: false,
@@ -834,6 +862,8 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
       { priceMinor: 700, stock: 4, qty: 1 },
     ])
     await env.checkout.cancel(started.orderId, 'admin cancelled')
+    // The shopper's payment lands after the cancel: the provider now holds the intent captured.
+    await env.payments.capturePayment(started.paymentIntent.id)
     const stockBefore = await stockOf(env, variants[0]!.id)
     const historyBefore = await historyOf(env, started.orderId)
     const reason = 'order_cancelled_refunded'
@@ -1703,9 +1733,12 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
     const env = await setup()
     const { payments, calls } = provider((stub) => ({
       async createPaymentIntent(params) {
-        const intent = await stub.createPaymentIntent(params)
-        // The provider captured more than the order's total.
-        return { ...intent, amountMinor: params.amountMinor + 1, status: 'succeeded' }
+        // The provider captured more than the order's total, and holds that capture to refund.
+        const intent = await stub.createPaymentIntent({
+          ...params,
+          amountMinor: params.amountMinor + 1,
+        })
+        return { ...intent, status: 'succeeded' }
       },
     }))
     const line = { priceMinor: 650, stock: 5, qty: 2 }

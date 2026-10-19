@@ -52,6 +52,10 @@ function order(id: string, status: OrderStatus, sequence: number): Order {
     notes: '',
     metadata: {},
     paymentIntentId: null,
+    capturedMinor: 0,
+    capturedAt: null,
+    refundedMinor: 0,
+    captureMethod: null,
     createdAt: '2026-10-18T10:00:00.000Z',
     updatedAt: '2026-10-18T10:00:00.000Z',
   }
