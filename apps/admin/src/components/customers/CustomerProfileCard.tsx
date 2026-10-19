@@ -46,7 +46,7 @@ export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProp
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
           icon={<ShoppingBag className="h-4 w-4 text-blue-500" />}
           label="Total Orders"
