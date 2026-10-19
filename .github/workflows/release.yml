@@ -126,13 +126,20 @@ jobs:
       - run: pnpm build
       # The root build covers packages/** only; the admin publishes its dist, which `nymbal dev` serves.
       - run: pnpm --filter @nymbalhq/admin build
+      # changeset publish writes annotated tags, which need an identity; without one each `git tag -m` fails and it
+      # carries on, so the 0.2.0 run pushed no tag.
+      - name: Set the git identity for tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Publish to npm
         run: pnpm changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
       # changeset publish tags only what it published in this run; a version an earlier, failed run published is
-      # tagged here instead.
+      # tagged here instead. The registry can answer 404 for a minute after a publish, so a missing version is asked
+      # again before it is taken as unpublished.
       - name: Tag released versions that have no tag
         run: |
           set -euo pipefail
@@ -140,7 +147,10 @@ jobs:
             | jq -r '.[] | select(.private != true) | "\(.name)@\(.version)"' \
             | while read -r tag; do
                 git rev-parse -q --verify "refs/tags/$tag" > /dev/null && continue
-                if npm view "$tag" version > /dev/null 2>&1; then git tag "$tag"; fi
+                for attempt in 1 2 3 4 5 6; do
+                  if npm view "$tag" version < /dev/null > /dev/null 2>&1; then git tag "$tag"; break; fi
+                  if [ "$attempt" -lt 6 ]; then sleep 15; fi
+                done
               done
       - name: Push tags
         run: git push origin --tags
