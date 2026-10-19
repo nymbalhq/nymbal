@@ -13,6 +13,8 @@ import { parseYaml } from './workflow-yaml'
 // changed file is a path its patch touches, its `# killed-by` file, or inside the closure of the killed-by file's
 // package; a configuration file, scripts/sentinels.ts or tests/sentinels/** selects every one. The plan takes the
 // selection as `sentinels: 'all' | Set<string>`; the CLI's `--sentinels all|impacted` defaults to impacted.
+// P1-20 AC-4 (spec P1-20-loop-waits-less) replaces AC-14's workflow assertion: ci.yml's sentinel job passes
+// `--sentinels impacted` on a pull request and `all` on a push; the nightly keeps `all`.
 
 afterEach(cleanupScratch)
 
@@ -117,7 +119,7 @@ function onlyIds(command: string): string[] | null {
   return m?.[1] === undefined ? null : m[1].split(',').sort()
 }
 
-describe('AC-14: the gate:full plan runs the selection, and CI and the nightly run all', () => {
+describe('AC-14: the gate:full plan and the CLI run the selection', () => {
   const sentinelsStep = (sentinels: 'all' | Set<string>): { command: string; skip?: string } => {
     const steps = plan({ full: true, base: 'HEAD', changed: [], mutated: [], sentinels }).steps
     const found = steps.find((s) => s.name === 'sentinels')
@@ -205,19 +207,146 @@ describe('AC-14: the gate:full plan runs the selection, and CI and the nightly r
     expect(calls.length, run.output).toBe(1)
     expect(onlyIds(calls[0] ?? '--only none')).toBeNull()
   })
+})
 
-  type Job = { steps?: Array<{ run?: string }> }
-  const jobs = (file: string): Record<string, Job> =>
-    (parseYaml(readFileSync(join(REPO, file), 'utf8')) as { jobs?: Record<string, Job> }).jobs ?? {}
+// A GitHub Actions expression, the subset a workflow here could use to pick an argument by event: string and boolean
+// literals, `github.event_name`, `env.<NAME>`, the status functions, `!`, `==`, `!=`, `&&`, `||` and parentheses.
+// Anything else throws, so a form this reader does not know fails loudly instead of reading as the wrong event.
+type Ctx = { event: string; env: Record<string, string> }
+type Value = string | boolean | null
 
-  it("AC-14: ci.yml's sentinel job and nightly.yml's gate:full pass --sentinels all", () => {
-    const ci = (jobs('.github/workflows/ci.yml').sentinels?.steps ?? []).filter((s) =>
-      /scripts\/gate\.ts/.test(s.run ?? ''),
-    )
-    const nightly = (jobs('.github/workflows/nightly.yml')['gate-full']?.steps ?? []).filter((s) =>
-      /\bgate:full\b/.test(s.run ?? ''),
-    )
-    expect(ci.length + nightly.length).toBeGreaterThan(1)
-    for (const step of [...ci, ...nightly]) expect(step.run).toMatch(/--sentinels[= ]all\b/)
+function evaluate(source: string, ctx: Ctx): Value {
+  const tokens =
+    source.match(/'(?:[^']|'')*'|==|!=|&&|\|\||[!()]|[A-Za-z_][\w.-]*\(\)|[A-Za-z_][\w.-]*|\S/g) ??
+    []
+  let i = 0
+  const truthy = (v: Value): boolean => v !== null && v !== false && v !== ''
+  const peek = (): string | undefined => tokens[i]
+  const take = (): string => {
+    const t = tokens[i]
+    if (t === undefined) throw new Error(`expression ended early: ${source}`)
+    i += 1
+    return t
+  }
+  function primary(): Value {
+    const t = take()
+    if (t === '(') {
+      const v = or()
+      if (take() !== ')') throw new Error(`unbalanced parentheses: ${source}`)
+      return v
+    }
+    if (t === '!') return !truthy(primary())
+    if (t.startsWith("'")) return t.slice(1, -1).replaceAll("''", "'")
+    if (t === 'true' || t === 'false') return t === 'true'
+    if (t === 'always()' || t === 'success()') return true
+    if (t === 'failure()' || t === 'cancelled()') return false
+    if (t === 'github.event_name') return ctx.event
+    if (t.startsWith('env.')) {
+      const raw = ctx.env[t.slice(4)]
+      return raw === undefined ? '' : interpolate(raw, ctx)
+    }
+    throw new Error(`unsupported expression term "${t}" in: ${source}`)
+  }
+  function compare(): Value {
+    let left = primary()
+    while (peek() === '==' || peek() === '!=') {
+      const op = take()
+      const right = primary()
+      left = op === '==' ? left === right : left !== right
+    }
+    return left
+  }
+  function and(): Value {
+    let left = compare()
+    while (peek() === '&&') {
+      take()
+      const right = compare()
+      left = truthy(left) ? right : left
+    }
+    return left
+  }
+  function or(): Value {
+    let left = and()
+    while (peek() === '||') {
+      take()
+      const right = and()
+      left = truthy(left) ? left : right
+    }
+    return left
+  }
+  const value = or()
+  if (i !== tokens.length) throw new Error(`unparsed "${tokens.slice(i).join(' ')}" in: ${source}`)
+  return value
+}
+
+function interpolate(text: string, ctx: Ctx): string {
+  return text.replace(/\$\{\{([\s\S]*?)\}\}/g, (_, expr: string) =>
+    String(evaluate(expr, ctx) ?? ''),
+  )
+}
+
+function condition(text: string | undefined, ctx: Ctx): boolean {
+  if (text === undefined) return true
+  const bare = /^\s*\$\{\{([\s\S]*)\}\}\s*$/.exec(text)?.[1] ?? text
+  const v = evaluate(bare, ctx)
+  return v !== null && v !== false && v !== ''
+}
+
+type WorkflowStep = { run?: string; if?: string; env?: Record<string, string> }
+type WorkflowJob = { if?: string; env?: Record<string, string>; steps?: WorkflowStep[] }
+type Workflow = { env?: Record<string, string>; jobs?: Record<string, WorkflowJob> }
+
+/**
+ * The `--sentinels` argument of every step of `job` whose run matches `runs` and that runs on `event`, with its
+ * expressions and the shell variable it names (from the step, job or workflow env) resolved.
+ */
+function sentinelsArgs(file: string, job: string, runs: RegExp, event: string): string[] {
+  const wf = parseYaml(readFileSync(join(REPO, file), 'utf8')) as Workflow
+  const j = wf.jobs?.[job]
+  expect(j, `${file} has a job ${job}`).toBeTruthy()
+  if (j === undefined) return []
+  const jobCtx: Ctx = { event, env: { ...wf.env, ...j.env } }
+  if (!condition(j.if, jobCtx)) return []
+  const args: string[] = []
+  for (const step of j.steps ?? []) {
+    if (step.run === undefined || !runs.test(step.run)) continue
+    const ctx: Ctx = { event, env: { ...jobCtx.env, ...step.env } }
+    if (!condition(step.if, ctx)) continue
+    const at = step.run.search(/--sentinels(?:[= ]|$)/)
+    if (at < 0) {
+      args.push('(no --sentinels: the gate default)')
+      continue
+    }
+    const rest = step.run.slice(at + '--sentinels'.length).replace(/^[= ]+/, '')
+    const word = /^(["']?)(\$\{\{[\s\S]*?\}\}|[^\s"']+)\1/.exec(rest)?.[2] ?? ''
+    const shellVar = /^\$\{?(\w+)\}?$/.exec(word)?.[1]
+    const value =
+      shellVar === undefined
+        ? interpolate(word, ctx)
+        : ctx.env[shellVar] === undefined
+          ? `(unset $${shellVar})`
+          : interpolate(ctx.env[shellVar], ctx)
+    args.push(value.trim())
+  }
+  return args
+}
+
+describe('AC-4 (P1-20): a pull request runs the impacted sentinels; a push and the nightly run all', () => {
+  it("AC-4: ci.yml's sentinel job passes impacted on pull_request and all on push; nightly.yml's gate:full passes all", () => {
+    const ci = (event: string): string[] =>
+      sentinelsArgs('.github/workflows/ci.yml', 'sentinels', /scripts\/gate\.ts/, event)
+    const nightly = (event: string): string[] =>
+      sentinelsArgs('.github/workflows/nightly.yml', 'gate-full', /\bgate:full\b/, event)
+    expect({
+      'ci pull_request': ci('pull_request'),
+      'ci push': ci('push'),
+      'nightly schedule': nightly('schedule'),
+      'nightly workflow_dispatch': nightly('workflow_dispatch'),
+    }).toEqual({
+      'ci pull_request': ['impacted'],
+      'ci push': ['all'],
+      'nightly schedule': ['all'],
+      'nightly workflow_dispatch': ['all'],
+    })
   })
 })
