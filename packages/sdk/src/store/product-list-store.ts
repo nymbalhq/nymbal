@@ -27,6 +27,8 @@ export interface ProductListStore {
 export function createProductListStore(adapter: CommerceAdapter): ProductListStore {
   const store = createStore<ProductListState>(INITIAL_STATE)
   let lastLimit: number | undefined
+  // Only the latest request's answer may reach the state: an older one carries another sort's items and cursor.
+  let generation = 0
 
   function buildParams(): ProductListParams {
     const state = store.getState()
@@ -50,9 +52,11 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
     }
     const request = buildParams()
     if (params?.cursor !== undefined) request.cursor = params.cursor
+    const current = ++generation
     store.setState({ loading: true })
     try {
       const result = await adapter.products.list(request)
+      if (current !== generation) return
       store.setState({
         products: result.items,
         facets: result.facets ?? store.getState().facets,
@@ -61,6 +65,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         error: null,
       })
     } catch (err) {
+      if (current !== generation) return
       console.error('[ProductListStore] load failed', err)
       store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }
@@ -69,6 +74,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
   async function loadMore(): Promise<void> {
     const state = store.getState()
     if (!state.pagination.hasMore || state.loading) return
+    const current = ++generation
     store.setState({ loading: true })
     try {
       const params = buildParams()
@@ -76,6 +82,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         params.cursor = state.pagination.cursor
       }
       const result = await adapter.products.list(params)
+      if (current !== generation) return
       store.setState({
         products: [...state.products, ...result.items],
         pagination: { cursor: result.nextCursor, hasMore: result.nextCursor !== null },
@@ -83,6 +90,7 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
         error: null,
       })
     } catch (err) {
+      if (current !== generation) return
       console.error('[ProductListStore] loadMore failed', err)
       store.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
     }

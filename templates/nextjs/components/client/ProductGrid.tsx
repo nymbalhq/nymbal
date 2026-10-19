@@ -31,7 +31,13 @@ export function ProductGrid({
   // filtered query (the API always returns full facets, but this guards against regressions).
   const [stableFacets, setStableFacets] = useState<Facet[]>(
     categories.length > 0
-      ? [{ field: 'category', label: 'Category', values: categories.map((c) => ({ value: c.slug, label: c.name })) }]
+      ? [
+          {
+            field: 'category',
+            label: 'Category',
+            values: categories.map((c) => ({ value: c.slug, label: c.name })),
+          },
+        ]
       : [],
   )
 
@@ -110,6 +116,7 @@ export function ProductGrid({
                   slug: product.slug,
                   name: product.name,
                   priceMinor: product.priceMinor ?? null,
+                  priceRange: product.priceRange ?? null,
                   currency: product.currency ?? null,
                   media: product.media,
                 }}

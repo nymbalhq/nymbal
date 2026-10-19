@@ -18,10 +18,9 @@ function renderProductCard(product: any): string {
     product.imageUrl ??
     (Array.isArray(product.media) && product.media[0]?.url) ??
     `https://picsum.photos/seed/${product.slug}/600/600`
-  const price =
-    product.priceMinor != null
-      ? formatPrice(product.priceMinor, product.currency ?? 'GBP')
-      : ''
+  // The "from" price, which the price sorts order by.
+  const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
+  const price = fromMinor != null ? formatPrice(fromMinor, product.currency ?? 'GBP') : ''
 
   return `
     <a href="/product/${product.slug}" class="product-card" data-testid="product-card-${product.slug}">

@@ -17,11 +17,8 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
   const currency = product.currency ?? 'GBP'
   const stock = variant?.stock ?? (product.inStock ? 10 : 0)
 
-  const variantOptions = product.variants?.map((v) => ({
-    id: v.id,
-    name: v.name,
-    options: v.options ?? [],
-  })) ?? []
+  // The selector derives its option groups from the product's variants.
+  const hasVariantChoice = (product.variants?.length ?? 0) > 1
 
   const handleVariantSelected = (e: CustomEvent<{ variant: unknown }>) => {
     const v = e.detail.variant as DenormalisedVariant | undefined
@@ -32,7 +29,9 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
 
   return (
     <div>
-      <h1 className={styles.productTitle} data-testid="product-title">{product.name}</h1>
+      <h1 className={styles.productTitle} data-testid="product-title">
+        {product.name}
+      </h1>
 
       <div className={styles.price} data-testid="product-price">
         {formatPrice(price, currency)}
@@ -48,20 +47,14 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
         )}
       </div>
 
-      {variantOptions.length > 1 && (
+      {hasVariantChoice && (
         <div className={styles.variantSection}>
-          <VariantSelector
-            options={JSON.stringify(variantOptions)}
-            onVariantSelected={handleVariantSelected}
-          />
+          <VariantSelector onVariantSelected={handleVariantSelected} />
         </div>
       )}
 
       <div className={styles.addToCartSection}>
-        <AddToCart
-          variantId={variant?.id ?? product.id}
-          disabled={stock === 0}
-        />
+        <AddToCart variantId={variant?.id ?? product.id} disabled={stock === 0} />
       </div>
     </div>
   )
