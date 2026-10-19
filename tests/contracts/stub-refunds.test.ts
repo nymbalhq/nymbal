@@ -86,19 +86,25 @@ describe('native stub: refunds (AC-9)', () => {
     )
   })
 
-  it('AC-9: after a restart (a new adapter, an empty memory) its own pi_stub_ id is accepted for the amount asked, and an id it never minted is still refused', async () => {
+  it('AC-9: after a restart (a new adapter, an empty memory) its own pi_stub_ id is accepted for the amount asked, in the currency the request names (opts.currency), and an id it never minted is still refused', async () => {
     const before = build()
     const intent = await before.createPaymentIntent({ amountMinor: 3_000, currency: 'GBP' })
     const after = build()
 
-    const answer = await after.refund(intent.id, 1_200)
+    const answer = await after.refund(intent.id, 1_200, 'requested_by_customer', {
+      idempotencyKey: 'refund-row-1',
+      currency: 'GBP',
+    })
     const foreign = await rejection(
-      after.refund(intent.id.replace(/^pi_stub_/, 'pi_other_'), 1_200),
+      after.refund(intent.id.replace(/^pi_stub_/, 'pi_other_'), 1_200, 'requested_by_customer', {
+        currency: 'GBP',
+      }),
     )
 
     expect(answer.status).toBe('succeeded')
     expect(answer.paymentId).toBe(intent.id)
     expect(answer.amountMinor).toBe(1_200)
+    expect(answer.currency.toUpperCase()).toBe(intent.currency.toUpperCase())
     expect(foreign?.code).toBe('payment.refund_rejected')
   })
 })

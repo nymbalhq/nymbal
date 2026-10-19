@@ -35,6 +35,7 @@ import {
   expiredCheckout,
   historyNotes,
   orderStatus,
+  paidFor,
 } from '../support/webhooks.js'
 
 // P1-13 AC-2, AC-3, AC-4, AC-6 and AC-13 on SQLite: a kernel from `src/` served over HTTP, the admin's own routes, the
@@ -227,6 +228,10 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
       expect(
         (await historyNotes(raw, order.orderId)).some((n) => /payment recorded manually/i.test(n)),
       ).toBe(true)
+      // The manual capture announces the payment once, for the order's total (decision 2).
+      expect((await paidFor(raw, order.orderId)).map((p) => [p.amountMinor, p.currency])).toEqual([
+        [order.totalMinor, order.currency],
+      ])
     })
 
     // Kills: a mark-paid that confirms without re-taking stock the sweeper already gave back.

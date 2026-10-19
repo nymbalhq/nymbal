@@ -4,7 +4,6 @@ import {
   EVT_ORDER_SHIPPED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
-  EVT_ORDER_PAID,
   NotFoundError,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
@@ -315,33 +314,6 @@ describe('OrderService', () => {
     })
     const cancelled = await orderService.cancel(id, 'test reason', 'admin')
     expect(cancelled.status).toBe('cancelled')
-    expect(received).toHaveLength(1)
-    await commandStore.close()
-  })
-
-  it('markPaid emits order.paid event', async () => {
-    const { commandStore, eventBus, orderService } = await setup()
-    const id = uuidv7()
-    const line = await createLine()
-    await orderService.createFromCheckout({
-      orderId: id,
-      customerId: null,
-      email: 'k@l.com',
-      billingAddress: addr,
-      shippingAddress: addr,
-      lineItems: [line],
-      subtotalMinor: line.lineTotalMinor,
-      taxTotalMinor: 0,
-      shippingTotalMinor: 0,
-      discountTotalMinor: 0,
-      totalMinor: line.lineTotalMinor,
-      currency: 'GBP',
-    })
-    const received: unknown[] = []
-    await eventBus.subscribe(EVT_ORDER_PAID, (e) => {
-      received.push(e.payload)
-    })
-    await orderService.markPaid(id, 'pi_test_123', line.lineTotalMinor, 'GBP')
     expect(received).toHaveLength(1)
     await commandStore.close()
   })
