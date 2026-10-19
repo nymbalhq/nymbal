@@ -26,6 +26,7 @@ import {
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { formatMoney } from '../money.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
 import type { CartService } from './cart-service.js'
@@ -231,12 +232,16 @@ export function createCheckoutService(
     return recordOutcome(tx, paymentIntentId, order, `order_not_pending: ${order.status}`)
   }
 
-  /** A captured payment that does not confirm its order: recorded, and nothing else changes. */
+  /**
+   * A captured payment that does not confirm its order: recorded, and nothing else changes. `detail` is for the
+   * merchant's note only; the event and the result carry the bare reason.
+   */
   async function recordOutcome(
     tx: Tx,
     paymentIntentId: string,
     order: Order | null,
     reason: string,
+    detail?: string,
   ): Promise<FinalizeResult> {
     await publisher.publish(EVT_PAYMENT_FAILED, {
       paymentId: paymentIntentId,
@@ -250,7 +255,7 @@ export function createCheckoutService(
         fromStatus: order.status,
         toStatus: order.status,
         actor: FINALIZE_ACTOR,
-        note: `captured payment not applied: ${reason}`,
+        note: `captured payment not applied: ${reason}${detail === undefined ? '' : ` (${detail})`}`,
         timestamp: new Date(),
       })
     }
@@ -436,7 +441,13 @@ export function createCheckoutService(
       settlement.status === 'succeeded'
         ? DUPLICATE_CAPTURE
         : `duplicate_capture_refund_${settlement.status}`
-    return recordOutcome(tx, paymentIntentId, order, reason)
+    return recordOutcome(
+      tx,
+      paymentIntentId,
+      order,
+      reason,
+      `capture of ${formatMoney(paid.amountMinor, paid.currency)}`,
+    )
   }
 
   async function confirm(

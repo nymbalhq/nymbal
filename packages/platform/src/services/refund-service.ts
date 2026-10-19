@@ -23,6 +23,7 @@ import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { OrderRefundInsert } from '../repositories/order-refund.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { formatMoney } from '../money.js'
 
 /** What the shop tells the provider; the merchant's own words stay on the refund row. */
 export const PROVIDER_REFUND_REASON = 'requested_by_customer'
@@ -127,8 +128,10 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
         if (earlier.amountMinor !== input.amountMinor) {
           throw new OrderConflictError(
             'refund.request_reused',
-            `Request ${input.requestId} already refunded ${earlier.amountMinor} on order ${order.orderNumber}`,
-            { context: { amountMinor: input.amountMinor, earlierAmountMinor: earlier.amountMinor } },
+            `Request ${input.requestId} already refunded ${formatMoney(earlier.amountMinor, earlier.currency)} on order ${order.orderNumber}`,
+            {
+              context: { amountMinor: input.amountMinor, earlierAmountMinor: earlier.amountMinor },
+            },
           )
         }
         const refunds = await repos.orderRefund.listByOrder(tx, order.id)
@@ -148,7 +151,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
     if (input.amountMinor > refundable) {
       throw new OrderConflictError(
         'refund.exceeds_captured',
-        `Refund of ${input.amountMinor} exceeds the ${refundable} refundable on order ${order.orderNumber}`,
+        `Refund of ${formatMoney(input.amountMinor, order.currency)} exceeds the ${formatMoney(refundable, order.currency)} refundable on order ${order.orderNumber}`,
         { context: { amountMinor: input.amountMinor, refundableMinor: refundable } },
       )
     }
@@ -238,7 +241,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
   ): Promise<void> {
     const full = refundedMinor >= order.capturedMinor
     const target = full ? 'refunded' : 'partially_refunded'
-    const note = `refund of ${refund.amountMinor} ${refund.currency}${refund.reason ? `: ${refund.reason}` : ''}`
+    const note = `refund of ${formatMoney(refund.amountMinor, refund.currency)}${refund.reason ? `: ${refund.reason}` : ''}`
     let toStatus = order.status
     if (order.status !== target && canTransitionOrder(order.status, target)) {
       await repos.order.setStatus(tx, order.id, target, now)
