@@ -1072,10 +1072,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       needs: ['compose up', 'build'],
     },
     // The document store and bus contracts on Redis and Postgres JSONB, the S3 media storage on MinIO, and the kernel
-    // on them (it loads the built packages).
+    // on them (it loads the built packages). The `nymbal add redis` proof installs a scaffold into the workspace and
+    // puts back the lockfile but not node_modules, so the install after the suite matches them again; the step keeps
+    // the suite's status, and is red too when that install fails.
     {
       name: 'integration-stores',
-      command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores`,
+      command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores; suite=$?; pnpm install --frozen-lockfile --prefer-offline && exit $suite`,
       needs: ['compose up', 'build'],
     },
     mutated.length === 0

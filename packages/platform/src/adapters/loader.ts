@@ -65,6 +65,15 @@ function packageManager(env: NodeJS.ProcessEnv, cwd: string): PackageManager {
   return 'npm'
 }
 
+/** The command that installs `packages` with the project's package manager, as `packageManager` picks it. */
+export function installLine(
+  packages: readonly string[],
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+): string {
+  return [INSTALL_VERBS[packageManager(env, cwd)], ...packages].join(' ')
+}
+
 /** The package a bare specifier names: `@scope/name` or `name`, without any subpath. */
 function packageOf(specifier: string): string {
   const parts = specifier.split('/')
@@ -100,7 +109,7 @@ export async function loadProviderAdapter(
   } catch (error) {
     const missing = missingPackage(error)
     if (missing !== entry.package && missing !== entry.sdk) throw error
-    const install = `${INSTALL_VERBS[packageManager(ctx.env, process.cwd())]} ${entry.package} ${entry.sdk}`
+    const install = installLine([entry.package, entry.sdk], ctx.env, process.cwd())
     throw new ConfigError(`${choiceOf(slot, provider)} needs ${entry.package}: ${install}`, {
       code: 'adapter.package_missing',
       cause: error,

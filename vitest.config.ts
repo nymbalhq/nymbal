@@ -143,9 +143,10 @@ export default defineConfig({
           // Needs Redis, Postgres and MinIO (NYMBAL_TEST_REDIS_URL, NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_S3_ENDPOINT;
           // `docker compose up -d --wait` starts all three): the Redis and Postgres JSONB document stores, the Redis
           // Streams bus and the S3 media storage against their contracts, the kernel on them (it loads the built
-          // packages), the S3 imports, and the E2E harness's per-run stores. Left
-          // out of the default run like integration-postgres (`pnpm test` leaves out integration-*), and gate:full and
-          // the PR's integration job run it.
+          // packages), the S3 imports, and the E2E harness's per-run stores. `nymbal add redis` is proved on a scaffold
+          // made in the checkout as smoke-astro and installed with pnpm, so it needs the build, and no smoke-astro left
+          // there. Left out of the default run like integration-postgres (`pnpm test` leaves out integration-*), and
+          // gate:full and the PR's integration job run it.
           name: 'integration-stores',
           environment: 'node',
           include: [

@@ -25,13 +25,15 @@
     "./schema": {
       "types": "./dist/db/schema/index.d.ts",
       "import": "./dist/db/schema/index.js"
-    }
+    },
+    "./recipes/*": "./recipes/*"
   },
   "files": [
     "dist",
     "drizzle.config.sqlite.ts",
     "drizzle.config.postgres.ts",
-    "migrations"
+    "migrations",
+    "recipes"
   ],
   "scripts": {
     "build": "tsup",
