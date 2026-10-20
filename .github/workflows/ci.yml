@@ -133,7 +133,7 @@ jobs:
       - name: MinIO
         run: |
           docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
             || { docker logs minio; exit 1; }
       - name: Postgres integration
@@ -234,7 +234,7 @@ jobs:
       - name: MinIO
         run: |
           docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
             || { docker logs minio; exit 1; }
       # A pull request runs the sentinels its change can affect; a push to main or dev, like the nightly and the

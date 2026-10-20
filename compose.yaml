@@ -41,7 +41,7 @@ services:
   # S3-compatible storage for `media: 's3'`. The community fork of MinIO: minio/minio and minio/mc are no longer
   # published. Its credentials are MinIO's defaults, which the S3 test suites assume.
   minio:
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: ['server', '/data']
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -58,7 +58,7 @@ services:
   # `docker compose run --rm minio-init`; it is under a profile because `up --wait` fails on a container that exits,
   # even with 0. The tests make buckets of their own.
   minio-init:
-    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z
+    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18
     profiles: ['init']
     depends_on:
       minio:
