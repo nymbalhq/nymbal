@@ -26,11 +26,13 @@ interface Node {
 const child = (node: Node, key: string): Node => node[key] as Node
 const children = (node: Node, key: string): Node[] => node[key] as Node[]
 
-function parse(source: string): Node {
-  // Recast expands tabs to `tabWidth` columns before Babel parses: at 1 every offset still points into `source`.
-  const lineTerminator = source.includes('\r\n') ? '\r\n' : '\n'
-  return parseModule(source, { tabWidth: 1, lineTerminator }).$ast as unknown as Node
+/** Parses LF text only: recast's offsets count a line break as one character, so CRLF text goes through `lfCopy`. */
+function parse(lf: string): Node {
+  // Recast expands tabs to `tabWidth` columns before Babel parses: at 1 every offset still points into `lf`.
+  return parseModule(lf, { tabWidth: 1 }).$ast as unknown as Node
 }
+
+const lfCopy = (source: string): string => source.replace(/\r\n/g, '\n')
 
 function unwrap(node: Node | undefined): Node | undefined {
   let at = node
@@ -59,6 +61,8 @@ interface ConfigModule {
   config: Node
   /** The local name `env` is imported under from @nymbalhq/config, if it is. */
   envName: string | undefined
+  /** Whether a top-level import or declaration binds the name `env`. */
+  envBound: boolean
   /** The first value import from @nymbalhq/config that names its imports. */
   namedImport: Node | undefined
 }
@@ -83,6 +87,20 @@ function importedAs(program: Node, imported: string): string | undefined {
   return undefined
 }
 
+function bindsEnv(program: Node): boolean {
+  const bound = (id: Node | undefined): boolean => id?.type === 'Identifier' && id['name'] === 'env'
+  return children(program, 'body').some((n) => {
+    const decl = n.type === 'ExportNamedDeclaration' ? child(n, 'declaration') : n
+    if (decl === null || decl === undefined) return false
+    if (decl.type === 'ImportDeclaration')
+      return children(decl, 'specifiers').some((s) => bound(child(s, 'local')))
+    if (decl.type === 'VariableDeclaration')
+      return children(decl, 'declarations').some((d) => bound(child(d, 'id')))
+    return bound(child(decl, 'id'))
+  })
+}
+
+/** The config literal of `source`, the LF copy of a nymbal.config.ts. */
 function locate(source: string): ConfigModule | undefined {
   const program = parse(source)
   const exported = children(program, 'body').find((n) => n.type === 'ExportDefaultDeclaration')
@@ -101,6 +119,7 @@ function locate(source: string): ConfigModule | undefined {
     program,
     config,
     envName: importedAs(program, 'env'),
+    envBound: bindsEnv(program),
     namedImport: configImports(program).find((d) =>
       children(d, 'specifiers').some((s) => s.type === 'ImportSpecifier'),
     ),
@@ -182,17 +201,15 @@ function isScaffoldDefault(value: unknown): boolean {
 interface Style {
   quote: string
   unit: string
-  eol: string
   envName: string
 }
 
 function styleOf(source: string, mod: ConfigModule): Style {
   const firstString = /(['"])(?:(?!\1)[^\\\r\n]|\\.)*\1/.exec(source.slice(mod.config.start))
-  const indented = /\r?\n([ \t]+)\S/.exec(source.slice(mod.config.start))
+  const indented = /\n([ \t]+)\S/.exec(source.slice(mod.config.start))
   return {
     quote: firstString?.[1] ?? "'",
     unit: indented?.[1] ?? '  ',
-    eol: source.includes('\r\n') ? '\r\n' : '\n',
     envName: mod.envName ?? 'env',
   }
 }
@@ -225,7 +242,7 @@ function render(value: RecipeValue, indent: string, style: Style): string {
   const lines = entries.map(
     ([k, v]) => `${inner}${renderKey(k, style)}: ${render(v, inner, style)},`,
   )
-  return `{${style.eol}${lines.join(style.eol)}${style.eol}${indent}}`
+  return `{\n${lines.join('\n')}\n${indent}}`
 }
 
 function writesEnv(value: RecipeValue): boolean {
@@ -239,12 +256,28 @@ function indentAt(source: string, offset: number): string {
   return /^[ \t]*/.exec(source.slice(lineStart))![0]
 }
 
+/** An edit at offsets of the LF copy, its text LF too. */
 type Splice = { at: number; remove: number; text: string }
 
+/**
+ * `source` with `edits` made. Their offsets are mapped from the LF copy back to `source`, and a line an edit adds ends
+ * as the line it lands in does, so a CRLF or mixed file keeps its own endings and every byte outside the edits.
+ */
 function spliced(source: string, edits: Splice[]): string {
-  return [...edits]
-    .sort((a, b) => b.at - a.at)
-    .reduce((s, e) => s.slice(0, e.at) + e.text + s.slice(e.at + e.remove), source)
+  // The LF copy's offset of every `\n` that a `\r` stands before in `source`.
+  const crlf: number[] = []
+  for (const m of source.matchAll(/\r\n/g)) crlf.push(m.index - crlf.length)
+  const at = (lf: number): number => lf + crlf.filter((p) => p < lf).length
+  const lastBreak = /\r?\n(?![\s\S]*\n)/.exec(source)?.[0] ?? '\n'
+  return edits
+    .map((e) => {
+      const start = at(e.at)
+      const end = at(e.at + e.remove)
+      const eol = /\r?\n/.exec(source.slice(end))?.[0] ?? lastBreak
+      return { start, end, text: e.text.replace(/\n/g, eol) }
+    })
+    .sort((a, b) => b.start - a.start)
+    .reduce((s, e) => s.slice(0, e.start) + e.text + s.slice(e.end), source)
 }
 
 /** The edits that add `key: value` as the last property of `object`, in the layout the object already has. */
@@ -268,14 +301,14 @@ function addProperty(
           {
             at: object.start + 1,
             remove: inside.length,
-            text: `${style.eol}${text}${style.eol}${indent}`,
+            text: `\n${text}\n${indent}`,
           },
         ]
-      : [{ at: close, remove: 0, text: `${style.eol}${text}${style.eol}${indent}` }]
+      : [{ at: close, remove: 0, text: `\n${text}\n${indent}` }]
   }
   const after = /^[ \t]*,/.exec(source.slice(last.end, close))
   const comma = after === null ? undefined : last.end + after[0].length
-  const lineEnd = source.slice(last.end, close).search(/\r?\n/)
+  const lineEnd = source.slice(last.end, close).indexOf('\n')
   const property = (indent: string): string =>
     `${renderKey(key, style)}: ${render(value, indent, style)}`
   if (lineEnd === -1) {
@@ -289,7 +322,7 @@ function addProperty(
     {
       at: last.end + lineEnd,
       remove: 0,
-      text: `${style.eol}${indent}${property(indent)}${comma === undefined ? '' : ','}`,
+      text: `\n${indent}${property(indent)}${comma === undefined ? '' : ','}`,
     },
   ]
   if (comma === undefined) edits.push({ at: last.end, remove: 0, text: ',' })
@@ -319,10 +352,11 @@ function setPath(
   value: RecipeValue,
   force: boolean,
 ): Step {
-  const mod = locate(source)
+  const lf = lfCopy(source)
+  const mod = locate(lf)
   if (mod === undefined)
     throw editByHand(recipe, 'does not export a defineConfig({...}) object literal')
-  const style = styleOf(source, mod)
+  const style = styleOf(lf, mod)
   const keys = path.split('.')
   let object = mod.config
   for (const [i, key] of keys.entries()) {
@@ -330,7 +364,7 @@ function setPath(
     if (prop === undefined) {
       const nested = keys.slice(i + 1).reduceRight<RecipeValue>((v, k) => ({ [k]: v }), value)
       return {
-        source: spliced(source, addProperty(source, object, key, nested, style)),
+        source: spliced(source, addProperty(lf, object, key, nested, style)),
         wrote: true,
       }
     }
@@ -340,10 +374,10 @@ function setPath(
       if (current !== undefined && sameValue(current, value)) return { source, wrote: false }
       if (!force && !isScaffoldDefault(current)) {
         return {
-          conflict: { path, current: current ?? source.slice(held.start, held.end), wanted: value },
+          conflict: { path, current: current ?? lf.slice(held.start, held.end), wanted: value },
         }
       }
-      const text = render(value, indentAt(source, prop.start), style)
+      const text = render(value, indentAt(lf, prop.start), style)
       return {
         source: spliced(source, [{ at: held.start, remove: held.end - held.start, text }]),
         wrote: true,
@@ -362,10 +396,13 @@ function setPath(
 }
 
 /** `source` importing `env` from @nymbalhq/config, by adding it to an import that names its imports, or a new one. */
-function importEnv(source: string): string {
-  const mod = locate(source)!
+function importEnv(source: string, recipe: Recipe): string {
+  const lf = lfCopy(source)
+  const mod = locate(lf)!
   if (mod.envName !== undefined) return source
-  const style = styleOf(source, mod)
+  if (mod.envBound)
+    throw editByHand(recipe, 'binds `env` to something other than the env of @nymbalhq/config')
+  const style = styleOf(lf, mod)
   if (mod.namedImport !== undefined) {
     const last = children(mod.namedImport, 'specifiers')
       .filter((s) => s.type === 'ImportSpecifier')
@@ -373,13 +410,16 @@ function importEnv(source: string): string {
     return spliced(source, [{ at: last.end, remove: 0, text: ', env' }])
   }
   const imports = children(mod.program, 'body').filter((n) => n.type === 'ImportDeclaration')
-  const line = `import { env } from ${quoted(CONFIG_MODULE, style)}${style.eol}`
+  const line = `import { env } from ${quoted(CONFIG_MODULE, style)}\n`
   const lastImport = imports.at(-1)
-  if (lastImport === undefined) return line + source
-  const lineEnd = source.indexOf('\n', lastImport.end)
-  return lineEnd === -1
-    ? `${source}${style.eol}${line}`
-    : spliced(source, [{ at: lineEnd + 1, remove: 0, text: line }])
+  const lineEnd = lastImport === undefined ? -1 : lf.indexOf('\n', lastImport.end)
+  const edit: Splice =
+    lastImport === undefined
+      ? { at: 0, remove: 0, text: line }
+      : lineEnd === -1
+        ? { at: lf.length, remove: 0, text: `\n${line}` }
+        : { at: lineEnd + 1, remove: 0, text: line }
+  return spliced(source, [edit])
 }
 
 /**
@@ -394,7 +434,7 @@ export function applyRecipeToConfig(
   recipe: Recipe,
   opts: { force: boolean },
 ): AppliedRecipe {
-  if (locate(source) === undefined) {
+  if (locate(lfCopy(source)) === undefined) {
     throw editByHand(recipe, 'does not export a defineConfig({...}) object literal')
   }
   let current = source
@@ -408,14 +448,18 @@ export function applyRecipeToConfig(
     changed.push(path)
     envWritten ||= writesEnv(value)
   }
-  if (envWritten) current = importEnv(current)
+  if (envWritten) current = importEnv(current, recipe)
   return { source: current, changed }
 }
 
-/** Every variable an `env('NAME')` or `env('NAME', …)` call in the config names, `env` imported from @nymbalhq/config. */
+/**
+ * Every variable an `env('NAME')` call with no default names in the config, `env` imported from @nymbalhq/config: the
+ * ones a load needs set. A call with a default runs on it, so its variable is left unset.
+ */
 export function envCallNames(source: string): string[] {
-  const mod = locate(source)
-  const envName = mod === undefined ? importedAs(parse(source), 'env') : mod.envName
+  const lf = lfCopy(source)
+  const mod = locate(lf)
+  const envName = mod === undefined ? importedAs(parse(lf), 'env') : mod.envName
   if (envName === undefined) return []
   const names = new Set<string>()
   const visit = (node: unknown): void => {
@@ -424,11 +468,13 @@ export function envCallNames(source: string): string[] {
     const n = node as Node
     if (n.type === 'CallExpression') {
       const callee = child(n, 'callee')
-      const first = children(n, 'arguments')[0]
+      const args = children(n, 'arguments')
+      const first = args[0]
       if (
         callee.type === 'Identifier' &&
         callee['name'] === envName &&
-        first?.type === 'StringLiteral'
+        first?.type === 'StringLiteral' &&
+        args.length === 1
       ) {
         names.add(first['value'] as string)
       }
@@ -437,6 +483,6 @@ export function envCallNames(source: string): string[] {
       if (key !== 'loc' && key !== 'comments' && key !== 'extra' && key !== 'original') visit(value)
     }
   }
-  visit(mod?.program ?? parse(source))
+  visit(mod?.program ?? parse(lf))
   return [...names]
 }

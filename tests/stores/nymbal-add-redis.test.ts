@@ -15,7 +15,8 @@ import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 // and Redis Streams bus; the seeded products and the order a cart and checkout over the API create are documents
 // under the prefix; the prefix is removed afterwards. The order stays `pending`: its receipt email asks the native
 // stub to hold the payment (`+stub-pending`, payments/native-stub.ts), and the payment hook is never called.
-// The install `pnpm` runs here also rewrites the workspace lockfile; the test puts it back byte for byte.
+// The install `pnpm` runs here also rewrites the workspace lockfile and re-links its node_modules; the test puts the
+// lockfile back byte for byte and re-installs from it.
 // Needs `pnpm build` and Redis (NYMBAL_TEST_REDIS_URL). Kills: `nymbal add redis` leaving a project that does not run
 // on Redis.
 
@@ -177,7 +178,13 @@ afterAll(async () => {
   if (created) rmSync(DIR, { recursive: true, force: true })
   if (lockfile !== null && !readFileSync(LOCKFILE).equals(lockfile))
     writeFileSync(LOCKFILE, lockfile)
-}, 60_000)
+  // The install also re-linked the workspace's node_modules for the scaffold; put them back to the lockfile.
+  if (created) {
+    const synced = await sh('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], REPO)
+    if (synced.code !== 0)
+      throw new Error(`pnpm install --frozen-lockfile failed:\n${synced.output.slice(-4000)}`)
+  }
+}, 360_000)
 
 describe('P2-03 AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => {
   it('AC-5: `nymbal add redis` exits 0', async () => {

@@ -19,11 +19,12 @@ import type {
 
 // Acceptance tests for P2-03 AC-2 (spec P2-03-nymbal-add-recipe, decision 4): applyRecipeToConfig on the config the
 // exported scaffold(dir, answers) writes for generated answers, varied with extra keys, comments, reordered properties,
-// a plain-object default export and an `env` import already in use. For every recipe the edit leaves every line outside
-// the edited properties in place, sets exactly the recipe's paths (the loaded result is the loaded original with those
-// paths changed), is idempotent, imports `env` only when an env() call is written, and loads through loadConfig. A path
-// holding a value that is neither the scaffold default nor the recipe's is a conflict, and `force` writes the
-// recipe's value; a config that is not an object literal is refused.
+// a plain-object default export and an `env` import already in use, each with LF, CRLF and mixed line endings. For
+// every recipe the edit leaves every line outside the edited properties in place (line endings included), sets exactly
+// the recipe's paths (the loaded result is the loaded original with those paths changed), is idempotent, imports `env`
+// only when an env() call is written, and loads through loadConfig. A path holding a value that is neither the
+// scaffold default nor the recipe's is a conflict, and `force` writes the recipe's value; a config that is not an
+// object literal, or that binds `env` to something else, is refused by a recipe that writes env().
 // Kills: an edit that loses user content, duplicates on re-run, breaks the import, or overwrites a user's choice.
 
 type Answers = Parameters<typeof scaffold>[1]
@@ -123,7 +124,12 @@ interface Variation {
   explicitMedia: boolean
   envInUse: boolean
   plainObject: boolean
+  /** For mixed endings, which line breaks are CRLF. */
+  crlfBreaks: boolean[]
 }
+
+type Endings = 'lf' | 'crlf' | 'mixed'
+const ENDINGS: Endings[] = ['lf', 'crlf', 'mixed']
 
 const variationArb: fc.Arbitrary<Variation> = fc.record({
   order: fc.array(fc.integer({ min: 0, max: 1000 }), { minLength: 16, maxLength: 16 }),
@@ -136,6 +142,7 @@ const variationArb: fc.Arbitrary<Variation> = fc.record({
   explicitMedia: fc.boolean(),
   envInUse: fc.boolean(),
   plainObject: fc.boolean(),
+  crlfBreaks: fc.array(fc.boolean(), { minLength: 7, maxLength: 7 }),
 })
 
 const OPEN = 'export default defineConfig({\n'
@@ -202,6 +209,20 @@ function vary(source: string, v: Variation): string {
     : `${head}${header}${OPEN}${blocks.join('\n\n')}${CLOSE}`
 }
 
+/** `source` (LF) with the line endings asked for: mixed starts CRLF then LF, then follows the generated pattern. */
+function withEndings(source: string, endings: Endings, crlfBreaks: boolean[]): string {
+  if (endings === 'lf') return source
+  const pattern = [true, false, ...crlfBreaks]
+  let i = 0
+  return source.replace(/\n/g, () =>
+    endings === 'crlf' || pattern[i++ % pattern.length] ? '\r\n' : '\n',
+  )
+}
+
+/** The kinds of line break `source` uses. */
+const lineEndings = (source: string): string[] =>
+  [...new Set(source.match(/\r?\n/g))].map((e) => JSON.stringify(e)).sort()
+
 /** Which lines of `a` and `b` a longest common subsequence keeps. */
 function common(a: string[], b: string[]): { inA: boolean[]; inB: boolean[] } {
   const t = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0))
@@ -264,46 +285,52 @@ function sourceOf(result: Applied, label: string): { source: string; changed: st
 }
 
 describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => {
-  it('AC-2: for every recipe the edit keeps every other line, sets exactly the set paths, is idempotent, imports env only when it writes env(), and loads', async () => {
+  it('AC-2: for every recipe and line ending the edit keeps every other line, sets exactly the set paths, is idempotent, imports env only when it writes env(), and loads', async () => {
     await fc.assert(
       fc.asyncProperty(answersArb, variationArb, async (answers, variation) => {
-        const original = vary(await scaffoldConfig(answers), variation)
-        const before = await load(original)
-        for (const recipe of recipes) {
-          const once = sourceOf(
-            applyRecipeToConfig(original, recipe, { force: false }),
-            recipe.name,
-          )
-          expect(outsideUntouched(original, once.source, recipe), recipe.name).toEqual([])
+        const lf = vary(await scaffoldConfig(answers), variation)
+        for (const endings of ENDINGS) {
+          const original = withEndings(lf, endings, variation.crlfBreaks)
+          const before = await load(original)
+          for (const recipe of recipes) {
+            const once = sourceOf(
+              applyRecipeToConfig(original, recipe, { force: false }),
+              `${recipe.name} ${endings}`,
+            )
+            expect(outsideUntouched(original, once.source, recipe), recipe.name).toEqual([])
+            expect(lineEndings(once.source), `${recipe.name} ${endings} endings`).toEqual(
+              lineEndings(original),
+            )
 
-          const twice = sourceOf(
-            applyRecipeToConfig(once.source, recipe, { force: false }),
-            `${recipe.name} again`,
-          )
-          expect(twice.source, `${recipe.name} twice`).toBe(once.source)
-          expect(twice.changed, `${recipe.name} twice`).toHaveLength(0)
-          expect(once.changed.length, recipe.name).toBeGreaterThan(0)
+            const twice = sourceOf(
+              applyRecipeToConfig(once.source, recipe, { force: false }),
+              `${recipe.name} again`,
+            )
+            expect(twice.source, `${recipe.name} twice`).toBe(once.source)
+            expect(twice.changed, `${recipe.name} twice`).toHaveLength(0)
+            expect(once.changed.length, recipe.name).toBeGreaterThan(0)
 
-          const names = importedNames(once.source)
-          const writesEnv = /\benv\(/.test(once.source)
-          expect(names.includes('env'), `${recipe.name}: env imported iff env() is written`).toBe(
-            writesEnv,
-          )
-          expect(names.filter((n) => n === 'env').length).toBeLessThanOrEqual(1)
-          expect(names.filter((n) => importedNames(original).includes(n))).toEqual(
-            importedNames(original),
-          )
-          expect(writesEnv, recipe.name).toBe(
-            importedNames(original).includes('env') || envNames(recipe).length > 0,
-          )
+            const names = importedNames(once.source)
+            const writesEnv = /\benv\(/.test(once.source)
+            expect(names.includes('env'), `${recipe.name}: env imported iff env() is written`).toBe(
+              writesEnv,
+            )
+            expect(names.filter((n) => n === 'env').length).toBeLessThanOrEqual(1)
+            expect(names.filter((n) => importedNames(original).includes(n))).toEqual(
+              importedNames(original),
+            )
+            expect(writesEnv, recipe.name).toBe(
+              importedNames(original).includes('env') || envNames(recipe).length > 0,
+            )
 
-          const after = await load(once.source)
-          for (const [path, value] of leaves(recipe)) {
-            expect(getPath(after, path), `${recipe.name} ${path}`).toBe(resolved(value))
+            const after = await load(once.source)
+            for (const [path, value] of leaves(recipe)) {
+              expect(getPath(after, path), `${recipe.name} ${path}`).toBe(resolved(value))
+            }
+            const restored = structuredClone(after) as unknown as Record<string, unknown>
+            for (const { path } of recipe.set) setPath(restored, path, getPath(before, path))
+            expect(restored, `${recipe.name} changed only its paths`).toEqual(before)
           }
-          const restored = structuredClone(after) as unknown as Record<string, unknown>
-          for (const { path } of recipe.set) setPath(restored, path, getPath(before, path))
-          expect(restored, `${recipe.name} changed only its paths`).toEqual(before)
         }
       }),
       { numRuns: 10 },
@@ -382,5 +409,43 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       }
     }
     expect(recipes.map((r) => r.name)).toEqual(RECIPE_NAMES)
+  })
+
+  it('AC-2: a config that binds `env` to something other than @nymbalhq/config\'s is refused, "edit by hand", by a recipe that writes env()', async () => {
+    const plain = await scaffoldConfig({
+      name: 'Foreign Env Shop',
+      directory: 'shop',
+      currency: 'GBP',
+      template: 'astro',
+      seedDemo: false,
+    })
+    const head = "import { defineConfig } from '@nymbalhq/config'\n"
+    expect(plain.startsWith(head), 'the scaffold config starts with its config import').toBe(true)
+    const foreign = [
+      plain.replace(head, `${head}import { env } from './env'\n`),
+      plain.replace(head, `${head}import env from './env'\n`),
+      plain.replace(head, `${head}const env = (name: string) => process.env[name] ?? ''\n`),
+    ]
+    const writers = recipes.filter((r) => envNames(r).length > 0)
+    expect(writers.length, 'a recipe writes env()').toBeGreaterThan(0)
+    for (const source of foreign) {
+      for (const recipe of writers) {
+        let message = ''
+        try {
+          applyRecipeToConfig(source, recipe, { force: false })
+        } catch (error) {
+          message = (error as Error).message
+        }
+        expect(message, `${recipe.name} on:\n${source.split('\n', 3).join('\n')}`).toMatch(
+          /edit by hand/i,
+        )
+        expect(message).toContain('binds `env`')
+        for (const { path } of recipe.set) expect(message).toContain(path)
+      }
+      for (const recipe of recipes.filter((r) => !writers.includes(r))) {
+        const applied = sourceOf(applyRecipeToConfig(source, recipe, { force: false }), recipe.name)
+        expect(applied.changed.length, recipe.name).toBeGreaterThan(0)
+      }
+    }
   })
 })

@@ -60,7 +60,7 @@ const isSet = (name: string, fromFile: Record<string, string>): boolean =>
  * Why the candidate config would not run, without connecting to anything: a recipe package the project does not
  * resolve, or a config `loadConfig` refuses (the schema and its cross-slot rules). The candidate is loaded as
  * `nymbal.config.ts` from a temp directory under the project, so `@nymbalhq/config` resolves as the real one does, with
- * every unset variable an `env()` call names given a placeholder for that load only.
+ * every unset variable an `env()` call with no default names given a placeholder for that load only.
  */
 async function problemsWith(
   candidate: string,
