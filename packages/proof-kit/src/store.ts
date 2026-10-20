@@ -167,11 +167,9 @@ function configure(
     store: { name: 'Proof Kit', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: kind,
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: { adapter: 'middleware', botProtection: { mode: 'off' } },
     commerce: {

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { MediaStorage } from './storage.js'
+import type { MediaStorage } from '@nymbalhq/types'
 
 export interface LocalFsMediaStorageOptions {
   root: string

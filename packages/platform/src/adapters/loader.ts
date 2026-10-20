@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigError, type AdapterContext, type CommerceSlot } from '@nymbalhq/types'
+import { ConfigError, type AdapterContext, type Slot } from '@nymbalhq/types'
 
 export interface ProviderPackage {
   /** The adapter package, which exports `createAdapter(ctx: AdapterContext)`. */
@@ -11,14 +11,31 @@ export interface ProviderPackage {
 
 /**
  * The providers that live in their own package, by slot then provider. The kernel imports a package only when the
- * config names its provider; `native`, `none` and `custom` have no entry.
+ * config names its provider; `native`, `none`, `custom` and the kernel's own primitives (`in-memory`, `in-process`,
+ * `local-fs`) have no entry.
  */
 export const PROVIDER_PACKAGES: Readonly<
-  Partial<Record<CommerceSlot, Readonly<Record<string, ProviderPackage>>>>
+  Partial<Record<Slot, Readonly<Record<string, ProviderPackage>>>>
 > = {
   payments: { stripe: { package: '@nymbalhq/adapter-stripe', sdk: 'stripe' } },
   ai: { anthropic: { package: '@nymbalhq/adapter-anthropic', sdk: '@anthropic-ai/sdk' } },
   email: { smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' } },
+  documentStore: {
+    redis: { package: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },
+    'postgres-jsonb': { package: '@nymbalhq/doc-store-postgres-jsonb', sdk: 'pg' },
+  },
+  eventBus: {
+    'redis-streams': { package: '@nymbalhq/event-bus-redis-streams', sdk: 'ioredis' },
+  },
+}
+
+const INFRASTRUCTURE_SLOTS: ReadonlySet<Slot> = new Set(['documentStore', 'eventBus', 'media'])
+
+/** How the config names a slot's choice, for messages: `payments.provider 'stripe'`, `documentStore 'redis'`. */
+function choiceOf(slot: Slot, provider: string): string {
+  return INFRASTRUCTURE_SLOTS.has(slot)
+    ? `infrastructure.${slot} '${provider}'`
+    : `${slot}.provider '${provider}'`
 }
 
 const INSTALL_VERBS = {
@@ -70,7 +87,7 @@ interface AdapterModule {
  * rethrown as it is.
  */
 export async function loadProviderAdapter(
-  slot: CommerceSlot,
+  slot: Slot,
   provider: string,
   ctx: Omit<AdapterContext, 'slot'>,
 ): Promise<unknown> {
@@ -83,7 +100,7 @@ export async function loadProviderAdapter(
     const missing = missingPackage(error)
     if (missing !== entry.package && missing !== entry.sdk) throw error
     const install = `${INSTALL_VERBS[packageManager(ctx.env, process.cwd())]} ${entry.package} ${entry.sdk}`
-    throw new ConfigError(`${slot}.provider '${provider}' needs ${entry.package}: ${install}`, {
+    throw new ConfigError(`${choiceOf(slot, provider)} needs ${entry.package}: ${install}`, {
       code: 'adapter.package_missing',
       cause: error,
       context: { slot, provider, missing, install },
@@ -95,5 +112,5 @@ export async function loadProviderAdapter(
       context: { slot, provider, package: entry.package },
     })
   }
-  return mod.createAdapter({ ...ctx, slot })
+  return await mod.createAdapter({ ...ctx, slot })
 }

@@ -17,11 +17,15 @@ const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 // If a new @nymbalhq/* package appears in the monorepo and is NOT intended as a scaffold dep,
 // add it here so the coverage test knows it's intentionally absent.
 export const NON_SCAFFOLD_PACKAGES = new Set([
-  // Provider adapters are optional peers of the kernel: a project installs one (and its SDK) only when it uses it.
+  // Provider adapters and primitive packages are optional peers of the kernel: a project installs one (and its SDK)
+  // only when its config names it.
   '@nymbalhq/adapter-anthropic',
   '@nymbalhq/adapter-smtp',
   '@nymbalhq/adapter-stripe',
   '@nymbalhq/contract-tests',
+  '@nymbalhq/doc-store-postgres-jsonb',
+  '@nymbalhq/doc-store-redis',
+  '@nymbalhq/event-bus-redis-streams',
   '@nymbalhq/proof-kit',
   '@nymbalhq/test-factories',
 ])
@@ -150,7 +154,7 @@ export function mergePackageJson(templatePkg, versions) {
     type: templatePkg.type,
     engines: templatePkg.engines,
     scripts: {
-      ...(/** @type {Record<string, string>} */ (templatePkg.scripts)),
+      .../** @type {Record<string, string>} */ (templatePkg.scripts),
       migrate: 'nymbal migrate',
       seed: 'nymbal seed',
     },

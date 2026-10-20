@@ -1,6 +1,7 @@
 import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
 import { ConfigError, type CommerceSlot, type PaymentsAdapter } from '@nymbalhq/types'
-import { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
+import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
+import type { ResolvePrimitivesOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
 import {
   buildAdapters,
@@ -11,10 +12,9 @@ import {
   type InjectedAdapters,
 } from './adapters/registry.js'
 import { createLogger } from './logger.js'
-import { LOCAL_FS_MEDIA_CAPABILITIES } from './media/index.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
-import { createRelay, type Relay } from './events/relay.js'
+import { createRelay, deliveringBus, type Relay } from './events/relay.js'
 import { registerHandlers } from './handlers/register.js'
 import { warmDocumentStore } from './warm-document-store.js'
 import {
@@ -56,7 +56,7 @@ export interface AttachHttpOptions {
   adminRoot?: string | null
 }
 
-export interface CreateAppOptions extends CreatePlatformOptions {
+export interface CreateAppOptions extends ResolvePrimitivesOptions {
   version?: string
   /** The project's own adapters, one per slot whose provider is `custom`. */
   adapters?: InjectedAdapters
@@ -94,7 +94,8 @@ export async function createApp(
   checkInjectedAdapters(config, options.adapters)
   const payments = await resolvePaymentsAdapter(config, adapterLogger, options.adapters)
   refuseUnsafeProduction(config, payments)
-  const platform = createPlatform(config, { ...options, logger })
+  const primitives = await resolvePrimitives(config, { ...options, logger })
+  const platform = createPlatform(config, { ...options, ...primitives, logger })
   const version = options.version ?? '0.1.0'
 
   const repos = buildRepositories(platform.commandStore, platform.documentStore)
@@ -112,6 +113,7 @@ export async function createApp(
     eventBus: platform.eventBus,
     logger,
   })
+  const subscriberBus = deliveringBus(platform.eventBus, relay)
   const publisher = createEventPublisher({
     eventBus: platform.eventBus,
     store: platform.commandStore,
@@ -141,7 +143,7 @@ export async function createApp(
 
   await registerHandlers({
     config,
-    eventBus: platform.eventBus,
+    eventBus: subscriberBus,
     documentStore: platform.documentStore,
     repos,
     adapters,
@@ -197,7 +199,7 @@ export async function createApp(
         adapters,
         repos,
         documentStore: platform.documentStore,
-        eventBus: platform.eventBus,
+        eventBus: subscriberBus,
         publisher,
         adminRoot:
           options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
@@ -230,8 +232,10 @@ export async function createApp(
           provider: config.infrastructure.eventBus,
           capabilities: platform.eventBus.capabilities(),
         },
-        // The kernel ships one media storage, on the local filesystem; the importer creates it per run.
-        media: { provider: 'local-fs', capabilities: LOCAL_FS_MEDIA_CAPABILITIES },
+        media: {
+          provider: config.infrastructure.media,
+          capabilities: platform.media.capabilities(),
+        },
       }
     },
     async stop() {

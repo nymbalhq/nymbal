@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { EventBusAdapter, Logger } from '@nymbalhq/types'
+import type { EventBusAdapter, EventHandler, Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
 
@@ -12,6 +12,12 @@ export interface Relay {
   /** Stops the interval and starts no new pass; resolves when the pass in flight, if any, has finished, so the
    *  store can be closed without cutting a delivery off between the handler and its bookkeeping. */
   stop(): Promise<void>
+  /**
+   * `handler`, run as part of a delivery: a drain it asks for (by running a command) returns at once instead of
+   * waiting on the pass that waits on it. The app wraps every subscribed handler in it, so this holds whether the bus
+   * calls the handler inside `publish` or from a consumer loop of its own.
+   */
+  asDelivery(handler: EventHandler): EventHandler
 }
 
 export interface CreateRelayOptions {
@@ -44,8 +50,8 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   const maxAttempts = opts.maxAttempts ?? 5
   const intervalMs = opts.intervalMs ?? 10_000
   const logger = opts.logger.child({ component: 'event-relay' })
-  // Set around each bus publish: a drain asked for by a subscriber (one that ran a command) must not wait for the
-  // drain that is delivering to it.
+  // Set around each bus publish and each subscribed handler: a drain asked for by a subscriber (one that ran a
+  // command) must not wait for the drain that is delivering to it.
   const delivering = new AsyncLocalStorage<true>()
 
   let active = false
@@ -140,5 +146,25 @@ export function createRelay(opts: CreateRelayOptions): Relay {
       if (delivering.getStore() === true) return Promise.resolve()
       return idle?.promise ?? Promise.resolve()
     },
+    asDelivery(handler) {
+      return (event) => delivering.run(true, () => handler(event))
+    },
+  }
+}
+
+/**
+ * The bus as subscribers see it: every handler runs as part of a relay delivery, so a command it runs does not wait
+ * on the drain that is waiting on the handler, whether the bus calls it inside `publish` or from a consumer loop.
+ */
+export function deliveringBus(bus: EventBusAdapter, relay: Relay): EventBusAdapter {
+  return {
+    capabilities: () => bus.capabilities(),
+    publish: (event) => bus.publish(event),
+    publishBatch: (events) => bus.publishBatch(events),
+    replay: (events) => bus.replay(events),
+    subscribe: (pattern, handler, config) =>
+      bus.subscribe(pattern, relay.asDelivery(handler), config),
+    unsubscribe: (subscription) => bus.unsubscribe(subscription),
+    close: () => bus.close(),
   }
 }

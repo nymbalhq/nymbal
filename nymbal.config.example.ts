@@ -15,11 +15,9 @@ export default defineConfig({
   template: 'astro',
 
   infrastructure: {
-    cloud: 'local',
     commandStore: 'sqlite',
     documentStore: 'in-memory',
     eventBus: 'in-process',
-    compute: 'in-process',
   },
 
   security: {

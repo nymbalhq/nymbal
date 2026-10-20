@@ -140,6 +140,26 @@ export default defineConfig({
       },
       {
         test: {
+          // Needs Redis and Postgres (NYMBAL_TEST_REDIS_URL, NYMBAL_TEST_POSTGRES_URL; `docker compose up -d --wait`
+          // starts both): the Redis and Postgres JSONB document stores and the Redis Streams bus against their
+          // contracts, the kernel on them (it loads the built packages), and the E2E harness's per-run stores. Left
+          // out of the default run like integration-postgres (`pnpm test` leaves out integration-*), and gate:full and
+          // the PR's integration job run it.
+          name: 'integration-stores',
+          environment: 'node',
+          include: [
+            'packages/doc-store-redis/src/**/*.test.ts',
+            'packages/doc-store-postgres-jsonb/src/**/*.test.ts',
+            'packages/event-bus-redis-streams/src/**/*.test.ts',
+            'packages/platform/tests/primitives/**/*.test.ts',
+            'tests/stores/**/*.test.ts',
+          ],
+          testTimeout: 60000,
+          hookTimeout: 60000,
+        },
+      },
+      {
+        test: {
           name: 'proof-kit',
           environment: 'node',
           include: ['packages/proof-kit/tests/*.test.ts'],

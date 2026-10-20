@@ -99,16 +99,22 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
       return
     }
 
+    // Unnamed: every open tab, on every instance, receives every event. A shared name would make the tabs consumers
+    // of one group on a shared bus, each event reaching one of them.
     const subscription = await eventBus.subscribe(
       ['order.*', 'payment.*', 'inventory.*', 'adapter.*'],
       (event) => {
         stream.send({
           id: event.id,
           event: event.type,
-          data: { id: event.id, type: event.type, timestamp: event.timestamp, payload: event.payload },
+          data: {
+            id: event.id,
+            type: event.type,
+            timestamp: event.timestamp,
+            payload: event.payload,
+          },
         })
       },
-      { name: 'sse-admin-events' },
     )
 
     stream.onClose(() => {
