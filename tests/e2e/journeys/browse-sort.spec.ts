@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { APIRequestContext, Page } from '@playwright/test'
+import { storeCapabilities } from '../support/capabilities'
 import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
@@ -12,6 +13,10 @@ import { expect, test } from '../support/fixtures'
 // made against the API read at the moment of the assertion and restricted to the products that existed when the test
 // began (`known`): a product created later may push known ones down the page, never reorder them, so the known cards
 // on the page must be exactly the first known products in the API's order.
+//
+// P2-05 AC-4: the keys come from the store, never from this file: the dropdown offers exactly GET /api/capabilities'
+// `catalog.sortKeys`, in that order, with `catalog.defaultSort` chosen when the URL names no key or an unknown one,
+// and each offered key still sorts the grid as P1-11 requires.
 
 type SortKey = 'newest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'
 
@@ -152,34 +157,83 @@ async function openListing(page: Page, path: string): Promise<void> {
 }
 
 test.describe('Browse: sort', () => {
-  test('AC-4: with no sort, /products renders the newest order server-side and the dropdown shows newest', async ({
+  test('AC-4: with no sort, /products renders the default order server-side and the dropdown shows the default sort', async ({
     page,
     request,
   }) => {
+    const { defaultSort } = (await storeCapabilities(request)).catalog
     // A product newer than the seeded catalogue, so newest order differs from slug order.
     await createProduct(request, 4321)
     const known = await knownSlugs(request)
 
     const html = await serverRenderedSlugs(request, '/products')
     const catalogue = (await apiProducts(request)).filter((p) => known.has(p.slug))
-    const newest = [...catalogue].sort(compareBy('newest')).map((p) => p.slug)
-    const { shown, expected } = knownPrefix(html, newest, known)
+    const ordered = [...catalogue].sort(compareBy(defaultSort as SortKey)).map((p) => p.slug)
+    const { shown, expected } = knownPrefix(html, ordered, known)
     expect(html.length).toBeGreaterThanOrEqual(Math.min(PAGE, known.size))
     expect(shown).toEqual(expected)
 
     await openListing(page, '/products')
-    await expect(page.getByTestId('sort-dropdown')).toHaveValue('newest')
+    await expect(page.getByTestId('sort-dropdown')).toHaveValue(defaultSort)
   })
 
-  test('AC-7: choosing each of the five keys renders the grid in the order GET /api/products?sort=<key> returns', async ({
+  test('AC-4: the dropdown offers exactly catalog.sortKeys from GET /api/capabilities, in that order, on /products and on a category page', async ({
     page,
     request,
   }) => {
+    const { sortKeys } = (await storeCapabilities(request)).catalog
+    expect(sortKeys.length).toBeGreaterThan(0)
+    const categories = (
+      (await (await request.get(`${API_URL}/api/categories`)).json()) as {
+        data: Array<{ slug: string }>
+      }
+    ).data
+    expect(categories.length).toBeGreaterThan(0)
+
+    for (const path of ['/products', `/category/${categories[0]!.slug}`]) {
+      await openListing(page, path)
+      const offered = await page
+        .getByTestId('sort-dropdown')
+        .locator('option')
+        .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value))
+      expect(offered, path).toEqual(sortKeys)
+    }
+  })
+
+  test('AC-4: an unknown ?sort shows the default sort chosen and the grid in the default order', async ({
+    page,
+    request,
+  }) => {
+    const { defaultSort } = (await storeCapabilities(request)).catalog
+    const known = await knownSlugs(request)
+
+    await openListing(page, '/products?sort=p2-05-not-a-key')
+
+    await expect(page.getByTestId('sort-dropdown')).toHaveValue(defaultSort)
+    await expect(async () => {
+      const grid = await gridSlugs(page)
+      const { shown, expected } = knownPrefix(
+        grid,
+        await apiOrder(request, { sort: defaultSort as SortKey }),
+        known,
+      )
+      expect(grid.length).toBeGreaterThanOrEqual(Math.min(PAGE, known.size))
+      expect(shown).toEqual(expected)
+    }).toPass({ timeout: GRID_TIMEOUT })
+  })
+
+  test('AC-7: choosing each key catalog.sortKeys offers renders the grid in the order GET /api/products?sort=<key> returns', async ({
+    page,
+    request,
+  }) => {
+    const { sortKeys, defaultSort } = (await storeCapabilities(request)).catalog
+    // The default last, so every key is a change from the one before it.
+    const keys = [...sortKeys.filter((k) => k !== defaultSort), defaultSort] as SortKey[]
     const known = await knownSlugs(request)
     await openListing(page, '/products')
     const dropdown = page.getByTestId('sort-dropdown')
 
-    for (const key of ['price-asc', 'price-desc', 'name-asc', 'name-desc', 'newest'] as const) {
+    for (const key of keys) {
       await dropdown.selectOption(key)
       await expect(async () => {
         const grid = await gridSlugs(page)
