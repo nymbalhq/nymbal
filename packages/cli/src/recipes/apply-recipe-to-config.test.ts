@@ -279,6 +279,46 @@ function outsideUntouched(original: string, edited: string, recipe: Recipe): str
   return [...lost.map((l) => `lost: ${l}`), ...foreign.map((l) => `not the edit's: ${l}`)]
 }
 
+/** `source`'s lines, each with the break that ends it. */
+const linesWithBreaks = (source: string): string[] => source.match(/[^\n]*\n|[^\n]+$/g) ?? []
+
+const breakOf = (line: string): string =>
+  line.endsWith('\r\n') ? '\r\n' : line.endsWith('\n') ? '\n' : ''
+
+/**
+ * Every line the edit added that does not end like the original line it went into. Lines are aligned by a longest
+ * common subsequence, so each run of new lines sits between two kept lines. A run that replaces as many lines as it
+ * has ends line for line like them; one that replaces fewer ends like one of those; a pure insertion lands on the
+ * break between the kept lines either side, so its lines all end like one of the two.
+ */
+function foreignBreaks(original: string, edited: string): string[] {
+  const a = linesWithBreaks(original)
+  const b = linesWithBreaks(edited)
+  const { inA, inB } = common(a, b)
+  const keptA = [-1, ...a.flatMap((_, i) => (inA[i] ? [i] : [])), a.length]
+  const keptB = [-1, ...b.flatMap((_, j) => (inB[j] ? [j] : [])), b.length]
+  const wrong: string[] = []
+  for (let k = 0; k + 1 < keptA.length; k++) {
+    const replaced = a.slice(keptA[k]! + 1, keptA[k + 1]!)
+    const added = b.slice(keptB[k]! + 1, keptB[k + 1]!)
+    if (added.length === 0) continue
+    const around = [a[keptA[k]!], a[keptA[k + 1]!]].filter((l): l is string => l !== undefined)
+    added.forEach((line, n) => {
+      const into =
+        added.length === replaced.length
+          ? [replaced[n]!]
+          : replaced.length > 0
+            ? replaced
+            : around
+      if (!into.some((l) => breakOf(l) === breakOf(line)))
+        wrong.push(`${JSON.stringify(line)} went into ${JSON.stringify(into)}`)
+    })
+    if (replaced.length === 0 && new Set(added.map(breakOf)).size > 1)
+      wrong.push(`one insertion with mixed breaks: ${JSON.stringify(added)}`)
+  }
+  return wrong
+}
+
 function sourceOf(result: Applied, label: string): { source: string; changed: string[] } {
   if (!('source' in result)) throw new Error(`${label}: conflict ${JSON.stringify(result)}`)
   return result
@@ -301,6 +341,10 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
             expect(lineEndings(once.source), `${recipe.name} ${endings} endings`).toEqual(
               lineEndings(original),
             )
+            expect(
+              foreignBreaks(original, once.source),
+              `${recipe.name} ${endings}: each added line ends like the line it went into`,
+            ).toEqual([])
 
             const twice = sourceOf(
               applyRecipeToConfig(once.source, recipe, { force: false }),

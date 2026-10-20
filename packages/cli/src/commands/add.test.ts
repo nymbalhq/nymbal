@@ -213,4 +213,29 @@ describe('P2-03 AC-4: nymbal add', () => {
     expect(after).toMatch(/commandStore: ['"]postgres['"]/)
     expect(after).toContain("xFrameOptions: env('P2_03_X_FRAME_OPTIONS', 'deny')")
   })
+
+  it("AC-4: with an enum field read as env('X', <valid default>) and an invalid X in .env, `nymbal add postgres` exits 1 and leaves the config byte-identical: .env applies as `nymbal dev` loads it", async () => {
+    const dir = project('env-default-dotenv')
+    const path = join(dir, 'nymbal.config.ts')
+    const edited = readFileSync(path, 'utf8')
+      .replace(
+        "import { defineConfig } from '@nymbalhq/config'",
+        "import { defineConfig, env } from '@nymbalhq/config'",
+      )
+      .replace("xFrameOptions: 'deny'", "xFrameOptions: env('P2_03_X_FRAME_OPTIONS', 'deny')")
+    expect(edited.match(/env\(/g), 'the scaffold config has the import and the field').toHaveLength(
+      1,
+    )
+    expect(edited).toContain('import { defineConfig, env }')
+    writeFileSync(path, edited)
+    writeFileSync(join(dir, '.env'), 'P2_03_X_FRAME_OPTIONS=not-a-frame-option\n')
+    expect(cleanEnv()['P2_03_X_FRAME_OPTIONS']).toBeUndefined()
+    const before = listing(dir)
+
+    const postgres = await add(dir, 'postgres', '--no-install')
+    expect(postgres.code, postgres.output).toBe(1)
+    expect(postgres.output).toContain('xFrameOptions')
+    expect(readFileSync(path, 'utf8')).toBe(edited)
+    expect(changedPaths(before, listing(dir))).toHaveLength(0)
+  })
 })

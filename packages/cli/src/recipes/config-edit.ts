@@ -452,16 +452,18 @@ export function applyRecipeToConfig(
   return { source: current, changed }
 }
 
+export type EnvCall = { name: string; defaulted: boolean }
+
 /**
- * Every variable an `env('NAME')` call with no default names in the config, `env` imported from @nymbalhq/config: the
- * ones a load needs set. A call with a default runs on it, so its variable is left unset.
+ * Every variable an `env('NAME')` call names in the config, `env` imported from @nymbalhq/config, and whether every
+ * call naming it has a default. A load needs the others set; a defaulted one runs on its default unless `.env` sets it.
  */
-export function envCallNames(source: string): string[] {
+export function envCalls(source: string): EnvCall[] {
   const lf = lfCopy(source)
   const mod = locate(lf)
   const envName = mod === undefined ? importedAs(parse(lf), 'env') : mod.envName
   if (envName === undefined) return []
-  const names = new Set<string>()
+  const defaulted = new Map<string, boolean>()
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) return node.forEach(visit)
     if (typeof node !== 'object' || node === null || typeof (node as Node).type !== 'string') return
@@ -473,10 +475,10 @@ export function envCallNames(source: string): string[] {
       if (
         callee.type === 'Identifier' &&
         callee['name'] === envName &&
-        first?.type === 'StringLiteral' &&
-        args.length === 1
+        first?.type === 'StringLiteral'
       ) {
-        names.add(first['value'] as string)
+        const name = first['value'] as string
+        defaulted.set(name, (defaulted.get(name) ?? true) && args.length > 1)
       }
     }
     for (const [key, value] of Object.entries(n)) {
@@ -484,5 +486,5 @@ export function envCallNames(source: string): string[] {
     }
   }
   visit(mod?.program ?? parse(lf))
-  return [...names]
+  return [...defaulted].map(([name, all]) => ({ name, defaulted: all }))
 }

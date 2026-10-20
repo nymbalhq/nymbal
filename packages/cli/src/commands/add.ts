@@ -11,7 +11,7 @@ import {
   RECIPE_HOLDERS,
   appendRecipeEnv,
   applyRecipeToConfig,
-  envCallNames,
+  envCalls,
   isInstalled,
   isKnownRecipe,
   knownRecipes,
@@ -59,8 +59,9 @@ const isSet = (name: string, fromFile: Record<string, string>): boolean =>
 /**
  * Why the candidate config would not run, without connecting to anything: a recipe package the project does not
  * resolve, or a config `loadConfig` refuses (the schema and its cross-slot rules). The candidate is loaded as
- * `nymbal.config.ts` from a temp directory under the project, so `@nymbalhq/config` resolves as the real one does, with
- * every unset variable an `env()` call with no default names given a placeholder for that load only.
+ * `nymbal.config.ts` from a temp directory under the project, so `@nymbalhq/config` resolves as the real one does. For
+ * that load only, every variable an `env()` call names takes its `.env` value as `nymbal dev` would, and one still
+ * unset gets a placeholder unless its calls have a default, which is what runs.
  */
 async function problemsWith(
   candidate: string,
@@ -76,10 +77,12 @@ async function problemsWith(
     )
   }
   const saved = new Map<string, string | undefined>()
-  for (const name of envCallNames(candidate)) {
+  for (const { name, defaulted } of envCalls(candidate)) {
     if ((process.env[name] ?? '') !== '') continue
+    const value = fromFile[name] || (defaulted ? undefined : `nymbal-add-placeholder-${name}`)
+    if (value === undefined) continue
     saved.set(name, process.env[name])
-    process.env[name] = fromFile[name] || `nymbal-add-placeholder-${name}`
+    process.env[name] = value
   }
   const dir = mkdtempSync(join(root, '.nymbal-add-'))
   try {

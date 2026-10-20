@@ -9,8 +9,9 @@ export {
 export {
   SCAFFOLD_DEFAULTS,
   applyRecipeToConfig,
-  envCallNames,
+  envCalls,
   type AppliedRecipe,
+  type EnvCall,
   type Conflict,
 } from './config-edit.js'
 export { appendRecipeEnv, missingEnv } from './env-example.js'

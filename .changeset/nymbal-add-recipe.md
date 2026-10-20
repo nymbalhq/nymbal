@@ -14,8 +14,9 @@ variable still unset is listed as `set NAME in .env`).
 
 - The edit goes through the config's AST, so comments, order and every other key stay as they were. Secrets are written
   only as `env('NAME')` calls, and `env` is added to the `@nymbalhq/config` import when needed. The edited config is
-  loaded before it is written, with a placeholder for every unset variable an `env()` call names, so a secret not yet
-  set never blocks an add. Nothing connects to the service.
+  loaded before it is written, with the values in `.env` applied as `nymbal dev` applies them and a placeholder for
+  every variable still unset that an `env()` call with no default names. A secret not yet set never blocks an add, and
+  a default or a `.env` value is validated as it will run. Nothing connects to the service.
 - Re-running a recipe is a no-op. A value the developer chose (not the scaffold's default) is a conflict that changes
   nothing and names the path and both values; `--force` overwrites it. `--dry-run` prints the config change, the
   `.env.example` lines and the install line. `--no-install` fails with the install line when a package is missing.
