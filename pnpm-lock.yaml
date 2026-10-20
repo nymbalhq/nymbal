@@ -504,28 +504,28 @@ importers:
   packages/stack:
     dependencies:
       '@nymbalhq/config':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../config
       '@nymbalhq/http':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../http
       '@nymbalhq/platform':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../platform
       '@nymbalhq/react':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../react
       '@nymbalhq/sdk':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../sdk
       '@nymbalhq/types':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../types
       '@nymbalhq/web-components':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../web-components
       nymbal:
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../cli
 
   packages/test-factories:

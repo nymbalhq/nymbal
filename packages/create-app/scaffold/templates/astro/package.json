@@ -17,14 +17,14 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "nymbal": "0.1.0",
-    "@nymbalhq/config": "0.1.0",
-    "@nymbalhq/platform": "0.1.0",
-    "@nymbalhq/stack": "0.1.0",
+    "nymbal": "0.2.0",
+    "@nymbalhq/config": "0.2.0",
+    "@nymbalhq/platform": "0.2.0",
+    "@nymbalhq/stack": "0.2.0",
     "@astrojs/node": "^11.1.8",
-    "@nymbalhq/sdk": "0.1.0",
-    "@nymbalhq/types": "0.1.0",
-    "@nymbalhq/web-components": "0.1.0",
+    "@nymbalhq/sdk": "0.2.0",
+    "@nymbalhq/types": "0.2.0",
+    "@nymbalhq/web-components": "0.2.0",
     "@stripe/stripe-js": "^4.0.0",
     "astro": "^7.4.0"
   },
@@ -34,26 +34,26 @@
   },
   "pnpm": {
     "overrides": {
-      "nymbal": "0.1.0",
-      "@nymbalhq/config": "0.1.0",
-      "@nymbalhq/http": "0.1.0",
-      "@nymbalhq/platform": "0.1.0",
-      "@nymbalhq/react": "0.1.0",
-      "@nymbalhq/sdk": "0.1.0",
-      "@nymbalhq/stack": "0.1.0",
-      "@nymbalhq/types": "0.1.0",
-      "@nymbalhq/web-components": "0.1.0"
+      "nymbal": "0.2.0",
+      "@nymbalhq/config": "0.2.0",
+      "@nymbalhq/http": "0.2.0",
+      "@nymbalhq/platform": "0.2.0",
+      "@nymbalhq/react": "0.2.0",
+      "@nymbalhq/sdk": "0.2.0",
+      "@nymbalhq/stack": "0.2.0",
+      "@nymbalhq/types": "0.2.0",
+      "@nymbalhq/web-components": "0.2.0"
     }
   },
   "overrides": {
-    "nymbal": "0.1.0",
-    "@nymbalhq/config": "0.1.0",
-    "@nymbalhq/http": "0.1.0",
-    "@nymbalhq/platform": "0.1.0",
-    "@nymbalhq/react": "0.1.0",
-    "@nymbalhq/sdk": "0.1.0",
-    "@nymbalhq/stack": "0.1.0",
-    "@nymbalhq/types": "0.1.0",
-    "@nymbalhq/web-components": "0.1.0"
+    "nymbal": "0.2.0",
+    "@nymbalhq/config": "0.2.0",
+    "@nymbalhq/http": "0.2.0",
+    "@nymbalhq/platform": "0.2.0",
+    "@nymbalhq/react": "0.2.0",
+    "@nymbalhq/sdk": "0.2.0",
+    "@nymbalhq/stack": "0.2.0",
+    "@nymbalhq/types": "0.2.0",
+    "@nymbalhq/web-components": "0.2.0"
   }
 }
