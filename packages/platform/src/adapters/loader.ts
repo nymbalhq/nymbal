@@ -27,6 +27,7 @@ export const PROVIDER_PACKAGES: Readonly<
   eventBus: {
     'redis-streams': { package: '@nymbalhq/event-bus-redis-streams', sdk: 'ioredis' },
   },
+  media: { s3: { package: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' } },
 }
 
 const INFRASTRUCTURE_SLOTS: ReadonlySet<Slot> = new Set(['documentStore', 'eventBus', 'media'])

@@ -53,6 +53,8 @@ export const REDIS_DEFAULTS = {
   streamMaxLen: 10_000,
 } as const
 
+const S3_DEFAULT_REGION = 'us-east-1'
+
 /** The Postgres JSONB store's namespace inside the command store's database. */
 const JSONB_PREFIX = 'nymbal'
 
@@ -79,8 +81,34 @@ function redisConnection(config: NymbalConfig, env: NodeJS.ProcessEnv, slot: str
   }
 }
 
+/**
+ * The `s3` block with its defaults: each field from the environment when the block leaves it out (`S3_BUCKET`,
+ * `AWS_REGION`, `S3_ENDPOINT`, `NYMBAL_S3_PREFIX`, `S3_PUBLIC_URL`), the region `us-east-1`, no prefix, and path-style
+ * requests when an endpoint is set. Credentials are not here: the AWS SDK's default chain provides them.
+ */
+function s3Connection(config: NymbalConfig, env: NodeJS.ProcessEnv) {
+  const block = config.infrastructure.s3 ?? {}
+  const bucket = nonEmpty(block.bucket) ?? nonEmpty(env['S3_BUCKET'])
+  if (bucket === undefined) {
+    throw new ConfigError(
+      "infrastructure.media 's3' needs a bucket: set infrastructure.s3.bucket or S3_BUCKET",
+      { code: 'config.s3_bucket_missing', context: { slot: 'media' } },
+    )
+  }
+  const endpoint = nonEmpty(block.endpoint) ?? nonEmpty(env['S3_ENDPOINT'])
+  const publicUrl = nonEmpty(block.publicUrl) ?? nonEmpty(env['S3_PUBLIC_URL'])
+  return {
+    bucket,
+    region: nonEmpty(block.region) ?? nonEmpty(env['AWS_REGION']) ?? S3_DEFAULT_REGION,
+    prefix: block.prefix ?? nonEmpty(env['NYMBAL_S3_PREFIX']) ?? '',
+    forcePathStyle: block.forcePathStyle ?? endpoint !== undefined,
+    ...(endpoint !== undefined && { endpoint }),
+    ...(publicUrl !== undefined && { publicUrl }),
+  }
+}
+
 async function loadPrimitive<T>(
-  slot: 'documentStore' | 'eventBus',
+  slot: 'documentStore' | 'eventBus' | 'media',
   provider: string,
   config: Record<string, unknown>,
   logger: Logger,
@@ -167,7 +195,12 @@ async function resolveEventBus(
   }
 }
 
-function resolveMedia(config: NymbalConfig, options: ResolvePrimitivesOptions): MediaStorage {
+async function resolveMedia(
+  config: NymbalConfig,
+  options: ResolvePrimitivesOptions,
+  logger: Logger,
+  env: NodeJS.ProcessEnv,
+): Promise<MediaStorage> {
   const choice = config.infrastructure.media
   switch (choice) {
     case 'local-fs':
@@ -175,6 +208,8 @@ function resolveMedia(config: NymbalConfig, options: ResolvePrimitivesOptions): 
         root: options.mediaRoot ?? join(process.cwd(), 'public', 'imported-media'),
         urlPrefix: '/imported-media',
       })
+    case 's3':
+      return loadPrimitive('media', choice, s3Connection(config, env), logger, env)
     default: {
       const exhaustive: never = choice
       throw new ConfigError(`Unknown media: ${String(exhaustive)}`)
@@ -192,10 +227,11 @@ export async function resolvePrimitives(
 ): Promise<Primitives> {
   const env = options.env ?? process.env
   const logger = options.logger ?? createLogger({ base: { store: config.store.name } })
-  const media = resolveMedia(config, options)
-  // Checked before anything connects, so a missing URL never leaves a half-built set behind.
+  // Checked before anything is loaded or connects, so a missing URL or bucket never leaves a half-built set behind.
+  if (config.infrastructure.media === 's3') s3Connection(config, env)
   if (config.infrastructure.documentStore === 'redis') redisConnection(config, env, 'documentStore')
   if (config.infrastructure.eventBus === 'redis-streams') redisConnection(config, env, 'eventBus')
+  const media = await resolveMedia(config, options, logger, env)
   const documentStore = await resolveDocumentStore(config, options, logger, env)
   try {
     const eventBus = await resolveEventBus(config, logger, env)

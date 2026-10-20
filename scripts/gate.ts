@@ -58,6 +58,8 @@ export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
 /** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
 export const MAILPIT_URL = 'http://localhost:18025'
 export const REDIS_URL = 'redis://localhost:63799'
+/** The MinIO API compose.yaml publishes, on NYMBAL_MINIO_PORT when it is moved. */
+export const minioUrl = (port: string = '59000'): string => `http://localhost:${port}`
 
 /**
  * The store sets the E2E suite runs on (`--stores`), as the variables the repo-root nymbal.config.ts reads. The first
@@ -809,6 +811,9 @@ export type PlanInput = {
   mailpitUrl?: string | undefined
   /** Where `external` services have Redis. */
   redisUrl?: string | undefined
+  /** Where `external` services have an S3 API; with compose, the port compose.yaml publishes MinIO on. */
+  s3Endpoint?: string | undefined
+  minioPort?: string | undefined
   /** The store set the E2E steps run on (`--stores`); `sqlite-memory`, today's plan, when not given. */
   stores?: StoreSet | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
@@ -1001,6 +1006,10 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
   const redisUrl = external ? (input.redisUrl ?? REDIS_URL) : REDIS_URL
   const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisUrl)}`
+  // External services bring their own credentials in the environment; compose's MinIO has its default root ones.
+  const s3 = external
+    ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
+    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(input.minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
   // A set other than the default points the repo-root config at the composed services; the E2E server wrapper gives
   // the run a database and a key prefix of its own.
   const stores = storeSet(input.stores ?? 'sqlite-memory')
@@ -1059,11 +1068,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       command: `${postgres} ${mailpit} pnpm exec vitest run --project proof-kit-services`,
       needs: ['compose up', 'build'],
     },
-    // The document store and bus contracts on Redis and Postgres JSONB, and the kernel on them (it loads the built
-    // packages).
+    // The document store and bus contracts on Redis and Postgres JSONB, the S3 media storage on MinIO, and the kernel
+    // on them (it loads the built packages).
     {
       name: 'integration-stores',
-      command: `${postgres} ${redis} pnpm exec vitest run --project integration-stores`,
+      command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores`,
       needs: ['compose up', 'build'],
     },
     mutated.length === 0
@@ -1082,7 +1091,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     sentinels,
     {
       name: 'tests-fail-on-base',
-      command: `${postgres} ${mailpit} ${redis} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
+      command: `${postgres} ${mailpit} ${redis} ${s3} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
       needs: ['compose up'],
     },
     // The journeys run against the built packages: without a build they test nothing new. Playwright starts its own
@@ -1290,6 +1299,8 @@ async function main(argv: string[]): Promise<number> {
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
+  const s3Endpoint = process.env.NYMBAL_TEST_S3_ENDPOINT
+  const minioPort = process.env.NYMBAL_MINIO_PORT
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
@@ -1307,6 +1318,8 @@ async function main(argv: string[]): Promise<number> {
     ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
     ...(mailpitUrl === undefined || mailpitUrl === '' ? {} : { mailpitUrl }),
     ...(redisUrl === undefined || redisUrl === '' ? {} : { redisUrl }),
+    ...(s3Endpoint === undefined || s3Endpoint === '' ? {} : { s3Endpoint }),
+    ...(minioPort === undefined || minioPort === '' ? {} : { minioPort }),
     ...(stores === undefined ? {} : { stores }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),

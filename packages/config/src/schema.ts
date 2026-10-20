@@ -41,7 +41,7 @@ function infrastructureValue<const V extends readonly [string, ...string[]]>(
   })
 }
 
-const INFRASTRUCTURE_KEYS = [...Object.keys(KNOWN_INFRASTRUCTURE), 'redis']
+const INFRASTRUCTURE_KEYS = [...Object.keys(KNOWN_INFRASTRUCTURE), 'redis', 's3']
 
 function unrecognizedInfrastructureKeys(keys: string[]): string {
   return keys
@@ -69,6 +69,39 @@ export const redisSchema = z
   })
   .strict()
 
+const S3_KEYS = ['bucket', 'region', 'endpoint', 'prefix', 'publicUrl', 'forcePathStyle']
+
+/**
+ * The bucket `media: 's3'` stores in. Each field falls back to the environment in the platform; credentials are never
+ * config keys: the AWS SDK's default chain provides them.
+ */
+export const s3Schema = z
+  .object(
+    {
+      /** Defaults to `S3_BUCKET`; one of the two is required. */
+      bucket: z.string().min(1).optional(),
+      /** Defaults to `AWS_REGION`, then `'us-east-1'`. */
+      region: z.string().min(1).optional(),
+      /** An S3-compatible API (MinIO, R2); defaults to `S3_ENDPOINT`, then AWS. */
+      endpoint: z.string().min(1).optional(),
+      /** Where every object key starts; defaults to `NYMBAL_S3_PREFIX`, then none. */
+      prefix: z.string().optional(),
+      /** Where the bucket's objects are served from (a CDN); defaults to `S3_PUBLIC_URL`, then the bucket's own URL. */
+      publicUrl: z.string().min(1).optional(),
+      /** Path-style requests; true by default when an endpoint is set. */
+      forcePathStyle: z.boolean().optional(),
+    },
+    {
+      errorMap: (issue, ctx) =>
+        issue.code === z.ZodIssueCode.unrecognized_keys
+          ? {
+              message: `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`,
+            }
+          : { message: ctx.defaultError },
+    },
+  )
+  .strict()
+
 export const infrastructureSchema = z
   .object(
     {
@@ -77,6 +110,7 @@ export const infrastructureSchema = z
       eventBus: infrastructureValue('eventBus', KNOWN_INFRASTRUCTURE.eventBus),
       media: infrastructureValue('media', KNOWN_INFRASTRUCTURE.media).default('local-fs'),
       redis: redisSchema.optional(),
+      s3: s3Schema.optional(),
     },
     {
       errorMap: (issue, ctx) =>
@@ -99,6 +133,13 @@ export const infrastructureSchema = z
         code: z.ZodIssueCode.custom,
         path: ['eventBus'],
         message: `eventBus 'redis-streams' needs a shared documentStore ('redis' or 'postgres-jsonb'), not 'in-memory': a named group hands each event to one instance, so a per-process read model would miss the rest`,
+      })
+    }
+    if (infra.s3 !== undefined && infra.media !== 's3') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['s3'],
+        message: `infrastructure.s3 configures media 's3', but media is '${infra.media}': set media to 's3' or delete the s3 block`,
       })
     }
   })

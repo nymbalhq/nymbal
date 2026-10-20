@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
 import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
-import * as p from 'picocolors'
+import p from 'picocolors'
 import { loadProject } from '../utils/project.js'
 import { createApp } from '@nymbalhq/platform'
 import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
@@ -140,6 +140,7 @@ export const importCommand = defineCommand({
           services: app.services,
           repos: app.repos,
           adapters: { ai: app.adapters.ai, reviews: app.adapters.reviews },
+          media: app.platform.media,
           onProgress(event: ProgressEvent) {
             if (event.kind === 'phase') {
               console.log(p.cyan(`  → ${event.phase}`))

@@ -79,6 +79,9 @@ jobs:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
       NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
     services:
       postgres:
         image: postgres:16-alpine
@@ -126,6 +129,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      # MinIO for the S3 media suites. A service container cannot pass it `server /data`, so it is started here.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
       - name: Postgres integration
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
       - name: Proof kit services (Postgres race, Mailpit sink)
@@ -173,12 +183,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [build]
-    # tests-fail-on-base runs every project against the base, so a new Postgres or Mailpit test needs its server here
-    # too, or it fails on base for want of one.
+    # tests-fail-on-base runs every project against the base, so a new Postgres, Mailpit or S3 test needs its server
+    # here too, or it fails on base for want of one.
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
       NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
     services:
       postgres:
         image: postgres:16-alpine
@@ -217,6 +230,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      # MinIO for the S3 media suites. A service container cannot pass it `server /data`, so it is started here.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
       # A pull request runs the sentinels its change can affect; a push to main or dev, like the nightly and the
       # release, runs every one.
       - name: Sentinels
