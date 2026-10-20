@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/platform",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Nymbal CQRS kernel (command store, document store, event bus)",
   "license": "MIT",
   "repository": {
