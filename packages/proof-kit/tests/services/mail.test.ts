@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { createAdapter } from '@nymbalhq/adapter-smtp'
 import { createMailSink } from '@nymbalhq/proof-kit/mail'
-import { createLogger, createNativeEmailAdapter } from '@nymbalhq/platform'
+import { createLogger } from '@nymbalhq/platform'
+import type { EmailAdapter } from '@nymbalhq/types'
 
-// Acceptance tests for P1-01 AC-10: the native email adapter, configured with the sink's emailConfig(), really
+// Acceptance tests for P1-01 AC-10: the SMTP email adapter, configured with the sink's emailConfig(), really
 // delivers to Mailpit, and waitFor fails loudly (address and counts) instead of hanging or resolving short.
+// P2-01 AC-5 moved it to the `smtp` provider: nodemailer left the kernel for @nymbalhq/adapter-smtp, loaded through
+// the package's createAdapter as the kernel loads it.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.
 
 const URL_VAR = 'NYMBAL_TEST_MAILPIT_URL'
@@ -18,10 +22,14 @@ if (mailpitUrl === undefined || mailpitUrl.trim() === '') {
 
 const logger = createLogger({ pretty: false, level: 'error' })
 
-describe('AC-10: the mail sink receives what the native email adapter sends', () => {
+function smtpAdapter(sink: ReturnType<typeof createMailSink>): EmailAdapter {
+  return createAdapter({ slot: 'email', config: sink.emailConfig(), logger, env: process.env }) as EmailAdapter
+}
+
+describe('AC-10 (P2-01 AC-5): the mail sink receives what the smtp email adapter sends', () => {
   it('AC-10: one sendTransactional to a unique address yields exactly one message for it, with the sent subject', async () => {
     const sink = createMailSink()
-    const email = createNativeEmailAdapter({ logger, config: sink.emailConfig() })
+    const email = smtpAdapter(sink)
     const to = `ac10-${randomUUID()}@proof-kit.test`
     const orderNumber = `PK-${randomUUID()}`
 
@@ -40,7 +48,7 @@ describe('AC-10: the mail sink receives what the native email adapter sends', ()
 
   it('AC-10: waitFor({ to, count: 2 }) after one message times out with an error naming the address and the counts seen', async () => {
     const sink = createMailSink()
-    const email = createNativeEmailAdapter({ logger, config: sink.emailConfig() })
+    const email = smtpAdapter(sink)
     const to = `ac10-short-${randomUUID()}@proof-kit.test`
     await email.sendTransactional({
       template: 'order-placed',

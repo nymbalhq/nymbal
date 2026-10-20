@@ -1,5 +1,7 @@
+import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -258,4 +260,128 @@ describe('P1-08 AC-13: the clean-machine admin', () => {
     expect(login.data.customer.email).toBe(email)
     expect(login.data.customer.roles).toContain('admin')
   })
+})
+
+// P2-01 AC-7: the clean-machine store installs no provider SDK, and naming a provider whose adapter package is not
+// installed stops `nymbal dev` with the install line for the project's package manager (npm here: the scaffold ran
+// through npx). The config half (ai `none`) is checked where it is cheapest, in packages/create-app/test. Kills: a
+// fresh store still installing a provider SDK, a missing adapter package crashing with no install line, and a line
+// naming a package manager the project does not use. Last in the file: it edits nymbal.config.ts, restored in finally.
+
+const PROVIDER_SDKS = ['stripe', '@anthropic-ai/sdk', 'nodemailer']
+
+/** Every package name installed under the project's node_modules, nested ones and pnpm's .pnpm/<name>@<version> too. */
+function installedPackageNames(root: string): Set<string> {
+  const names = new Set<string>()
+  const visitPackage = (pkgDir: string): void => {
+    const path = join(pkgDir, 'package.json')
+    if (existsSync(path)) {
+      const m = JSON.parse(readFileSync(path, 'utf8')) as { name?: string }
+      if (m.name) names.add(m.name)
+    }
+    const nested = join(pkgDir, 'node_modules')
+    if (existsSync(nested)) visitNodeModules(nested)
+  }
+  const visitNodeModules = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (lstatSync(full).isSymbolicLink()) continue
+      if (entry === '.pnpm') {
+        for (const id of readdirSync(full)) {
+          // `@scope+name@1.2.3(peer@x)` or `name@1.2.3`: the name is everything before the version's `@`.
+          const at = id.indexOf('@', id.startsWith('@') ? 1 : 0)
+          if (at > 0) names.add(id.slice(0, at).replace('+', '/'))
+          const inner = join(full, id, 'node_modules')
+          if (existsSync(inner)) visitNodeModules(inner)
+        }
+      } else if (entry.startsWith('@')) {
+        for (const name of readdirSync(full)) {
+          const scoped = join(full, name)
+          if (!lstatSync(scoped).isSymbolicLink()) visitPackage(scoped)
+        }
+      } else if (!entry.startsWith('.')) {
+        visitPackage(full)
+      }
+    }
+  }
+  visitNodeModules(join(root, 'node_modules'))
+  return names
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address()
+      probe.close(() =>
+        typeof address === 'object' && address !== null
+          ? resolve(address.port)
+          : reject(new Error('freePort: no address')),
+      )
+    })
+  })
+}
+
+/** Runs a command in the project until it exits, or kills its process group after `timeoutMs`. */
+function runInProject(
+  command: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; timedOut: boolean; output: string }> {
+  const env = { ...process.env }
+  // The suite runs under pnpm; npx sets the user agent of the package manager the project uses.
+  for (const key of Object.keys(env)) {
+    if (key === 'npm_config_user_agent' || key === 'npm_execpath' || key.startsWith('npm_lifecycle_')) {
+      delete env[key]
+    }
+  }
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd: DIR, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let output = ''
+    child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()))
+    child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()))
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      try {
+        process.kill(-child.pid!, 'SIGKILL')
+      } catch {
+        // already gone
+      }
+    }, timeoutMs)
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve({ code, timedOut, output })
+    })
+  })
+}
+
+describe('P2-01 AC-7: a clean machine installs no provider SDK', () => {
+  it('AC-7: no package directory under node_modules, .pnpm entries included, is stripe, @anthropic-ai/sdk or nodemailer', () => {
+    const installed = installedPackageNames(DIR)
+    expect(installed.size).toBeGreaterThan(0)
+    expect(PROVIDER_SDKS.filter((sdk) => installed.has(sdk))).toEqual([])
+  })
+
+  it("AC-7: with payments.provider changed to stripe, `npx nymbal dev --api-only` on a free port exits non-zero printing `npm install @nymbalhq/adapter-stripe stripe`", async () => {
+    const path = join(DIR, 'nymbal.config.ts')
+    const original = readFileSync(path, 'utf8')
+    const edited = original.replace(
+      /payments:\s*\{\s*provider:\s*'native'\s*\}/,
+      "payments: { provider: 'stripe', config: { secretKey: 'sk_test_p2_01', webhookSecret: 'whsec_p2_01' } }",
+    )
+    expect(edited, 'the scaffold config names native payments').not.toBe(original)
+    try {
+      writeFileSync(path, edited)
+      const port = await freePort()
+      const run = await runInProject('npx', ['nymbal', 'dev', '--api-only', '--port', String(port)], 60_000)
+
+      expect(run.timedOut, `still serving after 60 s:\n${run.output.slice(-2000)}`).toBe(false)
+      expect(run.code).not.toBe(0)
+      expect(run.output).toContain('npm install @nymbalhq/adapter-stripe stripe')
+    } finally {
+      writeFileSync(path, original)
+    }
+  }, 90_000)
 })

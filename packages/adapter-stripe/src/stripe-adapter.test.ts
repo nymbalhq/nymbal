@@ -1,8 +1,10 @@
 import fc from 'fast-check'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PaymentError } from '@nymbalhq/types'
-import { createStripePaymentsAdapter, type StripePaymentsConfig } from './stripe-adapter.js'
-import { createLogger } from '../../logger.js'
+import { PaymentError, type Logger } from '@nymbalhq/types'
+import { createStripePaymentsAdapter, type StripePaymentsConfig } from './index.js'
+
+// Moved from the kernel with the adapter (P2-01 decision 3): the package depends on @nymbalhq/types and never on the
+// kernel, so the kernel's logger is replaced by a silent one.
 
 const { constructorCalls, stripeStubs } = vi.hoisted(() => {
   return {
@@ -35,7 +37,14 @@ vi.mock('stripe', () => {
   return { default: MockStripe }
 })
 
-const logger = createLogger({ pretty: false, level: 'error' })
+const logger: Logger = {
+  trace: () => {},
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => logger,
+}
 
 const baseConfig: StripePaymentsConfig = {
   secretKey: 'sk_test_unit',
@@ -122,7 +131,7 @@ describe('createStripePaymentsAdapter — client configuration', () => {
     const adapter = buildAdapter()
     expect(adapter.kind).toBe('payments')
     expect(adapter.providerName).toBe('stripe')
-    expect(adapter.capabilities).toEqual(['intent', 'capture', 'refund', 'webhook'])
+    expect(adapter.capabilities()).toEqual(['intent', 'capture', 'refund', 'webhook'])
     await expect(adapter.initialize({})).resolves.toBeUndefined()
   })
 })

@@ -7,6 +7,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@nymbalhq/adapter-stripe": "workspace:*",
     "@nymbalhq/contract-tests": "workspace:*",
     "@nymbalhq/platform": "workspace:*",
     "@nymbalhq/types": "workspace:*"

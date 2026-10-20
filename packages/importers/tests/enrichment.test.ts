@@ -7,7 +7,7 @@ function makeAiAdapter(responseText: string): AiAdapter {
   return {
     kind: 'ai',
     providerName: 'test',
-    capabilities: ['complete'],
+    capabilities: () => ['complete'],
     producesEvents: [],
     consumesEvents: [],
     initialize: async () => undefined,

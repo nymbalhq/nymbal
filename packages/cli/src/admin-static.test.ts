@@ -65,7 +65,7 @@ function config(port: number) {
       analytics: { provider: 'native' },
       shipping: { provider: 'native' },
       tax: { provider: 'native' },
-      ai: { provider: 'native' },
+      ai: { provider: 'none' },
     },
     http: { adapter: 'fastify', port, host: HOST },
     deployment: { strategy: 'standard' },
