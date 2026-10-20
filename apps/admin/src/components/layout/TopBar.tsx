@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { Menu } from 'lucide-react'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { NotificationBell } from '@/components/common/NotificationBell'
 import { CommandPaletteButton, CommandPalette } from '@/components/common/CommandPalette'
 import { useEventTicker } from '@/realtime/handlers'
+import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 
 function EventTypeColor(type: string): string {
@@ -64,7 +66,7 @@ function LiveTicker() {
             key={event.id}
             className={cn(
               'flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap',
-              EventTypeColor(event.type)
+              EventTypeColor(event.type),
             )}
           >
             {event.label}
@@ -75,17 +77,34 @@ function LiveTicker() {
   )
 }
 
-export function TopBar() {
+interface TopBarProps {
+  navOpen: boolean
+  onToggleNav: () => void
+}
+
+export function TopBar({ navOpen, onToggleNav }: TopBarProps) {
   return (
     <>
-      <header className="fixed left-60 right-0 top-0 z-30 flex h-14 items-center border-b border-zinc-200 bg-white px-5">
+      <header className="fixed left-0 right-0 top-0 z-30 flex h-14 items-center border-b border-zinc-200 bg-white px-3 sm:px-5 md:left-60">
+        <button
+          type="button"
+          data-testid={tid('nav', 'toggle')}
+          aria-label="Navigation"
+          aria-controls="admin-sidebar"
+          aria-expanded={navOpen}
+          onClick={onToggleNav}
+          className="mr-2 rounded p-1.5 text-zinc-600 hover:bg-zinc-100 md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
         {/* Left: breadcrumbs */}
         <div className="flex min-w-0 flex-1 items-center">
           <Breadcrumbs />
         </div>
 
         {/* Center: live ticker */}
-        <div className="mx-8 flex flex-1 items-center justify-center overflow-hidden">
+        <div className="mx-8 hidden flex-1 items-center justify-center overflow-hidden md:flex">
           <LiveTicker />
         </div>
 

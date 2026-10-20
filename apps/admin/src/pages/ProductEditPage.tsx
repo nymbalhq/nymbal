@@ -136,9 +136,9 @@ export function ProductEditPage() {
       </div>
 
       {/* Form */}
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         {/* Main column */}
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <Tabs defaultValue="general">
             <TabsList className="mb-4">
               <TabsTrigger value="general">General</TabsTrigger>
