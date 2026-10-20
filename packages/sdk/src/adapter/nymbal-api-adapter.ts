@@ -5,6 +5,7 @@ import type {
   Order,
   ReviewsResult,
   ReviewResult,
+  StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
@@ -22,6 +23,12 @@ import type {
 
 export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapter {
   return {
+    capabilities: {
+      get() {
+        return fetchClient.request<StoreCapabilities>('GET', '/api/capabilities')
+      },
+    },
+
     cart: {
       get() {
         return fetchClient.request<Cart>('GET', '/api/cart')

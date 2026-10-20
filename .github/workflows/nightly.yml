@@ -15,8 +15,6 @@ jobs:
     env:
       CI: true
       NYMBAL_TEMPLATE: astro
-      NYMBAL_PAYMENTS_PROVIDER: native-stub
-      PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
       NYMBAL_API_URL: http://localhost:3001
       PUBLIC_NYMBAL_API_URL: http://localhost:3001
     steps:
@@ -58,8 +56,6 @@ jobs:
     env:
       CI: true
       NYMBAL_TEMPLATE: nextjs
-      NYMBAL_PAYMENTS_PROVIDER: native-stub
-      NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: native-stub
       NYMBAL_API_URL: http://localhost:3001
       NEXT_PUBLIC_NYMBAL_API_URL: http://localhost:3001
     steps:

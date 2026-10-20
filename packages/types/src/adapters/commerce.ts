@@ -23,8 +23,19 @@ export interface RefundOptions {
   currency?: string
 }
 
+/**
+ * The storefront half of a payments adapter: which client-side driver collects the payment and the public values it
+ * needs. GET /api/capabilities serves `options` to every shopper, so it holds public values only.
+ */
+export interface PaymentClient {
+  driver: string
+  options: Record<string, string>
+}
+
 export interface PaymentsAdapter extends CommerceAdapter {
   readonly kind: 'payments'
+  /** How a storefront collects a payment; absent or `null` when there is no client step. */
+  client?(): PaymentClient | null
   createPaymentIntent(params: PaymentIntentParams): Promise<PaymentIntent>
   capturePayment(intentId: string, amountMinor?: number): Promise<PaymentCapture>
   /** Throws `PaymentError('refund_rejected')` when no money moved, `PaymentError('refund_unknown')` when it may have. */
@@ -224,4 +235,16 @@ export interface AiAdapter extends CommerceAdapter {
   readonly kind: 'ai'
   embed(texts: string[]): Promise<number[][]>
   complete(prompt: string, opts?: { maxTokens?: number }): Promise<string>
+}
+
+/** The adapter interface each commerce slot takes: what a project injects for a slot whose provider is `custom`. */
+export interface CommerceSlotAdapters {
+  payments: PaymentsAdapter
+  email: EmailAdapter
+  reviews: ReviewsAdapter
+  search: SearchAdapter
+  analytics: AnalyticsAdapter
+  shipping: ShippingAdapter
+  tax: TaxAdapter
+  ai: AiAdapter
 }

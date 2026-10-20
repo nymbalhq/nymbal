@@ -1,7 +1,8 @@
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { getClient } from './registry.js'
 
-const HTMLElementBase =
+/** `HTMLElement`, or a stand-in on a server, where the module is imported but no element is ever made. */
+export const HTMLElementBase =
   typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as unknown as typeof HTMLElement)
 
 export abstract class NymbalElement extends HTMLElementBase {

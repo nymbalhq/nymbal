@@ -4,12 +4,14 @@ import '../../styles/pages/home.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import Breadcrumb from '../../components/Breadcrumb.astro'
 import ProductCard from '../../components/ProductCard.astro'
-import SortDropdown from '../../components/SortDropdown.astro'
 import Pagination from '../../components/Pagination.astro'
-import { fetchProducts, fetchCategories, sortFromUrl } from '../../lib/api'
+import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
+import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
 
 const { slug } = Astro.params
-const sort = sortFromUrl(Astro.url)
+const capabilities = await fetchCapabilities()
+const sortKeys = capabilities?.catalog.sortKeys ?? []
+const sort = sortFromUrl(Astro.url, capabilities?.catalog)
 
 const [productResult, categories] = await Promise.all([
   fetchProducts({ limit: 24, category: slug, sort }),
@@ -41,13 +43,30 @@ const facets = productResult.facets ?? []
 
     <div class="plp-layout">
       <aside class="plp-sidebar">
-        <nymbal-product-filter
-          facets={JSON.stringify(facets)}
-        ></nymbal-product-filter>
+        {facets.length > 0 && (
+          <nymbal-product-filter
+            facets={JSON.stringify(facets)}
+          ></nymbal-product-filter>
+        )}
       </aside>
 
       <div class="plp-grid-area">
-        <SortDropdown sort={sort} />
+        {sortKeys.length > 0 && (
+          <div class="plp-sort-bar">
+            <label for="sort-select">Sort by</label>
+            <nymbal-sort-dropdown
+              sort-keys={JSON.stringify(sortKeys)}
+              value={sort}
+              default-sort={capabilities?.catalog.defaultSort}
+            >
+              <select id="sort-select" data-testid="sort-dropdown">
+                {sortKeys.map((key) => (
+                  <option value={key} selected={key === sort}>{PRODUCT_SORT_LABELS[key]}</option>
+                ))}
+              </select>
+            </nymbal-sort-dropdown>
+          </div>
+        )}
 
         <div class="product-grid" id="product-grid" data-category={slug}>
           {products.map((product) => (

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { fetchProducts, fetchCategories, sortFromSearchParams } from '@/lib/api'
+import { fetchProducts, fetchCapabilities, sortFromSearchParams } from '@/lib/api'
 import { Breadcrumb } from '@/components/server/Breadcrumb'
 import { ProductGrid } from '@/components/client/ProductGrid'
 import styles from '@/styles/pages/plp.module.css'
@@ -14,11 +14,9 @@ interface ProductsPageProps {
 }
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {
-  const sort = sortFromSearchParams(await searchParams)
-  const [{ items, nextCursor }, categories] = await Promise.all([
-    fetchProducts({ limit: 24, sort }),
-    fetchCategories(),
-  ])
+  const capabilities = await fetchCapabilities()
+  const sort = sortFromSearchParams(await searchParams, capabilities?.catalog)
+  const { items, nextCursor, facets } = await fetchProducts({ limit: 24, sort })
 
   return (
     <div className={`container ${styles.page}`}>
@@ -33,7 +31,9 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
         initialProducts={items}
         initialCursor={nextCursor}
         initialSort={sort}
-        categories={categories}
+        initialFacets={facets ?? []}
+        sortKeys={capabilities?.catalog.sortKeys ?? []}
+        defaultSort={capabilities?.catalog.defaultSort}
       />
     </div>
   )

@@ -357,6 +357,60 @@ jobs:
       - name: Admin (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
 
+  # The same journeys on the custom-providers fixture store (search and payments swapped for custom adapters), in
+  # jobs of their own so the native ones keep their time.
+  e2e-astro-custom:
+    name: E2E — Astro on custom providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-custom:
+    name: E2E — Next.js on custom providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --no-build --base "$GATE_BASE"
+
   scaffold-smoke:
     name: Scaffold smoke test
     runs-on: ubuntu-latest
@@ -391,8 +445,6 @@ jobs:
           pnpm exec nymbal dev --api-only &
           echo "ASTRO_API_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-astro
-        env:
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
       - name: Wait for the API (Astro)
         run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Astro dev server
@@ -426,8 +478,6 @@ jobs:
           pnpm exec nymbal dev --api-only &
           echo "NEXTJS_API_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-nextjs
-        env:
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
       - name: Wait for the API (Next.js)
         run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Next.js dev server

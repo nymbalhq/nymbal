@@ -8,7 +8,7 @@ import { createProductListStore, type ProductListStore } from './store/product-l
 import { createSearchStore, type SearchStore } from './store/search-store.js'
 import { createCheckoutStore, type CheckoutStore } from './store/checkout-store.js'
 import { createAuthStore, type AuthStore } from './store/auth-store.js'
-import type { CustomerAddress, Order } from '@nymbalhq/types'
+import type { CustomerAddress, Order, StoreCapabilities } from '@nymbalhq/types'
 import type { NewAddress, OrderPage } from './types.js'
 
 export interface NymbalClientOptions {
@@ -32,7 +32,13 @@ export interface CustomerAccount {
   }
 }
 
+/** The store's capabilities report, read once per client: what it can do does not change while it runs. */
+export interface StoreCapabilitiesReader {
+  get(): Promise<StoreCapabilities>
+}
+
 export interface NymbalClient {
+  capabilities: StoreCapabilitiesReader
   cart: CartStore
   product: ProductStore
   productList: ProductListStore
@@ -92,6 +98,24 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
   }
 
+  // A failed read is not kept, so the next get() asks again.
+  let report: Promise<StoreCapabilities> | null = null
+  const capabilities: StoreCapabilitiesReader = {
+    get() {
+      if (report === null) {
+        const reader = adapter.capabilities
+        report =
+          reader === undefined
+            ? Promise.reject(new Error('This client’s adapter cannot read the store capabilities.'))
+            : reader.get()
+        report.catch(() => {
+          report = null
+        })
+      }
+      return report
+    },
+  }
+
   tokenManager.scheduleRefresh(() => adapter.customers.refresh())
 
   function destroy(): void {
@@ -104,5 +128,16 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     tokenManager.destroy()
   }
 
-  return { cart, product, productList, search, checkout, auth, customer, adapter, destroy }
+  return {
+    capabilities,
+    cart,
+    product,
+    productList,
+    search,
+    checkout,
+    auth,
+    customer,
+    adapter,
+    destroy,
+  }
 }

@@ -119,6 +119,36 @@ const COMPONENTS: ComponentDef[] = [
     hasChildren: false,
   },
   {
+    tagName: 'nymbal-payment-element',
+    reactName: 'PaymentElement',
+    attributes: [{ name: 'client', reactProp: 'client', type: 'json' }],
+    events: [
+      {
+        name: 'nymbal:payment:status',
+        reactProp: 'onStatusChange',
+        detailType: "{ status: 'pending' | 'ready' | 'error' }",
+      },
+    ],
+    hasChildren: false,
+  },
+  {
+    tagName: 'nymbal-sort-dropdown',
+    reactName: 'SortDropdown',
+    attributes: [
+      { name: 'sort-keys', reactProp: 'sortKeys', type: 'json' },
+      { name: 'value', reactProp: 'value', type: 'string' },
+      { name: 'default-sort', reactProp: 'defaultSort', type: 'string' },
+    ],
+    events: [
+      {
+        name: 'nymbal:sort:changed',
+        reactProp: 'onSortChange',
+        detailType: '{ sort: string }',
+      },
+    ],
+    hasChildren: false,
+  },
+  {
     tagName: 'nymbal-toast',
     reactName: 'Toast',
     attributes: [

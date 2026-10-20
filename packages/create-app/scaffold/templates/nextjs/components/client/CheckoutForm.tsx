@@ -1,19 +1,14 @@
 'use client'
 
-import { useState, useCallback, type FormEvent } from 'react'
+import { useState, useCallback, useEffect, useRef, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { useCheckout, useCart, useNymbalClient } from '@nymbalhq/react'
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
-import { loadStripe } from '@stripe/stripe-js'
+import { PaymentElement, useCheckout, useCart, useNymbalClient } from '@nymbalhq/react'
+import type { PaymentConfirmation } from '@nymbalhq/sdk'
+import type { NymbalPaymentElement } from '@nymbalhq/web-components'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/checkout.module.css'
 
-// The env says only whether a Stripe client exists; the payment flow follows the server's answer.
-const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ''
-const isStub = process.env.NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
-const stripePromise = isStub ? null : loadStripe(stripeKey)
-
-import type { Address } from '@nymbalhq/types'
+import type { Address, StoreCapabilities } from '@nymbalhq/types'
 type AddressFields = Pick<
   Address,
   'firstName' | 'lastName' | 'addressLine1' | 'city' | 'region' | 'postalCode' | 'country'
@@ -159,13 +154,16 @@ function AddressFormFields({
   )
 }
 
-function CheckoutFormInner() {
+/** The checkout, given the store's capabilities as the page's server component read them. */
+export function CheckoutForm({ capabilities }: { capabilities: StoreCapabilities }) {
   const router = useRouter()
   const client = useNymbalClient()
   const checkout = useCheckout()
   const cart = useCart()
-  const stripe = useStripe()
-  const elements = useElements()
+  const paymentClient = capabilities.payments.client
+  const paymentRef = useRef<NymbalPaymentElement | null>(null)
+  // An element that cannot take a payment (an unknown driver, a form that failed to load) holds Place Order.
+  const [paymentBlocked, setPaymentBlocked] = useState(false)
 
   const [step, setStep] = useState(0)
   const [email, setEmail] = useState('')
@@ -176,6 +174,16 @@ function CheckoutFormInner() {
   const [processing, setProcessing] = useState(false)
 
   const cartCurrency = cart.currency ?? 'GBP'
+
+  // The element renders on the payment step; its status may already be settled when this runs.
+  useEffect(() => {
+    const el = paymentRef.current
+    if (step !== 2 || el === null) return
+    const sync = () => setPaymentBlocked(el.status === 'error')
+    sync()
+    el.addEventListener('nymbal:payment:status', sync)
+    return () => el.removeEventListener('nymbal:payment:status', sync)
+  }, [step])
 
   const updateShipping = useCallback((field: keyof AddressFields, value: string) => {
     setShippingAddress((prev) => ({ ...prev, [field]: value }))
@@ -237,7 +245,7 @@ function CheckoutFormInner() {
   const handlePlaceOrder = useCallback(
     async (e: FormEvent) => {
       e.preventDefault()
-      if (!isStub && (!stripe || !elements)) return
+      if (paymentBlocked) return
 
       setProcessing(true)
       setError(null)
@@ -274,50 +282,20 @@ function CheckoutFormInner() {
         if (result.payment.status === 'failed') {
           return stay(client.checkout.getState().error ?? 'Payment failed.')
         }
-        // Without a Stripe client (a +stub-pending order) the order page shows it awaiting payment.
-        if (result.payment.status === 'requires_action' && !isStub && stripe && elements) {
-          const cardEl = elements.getElement(CardElement)
-          if (!cardEl) return stay('Card element not found.')
-
-          const { error: stripeError } = await stripe.confirmCardPayment(
+        // Confirmed only when the driver says the payment went through; otherwise the order page shows it pending.
+        if (result.payment.status === 'requires_action') {
+          const confirmation: PaymentConfirmation = (await paymentRef.current?.confirm(
             result.paymentIntent.clientSecret,
-            {
-              payment_method: {
-                card: cardEl,
-                billing_details: {
-                  email,
-                  address: {
-                    line1: billing.addressLine1,
-                    line2: billing.addressLine2 || undefined,
-                    city: billing.city,
-                    state: billing.region,
-                    postal_code: billing.postalCode,
-                    country: billing.country,
-                  },
-                },
-              },
-            },
-          )
-
-          if (stripeError) return stay(stripeError.message ?? 'Payment failed.')
-          checkout.markConfirmed()
+          )) ?? { ok: true, confirmed: false }
+          if (!confirmation.ok) return stay(confirmation.error)
+          if (confirmation.confirmed) checkout.markConfirmed()
         }
         leaveFor(result.orderNumber)
       } catch (err) {
         stay(err instanceof Error ? err.message : 'Something went wrong.')
       }
     },
-    [
-      stripe,
-      elements,
-      email,
-      shippingAddress,
-      billingAddress,
-      sameAsShipping,
-      checkout,
-      client,
-      router,
-    ],
+    [paymentBlocked, shippingAddress, billingAddress, sameAsShipping, checkout, client, router],
   )
 
   return (
@@ -328,7 +306,7 @@ function CheckoutFormInner() {
           <p className={styles.processingText}>Processing your order...</p>
         </div>
       )}
-      {/* Hidden, not unmounted, while processing: Stripe confirms with the mounted card element. */}
+      {/* Hidden, not unmounted, while processing: the payment driver confirms with what it mounted. */}
       <div
         className={`container ${styles.page}`}
         style={processing ? { display: 'none' } : undefined}
@@ -430,34 +408,12 @@ function CheckoutFormInner() {
                   className={styles.formSection}
                   style={{ marginTop: 'var(--nymbal-spacing-lg)' }}
                 >
-                  <h2 className={styles.formSectionTitle}>Payment</h2>
-                  {isStub ? (
-                    <div className={styles.paymentElement} data-testid="card-element">
-                      <p
-                        style={{
-                          color: 'var(--nymbal-color-text-muted, #9ca3af)',
-                          fontSize: '0.875rem',
-                          margin: 0,
-                        }}
-                      >
-                        Test mode — payment skipped
-                      </p>
-                    </div>
-                  ) : (
-                    <div className={styles.paymentElement} data-testid="card-element">
-                      <CardElement
-                        options={{
-                          style: {
-                            base: {
-                              fontSize: '16px',
-                              color: '#1a1a1a',
-                              '::placeholder': { color: '#9ca3af' },
-                            },
-                          },
-                        }}
-                      />
-                    </div>
-                  )}
+                  {paymentClient !== null && <h2 className={styles.formSectionTitle}>Payment</h2>}
+                  <PaymentElement
+                    ref={paymentRef}
+                    client={paymentClient}
+                    data-testid="payment-element"
+                  />
                 </div>
 
                 <div className={styles.formActions}>
@@ -467,7 +423,7 @@ function CheckoutFormInner() {
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={(!isStub && !stripe) || processing}
+                    disabled={paymentBlocked || processing}
                     data-testid="place-order"
                   >
                     Place Order
@@ -511,13 +467,5 @@ function CheckoutFormInner() {
         </div>
       </div>
     </>
-  )
-}
-
-export function CheckoutForm() {
-  return (
-    <Elements stripe={stripePromise}>
-      <CheckoutFormInner />
-    </Elements>
   )
 }

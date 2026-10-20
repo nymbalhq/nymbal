@@ -2,44 +2,35 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
-import type { Category, Facet, ProductSortKey } from '@nymbalhq/types'
-import { useProductList } from '@nymbalhq/react'
-import { ProductFilter } from '@nymbalhq/react'
+import type { Facet, ProductSortKey } from '@nymbalhq/types'
+import { ProductFilter, SortDropdown, useProductList } from '@nymbalhq/react'
 import { ProductCard } from '@/components/server/ProductCard'
-import { SortDropdown } from './SortDropdown'
 import styles from '@/styles/pages/plp.module.css'
 
 interface ProductGridProps {
   initialProducts: DenormalisedProduct[]
   initialCursor: string | null
   initialSort: ProductSortKey
+  /** The server-rendered listing's facets: none when the store's search cannot facet, and then no filter. */
+  initialFacets: Facet[]
+  /** The sort keys the store reports, in order, and the one it lists by when none is asked. */
+  sortKeys: ProductSortKey[]
+  defaultSort?: ProductSortKey | undefined
   categorySlug?: string
-  categories: Category[]
 }
 
 export function ProductGrid({
   initialProducts,
   initialCursor,
   initialSort,
+  initialFacets,
+  sortKeys,
+  defaultSort,
   categorySlug,
-  categories,
 }: ProductGridProps) {
-  const { products, facets, pagination, loading, sort, load, loadMore, setSort } = useProductList()
+  const { products, pagination, loading, sort, load, loadMore, setSort } = useProductList()
   const [initialized, setInitialized] = useState(false)
   const [showMobileFilters, setShowMobileFilters] = useState(false)
-  // Preserve the widest facet list seen so filter options never disappear during a
-  // filtered query (the API always returns full facets, but this guards against regressions).
-  const [stableFacets, setStableFacets] = useState<Facet[]>(
-    categories.length > 0
-      ? [
-          {
-            field: 'category',
-            label: 'Category',
-            values: categories.map((c) => ({ value: c.slug, label: c.name })),
-          },
-        ]
-      : [],
-  )
 
   useEffect(() => {
     load({ limit: 24, category: categorySlug, sort: initialSort })
@@ -48,7 +39,8 @@ export function ProductGrid({
 
   // The URL carries the sort, so a reload or a shared link renders the same order server-side.
   const handleSort = useCallback(
-    (key: ProductSortKey) => {
+    (event: CustomEvent<{ sort: string }>) => {
+      const key = event.detail.sort as ProductSortKey
       const url = new URL(window.location.href)
       url.searchParams.set('sort', key)
       window.history.replaceState(window.history.state, '', url)
@@ -56,17 +48,6 @@ export function ProductGrid({
     },
     [setSort],
   )
-
-  // Keep stableFacets updated whenever the store returns a wider facet list.
-  useEffect(() => {
-    if (facets.length > 0) {
-      const incomingValues = facets.reduce((acc, f) => acc + f.values.length, 0)
-      const stableValues = stableFacets.reduce((acc, f) => acc + f.values.length, 0)
-      if (incomingValues >= stableValues) {
-        setStableFacets(facets)
-      }
-    }
-  }, [facets, stableFacets])
 
   const displayProducts = initialized && products.length > 0 ? products : initialProducts
   const hasMore = initialized ? pagination.hasMore : !!initialCursor
@@ -77,26 +58,26 @@ export function ProductGrid({
     }
   }, [hasMore, loading, loadMore])
 
-  // Use stableFacets (which always contains the full category list) so all filter
-  // options remain visible after a category filter is applied.
-  const displayFacets = stableFacets
-
   return (
     <div className={styles.layout}>
       <aside className={styles.sidebar}>
-        <button
-          className={styles.mobileFilterToggle}
-          onClick={() => setShowMobileFilters((v) => !v)}
-          type="button"
-        >
-          {showMobileFilters ? 'Hide Filters' : 'Show Filters'}
-        </button>
-        <div
-          className={styles.filterSection}
-          style={{ display: showMobileFilters ? 'block' : undefined }}
-        >
-          <ProductFilter facets={displayFacets} />
-        </div>
+        {initialFacets.length > 0 && (
+          <>
+            <button
+              className={styles.mobileFilterToggle}
+              onClick={() => setShowMobileFilters((v) => !v)}
+              type="button"
+            >
+              {showMobileFilters ? 'Hide Filters' : 'Show Filters'}
+            </button>
+            <div
+              className={styles.filterSection}
+              style={{ display: showMobileFilters ? 'block' : undefined }}
+            >
+              <ProductFilter facets={initialFacets} />
+            </div>
+          </>
+        )}
       </aside>
 
       <div className={styles.content}>
@@ -104,7 +85,15 @@ export function ProductGrid({
           <span className={styles.resultCount}>
             {displayProducts.length} product{displayProducts.length !== 1 ? 's' : ''}
           </span>
-          <SortDropdown value={initialized ? sort : initialSort} onChange={handleSort} />
+          {sortKeys.length > 0 && (
+            <SortDropdown
+              className={styles.sortSelect}
+              sortKeys={sortKeys}
+              value={initialized ? sort : initialSort}
+              defaultSort={defaultSort}
+              onSortChange={handleSort}
+            />
+          )}
         </div>
 
         {displayProducts.length > 0 ? (

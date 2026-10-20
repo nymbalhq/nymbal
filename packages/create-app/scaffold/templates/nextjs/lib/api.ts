@@ -1,6 +1,7 @@
+import { unstable_rethrow } from 'next/navigation'
 import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbalhq/sdk'
 import { DEFAULT_PRODUCT_SORT, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
-import type { Category, Order, ProductSortKey } from '@nymbalhq/types'
+import type { Category, Order, ProductSortKey, StoreCapabilities } from '@nymbalhq/types'
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -27,10 +28,29 @@ export async function fetchProducts(params?: {
   }
 }
 
-/** The sort a listing URL asks for; a missing or unknown `?sort=` is the default. */
-export function sortFromSearchParams(params: { sort?: string | string[] }): ProductSortKey {
+/** What the store can do, which decides what the page renders; null when the API did not answer. */
+export async function fetchCapabilities(): Promise<StoreCapabilities | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/capabilities`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const envelope = (await res.json()) as { data: StoreCapabilities }
+    return envelope.data ?? null
+  } catch (err) {
+    // Next signals a request-time render by throwing from fetch at build; that must reach Next, not become null.
+    unstable_rethrow(err)
+    console.error('[api] fetchCapabilities failed', err)
+    return null
+  }
+}
+
+/** The sort a listing URL asks for, among the store's keys; a missing or unknown `?sort=` is the store's default. */
+export function sortFromSearchParams(
+  params: { sort?: string | string[] },
+  catalog?: StoreCapabilities['catalog'],
+): ProductSortKey {
   const sort = Array.isArray(params.sort) ? params.sort[0] : params.sort
-  return PRODUCT_SORT_KEYS.find((key) => key === sort) ?? DEFAULT_PRODUCT_SORT
+  const keys = catalog?.sortKeys ?? PRODUCT_SORT_KEYS
+  return keys.find((key) => key === sort) ?? catalog?.defaultSort ?? DEFAULT_PRODUCT_SORT
 }
 
 export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {

@@ -21,9 +21,7 @@
     "@nymbalhq/sdk": "workspace:*",
     "@nymbalhq/react": "workspace:*",
     "@nymbalhq/web-components": "workspace:*",
-    "@nymbalhq/types": "workspace:*",
-    "@stripe/stripe-js": "^4.0.0",
-    "@stripe/react-stripe-js": "^3.0.0"
+    "@nymbalhq/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

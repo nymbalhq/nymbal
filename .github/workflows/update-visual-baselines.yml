@@ -44,7 +44,6 @@ jobs:
             --update-snapshots
         env:
           CI: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
 
       - name: Generate baselines — admin visual projects
         run: |
@@ -55,7 +54,6 @@ jobs:
         env:
           CI: true
           NYMBAL_E2E_ADMIN: true
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
 
       - name: Commit and push baselines
         run: |

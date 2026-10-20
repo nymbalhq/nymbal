@@ -11,8 +11,10 @@ export function createAdapter(ctx: AdapterContext): PaymentsAdapter {
       context: { slot: ctx.slot },
     })
   }
+  const config = ctx.config as unknown as StripePaymentsConfig
+  const publishableKey = config.publishableKey ?? ctx.env['STRIPE_PUBLISHABLE_KEY']
   return createStripePaymentsAdapter({
     logger: ctx.logger,
-    config: ctx.config as unknown as StripePaymentsConfig,
+    config: { ...config, ...(publishableKey !== undefined && { publishableKey }) },
   })
 }
