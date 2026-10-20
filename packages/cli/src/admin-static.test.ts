@@ -50,11 +50,9 @@ function config(port: number) {
     store: { name: 'Shop', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: 'sqlite',
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: { adapter: 'middleware' },
     commerce: {

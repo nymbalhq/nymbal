@@ -34,11 +34,9 @@ export default defineConfig({
   store: { name: 'Shop', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
   template: '${template}',
   infrastructure: {
-    cloud: 'local',
     commandStore: 'sqlite',
     documentStore: 'in-memory',
     eventBus: 'in-process',
-    compute: 'in-process',
   },
   security: { adapter: 'middleware', csrf: true },
   commerce: {

@@ -51,11 +51,9 @@ function baseConfig(): Record<string, unknown> & { commerce: Record<string, unkn
     store: { name: 'P2-01', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: 'sqlite',
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: { adapter: 'middleware' },
     commerce: {

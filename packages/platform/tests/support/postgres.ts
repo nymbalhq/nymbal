@@ -66,3 +66,18 @@ export async function createDatabase(serverUrl: string, prefix: string): Promise
     },
   }
 }
+
+/** One query on its own connection to `url`, for tests that read a database they do not own (P2-02). */
+export async function queryOnce<R extends Record<string, unknown>>(
+  url: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<R[]> {
+  const client = new pg.Client({ connectionString: url })
+  await client.connect()
+  try {
+    return (await client.query<R>(sql, params)).rows
+  } finally {
+    await client.end()
+  }
+}

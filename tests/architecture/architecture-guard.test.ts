@@ -30,6 +30,9 @@ const GUARDED_PACKAGES = [
   'adapter-stripe',
   'adapter-anthropic',
   'adapter-smtp',
+  'doc-store-redis',
+  'doc-store-postgres-jsonb',
+  'event-bus-redis-streams',
 ] as const
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.
@@ -181,9 +184,7 @@ describe('architecture guard: core packages stay framework-agnostic', () => {
     // would pass vacuously. Fail loudly instead.
     expect(scannedFiles).toBeGreaterThan(0)
 
-    const report = offenders
-      .map((o) => `  ${o.file}:${o.line} -> ${o.specifier}`)
-      .join('\n')
+    const report = offenders.map((o) => `  ${o.file}:${o.line} -> ${o.specifier}`).join('\n')
 
     expect(
       offenders,

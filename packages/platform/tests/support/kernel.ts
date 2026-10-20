@@ -39,11 +39,9 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
     store: { name: 'P1-02', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: dialect,
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: {
       adapter: 'middleware',
