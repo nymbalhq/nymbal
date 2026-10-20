@@ -39,7 +39,7 @@ afterAll(async () => {
 
 describe('a failed createApp releases what it opened', () => {
   it('when the start fails after the Redis document store and the Redis Streams bus connect, their connections are closed', async () => {
-    const before = new Set(await clientsOnDb13())
+    const before = await clientsOnDb13()
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
       documentStore: 'redis',
@@ -56,10 +56,7 @@ describe('a failed createApp releases what it opened', () => {
     ).rejects.toThrow(/no such table/)
 
     await vi.waitFor(
-      async () => {
-        const opened = (await clientsOnDb13()).filter((id) => !before.has(id))
-        expect(opened).toEqual([])
-      },
+      async () => expect((await clientsOnDb13()).sort()).toEqual([...before].sort()),
       { timeout: 3_000, interval: 100 },
     )
   }, 30_000)
