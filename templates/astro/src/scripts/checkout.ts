@@ -1,3 +1,5 @@
+import type { PaymentConfirmContext, PaymentConfirmation } from '@nymbalhq/sdk'
+import type { NymbalPaymentElement } from '@nymbalhq/web-components'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
 import { submitOnce } from '../lib/submit-once.js'
@@ -152,60 +154,55 @@ shippingForm?.addEventListener('submit', (e) => {
   showStep('payment')
 })
 
-// Stripe setup. The env says only whether a Stripe client exists; the payment flow follows the server's answer.
-let stripe: any = null
-let cardElement: any = null
+// The payment step is the store's: the element renders the payments adapter's client half through its driver.
+const paymentForm = document.getElementById('payment-form') as HTMLFormElement | null
+const paymentEl = paymentForm?.querySelector<NymbalPaymentElement>('nymbal-payment-element') ?? null
+const placeOrderBtn = paymentForm?.querySelector<HTMLButtonElement>('[data-testid="place-order"]')
+const paymentBlocked = () => paymentEl?.status === 'error'
 
-const stripeKey = import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY
-const isStubPayments =
-  import.meta.env.PUBLIC_NYMBAL_PAYMENTS_PROVIDER === 'native-stub' || !stripeKey
+// While the element cannot take a payment (an unknown driver, a form that failed to load), no order is placed.
+let heldByPayment = false
+function syncPlaceOrder() {
+  if (!placeOrderBtn) return
+  const blocked = paymentBlocked()
+  if (blocked) placeOrderBtn.disabled = true
+  else if (heldByPayment) placeOrderBtn.disabled = false
+  heldByPayment = blocked
+}
+paymentEl?.addEventListener('nymbal:payment:status', syncPlaceOrder)
+syncPlaceOrder()
+paymentForm?.addEventListener(
+  'submit',
+  (e) => {
+    if (!paymentBlocked()) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  },
+  true,
+)
 
-async function mountStripe() {
-  if (isStubPayments) {
-    const cardContainer = document.getElementById('stripe-card-element')
-    if (cardContainer) {
-      cardContainer.innerHTML =
-        '<p style="color: var(--nymbal-color-text-muted, #71717a); font-size: 0.875rem; margin: 0;">Test mode — payment skipped</p>'
-    }
-    return
-  }
-  try {
-    const { loadStripe } = await import('@stripe/stripe-js')
-    stripe = await loadStripe(stripeKey)
-    if (!stripe) return
+// Place Order renders where Continue was, so the second click of a double-click on Continue lands on it. A click that
+// continues a multi-click is not a decision to pay: the first click of one on Place Order has already submitted.
+placeOrderBtn?.addEventListener('click', (e) => {
+  if (e.detail > 1) e.preventDefault()
+})
 
-    const elements = stripe.elements()
-    cardElement = elements.create('card', {
-      style: {
-        base: {
-          fontSize: '14px',
-          color: '#18181b',
-          '::placeholder': { color: '#71717a' },
-        },
-      },
-    })
-
-    const cardContainer = document.getElementById('stripe-card-element')
-    if (cardContainer) cardElement.mount(cardContainer)
-  } catch {
-    // Stripe unavailable
-  }
+/** No element (a page without a payment step) has nothing to confirm, as a null client does. */
+function confirmPayment(
+  clientSecret: string,
+  context: PaymentConfirmContext,
+): Promise<PaymentConfirmation> {
+  return paymentEl?.confirm(clientSecret, context) ?? Promise.resolve({ ok: true, confirmed: false })
 }
 
-mountStripe()
-
 // Payment form
-const paymentForm = document.getElementById('payment-form') as HTMLFormElement | null
 submitOnce(paymentForm, async () => {
   hideError()
 
-  const submitBtn = paymentForm?.querySelector(
-    '[data-testid="place-order"]',
-  ) as HTMLButtonElement | null
-  if (submitBtn) submitBtn.textContent = 'Processing...'
+  if (placeOrderBtn) placeOrderBtn.textContent = 'Processing...'
   const stay = (message: string) => {
     showError(message)
-    if (submitBtn) submitBtn.textContent = 'Place Order'
+    if (placeOrderBtn) placeOrderBtn.textContent = 'Place Order'
   }
   const leaveFor = (orderNumber: string) => {
     client.checkout.reset()
@@ -243,13 +240,15 @@ submitOnce(paymentForm, async () => {
     if (result.payment.status === 'failed') {
       return stay(client.checkout.getState().error ?? 'Payment failed. Please try again.')
     }
-    // Without a Stripe client (a +stub-pending order) the order page shows it awaiting payment.
-    if (result.payment.status === 'requires_action' && stripe && cardElement) {
-      const { error } = await stripe.confirmCardPayment(result.paymentIntent.clientSecret, {
-        payment_method: { card: cardElement },
+    // Confirmed only when the driver says the payment went through; otherwise the order page shows it awaiting payment.
+    if (result.payment.status === 'requires_action') {
+      const { email, billingAddress } = client.checkout.getState()
+      const confirmation = await confirmPayment(result.paymentIntent.clientSecret, {
+        email: email || undefined,
+        billing: billingAddress ?? undefined,
       })
-      if (error) return stay(error.message ?? 'Payment failed.')
-      client.checkout.markConfirmed()
+      if (!confirmation.ok) return stay(confirmation.error)
+      if (confirmation.confirmed) client.checkout.markConfirmed()
     }
     return leaveFor(result.orderNumber)
   } catch (err: any) {

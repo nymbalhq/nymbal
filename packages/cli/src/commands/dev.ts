@@ -40,23 +40,15 @@ export function preferredStorefrontPort(
 }
 
 /**
- * The environment the storefront dev server starts with. The client-side variables must be set before it starts, and
- * both templates skip Stripe when the payments provider variable says `native-stub`, which is every provider but
- * `stripe`.
+ * The environment the storefront dev server starts with. The client-side variables must be set before it starts. It
+ * says nothing about the adapters: a storefront learns what the store can do from GET /api/capabilities.
  */
 export function storefrontEnv(
-  config: NymbalConfig,
+  _config: NymbalConfig,
   apiUrl: string,
   storefrontPort: number,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const stubPayments =
-    config.commerce.payments.provider === 'stripe'
-      ? {}
-      : {
-          PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub', // Astro
-          NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER: 'native-stub', // Next.js
-        }
   return {
     ...baseEnv,
     NYMBAL_API_URL: apiUrl,
@@ -65,7 +57,6 @@ export function storefrontEnv(
     // The framework also reads the port flag; the env var keeps the scaffold
     // config (astro.config.mjs) in sync when it honours NYMBAL_STOREFRONT_PORT.
     NYMBAL_STOREFRONT_PORT: String(storefrontPort),
-    ...stubPayments,
   }
 }
 
@@ -124,7 +115,10 @@ export const devCommand = defineCommand({
     // Auto-migrate on startup so a fresh clone works without running `nymbal migrate` first
     await migrateProject(config, projectRoot)
 
-    const app = await createApp(config, { version })
+    const app = await createApp(config, {
+      version,
+      ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
+    })
     const { platform } = app
 
     if (args.seed) {

@@ -13,6 +13,8 @@ declare module 'react' {
       'nymbal-quantity-selector': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-search-bar': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-product-filter': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-payment-element': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-sort-dropdown': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-toast': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
     }
   }
@@ -323,6 +325,106 @@ export const ProductFilter = forwardRef<HTMLElement, ProductFilterProps>(
       <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
         
       </nymbal-product-filter>
+    )
+  },
+)
+
+export interface PaymentElementProps {
+  client?: unknown
+  onStatusChange?: (event: CustomEvent<{ status: 'pending' | 'ready' | 'error' }>) => void
+  className?: string
+  style?: React.CSSProperties
+  'data-testid'?: string
+}
+
+export const PaymentElement = forwardRef<HTMLElement, PaymentElementProps>(
+  function PaymentElement(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.client !== undefined) {
+      el.setAttribute('client', JSON.stringify(props.client))
+    } else {
+      el.removeAttribute('client')
+    }
+  }, [props.client])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onStatusChange) return
+    const handler = props.onStatusChange as EventListener
+    el.addEventListener('nymbal:payment:status', handler)
+    return () => el.removeEventListener('nymbal:payment:status', handler)
+  }, [props.onStatusChange])
+
+    return (
+      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+        
+      </nymbal-payment-element>
+    )
+  },
+)
+
+export interface SortDropdownProps {
+  sortKeys?: unknown
+  value?: string
+  defaultSort?: string
+  onSortChange?: (event: CustomEvent<{ sort: string }>) => void
+  className?: string
+  style?: React.CSSProperties
+  'data-testid'?: string
+}
+
+export const SortDropdown = forwardRef<HTMLElement, SortDropdownProps>(
+  function SortDropdown(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.sortKeys !== undefined) {
+      el.setAttribute('sort-keys', JSON.stringify(props.sortKeys))
+    } else {
+      el.removeAttribute('sort-keys')
+    }
+  }, [props.sortKeys])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.value !== undefined) {
+      el.setAttribute('value', String(props.value))
+    } else {
+      el.removeAttribute('value')
+    }
+  }, [props.value])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.defaultSort !== undefined) {
+      el.setAttribute('default-sort', String(props.defaultSort))
+    } else {
+      el.removeAttribute('default-sort')
+    }
+  }, [props.defaultSort])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onSortChange) return
+    const handler = props.onSortChange as EventListener
+    el.addEventListener('nymbal:sort:changed', handler)
+    return () => el.removeEventListener('nymbal:sort:changed', handler)
+  }, [props.onSortChange])
+
+    return (
+      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+        
+      </nymbal-sort-dropdown>
     )
   },
 )

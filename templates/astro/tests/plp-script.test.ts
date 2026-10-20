@@ -66,16 +66,21 @@ function fakeApi() {
   return { listings, fetchImpl }
 }
 
-/** The markup `src/pages/products/index.astro` gives the script, with the newest order server-rendered. */
+/**
+ * The markup `src/pages/products/index.astro` gives the script, with the newest order server-rendered. The custom
+ * elements are stubbed, so `<nymbal-sort-dropdown>` stays unupgraded and the test emits its event as the element does.
+ */
 const PLP_MARKUP = `
   <p id="product-count">${NEWEST.length} products</p>
-  <select id="sort-select" data-testid="sort-dropdown">
-    <option value="newest" selected>Newest</option>
-    <option value="price-asc">Price: Low to High</option>
-    <option value="price-desc">Price: High to Low</option>
-    <option value="name-asc">Name: A to Z</option>
-    <option value="name-desc">Name: Z to A</option>
-  </select>
+  <nymbal-sort-dropdown value="newest">
+    <select id="sort-select" data-testid="sort-dropdown">
+      <option value="newest" selected>Newest</option>
+      <option value="price-asc">Price: Low to High</option>
+      <option value="price-desc">Price: High to Low</option>
+      <option value="name-asc">Name: A to Z</option>
+      <option value="name-desc">Name: Z to A</option>
+    </select>
+  </nymbal-sort-dropdown>
   <div class="product-grid" id="product-grid">
     ${NEWEST.map(
       (p) =>
@@ -107,9 +112,14 @@ describe('Store walk: the Astro listing script renders product names as text', (
       expect(client.productList.getState().loading).toBe(false)
     })
 
-    const select = document.getElementById('sort-select') as HTMLSelectElement
-    select.value = 'price-desc'
-    select.dispatchEvent(new Event('change'))
+    // The sort element's own event, which it emits whichever select it renders; the select itself is not touched.
+    document.querySelector('nymbal-sort-dropdown')!.dispatchEvent(
+      new CustomEvent('nymbal:sort:changed', {
+        bubbles: true,
+        composed: true,
+        detail: { sort: 'price-desc' },
+      }),
+    )
 
     const cards = () => [
       ...document.querySelectorAll<HTMLElement>('[data-testid^="product-card-"]'),

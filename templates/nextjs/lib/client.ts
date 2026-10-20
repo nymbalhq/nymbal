@@ -1,5 +1,8 @@
 import { createNymbalClient, type NymbalClient } from '@nymbalhq/sdk'
 
+// A payment driver of the project's own is registered here, at module load, before any checkout renders:
+// registerPaymentDriver(name, driver) from @nymbalhq/sdk, named by the driver of the payments adapter's client half.
+
 let instance: NymbalClient | null = null
 let restoring: Promise<void> | null = null
 

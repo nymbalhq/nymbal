@@ -1,17 +1,12 @@
 import {
   ConfigError,
-  type AnalyticsAdapter,
   type AiAdapter,
   type CommerceSlot,
+  type CommerceSlotAdapters,
   type DocumentStoreAdapter,
-  type EmailAdapter,
   type Logger,
   type PaymentsAdapter,
-  type ReviewsAdapter,
-  type SearchAdapter,
   type SecurityAdapter,
-  type ShippingAdapter,
-  type TaxAdapter,
 } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
@@ -26,16 +21,7 @@ import { createNativeTaxAdapter } from './tax/native-adapter.js'
 import { loadProviderAdapter } from './loader.js'
 
 /** One adapter per commerce slot. */
-export interface CommerceAdapters {
-  payments: PaymentsAdapter
-  email: EmailAdapter
-  reviews: ReviewsAdapter
-  search: SearchAdapter
-  analytics: AnalyticsAdapter
-  shipping: ShippingAdapter
-  tax: TaxAdapter
-  ai: AiAdapter
-}
+export type CommerceAdapters = CommerceSlotAdapters
 
 /** Adapters a project hands `createApp`, each for a slot whose provider is `custom`. */
 export type InjectedAdapters = Partial<CommerceAdapters>
@@ -80,8 +66,8 @@ export function checkInjectedAdapters(config: NymbalConfig, injected: InjectedAd
     if (provider === 'custom' && !given) {
       throw new ConfigError(
         `commerce.${slot}.provider is 'custom' but createApp was given no ${slot} adapter ` +
-          `(createApp(config, { adapters: { ${slot} } })). nymbal dev and nymbal start cannot inject one yet: ` +
-          'run the app from an entry of your own that calls createApp.',
+          `(createApp(config, { adapters: { ${slot} } })); nymbal dev takes it from the \`adapters\` export of ` +
+          'nymbal.config.ts.',
         { code: 'adapter.custom_mismatch', context: { slot } },
       )
     }

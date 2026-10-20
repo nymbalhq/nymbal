@@ -5,6 +5,7 @@ import type {
   Order,
   ReviewsResult,
   ReviewResult,
+  StoreCapabilities,
 } from '@nymbalhq/types'
 import type {
   DenormalisedProduct,
@@ -19,6 +20,10 @@ import type {
 } from '../types.js'
 
 export interface CommerceAdapter {
+  /** What the store can do (GET /api/capabilities); an adapter without it cannot tell the storefront. */
+  capabilities?: {
+    get(): Promise<StoreCapabilities>
+  }
   cart: {
     get(): Promise<Cart>
     addItem(variantId: string, qty: number): Promise<Cart>

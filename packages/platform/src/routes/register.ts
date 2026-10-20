@@ -7,6 +7,7 @@ import type { EventPublisher } from '../events/publisher.js'
 import { createAuthMiddleware } from './auth-middleware.js'
 import { registerAuthRoutes } from './auth.js'
 import { registerProductRoutes } from './products.js'
+import { registerCapabilitiesRoute } from './capabilities.js'
 import { registerCategoryRoutes } from './categories.js'
 import { registerCartRoutes } from './cart.js'
 import { registerCheckoutRoutes } from './checkout.js'
@@ -39,6 +40,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
   registerAuthRoutes(adapter, services.auth)
+  registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
     adapter,
@@ -46,6 +48,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     config.store.name,
     adapters.reviews,
     services.search,
+    () => adapters.search.capabilities().includes('facet'),
   )
   registerCartRoutes(adapter, {
     cart: services.cart,

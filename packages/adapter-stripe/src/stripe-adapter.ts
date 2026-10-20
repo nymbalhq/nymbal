@@ -17,6 +17,8 @@ import {
 export interface StripePaymentsConfig {
   secretKey: string
   webhookSecret: string
+  /** The public key the storefront's Stripe.js uses; served by GET /api/capabilities. */
+  publishableKey?: string
   apiVersion?: string
   /** Override the Stripe API host (for stripe-mock style test servers). Omit in production. */
   host?: string
@@ -83,6 +85,13 @@ export function createStripePaymentsAdapter(deps: {
   const cfg = deps.config
   if (!cfg.secretKey) throw new PaymentError('not_configured', 'Stripe secretKey missing')
   if (!cfg.webhookSecret) throw new PaymentError('not_configured', 'Stripe webhookSecret missing')
+  // The publishable key is served to every shopper: a secret or restricted key pasted there must never be.
+  if (cfg.publishableKey !== undefined && /^(sk|rk)_/.test(cfg.publishableKey)) {
+    throw new PaymentError(
+      'not_configured',
+      'Stripe publishableKey holds a secret key; use the pk_ key',
+    )
+  }
   const stripeClient = new Stripe(cfg.secretKey, {
     ...(cfg.apiVersion !== undefined && {
       apiVersion: cfg.apiVersion as Stripe.LatestApiVersion,
@@ -95,6 +104,11 @@ export function createStripePaymentsAdapter(deps: {
     kind: 'payments',
     providerName: 'stripe',
     capabilities: () => ['intent', 'capture', 'refund', 'webhook'],
+    // Without a key the storefront's stripe driver reports it cannot mount, which keeps Place Order disabled.
+    client: () => ({
+      driver: 'stripe',
+      options: cfg.publishableKey ? { publishableKey: cfg.publishableKey } : {},
+    }),
     producesEvents: [EVT_PAYMENT_CAPTURED, EVT_PAYMENT_FAILED, EVT_PAYMENT_REFUNDED],
     consumesEvents: [],
     async initialize() {

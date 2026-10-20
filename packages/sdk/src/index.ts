@@ -1,5 +1,17 @@
 export { createNymbalClient } from './client.js'
-export type { NymbalClient, NymbalClientOptions, CustomerAccount } from './client.js'
+export type {
+  NymbalClient,
+  NymbalClientOptions,
+  CustomerAccount,
+  StoreCapabilitiesReader,
+} from './client.js'
+
+export { registerPaymentDriver, getPaymentDriver } from './payment-drivers.js'
+export type {
+  PaymentDriver,
+  PaymentConfirmation,
+  PaymentConfirmContext,
+} from './payment-drivers.js'
 
 export { createStore } from './store/create-store.js'
 export type { Store, Listener } from './store/create-store.js'
@@ -52,6 +64,8 @@ export type {
 } from './types.js'
 
 export type {
+  StoreCapabilities,
+  PaymentClient,
   ProductSortKey,
   ReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,

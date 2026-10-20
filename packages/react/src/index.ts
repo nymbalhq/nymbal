@@ -27,6 +27,8 @@ export {
   QuantitySelector,
   SearchBar,
   ProductFilter,
+  PaymentElement,
+  SortDropdown,
   Toast,
 } from './generated/wrappers.js'
 
@@ -38,5 +40,7 @@ export type {
   QuantitySelectorProps,
   SearchBarProps,
   ProductFilterProps,
+  PaymentElementProps,
+  SortDropdownProps,
   ToastProps,
 } from './generated/wrappers.js'

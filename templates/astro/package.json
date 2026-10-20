@@ -19,7 +19,6 @@
     "@nymbalhq/sdk": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "@nymbalhq/web-components": "workspace:*",
-    "@stripe/stripe-js": "^4.0.0",
     "astro": "^7.4.0"
   },
   "devDependencies": {

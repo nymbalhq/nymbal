@@ -49,6 +49,8 @@ export function registerProductRoutes(
   storeName: string,
   reviewsAdapter?: ReviewsAdapter,
   searchService?: SearchService,
+  /** Whether the search adapter can facet; a listing offers no filter it cannot serve. */
+  canFacet: () => boolean = () => true,
 ): void {
   adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
     try {
@@ -106,6 +108,7 @@ export function registerProductRoutes(
             ...(cursor !== undefined && { cursor }),
           }))
 
+      if (!canFacet()) return ok({ items: result.items, nextCursor: result.nextCursor })
       // Facets come from the full catalogue, never the page: a page holds only some of each category (the newest
       // products lead the default order), so its counts would understate what a filter returns.
       const allResult = await documentStore.query('products', {

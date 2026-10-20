@@ -3,15 +3,15 @@ import { client } from '../lib/client.js'
 import { escapeHtml, formatPrice } from '../lib/format.js'
 
 const gridContainer = document.getElementById('product-grid')
-const sortSelect = document.getElementById('sort-select') as HTMLSelectElement | null
+const sortDropdown = document.querySelector('nymbal-sort-dropdown')
 const loadMoreBtn = document.getElementById('load-more-btn')
 const countEl = document.getElementById('product-count')
 
 // A category page carries its category in the path, which the server render puts on the grid; /products may carry
-// one in the query. The server render also selected the URL's sort in the dropdown.
+// one in the query. The server render puts the sort it resolved from the URL on the dropdown's `value`.
 const urlParams = new URLSearchParams(window.location.search)
 const initialCategory = gridContainer?.dataset.category ?? urlParams.get('category') ?? undefined
-const initialSort = (sortSelect?.value ?? 'newest') as ProductSortKey
+const initialSort = (sortDropdown?.getAttribute('value') || 'newest') as ProductSortKey
 
 function renderProductCard(product: any): string {
   const imageUrl =
@@ -94,9 +94,10 @@ async function init() {
 
 void init()
 
+// The element's event, not its select's `change`: the select may be the element's own rather than the server's.
 // The URL carries the sort, so a reload or a shared link renders the same order server-side.
-sortSelect?.addEventListener('change', () => {
-  const sort = sortSelect.value as ProductSortKey
+sortDropdown?.addEventListener('nymbal:sort:changed', (e) => {
+  const sort = (e as CustomEvent<{ sort: ProductSortKey }>).detail.sort
   const url = new URL(window.location.href)
   url.searchParams.set('sort', sort)
   window.history.replaceState(window.history.state, '', url)

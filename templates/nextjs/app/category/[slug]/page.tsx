@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { fetchProducts, fetchCategories, sortFromSearchParams } from '@/lib/api'
+import { fetchProducts, fetchCategories, fetchCapabilities, sortFromSearchParams } from '@/lib/api'
 import { Breadcrumb } from '@/components/server/Breadcrumb'
 import { ProductGrid } from '@/components/client/ProductGrid'
 import styles from '@/styles/pages/plp.module.css'
@@ -25,8 +25,9 @@ export async function generateMetadata({
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
   const { slug } = await params
-  const sort = sortFromSearchParams(await searchParams)
-  const [{ items, nextCursor }, categories] = await Promise.all([
+  const capabilities = await fetchCapabilities()
+  const sort = sortFromSearchParams(await searchParams, capabilities?.catalog)
+  const [{ items, nextCursor, facets }, categories] = await Promise.all([
     fetchProducts({ limit: 24, category: slug, sort }),
     fetchCategories(),
   ])
@@ -50,8 +51,10 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
         initialProducts={items}
         initialCursor={nextCursor}
         initialSort={sort}
+        initialFacets={facets ?? []}
+        sortKeys={capabilities?.catalog.sortKeys ?? []}
+        defaultSort={capabilities?.catalog.defaultSort}
         categorySlug={slug}
-        categories={categories}
       />
     </div>
   )

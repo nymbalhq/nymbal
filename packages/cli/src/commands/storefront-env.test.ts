@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { KNOWN_PROVIDERS, nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 import { storefrontEnv } from './dev.js'
 
-// Acceptance test for P1-07 AC-6 (the `nymbal dev` half): the storefront's environment tells both templates to skip
-// Stripe whenever the configured payments provider is not `stripe`, and says nothing for `stripe`. Since P2-01 the
-// config accepts only the providers it knows, so the property runs over those (`custom` reads an injected adapter
-// the storefront environment cannot see, which the spec leaves open).
+// P2-05 decision 3 (replacing P1-07 AC-6's payments branch): the storefront learns how to take a payment from GET
+// /api/capabilities, so the environment `nymbal dev` starts it with says nothing about the payments provider. Over
+// every payments provider the config accepts (custom included), the storefront environment is the same, carries the
+// API URL and the port, and holds no `*_PAYMENTS_PROVIDER` or `*_STRIPE_*` variable the base environment did not.
+// Kills: the vendor branch surviving in the CLI (a template told `native-stub` keeps its stub branch).
 
-const STUB = 'native-stub'
-const VARS = ['PUBLIC_NYMBAL_PAYMENTS_PROVIDER', 'NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER'] as const
 const API_URL = 'http://localhost:3001'
+const VENDOR_VARIABLE = /(_PAYMENTS_PROVIDER$|_STRIPE_)/
 
 function configWith(provider: string): NymbalConfig {
   return nymbalConfigSchema.parse({
@@ -37,29 +37,27 @@ function configWith(provider: string): NymbalConfig {
   })
 }
 
+const PROVIDERS = [...new Set([...KNOWN_PROVIDERS.payments, 'custom'])]
+
 describe('nymbal dev storefront environment', () => {
-  it('AC-6: any provider other than stripe sets both payments-provider variables to native-stub', () => {
+  it('AC-2: over every payments provider and port, the storefront environment is the same for all providers and sets no payments-provider or Stripe variable', () => {
+    expect(PROVIDERS).toEqual(expect.arrayContaining(['native', 'stripe', 'custom']))
     fc.assert(
       fc.property(
-        fc.constantFrom(
-          ...KNOWN_PROVIDERS.payments.filter((p: string) => p !== 'stripe' && p !== 'custom'),
-        ),
+        fc.constantFrom(...PROVIDERS),
+        fc.constantFrom(...PROVIDERS),
         fc.integer({ min: 1024, max: 65535 }),
-        (provider, port) => {
-          fc.pre(provider !== 'stripe')
-          const env = storefrontEnv(configWith(provider), API_URL, port, {})
-          for (const name of VARS) expect(env[name], `${name} for ${provider}`).toBe(STUB)
-          // The same object is the one carrying the API URL to the storefront.
-          expect(env['PUBLIC_NYMBAL_API_URL']).toBe(API_URL)
-          expect(env['NYMBAL_STOREFRONT_PORT']).toBe(String(port))
+        (a, b, port) => {
+          const envA = storefrontEnv(configWith(a), API_URL, port, {})
+          const envB = storefrontEnv(configWith(b), API_URL, port, {})
+
+          expect(envA).toEqual(envB)
+          expect(Object.keys(envA).filter((name) => VENDOR_VARIABLE.test(name))).toEqual([])
+          expect(envA['PUBLIC_NYMBAL_API_URL']).toBe(API_URL)
+          expect(envA['NEXT_PUBLIC_NYMBAL_API_URL']).toBe(API_URL)
+          expect(envA['NYMBAL_STOREFRONT_PORT']).toBe(String(port))
         },
       ),
     )
-  })
-
-  it('AC-6: stripe leaves both payments-provider variables unset', () => {
-    const env = storefrontEnv(configWith('stripe'), API_URL, 4321, {})
-    for (const name of VARS) expect(env[name], name).toBeUndefined()
-    expect(env['PUBLIC_NYMBAL_API_URL']).toBe(API_URL)
   })
 })

@@ -6,7 +6,8 @@ import { plan, type StepSpec } from '../../scripts/gate'
 // three-project gate an earlier red project re-ran nothing. Each E2E step passes `--output test-results/<target>`,
 // and `--rerun-red` re-runs a step with `--last-failed` in that same dir. Plan level: the commands are the contract.
 
-const TARGETS = ['astro', 'nextjs', 'admin']
+// P2-05 decision 9 adds the two custom-providers targets, which run on the default store set this INPUT plans.
+const TARGETS = ['astro', 'nextjs', 'admin', 'astro-custom', 'nextjs-custom']
 const INPUT = { full: true, base: 'abc1234', changed: ['packages/sdk/src/client.ts'], mutated: [] }
 
 /** The Playwright command of an E2E step: e2eCommand wraps it in existence and shutdown checks. */

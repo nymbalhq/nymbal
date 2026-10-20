@@ -67,6 +67,8 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
     providerName: 'native-stub',
     // No `webhook`: parseWebhook verifies no signature, so a template cannot rely on it.
     capabilities: () => ['intent', 'capture', 'refund'],
+    // Nothing to collect: the receipt email decides the outcome.
+    client: () => ({ driver: 'test-mode', options: {} }),
     producesEvents: [EVT_PAYMENT_CAPTURED, EVT_PAYMENT_FAILED, EVT_PAYMENT_REFUNDED],
     consumesEvents: [],
     initialize: noopInitialize,

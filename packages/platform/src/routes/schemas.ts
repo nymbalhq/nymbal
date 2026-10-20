@@ -103,6 +103,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
     body: optionalRefresh,
   },
 
+  // Store
+  'GET /api/capabilities': {
+    name: 'capabilities.get',
+    description:
+      'What the store can do, for a storefront: payments client half, search capabilities and sort keys.',
+  },
+
   // Catalogue
   'GET /api/categories': {
     name: 'categories.list',
