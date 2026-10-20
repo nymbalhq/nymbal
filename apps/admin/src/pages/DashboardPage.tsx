@@ -84,7 +84,7 @@ export function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={<ShoppingBag className="h-4.5 w-4.5" />}
           label="Orders today"
@@ -110,9 +110,9 @@ export function DashboardPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         {/* Recent orders (2/3 width) */}
-        <div className="col-span-2">
+        <div className="md:col-span-2">
           <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
             <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
               <h2 className="text-sm font-semibold text-zinc-900">Recent Orders</h2>
