@@ -8,6 +8,9 @@
 - Removed: <!-- files and why (cannot fail, presence only, duplicate); "none" is an answer -->
 - Shown failing before the change: <!-- commit or run -->
 
+<!-- A pull request that regenerates visual baselines has its reviewer open the changed mobile PNGs, since no job
+compares them before merge. -->
+
 **Changeset:** <!-- the changeset file, or "none: no published package changes" -->
 
 **Store end states**

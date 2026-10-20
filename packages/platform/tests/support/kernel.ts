@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 import type { Address } from '@nymbalhq/types'
-import { createApp, type NymbalApp } from '../../src/app.js'
+import { createApp, type CreateAppOptions, type NymbalApp } from '../../src/app.js'
 import { createCommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
@@ -89,6 +89,8 @@ export async function createKernel(
   ) & {
     /** Reshapes the kernel config before anything opens: P1-05 serves a kernel on the Stripe adapter. */
     configure?: (config: NymbalConfig) => NymbalConfig
+    /** More createApp options, beside the storage and logger the harness passes: P2-01 injects adapters. */
+    appOptions?: Omit<CreateAppOptions, 'sqlitePath' | 'postgresUrl' | 'logger'>
   },
 ): Promise<Kernel> {
   const base = kernelConfig(opts.dialect)
@@ -111,7 +113,7 @@ export async function createKernel(
     await migrateStore.close()
   }
 
-  const app = await createApp(config, { ...storage, logger })
+  const app = await createApp(config, { ...opts.appOptions, ...storage, logger })
   return {
     dialect: opts.dialect,
     config,

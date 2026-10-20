@@ -48,7 +48,7 @@ function makeReviewsAdapter(items: unknown[] = []): ReviewsAdapter {
   return {
     kind: 'reviews',
     providerName: 'mock',
-    capabilities: [],
+    capabilities: () => [],
     producesEvents: [],
     consumesEvents: [],
     initialize: vi.fn(),

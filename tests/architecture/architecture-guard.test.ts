@@ -21,7 +21,16 @@ import { describe, expect, it } from 'vitest'
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
 // Packages whose source must never depend on a rendering framework.
-const GUARDED_PACKAGES = ['platform', 'sdk', 'types', 'config', 'http'] as const
+const GUARDED_PACKAGES = [
+  'platform',
+  'sdk',
+  'types',
+  'config',
+  'http',
+  'adapter-stripe',
+  'adapter-anthropic',
+  'adapter-smtp',
+] as const
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.
 const FORBIDDEN_FRAMEWORKS = [

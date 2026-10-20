@@ -321,6 +321,35 @@ describe('scaffold() output', () => {
       expect(config.commerce.payments.provider).toBe('native')
     })
   }
+
+  // P2-01 AC-7 (the config half, at the cheapest layer that sees it) and decision 6: a fresh project runs no AI provider
+  // and lists no provider SDK or adapter package, so its install holds none. Kills the Anthropic default with a
+  // placeholder key, which made every scaffold load the Anthropic SDK.
+  for (const template of TEMPLATES) {
+    it(`AC-7 (P2-01): ${template}'s generated config has ai { provider: 'none' } and its package.json lists no provider SDK or adapter package`, async () => {
+      const dir = out[template]
+      await mkdir(join(dir, 'node_modules', '@nymbalhq'), { recursive: true })
+      if (!existsSync(join(dir, 'node_modules', '@nymbalhq', 'config'))) {
+        await symlink(
+          join(PACKAGES, 'config'),
+          join(dir, 'node_modules', '@nymbalhq', 'config'),
+          'dir',
+        )
+      }
+      const { config } = await loadConfig(dir)
+      const pkg = await readJson<Manifest>(join(dir, 'package.json'))
+      const listed = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]
+
+      expect(config.commerce.ai).toEqual({ provider: 'none' })
+      expect(
+        listed.filter(
+          (n) =>
+            ['stripe', '@anthropic-ai/sdk', 'nodemailer'].includes(n) ||
+            n.startsWith('@nymbalhq/adapter-'),
+        ),
+      ).toEqual([])
+    })
+  }
 })
 
 // ─── AC-3: the stack cohort ──────────────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,47 @@
+{
+  "name": "@nymbalhq/adapter-stripe",
+  "version": "0.2.0",
+  "description": "Stripe payments for Nymbal: the `stripe` payments provider",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/adapter-stripe"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "stripe": "^17.4.0"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2",
+    "stripe": "^17.4.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}

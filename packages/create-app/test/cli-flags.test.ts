@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CliFlagError, parseCliFlags } from '../src/index.js'
 
@@ -15,14 +16,19 @@ const argv = (...args: string[]): string[] => ['node', 'create-nymbal-app', ...a
 const TEMPLATES = ['astro', 'nextjs'] as const
 const CURRENCIES = ['GBP', 'USD', 'EUR'] as const
 
+/** A project name as a shopper types it: letters, digits and spaces, never a leading `-` (that is a flag). */
+const NAME = fc.stringMatching(/^[A-Za-z0-9 ]{1,40}$/)
+
 describe('parseCliFlags', () => {
-  it('AC-8: --template <v> and --template=<v> select the same template, for every template', () => {
-    for (const template of TEMPLATES) {
-      const spaced = parseCliFlags(argv('my-store', '--template', template, '--yes'))
-      const joined = parseCliFlags(argv('my-store', `--template=${template}`, '--yes'))
-      expect(spaced.template).toBe(template)
-      expect(spaced).toEqual(joined)
-    }
+  it('AC-2: for any name and any template, --template <v> and --template=<v> parse the same, name and template intact', () => {
+    fc.assert(
+      fc.property(NAME, fc.constantFrom(...TEMPLATES), (name, template) => {
+        const spaced = parseCliFlags(argv(name, '--template', template, '--yes'))
+        const joined = parseCliFlags(argv(name, `--template=${template}`, '--yes'))
+        expect(spaced).toEqual(joined)
+        expect(spaced).toEqual({ name, template, yes: true })
+      }),
+    )
   })
 
   it('AC-8: --template nextjs (CI scaffold smoke) selects nextjs and the value is not taken as the name', () => {
@@ -36,22 +42,26 @@ describe('parseCliFlags', () => {
     expect(flags.name).toBe('my-store')
   })
 
-  it('AC-8: --currency <v> and --currency=<v> select the same currency, for every currency', () => {
-    for (const currency of CURRENCIES) {
-      const spaced = parseCliFlags(argv('my-store', '--currency', currency))
-      const joined = parseCliFlags(argv('my-store', `--currency=${currency}`))
-      expect(spaced.currency).toBe(currency)
-      expect(spaced).toEqual(joined)
-    }
+  it('AC-2: for any name and any currency, --currency <v> and --currency=<v> parse the same, name and currency intact', () => {
+    fc.assert(
+      fc.property(NAME, fc.constantFrom(...CURRENCIES), (name, currency) => {
+        const spaced = parseCliFlags(argv(name, '--currency', currency))
+        const joined = parseCliFlags(argv(name, `--currency=${currency}`))
+        expect(spaced).toEqual(joined)
+        expect(spaced).toEqual({ name, currency, yes: false })
+      }),
+    )
   })
 
-  it('AC-8: --name <v> and --name=<v> set the same name, including a name with spaces', () => {
-    for (const name of ['x', 'My Store']) {
-      const spaced = parseCliFlags(argv('--name', name, '--yes'))
-      const joined = parseCliFlags(argv(`--name=${name}`, '--yes'))
-      expect(spaced.name).toBe(name)
-      expect(spaced).toEqual(joined)
-    }
+  it('AC-2: for any name, spaces included, --name <v> and --name=<v> set the same name', () => {
+    fc.assert(
+      fc.property(NAME, (name) => {
+        const spaced = parseCliFlags(argv('--name', name, '--yes'))
+        const joined = parseCliFlags(argv(`--name=${name}`, '--yes'))
+        expect(spaced).toEqual(joined)
+        expect(spaced).toEqual({ name, yes: true })
+      }),
+    )
   })
 
   it('AC-8: a positional argument is the name when no --name is given', () => {
@@ -59,7 +69,9 @@ describe('parseCliFlags', () => {
   })
 
   it('AC-8: all three flags in space form together parse as their = forms do', () => {
-    const spaced = parseCliFlags(argv('--name', 'Shop', '--template', 'nextjs', '--currency', 'USD', '-y'))
+    const spaced = parseCliFlags(
+      argv('--name', 'Shop', '--template', 'nextjs', '--currency', 'USD', '-y'),
+    )
     const joined = parseCliFlags(argv('--name=Shop', '--template=nextjs', '--currency=USD', '-y'))
     expect(spaced).toEqual({ name: 'Shop', template: 'nextjs', currency: 'USD', yes: true })
     expect(spaced).toEqual(joined)
@@ -105,7 +117,11 @@ describe('create-nymbal-app CLI', () => {
   const run = (...args: string[]) => {
     const cwd = mkdtempSync(join(tmpdir(), 'create-nymbal-app-flags-'))
     dirs.push(cwd)
-    const result = spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', timeout: 30_000 })
+    const result = spawnSync(process.execPath, [BIN, ...args], {
+      cwd,
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
     return { ...result, cwd }
   }
 

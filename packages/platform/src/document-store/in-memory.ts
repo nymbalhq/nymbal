@@ -27,6 +27,10 @@ export class InMemoryDocumentStore implements DocumentStoreAdapter {
     }
   }
 
+  capabilities(): readonly string[] {
+    return ['get', 'put', 'delete', 'query', 'batch', 'ttl', 'conditional-put']
+  }
+
   async get<T>(collection: string, key: string): Promise<T | null> {
     const entry = this.#data.get(collection)?.get(key)
     if (!entry) return null

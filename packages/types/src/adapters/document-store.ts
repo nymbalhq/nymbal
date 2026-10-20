@@ -28,6 +28,7 @@ export interface QueryResult<T> {
 }
 
 export interface DocumentStoreAdapter {
+  capabilities(): readonly string[]
   get<T>(collection: string, key: string): Promise<T | null>
   put<T>(collection: string, key: string, document: T, options?: PutOptions): Promise<void>
   delete(collection: string, key: string): Promise<void>

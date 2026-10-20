@@ -23,7 +23,11 @@ export class NymbalError extends Error {
 export class ConfigError extends NymbalError {
   constructor(
     message: string,
-    options: { cause?: unknown; context?: ErrorContext; code?: `config.${string}` } = {},
+    options: {
+      cause?: unknown
+      context?: ErrorContext
+      code?: `config.${string}` | `adapter.${string}`
+    } = {},
   ) {
     super(options.code ?? 'config.invalid', message, options)
   }

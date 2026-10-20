@@ -1,5 +1,6 @@
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
+import { submitOnce } from '../lib/submit-once.js'
 
 const steps = ['contact', 'shipping', 'payment'] as const
 type Step = (typeof steps)[number]
@@ -195,27 +196,21 @@ mountStripe()
 
 // Payment form
 const paymentForm = document.getElementById('payment-form') as HTMLFormElement | null
-paymentForm?.addEventListener('submit', async (e) => {
-  e.preventDefault()
+submitOnce(paymentForm, async () => {
   hideError()
 
-  const submitBtn = paymentForm.querySelector(
+  const submitBtn = paymentForm?.querySelector(
     '[data-testid="place-order"]',
   ) as HTMLButtonElement | null
-  if (submitBtn) {
-    submitBtn.disabled = true
-    submitBtn.textContent = 'Processing...'
-  }
+  if (submitBtn) submitBtn.textContent = 'Processing...'
   const stay = (message: string) => {
     showError(message)
-    if (submitBtn) {
-      submitBtn.disabled = false
-      submitBtn.textContent = 'Place Order'
-    }
+    if (submitBtn) submitBtn.textContent = 'Place Order'
   }
   const leaveFor = (orderNumber: string) => {
     client.checkout.reset()
     window.location.href = `/order/${encodeURIComponent(orderNumber)}`
+    return 'leaving' as const
   }
 
   try {
@@ -256,7 +251,7 @@ paymentForm?.addEventListener('submit', async (e) => {
       if (error) return stay(error.message ?? 'Payment failed.')
       client.checkout.markConfirmed()
     }
-    leaveFor(result.orderNumber)
+    return leaveFor(result.orderNumber)
   } catch (err: any) {
     stay(err.message ?? 'Payment failed. Please try again.')
   }

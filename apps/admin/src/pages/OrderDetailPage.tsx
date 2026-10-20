@@ -174,12 +174,12 @@ export function OrderDetailPage() {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-40" />
-        <div className="grid grid-cols-5 gap-5">
-          <div className="col-span-3 space-y-4">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
+          <div className="md:col-span-3 space-y-4">
             <Skeleton className="h-48 w-full" />
             <Skeleton className="h-32 w-full" />
           </div>
-          <div className="col-span-2 space-y-4">
+          <div className="md:col-span-2 space-y-4">
             <Skeleton className="h-40 w-full" />
             <Skeleton className="h-48 w-full" />
           </div>
@@ -306,9 +306,9 @@ export function OrderDetailPage() {
       </div>
 
       {/* Main layout */}
-      <div className="grid grid-cols-5 gap-5">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
         {/* Left 3/5 */}
-        <div className="col-span-3 space-y-5">
+        <div className="md:col-span-3 space-y-5">
           {/* Line items */}
           <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
             <div className="border-b border-zinc-100 px-4 py-3">
@@ -427,7 +427,7 @@ export function OrderDetailPage() {
         </div>
 
         {/* Right 2/5 */}
-        <div className="col-span-2 space-y-4">
+        <div className="md:col-span-2 space-y-4">
           {/* Customer */}
           <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
@@ -456,7 +456,7 @@ export function OrderDetailPage() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
               Addresses
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <AddressBlock address={order.shippingAddress} label="Shipping" />
               <AddressBlock address={order.billingAddress} label="Billing" />
             </div>

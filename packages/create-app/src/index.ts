@@ -421,7 +421,7 @@ async function renameDotFiles(dir: string): Promise<void> {
 }
 
 function renderConfig(answers: Answers): string {
-  return `import { defineConfig, env } from '@nymbalhq/config'
+  return `import { defineConfig } from '@nymbalhq/config'
 
 export default defineConfig({
   store: {
@@ -467,7 +467,7 @@ export default defineConfig({
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
     tax: { provider: 'native' },
-    ai: { provider: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY', 'anthropic-placeholder') } },
+    ai: { provider: 'none' },
   },
 
   http: {

@@ -3,7 +3,8 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLogger, createStripePaymentsAdapter } from '@nymbalhq/platform'
+import { createStripePaymentsAdapter } from '@nymbalhq/adapter-stripe'
+import { createLogger } from '@nymbalhq/platform'
 import { PaymentError, type PaymentsAdapter } from '@nymbalhq/types'
 
 // P1-13 AC-4 (decision 4, B2) for the Stripe adapter, through the real stripe-node client against an in-process mock of

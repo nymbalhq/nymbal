@@ -1,10 +1,12 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { KNOWN_PROVIDERS, nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 import { storefrontEnv } from './dev.js'
 
 // Acceptance test for P1-07 AC-6 (the `nymbal dev` half): the storefront's environment tells both templates to skip
-// Stripe whenever the configured payments provider is not `stripe`, and says nothing for `stripe`.
+// Stripe whenever the configured payments provider is not `stripe`, and says nothing for `stripe`. Since P2-01 the
+// config accepts only the providers it knows, so the property runs over those (`custom` reads an injected adapter
+// the storefront environment cannot see, which the spec leaves open).
 
 const STUB = 'native-stub'
 const VARS = ['PUBLIC_NYMBAL_PAYMENTS_PROVIDER', 'NEXT_PUBLIC_NYMBAL_PAYMENTS_PROVIDER'] as const
@@ -30,7 +32,7 @@ function configWith(provider: string): NymbalConfig {
       analytics: { provider: 'native' },
       shipping: { provider: 'native' },
       tax: { provider: 'native' },
-      ai: { provider: 'native' },
+      ai: { provider: 'none' },
     },
     http: { adapter: 'fastify', port: 3001 },
     deployment: { strategy: 'standard' },
@@ -41,7 +43,7 @@ describe('nymbal dev storefront environment', () => {
   it('AC-6: any provider other than stripe sets both payments-provider variables to native-stub', () => {
     fc.assert(
       fc.property(
-        fc.oneof(fc.constant('native'), fc.constant('native-stub'), fc.string({ minLength: 1 })),
+        fc.constantFrom(...KNOWN_PROVIDERS.payments.filter((p: string) => p !== 'stripe' && p !== 'custom')),
         fc.integer({ min: 1024, max: 65535 }),
         (provider, port) => {
           fc.pre(provider !== 'stripe')

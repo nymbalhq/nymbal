@@ -30,6 +30,7 @@ import AddressForm from '../../components/AddressForm.astro'
   import type { Address, CustomerAddress } from '@nymbalhq/types'
   import { client } from '../../lib/client.js'
   import { escapeHtml } from '../../lib/format.js'
+  import { submitOnce } from '../../lib/submit-once.js'
 
   const container = document.getElementById('addresses-container')
   const form = document.getElementById('add-address-form') as HTMLFormElement | null
@@ -75,8 +76,7 @@ import AddressForm from '../../components/AddressForm.astro'
     }
   }
 
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault()
+  submitOnce(form, async () => {
     if (!form || !messageEl) return
 
     const formData = new FormData(form)

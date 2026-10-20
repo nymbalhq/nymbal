@@ -1,23 +1,51 @@
+import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-test.describe('Search', () => {
-  test('search page shows search input and empty state', async ({ page }) => {
-    await page.goto('/search')
-    // Accept any search input or results container visible on the page
-    await expect(
-      page
-        .locator(
-          '[data-testid="search-page-input"], [data-testid="search-results"], [data-testid="search-input"]',
-        )
-        .first(),
-    ).toBeVisible({ timeout: 10000 })
-  })
+interface ApiSearch {
+  data: { items: Array<{ slug: string; name: string }> }
+}
 
-  test('searching a term shows results', async ({ page }) => {
-    await page.goto('/search?q=wool')
-    await expect(page.locator('[data-testid^="product-card-"]').first()).toBeVisible({
+test.describe('Search', () => {
+  test('AC-5: a term GET /api/products/search finds nothing for shows the no-results state and no card', async ({
+    page,
+  }) => {
+    const term = 'zqxjvw'
+    const res = await page.request.get(`${API_URL}/api/products/search?q=${term}`)
+    expect(res.status()).toBe(200)
+    const found = (await res.json()) as ApiSearch
+    expect(found.data.items).toHaveLength(0)
+
+    await page.goto(`/search?q=${term}`)
+    await expect(page.getByRole('heading', { name: 'No results found' })).toBeVisible({
       timeout: 15000,
     })
+    await expect(page.locator('[data-testid^="product-card-"]')).toHaveCount(
+      found.data.items.length,
+    )
+  })
+
+  test('AC-5: searching a seeded term lists the products GET /api/products/search returns for it, in its order and by name', async ({
+    page,
+  }) => {
+    const res = await page.request.get(`${API_URL}/api/products/search?q=wool`)
+    expect(res.status()).toBe(200)
+    const found = (await res.json()) as ApiSearch
+    expect(found.data.items.length, 'no seeded product matches "wool"').toBeGreaterThan(0)
+
+    await page.goto('/search?q=wool')
+    const cards = page.locator('[data-testid^="product-card-"]')
+    await expect
+      .poll(
+        () =>
+          cards.evaluateAll((els) =>
+            els.map((el) => el.getAttribute('data-testid')!.slice('product-card-'.length)),
+          ),
+        { timeout: 15000 },
+      )
+      .toEqual(found.data.items.map((p) => p.slug))
+    for (const [i, product] of found.data.items.entries()) {
+      await expect(cards.nth(i)).toContainText(product.name)
+    }
   })
 
   test('search bar navigates to search page on submit', async ({ page }) => {

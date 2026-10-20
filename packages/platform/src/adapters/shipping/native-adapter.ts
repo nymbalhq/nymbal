@@ -6,7 +6,7 @@ export function createNativeShippingAdapter(logger: Logger): ShippingAdapter {
   return {
     kind: 'shipping',
     providerName: 'native',
-    capabilities: ['flat-rate'],
+    capabilities: () => ['flat-rate'],
     producesEvents: [],
     consumesEvents: [],
     initialize: noopInitialize,

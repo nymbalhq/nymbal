@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import { AdapterError } from '@nymbalhq/types'
-import { noopInitialize, okHealth } from '../base.js'
 
 export interface AnthropicAiAdapterConfig {
   apiKey: string
@@ -16,14 +15,21 @@ export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAd
   return {
     kind: 'ai',
     providerName: 'anthropic',
-    capabilities: ['complete'],
+    capabilities: () => ['complete'],
     producesEvents: [],
     consumesEvents: [],
-    initialize: noopInitialize,
-    healthCheck: () => okHealth(`Anthropic AI adapter using model ${model}`),
+    async initialize() {
+      // no-op: the client is constructed above
+    },
+    async healthCheck() {
+      return { status: 'healthy', detail: `Anthropic AI adapter using model ${model}` }
+    },
 
     async embed() {
-      throw new AdapterError('not_configured', 'Embedding not yet supported by the Anthropic adapter')
+      throw new AdapterError(
+        'not_configured',
+        'Embedding not yet supported by the Anthropic adapter',
+      )
     },
 
     async complete(prompt, opts) {

@@ -1,102 +1,170 @@
-import type {
-  AnalyticsAdapter,
-  AiAdapter,
-  DocumentStoreAdapter,
-  EmailAdapter,
-  Logger,
-  PaymentsAdapter,
-  ReviewsAdapter,
-  SearchAdapter,
-  SecurityAdapter,
-  ShippingAdapter,
-  TaxAdapter,
+import {
+  ConfigError,
+  type AnalyticsAdapter,
+  type AiAdapter,
+  type CommerceSlot,
+  type DocumentStoreAdapter,
+  type EmailAdapter,
+  type Logger,
+  type PaymentsAdapter,
+  type ReviewsAdapter,
+  type SearchAdapter,
+  type SecurityAdapter,
+  type ShippingAdapter,
+  type TaxAdapter,
 } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
 import { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
-import {
-  createStripePaymentsAdapter,
-  type StripePaymentsConfig,
-} from './payments/stripe-adapter.js'
 import { createNativeStubPaymentsAdapter } from './payments/native-stub.js'
-import {
-  createNativeEmailAdapter,
-  type NativeEmailAdapterConfig,
-} from './email/native-email-adapter.js'
+import { createNativeEmailAdapter } from './email/native-email-adapter.js'
 import { createNativeSearchAdapter } from './search/native-adapter.js'
 import { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
-import { createNativeAiAdapter } from './ai/native-adapter.js'
-import { createAnthropicAiAdapter } from './ai/anthropic-adapter.js'
+import { loadProviderAdapter } from './loader.js'
 
-export interface AdapterRegistry {
-  security: SecurityAdapter
+/** One adapter per commerce slot. */
+export interface CommerceAdapters {
   payments: PaymentsAdapter
   email: EmailAdapter
-  search: SearchAdapter
   reviews: ReviewsAdapter
+  search: SearchAdapter
   analytics: AnalyticsAdapter
   shipping: ShippingAdapter
   tax: TaxAdapter
   ai: AiAdapter
 }
 
+/** Adapters a project hands `createApp`, each for a slot whose provider is `custom`. */
+export type InjectedAdapters = Partial<CommerceAdapters>
+
+export const COMMERCE_SLOTS = [
+  'payments',
+  'email',
+  'reviews',
+  'search',
+  'analytics',
+  'shipping',
+  'tax',
+  'ai',
+] as const satisfies readonly CommerceSlot[]
+
+export interface AdapterRegistry extends Omit<CommerceAdapters, 'ai'> {
+  security: SecurityAdapter
+  /** `null` when the config's ai provider is `none`. */
+  ai: AiAdapter | null
+}
+
+type SlotAdapter<S extends CommerceSlot> = AdapterRegistry[S]
+
 export interface BuildAdaptersDeps {
   config: NymbalConfig
   logger: Logger
   documentStore: DocumentStoreAdapter
   repos: Repositories
+  injected?: InjectedAdapters
+  /** The payments adapter `createApp` resolved before it opened the store. */
+  payments: PaymentsAdapter
 }
 
 /**
- * The `providerName` of the payments adapter a configured provider resolves to. A provider with no adapter of its
- * own falls back to the stub, which verifies no webhook signature.
+ * A `custom` slot takes the adapter the project injected, and an injected adapter needs a `custom` slot: anything
+ * else is a configuration mistake, refused before anything is built.
  */
-export function paymentsAdapterFor(provider: string): 'stripe' | 'native-stub' {
-  return provider === 'stripe' ? 'stripe' : 'native-stub'
+export function checkInjectedAdapters(config: NymbalConfig, injected: InjectedAdapters = {}): void {
+  for (const slot of COMMERCE_SLOTS) {
+    const provider = config.commerce[slot].provider
+    const given = injected[slot] !== undefined
+    if (provider === 'custom' && !given) {
+      throw new ConfigError(
+        `commerce.${slot}.provider is 'custom' but createApp was given no ${slot} adapter ` +
+          `(createApp(config, { adapters: { ${slot} } })). nymbal dev and nymbal start cannot inject one yet: ` +
+          'run the app from an entry of your own that calls createApp.',
+        { code: 'adapter.custom_mismatch', context: { slot } },
+      )
+    }
+    if (provider !== 'custom' && given) {
+      throw new ConfigError(
+        `createApp was given a ${slot} adapter, but commerce.${slot}.provider is '${provider}'; ` +
+          `set it to 'custom' to use the injected adapter.`,
+        { code: 'adapter.custom_mismatch', context: { slot, provider } },
+      )
+    }
+  }
+}
+
+type BuiltIns<S extends CommerceSlot> = Readonly<Record<string, () => SlotAdapter<S>>>
+
+/**
+ * The slot's adapter, from the injected ones (`custom`), an adapter package, or the kernel's own, initialized with the
+ * slot's config block. A provider none of them has is refused, never replaced by a stand-in.
+ */
+async function resolveSlot<S extends CommerceSlot>(
+  slot: S,
+  config: NymbalConfig,
+  logger: Logger,
+  injected: InjectedAdapters,
+  builtIns: BuiltIns<S>,
+): Promise<SlotAdapter<S>> {
+  const block = config.commerce[slot]
+  const blockConfig = block.config ?? {}
+  let adapter: SlotAdapter<S> | undefined
+  if (block.provider === 'custom') {
+    adapter = injected[slot] as SlotAdapter<S> | undefined
+  } else {
+    adapter = (await loadProviderAdapter(slot, block.provider, {
+      config: blockConfig,
+      logger: logger.child({ adapter: slot }),
+      env: process.env,
+    })) as SlotAdapter<S> | undefined
+    if (adapter === undefined && Object.hasOwn(builtIns, block.provider)) {
+      adapter = builtIns[block.provider]!()
+    }
+  }
+  if (adapter === undefined) {
+    throw new ConfigError(`commerce.${slot}.provider '${block.provider}' has no adapter`, {
+      context: { slot, provider: block.provider },
+    })
+  }
+  await adapter?.initialize(blockConfig)
+  return adapter
+}
+
+/** The payments adapter alone: `createApp` reads it before it opens the store. */
+export function resolvePaymentsAdapter(
+  config: NymbalConfig,
+  logger: Logger,
+  injected: InjectedAdapters = {},
+): Promise<PaymentsAdapter> {
+  return resolveSlot('payments', config, logger, injected, {
+    native: () =>
+      createNativeStubPaymentsAdapter({ logger: logger.child({ adapter: 'payments' }) }),
+  })
 }
 
 export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterRegistry> {
-  const { config, logger, documentStore, repos } = deps
-  const payments: PaymentsAdapter =
-    paymentsAdapterFor(config.commerce.payments.provider) === 'stripe'
-      ? createStripePaymentsAdapter({
-          logger: logger.child({ adapter: 'payments' }),
-          config: (config.commerce.payments.config ?? {}) as unknown as StripePaymentsConfig,
-        })
-      : createNativeStubPaymentsAdapter({ logger: logger.child({ adapter: 'payments' }) })
+  const { config, logger, documentStore, repos, payments } = deps
+  const injected = deps.injected ?? {}
+  const slot = <S extends CommerceSlot>(name: S, builtIns: BuiltIns<S>) =>
+    resolveSlot(name, config, logger, injected, builtIns)
 
-  const email: EmailAdapter = createNativeEmailAdapter({
-    logger: logger.child({ adapter: 'email' }),
-    config: (config.commerce.email.config ?? {}) as NativeEmailAdapterConfig,
+  const email = await slot('email', {
+    native: () => createNativeEmailAdapter({ logger: logger.child({ adapter: 'email' }) }),
   })
-  await email.initialize(email ? (config.commerce.email.config ?? {}) : {})
-
-  const search = createNativeSearchAdapter({
-    documentStore,
-    logger: logger.child({ adapter: 'search' }),
+  const search = await slot('search', {
+    native: () =>
+      createNativeSearchAdapter({ documentStore, logger: logger.child({ adapter: 'search' }) }),
   })
-
-  const reviews = createNativeReviewsAdapter({
-    repos,
-    logger: logger.child({ adapter: 'reviews' }),
+  const reviews = await slot('reviews', {
+    native: () =>
+      createNativeReviewsAdapter({ repos, logger: logger.child({ adapter: 'reviews' }) }),
   })
-
-  const analytics = createNativeAnalyticsAdapter(logger)
-  const shipping = createNativeShippingAdapter(logger)
-  const tax = createNativeTaxAdapter(logger)
-  const aiProvider = config.commerce.ai?.provider
-  const ai: AiAdapter =
-    aiProvider === 'anthropic'
-      ? createAnthropicAiAdapter({
-          apiKey: process.env['ANTHROPIC_API_KEY'] ?? '',
-          model:
-            (config.commerce.ai?.config?.['model'] as string | undefined) ?? 'claude-sonnet-4-6',
-          logger: logger.child({ adapter: 'ai' }),
-        })
-      : createNativeAiAdapter(logger)
+  const analytics = await slot('analytics', { native: () => createNativeAnalyticsAdapter(logger) })
+  const shipping = await slot('shipping', { native: () => createNativeShippingAdapter(logger) })
+  const tax = await slot('tax', { native: () => createNativeTaxAdapter(logger) })
+  const ai = await slot('ai', { none: () => null })
   const security = createMiddlewareSecurityAdapter({
     logger: logger.child({ adapter: 'security' }),
   })
