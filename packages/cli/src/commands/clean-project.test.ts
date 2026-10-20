@@ -25,10 +25,10 @@ const Database = createRequire(join(PACKAGES, 'platform', 'package.json'))(
 const TABLES = ['categories', 'products', 'variants', 'customers'] as const
 type Counts = Record<(typeof TABLES)[number], number>
 
-// The config create-nymbal-app generates (decision 7: native payments), for either template.
+// The config create-nymbal-app generates (decision 7: native payments; P2-01 decision 6: no ai), for either template.
 const config = (
   template: 'astro' | 'nextjs',
-): string => `import { defineConfig, env } from '@nymbalhq/config'
+): string => `import { defineConfig } from '@nymbalhq/config'
 
 export default defineConfig({
   store: { name: 'Shop', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
@@ -49,7 +49,7 @@ export default defineConfig({
     analytics: { provider: 'native' },
     shipping: { provider: 'native' },
     tax: { provider: 'native' },
-    ai: { provider: 'anthropic', config: { apiKey: env('ANTHROPIC_API_KEY', 'anthropic-placeholder') } },
+    ai: { provider: 'none' },
   },
   http: { adapter: 'fastify', port: 3001 },
   deployment: { strategy: 'standard' },

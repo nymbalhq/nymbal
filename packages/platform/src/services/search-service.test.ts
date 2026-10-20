@@ -7,7 +7,7 @@ function makeAdapter(): SearchAdapter {
   return {
     providerName: 'test',
     kind: 'search',
-    capabilities: [],
+    capabilities: () => [],
     producesEvents: [],
     consumesEvents: [],
     initialize: vi.fn().mockResolvedValue(undefined),

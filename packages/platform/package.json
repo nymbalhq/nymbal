@@ -43,28 +43,44 @@
     "db:migrate:postgres": "drizzle-kit migrate --config=drizzle.config.postgres.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.3.0",
     "drizzle-orm": "^0.36.0",
     "jose": "^5.9.6",
-    "nodemailer": "^6.9.16",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
-    "stripe": "^17.4.0",
     "uuid": "^10.0.0",
     "zod": "^3.23.8"
   },
+  "peerDependencies": {
+    "@nymbalhq/adapter-anthropic": "workspace:^",
+    "@nymbalhq/adapter-smtp": "workspace:^",
+    "@nymbalhq/adapter-stripe": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@nymbalhq/adapter-anthropic": {
+      "optional": true
+    },
+    "@nymbalhq/adapter-smtp": {
+      "optional": true
+    },
+    "@nymbalhq/adapter-stripe": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@nymbalhq/adapter-anthropic": "workspace:*",
+    "@nymbalhq/adapter-smtp": "workspace:*",
+    "@nymbalhq/adapter-stripe": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",
-    "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.28.0",
+    "stripe": "^17.4.0",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3",
     "vitest": "^3.0.0"

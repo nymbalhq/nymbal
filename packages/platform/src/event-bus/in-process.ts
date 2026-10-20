@@ -29,6 +29,10 @@ export class InProcessEventBus implements EventBusAdapter {
     this.#logger = options.logger
   }
 
+  capabilities(): readonly string[] {
+    return ['publish', 'subscribe', 'wildcard', 'replay']
+  }
+
   async publish<T>(event: NymbalEvent<T>): Promise<void> {
     await this.#deliver(event, () => true)
   }

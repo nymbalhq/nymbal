@@ -17,6 +17,10 @@ const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 // If a new @nymbalhq/* package appears in the monorepo and is NOT intended as a scaffold dep,
 // add it here so the coverage test knows it's intentionally absent.
 export const NON_SCAFFOLD_PACKAGES = new Set([
+  // Provider adapters are optional peers of the kernel: a project installs one (and its SDK) only when it uses it.
+  '@nymbalhq/adapter-anthropic',
+  '@nymbalhq/adapter-smtp',
+  '@nymbalhq/adapter-stripe',
   '@nymbalhq/contract-tests',
   '@nymbalhq/proof-kit',
   '@nymbalhq/test-factories',

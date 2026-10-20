@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { KNOWN_PROVIDERS, type CommerceSlot } from './known-providers.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -68,20 +69,34 @@ export const securitySchema = z.object({
     .default({}),
 })
 
-const adapterBlock = z.object({
-  provider: z.string().min(1),
-  config: z.record(z.string(), z.unknown()).optional(),
-})
+/** A slot's block: its provider must be one the slot knows, and an unknown one is named with the slot's list. */
+function adapterBlock<const P extends readonly [string, ...string[]]>(
+  slot: CommerceSlot,
+  providers: P,
+) {
+  const known = providers.map((p) => `'${p}'`).join(', ')
+  return z.object({
+    provider: z.enum(providers, {
+      errorMap: (issue, ctx) =>
+        issue.code === z.ZodIssueCode.invalid_enum_value
+          ? {
+              message: `unknown ${slot} provider '${String(issue.received)}'; the ${slot} providers are ${known}`,
+            }
+          : { message: ctx.defaultError },
+    }),
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+}
 
 export const commerceSchema = z.object({
-  payments: adapterBlock,
-  email: adapterBlock,
-  reviews: adapterBlock,
-  search: adapterBlock,
-  analytics: adapterBlock,
-  shipping: adapterBlock,
-  tax: adapterBlock,
-  ai: adapterBlock,
+  payments: adapterBlock('payments', KNOWN_PROVIDERS.payments),
+  email: adapterBlock('email', KNOWN_PROVIDERS.email),
+  reviews: adapterBlock('reviews', KNOWN_PROVIDERS.reviews),
+  search: adapterBlock('search', KNOWN_PROVIDERS.search),
+  analytics: adapterBlock('analytics', KNOWN_PROVIDERS.analytics),
+  shipping: adapterBlock('shipping', KNOWN_PROVIDERS.shipping),
+  tax: adapterBlock('tax', KNOWN_PROVIDERS.tax),
+  ai: adapterBlock('ai', KNOWN_PROVIDERS.ai),
   orders: z
     .object({
       numberPrefix: z.string().min(1).default('NYM'),
@@ -155,6 +170,16 @@ export const nymbalConfigSchema = z
           message: `cloud=local only supports 'in-process' or 'worker-threads' for compute`,
         })
       }
+    }
+
+    // SMTP left the kernel for @nymbalhq/adapter-smtp; a native block still asking for it would print to the console.
+    const email = cfg.commerce.email
+    if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['commerce', 'email', 'config', 'transport'],
+        message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/adapter-smtp)`,
+      })
     }
 
     // middleware security adapter is v0.1 and not intended for managed-cloud production deployments.

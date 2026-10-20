@@ -22,7 +22,8 @@ import type { ReviewsAdapter } from '@nymbalhq/types'
 export interface WooCommerceImporterDeps {
   services: ServiceRegistry
   repos: Repositories
-  adapters: { ai: AiAdapter; reviews: ReviewsAdapter }
+  /** `ai` is null when the store's ai provider is `none`, and enrichment is skipped. */
+  adapters: { ai: AiAdapter | null; reviews: ReviewsAdapter }
   onProgress?: ProgressCallback
 }
 
@@ -284,7 +285,7 @@ export async function runWooCommerceImport(
 
   // ── 7. AI Enrichment ─────────────────────────────────────────────────────────
   const enrichStats = { enriched: 0, skipped: 0, failed: 0 }
-  if (opts.ai && state.importedIds.products.length > 0) {
+  if (opts.ai && adapters.ai !== null && state.importedIds.products.length > 0) {
     emit({ kind: 'phase', phase: 'enrich' })
     const stats = await runEnrichment(
       state.importedIds.products,

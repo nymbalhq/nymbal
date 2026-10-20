@@ -1,8 +1,17 @@
 import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
-import { ConfigError } from '@nymbalhq/types'
+import { ConfigError, type CommerceSlot, type PaymentsAdapter } from '@nymbalhq/types'
 import { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
-import { buildAdapters, paymentsAdapterFor, type AdapterRegistry } from './adapters/registry.js'
+import {
+  buildAdapters,
+  checkInjectedAdapters,
+  COMMERCE_SLOTS,
+  resolvePaymentsAdapter,
+  type AdapterRegistry,
+  type InjectedAdapters,
+} from './adapters/registry.js'
+import { createLogger } from './logger.js'
+import { LOCAL_FS_MEDIA_CAPABILITIES } from './media/index.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, type Relay } from './events/relay.js'
@@ -29,8 +38,19 @@ export interface NymbalApp {
    * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
    */
   attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
+  /** Each slot's provider and its adapter's own `capabilities()`; an ai slot of `none` offers nothing. */
+  capabilities(): CapabilitiesReport
   stop(): Promise<void>
 }
+
+export type CapabilitySlot = CommerceSlot | 'security' | 'documentStore' | 'eventBus' | 'media'
+
+export interface SlotCapabilities {
+  provider: string
+  capabilities: readonly string[]
+}
+
+export type CapabilitiesReport = Record<CapabilitySlot, SlotCapabilities>
 
 export interface AttachHttpOptions {
   adminRoot?: string | null
@@ -38,16 +58,19 @@ export interface AttachHttpOptions {
 
 export interface CreateAppOptions extends CreatePlatformOptions {
   version?: string
+  /** The project's own adapters, one per slot whose provider is `custom`. */
+  adapters?: InjectedAdapters
 }
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
- * tokens with the schema's published default secret. Checked before anything opens the store.
+ * tokens with the schema's published default secret. Checked on the resolved adapter, built or injected, before
+ * anything opens the store.
  */
-function refuseUnsafeProduction(config: NymbalConfig): void {
+function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter): void {
   if (process.env.NODE_ENV !== 'production') return
   const provider = config.commerce.payments.provider
-  if (paymentsAdapterFor(provider) === 'native-stub') {
+  if (payments.providerName === 'native-stub') {
     throw new ConfigError(
       `Payments provider "${provider}" resolves to the stub adapter, which verifies no webhook signature; ` +
         'configure a real payments provider for production.',
@@ -66,17 +89,22 @@ export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
 ): Promise<NymbalApp> {
-  refuseUnsafeProduction(config)
-  const platform = createPlatform(config, options)
+  const logger = options.logger ?? createLogger({ base: { store: config.store.name } })
+  const adapterLogger = logger.child({ layer: 'adapter' })
+  checkInjectedAdapters(config, options.adapters)
+  const payments = await resolvePaymentsAdapter(config, adapterLogger, options.adapters)
+  refuseUnsafeProduction(config, payments)
+  const platform = createPlatform(config, { ...options, logger })
   const version = options.version ?? '0.1.0'
-  const logger = platform.logger
 
   const repos = buildRepositories(platform.commandStore, platform.documentStore)
   const adapters = await buildAdapters({
     config,
-    logger: logger.child({ layer: 'adapter' }),
+    logger: adapterLogger,
     documentStore: platform.documentStore,
     repos,
+    payments,
+    ...(options.adapters !== undefined && { injected: options.adapters }),
   })
   const relay = createRelay({
     store: platform.commandStore,
@@ -174,6 +202,37 @@ export async function createApp(
         adminRoot:
           options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
       })
+    },
+    capabilities() {
+      const commerce = Object.fromEntries(
+        COMMERCE_SLOTS.map((slot) => {
+          const adapter = adapters[slot]
+          return [
+            slot,
+            {
+              provider: config.commerce[slot].provider,
+              capabilities: adapter === null ? [] : adapter.capabilities(),
+            },
+          ]
+        }),
+      ) as Record<CommerceSlot, SlotCapabilities>
+      return {
+        ...commerce,
+        security: {
+          provider: config.security.adapter,
+          capabilities: adapters.security.capabilities(),
+        },
+        documentStore: {
+          provider: config.infrastructure.documentStore,
+          capabilities: platform.documentStore.capabilities(),
+        },
+        eventBus: {
+          provider: config.infrastructure.eventBus,
+          capabilities: platform.eventBus.capabilities(),
+        },
+        // The kernel ships one media storage, on the local filesystem; the importer creates it per run.
+        media: { provider: 'local-fs', capabilities: LOCAL_FS_MEDIA_CAPABILITIES },
+      }
     },
     async stop() {
       await relay.stop()

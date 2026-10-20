@@ -20,7 +20,7 @@ export function createNativeReviewsAdapter(deps: {
   return {
     kind: 'reviews',
     providerName: 'native',
-    capabilities: ['submit', 'moderate', 'aggregate'],
+    capabilities: () => ['submit', 'moderate', 'aggregate'],
     producesEvents: [],
     consumesEvents: [EVT_ORDER_DELIVERED],
     initialize: noopInitialize,

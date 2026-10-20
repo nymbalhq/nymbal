@@ -47,7 +47,15 @@ export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
 export { routeSchemas, type RouteSchema } from './routes/schemas.js'
-export { createApp, type NymbalApp, type CreateAppOptions, type AttachHttpOptions } from './app.js'
+export {
+  createApp,
+  type NymbalApp,
+  type CreateAppOptions,
+  type AttachHttpOptions,
+  type CapabilitiesReport,
+  type CapabilitySlot,
+  type SlotCapabilities,
+} from './app.js'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {
   startInventoryReservationSweeper,

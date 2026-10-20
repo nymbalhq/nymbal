@@ -40,7 +40,7 @@ export function createNativeSearchAdapter(deps: {
   return {
     kind: 'search',
     providerName: 'native',
-    capabilities: ['index', 'search', 'facet'],
+    capabilities: () => ['index', 'search', 'facet'],
     producesEvents: [],
     consumesEvents: [EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED, EVT_PRODUCT_DELETED],
     initialize: noopInitialize,

@@ -94,7 +94,7 @@ export function createStripePaymentsAdapter(deps: {
   return {
     kind: 'payments',
     providerName: 'stripe',
-    capabilities: ['intent', 'capture', 'refund', 'webhook'],
+    capabilities: () => ['intent', 'capture', 'refund', 'webhook'],
     producesEvents: [EVT_PAYMENT_CAPTURED, EVT_PAYMENT_FAILED, EVT_PAYMENT_REFUNDED],
     consumesEvents: [],
     async initialize() {

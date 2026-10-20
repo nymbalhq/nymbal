@@ -16,9 +16,15 @@ const members = workspaceMembers()
 const root = members.find((m) => m.dir === '')
 const published = members.filter((m) => m.dir !== '' && isPublished(m.manifest))
 
-/** The twelve packages the specs publish (P1-07 adds packages/stack, P1-08 apps/admin), by directory (names are what is under test). */
+/**
+ * The fifteen packages the specs publish (P1-07 adds packages/stack, P1-08 apps/admin, P2-01 the three adapter
+ * packages), by directory (names are what is under test).
+ */
 const PUBLISHED_DIRS = [
   'apps/admin',
+  'packages/adapter-anthropic',
+  'packages/adapter-smtp',
+  'packages/adapter-stripe',
   'packages/cli',
   'packages/config',
   'packages/create-app',
@@ -59,7 +65,7 @@ function repositoryUrl(m: Manifest): string | undefined {
 }
 
 describe('AC-2: workspace package names and published manifests', () => {
-  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the twelve publish', () => {
+  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the fifteen publish', () => {
     // Discovery guard: every package directory the spec publishes is a workspace member.
     const dirs = new Set(members.map((m) => m.dir))
     expect.soft(root).toBeDefined()
