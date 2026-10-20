@@ -22,13 +22,18 @@ The storefronts render from what the store's adapters can do, never from which v
   `STRIPE_PUBLISHABLE_KEY`; a key that starts `sk_` or `rk_` there fails at start.
 - `<nymbal-payment-element client='<json>'>` (React: `PaymentElement`) renders that client half through a driver
   from the SDK's registry (`registerPaymentDriver(name, driver)`, `getPaymentDriver(name)`), and its
-  `confirm(clientSecret)` answers `{ ok: true, confirmed }` or `{ ok: false, error }`. `registerComponents()`
+  `confirm(clientSecret, context?)` answers `{ ok: true, confirmed }` or `{ ok: false, error }`. `context`
+  (`PaymentConfirmContext`: `email`, `billing`) is the shopper's email and billing address, which both checkouts
+  pass and the `stripe` driver sends as `billing_details`. `registerComponents()`
   registers the `test-mode` driver and a `stripe` driver that loads Stripe.js from js.stripe.com, so no project
   installs a Stripe package. A project registers a driver of its own in its client bootstrap; one registered under a
   built-in's name wins. A `null` client renders nothing; an unknown driver shows `payment-element-error`, and the
   checkout keeps Place Order disabled.
 - `<nymbal-sort-dropdown sort-keys value default-sort>` (React: `SortDropdown`) offers the store's sort keys in its
   order and emits `nymbal:sort:changed` with `{ sort }`.
+- Astro's listing script sorts on the dropdown's `nymbal:sort:changed`, so it sorts whichever select the element
+  renders. On Astro's checkout, the second click of a double click on shipping Continue, which lands on Place Order,
+  no longer places the order.
 - `GET /api/products` leaves out `facets` when the search adapter does not report `facet`. Both templates render the
   product filter only from the listing's facets, the header search bar only when search reports `search`, and the sort
   options from `catalog.sortKeys`.
@@ -39,5 +44,4 @@ The storefronts render from what the store's adapters can do, never from which v
 `PUBLIC_STRIPE_PUBLISHABLE_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` or `*_NYMBAL_PAYMENTS_PROVIDER`, and
 `nymbal dev` no longer sets the latter. Give the API the publishable key instead (`payments.config.publishableKey`
 or `STRIPE_PUBLISHABLE_KEY`). The payment step's test id is `payment-element` (was `stripe-card-element` on Astro and
-`card-element` on Next), and Next's `CheckoutForm` takes the report as its `capabilities` prop. Card confirmation no
-longer sends billing details to Stripe.
+`card-element` on Next), and Next's `CheckoutForm` takes the report as its `capabilities` prop.

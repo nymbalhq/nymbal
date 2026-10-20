@@ -1,4 +1,4 @@
-import type { PaymentConfirmation } from '@nymbalhq/sdk'
+import type { PaymentConfirmContext, PaymentConfirmation } from '@nymbalhq/sdk'
 import type { NymbalPaymentElement } from '@nymbalhq/web-components'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
@@ -181,9 +181,18 @@ paymentForm?.addEventListener(
   true,
 )
 
+// Place Order renders where Continue was, so the second click of a double-click on Continue lands on it. A click that
+// continues a multi-click is not a decision to pay: the first click of one on Place Order has already submitted.
+placeOrderBtn?.addEventListener('click', (e) => {
+  if (e.detail > 1) e.preventDefault()
+})
+
 /** No element (a page without a payment step) has nothing to confirm, as a null client does. */
-function confirmPayment(clientSecret: string): Promise<PaymentConfirmation> {
-  return paymentEl?.confirm(clientSecret) ?? Promise.resolve({ ok: true, confirmed: false })
+function confirmPayment(
+  clientSecret: string,
+  context: PaymentConfirmContext,
+): Promise<PaymentConfirmation> {
+  return paymentEl?.confirm(clientSecret, context) ?? Promise.resolve({ ok: true, confirmed: false })
 }
 
 // Payment form
@@ -233,7 +242,11 @@ submitOnce(paymentForm, async () => {
     }
     // Confirmed only when the driver says the payment went through; otherwise the order page shows it awaiting payment.
     if (result.payment.status === 'requires_action') {
-      const confirmation = await confirmPayment(result.paymentIntent.clientSecret)
+      const { email, billingAddress } = client.checkout.getState()
+      const confirmation = await confirmPayment(result.paymentIntent.clientSecret, {
+        email: email || undefined,
+        billing: billingAddress ?? undefined,
+      })
       if (!confirmation.ok) return stay(confirmation.error)
       if (confirmation.confirmed) client.checkout.markConfirmed()
     }

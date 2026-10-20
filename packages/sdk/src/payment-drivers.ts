@@ -1,13 +1,22 @@
+import type { Address } from '@nymbalhq/types'
+
+/** What a checkout already knows about the shopper, which a driver may hand its processor with the payment. */
+export interface PaymentConfirmContext {
+  email?: string
+  billing?: Address
+}
+
 /** What a payment driver's `confirm` answers: paid now, accepted without a payment yet, or refused with a reason. */
 export type PaymentConfirmation = { ok: true; confirmed: boolean } | { ok: false; error: string }
 
 /**
  * The browser half of a payments adapter, named by the `driver` of GET /api/capabilities' payments client. `mount`
- * renders whatever the shopper pays with inside `el`; `confirm` completes a payment the API left `requires_action`.
+ * renders whatever the shopper pays with inside `el`; `confirm` completes a payment the API left `requires_action`,
+ * with the shopper's email and billing address when the checkout has them.
  */
 export interface PaymentDriver {
   mount(el: HTMLElement, options: Record<string, string>): Promise<void> | void
-  confirm(clientSecret: string): Promise<PaymentConfirmation>
+  confirm(clientSecret: string, context?: PaymentConfirmContext): Promise<PaymentConfirmation>
 }
 
 // On globalThis, like the registered client: a page that loads two copies of the SDK still has one registry.

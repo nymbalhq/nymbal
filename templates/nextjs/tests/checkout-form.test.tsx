@@ -349,6 +349,39 @@ describe('AC-2: the Next checkout confirms through the payment element', () => {
     expect(watch.claimedPaid()).toBe(true)
   })
 
+  it('AC-2: stripe on requires_action sends the contact email and the billing address (same as shipping) to confirmCardPayment as billing_details', async () => {
+    stripe = installFakeStripe()
+    const client = { driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_next_bill' } }
+    const api = fakeApi({ status: 'requires_action' }, client)
+    vi.stubGlobal('fetch', vi.fn(api.fetchImpl))
+    renderCheckout(client)
+
+    const button = await fillToPayment()
+    await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
+    await vi.waitFor(() => expect(button.disabled).toBe(false))
+    fireEvent.click(button)
+    await vi.waitFor(() => expect(toOrderPage().length).toBeGreaterThan(0))
+
+    expect(stripe.confirmCalls.map((c) => c.data)).toEqual([
+      {
+        payment_method: {
+          card: stripe.cards.at(-1)!.handle,
+          billing_details: {
+            email: 'ada@p2-05.test',
+            name: 'Ada Buyer',
+            address: {
+              line1: '1 Main St',
+              city: 'London',
+              state: 'England',
+              postal_code: 'E1 6AN',
+              country: 'GB',
+            },
+          },
+        },
+      },
+    ])
+  })
+
   it('AC-2: stripe answering with a Stripe error stays on checkout with its message, Place Order enabled, no navigation and no confirmed claim', async () => {
     stripe = installFakeStripe()
     stripe.answer = async () => ({ error: { message: 'Your card was declined (stripe next).' } })

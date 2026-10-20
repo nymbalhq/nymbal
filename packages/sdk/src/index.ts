@@ -7,7 +7,11 @@ export type {
 } from './client.js'
 
 export { registerPaymentDriver, getPaymentDriver } from './payment-drivers.js'
-export type { PaymentDriver, PaymentConfirmation } from './payment-drivers.js'
+export type {
+  PaymentDriver,
+  PaymentConfirmation,
+  PaymentConfirmContext,
+} from './payment-drivers.js'
 
 export { createStore } from './store/create-store.js'
 export type { Store, Listener } from './store/create-store.js'

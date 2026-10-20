@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getPaymentDriver, registerPaymentDriver, type PaymentDriver } from '@nymbalhq/sdk'
+import {
+  getPaymentDriver,
+  registerPaymentDriver,
+  type PaymentConfirmContext,
+  type PaymentDriver,
+} from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
 import {
   installFakeStripe,
@@ -32,7 +37,36 @@ afterEach(() => {
 })
 
 interface PaymentElement extends HTMLElement {
-  confirm(clientSecret: string): Promise<Confirmation>
+  confirm(clientSecret: string, context?: PaymentConfirmContext): Promise<Confirmation>
+}
+
+/** What a checkout holds when it confirms: the shopper's email and the billing address it set. */
+const CONTEXT: PaymentConfirmContext = {
+  email: 'ada@p2-05.test',
+  billing: {
+    firstName: 'Ada',
+    lastName: 'Buyer',
+    addressLine1: '1 Main St',
+    addressLine2: 'Flat 2',
+    city: 'London',
+    region: 'England',
+    postalCode: 'E1 6AN',
+    country: 'GB',
+  },
+}
+
+/** The same context as Stripe's `billing_details`. */
+const BILLING_DETAILS = {
+  email: 'ada@p2-05.test',
+  name: 'Ada Buyer',
+  address: {
+    line1: '1 Main St',
+    line2: 'Flat 2',
+    city: 'London',
+    state: 'England',
+    postal_code: 'E1 6AN',
+    country: 'GB',
+  },
 }
 
 /** The element as a page renders it: the client half as JSON in its `client` attribute. */
@@ -47,17 +81,19 @@ function mount(client: unknown): PaymentElement {
 function recordingDriver(answer: (secret: string) => Promise<Confirmation>) {
   const mounts: Array<{ el: HTMLElement; options: Record<string, string> }> = []
   const confirms: string[] = []
+  const contexts: Array<PaymentConfirmContext | undefined> = []
   const driver: PaymentDriver = {
     mount(el: HTMLElement, options: Record<string, string>) {
       mounts.push({ el, options })
       el.insertAdjacentHTML('beforeend', '<p data-p2-05-driver>own driver</p>')
     },
-    confirm(clientSecret: string) {
+    confirm(clientSecret: string, context?: PaymentConfirmContext) {
       confirms.push(clientSecret)
+      contexts.push(context)
       return answer(clientSecret)
     },
   }
-  return { driver, mounts, confirms }
+  return { driver, mounts, confirms, contexts }
 }
 
 /** Lets a render queued on a microtask or the next task run: absence can only be read once it has had its turn. */
@@ -177,5 +213,37 @@ describe('nymbal-payment-element', () => {
       (c) => (c.data as { payment_method?: { card?: unknown } } | undefined)?.payment_method?.card,
     )
     expect(confirmedWith).toEqual([stripe.cards[0]!.handle, stripe.cards[0]!.handle])
+  })
+
+  it('AC-2: confirm hands the driver the checkout’s email and billing address as given', async () => {
+    const own = recordingDriver(async () => ({ ok: true, confirmed: true }))
+    registerPaymentDriver('p2-05-own-context', own.driver)
+    const el = mount({ driver: 'p2-05-own-context', options: {} })
+    await vi.waitFor(() => expect(own.mounts.length).toBeGreaterThan(0))
+
+    await el.confirm('pi_p2_05_ctx_secret_1', CONTEXT)
+
+    expect(own.confirms).toEqual(['pi_p2_05_ctx_secret_1'])
+    expect(own.contexts).toEqual([CONTEXT])
+  })
+
+  it('AC-2: stripe confirm sends the checkout’s email, name and billing address to confirmCardPayment as billing_details, beside the mounted card', async () => {
+    stripe = installFakeStripe()
+    const el = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_c' } })
+    await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
+
+    expect(await el.confirm('pi_p2_05_billing_secret_1', CONTEXT)).toEqual({
+      ok: true,
+      confirmed: true,
+    })
+
+    expect(stripe.confirmCalls).toEqual([
+      {
+        clientSecret: 'pi_p2_05_billing_secret_1',
+        data: {
+          payment_method: { card: stripe.cards[0]!.handle, billing_details: BILLING_DETAILS },
+        },
+      },
+    ])
   })
 })

@@ -1,4 +1,4 @@
-import type { PaymentConfirmation, PaymentDriver } from '@nymbalhq/sdk'
+import type { PaymentConfirmContext, PaymentConfirmation, PaymentDriver } from '@nymbalhq/sdk'
 
 // Stripe.js from Stripe's own host, as Stripe requires, so no project installs a Stripe package to take a card.
 const STRIPE_JS = 'https://js.stripe.com/v3/'
@@ -7,12 +7,45 @@ interface StripeCard {
   mount(target: HTMLElement): void
 }
 
+interface StripeBillingDetails {
+  email?: string
+  name?: string
+  address?: {
+    line1: string
+    line2?: string
+    city: string
+    state: string
+    postal_code: string
+    country: string
+  }
+}
+
 interface StripeInstance {
   elements(): { create(type: 'card', options?: Record<string, unknown>): StripeCard }
   confirmCardPayment(
     clientSecret: string,
-    data: { payment_method: { card: StripeCard } },
+    data: { payment_method: { card: StripeCard; billing_details?: StripeBillingDetails } },
   ): Promise<{ paymentIntent?: { status: string }; error?: { message?: string } }>
+}
+
+/** The checkout's shopper details as Stripe's `billing_details`, which its fraud checks read; none when empty. */
+function billingDetails(context: PaymentConfirmContext | undefined): StripeBillingDetails | undefined {
+  const details: StripeBillingDetails = {}
+  if (context?.email) details.email = context.email
+  const billing = context?.billing
+  if (billing) {
+    const name = `${billing.firstName} ${billing.lastName}`.trim()
+    if (name) details.name = name
+    details.address = {
+      line1: billing.addressLine1,
+      ...(billing.addressLine2 ? { line2: billing.addressLine2 } : {}),
+      city: billing.city,
+      state: billing.region,
+      postal_code: billing.postalCode,
+      country: billing.country,
+    }
+  }
+  return Object.keys(details).length > 0 ? details : undefined
 }
 
 type StripeFactory = (publishableKey: string) => StripeInstance
@@ -71,11 +104,12 @@ export const stripeDriver: PaymentDriver = {
     ]
   },
 
-  async confirm(clientSecret): Promise<PaymentConfirmation> {
+  async confirm(clientSecret, context): Promise<PaymentConfirmation> {
     const current = mounted.findLast((m) => m.host.isConnected) ?? mounted.at(-1)
     if (current === undefined) return { ok: false, error: 'The card form is not ready.' }
+    const billing_details = billingDetails(context)
     const result = await current.stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card: current.card },
+      payment_method: { card: current.card, ...(billing_details ? { billing_details } : {}) },
     })
     if (result.error) return { ok: false, error: result.error.message ?? 'Payment failed.' }
     // `processing` is accepted but not paid yet: the webhook confirms it.

@@ -250,17 +250,18 @@ export function CheckoutForm({ capabilities }: { capabilities: StoreCapabilities
       setProcessing(true)
       setError(null)
 
-      const billing = sameAsShipping ? shippingAddress : billingAddress
-      checkout.setBillingAddress({
-        firstName: billing.firstName,
-        lastName: billing.lastName,
-        addressLine1: billing.addressLine1,
-        addressLine2: billing.addressLine2 || undefined,
-        city: billing.city,
-        region: billing.region,
-        postalCode: billing.postalCode,
-        country: billing.country,
-      })
+      const fields = sameAsShipping ? shippingAddress : billingAddress
+      const billing = {
+        firstName: fields.firstName,
+        lastName: fields.lastName,
+        addressLine1: fields.addressLine1,
+        addressLine2: fields.addressLine2 || undefined,
+        city: fields.city,
+        region: fields.region,
+        postalCode: fields.postalCode,
+        country: fields.country,
+      }
+      checkout.setBillingAddress(billing)
 
       const stay = (message: string) => {
         setError(message)
@@ -286,6 +287,7 @@ export function CheckoutForm({ capabilities }: { capabilities: StoreCapabilities
         if (result.payment.status === 'requires_action') {
           const confirmation: PaymentConfirmation = (await paymentRef.current?.confirm(
             result.paymentIntent.clientSecret,
+            { email: email || undefined, billing },
           )) ?? { ok: true, confirmed: false }
           if (!confirmation.ok) return stay(confirmation.error)
           if (confirmation.confirmed) checkout.markConfirmed()
@@ -295,7 +297,16 @@ export function CheckoutForm({ capabilities }: { capabilities: StoreCapabilities
         stay(err instanceof Error ? err.message : 'Something went wrong.')
       }
     },
-    [paymentBlocked, shippingAddress, billingAddress, sameAsShipping, checkout, client, router],
+    [
+      paymentBlocked,
+      email,
+      shippingAddress,
+      billingAddress,
+      sameAsShipping,
+      checkout,
+      client,
+      router,
+    ],
   )
 
   return (

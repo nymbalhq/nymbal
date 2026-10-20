@@ -1,4 +1,9 @@
-import { getPaymentDriver, type PaymentConfirmation, type PaymentDriver } from '@nymbalhq/sdk'
+import {
+  getPaymentDriver,
+  type PaymentConfirmContext,
+  type PaymentConfirmation,
+  type PaymentDriver,
+} from '@nymbalhq/sdk'
 import type { PaymentClient } from '@nymbalhq/types'
 import { HTMLElementBase } from '../base-element.js'
 import { injectStyles } from '../styles.js'
@@ -75,13 +80,16 @@ export class NymbalPaymentElement extends HTMLElementBase {
     if (this.isConnected) this.render()
   }
 
-  /** Completes a payment the API left `requires_action`, once the driver has mounted; the driver's answer as is. */
-  async confirm(clientSecret: string): Promise<PaymentConfirmation> {
+  /**
+   * Completes a payment the API left `requires_action`, once the driver has mounted, handing the driver the
+   * checkout's `context`; the driver's answer as is.
+   */
+  async confirm(clientSecret: string, context?: PaymentConfirmContext): Promise<PaymentConfirmation> {
     const driver = this._driver
     if (this._status === 'error') return { ok: false, error: this._error }
     if (driver === null) return NO_PAYMENT_STEP
     if (!(await this._mounted)) return { ok: false, error: this._error }
-    return driver.confirm(clientSecret)
+    return driver.confirm(clientSecret, context)
   }
 
   private render(): void {

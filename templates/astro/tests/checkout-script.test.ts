@@ -240,7 +240,8 @@ async function loadCheckout(client: PaymentClient, bootstrap?: () => void): Prom
   return { claimedPaid: () => statuses.includes('succeeded') }
 }
 
-function fillToPayment() {
+/** Contact, then the shipping address, short of pressing Continue on it. */
+function fillToShippingContinue() {
   setValue('contact-email', 'ada@p2-05.test')
   byTestId('contact-continue').click()
   setValue('shipping-firstName', 'Ada')
@@ -250,7 +251,18 @@ function fillToPayment() {
   setValue('shipping-region', 'England')
   setValue('shipping-postalCode', 'E1 6AN')
   setValue('shipping-country', 'GB')
+}
+
+function fillToPayment() {
+  fillToShippingContinue()
   byTestId('shipping-continue').click()
+}
+
+/** The click a browser fires for the `count`th press of a multi-click, at wherever the pointer is. */
+function clickNumber(id: string, count: number) {
+  byTestId(id).dispatchEvent(
+    new MouseEvent('click', { bubbles: true, cancelable: true, detail: count }),
+  )
 }
 
 /** Contact, shipping, then Place Order once the page lets the shopper press it. */
@@ -407,6 +419,37 @@ describe('AC-2: the Astro checkout confirms through the payment element', () => 
     expect(watch.claimedPaid()).toBe(true)
   })
 
+  it('AC-2: stripe on requires_action sends the contact email and the billing address (same as shipping) to confirmCardPayment as billing_details', async () => {
+    stripe = installFakeStripe()
+    const client = { driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_astro_bill' } }
+    const api = fakeApi({ status: 'requires_action' }, client)
+    vi.stubGlobal('fetch', vi.fn(api.fetchImpl))
+    await loadCheckout(client)
+    await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
+
+    await placeOrder()
+    await vi.waitFor(() => expect(toOrderPage().length).toBeGreaterThan(0))
+
+    expect(stripe.confirmCalls.map((c) => c.data)).toEqual([
+      {
+        payment_method: {
+          card: stripe.cards.at(-1)!.handle,
+          billing_details: {
+            email: 'ada@p2-05.test',
+            name: 'Ada Buyer',
+            address: {
+              line1: '1 Main St',
+              city: 'London',
+              state: 'England',
+              postal_code: 'E1 6AN',
+              country: 'GB',
+            },
+          },
+        },
+      },
+    ])
+  })
+
   it('AC-2: stripe answering with a Stripe error stays on checkout with its message, Place Order enabled, no navigation and no confirmed claim', async () => {
     stripe = installFakeStripe()
     stripe.answer = async () => ({ error: { message: 'Your card was declined (stripe astro).' } })
@@ -468,5 +511,25 @@ describe('AC-2: the Astro checkout confirms through the payment element', () => 
 
     expect(toOrderPage()).toEqual([])
     expect(own.confirms).toEqual([])
+  })
+
+  it('Store walk: a double click on shipping Continue shows the payment step and places no order; Place Order pressed after it places one', async () => {
+    const api = fakeApi({ status: 'succeeded' }, null)
+    vi.stubGlobal('fetch', vi.fn(api.fetchImpl))
+    await loadCheckout(null)
+
+    fillToShippingContinue()
+    // The first click advances to payment; the second lands on Place Order, rendered where Continue was.
+    clickNumber('shipping-continue', 1)
+    clickNumber('place-order', 2)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(api.checkoutPosts()).toBe(0)
+    expect(toOrderPage()).toEqual([])
+    expect(document.getElementById('checkout-payment')!.style.display).toBe('')
+
+    clickNumber('place-order', 1)
+    await vi.waitFor(() => expect(toOrderPage().length).toBeGreaterThan(0))
+    expect(api.checkoutPosts()).toBe(1)
   })
 })
