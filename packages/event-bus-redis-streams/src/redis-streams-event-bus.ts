@@ -34,6 +34,8 @@ interface Sub {
   live: boolean
   /** Unnamed only: the stream's last entry when it subscribed; it receives what comes after. */
   since?: string
+  /** Unnamed only: its starting point is still being read; what the tail feeds it meanwhile waits in the queue. */
+  starting: boolean
   queue: Array<{ entryId: string; event: NymbalEvent }>
   running: Promise<void> | null
 }
@@ -221,6 +223,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       handler,
       derived: config?.derived === true,
       live: true,
+      starting: false,
       queue: [],
       running: null,
     }
@@ -250,8 +253,23 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       group.claimDue = true
       void this.#drainGroup(group)
     } else {
-      sub.since = await this.#lastId()
+      // Joins before its starting point is read: an entry the tail reads meanwhile is queued, then kept if it is later.
+      sub.since = this.#tailFrom
+      sub.starting = true
       this.#subs.set(sub.id, sub)
+      let last: string
+      try {
+        last = await this.#lastId()
+      } catch (error) {
+        sub.live = false
+        this.#subs.delete(sub.id)
+        throw error
+      }
+      sub.since = last
+      sub.starting = false
+      const later = sub.queue.filter((q) => compareIds(q.entryId, last) > 0)
+      sub.queue.splice(0, sub.queue.length, ...later)
+      if (sub.queue.length > 0 && sub.running === null) sub.running = this.#runQueue(sub)
     }
     this.#startTick()
     const self = this
@@ -305,7 +323,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
         targets.add(`g:${group.name}`)
     }
     for (const sub of this.#subs.values()) {
-      if (sub.since !== undefined && sub.live && matches(sub, event.type))
+      if (sub.since !== undefined && sub.live && !sub.starting && matches(sub, event.type))
         targets.add(`s:${sub.id}`)
     }
     let resolve!: () => void
@@ -492,7 +510,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       if (sub.since === undefined || !sub.live || compareIds(entryId, sub.since) <= 0) continue
       if (!matches(sub, event.type)) continue
       sub.queue.push({ entryId, event })
-      if (sub.running === null) sub.running = this.#runQueue(sub)
+      if (sub.running === null && !sub.starting) sub.running = this.#runQueue(sub)
     }
   }
 
@@ -611,10 +629,14 @@ export class RedisStreamsEventBus implements EventBusAdapter {
     } while (start !== '0-0')
   }
 
-  /** Handles each entry for the group's matching subscriptions, then acknowledges it; non-matching ones in bulk. */
+  /**
+   * Handles each entry for the group's matching subscriptions, then acknowledges it; non-matching ones in bulk. Once
+   * the group has no live subscription here, the rest stay pending, for a live consumer of the group to take over.
+   */
   async #handle(group: Group, entries: Entry[]): Promise<void> {
     const skipped: string[] = []
     for (const entry of entries) {
+      if (![...group.subs].some((s) => s.live)) break
       const event = entry.event
       const subs =
         event === null ? [] : [...group.subs].filter((s) => s.live && matches(s, event.type))

@@ -38,7 +38,7 @@ afterAll(async () => {
 runDocumentStoreContract('redis', make, opts)
 documentStoreAcceptance('redis', make, opts)
 
-/** The same server, logical database 15, which only this file's prefixes write to. */
+/** The same server, logical database 15, which only the P2-02 store suites' prefixes write to. */
 function onDb15(): string {
   const u = new URL(url)
   u.pathname = '/15'
@@ -46,7 +46,7 @@ function onDb15(): string {
 }
 
 describe('P2-02 AC-2: the Redis document store keeps everything under its prefix', () => {
-  it('AC-2: after puts with and without a TTL, a batchPut and a delete, every key in the database is under a prefix of this run, and some are under the store’s', async () => {
+  it('AC-2: after puts with and without a TTL, a batchPut and a delete, every key in the database is under a P2-02 test prefix (the stores suites share it, in parallel), and some are under the store’s', async () => {
     const prefix = `${run}-ns`
     const store = await storeOn(prefix, onDb15())
     try {
@@ -59,7 +59,7 @@ describe('P2-02 AC-2: the Redis document store keeps everything under its prefix
       const ours = await keysUnder(onDb15(), prefix)
       const everything = await keysUnder(onDb15(), '')
       expect(ours.length).toBeGreaterThan(0)
-      expect(everything.filter((key) => !key.startsWith('p2-02-doc-redis-'))).toEqual([])
+      expect(everything.filter((key) => !key.startsWith('p2-02-'))).toEqual([])
     } finally {
       await store.close()
     }

@@ -65,7 +65,7 @@ function event(type: string) {
 }
 
 describe('P2-02 AC-3 (decision 4): the Redis Streams bus keeps its streams under the prefix, trimmed', () => {
-  it('AC-3: with streamMaxLen 20, after 300 publishes and a named and an unnamed subscription, every key in the database is under a prefix of this run, and the streams hold fewer entries than were published', async () => {
+  it('AC-3: with streamMaxLen 20, after 300 publishes and a named and an unnamed subscription, every key in the database is under a P2-02 test prefix (the stores suites share it, in parallel), and the streams hold fewer entries than were published', async () => {
     const p = `${run}-trim`
     const bus = await busOn(p, { streamMaxLen: 20 }, onDb15())
     try {
@@ -80,7 +80,7 @@ describe('P2-02 AC-3 (decision 4): the Redis Streams bus keeps its streams under
 
       const ours = await keysUnder(onDb15(), p)
       const everything = await keysUnder(onDb15(), '')
-      expect(everything.filter((key) => !key.startsWith('p2-02-streams-'))).toEqual([])
+      expect(everything.filter((key) => !key.startsWith('p2-02-'))).toEqual([])
       const types = await redis(
         onDb15(),
         ours.map((key) => ['TYPE', key]),
