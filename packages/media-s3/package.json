@@ -21,10 +21,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./recipes/*": "./recipes/*"
   },
   "files": [
-    "dist"
+    "dist",
+    "recipes"
   ],
   "scripts": {
     "build": "tsup",

@@ -140,7 +140,7 @@ jobs:
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
       - name: Proof kit services (Postgres race, Mailpit sink)
         run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
-      - name: Document stores and event bus on Redis and Postgres JSONB, the kernel on them, the E2E harness
+      - name: Document stores and event bus on Redis and Postgres JSONB, the kernel on them, the E2E harness, nymbal add redis on a scaffold
         run: pnpm exec tsx scripts/gate.ts --full --only integration-stores --no-build --services external --base "$GATE_BASE"
       - name: Platform and importers integration, contracts
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native

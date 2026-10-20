@@ -6,6 +6,7 @@ import { migrateCommand } from './commands/migrate.js'
 import { seedCommand } from './commands/seed.js'
 import { importCommand } from './commands/import.js'
 import { configValidateCommand } from './commands/config-validate.js'
+import { addCommand } from './commands/add.js'
 import {
   testAllCommand,
   testCommand,
@@ -30,6 +31,7 @@ const main = defineCommand({
     seed: seedCommand,
     import: importCommand,
     'config:validate': configValidateCommand,
+    add: addCommand,
     test: testCommand,
     'test:e2e': testE2eCommand,
     'test:visual': testVisualCommand,

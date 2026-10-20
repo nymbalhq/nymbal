@@ -44,6 +44,7 @@
     "@nymbalhq/platform": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "citty": "^0.1.6",
+    "magicast": "^0.5.5",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

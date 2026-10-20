@@ -5,7 +5,7 @@ export {
   type CommerceAdapters,
   type InjectedAdapters,
 } from './registry.js'
-export { PROVIDER_PACKAGES, type ProviderPackage } from './loader.js'
+export { installLine, PROVIDER_PACKAGES, type ProviderPackage } from './loader.js'
 export { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
 export { RateLimiter } from './security/rate-limit.js'
 export { buildSecurityHeaders, CSRF_COOKIE, CSRF_HEADER } from './security/headers.js'
