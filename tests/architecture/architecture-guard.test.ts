@@ -33,6 +33,7 @@ const GUARDED_PACKAGES = [
   'doc-store-redis',
   'doc-store-postgres-jsonb',
   'event-bus-redis-streams',
+  'media-s3',
 ] as const
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.

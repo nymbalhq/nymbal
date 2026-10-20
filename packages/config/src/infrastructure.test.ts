@@ -20,11 +20,12 @@ const SPEC_VALUES: Record<Slot, readonly string[]> = {
   commandStore: ['sqlite', 'postgres'],
   documentStore: ['in-memory', 'redis', 'postgres-jsonb'],
   eventBus: ['in-process', 'redis-streams'],
-  media: ['local-fs'],
+  // P2-11 decision 2 adds s3, and its `s3` block below.
+  media: ['local-fs', 's3'],
 }
 
 const EVERY_VALUE = new Set(Object.values(SPEC_VALUES).flat())
-const KNOWN_KEYS = new Set<string>([...SLOTS, 'redis'])
+const KNOWN_KEYS = new Set<string>([...SLOTS, 'redis', 's3'])
 
 const dirs: string[] = []
 afterAll(() => {
