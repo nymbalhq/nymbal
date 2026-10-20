@@ -17,11 +17,9 @@ function configWith(provider: string): NymbalConfig {
     store: { name: 'Shop', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: 'sqlite',
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: { adapter: 'middleware' },
     commerce: {
@@ -43,7 +41,9 @@ describe('nymbal dev storefront environment', () => {
   it('AC-6: any provider other than stripe sets both payments-provider variables to native-stub', () => {
     fc.assert(
       fc.property(
-        fc.constantFrom(...KNOWN_PROVIDERS.payments.filter((p: string) => p !== 'stripe' && p !== 'custom')),
+        fc.constantFrom(
+          ...KNOWN_PROVIDERS.payments.filter((p: string) => p !== 'stripe' && p !== 'custom'),
+        ),
         fc.integer({ min: 1024, max: 65535 }),
         (provider, port) => {
           fc.pre(provider !== 'stripe')

@@ -58,7 +58,10 @@
   "peerDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:^",
     "@nymbalhq/adapter-smtp": "workspace:^",
-    "@nymbalhq/adapter-stripe": "workspace:^"
+    "@nymbalhq/adapter-stripe": "workspace:^",
+    "@nymbalhq/doc-store-postgres-jsonb": "workspace:^",
+    "@nymbalhq/doc-store-redis": "workspace:^",
+    "@nymbalhq/event-bus-redis-streams": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@nymbalhq/adapter-anthropic": {
@@ -69,12 +72,24 @@
     },
     "@nymbalhq/adapter-stripe": {
       "optional": true
+    },
+    "@nymbalhq/doc-store-postgres-jsonb": {
+      "optional": true
+    },
+    "@nymbalhq/doc-store-redis": {
+      "optional": true
+    },
+    "@nymbalhq/event-bus-redis-streams": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:*",
     "@nymbalhq/adapter-smtp": "workspace:*",
     "@nymbalhq/adapter-stripe": "workspace:*",
+    "@nymbalhq/doc-store-postgres-jsonb": "workspace:*",
+    "@nymbalhq/doc-store-redis": "workspace:*",
+    "@nymbalhq/event-bus-redis-streams": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",
     "@types/pg": "^8.11.10",

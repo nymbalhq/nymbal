@@ -1,5 +1,6 @@
-export { runDocumentStoreContract } from './document-store.js'
-export { runEventBusContract } from './event-bus.js'
+export { runDocumentStoreContract, type DocumentStoreContractOptions } from './document-store.js'
+export { runEventBusContract, type EventBusContractOptions } from './event-bus.js'
+export { runMediaStorageContract } from './media-storage.js'
 export { runPaymentsContract } from './payments.js'
 export { runEmailContract } from './email.js'
 export { runReviewsContract } from './reviews.js'

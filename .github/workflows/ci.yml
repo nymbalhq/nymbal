@@ -78,6 +78,7 @@ jobs:
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
     services:
       postgres:
         image: postgres:16-alpine
@@ -129,6 +130,8 @@ jobs:
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
       - name: Proof kit services (Postgres race, Mailpit sink)
         run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
+      - name: Document stores and event bus on Redis and Postgres JSONB, the kernel on them, the E2E harness
+        run: pnpm exec tsx scripts/gate.ts --full --only integration-stores --no-build --services external --base "$GATE_BASE"
       - name: Platform and importers integration, contracts
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
@@ -175,6 +178,7 @@ jobs:
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
     services:
       postgres:
         image: postgres:16-alpine
@@ -236,7 +240,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      # integration-postgres and proof-kit-services have their own job, with the services they need.
+      # integration-postgres, integration-stores and proof-kit-services have their own job, with the services they need.
       # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
       # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
@@ -246,7 +250,7 @@ jobs:
           status=0
           pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
             --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
-            --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**' || status=$?
+            --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**' || status=$?
           node -e '
             const fs = require("fs")
             const out = ["## Coverage", ""]

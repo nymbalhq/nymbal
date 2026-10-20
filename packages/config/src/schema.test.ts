@@ -5,13 +5,12 @@ function baseConfig(): NymbalConfigInput {
   return {
     store: { name: 'Test', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro' as const,
+    // P2-02 decision 1: cloud and compute are gone; the cast keeps this compiling until the schema drops them.
     infrastructure: {
-      cloud: 'local' as const,
       commandStore: 'sqlite' as const,
       documentStore: 'in-memory' as const,
       eventBus: 'in-process' as const,
-      compute: 'in-process' as const,
-    },
+    } as NymbalConfigInput['infrastructure'],
     security: { adapter: 'middleware' as const, rateLimit: {}, csrf: true },
     commerce: {
       payments: { provider: 'stripe', config: { secretKey: 's', webhookSecret: 'w' } },
@@ -32,7 +31,7 @@ describe('nymbalConfigSchema', () => {
   it('accepts a valid local config', () => {
     const parsed = nymbalConfigSchema.parse(baseConfig())
     expect(parsed.template).toBe('astro')
-    expect(parsed.infrastructure.cloud).toBe('local')
+    expect(parsed.infrastructure.commandStore).toBe('sqlite')
     expect(parsed.features.staging).toBe(false)
   })
 
@@ -54,29 +53,9 @@ describe('nymbalConfigSchema', () => {
     expect(issues.some((i) => i.path.includes('template'))).toBe(true)
   })
 
-  it('rejects cloud=local with documentStore=dynamodb', () => {
-    const cfg = baseConfig()
-    cfg.infrastructure.documentStore = 'dynamodb'
-    const result = nymbalConfigSchema.safeParse(cfg)
-    expect(result.success).toBe(false)
-  })
-
-  it('rejects middleware adapter with aws cloud', () => {
-    const cfg = baseConfig()
-    cfg.infrastructure.cloud = 'aws'
-    cfg.infrastructure.documentStore = 'dynamodb'
-    cfg.infrastructure.eventBus = 'eventbridge'
-    cfg.infrastructure.compute = 'lambda'
-    // Security stays middleware — should fail cross-field rule
-    const result = nymbalConfigSchema.safeParse(cfg)
-    expect(result.success).toBe(false)
-    const issues = result.success ? [] : result.error.issues
-    expect(issues.some((i) => i.message.includes('middleware'))).toBe(true)
-  })
-
   it('rejects malformed rate-limit key', () => {
     const cfg = baseConfig()
-    cfg.security.rateLimit = { 'bad_key': { requests: 10, window: '60s', action: 'block' } }
+    cfg.security.rateLimit = { bad_key: { requests: 10, window: '60s', action: 'block' } }
     const result = nymbalConfigSchema.safeParse(cfg)
     expect(result.success).toBe(false)
   })
@@ -96,10 +75,12 @@ describe('nymbalConfigSchema', () => {
 
   it('accepts explicit CORS origins override', () => {
     const input = baseConfig() as unknown as Record<string, unknown>
-    input.http = { ...(input.http as object), cors: { allowedOrigins: ['https://shop.example.com'], credentials: false } }
+    input.http = {
+      ...(input.http as object),
+      cors: { allowedOrigins: ['https://shop.example.com'], credentials: false },
+    }
     const cfg = nymbalConfigSchema.parse(input)
     expect(cfg.http.cors.allowedOrigins).toEqual(['https://shop.example.com'])
     expect(cfg.http.cors.credentials).toBe(false)
   })
-
 })

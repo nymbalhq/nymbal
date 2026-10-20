@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build",
     "build:templates": "pnpm -r --filter './templates/**' build",
-    "test": "vitest run --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**'",
+    "test": "vitest run --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'",
     "test:watch": "vitest",
     "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck && pnpm --filter @nymbalhq/template-astro typecheck",
     "typecheck:astro": "pnpm --filter @nymbalhq/template-astro typecheck",
@@ -24,13 +24,14 @@
     "mutation": "stryker run",
     "mutation:ratchet": "tsx scripts/mutation-ratchet.ts",
     "census": "tsx scripts/test-census.ts",
-    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**'\"",
+    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**' --exclude 'packages/doc-store-*/src/**' --exclude 'packages/event-bus-*/src/**' --exclude 'packages/platform/tests/primitives/**' --exclude 'tests/stores/**'\"",
     "gate": "tsx scripts/gate.ts",
     "gate:full": "tsx scripts/gate.ts --full"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
     "@lhci/cli": "0.15.1",
+    "@nymbalhq/config": "workspace:*",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@testing-library/jest-dom": "^6.4.0",

@@ -27,12 +27,15 @@ export type CommerceSlot =
   | 'tax'
   | 'ai'
 
+/** Every slot an adapter package can fill: the commerce slots and the infrastructure primitives. */
+export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media'
+
 /**
  * What the kernel hands an adapter package's `createAdapter`. A package that serves more than one slot switches on
- * `slot`; `config` is the slot's `config` block from nymbal.config.ts.
+ * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, or a primitive's connection block.
  */
 export interface AdapterContext {
-  slot: CommerceSlot
+  slot: Slot
   config: Record<string, unknown>
   logger: Logger
   env: NodeJS.ProcessEnv

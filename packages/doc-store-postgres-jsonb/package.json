@@ -1,0 +1,49 @@
+{
+  "name": "@nymbalhq/doc-store-postgres-jsonb",
+  "version": "0.2.0",
+  "description": "The Postgres JSONB document store for Nymbal: `infrastructure.documentStore: 'postgres-jsonb'`",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/doc-store-postgres-jsonb"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@nymbalhq/contract-tests": "workspace:*",
+    "@types/pg": "^8.11.10",
+    "fast-check": "^4.10.2",
+    "pg": "^8.13.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}
