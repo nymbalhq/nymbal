@@ -101,7 +101,8 @@ const arbPaymentCaps = fc.subarray(['intent', 'capture', 'refund', 'webhook', 'p
 
 /** A payments adapter of the project's own: the stub's behaviour, with the generated client half and capabilities. */
 function injectedPayments(tag: string, caps: string[], client: ClientShape) {
-  const stub = createNativeStubPaymentsAdapter({ logger })
+  // The stub's own client() reports test-mode (decision 2); an adapter without a client half must not inherit it.
+  const { client: _stubClient, ...stub } = createNativeStubPaymentsAdapter({ logger })
   return {
     ...stub,
     providerName: `p2-05-payments-${tag}`,

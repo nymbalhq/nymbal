@@ -10,9 +10,9 @@ import { randomUUID } from 'node:crypto'
 // - payments: the native stub's `+stub-*` receipt-email rules, with `client()` null, so the storefront has no payment
 //   step to render.
 
-type Health = { status: 'healthy' | 'degraded' | 'down'; detail?: string }
+export type Health = { status: 'healthy' | 'degraded' | 'down'; detail?: string }
 
-interface Doc {
+export interface Doc {
   id: string
   type: string
   fields: Record<string, unknown>
@@ -64,7 +64,7 @@ export function createFixtureSearchAdapter() {
   }
 }
 
-type PaymentStatus =
+export type PaymentStatus =
   | 'requires_payment_method'
   | 'requires_confirmation'
   | 'requires_action'
@@ -74,7 +74,7 @@ type PaymentStatus =
   | 'cancelled'
   | 'failed'
 
-interface Intent {
+export interface Intent {
   id: string
   amountMinor: number
   currency: string
