@@ -26,6 +26,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/doc-store-postgres-jsonb',
   '@nymbalhq/doc-store-redis',
   '@nymbalhq/event-bus-redis-streams',
+  '@nymbalhq/media-s3',
   '@nymbalhq/proof-kit',
   '@nymbalhq/test-factories',
 ])

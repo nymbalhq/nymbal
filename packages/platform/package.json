@@ -61,7 +61,8 @@
     "@nymbalhq/adapter-stripe": "workspace:^",
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:^",
     "@nymbalhq/doc-store-redis": "workspace:^",
-    "@nymbalhq/event-bus-redis-streams": "workspace:^"
+    "@nymbalhq/event-bus-redis-streams": "workspace:^",
+    "@nymbalhq/media-s3": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@nymbalhq/adapter-anthropic": {
@@ -81,6 +82,9 @@
     },
     "@nymbalhq/event-bus-redis-streams": {
       "optional": true
+    },
+    "@nymbalhq/media-s3": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -90,6 +94,7 @@
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:*",
     "@nymbalhq/doc-store-redis": "workspace:*",
     "@nymbalhq/event-bus-redis-streams": "workspace:*",
+    "@nymbalhq/media-s3": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",
     "@types/pg": "^8.11.10",

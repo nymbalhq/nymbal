@@ -14,6 +14,7 @@ export {
   storeSchema,
   infrastructureSchema,
   redisSchema,
+  s3Schema,
   securitySchema,
   commerceSchema,
   httpSchema,

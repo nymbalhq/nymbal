@@ -1,10 +1,8 @@
-import type { AiAdapter } from '@nymbalhq/types'
+import type { AiAdapter, MediaStorage } from '@nymbalhq/types'
 import type {
   ServiceRegistry,
   Repositories,
 } from '@nymbalhq/platform'
-import { createLocalFsMediaStorage } from '@nymbalhq/platform'
-import { join } from 'node:path'
 import type { WooCommerceImportOptions, ImportState, ProgressCallback } from '../types.js'
 import { loadState, freshState, saveState } from '../state.js'
 import { buildReport } from '../report.js'
@@ -24,6 +22,8 @@ export interface WooCommerceImporterDeps {
   repos: Repositories
   /** `ai` is null when the store's ai provider is `none`, and enrichment is skipped. */
   adapters: { ai: AiAdapter | null; reviews: ReviewsAdapter }
+  /** The store's media storage (`app.platform.media`): every product image is put here. */
+  media: MediaStorage
   onProgress?: ProgressCallback
 }
 
@@ -55,14 +55,10 @@ export async function runWooCommerceImport(
   deps: WooCommerceImporterDeps,
 ) {
   const startMs = Date.now()
-  const { services, adapters, onProgress } = deps
+  const { services, adapters, media, onProgress } = deps
   const emit = onProgress ?? (() => undefined)
 
   const client = new WooCommerceClient(opts.credentials)
-  const storage = createLocalFsMediaStorage({
-    root: join(opts.projectRoot, 'public', 'imported-media'),
-    urlPrefix: '/imported-media',
-  })
 
   // Load or create state
   let state: ImportState = opts.fresh
@@ -148,7 +144,10 @@ export async function runWooCommerceImport(
           const suffix = seenSlugs.has(slug) ? String(wc.id) : ''
           seenSlugs.add(slug)
 
-          const mediaItems = await downloadProductImages(wc.images, slug, storage)
+          const mediaItems = await downloadProductImages(wc.images, slug, media, (err) => {
+            state.errors.push({ phase: 'media', id: String(wc.id), error: String(err) })
+            emit({ kind: 'error', phase: 'media', id: String(wc.id), message: String(err) })
+          })
 
           try {
             const snap = await services.product.create(
