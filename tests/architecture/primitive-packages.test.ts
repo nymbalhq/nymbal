@@ -9,6 +9,9 @@ import { REPO_ROOT, type Manifest } from './workspace-manifests'
 // out of the scaffold's dependencies. No kernel source file imports ioredis. PUBLISHED_DIRS (workspace-names.test.ts)
 // and GUARDED_PACKAGES (architecture-guard.test.ts) list the three as well. Kills: a primitive SDK entering the
 // kernel's install, a package depending on the kernel (a cycle), and a package outside the release group.
+// P2-11 AC-2 (spec P2-11-s3-media, decision 1) adds @nymbalhq/media-s3, which peers @aws-sdk/client-s3: the same rules
+// hold for it, and the kernel's dependencies and source name no @aws-sdk/* package. Kills: the kernel bundling the
+// SDK, and the new package drifting from the group's version (PR #44's defect).
 
 interface PackageManifest extends Manifest {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
@@ -28,6 +31,7 @@ const PRIMITIVES = [
     name: '@nymbalhq/event-bus-redis-streams',
     sdk: 'ioredis',
   },
+  { dir: 'packages/media-s3', name: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' },
 ] as const
 
 const NAMES: readonly string[] = PRIMITIVES.map((p) => p.name)
@@ -74,9 +78,10 @@ function specifiers(source: string): string[] {
 }
 
 const isRedisSdk = (spec: string): boolean => spec === 'ioredis' || spec.startsWith('ioredis/')
+const isAwsSdk = (spec: string): boolean => spec.startsWith('@aws-sdk/')
 
 describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in the kernel', () => {
-  it("AC-6: the kernel's dependencies hold no ioredis, and it peers the three packages, each optional, at workspace:^", () => {
+  it("AC-6: the kernel's dependencies hold no ioredis, and it peers the primitive packages, each optional, at workspace:^", () => {
     const platform = read('packages/platform')
     const optional = Object.entries(platform.peerDependenciesMeta ?? {})
       .filter(([, meta]) => meta.optional === true)
@@ -105,7 +110,7 @@ describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in th
     })
   }
 
-  it('AC-6: the three packages version in the fixed group the kernel is in, and none is a scaffold dependency', async () => {
+  it('AC-6: the primitive packages version in the fixed group the kernel is in, and none is a scaffold dependency', async () => {
     // An untyped script module: imported through a variable, so it is loaded as it is, without declarations.
     const { NON_SCAFFOLD_PACKAGES } = (await import(SCAFFOLD_SCRIPT)) as {
       NON_SCAFFOLD_PACKAGES: ReadonlySet<string>
@@ -117,6 +122,21 @@ describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in th
 
     expect(NAMES.filter((n) => group.includes(n)).length).toBe(NAMES.length)
     expect(NAMES.filter((n) => NON_SCAFFOLD_PACKAGES.has(n)).length).toBe(NAMES.length)
+  })
+
+  it("P2-11 AC-2: the kernel's dependencies name no @aws-sdk/* package, and no file under packages/platform/src imports one", () => {
+    const platform = read('packages/platform')
+    expect(listed(platform, ['dependencies', 'optionalDependencies']).filter(isAwsSdk)).toEqual([])
+
+    const root = join(REPO_ROOT, 'packages', 'platform', 'src')
+    const files = sourceFiles(root)
+    expect(files.length).toBeGreaterThan(0)
+    const offenders = files.flatMap((file) =>
+      specifiers(readFileSync(file, 'utf8'))
+        .filter(isAwsSdk)
+        .map((spec) => `${file.slice(root.length + 1)}: ${spec}`),
+    )
+    expect(offenders).toEqual([])
   })
 
   it('AC-6: no file under packages/platform/src imports ioredis', () => {

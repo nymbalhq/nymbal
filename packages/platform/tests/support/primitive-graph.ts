@@ -67,13 +67,21 @@ export function withInfrastructure(
 
 export async function runGraphChild(
   config: NymbalConfig,
-  opts: { hide?: string[] } = {},
+  /** `env` is laid over the child's environment; a variable set to undefined is removed from it. */
+  opts: { hide?: string[]; env?: Record<string, string | undefined> } = {},
 ): Promise<{ resolutions: Resolution[]; outcome: GraphOutcome }> {
   const dir = scratch()
   const out = join(dir, 'resolved.jsonl')
   writeFileSync(out, '')
-  const env = { ...process.env, P2_02_GRAPH: JSON.stringify({ out, hide: opts.hide }) }
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    P2_02_GRAPH: JSON.stringify({ out, hide: opts.hide }),
+  }
   delete env['npm_config_user_agent']
+  for (const [name, value] of Object.entries(opts.env ?? {})) {
+    if (value === undefined) delete env[name]
+    else env[name] = value
+  }
   const { stdout } = await exec(process.execPath, [CHILD, JSON.stringify(config)], {
     cwd: dir,
     env,
