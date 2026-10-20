@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/stack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Nymbal runtime packages at one exact, tested version",
   "license": "MIT",
   "repository": {
@@ -19,13 +19,13 @@
     "package.json"
   ],
   "dependencies": {
-    "@nymbalhq/config": "0.1.0",
-    "@nymbalhq/http": "0.1.0",
-    "@nymbalhq/platform": "0.1.0",
-    "@nymbalhq/react": "0.1.0",
-    "@nymbalhq/sdk": "0.1.0",
-    "@nymbalhq/types": "0.1.0",
-    "@nymbalhq/web-components": "0.1.0",
-    "nymbal": "0.1.0"
+    "@nymbalhq/config": "0.2.0",
+    "@nymbalhq/http": "0.2.0",
+    "@nymbalhq/platform": "0.2.0",
+    "@nymbalhq/react": "0.2.0",
+    "@nymbalhq/sdk": "0.2.0",
+    "@nymbalhq/types": "0.2.0",
+    "@nymbalhq/web-components": "0.2.0",
+    "nymbal": "0.2.0"
   }
 }
