@@ -56,9 +56,9 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "@nymbalhq/adapter-anthropic": "workspace:*",
-    "@nymbalhq/adapter-smtp": "workspace:*",
-    "@nymbalhq/adapter-stripe": "workspace:*"
+    "@nymbalhq/adapter-anthropic": "workspace:^",
+    "@nymbalhq/adapter-smtp": "workspace:^",
+    "@nymbalhq/adapter-stripe": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@nymbalhq/adapter-anthropic": {

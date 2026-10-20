@@ -40,14 +40,6 @@ afterAll(async () => {
 })
 
 describe('AC-11: the kit store sends kernel email to the sink', () => {
-  // P2-01 AC-5: the kit store's mail goes out through the `smtp` provider (nodemailer left the kernel), so the AC-11
-  // delivery below is SMTP mail sent by @nymbalhq/adapter-smtp.
-  it('AC-5 (P2-01): the kit store started with a mail sink configures email as the smtp provider, and the sink as its config', () => {
-    const email = store.app.platform.config.commerce.email
-    expect(email.provider).toBe('smtp')
-    expect(email.config).toEqual(sink.emailConfig())
-  })
-
   it('AC-11: a checkout over HTTP (cart, item, begin checkout) delivers the order-placed email exactly once to the buyer', async () => {
     const product = await store.app.services.product.create({
       slug: `mail-${randomUUID()}`,

@@ -203,7 +203,12 @@ describe('production refusals at createApp', () => {
     const unpredicted = results
       .filter(({ cell, error }) => {
         if (!(error instanceof ConfigError)) return true
-        return !predictedCodes(cell).includes(error.code)
+        if (!predictedCodes(cell).includes(error.code)) return true
+        // A stub refusal names the configured provider, not a hard-coded 'native'.
+        const configured = cell.payments === 'custom-stub' ? 'custom' : cell.payments
+        return (
+          error.code === 'config.production_stub_payments' && !error.message.includes(configured)
+        )
       })
       .map(({ cell, error }) => ({ cell, error: String(error) }))
     expect(unpredicted).toEqual([])
