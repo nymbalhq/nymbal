@@ -214,6 +214,14 @@ test.describe('Admin at Pixel 7', () => {
     await expect(sidebar).toHaveAttribute('data-state', 'closed')
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(ordersLink).not.toBeInViewport()
+
+    // Below md, main and the top bar take the full width: the desktop 240 px offset would leave a 172 px column.
+    const main = await page.locator('main').boundingBox()
+    const topBar = await page.locator('header').filter({ has: toggle }).boundingBox()
+    expect(main, 'main has a box').not.toBeNull()
+    expect(topBar, 'the top bar has a box').not.toBeNull()
+    expect(main!.x).toBe(0)
+    expect(topBar!.x).toBe(0)
   })
 })
 
