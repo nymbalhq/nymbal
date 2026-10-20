@@ -22,6 +22,7 @@ export interface Subscription {
 }
 
 export interface EventBusAdapter {
+  capabilities(): readonly string[]
   publish<T>(event: NymbalEvent<T>): Promise<void>
   publishBatch(events: NymbalEvent<unknown>[]): Promise<void>
   /** Delivers to `derived` subscriptions only, so rebuilding derived state never triggers side effects. */

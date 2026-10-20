@@ -6,7 +6,7 @@ export function createNativeAnalyticsAdapter(logger: Logger): AnalyticsAdapter {
   return {
     kind: 'analytics',
     providerName: 'native',
-    capabilities: ['track', 'identify'],
+    capabilities: () => ['track', 'identify'],
     producesEvents: [],
     consumesEvents: [],
     initialize: noopInitialize,

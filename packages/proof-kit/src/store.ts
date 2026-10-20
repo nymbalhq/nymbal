@@ -89,7 +89,7 @@ async function runAll(steps: Array<() => unknown>, message: string): Promise<voi
 
 /**
  * A kernel on stub payments with migrations applied, served over HTTP on a free port. SQLite lives in its own temp
- * file unless `sqlitePath` is given; `email` points the native email adapter at a mail sink.
+ * file unless `sqlitePath` is given; `email` sends the store's mail to a mail sink through the `smtp` provider.
  */
 export async function startTestStore(
   opts: {
@@ -176,10 +176,9 @@ function configure(
     security: { adapter: 'middleware', botProtection: { mode: 'off' } },
     commerce: {
       payments: { provider: 'native' },
-      email: {
-        provider: 'native',
-        config: email?.emailConfig() ?? { transport: 'console' },
-      },
+      email: email
+        ? { provider: 'smtp', config: email.emailConfig() }
+        : { provider: 'native', config: { transport: 'console' } },
       reviews: { provider: 'native' },
       search: { provider: 'native' },
       analytics: { provider: 'native' },

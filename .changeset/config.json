@@ -13,7 +13,10 @@
       "@nymbalhq/web-components",
       "@nymbalhq/http",
       "@nymbalhq/react",
-      "@nymbalhq/admin"
+      "@nymbalhq/admin",
+      "@nymbalhq/adapter-stripe",
+      "@nymbalhq/adapter-anthropic",
+      "@nymbalhq/adapter-smtp"
     ]
   ],
   "linked": [],

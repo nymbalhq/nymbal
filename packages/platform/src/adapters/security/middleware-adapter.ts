@@ -21,7 +21,7 @@ export function createMiddlewareSecurityAdapter(deps: { logger: Logger }): Secur
   const { logger } = deps
   let lastAppliedAt = ''
   return {
-    capabilities: ['headers'],
+    capabilities: () => ['headers'],
     producesEvents: [],
     consumesEvents: [],
     initialize: noopInitialize,

@@ -6,7 +6,7 @@ export function createNativeAiAdapter(_logger: Logger): AiAdapter {
   return {
     kind: 'ai',
     providerName: 'native',
-    capabilities: [],
+    capabilities: () => [],
     producesEvents: [],
     consumesEvents: [],
     initialize: noopInitialize,

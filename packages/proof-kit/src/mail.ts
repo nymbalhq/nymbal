@@ -7,7 +7,8 @@ export interface MailMessage {
 }
 
 export interface MailSink {
-  emailConfig(): { transport: 'smtp'; smtp: { host: string; port: number; secure: false } }
+  /** The `smtp` email provider's config that sends to this sink. */
+  emailConfig(): { smtp: { host: string; port: number; secure: false } }
   messages(filter: { to: string }): Promise<MailMessage[]>
   waitFor(
     filter: { to: string; count?: number },
@@ -41,7 +42,7 @@ async function getJson<T>(url: URL): Promise<T> {
   return (await res.json()) as T
 }
 
-/** A Mailpit server (compose.yaml, or the CI service) that the native email adapter delivers to over SMTP. */
+/** A Mailpit server (compose.yaml, or the CI service) that the `smtp` email provider delivers to. */
 export function createMailSink(opts: { apiUrl?: string; smtp?: string } = {}): MailSink {
   const apiUrl = opts.apiUrl ?? process.env.NYMBAL_TEST_MAILPIT_URL ?? 'http://localhost:18025'
   const smtp = opts.smtp ?? process.env.NYMBAL_TEST_MAILPIT_SMTP ?? 'localhost:11025'
@@ -79,7 +80,7 @@ export function createMailSink(opts: { apiUrl?: string; smtp?: string } = {}): M
   }
 
   return {
-    emailConfig: () => ({ transport: 'smtp', smtp: { host, port, secure: false } }),
+    emailConfig: () => ({ smtp: { host, port, secure: false } }),
     messages: async (filter) => bodies(await summaries(filter.to)),
     async waitFor(filter, waitOpts = {}) {
       const count = filter.count ?? 1

@@ -5,7 +5,7 @@ export function createNativeTaxAdapter(logger: Logger, defaultRate = 0): TaxAdap
   return {
     kind: 'tax',
     providerName: 'native',
-    capabilities: ['flat-rate'],
+    capabilities: () => ['flat-rate'],
     producesEvents: [],
     consumesEvents: [],
     initialize: noopInitialize,

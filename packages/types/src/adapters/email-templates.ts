@@ -1,3 +1,4 @@
+// The kernel's transactional email templates, shared by every email adapter (the console one and the SMTP package).
 export interface RenderedEmail {
   subject: string
   text: string
@@ -38,7 +39,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
 }
 
-export function renderTemplate(template: string, vars: Record<string, unknown>): RenderedEmail {
+export function renderEmailTemplate(
+  template: string,
+  vars: Record<string, unknown>,
+): RenderedEmail {
   const t = TEMPLATES[template]
   if (!t) {
     return {
