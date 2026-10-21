@@ -107,13 +107,15 @@ beforeAll(async () => {
     type: 'product.created.v1',
     version: 1,
     timestamp: new Date().toISOString(),
+    correlationId: EVENT_ID,
     data: { productId: 'p2-09-witness' },
     metadata: { storeId: 'P1-02', environment: 'test' },
   }
   await queryOnce(
     db.url,
-    `INSERT INTO events (id, type, envelope, created_at) VALUES ($1, $2, $3, now() - interval '1 hour')`,
-    [EVENT_ID, envelope.type, JSON.stringify(envelope)],
+    `INSERT INTO events (id, type, envelope, correlation_id, created_at)
+     VALUES ($1, $2, $3, $4, now() - interval '1 hour')`,
+    [EVENT_ID, envelope.type, JSON.stringify(envelope), envelope.correlationId],
   )
   await queryOnce(
     db.url,

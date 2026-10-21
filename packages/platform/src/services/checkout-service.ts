@@ -26,9 +26,11 @@ import {
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { currentCorrelationId } from '../events/correlation.js'
 import { formatMoney } from '../money.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
+import { inOrderScope } from './order-correlation.js'
 import type { CartService } from './cart-service.js'
 import {
   PROVIDER_REFUND_REASON,
@@ -108,6 +110,8 @@ export interface CreateCheckoutServiceDeps {
 interface DraftMetadata {
   cartToken: string
   reservationIds: string[]
+  /** The checkout's correlation id, which its payment publishes under (`inOrderScope`). */
+  correlationId?: string
 }
 
 /** A line whose released reservation cannot be re-taken: another order has the stock now. */
@@ -606,6 +610,7 @@ export function createCheckoutService(
       imageUrl: item.imageUrl,
     }))
     const orderId = uuidv7()
+    const correlationId = currentCorrelationId()
     const reservationIds: string[] = []
     for (const item of cartDoc.items) {
       try {
@@ -633,7 +638,11 @@ export function createCheckoutService(
       totalMinor: cartDoc.subtotalMinor,
       currency: cartDoc.currency,
       ...(input.notes !== undefined && { notes: input.notes }),
-      metadata: { cartToken: cartDoc.token, reservationIds } satisfies DraftMetadata,
+      metadata: {
+        cartToken: cartDoc.token,
+        reservationIds,
+        ...(correlationId !== undefined && { correlationId }),
+      } satisfies DraftMetadata,
       cartToken: cartDoc.token,
     })
     return { kind: 'placed', order }
@@ -757,40 +766,50 @@ export function createCheckoutService(
 
   async function finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult> {
     return store.transaction(async (tx) => {
-      const outcome = (order: Order | null, reason: string) =>
-        recordOutcome(tx, paymentIntentId, order, reason)
       const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
-      if (order === null || order.status !== 'pending') {
-        return settled(tx, paymentIntentId, order, paid)
-      }
-      // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
-      if (
-        paid.amountMinor !== order.totalMinor ||
-        paid.currency.toUpperCase() !== order.currency.toUpperCase()
-      ) {
-        return outcome(
-          order,
-          `amount_mismatch: paid ${paid.amountMinor} ${paid.currency.toUpperCase()}, ` +
-            `due ${order.totalMinor} ${order.currency.toUpperCase()}`,
-        )
-      }
-      try {
-        // Behind a savepoint: when stock is gone or the order moved first, whatever the earlier lines took is undone.
-        return await store.savepoint(() =>
-          confirm(tx, paymentIntentId, paid, order, PROVIDER_CAPTURE),
-        )
-      } catch (err) {
-        if (err instanceof StockUnavailable) {
-          // A concurrent writer may have confirmed the order with the units this re-take wanted.
-          const current = await repos.order.findById(tx, order.id)
-          if (current?.status !== 'pending') return settled(tx, paymentIntentId, current, paid)
-          return outcome(current, `stock_unavailable: ${err.variantId}`)
-        }
-        if (!(err instanceof NoLongerPending)) throw err
-      }
-      // Another delivery (or an admin) moved the order between the read and the write.
-      return settled(tx, paymentIntentId, await repos.order.findById(tx, order.id), paid)
+      // Whichever request delivered the payment, its outcome publishes under the checkout's id.
+      return inOrderScope(order, () => finalizeLoaded(tx, paymentIntentId, paid, order))
     })
+  }
+
+  async function finalizeLoaded(
+    tx: Tx,
+    paymentIntentId: string,
+    paid: CapturedPayment,
+    order: Order | null,
+  ): Promise<FinalizeResult> {
+    const outcome = (order: Order | null, reason: string) =>
+      recordOutcome(tx, paymentIntentId, order, reason)
+    if (order === null || order.status !== 'pending') {
+      return settled(tx, paymentIntentId, order, paid)
+    }
+    // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
+    if (
+      paid.amountMinor !== order.totalMinor ||
+      paid.currency.toUpperCase() !== order.currency.toUpperCase()
+    ) {
+      return outcome(
+        order,
+        `amount_mismatch: paid ${paid.amountMinor} ${paid.currency.toUpperCase()}, ` +
+          `due ${order.totalMinor} ${order.currency.toUpperCase()}`,
+      )
+    }
+    try {
+      // Behind a savepoint: when stock is gone or the order moved first, whatever the earlier lines took is undone.
+      return await store.savepoint(() =>
+        confirm(tx, paymentIntentId, paid, order, PROVIDER_CAPTURE),
+      )
+    } catch (err) {
+      if (err instanceof StockUnavailable) {
+        // A concurrent writer may have confirmed the order with the units this re-take wanted.
+        const current = await repos.order.findById(tx, order.id)
+        if (current?.status !== 'pending') return settled(tx, paymentIntentId, current, paid)
+        return outcome(current, `stock_unavailable: ${err.variantId}`)
+      }
+      if (!(err instanceof NoLongerPending)) throw err
+    }
+    // Another delivery (or an admin) moved the order between the read and the write.
+    return settled(tx, paymentIntentId, await repos.order.findById(tx, order.id), paid)
   }
 
   return {
@@ -856,7 +875,7 @@ export function createCheckoutService(
         const paid = { amountMinor: order.totalMinor, currency: order.currency }
         try {
           // No provider took this payment: the events name none.
-          await confirm(tx, '', paid, order, capture)
+          await inOrderScope(order, () => confirm(tx, '', paid, order, capture))
         } catch (err) {
           if (!(err instanceof StockUnavailable)) throw err
           throw new OrderConflictError(

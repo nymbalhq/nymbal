@@ -2,7 +2,7 @@ import { defineCommand } from 'citty'
 import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
 import p from 'picocolors'
 import { loadProject } from '../utils/project.js'
-import { createApp } from '@nymbalhq/platform'
+import { createApp, newCorrelationId, runWithCorrelation } from '@nymbalhq/platform'
 import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
@@ -124,35 +124,38 @@ export const importCommand = defineCommand({
     loadSpin.stop('Platform ready')
 
     try {
-      const report = await runWooCommerceImport(
-        {
-          credentials: { url: storeUrl, consumerKey, consumerSecret },
-          entities: entityList,
-          ai: aiEnabled,
-          gdpr: gdprEnabled,
-          fresh: args.fresh,
-          concurrency,
-          projectRoot,
-          currency: config.store.currency,
-          statePath,
-        },
-        {
-          services: app.services,
-          repos: app.repos,
-          adapters: { ai: app.adapters.ai, reviews: app.adapters.reviews },
-          media: app.platform.media,
-          onProgress(event: ProgressEvent) {
-            if (event.kind === 'phase') {
-              console.log(p.cyan(`  → ${event.phase}`))
-            } else if (event.kind === 'progress') {
-              const pct = Math.round((event.done / event.total) * 100)
-              process.stdout.write(`\r  ${event.entity}: ${event.done}/${event.total} (${pct}%)  `)
-              if (event.done === event.total) process.stdout.write('\n')
-            } else if (event.kind === 'error') {
-              console.log(p.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`))
-            }
+      // One run is one operation: every event the import causes carries one id.
+      const report = await runWithCorrelation(newCorrelationId('import:woocommerce'), () =>
+        runWooCommerceImport(
+          {
+            credentials: { url: storeUrl, consumerKey, consumerSecret },
+            entities: entityList,
+            ai: aiEnabled,
+            gdpr: gdprEnabled,
+            fresh: args.fresh,
+            concurrency,
+            projectRoot,
+            currency: config.store.currency,
+            statePath,
           },
-        },
+          {
+            services: app.services,
+            repos: app.repos,
+            adapters: { ai: app.adapters.ai, reviews: app.adapters.reviews },
+            media: app.platform.media,
+            onProgress(event: ProgressEvent) {
+              if (event.kind === 'phase') {
+                console.log(p.cyan(`  → ${event.phase}`))
+              } else if (event.kind === 'progress') {
+                const pct = Math.round((event.done / event.total) * 100)
+                process.stdout.write(`\r  ${event.entity}: ${event.done}/${event.total} (${pct}%)  `)
+                if (event.done === event.total) process.stdout.write('\n')
+              } else if (event.kind === 'error') {
+                console.log(p.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`))
+              }
+            },
+          },
+        ),
       )
 
       const reportPath = await writeReport(report, projectRoot, config.store.name)

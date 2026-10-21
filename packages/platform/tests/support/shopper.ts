@@ -12,6 +12,7 @@ export interface ShopResponse<T> {
   body: { data?: T; error?: { code: string; message: string } }
   /** Every `Set-Cookie` header of this response, verbatim. */
   setCookies: string[]
+  headers: Headers
 }
 
 export function shopper(baseUrl: string, jar: CookieJar = new Map()) {
@@ -42,7 +43,12 @@ export function shopper(baseUrl: string, jar: CookieJar = new Map()) {
       if (at > 0) jar.set(pair!.slice(0, at).trim(), pair!.slice(at + 1).trim())
     }
     const text = await res.text()
-    return { status: res.status, body: text === '' ? {} : JSON.parse(text), setCookies }
+    return {
+      status: res.status,
+      body: text === '' ? {} : JSON.parse(text),
+      setCookies,
+      headers: res.headers,
+    }
   }
 
   return { call, jar }
