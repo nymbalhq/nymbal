@@ -52,14 +52,24 @@ async function searchCategoryFacet(
   query: string,
   filters: Record<string, unknown> | undefined,
 ): Promise<Facet> {
-  const [counts, categories] = await Promise.all([
-    facet('categoryIds', { query, ...(filters !== undefined && { filters }) }),
-    documentStore.query<{ id: string; slug: string; name: string }>('categories', {
-      partitionKey: { field: 'storeId', value: storeName },
-      limit: 500,
-    }),
-  ])
-  const byId = new Map(categories.items.map((c) => [c.id, c]))
+  const counts = await facet('categoryIds', { query, ...(filters !== undefined && { filters }) })
+  // Categories are keyed by slug, so the facet's ids are found by walking the store's pages until each is seen.
+  const wanted = new Set(counts.values.map((v) => v.value))
+  const byId = new Map<string, { id: string; slug: string; name: string }>()
+  let cursor: string | undefined
+  while (byId.size < wanted.size) {
+    const page = await documentStore.query<{ id: string; slug: string; name: string }>(
+      'categories',
+      {
+        partitionKey: { field: 'storeId', value: storeName },
+        limit: 500,
+        ...(cursor !== undefined && { cursor }),
+      },
+    )
+    for (const c of page.items) if (wanted.has(c.id)) byId.set(c.id, c)
+    if (page.nextCursor === null) break
+    cursor = page.nextCursor
+  }
   return {
     field: 'category',
     label: 'Category',

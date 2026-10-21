@@ -237,6 +237,63 @@ describe('P2-07 AC-5: GET /api/products/search on the native store (search repor
   })
 })
 
+describe('P2-07 AC-5: GET /api/products/search on a store with more categories than one document-store page', () => {
+  let served: ServedKernel
+  let tok: string
+  let seeded: Awaited<ReturnType<typeof seedCatalogue>>
+
+  beforeAll(async () => {
+    served = await serveKernel(await createKernel({ dialect: 'sqlite' }))
+    tok = token()
+    // Categories page by slug; these 500 sort before the seeded ones, as a large import's would.
+    const { documentStore, config } = served.kernel
+    const fillers = new Map<string, Category & { storeId: string }>()
+    for (let i = 0; i < 500; i++) {
+      const slug = `p2-07-0-${tok}-${String(i).padStart(3, '0')}`
+      fillers.set(slug, { id: `filler-${tok}-${i}`, slug, name: slug, storeId: config.store.name })
+    }
+    await documentStore.batchPut('categories', fillers)
+    seeded = await seedCatalogue(served, tok)
+  }, 60_000)
+
+  afterAll(async () => {
+    await served?.stop()
+  })
+
+  it('AC-5: facets names every matching category, those past the first 500 included, with each one’s count of matching products', async () => {
+    const { documentStore, config } = served.kernel
+    const firstPage = await documentStore.query<Category>('categories', {
+      partitionKey: { field: 'storeId', value: config.store.name },
+      limit: 500,
+    })
+    const seededSlugs = seeded.cats.map((c) => c.slug)
+    expect(
+      firstPage.items.filter((c) => seededSlugs.includes(c.slug)),
+      'the seeded categories sit past the first page',
+    ).toEqual([])
+
+    // Every seeded product carries the token, so the counts are the seed's. They come from the seed, not from the
+    // products' documents, whose embedded categories resolve through a lookup of their own.
+    const full = await routeWalk(served, { q: tok, limit: '100' })
+    expect(full.slugs.length, 'every seeded product matches').toBe(seeded.created.length)
+    const expected = new Map<string, { label: string; count: number }>()
+    for (const product of seeded.created) {
+      for (const slug of product.categorySlugs) {
+        const label = seeded.cats.find((c) => c.slug === slug)!.name
+        expected.set(slug, { label, count: (expected.get(slug)?.count ?? 0) + 1 })
+      }
+    }
+    expect(expected.size, 'the seeded products sit in two categories').toBe(2)
+
+    const facets = (await get(served, { q: tok, limit: '3' })).body.data!.facets
+    expect(facets.map((f) => f.field)).toEqual(['category'])
+    const shown = Object.fromEntries(
+      facets[0]!.values.map((v) => [v.value, { label: v.label, count: v.count }]),
+    )
+    expect(shown).toEqual(Object.fromEntries(expected))
+  })
+})
+
 describe('P2-07 AC-5: GET /api/products/search on a store whose search does not report facet', () => {
   let served: ServedKernel
   let tok: string

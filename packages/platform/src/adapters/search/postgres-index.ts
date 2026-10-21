@@ -6,8 +6,9 @@ import { latestById, type IndexRow, type QueryTerms, type SearchIndex } from './
 // of its own terms, so no text goes through a parser or dictionary: the 'simple' configuration's tokens, without its
 // parser's splits.
 
-/** Postgres's limits on a lexeme's bytes, a position's value and the positions kept per lexeme. */
-const MAX_LEXEME = 2047
+/** Postgres's limits on a lexeme's bytes, a position's value and the positions kept per lexeme. Terms are ASCII
+ *  (`[a-z0-9]+`), so slicing characters slices bytes. */
+const MAX_LEXEME = 2046
 const MAX_POSITION = 16383
 const MAX_POSITIONS = 256
 

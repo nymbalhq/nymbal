@@ -447,6 +447,8 @@ export function searchAcceptance(
       )
       // Fragments glued together, so an operator sits against a word as it would in a typed query.
       const hostile = fc.array(fragment, { maxLength: 6 }).map((fs) => fs.join(''))
+      const longTerm = 'a'.repeat(2047)
+      const plain: GenProduct = { name: 'a b', description: 'c', variants: [], categories: [0] }
 
       it(
         "AC-4: any string after the run token, full unicode and FTS operators included, never throws and returns exactly the oracle's matches for the query's normalised terms",
@@ -474,7 +476,16 @@ export function searchAcceptance(
                 }
               },
             ),
-            { numRuns: numRuns * 2 },
+            {
+              numRuns: numRuns * 2,
+              // A term one byte past Postgres's longest lexeme (2046 bytes; terms are ASCII, so bytes are
+              // characters): in the query, in a description, and in both.
+              examples: [
+                [[plain], longTerm],
+                [[{ ...plain, description: `c ${longTerm}` }], ''],
+                [[{ ...plain, description: longTerm }], longTerm],
+              ],
+            },
           )
         },
         SLOW,
