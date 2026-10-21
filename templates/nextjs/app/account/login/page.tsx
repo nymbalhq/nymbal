@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { LoginForm } from '@/components/client/LoginForm'
+import { LoginView } from './LoginView'
 
 export const metadata: Metadata = {
   title: 'Sign In',
@@ -17,7 +17,7 @@ export default function LoginPage() {
         </div>
       }
     >
-      <LoginForm />
+      <LoginView />
     </Suspense>
   )
 }
