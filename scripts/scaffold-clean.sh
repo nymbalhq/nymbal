@@ -127,6 +127,8 @@ project="$parent/shop"
 store_port="$(free_port)"
 store_url="http://localhost:$store_port"
 api_port="$(free_port)"
+# Each draw's port is closed before the next, so the OS can hand out the store's again.
+while [ "$api_port" = "$store_port" ]; do api_port="$(free_port)"; done
 api_url="http://localhost:$api_port"
 serve_start="$(now_ms)"
 (cd "$project" && exec npx nymbal dev --port "$api_port" --storefront-port "$store_port") >"$work/dev.log" 2>&1 &

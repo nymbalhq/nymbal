@@ -1,10 +1,13 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -117,8 +120,99 @@ function git(cwd: string, args: string[]): string | undefined {
 
 const real = (path: string): string => (existsSync(path) ? realpathSync(path) : path)
 
-/** A claim opened but not yet written is empty for an instant; only an old empty one is left over from a crash. */
-const EMPTY_CLAIM_GRACE_MS = 60_000
+/** The checkout at `cwd`: its git common dir, its top level, and whether it is the main checkout. */
+type Checkout = { commonDir: string; worktree: string; main: boolean }
+
+function checkout(cwd: string): Checkout | undefined {
+  const dirs = git(cwd, [
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-dir',
+    '--git-common-dir',
+    '--show-toplevel',
+  ])
+  if (dirs === undefined) return undefined
+  const [gitDir = '', commonDir = '', top = ''] = dirs.split('\n')
+  if (commonDir === '' || top === '') return undefined
+  return {
+    commonDir: real(commonDir),
+    worktree: real(top),
+    main: real(gitDir) === real(commonDir),
+  }
+}
+
+const isErrno = (error: unknown, code: string): boolean =>
+  (error as NodeJS.ErrnoException | undefined)?.code === code
+
+function removeFile(path: string): void {
+  try {
+    unlinkSync(path)
+  } catch (error) {
+    if (!isErrno(error, 'ENOENT')) throw error
+  }
+}
+
+const SLEEPER = new Int32Array(new SharedArrayBuffer(4))
+/** resolveSlot is synchronous (the Playwright config calls it at import), so its lock waits block. */
+const sleepSync = (ms: number): void => {
+  Atomics.wait(SLEEPER, 0, 0, ms)
+}
+
+/** A lock older than this was left by a crash: holding one takes milliseconds. */
+const LOCK_STALE_MS = 30_000
+
+/**
+ * Runs `fn` holding `<dir>/.lock`, taken by an exclusive create with backoff. Whatever removes a file another process
+ * may have just made does it under this lock, so it never removes the new one.
+ */
+function withLock<T>(dir: string, fn: () => T): T {
+  const lock = join(dir, '.lock')
+  const token = `${process.pid} ${randomUUID()}\n`
+  let delay = 5
+  for (;;) {
+    try {
+      writeFileSync(lock, token, { flag: 'wx' })
+      break
+    } catch (error) {
+      if (!isErrno(error, 'EEXIST')) throw error
+    }
+    breakStaleLock(lock)
+    sleepSync(delay + Math.random() * delay)
+    delay = Math.min(delay * 2, 100)
+  }
+  try {
+    return fn()
+  } finally {
+    // Ours unless it was broken as stale meanwhile; then it is another process's, and stays.
+    if (readOrUndefined(lock) === token) removeFile(lock)
+  }
+}
+
+function breakStaleLock(lock: string): void {
+  let seen
+  try {
+    seen = statSync(lock)
+  } catch {
+    return
+  }
+  if (Date.now() - seen.mtimeMs <= LOCK_STALE_MS) return
+  try {
+    // Only the lock judged stale: one made since by another breaker has another inode.
+    const now = statSync(lock)
+    if (now.ino === seen.ino && now.mtimeMs === seen.mtimeMs) removeFile(lock)
+  } catch (error) {
+    if (!isErrno(error, 'ENOENT')) throw error
+  }
+}
+
+function readOrUndefined(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch (error) {
+    if (isErrno(error, 'ENOENT')) return undefined
+    throw error
+  }
+}
 
 type Claim = { slot: number; path: string; holder: string }
 
@@ -127,32 +221,9 @@ function readClaims(dir: string): Claim[] {
     .filter((name) => /^[1-9]$/.test(name) && Number(name) <= MAX_SLOT)
     .flatMap((name) => {
       const path = join(dir, name)
-      try {
-        return [{ slot: Number(name), path, holder: readFileSync(path, 'utf8').trim() }]
-      } catch {
-        // Removed as stale by another process between the listing and the read.
-        return []
-      }
+      const holder = readOrUndefined(path)
+      return holder === undefined ? [] : [{ slot: Number(name), path, holder: holder.trim() }]
     })
-}
-
-function isStale(claim: Claim, live: Set<string>): boolean {
-  if (claim.holder === '') {
-    try {
-      return Date.now() - statSync(claim.path).mtimeMs > EMPTY_CLAIM_GRACE_MS
-    } catch {
-      return false
-    }
-  }
-  return !live.has(claim.holder) || !existsSync(claim.holder)
-}
-
-function removeClaim(path: string): void {
-  try {
-    unlinkSync(path)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
 }
 
 export function resolveSlot(cwd: string, env: NodeJS.ProcessEnv = process.env): number {
@@ -164,57 +235,234 @@ export function resolveSlot(cwd: string, env: NodeJS.ProcessEnv = process.env): 
     }
     return slot
   }
-  const dirs = git(cwd, [
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-dir',
-    '--git-common-dir',
-    '--show-toplevel',
-  ])
-  if (dirs === undefined) return 0
-  const [gitDir = '', commonDir = '', top = ''] = dirs.split('\n')
-  if (real(gitDir) === real(commonDir) || top === '') return 0
-  const worktree = real(top)
+  const here = checkout(cwd)
+  if (here === undefined || here.main) return 0
+  const { worktree } = here
 
-  const dir = join(real(commonDir), 'nymbal-stacks')
+  const dir = join(here.commonDir, 'nymbal-stacks')
   mkdirSync(dir, { recursive: true })
-  const own = (): Claim | undefined =>
+  // A claim is written whole under the lock, so a holder read outside it is either complete or not this worktree's.
+  const own = (): number | undefined =>
     readClaims(dir)
       .filter((claim) => claim.holder === worktree)
-      .sort((a, b) => a.slot - b.slot)[0]
+      .sort((a, b) => a.slot - b.slot)[0]?.slot
   const held = own()
-  if (held !== undefined) return held.slot
+  if (held !== undefined) return held
 
-  const live = new Set(
-    (git(cwd, ['worktree', 'list', '--porcelain']) ?? '')
-      .split('\n')
-      .filter((line) => line.startsWith('worktree '))
-      .map((line) => real(line.slice('worktree '.length))),
-  )
-  for (const claim of readClaims(dir)) if (isStale(claim, live)) removeClaim(claim.path)
+  // Listing the worktrees, sweeping stale claims and claiming, all under one lock: a sweep that read a claim as stale
+  // cannot then delete the fresh claim another process made in its place.
+  return withLock(dir, () => {
+    // Another process in this worktree may have claimed while this one waited for the lock.
+    const claimed = own()
+    if (claimed !== undefined) return claimed
+    const live = new Set(
+      (git(cwd, ['worktree', 'list', '--porcelain']) ?? '')
+        .split('\n')
+        .filter((line) => line.startsWith('worktree '))
+        .map((line) => real(line.slice('worktree '.length))),
+    )
+    const claims = readClaims(dir)
+    // Under the lock an empty claim can only be one a crash left half written.
+    for (const claim of claims) {
+      if (claim.holder === '' || !live.has(claim.holder) || !existsSync(claim.holder)) {
+        removeFile(claim.path)
+      }
+    }
+    for (let slot = 1; slot <= MAX_SLOT; slot++) {
+      try {
+        writeFileSync(join(dir, String(slot)), `${worktree}\n`, { flag: 'wx' })
+        return slot
+      } catch (error) {
+        if (!isErrno(error, 'EEXIST')) throw error
+      }
+    }
+    const holders = readClaims(dir)
+      .sort((a, b) => a.slot - b.slot)
+      .map((claim) => `${claim.slot}: ${claim.holder}`)
+    throw new Error(
+      `every stack slot 1..${MAX_SLOT} is held (${holders.join(', ')}); remove a worktree or set NYMBAL_STACK_SLOT`,
+    )
+  })
+}
 
-  for (let slot = 1; slot <= MAX_SLOT; slot++) {
-    const path = join(dir, String(slot))
-    try {
-      writeFileSync(path, `${worktree}\n`, { flag: 'wx' })
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-      throw error
-    }
-    // Two processes in this worktree racing each claim a slot; both keep the lower one.
-    const first = own()
-    if (first !== undefined && first.slot < slot) {
-      removeClaim(path)
-      return first.slot
-    }
-    return slot
+// The quiet lock. Parallel stacks share the machine's CPU, so a timing-bound step (the exclusive hold) waits until no
+// other worktree runs a CPU-heavy step (a shared hold), and new shared holds from other worktrees wait while it runs.
+// Holds live under `<git-common-dir>/nymbal-stacks/heavy/`: a shared hold is `shared-<pid>-<label>`, the exclusive
+// one is `quiet`; each names its pid and worktree, and a hold whose pid is dead is removed and blocks nothing. A
+// worktree never waits on its own holds: its gate runs one step at a time.
+
+export type Release = () => Promise<void>
+export type Hold = Release & { waitedMs: number; quiet: boolean }
+
+/** How long a hold waits before it runs anyway, and says so. */
+export const QUIET_MAX_WAIT_MS = 600_000
+
+type HoldFile = { path: string; pid: number; worktree: string; text: string }
+
+function heavyDir(cwd: string): { dir: string; worktree: string } | undefined {
+  const here = checkout(cwd)
+  if (here === undefined) return undefined
+  const dir = join(here.commonDir, 'nymbal-stacks', 'heavy')
+  mkdirSync(dir, { recursive: true })
+  return { dir, worktree: here.worktree }
+}
+
+function isAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // EPERM: alive, under another user.
+    return isErrno(error, 'EPERM')
   }
-  const holders = readClaims(dir)
-    .sort((a, b) => a.slot - b.slot)
-    .map((claim) => `${claim.slot}: ${claim.holder}`)
-  throw new Error(
-    `every stack slot 1..${MAX_SLOT} is held (${holders.join(', ')}); remove a worktree or set NYMBAL_STACK_SLOT`,
+}
+
+function readHold(path: string): HoldFile | undefined {
+  const text = readOrUndefined(path)
+  if (text === undefined) return undefined
+  const [pid = '', worktree = ''] = text.split('\n')
+  return { path, pid: Number(pid), worktree, text }
+}
+
+// Hold files appear whole, never half written: a reader that saw an empty one would take it for a dead holder's.
+const tempIn = (dir: string): string => join(dir, `.tmp-${process.pid}-${randomUUID()}`)
+
+function writeWhole(dir: string, path: string, text: string): void {
+  const temp = tempIn(dir)
+  writeFileSync(temp, text)
+  renameSync(temp, path)
+}
+
+/** Creates `path` holding `text` unless it exists; false when it does. */
+function createWhole(dir: string, path: string, text: string): boolean {
+  const temp = tempIn(dir)
+  writeFileSync(temp, text)
+  try {
+    linkSync(temp, path)
+    return true
+  } catch (error) {
+    if (isErrno(error, 'EEXIST')) return false
+    throw error
+  } finally {
+    removeFile(temp)
+  }
+}
+
+/** The holder of `quiet` when it is alive; a dead holder's is removed, under the lock and only if still the same. */
+function liveQuiet(dir: string): HoldFile | undefined {
+  const path = join(dir, 'quiet')
+  const hold = readHold(path)
+  if (hold === undefined) return undefined
+  if (isAlive(hold.pid)) return hold
+  withLock(dir, () => {
+    if (readOrUndefined(path) === hold.text) removeFile(path)
+  })
+  return undefined
+}
+
+/** Whether another worktree holds the quiet. */
+const quietElsewhere = (dir: string, worktree: string): boolean => {
+  const hold = liveQuiet(dir)
+  return hold !== undefined && hold.worktree !== worktree
+}
+
+/** Whether another worktree has a live shared hold; a dead holder's is removed (its name holds its pid). */
+function sharedElsewhere(dir: string, worktree: string): boolean {
+  return readdirSync(dir)
+    .filter((name) => name.startsWith('shared-'))
+    .some((name) => {
+      const hold = readHold(join(dir, name))
+      if (hold === undefined) return false
+      if (!isAlive(hold.pid)) {
+        removeFile(hold.path)
+        return false
+      }
+      return hold.worktree !== worktree
+    })
+}
+
+const holdText = (worktree: string, label: string): string =>
+  `${process.pid}\n${worktree}\n${label}\n${randomUUID()}\n`
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Polls `ready` with backoff until it is true or `maxWaitMs` has passed; true when it became ready. */
+async function waitFor(
+  ready: () => boolean,
+  startedMs: number,
+  maxWaitMs: number,
+): Promise<boolean> {
+  let delay = 20
+  for (;;) {
+    if (ready()) return true
+    const left = startedMs + maxWaitMs - Date.now()
+    if (left <= 0) return false
+    await sleep(Math.min(delay, left))
+    delay = Math.min(delay * 1.5, 500)
+  }
+}
+
+const done = (release: Release, waitedMs: number, quiet: boolean): Hold =>
+  Object.assign(release, { waitedMs, quiet })
+
+/** A shared hold for a CPU-heavy step: it waits while another worktree's timing step holds the quiet. */
+export async function acquireShared(
+  cwd: string,
+  label: string,
+  { maxWaitMs = QUIET_MAX_WAIT_MS }: { maxWaitMs?: number } = {},
+): Promise<Hold> {
+  const startedMs = Date.now()
+  const heavy = heavyDir(cwd)
+  if (heavy === undefined) return done(async () => {}, 0, true)
+  const { dir, worktree } = heavy
+  const path = join(dir, `shared-${process.pid}-${label.replace(/[^A-Za-z0-9_.-]/g, '_')}`)
+  const text = holdText(worktree, label)
+  // Written, then checked again: an exclusive taker creates `quiet` before it reads the shared holds, so either it
+  // sees this hold or this check sees its `quiet`.
+  const quiet = await waitFor(
+    () => {
+      if (quietElsewhere(dir, worktree)) return false
+      writeWhole(dir, path, text)
+      if (!quietElsewhere(dir, worktree)) return true
+      removeFile(path)
+      return false
+    },
+    startedMs,
+    maxWaitMs,
   )
+  if (!quiet) writeWhole(dir, path, text)
+  return done(async () => removeFile(path), Date.now() - startedMs, quiet)
+}
+
+/** The exclusive hold for a timing-bound step: `quiet` is created, then it waits for other worktrees' shared holds. */
+export async function acquireExclusive(
+  cwd: string,
+  label: string,
+  { maxWaitMs = QUIET_MAX_WAIT_MS }: { maxWaitMs?: number } = {},
+): Promise<Hold> {
+  const startedMs = Date.now()
+  const heavy = heavyDir(cwd)
+  if (heavy === undefined) return done(async () => {}, 0, true)
+  const { dir, worktree } = heavy
+  const path = join(dir, 'quiet')
+  const text = holdText(worktree, label)
+  const created = await waitFor(
+    () => {
+      if (createWhole(dir, path, text)) return true
+      // A dead holder's `quiet` is removed here, and the next try creates it.
+      liveQuiet(dir)
+      return false
+    },
+    startedMs,
+    maxWaitMs,
+  )
+  const drained =
+    created && (await waitFor(() => !sharedElsewhere(dir, worktree), startedMs, maxWaitMs))
+  const release: Release = async () => {
+    if (created && readOrUndefined(path) === text) removeFile(path)
+  }
+  return done(release, Date.now() - startedMs, drained)
 }
 
 export function stack(

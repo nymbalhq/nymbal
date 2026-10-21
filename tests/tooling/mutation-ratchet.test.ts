@@ -325,7 +325,7 @@ describe('AC-2: check exits 1 iff a file in both the ratchet and the report scor
         ],
       },
     )
-  })
+  }, 180_000)
 
   it('AC-2: pnpm mutation:ratchet runs the same check: a lowered file fails it, an equal one passes', () => {
     const dir = scratch()

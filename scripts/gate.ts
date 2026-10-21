@@ -14,7 +14,16 @@ import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { loadSentinels, type Sentinel, touchedPaths } from './sentinels'
-import { composePorts, type StackBlock, stack, stackBlock } from './stack'
+import {
+  acquireExclusive,
+  acquireShared,
+  composePorts,
+  type Hold,
+  QUIET_MAX_WAIT_MS,
+  type StackBlock,
+  stack,
+  stackBlock,
+} from './stack'
 import {
   aggregate,
   classifySource,
@@ -41,6 +50,8 @@ export type StepSpec = {
   needs?: string[]
   /** The skip is because there is nothing for the step to do (not a precondition that failed). */
   idle?: boolean
+  /** The quiet lock it holds while it runs: `shared` for a CPU-heavy step, `exclusive` for a timing-bound one. */
+  hold?: 'shared' | 'exclusive'
 }
 
 export type RunOptions = {
@@ -49,6 +60,8 @@ export type RunOptions = {
   /** Progress and the output of red steps, as they happen. */
   log?: (text: string) => void
   env?: NodeJS.ProcessEnv
+  /** How a step takes its hold; the quiet lock of `cwd`'s repository when not given. */
+  acquire?: (mode: 'shared' | 'exclusive', label: string) => Promise<Hold>
 }
 
 export type RunResult = { exitCode: number; steps: Step[]; report: string }
@@ -357,10 +370,28 @@ function execute(
   })
 }
 
+/**
+ * What a step's row says about its hold: an exclusive one always (proof runs quote the wait), a shared one only when
+ * it waited past the bound and ran during another worktree's quiet. Its wait is not in the step's time.
+ */
+function holdNote(mode: 'shared' | 'exclusive', hold: Hold): string | undefined {
+  const waited = `${seconds(hold.waitedMs)} s`
+  if (mode === 'exclusive') {
+    return hold.quiet ? `quiet after a ${waited} wait` : `ran without quiet after a ${waited} wait`
+  }
+  return hold.quiet ? undefined : `ran during another worktree's quiet after a ${waited} wait`
+}
+
 /** Runs the steps in order, each as a shell command in `cwd`; a red step does not stop the later ones. */
 export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResult> {
   const results: Step[] = []
   const log = opts.log ?? ((): void => {})
+  const acquire =
+    opts.acquire ??
+    ((mode: 'shared' | 'exclusive', label: string): Promise<Hold> =>
+      mode === 'exclusive'
+        ? acquireExclusive(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS })
+        : acquireShared(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS }))
   for (const spec of steps) {
     const unmet = (spec.needs ?? []).flatMap((need) => {
       const earlier = results.find((s) => s.name === need)
@@ -375,14 +406,29 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       log(`skipped ${spec.name}: ${reason}\n`)
       continue
     }
+    const mode = spec.hold
+    const hold = mode === undefined ? undefined : await acquire(mode, spec.name)
+    const quiet = mode === undefined || hold === undefined ? undefined : holdNote(mode, hold)
+    if (quiet !== undefined) log(`${spec.name}: ${quiet}\n`)
     log(`running ${spec.name}: ${spec.command}\n`)
     const started = performance.now()
-    const { code, output } = await execute(spec.command, opts.cwd, opts.env)
+    let code: number
+    let output: string
+    try {
+      ;({ code, output } = await execute(spec.command, opts.cwd, opts.env))
+    } finally {
+      await hold?.()
+    }
     const ms = Math.round(performance.now() - started)
+    const details = [
+      ...(code === 0 ? [] : [`exit ${code}`]),
+      ...(quiet === undefined ? [] : [quiet]),
+    ]
+    const detail = details.length === 0 ? {} : { detail: details.join('; ') }
     if (code === 0) {
-      results.push({ name: spec.name, status: 'ok', ms })
+      results.push({ name: spec.name, status: 'ok', ms, ...detail })
     } else {
-      results.push({ name: spec.name, status: 'red', ms, detail: `exit ${code}` })
+      results.push({ name: spec.name, status: 'red', ms, ...detail })
       log(`${tail(output)}\n`)
     }
     log(`${spec.name}: ${results[results.length - 1]?.status} in ${seconds(ms)} s\n`)
@@ -827,6 +873,8 @@ export type PlanInput = {
   artefactPresent?: boolean | undefined
   /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
   proofKitPackages?: string[] | undefined
+  /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
+  perfPackages?: string[] | undefined
   /** The sentinels gate:full runs: every one, or a selection (`selectSentinels`). Every one when not given. */
   sentinels?: 'all' | Set<string> | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
@@ -863,6 +911,30 @@ function rerunTestsCommand(red: RedTest[]): string {
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+/** The `perf` project's timing-bound file, which `pnpm test` would collect too; `perf-postgres` is apart already. */
+const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
+/** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
+const SHARED_HOLD_STEPS = new Set([
+  'tests',
+  'integration-postgres',
+  'proof-kit-services',
+  'integration-stores',
+  'stryker',
+  'sentinels',
+  'tests-fail-on-base',
+])
+const EXCLUSIVE_HOLD_STEPS = new Set(['perf', 'perf-postgres'])
+
+/** Marks each step with the hold it takes while it runs. */
+function withHolds(steps: StepSpec[]): StepSpec[] {
+  return steps.map((step) =>
+    EXCLUSIVE_HOLD_STEPS.has(step.name)
+      ? { ...step, hold: 'exclusive' }
+      : SHARED_HOLD_STEPS.has(step.name) || step.name.startsWith('e2e ')
+        ? { ...step, hold: 'shared' }
+        : step,
+  )
+}
 /** Where the tests step's Vitest JSON goes: test-quality reads it, and `--rerun-red` finds the red tests in it. */
 const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
@@ -990,6 +1062,25 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
   const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
   const red = input.rerun?.tests ?? []
+  // The timing-bound tests run in steps of their own. When `--only` leaves those steps out (CI's jobs name theirs), the
+  // tests and integration-postgres steps run them, as they did before the steps existed.
+  const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
+  const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  const perfPackages = input.perfPackages ?? ['packages/platform']
+  const perfReached =
+    selection.mode === 'all' ||
+    (selection.mode === 'changed' &&
+      changed.some(
+        (path) => !isDocumentation(path) && perfPackages.some((dir) => path.startsWith(`${dir}/`)),
+      ))
+  const perf: StepSpec = perfReached
+    ? { name: 'perf', command: 'pnpm exec vitest run --project perf', ...buildNeeds }
+    : {
+        name: 'perf',
+        command: 'true',
+        skip: 'no change reaches the timing-bound tests',
+        idle: true,
+      }
   const tests: StepSpec =
     red.length > 0
       ? { name: 'tests', command: rerunTestsCommand(red), ...buildNeeds }
@@ -999,19 +1090,20 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           ? {
               name: 'tests',
               command:
-                `pnpm run test --changed ${base} --passWithNoTests ${VITEST_JSON}` +
+                `pnpm run test --changed ${base} --passWithNoTests${perfApart} ${VITEST_JSON}` +
                 (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
               ...buildNeeds,
             }
-          : { name: 'tests', command: `pnpm run test ${VITEST_JSON}`, ...buildNeeds }
+          : { name: 'tests', command: `pnpm run test${perfApart} ${VITEST_JSON}`, ...buildNeeds }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,
+    perf,
     { name: 'census trend', command: `${SCRIPT} census-trend ${base}` },
   ]
-  if (!full) return { steps: select(steps, input), budgetMs: GATE_BUDGET_MS }
+  if (!full) return { steps: select(withHolds(steps), input), budgetMs: GATE_BUDGET_MS }
 
   const external = input.services === 'external'
   const block = input.stack ?? stackBlock(0)
@@ -1088,7 +1180,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : { name: 'compose up', command: compose },
     {
       name: 'integration-postgres',
-      command: `${postgres} pnpm exec vitest run --project integration-postgres`,
+      command: `${postgres} pnpm exec vitest run --project integration-postgres${picked('perf-postgres') ? '' : ' --project perf-postgres'}`,
+      needs: ['compose up'],
+    },
+    {
+      name: 'perf-postgres',
+      command: `${postgres} pnpm exec vitest run --project perf-postgres`,
       needs: ['compose up'],
     },
     {
@@ -1140,7 +1237,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
     )
   }
-  return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
+  return { steps: select(withHolds(steps), input), budgetMs: FULL_BUDGET_MS }
 }
 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
@@ -1367,6 +1464,7 @@ async function main(argv: string[]): Promise<number> {
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
+    perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
     ...(last === undefined
       ? {}
