@@ -91,16 +91,21 @@ interface AdapterModule {
   createAdapter?: (ctx: AdapterContext) => unknown
 }
 
+interface ProviderModule {
+  createAdapter: (ctx: AdapterContext) => unknown
+}
+
 /**
- * The adapter for a provider that lives in its own package, or `undefined` when the provider is built in. A missing
- * package or SDK is a `ConfigError` (`adapter.package_missing`) carrying the install line; any other load error is
- * rethrown as it is.
+ * The module of a provider that lives in its own package, imported from the kernel as `loadProviderAdapter` imports
+ * it, or `undefined` when the provider is built in. A missing package or SDK is a `ConfigError`
+ * (`adapter.package_missing`) carrying the install line, a module with no `createAdapter` is `adapter.package_invalid`,
+ * and any other load error is rethrown as it is.
  */
-export async function loadProviderAdapter(
+export async function importProviderPackage(
   slot: Slot,
   provider: string,
-  ctx: Omit<AdapterContext, 'slot'>,
-): Promise<unknown> {
+  env: NodeJS.ProcessEnv,
+): Promise<ProviderModule | undefined> {
   const entry = PROVIDER_PACKAGES[slot]?.[provider]
   if (entry === undefined) return undefined
   let mod: AdapterModule
@@ -109,7 +114,7 @@ export async function loadProviderAdapter(
   } catch (error) {
     const missing = missingPackage(error)
     if (missing !== entry.package && missing !== entry.sdk) throw error
-    const install = installLine([entry.package, entry.sdk], ctx.env, process.cwd())
+    const install = installLine([entry.package, entry.sdk], env, process.cwd())
     throw new ConfigError(`${choiceOf(slot, provider)} needs ${entry.package}: ${install}`, {
       code: 'adapter.package_missing',
       cause: error,
@@ -122,5 +127,19 @@ export async function loadProviderAdapter(
       context: { slot, provider, package: entry.package },
     })
   }
+  return mod as ProviderModule
+}
+
+/**
+ * The adapter for a provider that lives in its own package, or `undefined` when the provider is built in; it fails as
+ * `importProviderPackage` does.
+ */
+export async function loadProviderAdapter(
+  slot: Slot,
+  provider: string,
+  ctx: Omit<AdapterContext, 'slot'>,
+): Promise<unknown> {
+  const mod = await importProviderPackage(slot, provider, ctx.env)
+  if (mod === undefined) return undefined
   return await mod.createAdapter({ ...ctx, slot })
 }

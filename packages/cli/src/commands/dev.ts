@@ -1,8 +1,10 @@
+import { resolve } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { KNOWN_PROVIDERS, type NymbalConfig } from '@nymbalhq/config'
+import type { CommerceSlot } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
-import { createApp, runSeed } from '@nymbalhq/platform'
+import { createApp, createLogger, runSeed, sqliteFile, type NymbalApp } from '@nymbalhq/platform'
 import { createHttpServer } from '@nymbalhq/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
@@ -11,6 +13,7 @@ import { planTemplateLaunch } from '../utils/template-runner.js'
 import { migrateProject } from './migrate.js'
 import { resolveAdminRoot } from '../admin.js'
 import { runShutdown, SHUTDOWN_BOUND_MS, type ShutdownStep } from '../utils/shutdown.js'
+import { renderDevSummary, type DevSummaryInfo } from './dev-summary.js'
 
 /** Default storefront dev-server port per template (matches the scaffold scripts). */
 export function defaultStorefrontPort(template: 'astro' | 'nextjs'): number {
@@ -60,6 +63,43 @@ export function storefrontEnv(
   }
 }
 
+/** dev logs at info, so it prints the summary and not every projection; `LOG_LEVEL` wins over `--verbose`. */
+export function devLogLevel(verbose: boolean, env: NodeJS.ProcessEnv): string {
+  const fromEnv = env['LOG_LEVEL']
+  if (fromEnv !== undefined && fromEnv !== '') return fromEnv
+  return verbose ? 'debug' : 'info'
+}
+
+/** The summary's facts, from the running app: no URL here carries anything but what the config gave. */
+function summaryInfo(
+  config: NymbalConfig,
+  app: NymbalApp,
+  apiUrl: string,
+  storefront: DevSummaryInfo['storefront'],
+  adminBuilt: boolean,
+): DevSummaryInfo {
+  const report = app.capabilities()
+  return {
+    store: config.store.name,
+    apiUrl,
+    storefront,
+    admin: adminBuilt ? { url: `${apiUrl}/admin/` } : null,
+    commandStore:
+      config.infrastructure.commandStore === 'sqlite'
+        ? { kind: 'sqlite', path: resolve(sqliteFile()) }
+        : { kind: 'postgres', url: process.env['DATABASE_URL'] ?? '' },
+    slots: (Object.keys(KNOWN_PROVIDERS) as CommerceSlot[]).map((slot) => ({
+      slot,
+      provider: report[slot].provider,
+      capabilities: report[slot].capabilities,
+    })),
+    primitives: (['documentStore', 'eventBus', 'media'] as const).map((name) => ({
+      name,
+      provider: report[name].provider,
+    })),
+  }
+}
+
 /** The API port: `--port` when given, else the config's `http.port`. */
 function apiPort(config: NymbalConfig, flagPort: string | undefined): number {
   if (flagPort === undefined || flagPort.trim() === '') return config.http.port
@@ -104,6 +144,11 @@ export const devCommand = defineCommand({
         'Port for the storefront dev server (default: 4321 Astro / 3000 Next.js). ' +
         'If busy, the next free port is used. Also settable via NYMBAL_STOREFRONT_PORT.',
     },
+    verbose: {
+      type: 'boolean',
+      description: 'Log at debug (LOG_LEVEL, when set, wins)',
+      default: false,
+    },
   },
   async run({ args }) {
     const loaded = await loadProject()
@@ -115,8 +160,13 @@ export const devCommand = defineCommand({
     // Auto-migrate on startup so a fresh clone works without running `nymbal migrate` first
     await migrateProject(config, projectRoot)
 
+    const logger = createLogger({
+      base: { store: config.store.name },
+      level: devLogLevel(args.verbose, process.env),
+    })
     const app = await createApp(config, {
       version,
+      logger,
       ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
     })
     const { platform } = app
@@ -146,16 +196,13 @@ export const devCommand = defineCommand({
       version,
     })
     const adminRoot = resolveAdminRoot()
-    if (adminRoot === null) {
-      // eslint-disable-next-line no-console
-      console.log(
-        pc.yellow(
-          '→ The admin is not built, so /admin/ answers 404: run `pnpm --filter @nymbalhq/admin build`.',
-        ),
-      )
-    }
     await app.attachHttp(http.adapter, { adminRoot })
     await http.start()
+    const apiUrl = `http://localhost:${config.http.port}`
+    const printSummary = (storefront: DevSummaryInfo['storefront']) => {
+      // eslint-disable-next-line no-console
+      console.log(renderDevSummary(summaryInfo(config, app, apiUrl, storefront, adminRoot !== null)))
+    }
 
     const stopApi: ShutdownStep[] = [
       { name: 'http.stop', run: () => http.stop() },
@@ -169,6 +216,7 @@ export const devCommand = defineCommand({
       })
 
     if (args.apiOnly) {
+      printSummary(null)
       const shutdown = (signal: string) => {
         platform.logger.info({ signal }, 'Shutting down API')
         return shutdownWith(stopApi)
@@ -201,21 +249,12 @@ export const devCommand = defineCommand({
     // monorepo layout falls back to a pnpm --filter on the template package.
     const launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
 
-    const apiUrl = `http://localhost:${config.http.port}`
     const storefrontUrl = `http://localhost:${storefrontPort}`
-    // eslint-disable-next-line no-console
-    console.log(
-      pc.cyan(
-        `→ Starting storefront (${pc.bold(config.template)}, ${launch.mode}) on ${pc.bold(storefrontUrl)}`,
-      ),
-    )
-    // eslint-disable-next-line no-console
-    console.log(pc.dim(`  API: ${apiUrl}`))
-
     const templateProc = run(launch.command, launch.args, {
       cwd: launch.cwd,
       env: storefrontEnv(config, apiUrl, storefrontPort),
     })
+    printSummary({ template: `${config.template}, ${launch.mode}`, url: storefrontUrl })
 
     let shuttingDown = false
     const shutdown = (signal: string) => {

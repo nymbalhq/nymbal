@@ -1,5 +1,11 @@
 import { AdapterError, queryDocuments } from '@nymbalhq/types'
-import type { DocumentStoreAdapter, PutOptions, QueryParams, QueryResult } from '@nymbalhq/types'
+import type {
+  DocumentStoreAdapter,
+  HealthReport,
+  PutOptions,
+  QueryParams,
+  QueryResult,
+} from '@nymbalhq/types'
 
 interface Entry {
   doc: unknown
@@ -29,6 +35,11 @@ export class InMemoryDocumentStore implements DocumentStoreAdapter {
 
   capabilities(): readonly string[] {
     return ['get', 'put', 'delete', 'query', 'batch', 'ttl', 'conditional-put']
+  }
+
+  /** The process's own memory: healthy whenever it can answer. */
+  async healthCheck(): Promise<HealthReport> {
+    return { status: 'healthy' }
   }
 
   async get<T>(collection: string, key: string): Promise<T | null> {

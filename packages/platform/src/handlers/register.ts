@@ -79,5 +79,5 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     processedEventRepo: repos.processedEvent,
   })
 
-  logger.info('event handlers registered')
+  logger.debug('event handlers registered')
 }

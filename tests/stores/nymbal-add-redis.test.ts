@@ -6,6 +6,15 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  closedPort,
+  DEBUG_LINE,
+  doctorLines,
+  linesNaming,
+  startDev,
+  type DevRun,
+  type DoctorLine,
+} from '../support/doctor'
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 
 // Acceptance test for P2-03 AC-5, the roadmap proof as scoped (spec P2-03-nymbal-add-recipe): a fresh Astro scaffold,
@@ -19,6 +28,14 @@ import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 // lockfile back byte for byte and re-installs from it.
 // Needs `pnpm build` and Redis (NYMBAL_TEST_REDIS_URL). Kills: `nymbal add redis` leaving a project that does not run
 // on Redis.
+//
+// P2-09 AC-7, the roadmap proof (spec P2-09-dev-stage), and AC-5 (a) on the same scaffold, the one place the Redis
+// packages are in a project's own node_modules: after `nymbal add redis`, `nymbal doctor` with REDIS_URL at a closed
+// port exits 1, its `primitive documentStore` line is down naming redis and the host:port, and every other check still
+// runs, with the names of the healthy run; with the composed Redis it exits 0. `nymbal dev --api-only` there prints the
+// summary naming the `redis` document store and no DEBUG line. (The recipe's variable is REDIS_URL, which the spec's
+// AC-7 calls NYMBAL_REDIS_URL.) Kills: a doctor that does not see the scaffold's real config, a dev that is noisy on a
+// scaffold.
 
 const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -286,4 +303,61 @@ describe('P2-03 AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', 
     expect(deleted).toBeGreaterThanOrEqual(before)
     expect(await keysUnder(redisUrl, prefix)).toHaveLength(0)
   }, 60_000)
+})
+
+describe('P2-09 AC-7: nymbal doctor and the dev summary on the scaffold after `nymbal add redis`', () => {
+  const bin = () => join(DIR, 'node_modules/nymbal/bin/nymbal.mjs')
+  let closed: { code: number; output: string; port: number } | null = null
+  let dev: DevRun | null = null
+
+  afterAll(async () => {
+    await dev?.stop()
+  })
+
+  const names = (lines: DoctorLine[]) => lines.map((l) => l.name)
+
+  it('AC-7, AC-5 (a): with REDIS_URL at a closed port, doctor exits 1 and `primitive documentStore` is down naming redis and the host:port', async () => {
+    const port = await closedPort()
+    const run = await sh(process.execPath, [bin(), 'doctor'], DIR, {
+      ...storeEnv(),
+      REDIS_URL: `redis://127.0.0.1:${port}`,
+    })
+    closed = { ...run, port }
+    const documentStore = doctorLines(run.output).find((l) => l.name === 'primitive documentStore')
+
+    expect(run.code, run.output.slice(-4000)).toBe(1)
+    expect(documentStore?.status).toBe('down')
+    expect(documentStore?.detail).toMatch(/redis/i)
+    expect(documentStore?.detail).toContain(`127.0.0.1:${port}`)
+  }, 120_000)
+
+  it('AC-7, AC-5 (a): with the composed Redis, doctor exits 0 with no down line, and lists the same checks as the closed-port run', async () => {
+    const run = await sh(process.execPath, [bin(), 'doctor'], DIR, storeEnv())
+    const lines = doctorLines(run.output)
+
+    expect(run.code, run.output.slice(-4000)).toBe(0)
+    expect(lines.filter((l) => l.status === 'down')).toEqual([])
+    expect(closed, 'the closed-port run above').not.toBeNull()
+    expect(names(lines)).toEqual(names(doctorLines(closed!.output)))
+    expect(lines.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  it('AC-7: dev --api-only prints the summary naming the redis document store, and no DEBUG line up to 2 s after a GET /api/products', async () => {
+    const env = storeEnv()
+    delete env['LOG_LEVEL']
+    dev = await startDev([], { cwd: DIR, env, bin: bin(), readyWithinMs: READY_WITHIN_MS })
+    const res = await fetch(`${dev.base}/api/products`, { signal: AbortSignal.timeout(10_000) })
+    expect(res.status).toBe(200)
+    await new Promise((r) => setTimeout(r, 2000))
+    const out = dev.output()
+
+    expect(
+      out.split('\n').filter((l) => DEBUG_LINE.test(l)),
+      out.slice(-4000),
+    ).toEqual([])
+    expect(
+      linesNaming(out, 'documentStore', 'redis').length,
+      out.slice(-4000),
+    ).toBeGreaterThanOrEqual(1)
+  }, 180_000)
 })

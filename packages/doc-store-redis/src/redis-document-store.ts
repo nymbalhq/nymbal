@@ -1,8 +1,12 @@
 import { Redis } from 'ioredis'
 import {
   AdapterError,
+  boundedHealthCheck,
+  connectionSecrets,
+  HEALTH_CHECK_TIMEOUT_MS,
   queryDocuments,
   type DocumentStoreAdapter,
+  type HealthReport,
   type Logger,
   type PutOptions,
   type QueryParams,
@@ -95,6 +99,7 @@ const SWEEP_BATCH = 500
 /** A document store on Redis: one hash per collection under the prefix, ordered and filtered by the reference. */
 export class RedisDocumentStore implements DocumentStoreAdapter {
   readonly #client: Redis & Scripted
+  readonly #url: string
   readonly #prefix: string
   readonly #now: () => number
   readonly #logger: Logger | undefined
@@ -105,6 +110,7 @@ export class RedisDocumentStore implements DocumentStoreAdapter {
     client.defineCommand('nymbalPutIf', { numberOfKeys: 3, lua: PUT_IF })
     client.defineCommand('nymbalSweep', { numberOfKeys: 2, lua: SWEEP })
     this.#client = client as Redis & Scripted
+    this.#url = options.url
     this.#prefix = options.prefix
     this.#now = options.now ?? Date.now
     this.#logger = options.logger
@@ -117,6 +123,10 @@ export class RedisDocumentStore implements DocumentStoreAdapter {
 
   capabilities(): readonly string[] {
     return ['get', 'put', 'delete', 'query', 'batch', 'ttl', 'conditional-put']
+  }
+
+  healthCheck(): Promise<HealthReport> {
+    return pingRedis(this.#url)
   }
 
   async get<T>(collection: string, key: string): Promise<T | null> {
@@ -251,6 +261,30 @@ export class RedisDocumentStore implements DocumentStoreAdapter {
     const stored = this.#decode(raw)
     return stored === null ? null : (stored.d as T)
   }
+}
+
+/**
+ * PING on a client of its own that never retries and queues nothing, disconnected afterwards: the store's or bus's own
+ * clients retry a closed port for as long as the process lives, so they cannot answer within the bound.
+ */
+function pingRedis(url: string, timeoutMs = HEALTH_CHECK_TIMEOUT_MS): Promise<HealthReport> {
+  const client = new Redis(url, {
+    lazyConnect: true,
+    retryStrategy: () => null,
+    maxRetriesPerRequest: 0,
+    enableOfflineQueue: false,
+    connectTimeout: timeoutMs,
+  })
+  // connect() rejects with the same error, and the report carries it; without a listener ioredis would throw it.
+  client.on('error', () => undefined)
+  return boundedHealthCheck(
+    async () => {
+      await client.connect()
+      await client.ping()
+      return { status: 'healthy' }
+    },
+    { timeoutMs, redact: connectionSecrets(url) },
+  ).finally(() => client.disconnect())
 }
 
 /** Connects to `url` and resolves once the connection is ready; a server that cannot be reached rejects. */

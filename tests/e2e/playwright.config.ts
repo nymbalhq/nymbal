@@ -14,14 +14,23 @@ const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
 const isCustom = target !== undefined && CUSTOM_TARGETS.includes(target)
 const CUSTOM_API = 'http://localhost:3011'
 const NATIVE_API = 'http://localhost:3001'
-// The journeys read API_URL from here (support/csrf.ts); a custom run must point them at the fixture API, whatever
-// the shell says, or its API assertions would read the native store.
+// P2-09 decision 6: the no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of
+// its own on 3021, with storefronts on 4341 (Astro) and 3020 (Next.js). `astro-nosearch` and `nextjs-nosearch` run only
+// the journeys tagged @nosearch, and every other project leaves them out.
+const NOSEARCH_TARGETS = ['astro-nosearch', 'nextjs-nosearch']
+const isNoSearch = target !== undefined && NOSEARCH_TARGETS.includes(target)
+const NOSEARCH_API = 'http://localhost:3021'
+// The journeys read API_URL from here (support/csrf.ts); a custom or no-search run must point them at its fixture API,
+// whatever the shell says, or its API assertions would read the native store.
 if (isCustom) process.env.NYMBAL_API_URL = CUSTOM_API
+if (isNoSearch) process.env.NYMBAL_API_URL = NOSEARCH_API
 
 const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
 const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
 const astroCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4331'
 const nextjsCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3010'
+const astroNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4341'
+const nextjsNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3020'
 // The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api (P1-08).
 const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:3001/admin/'
 
@@ -35,6 +44,10 @@ const sqlitePath = (process.env.NYMBAL_E2E_SQLITE_PATH ??= join(
 const customSqlitePath = (process.env.NYMBAL_E2E_CUSTOM_SQLITE_PATH ??= join(
   tmpdir(),
   `nymbal-e2e-custom-${Date.now()}-${process.pid}.db`,
+))
+const noSearchSqlitePath = (process.env.NYMBAL_E2E_NOSEARCH_SQLITE_PATH ??= join(
+  tmpdir(),
+  `nymbal-e2e-nosearch-${Date.now()}-${process.pid}.db`,
 ))
 
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
@@ -60,6 +73,20 @@ const customApiServer = {
   timeout: 90000,
   env: {
     NYMBAL_SQLITE_PATH: customSqlitePath,
+  },
+  gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
+}
+
+/** The no-search store: `nymbal dev --api-only` from its fixture directory, as the custom store runs from its own. */
+const noSearchApiServer = {
+  command:
+    'node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only',
+  url: `${NOSEARCH_API}/health`,
+  cwd: './fixtures/no-search',
+  reuseExistingServer: false,
+  timeout: 90000,
+  env: {
+    NYMBAL_SQLITE_PATH: noSearchSqlitePath,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
@@ -103,7 +130,7 @@ function nextjsServer(url: string, api: string) {
  * The admin needs the API alone, which serves the built admin (`pnpm --filter @nymbalhq/admin build` first).
  */
 function servers() {
-  const targets = ['astro', 'nextjs', 'admin', ...CUSTOM_TARGETS]
+  const targets = ['astro', 'nextjs', 'admin', ...CUSTOM_TARGETS, ...NOSEARCH_TARGETS]
   if (target !== undefined && !targets.includes(target)) {
     throw new Error(`NYMBAL_E2E_TARGET must be one of ${targets.join(', ')}; got "${target}"`)
   }
@@ -112,6 +139,12 @@ function servers() {
   if (target === 'astro-custom') return [customApiServer, astroServer(astroCustomURL, CUSTOM_API)]
   if (target === 'nextjs-custom') {
     return [customApiServer, nextjsServer(nextjsCustomURL, CUSTOM_API)]
+  }
+  if (target === 'astro-nosearch') {
+    return [noSearchApiServer, astroServer(astroNoSearchURL, NOSEARCH_API)]
+  }
+  if (target === 'nextjs-nosearch') {
+    return [noSearchApiServer, nextjsServer(nextjsNoSearchURL, NOSEARCH_API)]
   }
   if (isAdminE2E) return [apiServer]
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
@@ -133,6 +166,7 @@ export default defineConfig({
     {
       name: 'astro',
       testIgnore: ['**/journeys/admin/**'],
+      grepInvert: /@nosearch/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -141,6 +175,7 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
+      grepInvert: /@nosearch/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -151,7 +186,7 @@ export default defineConfig({
     {
       name: 'astro-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual/,
+      grepInvert: /@visual|@nosearch/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
@@ -160,10 +195,29 @@ export default defineConfig({
     {
       name: 'nextjs-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual/,
+      grepInvert: /@visual|@nosearch/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,
+      },
+    },
+    // The no-search store: only the journeys tagged @nosearch, which no other project runs.
+    {
+      name: 'astro-nosearch',
+      testIgnore: ['**/journeys/admin/**'],
+      grep: /@nosearch/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: astroNoSearchURL,
+      },
+    },
+    {
+      name: 'nextjs-nosearch',
+      testIgnore: ['**/journeys/admin/**'],
+      grep: /@nosearch/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: nextjsNoSearchURL,
       },
     },
     {

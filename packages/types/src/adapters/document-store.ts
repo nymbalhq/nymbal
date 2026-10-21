@@ -1,3 +1,5 @@
+import type { HealthReport } from './adapter-base.js'
+
 export interface PutOptions {
   ttl?: number
   conditionKey?: string
@@ -37,4 +39,9 @@ export interface DocumentStoreAdapter {
   batchGet<T>(collection: string, keys: string[]): Promise<Map<string, T>>
   batchPut<T>(collection: string, items: Map<string, T>): Promise<void>
   close(): Promise<void>
+  /**
+   * Whether the store can serve, within `HEALTH_CHECK_TIMEOUT_MS`. Optional, so a store written before it existed
+   * still type-checks; `nymbal doctor` reports one without it as `no healthCheck`.
+   */
+  healthCheck?(): Promise<HealthReport>
 }
