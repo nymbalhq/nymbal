@@ -11,6 +11,7 @@ import { ProductEditPage, productEditHandle, productNewHandle } from '@/pages/Pr
 import { InventoryPage, inventoryHandle } from '@/pages/InventoryPage'
 import { CustomersListPage, customersListHandle } from '@/pages/CustomersListPage'
 import { CustomerDetailPage, customerDetailHandle } from '@/pages/CustomerDetailPage'
+import { SettingsPage, settingsHandle } from '@/pages/SettingsPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
 let restoreAttempt: Promise<boolean> | null = null
@@ -100,6 +101,11 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           ],
         },
         {
+          path: 'settings',
+          element: <SettingsPage />,
+          handle: settingsHandle,
+        },
+        {
           path: '*',
           element: <NotFoundPage />,
         },
@@ -108,7 +114,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
   ],
   {
     basename: '/admin',
-  }
+  },
 )
 
 onSessionLost(() => {

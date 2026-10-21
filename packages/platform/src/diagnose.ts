@@ -15,7 +15,7 @@ import {
   type Logger,
   type Slot,
 } from '@nymbalhq/types'
-import { importProviderPackage, PROVIDER_PACKAGES } from './adapters/loader.js'
+import { declaredSettings, importProviderPackage, PROVIDER_PACKAGES } from './adapters/loader.js'
 import {
   checkInjectedSlot,
   COMMERCE_SLOTS,
@@ -33,7 +33,10 @@ import {
 import { migrationState } from './db/migrate.js'
 import { createLogger } from './logger.js'
 import { buildDocumentStore, buildEventBus, buildMedia, redisUrlOf } from './platform.js'
-import { buildRepositories } from './repositories/index.js'
+import { buildRepositories, type SettingRow } from './repositories/index.js'
+import { listStoredSettings, settingValues } from './settings/load.js'
+import type { SettingValue } from './settings/resolve.js'
+import { scrub, scrubbingLogger } from './settings/secret-set.js'
 
 /** `ok` is a check with no health semantics (config, a package, migrations); the rest are a health report's. */
 export type DiagnosisStatus = HealthStatus | 'ok'
@@ -163,14 +166,18 @@ export async function diagnose(
   const parsed = nymbalConfigSchema.safeParse(input)
   if (!parsed.success) {
     const detail = parsed.error.issues
-      .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : '<root>'}: ${issue.message}`)
+      .map(
+        (issue) => `${issue.path.length > 0 ? issue.path.join('.') : '<root>'}: ${issue.message}`,
+      )
       .join('; ')
     return { checks: [{ name: 'config', status: 'down', detail }] }
   }
   const config = parsed.data
   const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS
   const env = options.env ?? process.env
-  const logger = options.logger ?? createLogger({ base: { store: config.store.name } })
+  const logger = scrubbingLogger(
+    options.logger ?? createLogger({ base: { store: config.store.name } }),
+  )
   const injected = options.adapters ?? {}
   const infrastructure = config.infrastructure
   const providers: Record<Slot, string> = {
@@ -187,9 +194,7 @@ export async function diagnose(
   for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES]) {
     const entry = PROVIDER_PACKAGES[slot]?.[providers[slot]]
     if (entry === undefined) continue
-    const found = await within(timeoutMs, () =>
-      importProviderPackage(slot, providers[slot], env),
-    )
+    const found = await within(timeoutMs, () => importProviderPackage(slot, providers[slot], env))
     packages.push({
       name: `package ${slot}`,
       status: found.ok ? 'ok' : 'down',
@@ -260,7 +265,11 @@ export async function diagnose(
             status: 'down',
             detail: `${state.value.pending} pending: run \`nymbal migrate\``,
           }
-        : { name: 'migrations', status: 'ok', detail: `${state.value.applied} applied, none pending` }
+        : {
+            name: 'migrations',
+            status: 'ok',
+            detail: `${state.value.applied} applied, none pending`,
+          }
   }
 
   const primitiveOptions = {
@@ -322,9 +331,24 @@ export async function diagnose(
     return boundedHealthCheck(() => check(), { timeoutMs })
   }
 
+  // The rows Settings hold fill each slot as createApp fills it; a store that did not open holds none.
+  const stored: Outcome<SettingRow[]> =
+    commandStore === undefined
+      ? { ok: true, value: [] }
+      : await within(timeoutMs, () => listStoredSettings(commandStore))
+  /** The values Settings give `slot`'s declared fields, decrypted; a row that cannot be read fails the slot. */
+  const settingsOf = async (slot: CommerceSlot): Promise<SettingValue[]> => {
+    const provider = providers[slot]
+    if (provider === 'custom') return []
+    const declared = declaredSettings(await importProviderPackage(slot, provider, env))
+    if (declared.length === 0) return []
+    if (!stored.ok) throw new Error(`settings not read: ${stored.detail}`)
+    return settingValues(config, [{ slot, provider, declared }], stored.value, env, logger)
+  }
+
   const slots: DiagnosisCheck[] = []
   const adapterLogger = logger.child({ layer: 'adapter' })
-  const builders = slotBuilders({
+  const builderDeps = {
     config,
     logger: adapterLogger,
     sql:
@@ -336,17 +360,22 @@ export async function diagnose(
       documentStore ?? unavailableDocumentStore(),
     ),
     injected,
-  })
+  }
   for (const slot of COMMERCE_SLOTS) {
     const provider = providers[slot]
     const adapter = await within(timeoutMs, async (): Promise<Checkable | null> => {
       checkInjectedSlot(config, slot, injected)
+      const settings = await settingsOf(slot)
       return slot === 'payments'
-        ? resolvePaymentsAdapter(config, adapterLogger, injected)
-        : builders[slot]()
+        ? resolvePaymentsAdapter(config, adapterLogger, injected, settings)
+        : slotBuilders({ ...builderDeps, settings })[slot]()
     })
     if (!adapter.ok) {
-      slots.push({ name: `slot ${slot}`, status: 'down', detail: described(provider, adapter.detail) })
+      slots.push({
+        name: `slot ${slot}`,
+        status: 'down',
+        detail: described(provider, adapter.detail),
+      })
     } else if (adapter.value === null) {
       slots.push({ name: `slot ${slot}`, status: 'ok', detail: provider })
     } else {
@@ -358,7 +387,11 @@ export async function diagnose(
   for (const name of PRIMITIVES) {
     const primitive = built[name]
     if (primitive === undefined) {
-      primitives.push({ name: `primitive ${name}`, status: 'down', detail: primitiveFailures[name] ?? '' })
+      primitives.push({
+        name: `primitive ${name}`,
+        status: 'down',
+        detail: primitiveFailures[name] ?? '',
+      })
     } else {
       primitives.push(fromReport(`primitive ${name}`, subject(name), await health(primitive)))
     }
@@ -381,7 +414,7 @@ export async function diagnose(
     ...primitives,
   ].map((check) => ({
     ...check,
-    detail: secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail),
+    detail: scrub(secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail)),
   }))
   return { checks }
 }

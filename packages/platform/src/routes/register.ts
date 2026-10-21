@@ -4,6 +4,7 @@ import type { ServiceRegistry } from '../services/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import type { DeclaredSlot } from '../settings/load.js'
 import { runWithCorrelation } from '../events/correlation.js'
 import { createAuthMiddleware } from './auth-middleware.js'
 import { registerAuthRoutes } from './auth.js'
@@ -29,6 +30,8 @@ export interface RegisterAllRoutesDeps {
   documentStore: DocumentStoreAdapter
   eventBus: EventBusAdapter
   publisher: EventPublisher
+  /** The slots whose provider packages declare settings, as the store booted with them. */
+  settingsSlots: readonly DeclaredSlot[]
   /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
   adminRoot?: string | null | undefined
 }
@@ -91,6 +94,8 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     services,
     repos,
     adapters,
+    publisher,
+    settingsSlots: deps.settingsSlots,
   })
   registerEventsSseRoute(adapter, {
     eventBus,

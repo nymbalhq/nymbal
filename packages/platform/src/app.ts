@@ -13,6 +13,8 @@ import {
   type InjectedAdapters,
 } from './adapters/registry.js'
 import { createLogger } from './logger.js'
+import { loadBootSettings } from './settings/load.js'
+import { scrubbingLogger } from './settings/secret-set.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type Relay } from './events/relay.js'
@@ -131,10 +133,27 @@ export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
 ): Promise<NymbalApp> {
-  const logger = options.logger ?? createLogger({ base: { store: config.store.name } })
+  // Whatever logger the caller gives, nothing it writes carries a secret Settings hold.
+  const logger = scrubbingLogger(
+    options.logger ?? createLogger({ base: { store: config.store.name } }),
+  )
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
-  const payments = await resolvePaymentsAdapter(config, adapterLogger, options.adapters)
+  // Settings are read, through a read-only open closed again here, before any adapter is built: payments first.
+  const settings = await loadBootSettings(config, {
+    storage: {
+      ...(options.sqlitePath !== undefined && { sqlitePath: options.sqlitePath }),
+      ...(options.postgresUrl !== undefined && { postgresUrl: options.postgresUrl }),
+    },
+    env: process.env,
+    logger,
+  })
+  const payments = await resolvePaymentsAdapter(
+    config,
+    adapterLogger,
+    options.adapters,
+    settings.values,
+  )
   refuseUnsafeProduction(config, payments)
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
@@ -155,6 +174,7 @@ export async function createApp(
       sql: rawClients(platform.commandStore),
       repos,
       payments,
+      settings: settings.values,
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })
     const relay = createRelay({
@@ -253,6 +273,7 @@ export async function createApp(
           documentStore: platform.documentStore,
           eventBus: subscriberBus,
           publisher,
+          settingsSlots: settings.slots,
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
         })

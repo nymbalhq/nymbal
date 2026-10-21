@@ -49,6 +49,7 @@ export const EVT_PAYMENT_REFUNDED = 'payment.refunded.v1'
 
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
+export const EVT_SETTINGS_CHANGED = 'settings.changed.v1'
 
 export const STANDARD_EVENT_TYPES = [
   EVT_PRODUCT_CREATED,
@@ -85,4 +86,5 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,
   EVT_ADAPTER_ERROR,
+  EVT_SETTINGS_CHANGED,
 ] as const

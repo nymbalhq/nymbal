@@ -23,6 +23,7 @@ const idParams = z.object({ id })
 const orderIdParams = idParams
 const variantIdParams = z.object({ variantId: id })
 const orderNumberParams = z.object({ orderNumber: id })
+const settingParams = z.object({ slot: id, path: id })
 
 const address = z.object({
   firstName: z.string(),
@@ -227,6 +228,23 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/admin/me': {
     name: 'admin.me',
     description: 'Get the signed-in admin and the store it administers.',
+  },
+  'GET /api/admin/settings': {
+    name: 'admin.settings.list',
+    description:
+      "List each slot's provider and the fields it lets Settings fill: where each is set from, and no secret value.",
+  },
+  'PUT /api/admin/settings/:slot/:path': {
+    name: 'admin.settings.put',
+    description:
+      'Save a value for a field the config and environment leave unset; it applies at the next start.',
+    params: settingParams,
+    body: z.object({ value: z.string().min(1) }),
+  },
+  'DELETE /api/admin/settings/:slot/:path': {
+    name: 'admin.settings.delete',
+    description: 'Clear the saved value of a field; it applies at the next start.',
+    params: settingParams,
   },
   'GET /api/admin/dashboard': {
     name: 'admin.dashboard',

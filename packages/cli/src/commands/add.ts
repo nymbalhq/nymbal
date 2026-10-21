@@ -18,6 +18,7 @@ import {
   missingEnv,
   readRecipe,
   recipeFile,
+  settingsEnv,
 } from '../recipes/index.js'
 
 export interface AddOptions {
@@ -228,7 +229,14 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
   if (unset.length > 0 || recipe.next.length > 0) {
     out()
     out('Next:')
-    for (const v of unset) out(`  - set ${v.name} in .env`)
+    const fromSettings = unset.length > 0 ? await settingsEnv(recipe.install, root) : new Set()
+    for (const v of unset) {
+      out(
+        fromSettings.has(v.name)
+          ? `  - set ${v.name} in .env or in the admin's Settings`
+          : `  - set ${v.name} in .env`,
+      )
+    }
     for (const line of recipe.next) out(`  - ${line}`)
   }
   return 0

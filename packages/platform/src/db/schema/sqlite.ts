@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm'
-import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from 'drizzle-orm/sqlite-core'
+import {
+  sqliteTable,
+  text,
+  integer,
+  blob,
+  uniqueIndex,
+  index,
+  primaryKey,
+  check,
+} from 'drizzle-orm/sqlite-core'
 
 // --- Categories ------------------------------------------------------------
 
@@ -360,6 +369,34 @@ export const processedEvents = sqliteTable(
   }),
 )
 
+// --- Settings --------------------------------------------------------------
+
+/**
+ * Values a store owner entered in the admin for the fields a provider package declares: a secret as AES-256-GCM
+ * ciphertext with its IV, tag and key id, anything else as `plain`.
+ */
+export const settings = sqliteTable(
+  'settings',
+  {
+    slot: text('slot').notNull(),
+    path: text('path').notNull(),
+    ciphertext: blob('ciphertext', { mode: 'buffer' }),
+    plain: text('plain'),
+    iv: blob('iv', { mode: 'buffer' }),
+    tag: blob('tag', { mode: 'buffer' }),
+    keyId: text('key_id'),
+    updatedAt: text('updated_at').notNull(),
+    updatedBy: text('updated_by'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.slot, t.path] }),
+    oneValue: check(
+      'settings_one_value',
+      sql`(${t.ciphertext} IS NULL) <> (${t.plain} IS NULL) AND (${t.ciphertext} IS NULL OR (${t.iv} IS NOT NULL AND ${t.tag} IS NOT NULL AND ${t.keyId} IS NOT NULL))`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -376,4 +413,5 @@ export const schema = {
   carts,
   events,
   processedEvents,
+  settings,
 }

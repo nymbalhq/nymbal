@@ -165,13 +165,15 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
     },
   )
 
-  it('AC-4: `nymbal add stripe` with no Stripe env set exits 0 and prints "set STRIPE_SECRET_KEY in .env"', async () => {
+  // P3-07 Decision 1: a variable the package declares as a setting can come from the admin's Settings as well.
+  it('AC-4: `nymbal add stripe` with no Stripe env set exits 0 and prints "set STRIPE_SECRET_KEY in .env or in the admin\'s Settings"', async () => {
     const dir = project('stripe')
     const before = listing(dir)
 
     const result = await add(dir, 'stripe', '--no-install')
     expect(result.code, result.output).toBe(0)
-    expect(result.output).toContain('set STRIPE_SECRET_KEY in .env')
+    expect(result.output).toContain("set STRIPE_SECRET_KEY in .env or in the admin's Settings")
+    expect(result.output).toContain("set STRIPE_WEBHOOK_SECRET in .env or in the admin's Settings")
     expect(changedPaths(before, listing(dir))).toEqual(['.env.example', 'nymbal.config.ts'])
   })
 
