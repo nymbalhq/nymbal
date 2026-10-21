@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -94,8 +94,53 @@ function lastJson(stdout: string): Resolved {
   return JSON.parse(stdout.trimEnd().split('\n').pop() ?? '{}') as Resolved
 }
 
-/** Resolves the slot of each directory in a child process of its own; with `together`, all at the same moment. */
-async function resolveInChildren(dirs: string[], together: boolean): Promise<Resolved[]> {
+// A child that says when it calls resolveSlot (a synchronous write, so it is seen even while resolveSlot blocks), and
+// prints the slot with the time it got it.
+const TIMED_RESOLVE = `const fs = require('node:fs')
+import(process.env.NYMBAL_TEST_STACK_URL).then((m) => {
+  fs.writeSync(1, JSON.stringify({ called: Date.now() }) + '\\n')
+  let line
+  try { line = { slot: m.resolveSlot(process.cwd(), {}), at: Date.now() } }
+  catch (e) { line = { error: String(e && e.message !== undefined ? e.message : e), at: Date.now() } }
+  fs.writeSync(1, JSON.stringify(line) + '\\n')
+}, (e) => fs.writeSync(1, JSON.stringify({ called: Date.now(), error: String(e) }) + '\\n'))`
+
+type TimedResolved = Resolved & { at?: number }
+
+function spawnTimedResolve(cwd: string): { called: Promise<number>; done: Promise<TimedResolved> } {
+  const child = spawn(TSX, ['--eval', TIMED_RESOLVE], {
+    cwd,
+    env: { ...cleanEnv(), NYMBAL_TEST_STACK_URL: STACK_URL },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let stdout = ''
+  let markCalled = (_at: number): void => {}
+  const called = new Promise<number>((resolve) => {
+    markCalled = resolve
+  })
+  child.stdout.on('data', (chunk: Buffer) => {
+    stdout += chunk.toString()
+    const first = /\{"called":(\d+)/.exec(stdout)
+    if (first) markCalled(Number(first[1]))
+  })
+  const done = new Promise<TimedResolved>((resolve) => {
+    child.on('close', () => {
+      markCalled(Number.NaN)
+      resolve(lastJson(stdout) as TimedResolved)
+    })
+  })
+  return { called, done }
+}
+
+/**
+ * Resolves the slot of each directory in a child process of its own; with `together`, all at the same moment, the
+ * go signal written to the children in `order` (indexes into `dirs`) when given.
+ */
+async function resolveInChildren(
+  dirs: string[],
+  together: boolean,
+  order?: number[],
+): Promise<Resolved[]> {
   const runs = dirs.map((cwd) => {
     const child = spawn(TSX, ['--eval', RESOLVE], {
       cwd,
@@ -126,7 +171,7 @@ async function resolveInChildren(dirs: string[], together: boolean): Promise<Res
   })
   if (together) {
     await Promise.all(runs.map((r) => r.ready))
-    for (const r of runs) r.child.stdin.write('go\n')
+    for (const i of order ?? runs.map((_, i) => i)) runs[i]!.child.stdin.write('go\n')
   } else {
     for (const r of runs) r.child.stdin.end()
   }
@@ -233,26 +278,69 @@ describe('AC-2: resolveSlot gives each worktree a slot of its own, kept until th
     expect(resolveSlot(scratch('nymbal-stack-outside-'), {})).toBe(0)
   })
 
-  it('AC-2: property: four new worktrees resolving at the same moment, each in its own process, get four distinct free slots', async () => {
+  // Review round 1, B1: the stale sweep unlinked by path, so a racer that read a stale claim could delete the fresh
+  // claim another racer had just made in its place, and a third took the same slot.
+  it('AC-2 (strengthened): property: with five stale claims, six new worktrees resolving at the same moment, each in its own process, get six distinct slots and keep them', async () => {
     const { resolveSlot, MAX_SLOT } = await loadStack()
+    const RACERS = 6
     await fc.assert(
-      fc.asyncProperty(fc.integer({ min: 0, max: 5 }), async (held) => {
-        const main = tempRepo()
-        const before = Array.from({ length: held }, (_, i) =>
-          resolveSlot(addWorktree(main, `held${i}`), {}),
-        )
-        const racing = Array.from({ length: 4 }, (_, i) => addWorktree(main, `race${i}`))
-        const results = await resolveInChildren(racing, true)
-        expect(results.map((r) => r.error)).toEqual([undefined, undefined, undefined, undefined])
-        const slots = results.map((r) => r.slot ?? -1)
-        expect(new Set(slots).size).toBe(racing.length)
-        expect(slots.filter((slot) => before.includes(slot))).toEqual([])
-        expect(Math.min(...slots)).toBeGreaterThanOrEqual(1)
-        expect(Math.max(...slots)).toBeLessThanOrEqual(MAX_SLOT)
-      }),
-      { numRuns: 3 },
+      fc.asyncProperty(
+        fc.shuffledSubarray(
+          Array.from({ length: RACERS }, (_, i) => i),
+          { minLength: RACERS, maxLength: RACERS },
+        ),
+        async (goOrder) => {
+          const main = tempRepo()
+          const gone = Array.from({ length: 5 }, (_, i) => addWorktree(main, `gone${i}`))
+          expect(gone.map((dir) => resolveSlot(dir, {}))).toEqual([1, 2, 3, 4, 5])
+          for (const dir of gone) git(main, 'worktree', 'remove', dir)
+          const racing = Array.from({ length: RACERS }, (_, i) => addWorktree(main, `race${i}`))
+          const results = await resolveInChildren(racing, true, goOrder)
+          expect(results.map((r) => r.error)).toEqual(racing.map(() => undefined))
+          const slots = results.map((r) => r.slot ?? -1)
+          expect(new Set(slots).size).toBe(RACERS)
+          expect(Math.min(...slots)).toBeGreaterThanOrEqual(1)
+          expect(Math.max(...slots)).toBeLessThanOrEqual(MAX_SLOT)
+          // A claim deleted under its holder shows here too: the second call would take another slot.
+          expect(racing.map((dir) => resolveSlot(dir, {}))).toEqual(slots)
+        },
+      ),
+      { numRuns: 20 },
     )
-  })
+  }, 180_000)
+
+  // Decision 9: listing, sweeping and claiming happen under `<git-common-dir>/nymbal-stacks/.lock`, broken after 30 s.
+  it('AC-2 (strengthened): a claim waits while another process holds the stacks lock, and a lock over 30 s old is broken', async () => {
+    const { resolveSlot } = await loadStack()
+    const main = tempRepo()
+    const stacks = join(main, '.git', 'nymbal-stacks')
+    mkdirSync(stacks, { recursive: true })
+    const lock = join(stacks, '.lock')
+    writeFileSync(lock, `${process.pid}\n`, { flag: 'wx' })
+
+    const held = addWorktree(main, 'wt1')
+    const child = spawnTimedResolve(held)
+    const calledAt = await child.called
+    // The lock stays held for a while after the claim starts: a claim that ignores it answers inside this window.
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const releasedAt = Date.now()
+    rmSync(lock)
+    const first = await child.done
+    expect(first.error).toBeUndefined()
+    expect(first.slot).toBe(1)
+    expect(first.at).toBeGreaterThanOrEqual(releasedAt)
+    expect(releasedAt - calledAt).toBeGreaterThanOrEqual(400)
+
+    // A lock left by a crash, 60 s old, does not wedge the next claim.
+    writeFileSync(lock, '999999\n', { flag: 'wx' })
+    const old = (Date.now() - 60_000) / 1000
+    utimesSync(lock, old, old)
+    const stale = addWorktree(main, 'wt2')
+    const second = await spawnTimedResolve(stale).done
+    expect(second.error).toBeUndefined()
+    expect(second.slot).toBe(2)
+    expect(resolveSlot(held, {})).toBe(first.slot)
+  }, 60_000)
 })
 
 describe('AC-6: the stack CLI prints the block of the worktree it runs in', () => {
