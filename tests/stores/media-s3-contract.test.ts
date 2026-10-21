@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { MediaStorage } from '../../packages/types/src/adapters/media.js'
-import { runMediaStorageContract } from '../../packages/contract-tests/src/media-storage.js'
+import {
+  runMediaStorageContract,
+  type MediaStorageContractOptions,
+} from '../../packages/contract-tests/src/index.js'
 import { createS3MediaStorage, s3ObjectUrl } from '../../packages/media-s3/src/index.js'
 import {
   anonymousGet,
@@ -11,6 +14,7 @@ import {
   uniqueBucketName,
   type TestBucket,
 } from '../support/s3'
+import { closedPort } from '../support/tcp-proxy'
 
 // Acceptance tests for P2-11 AC-3, the MinIO half (spec P2-11-s3-media, decision 4): runMediaStorageContract passes on
 // the S3 storage with `fetchUrl` an anonymous HTTP GET of the returned URL, so each URL really serves its bytes to
@@ -19,6 +23,9 @@ import {
 // made public-read here and removed afterwards. Needs MinIO (NYMBAL_TEST_S3_ENDPOINT).
 // Kills: URLs that do not serve the object (wrong host, path or style), a lost content type, and a prefix that is
 // not where the object lands.
+// P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): the suite comes from the package's index, and `unreachable` is
+// the storage on an endpoint nobody listens on, so the downtime cases run here too. The recording wrapper forwards
+// healthCheck, which the suite now requires of every primitive.
 
 const endpoint = s3Endpoint()
 const name = uniqueBucketName('contract')
@@ -31,7 +38,7 @@ afterAll(async () => {
   await bucket?.remove()
 })
 
-const options = (more: { prefix?: string } = {}) => ({
+const options = (more: { prefix?: string; endpoint?: string } = {}) => ({
   bucket: name,
   endpoint,
   region: S3_TEST_REGION,
@@ -44,6 +51,7 @@ const lastContentType = new Map<string, string>()
 function recorded(storage: MediaStorage): MediaStorage {
   return {
     capabilities: () => storage.capabilities(),
+    ...(storage.healthCheck !== undefined && { healthCheck: () => storage.healthCheck!() }),
     async put(key, body, contentType) {
       const result = await storage.put(key, body, contentType)
       lastContentType.set(result.url, contentType)
@@ -58,7 +66,13 @@ const fetchUrl = async (url: string): Promise<Uint8Array> => {
   return got.bytes
 }
 
-runMediaStorageContract('s3', () => recorded(createS3MediaStorage(options())), fetchUrl)
+const contractOptions: MediaStorageContractOptions = {
+  fetchUrl,
+  unreachable: async () =>
+    createS3MediaStorage(options({ endpoint: `http://127.0.0.1:${await closedPort()}` })),
+}
+
+runMediaStorageContract('s3', () => recorded(createS3MediaStorage(options())), contractOptions)
 
 async function headContentType(url: string): Promise<string | null> {
   const res = await fetch(url, { method: 'HEAD' })

@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
 import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -40,13 +40,21 @@ function rowToReview(row: Record<string, unknown>): Review {
   }
 }
 
+/** Where a page of a product's reviews starts: after this review, in the newest-first, then id-descending order. */
+export interface ReviewKey {
+  submittedAt: string
+  id: string
+}
+
 export interface ReviewRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Review | null>
+  /** Newest first, ties by id descending; `after` is the last review of the previous page. */
   listByProduct(
     tx: ReadTx,
     productId: string,
     status?: ReviewModerationStatus,
     limit?: number,
+    after?: ReviewKey,
   ): Promise<Review[]>
   listByStatus(tx: ReadTx, status: ReviewModerationStatus, limit?: number): Promise<Review[]>
   insert(tx: Tx, r: ReviewInsert): Promise<void>
@@ -85,34 +93,36 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .where(eq(postgresSchema.reviews.id, id))
       return row ? rowToReview(row as Record<string, unknown>) : null
     },
-    async listByProduct(tx, productId, status, limit = 50) {
+    async listByProduct(tx, productId, status, limit = 50, after) {
       if (tx.kind === 'sqlite') {
-        const cond = status
-          ? and(
-              eq(sqliteSchema.reviews.productId, productId),
-              eq(sqliteSchema.reviews.moderationStatus, status),
-            )
-          : eq(sqliteSchema.reviews.productId, productId)
+        const t = sqliteSchema.reviews
+        const conds: SQL[] = [eq(t.productId, productId)]
+        if (status) conds.push(eq(t.moderationStatus, status))
+        if (after) {
+          const at = new Date(after.submittedAt).toISOString()
+          conds.push(or(lt(t.submittedAt, at), and(eq(t.submittedAt, at), lt(t.id, after.id)))!)
+        }
         const rows = sqliteDb(tx)
           .select()
-          .from(sqliteSchema.reviews)
-          .where(cond)
-          .orderBy(desc(sqliteSchema.reviews.submittedAt))
+          .from(t)
+          .where(and(...conds))
+          .orderBy(desc(t.submittedAt), desc(t.id))
           .limit(limit)
           .all()
         return rows.map((r) => rowToReview(r as Record<string, unknown>))
       }
-      const cond = status
-        ? and(
-            eq(postgresSchema.reviews.productId, productId),
-            eq(postgresSchema.reviews.moderationStatus, status),
-          )
-        : eq(postgresSchema.reviews.productId, productId)
+      const t = postgresSchema.reviews
+      const conds: SQL[] = [eq(t.productId, productId)]
+      if (status) conds.push(eq(t.moderationStatus, status))
+      if (after) {
+        const at = new Date(after.submittedAt)
+        conds.push(or(lt(t.submittedAt, at), and(eq(t.submittedAt, at), lt(t.id, after.id)))!)
+      }
       const rows = await postgresDb(tx)
         .select()
-        .from(postgresSchema.reviews)
-        .where(cond)
-        .orderBy(desc(postgresSchema.reviews.submittedAt))
+        .from(t)
+        .where(and(...conds))
+        .orderBy(desc(t.submittedAt), desc(t.id))
         .limit(limit)
       return rows.map((r) => rowToReview(r as Record<string, unknown>))
     },

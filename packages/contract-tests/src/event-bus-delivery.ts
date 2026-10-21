@@ -2,20 +2,18 @@ import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
+import type { Build } from './common.js'
 
-// P2-02 AC-3 (spec P2-02-primitives-are-protocols), the event bus contract. Every implementation's test file runs it
-// beside `runEventBusContract` from @nymbalhq/contract-tests, with the same `make`: in-process in tests/contracts, Redis
-// Streams in its own package, which also passes `second` (another instance on the same streams as the bus `make`
-// returned last) and its timing knobs for the cases that only a shared bus has (decision 4).
-// Kills: a publish that resolves before its handlers ran (a read straight after a command misses its projection), a
-// throwing handler that rejects publish or starves another, replay reaching side effects, batch order lost, two
-// instances double-handling a named event, an instance missing an unnamed (admin tab) event, and a dead instance or
-// consumer stalling every publish (every checkout) until the timeout.
+// The event bus delivery contract. With `second` (another instance on the same streams as the bus `make` returned
+// last) and `timing` (the bus's own knobs, set small) it adds the cases only a shared bus has. Kills: a publish that
+// resolves before its handlers ran (a read straight after a command misses its projection), a throwing handler that
+// rejects publish or starves another, replay reaching side effects, batch order lost, two instances double-handling a
+// named event, an instance missing an unnamed (admin tab) event, and a dead instance or consumer stalling every
+// publish (every checkout) until the timeout.
 
-export interface EventBusAcceptanceOptions {
-  /** Another instance on the same streams as the bus `make` returned last. Only a shared bus passes it. */
+/** What the delivery cases read of the suite's options. */
+export interface DeliveryOptions {
   second?: () => Promise<EventBusAdapter>
-  /** The bus's own knobs, set small by the caller: the claim and timeout cases assert the windows they bound. */
   timing?: { claimIdleMs: number; ackTimeoutMs: number }
 }
 
@@ -26,10 +24,10 @@ function event(type: string, payload: Record<string, unknown> = {}): NymbalEvent
     id: `evt-${randomUUID()}`,
     type,
     timestamp: new Date().toISOString(),
-    source: 'p2-02-contract',
+    source: 'contract-contract',
     correlationId: `corr-${randomUUID()}`,
     payload,
-    metadata: { storeId: 'p2-02', environment: 'development', version: '0.0.0' },
+    metadata: { storeId: 'contract', environment: 'development', version: '0.0.0' },
   }
 }
 
@@ -62,33 +60,30 @@ async function closingAll(buses: EventBusAdapter[], body: () => Promise<void>): 
 
 const TYPES = ['order.created.v1', 'order.paid.v1', 'cart.updated.v1'] as const
 
-export function eventBusAcceptance(
-  name: string,
-  make: () => Promise<EventBusAdapter>,
-  opts: EventBusAcceptanceOptions = {},
-): void {
-  describe(`P2-02 AC-3: ${name} keeps the delivery contract (decision 3)`, () => {
+/** The delivery cases, registered inside the suite's describe. */
+export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: DeliveryOptions): void {
+  describe('keeps the delivery contract', () => {
     it(
-      'AC-3: publish resolves only after every matching handler has finished: a 200 ms handler, named and unnamed, is done first',
+      'publish resolves only after every matching handler has finished: a 200 ms handler, named and unnamed, is done first',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
           const finished: string[] = []
-          await bus.subscribe('p2.slow.v1', async () => {
+          await bus.subscribe('contract.slow.v1', async () => {
             await delay(200)
             finished.push('unnamed')
           })
           await bus.subscribe(
-            'p2.slow.v1',
+            'contract.slow.v1',
             async () => {
               await delay(200)
               finished.push('named')
             },
-            { name: 'p2-02-slow' },
+            { name: 'contract-slow' },
           )
 
           const startedAt = Date.now()
-          await bus.publish(event('p2.slow.v1'))
+          await bus.publish(event('contract.slow.v1'))
           const elapsed = Date.now() - startedAt
 
           expect([...finished].sort()).toEqual(['named', 'unnamed'])
@@ -99,22 +94,22 @@ export function eventBusAcceptance(
     )
 
     it(
-      'AC-3: a throwing handler leaves publish resolved and every other matching handler called, event after event',
+      'a throwing handler leaves publish resolved and every other matching handler called, event after event',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
           const received: string[] = []
           await bus.subscribe(
-            'p2.boom.v1',
+            'contract.boom.v1',
             async () => {
-              throw new Error('p2-02 handler failure')
+              throw new Error('contract handler failure')
             },
-            { name: 'p2-02-throws' },
+            { name: 'contract-throws' },
           )
-          await bus.subscribe('p2.boom.v1', async (e) => {
+          await bus.subscribe('contract.boom.v1', async (e) => {
             received.push(e.id)
           })
-          const events = [event('p2.boom.v1'), event('p2.boom.v1'), event('p2.boom.v1')]
+          const events = [event('contract.boom.v1'), event('contract.boom.v1'), event('contract.boom.v1')]
 
           for (const e of events) await expect(bus.publish(e)).resolves.toBeUndefined()
 
@@ -125,22 +120,22 @@ export function eventBusAcceptance(
     )
 
     it(
-      'AC-3: replay reaches derived subscriptions only, in order; a later publish still reaches every subscription',
+      'replay reaches derived subscriptions only, in order; a later publish still reaches every subscription',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
           const derived: string[] = []
           const sideNamed: string[] = []
           const sideUnnamed: string[] = []
-          await bus.subscribe('p2.replay.v1', async (e) => void derived.push(e.id), {
-            name: 'p2-02-projection',
+          await bus.subscribe('contract.replay.v1', async (e) => void derived.push(e.id), {
+            name: 'contract-projection',
             derived: true,
           })
-          await bus.subscribe('p2.replay.v1', async (e) => void sideNamed.push(e.id), {
-            name: 'p2-02-side-effect',
+          await bus.subscribe('contract.replay.v1', async (e) => void sideNamed.push(e.id), {
+            name: 'contract-side-effect',
           })
-          await bus.subscribe('p2.replay.v1', async (e) => void sideUnnamed.push(e.id))
-          const replayed = [event('p2.replay.v1'), event('p2.replay.v1')]
+          await bus.subscribe('contract.replay.v1', async (e) => void sideUnnamed.push(e.id))
+          const replayed = [event('contract.replay.v1'), event('contract.replay.v1')]
 
           await bus.replay(replayed)
 
@@ -148,7 +143,7 @@ export function eventBusAcceptance(
           expect(sideNamed).toEqual([])
           expect(sideUnnamed).toEqual([])
 
-          const live = event('p2.replay.v1')
+          const live = event('contract.replay.v1')
           await bus.publish(live)
           expect(derived).toEqual([...replayed, live].map((e) => e.id))
           expect(sideNamed).toEqual([live.id])
@@ -159,7 +154,7 @@ export function eventBusAcceptance(
     )
 
     it(
-      'AC-3: publishBatch reaches each subscription with exactly its matching events, in batch order (wildcards and pattern arrays)',
+      'publishBatch reaches each subscription with exactly its matching events, in batch order (wildcards and pattern arrays)',
       async () => {
         await fc.assert(
           fc.asyncProperty(
@@ -167,11 +162,11 @@ export function eventBusAcceptance(
             async (types) => {
               const bus = await make()
               await closingAll([bus], async () => {
-                const fence = event('p2.fence.v1')
+                const fence = event('contract.fence.v1')
                 const subs = [
                   { patterns: ['order.*', fence.type], name: undefined },
-                  { patterns: ['cart.updated.v1', 'order.paid.v1', fence.type], name: 'p2-02-arr' },
-                  { patterns: ['order.created.v1', fence.type], name: 'p2-02-one' },
+                  { patterns: ['cart.updated.v1', 'order.paid.v1', fence.type], name: 'contract-arr' },
+                  { patterns: ['order.created.v1', fence.type], name: 'contract-one' },
                 ]
                 const seen = subs.map(() => [] as string[])
                 for (const [i, sub] of subs.entries()) {
@@ -208,24 +203,24 @@ export function eventBusAcceptance(
     )
 
     it(
-      'AC-3: an unsubscribed handler, by bus.unsubscribe or by its own unsubscribe(), receives nothing more',
+      'an unsubscribed handler, by bus.unsubscribe or by its own unsubscribe(), receives nothing more',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
           const gone: string[] = []
           const goneToo: string[] = []
           const kept: string[] = []
-          const a = await bus.subscribe('p2.unsub.v1', async (e) => void gone.push(e.id), {
-            name: 'p2-02-unsub',
+          const a = await bus.subscribe('contract.unsub.v1', async (e) => void gone.push(e.id), {
+            name: 'contract-unsub',
           })
-          const b = await bus.subscribe('p2.unsub.v1', async (e) => void goneToo.push(e.id))
-          await bus.subscribe('p2.unsub.v1', async (e) => void kept.push(e.id))
-          const before = event('p2.unsub.v1')
+          const b = await bus.subscribe('contract.unsub.v1', async (e) => void goneToo.push(e.id))
+          await bus.subscribe('contract.unsub.v1', async (e) => void kept.push(e.id))
+          const before = event('contract.unsub.v1')
           await bus.publish(before)
 
           await bus.unsubscribe(a)
           await b.unsubscribe()
-          const after = [event('p2.unsub.v1'), event('p2.unsub.v1')]
+          const after = [event('contract.unsub.v1'), event('contract.unsub.v1')]
           for (const e of after) await bus.publish(e)
 
           expect(kept).toEqual([before, ...after].map((e) => e.id))
@@ -237,17 +232,17 @@ export function eventBusAcceptance(
     )
 
     it(
-      'AC-3: on one instance, a named and an unnamed subscription each handle every event once',
+      'on one instance, a named and an unnamed subscription each handle every event once',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
           const named: string[] = []
           const unnamed: string[] = []
-          await bus.subscribe('p2.both.v1', async (e) => void named.push(e.id), {
-            name: 'p2-02-named',
+          await bus.subscribe('contract.both.v1', async (e) => void named.push(e.id), {
+            name: 'contract-named',
           })
-          await bus.subscribe('p2.both.v1', async (e) => void unnamed.push(e.id))
-          const events = Array.from({ length: 6 }, () => event('p2.both.v1'))
+          await bus.subscribe('contract.both.v1', async (e) => void unnamed.push(e.id))
+          const events = Array.from({ length: 6 }, () => event('contract.both.v1'))
 
           for (const e of events) await bus.publish(e)
 
@@ -265,25 +260,25 @@ export function eventBusAcceptance(
       const N = 12
 
       it(
-        'AC-3: one named subscription on both instances handles each of N events exactly once in total',
+        'one named subscription on both instances handles each of N events exactly once in total',
         async () => {
           const a = await make()
           const b = await second()
           await closingAll([a, b], async () => {
             const byA: string[] = []
             const byB: string[] = []
-            await a.subscribe('p2.named.*', async (e) => void byA.push(e.id), {
-              name: 'p2-02-shared',
+            await a.subscribe('contract.named.*', async (e) => void byA.push(e.id), {
+              name: 'contract-shared',
             })
-            await b.subscribe('p2.named.*', async (e) => void byB.push(e.id), {
-              name: 'p2-02-shared',
+            await b.subscribe('contract.named.*', async (e) => void byB.push(e.id), {
+              name: 'contract-shared',
             })
-            const events = Array.from({ length: N }, (_, seq) => event('p2.named.x', { seq }))
+            const events = Array.from({ length: N }, (_, seq) => event('contract.named.x', { seq }))
 
             for (const [i, e] of events.entries()) await (i % 2 === 0 ? a : b).publish(e)
             // A per-instance group would hand every event to both; these fences make its copies show before the count.
-            await b.publish(event('p2.named.fence'))
-            await a.publish(event('p2.named.fence'))
+            await b.publish(event('contract.named.fence'))
+            await a.publish(event('contract.named.fence'))
 
             const ids = new Set(events.map((e) => e.id))
             const handled = [...byA, ...byB].filter((id) => ids.has(id))
@@ -295,19 +290,19 @@ export function eventBusAcceptance(
       )
 
       it(
-        'AC-3: an unnamed subscription on each instance receives all N events, in order, on both',
+        'an unnamed subscription on each instance receives all N events, in order, on both',
         async () => {
           const a = await make()
           const b = await second()
           await closingAll([a, b], async () => {
             const onA: string[] = []
             const onB: string[] = []
-            await a.subscribe('p2.fanout.*', async (e) => void onA.push(e.id))
-            await b.subscribe('p2.fanout.*', async (e) => void onB.push(e.id))
-            const events = Array.from({ length: N }, (_, seq) => event('p2.fanout.x', { seq }))
+            await a.subscribe('contract.fanout.*', async (e) => void onA.push(e.id))
+            await b.subscribe('contract.fanout.*', async (e) => void onB.push(e.id))
+            const events = Array.from({ length: N }, (_, seq) => event('contract.fanout.x', { seq }))
 
             for (const e of events) await a.publish(e)
-            const fenceB = event('p2.fanout.fence')
+            const fenceB = event('contract.fanout.fence')
             await b.publish(fenceB)
 
             const ids = events.map((e) => e.id)
@@ -320,7 +315,7 @@ export function eventBusAcceptance(
       )
 
       it(
-        'AC-3: replay on one instance reaches its own derived handlers and nothing on the other instance',
+        'replay on one instance reaches its own derived handlers and nothing on the other instance',
         async () => {
           const a = await make()
           const b = await second()
@@ -328,22 +323,22 @@ export function eventBusAcceptance(
             const derivedA: string[] = []
             const derivedB: string[] = []
             const sideB: string[] = []
-            await a.subscribe('p2.rebuild.*', async (e) => void derivedA.push(e.id), {
-              name: 'p2-02-projection',
+            await a.subscribe('contract.rebuild.*', async (e) => void derivedA.push(e.id), {
+              name: 'contract-projection',
               derived: true,
             })
-            await b.subscribe('p2.rebuild.*', async (e) => void derivedB.push(e.id), {
-              name: 'p2-02-projection',
+            await b.subscribe('contract.rebuild.*', async (e) => void derivedB.push(e.id), {
+              name: 'contract-projection',
               derived: true,
             })
-            await b.subscribe('p2.rebuild.*', async (e) => void sideB.push(e.id), {
-              name: 'p2-02-side-effect',
+            await b.subscribe('contract.rebuild.*', async (e) => void sideB.push(e.id), {
+              name: 'contract-side-effect',
             })
-            const replayed = [event('p2.rebuild.x'), event('p2.rebuild.x')]
+            const replayed = [event('contract.rebuild.x'), event('contract.rebuild.x')]
 
             await a.replay(replayed)
             // b reads its groups in stream order: a replay that went through the stream would reach b before this.
-            const fence = event('p2.rebuild.fence')
+            const fence = event('contract.rebuild.fence')
             await b.publish(fence)
 
             expect(derivedA.slice(0, replayed.length)).toEqual(replayed.map((e) => e.id))
@@ -360,19 +355,19 @@ export function eventBusAcceptance(
       const { claimIdleMs, ackTimeoutMs } = timing
 
       it(
-        'AC-3: groups left by a stopped instance (never unsubscribed) do not delay publish on the other instance',
+        'groups left by a stopped instance (never unsubscribed) do not delay publish on the other instance',
         async () => {
           const a = await make()
           const b = await second()
           await closingAll([a], async () => {
-            await b.subscribe('p2.left.*', async () => undefined, { name: 'p2-02-left-behind' })
-            await b.subscribe('p2.left.*', async () => undefined)
+            await b.subscribe('contract.left.*', async () => undefined, { name: 'contract-left-behind' })
+            await b.subscribe('contract.left.*', async () => undefined)
             await b.close()
             const handled: string[] = []
-            await a.subscribe('p2.left.*', async (e) => void handled.push(e.id), {
-              name: 'p2-02-live',
+            await a.subscribe('contract.left.*', async (e) => void handled.push(e.id), {
+              name: 'contract-live',
             })
-            const e = event('p2.left.x')
+            const e = event('contract.left.x')
 
             const startedAt = Date.now()
             await a.publish(e)
@@ -386,7 +381,7 @@ export function eventBusAcceptance(
       )
 
       it(
-        'AC-3: an entry pending on a stopped consumer of a named group is handled by the live one after claimIdleMs and before ackTimeoutMs',
+        'an entry pending on a stopped consumer of a named group is handled by the live one after claimIdleMs and before ackTimeoutMs',
         async () => {
           const a = await make()
           const b = await second()
@@ -395,14 +390,14 @@ export function eventBusAcceptance(
           try {
             let receivedByB: number | undefined
             await b.subscribe(
-              'p2.claim.*',
+              'contract.claim.*',
               async () => {
                 receivedByB = Date.now()
                 await held.wait
               },
-              { name: 'p2-02-claimed' },
+              { name: 'contract-claimed' },
             )
-            const stranded = event('p2.claim.x')
+            const stranded = event('contract.claim.x')
             // a holds no subscription to the group yet, so this publish waits on nothing and b's consumer takes it.
             await a.publish(stranded)
             await until(() => receivedByB !== undefined, 'b to receive the entry', ackTimeoutMs)
@@ -410,13 +405,13 @@ export function eventBusAcceptance(
 
             const byA: Array<{ id: string; at: number }> = []
             await a.subscribe(
-              'p2.claim.*',
+              'contract.claim.*',
               async (e) => void byA.push({ id: e.id, at: Date.now() }),
               {
-                name: 'p2-02-claimed',
+                name: 'contract-claimed',
               },
             )
-            const next = event('p2.claim.x')
+            const next = event('contract.claim.x')
             const startedAt = Date.now()
             await a.publish(next)
             const publishMs = Date.now() - startedAt
@@ -444,17 +439,17 @@ export function eventBusAcceptance(
       )
 
       it(
-        'AC-3: an unnamed subscription unsubscribed while publish waits on it lets publish resolve well before ackTimeoutMs',
+        'an unnamed subscription unsubscribed while publish waits on it lets publish resolve well before ackTimeoutMs',
         async () => {
           const a = await make()
           const held = gate()
           try {
             let entered = false
-            const sub = await a.subscribe('p2.wait.*', async () => {
+            const sub = await a.subscribe('contract.wait.*', async () => {
               entered = true
               await held.wait
             })
-            const publishing = a.publish(event('p2.wait.x')).then(
+            const publishing = a.publish(event('contract.wait.x')).then(
               () => Date.now(),
               (error: unknown) => error,
             )

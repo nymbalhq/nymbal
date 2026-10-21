@@ -1,38 +1,57 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { EmailAdapter } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
 
-export function runEmailContract(build: () => EmailAdapter): void {
-  describe('EmailAdapter contract', () => {
-    it('sendTransactional resolves with accepted or messageId', async () => {
-      const adapter = build()
-      const result = await adapter.sendTransactional({
-        template: 'order-confirmation',
-        to: 'test@example.com',
-        vars: { orderNumber: 'ORD-001' },
-      })
-      expect(typeof result.accepted).toBe('boolean')
-    })
+const MAIL = {
+  template: 'order-confirmation',
+  to: 'test@example.com',
+  vars: { orderNumber: 'ORD-001' },
+}
 
-    it('syncCustomerToList resolves without throwing', async () => {
-      const adapter = build()
-      await expect(adapter.syncCustomerToList({
-        customerId: 'cust-1',
-        orderCount: 0,
-        totalSpentMinor: 0,
-        segment: 'new',
-        createdAt: new Date().toISOString(),
-      })).resolves.not.toThrow()
-    })
+export function runEmailContract(
+  name: string,
+  build: Build<EmailAdapter>,
+  options: ContractOptions<EmailAdapter> = {},
+): void {
+  describe(`EmailAdapter contract: ${name}`, () => {
+    it(
+      'sendTransactional resolves with accepted or messageId',
+      async () => {
+        const adapter = await build()
+        const result = await adapter.sendTransactional(MAIL)
+        expect(typeof result.accepted).toBe('boolean')
+      },
+      CASE_MS,
+    )
 
-    it('removeCustomerFromList resolves without throwing', async () => {
-      const adapter = build()
-      await expect(adapter.removeCustomerFromList('cust-1')).resolves.not.toThrow()
-    })
+    it(
+      'syncCustomerToList resolves without throwing',
+      async () => {
+        const adapter = await build()
+        await expect(
+          adapter.syncCustomerToList({
+            customerId: 'cust-1',
+            orderCount: 0,
+            totalSpentMinor: 0,
+            segment: 'new',
+            createdAt: new Date().toISOString(),
+          }),
+        ).resolves.not.toThrow()
+      },
+      CASE_MS,
+    )
 
-    it('healthCheck returns a valid report', async () => {
-      const adapter = build()
-      const report = await adapter.healthCheck()
-      expect(['healthy', 'degraded', 'down']).toContain(report.status)
-    })
+    it(
+      'removeCustomerFromList resolves without throwing',
+      async () => {
+        const adapter = await build()
+        await expect(adapter.removeCustomerFromList('cust-1')).resolves.not.toThrow()
+      },
+      CASE_MS,
+    )
+
+    healthAndDowntime(build, options.unreachable, 'sendTransactional()', (adapter) =>
+      adapter.sendTransactional(MAIL),
+    )
   })
 }

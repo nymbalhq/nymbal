@@ -6,27 +6,23 @@ import {
   type DocumentStoreAdapter,
   type QueryParams,
 } from '@nymbalhq/types'
+import { CASE_MS, type Build } from './common.js'
 
-// P2-02 AC-2 (spec P2-02-primitives-are-protocols), the document store contract as a property against the reference
-// model of decision 3. Every implementation's test file runs it beside `runDocumentStoreContract` from
-// @nymbalhq/contract-tests, with the same `make` and options: in-memory in tests/contracts, Redis and Postgres JSONB
-// in their own packages. It absorbs P1-11's ordering cases (tests/contracts/document-store.test.ts): each store's page
-// sequence, over decision 3's generator domain, equals the reference (filter with matchesSortKey, order with
-// compareDocumentValues, nulls last, ties by key, slice by `limit`).
-// Kills: a store that filters `eq` as text (1 against '1'), orders strings by bytes instead of the collator, places
-// nulls or missing fields first, ignores a dotted path, restarts or repeats a cursor walk (also across a delete),
-// accepts a cursor under another order, ignores or misreads a TTL, skips a put condition, or leaks across a
-// collection or a prefix.
+// The document store contract as a property against the reference model: each store's page sequence, over the
+// generator domain below, equals the reference (filter with matchesSortKey, order with compareDocumentValues, nulls
+// last, ties by key, slice by `limit`). Kills: a store that filters `eq` as text (1 against '1'), orders strings by
+// bytes instead of the collator, places nulls or missing fields first, ignores a dotted path, restarts or repeats a
+// cursor walk (also across a delete), accepts a cursor under another order, ignores or misreads a TTL, skips a put
+// condition, or leaks across a collection or a prefix.
 
-export interface DocumentStoreAcceptanceOptions {
-  /** A test clock the store reads: TTL cases advance it instead of waiting. Without it they wait a 1 s TTL out. */
+/** What the model cases read of the suite's options. */
+export interface ModelOptions {
   clock?: { advance(ms: number): void | Promise<void> }
-  /** Two stores on one backend with different prefixes. Redis and Postgres JSONB pass it; in-memory has no prefix. */
   isolation?: () => Promise<[DocumentStoreAdapter, DocumentStoreAdapter]>
 }
 
-const COLLECTION = 'p2-02-docs'
-const DECOY = 'p2-02-decoy'
+const COLLECTION = 'contract-docs'
+const DECOY = 'contract-decoy'
 const SLOW = 60_000
 
 type Value = string | number | null
@@ -47,7 +43,7 @@ interface Generated {
   n: Value | undefined
 }
 
-/** Decision 3's domain: case, accent and equal-base strings, ints next to numeric strings, and null. */
+/** The domain: case, accent and equal-base strings, ints next to numeric strings, and null. */
 const valueArb: fc.Arbitrary<Value> = fc.oneof(
   fc.constantFrom('a', 'A', 'á', 'b', 'B', 'é', 'e', 'ab', 'Ab', '1', '10', '2'),
   fc.integer({ min: -2, max: 10 }),
@@ -118,7 +114,7 @@ interface Query {
   orderBy: { field: string; direction: Direction } | undefined
 }
 
-/** Decision 3's reference: filter by partition and matchesSortKey, then order (when asked) by compareDocumentValues. */
+/** The reference: filter by partition and matchesSortKey, then order (when asked) by compareDocumentValues. */
 function reference(docs: Doc[], q: Query): string[] {
   const hits = docs.filter(
     (d) =>
@@ -184,7 +180,7 @@ function withoutTrailingEmpty<T>(pages: T[][]): T[][] {
 }
 
 async function storeWith(
-  make: () => Promise<DocumentStoreAdapter>,
+  make: Build<DocumentStoreAdapter>,
   generated: Generated[],
 ): Promise<{ store: DocumentStoreAdapter; docs: Doc[] }> {
   const store = await make()
@@ -214,14 +210,11 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
 
 const TTL_SECONDS = 1
 
-export function documentStoreAcceptance(
-  name: string,
-  make: () => Promise<DocumentStoreAdapter>,
-  opts: DocumentStoreAcceptanceOptions = {},
-): void {
-  describe(`P2-02 AC-2: ${name} agrees with the reference model (decision 3)`, () => {
+/** The reference-model cases, registered inside the suite's describe. */
+export function documentStoreModelCases(make: Build<DocumentStoreAdapter>, opts: ModelOptions): void {
+  describe('agrees with the reference model', () => {
     it(
-      'AC-2: every query’s page sequence equals the reference: filter by partition and sortKey, order with nulls last and ties by key, slice by limit',
+      'every query’s page sequence equals the reference: filter by partition and sortKey, order with nulls last and ties by key, slice by limit',
       async () => {
         await fc.assert(
           fc.asyncProperty(
@@ -252,7 +245,7 @@ export function documentStoreAcceptance(
     )
 
     it(
-      'AC-2: without orderBy, a cursor walk returns exactly the reference’s matches, each once',
+      'without orderBy, a cursor walk returns exactly the reference’s matches, each once',
       async () => {
         await fc.assert(
           fc.asyncProperty(
@@ -282,7 +275,7 @@ export function documentStoreAcceptance(
     )
 
     it(
-      'AC-2: a cursor walk across a mid-walk delete returns every remaining match exactly once, in the reference order',
+      'a cursor walk across a mid-walk delete returns every remaining match exactly once, in the reference order',
       async () => {
         await fc.assert(
           fc.asyncProperty(
@@ -322,7 +315,7 @@ export function documentStoreAcceptance(
     )
 
     it(
-      'AC-2: a cursor issued under one orderBy is refused under another, and continues the walk under its own',
+      'a cursor issued under one orderBy is refused under another, and continues the walk under its own',
       async () => {
         const generated: Generated[] = ['k1', 'k2', 'k3', 'k4', 'k5'].map((key, i) => ({
           key,
@@ -357,7 +350,7 @@ export function documentStoreAcceptance(
     )
 
     it(
-      'AC-2: a document put with a TTL is returned until it expires, then by no get, query or batchGet; one put without stays',
+      'a document put with a TTL is returned until it expires, then by no get, query or batchGet; one put without stays',
       async () => {
         const store = await make()
         await closing(store, async () => {
@@ -396,7 +389,7 @@ export function documentStoreAcceptance(
       SLOW,
     )
 
-    it('AC-2: a conditional put applies when the field matches, and otherwise fails condition-failed and changes nothing', async () => {
+    it('a conditional put applies when the field matches, and otherwise fails condition-failed and changes nothing', async () => {
       const store = await make()
       await closing(store, async () => {
         const v1: Doc & { version: number } = {
@@ -429,10 +422,10 @@ export function documentStoreAcceptance(
         expect((absent as { code?: unknown } | null)?.code).toBe('adapter.condition-failed')
         expect(await store.get(COLLECTION, 'none')).toBeNull()
       })
-    })
+    }, CASE_MS)
 
     it(
-      'AC-2: batchPut stores every item and batchGet returns exactly the stored keys, equal to what was put',
+      'batchPut stores every item and batchGet returns exactly the stored keys, equal to what was put',
       async () => {
         await fc.assert(
           fc.asyncProperty(docsArb(1), async (generated) => {
@@ -440,7 +433,7 @@ export function documentStoreAcceptance(
             await closing(store, async () => {
               const docs = generated.map(stored)
               await store.batchPut(COLLECTION, new Map(docs.map((d) => [d.id, d])))
-              const asked = [...docs.map((d) => d.id), 'p2-02-absent']
+              const asked = [...docs.map((d) => d.id), 'contract-absent']
               const got = await store.batchGet<Doc>(COLLECTION, asked)
 
               expect(got.size).toBe(docs.length)
@@ -456,32 +449,32 @@ export function documentStoreAcceptance(
       SLOW,
     )
 
-    it('AC-2: collections are isolated for get, query and delete', async () => {
+    it('collections are isolated for get, query and delete', async () => {
       const store = await make()
       await closing(store, async () => {
         const a: Doc = { id: 'same', part: 'p', nested: {}, label: 'A' }
         const b: Doc = { ...a, label: 'B' }
         const onlyA: Doc = { ...a, id: 'only-a' }
-        await store.put('p2-02-col-a', a.id, a)
-        await store.put('p2-02-col-a', onlyA.id, onlyA)
-        await store.put('p2-02-col-b', b.id, b)
+        await store.put('contract-col-a', a.id, a)
+        await store.put('contract-col-a', onlyA.id, onlyA)
+        await store.put('contract-col-b', b.id, b)
 
-        expect(await store.get('p2-02-col-a', 'same')).toEqual(a)
-        expect(await store.get('p2-02-col-b', 'same')).toEqual(b)
-        const inB = await store.query<Doc>('p2-02-col-b', {
+        expect(await store.get('contract-col-a', 'same')).toEqual(a)
+        expect(await store.get('contract-col-b', 'same')).toEqual(b)
+        const inB = await store.query<Doc>('contract-col-b', {
           partitionKey: { field: 'part', value: '*' },
           limit: 100,
         })
         expect(idsOf(inB.items)).toEqual([b.id])
-        await store.delete('p2-02-col-a', 'same')
-        expect(await store.get('p2-02-col-b', 'same')).toEqual(b)
-        expect(await store.get('p2-02-col-a', 'only-a')).toEqual(onlyA)
+        await store.delete('contract-col-a', 'same')
+        expect(await store.get('contract-col-b', 'same')).toEqual(b)
+        expect(await store.get('contract-col-a', 'only-a')).toEqual(onlyA)
       })
-    })
+    }, CASE_MS)
 
     if (opts.isolation !== undefined) {
       const isolation = opts.isolation
-      it('AC-2: two instances with different prefixes never see each other’s documents', async () => {
+      it('two instances with different prefixes never see each other’s documents', async () => {
         const [one, two] = await isolation()
         try {
           const mine: Doc = { id: 'shared-key', part: 'p', nested: {}, label: 'one' }
@@ -507,7 +500,7 @@ export function documentStoreAcceptance(
           await one.close()
           await two.close()
         }
-      })
+      }, CASE_MS)
     }
   })
 }

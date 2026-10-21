@@ -1,6 +1,8 @@
 import nodemailer, { type Transporter } from 'nodemailer'
 import {
   AdapterError,
+  boundedHealthCheck,
+  errorText,
   EVT_CART_ABANDONED,
   EVT_CUSTOMER_CREATED,
   EVT_ORDER_PLACED,
@@ -11,6 +13,8 @@ import {
   type Logger,
   type TransactionalEmail,
 } from '@nymbalhq/types'
+
+const SMTP_TIMEOUT_MS = 4000
 
 export interface SmtpEmailAdapterConfig {
   from?: string
@@ -40,6 +44,10 @@ export function createSmtpEmailAdapter(deps: {
       host: cfg.smtp.host,
       port: cfg.smtp.port,
       secure: cfg.smtp.secure ?? cfg.smtp.port === 465,
+      // nodemailer waits two minutes to connect by default; a host that drops packets must fail inside the 6 s bound.
+      connectionTimeout: SMTP_TIMEOUT_MS,
+      greetingTimeout: SMTP_TIMEOUT_MS,
+      socketTimeout: SMTP_TIMEOUT_MS,
       ...(cfg.smtp.user !== undefined && cfg.smtp.pass !== undefined
         ? { auth: { user: cfg.smtp.user, pass: cfg.smtp.pass } }
         : {}),
@@ -58,15 +66,19 @@ export function createSmtpEmailAdapter(deps: {
       ensureTransport()
     },
     async healthCheck() {
-      try {
-        await ensureTransport().verify()
-        return { status: 'healthy', detail: 'SMTP verified' }
-      } catch (err) {
-        return {
-          status: 'degraded',
-          detail: `SMTP verify failed: ${err instanceof Error ? err.message : String(err)}`,
+      return boundedHealthCheck(async () => {
+        try {
+          await ensureTransport().verify()
+          return { status: 'healthy', detail: 'SMTP verified' }
+        } catch (err) {
+          // A server that answers and refuses the login is there but unusable; one that cannot be reached is down.
+          const reachable = (err as { code?: unknown } | null)?.code === 'EAUTH'
+          return {
+            status: reachable ? 'degraded' : 'down',
+            detail: `SMTP verify failed: ${errorText(err)}`,
+          }
         }
-      }
+      })
     },
 
     async sendTransactional(params: TransactionalEmail) {

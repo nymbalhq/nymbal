@@ -2,21 +2,23 @@ import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '@nymbalhq/config'
-import { runPaymentsContract, runSearchContract } from '@nymbalhq/contract-tests'
-import type { PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
-import { encodeFixtureCursor } from '../e2e/fixtures/custom-providers/adapters'
 import {
   matchesQuery,
-  searchAcceptance,
+  runPaymentsContract,
+  runSearchContract,
   toSearchDocument,
   type ContractProduct,
-} from './suites/search'
+} from '@nymbalhq/contract-tests'
+import type { PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
+import { encodeFixtureCursor } from '../e2e/fixtures/custom-providers/adapters'
 
 // P2-05 decisions 8 and 9: the swap fixture (tests/e2e/fixtures/custom-providers), loaded the way `nymbal dev` loads
 // it (loadConfig, which returns the config module's named `adapters` export), injects adapters that pass the search
 // and payments contracts, and its search is what the spec says: no `facet`, and (P2-07 decision 9) decision 3's
 // matching over name, SKU, variant name and description, paged by cursor with an exact total. Kills: a loader that
 // drops the `adapters` export, a fixture that only looks like an adapter, and a search that matches by another rule.
+// P2-13 (spec P2-13-contract-tests-public): the suites and the search oracle come from the package, so the fixture runs
+// the cases a third party certifies against, the refund idempotency case included.
 
 const FIXTURE_DIR = fileURLToPath(new URL('../e2e/fixtures/custom-providers/', import.meta.url))
 
@@ -40,10 +42,11 @@ function loadedOr<T>(adapter: T | undefined, slot: string): T {
   return adapter
 }
 
-runSearchContract(() => loadedOr(search, 'search'))
 // P2-07 AC-1 and AC-4 on the fixture: no `facet`, no ranking promised.
-searchAcceptance(() => loadedOr(search, 'search'), { cursorAt: encodeFixtureCursor })
-runPaymentsContract(() => loadedOr(payments, 'payments'))
+runSearchContract('custom fixture', () => loadedOr(search, 'search'), {
+  cursorAt: encodeFixtureCursor,
+})
+runPaymentsContract('custom fixture', () => loadedOr(payments, 'payments'))
 
 describe('P2-05 swap fixture, as loadConfig returns it', () => {
   it('AC-5: loadConfig returns the fixture config module’s adapters export, one adapter per custom slot', () => {

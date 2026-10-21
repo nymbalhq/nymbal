@@ -1,5 +1,12 @@
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
+
+// Each spawns nested vitest runs (a certify run per case, the breakers' own suite run) and takes 10 to 15 s of CPU, so
+// they run in integration-stores (its own CI job, and gate:full) rather than beside the CLI-spawning tests of `pnpm test`.
+const NESTED_VITEST_RUNS = [
+  'packages/cli/src/commands/test-contracts-package.test.ts',
+  'tests/contracts/contract-breakers.test.ts',
+]
 
 // Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
 // without them), so it exists only when `scripts/scaffold-clean.sh <astro|nextjs>` has set them. Every other run
@@ -31,6 +38,7 @@ export default defineConfig({
           name: 'cli',
           environment: 'node',
           include: ['packages/cli/src/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...NESTED_VITEST_RUNS],
         },
       },
       {
@@ -94,6 +102,7 @@ export default defineConfig({
           name: 'contracts-native',
           environment: 'node',
           include: ['tests/contracts/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...NESTED_VITEST_RUNS],
         },
       },
       {
@@ -145,8 +154,9 @@ export default defineConfig({
           // Streams bus and the S3 media storage against their contracts, the kernel on them (it loads the built
           // packages), the S3 imports, and the E2E harness's per-run stores. `nymbal add redis` is proved on a scaffold
           // made in the checkout as smoke-astro and installed with pnpm, so it needs the build, and no smoke-astro left
-          // there. Left out of the default run like integration-postgres (`pnpm test` leaves out integration-*), and
-          // gate:full and the PR's integration job run it.
+          // there. Also the nested vitest runs above, which need only the build. Left out of the default run like
+          // integration-postgres (`pnpm test` leaves out integration-*), and gate:full and the PR's integration job
+          // run it.
           name: 'integration-stores',
           environment: 'node',
           include: [
@@ -155,6 +165,7 @@ export default defineConfig({
             'packages/event-bus-redis-streams/src/**/*.test.ts',
             'packages/platform/tests/primitives/**/*.test.ts',
             'tests/stores/**/*.test.ts',
+            ...NESTED_VITEST_RUNS,
           ],
           testTimeout: 60000,
           hookTimeout: 60000,

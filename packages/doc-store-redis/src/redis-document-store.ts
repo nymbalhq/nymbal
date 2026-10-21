@@ -289,7 +289,15 @@ function pingRedis(url: string, timeoutMs = HEALTH_CHECK_TIMEOUT_MS): Promise<He
 
 /** Connects to `url` and resolves once the connection is ready; a server that cannot be reached rejects. */
 export async function connectRedis(url: string, logger?: Logger): Promise<Redis> {
-  const client = new Redis(url, { lazyConnect: true })
+  // While the server is gone a command waits out at most two reconnect attempts (each a connect of at most 2 s, a
+  // second apart) and then rejects, rather than queueing until the server returns. The client keeps reconnecting for
+  // as long as the store is open, so the commands after the server is back succeed.
+  const client = new Redis(url, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times: number) => Math.min(times * 200, 1000),
+    connectTimeout: 2000,
+  })
   client.on('error', (err: Error) => logger?.warn({ err }, 'redis connection error'))
   try {
     await client.connect()

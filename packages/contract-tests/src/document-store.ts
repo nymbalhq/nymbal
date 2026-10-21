@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { DocumentStoreAdapter, QueryParams } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
+import { documentStoreModelCases } from './document-store-model.js'
 
-export interface DocumentStoreContractOptions {
-  /** A clock the store reads: the TTL case advances it instead of waiting a one-second TTL out. */
+export interface DocumentStoreContractOptions extends ContractOptions<DocumentStoreAdapter> {
+  /** A clock the store reads: the TTL cases advance it instead of waiting a one-second TTL out. */
   clock?: { advance(ms: number): void | Promise<void> }
-  /** Two stores on one backend under different prefixes, for the prefix isolation case. */
+  /** Two stores on one backend under different prefixes, for the prefix isolation cases. */
   isolation?: () => Promise<[DocumentStoreAdapter, DocumentStoreAdapter]>
 }
 
-type Make = () => DocumentStoreAdapter | Promise<DocumentStoreAdapter>
+type Make = Build<DocumentStoreAdapter>
 
 interface Doc {
   id: string
@@ -63,8 +65,9 @@ async function walk(
 
 /**
  * The document store contract every implementation runs: the reference order and filter of
- * `compareDocumentValues` and `matchesSortKey`, cursors that survive a delete, TTL, conditional puts, batches, and
- * isolation between collections (and, given `isolation`, between prefixes). `make` returns an empty store each time.
+ * `compareDocumentValues` and `matchesSortKey`, cursors that survive a delete, TTL, conditional puts, batches,
+ * isolation between collections (and, given `isolation`, between prefixes), the same as a property against the
+ * reference model, and health (and, given `unreachable`, downtime). `make` returns an empty store each time.
  */
 export function runDocumentStoreContract(
   name: string,
@@ -84,7 +87,7 @@ export function runDocumentStoreContract(
         await store.put('col', 'k1', { v: 2 })
         expect(await store.get('col', 'k1')).toEqual({ v: 2 })
       })
-    })
+    }, CASE_MS)
 
     it('delete removes the document, and deleting a missing key does not throw', async () => {
       await using(make, async (store) => {
@@ -93,7 +96,7 @@ export function runDocumentStoreContract(
         expect(await store.get('col', 'k1')).toBeNull()
         await expect(store.delete('col', 'nope')).resolves.toBeUndefined()
       })
-    })
+    }, CASE_MS)
 
     it("query narrows by partition, and '*' returns the whole collection", async () => {
       await using(make, async (store) => {
@@ -108,7 +111,7 @@ export function runDocumentStoreContract(
         expect(ids(all.items).sort()).toEqual(['a', 'b', 'c'])
         expect(all.nextCursor).toBeNull()
       })
-    })
+    }, CASE_MS)
 
     it("sortKey eq is strict (1 is not '1', 'a' is not 'A'); gt, lt and between follow compareDocumentValues", async () => {
       await using(make, async (store) => {
@@ -140,7 +143,7 @@ export function runDocumentStoreContract(
           ['n5', 's1', 'sA', 'sa'].sort(),
         )
       })
-    })
+    }, CASE_MS)
 
     it('orderBy orders by value with the collator, nulls and missing last, ties by key, on a dotted path too', async () => {
       await using(make, async (store) => {
@@ -164,7 +167,7 @@ export function runDocumentStoreContract(
         })
         expect(ids(desc.items)).toEqual(['k1', 'k4', 'k2', 'k5', 'k6', 'k0', 'k3'])
       })
-    })
+    }, CASE_MS)
 
     it(
       'a limit and cursor walk returns every match exactly once, also when a document is deleted mid-walk',
@@ -219,7 +222,7 @@ export function runDocumentStoreContract(
         const next = await store.query<Doc>('col', { ...base, cursor })
         expect(ids(next.items)).toEqual(['k2', 'k3'])
       })
-    })
+    }, CASE_MS)
 
     it(
       'a document put with a ttl (seconds) is gone from get, query and batchGet once it expires',
@@ -268,7 +271,7 @@ export function runDocumentStoreContract(
         expect(await store.get('col', 'c')).toEqual({ version: 2, label: 'v2' })
         expect(await store.get('col', 'none')).toBeNull()
       })
-    })
+    }, CASE_MS)
 
     it('batchPut stores every item; batchGet returns exactly the stored keys', async () => {
       await using(make, async (store) => {
@@ -285,7 +288,7 @@ export function runDocumentStoreContract(
         expect(await store.get('col', 'y')).toEqual({ n: 20 })
         expect((await store.batchGet('col', [])).size).toBe(0)
       })
-    })
+    }, CASE_MS)
 
     it('collections are isolated for get, query and delete', async () => {
       await using(make, async (store) => {
@@ -297,7 +300,7 @@ export function runDocumentStoreContract(
         await store.delete('colA', 'key')
         expect(await store.get('colB', 'key')).toEqual({ id: 'key', part: 'p', from: 'B' })
       })
-    })
+    }, CASE_MS)
 
     const isolation = opts.isolation
     if (isolation !== undefined) {
@@ -317,7 +320,13 @@ export function runDocumentStoreContract(
           await one.close()
           await two.close()
         }
-      })
+      }, CASE_MS)
     }
+
+    documentStoreModelCases(make, opts)
+
+    healthAndDowntime(make, opts.unreachable, 'get()', (store) =>
+      store.get('contract-down', 'k'),
+    )
   })
 }

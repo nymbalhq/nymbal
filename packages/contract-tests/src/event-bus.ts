@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
+import { eventBusDeliveryCases } from './event-bus-delivery.js'
 
-export interface EventBusContractOptions {
+export interface EventBusContractOptions extends ContractOptions<EventBusAdapter> {
   /** Another instance on the same streams as the bus `make` returned last: only a shared bus passes it. */
   second?: () => Promise<EventBusAdapter>
+  /** The bus's own knobs, set small by the caller: the claim and timeout cases assert the windows they bound. */
+  timing?: { claimIdleMs: number; ackTimeoutMs: number }
 }
 
-type Make = () => EventBusAdapter | Promise<EventBusAdapter>
+type Make = Build<EventBusAdapter>
 
 const SLOW = 30_000
 
@@ -37,7 +41,8 @@ async function using(buses: EventBusAdapter[], body: () => Promise<void>): Promi
  * The event bus contract every implementation runs. `publish` resolves only after every matching subscription's
  * handler has finished (what a read straight after a command relies on); a throwing handler is logged and does not
  * reject it; `replay` reaches `derived` subscriptions only; each subscription takes its events in order. With `second`,
- * a named subscription is handled once across instances and an unnamed one on every instance.
+ * a named subscription is handled once across instances and an unnamed one on every instance. Then the delivery
+ * contract's cases, and health (and, given `unreachable`, downtime).
  */
 export function runEventBusContract(
   name: string,
@@ -59,7 +64,7 @@ export function runEventBusContract(
         expect(received).toEqual([{ x: 1 }])
         expect(other).toEqual([])
       })
-    })
+    }, CASE_MS)
 
     it('a handler that throws leaves publish resolved and every other handler called', async () => {
       const bus = await make()
@@ -72,7 +77,7 @@ export function runEventBusContract(
         await expect(bus.publish(makeEvent('error.test.v1'))).resolves.toBeUndefined()
         expect(results).toEqual(['ok'])
       })
-    })
+    }, CASE_MS)
 
     it('replay reaches derived subscriptions only', async () => {
       const bus = await make()
@@ -91,7 +96,7 @@ export function runEventBusContract(
         expect(derived).toEqual(events.map((e) => e.id))
         expect(sideEffect).toEqual([])
       })
-    })
+    }, CASE_MS)
 
     it('publishBatch reaches each subscription in batch order, through wildcards and pattern arrays', async () => {
       const bus = await make()
@@ -109,7 +114,7 @@ export function runEventBusContract(
         expect(wildcard).toEqual(events.map((e) => e.id))
         expect(listed).toEqual(events.filter((e) => e.type !== 'batch.b.v1').map((e) => e.id))
       })
-    })
+    }, CASE_MS)
 
     it('an unsubscribed handler receives nothing more', async () => {
       const bus = await make()
@@ -122,7 +127,7 @@ export function runEventBusContract(
         await bus.publish(makeEvent('unsub.event.v1'))
         expect(received).toEqual([before.id])
       })
-    })
+    }, CASE_MS)
 
     it('on one instance, a named and an unnamed subscription each handle every event once', async () => {
       const bus = await make()
@@ -138,7 +143,13 @@ export function runEventBusContract(
         expect(named).toEqual(events.map((e) => e.id))
         expect(unnamed).toEqual(named)
       })
-    })
+    }, CASE_MS)
+
+    eventBusDeliveryCases(make, opts)
+
+    healthAndDowntime(make, opts.unreachable, 'publish()', (bus) =>
+      bus.publish(makeEvent('contract.down.v1')),
+    )
 
     const second = opts.second
     if (second === undefined) return

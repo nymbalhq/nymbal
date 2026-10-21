@@ -186,6 +186,12 @@ export const securitySchema = z.object({
     .default({}),
 })
 
+/**
+ * npm's rules for a new package name: lower case and URL-safe, optionally `@scope/`, never starting with `.` or `_`.
+ * The 214-character limit is checked beside it.
+ */
+const NPM_PACKAGE_NAME = /^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/
+
 /** A slot's block: its provider must be one the slot knows, and an unknown one is named with the slot's list. */
 function adapterBlock<const P extends readonly [string, ...string[]]>(
   slot: CommerceSlot,
@@ -202,6 +208,12 @@ function adapterBlock<const P extends readonly [string, ...string[]]>(
           : { message: ctx.defaultError },
     }),
     config: z.record(z.string(), z.unknown()).optional(),
+    /** The npm package a `custom` slot's adapter comes from, for tooling (`nymbal test:contracts`); the kernel never reads it. */
+    package: z
+      .string()
+      .max(214, 'an npm package name is at most 214 characters')
+      .regex(NPM_PACKAGE_NAME, 'must be an npm package name, such as `@acme/nymbal-search`')
+      .optional(),
   })
 }
 
