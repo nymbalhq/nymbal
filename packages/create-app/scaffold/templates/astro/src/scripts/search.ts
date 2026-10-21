@@ -57,7 +57,8 @@ function renderResults() {
   const state = client.search.getState()
   const results = state.results ?? []
   const query = state.query ?? ''
-  const isLoading = state.loading ?? false
+  // A load-more or category change keeps the results shown until its answer replaces them.
+  const isLoading = (state.loading ?? false) && results.length === 0
 
   if (!resultsContainer) return
 
@@ -100,34 +101,55 @@ function renderResults() {
     return
   }
 
-  resultsContainer.replaceChildren(
+  const total = state.total
+  const children: HTMLElement[] = [
     el(
       'div',
       { class: 'search-results-header' },
       el(
         'span',
-        { class: 'search-result-count' },
-        `${results.length} result${results.length === 1 ? '' : 's'}`,
+        { class: 'search-result-count', 'data-testid': 'search-total' },
+        `${total} result${total === 1 ? '' : 's'}`,
       ),
     ),
     el('div', { class: 'product-grid' }, ...results.map(renderProductCard)),
-  )
+  ]
+  if (state.nextCursor !== null) {
+    const loadMore = el(
+      'button',
+      { type: 'button', class: 'btn btn-secondary', 'data-testid': 'search-load-more' },
+      state.loading ? 'Loading...' : 'Load more',
+    ) as HTMLButtonElement
+    loadMore.disabled = state.loading
+    loadMore.addEventListener('click', () => void client.search.loadMore())
+    children.push(el('div', { class: 'plp-pagination' }, loadMore))
+  }
+  resultsContainer.replaceChildren(...children)
 }
 
 client.search.subscribe(renderResults)
 
-// Read initial query from URL
+// Read initial query and category from URL
 const urlParams = new URLSearchParams(window.location.search)
 const initialQuery = urlParams.get('q')
 
 if (initialQuery) {
   if (searchInput) searchInput.value = initialQuery
-  client.search.search(initialQuery)
+  client.search.search(initialQuery, { category: urlParams.get('category') })
 } else {
   renderResults()
 }
 
-// Listen for search input changes
+// The category filter has narrowed the search; the URL follows, beside ?q.
+document.addEventListener('nymbal:filter:changed', (event) => {
+  const { value } = (event as CustomEvent<{ name: string; value: string }>).detail
+  const url = new URL(window.location.href)
+  if (value) url.searchParams.set('category', value)
+  else url.searchParams.delete('category')
+  window.history.replaceState({}, '', url.toString())
+})
+
+// Listen for search input changes: a new query searches every category again.
 searchInput?.addEventListener('input', () => {
   const value = searchInput.value.trim()
   if (value.length >= 2) {
@@ -135,11 +157,13 @@ searchInput?.addEventListener('input', () => {
     // Update URL without reload
     const url = new URL(window.location.href)
     url.searchParams.set('q', value)
+    url.searchParams.delete('category')
     window.history.replaceState({}, '', url.toString())
   } else if (value.length === 0) {
     client.search.clearSearch()
     const url = new URL(window.location.href)
     url.searchParams.delete('q')
+    url.searchParams.delete('category')
     window.history.replaceState({}, '', url.toString())
   }
 })

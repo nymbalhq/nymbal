@@ -55,6 +55,8 @@ export type {
   DenormalisedVariant,
   ProductListParams,
   ProductListResult,
+  ProductSearchParams,
+  ProductSearchResult,
   CheckoutDetails,
   CheckoutResult,
   RegisterParams,

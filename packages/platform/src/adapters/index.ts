@@ -14,7 +14,7 @@ export {
   createNativeEmailAdapter,
   type NativeEmailAdapterConfig,
 } from './email/native-email-adapter.js'
-export { createNativeSearchAdapter } from './search/native-adapter.js'
+export { createNativeSearchAdapter, encodeSearchCursor } from './search/native-adapter.js'
 export { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 export { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 export { createNativeShippingAdapter } from './shipping/native-adapter.js'

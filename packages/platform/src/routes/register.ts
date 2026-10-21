@@ -49,6 +49,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     adapters.reviews,
     services.search,
     () => adapters.search.capabilities().includes('facet'),
+    (field, params) => adapters.search.facet(field, params),
   )
   registerCartRoutes(adapter, {
     cart: services.cart,
