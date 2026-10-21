@@ -7,6 +7,97 @@ export interface HealthReport {
   detail?: string
 }
 
+/** How long a health check may run before it reports `down`. */
+export const HEALTH_CHECK_TIMEOUT_MS = 5000
+
+export interface BoundedHealthCheckOptions {
+  /** `HEALTH_CHECK_TIMEOUT_MS` when not given. */
+  timeoutMs?: number
+  /** Values an error's message must never show (a URL's user, password or query values); each becomes `***`. */
+  redact?: readonly string[]
+}
+
+/** An error's message for a report; an AggregateError (a refused connection to every address of a name) lists its own. */
+export function errorText(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  if (error.message !== '') return error.message
+  const inner = (error as { errors?: unknown }).errors
+  if (Array.isArray(inner) && inner.length > 0) return inner.map(errorText).join('; ')
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : error.name
+}
+
+/**
+ * The values in a connection URL that are credentials or may carry one: its password and its query values, and its
+ * user unless `user` is false, each as written and decoded. Values shorter than 4 characters are left out, so a
+ * redaction never eats a common word. A user (often `nymbal`) is worth hiding in a driver's error, not in our own text.
+ */
+export function connectionSecrets(url: string, options: { user?: boolean } = {}): string[] {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return []
+  }
+  const raw = [
+    ...(options.user === false ? [] : [parsed.username]),
+    parsed.password,
+    ...parsed.searchParams.values(),
+  ]
+  const decoded = raw.map((value) => {
+    try {
+      return decodeURIComponent(value)
+    } catch {
+      return value
+    }
+  })
+  return [...new Set([...raw, ...decoded])].filter((value) => value.length >= 4)
+}
+
+/**
+ * A connection URL as it may be printed: `scheme://host:port/path`, with no user, password, query or fragment. Text
+ * that is not a URL comes back as `<unparsable url>`, since it may be a URL with a secret the parser could not read.
+ */
+export function displayUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`
+  } catch {
+    return '<unparsable url>'
+  }
+}
+
+/**
+ * Runs `check` within the bound. A check that throws is `down` with the error's message, every `redact` value in it
+ * replaced; one still running when the bound passes is `down` with `timed out after <n> ms`, and its signal aborted.
+ */
+export async function boundedHealthCheck(
+  check: (signal: AbortSignal) => Promise<HealthReport>,
+  options: BoundedHealthCheckOptions = {},
+): Promise<HealthReport> {
+  const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<HealthReport>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      resolve({ status: 'down', detail: `timed out after ${timeoutMs} ms` })
+    }, timeoutMs)
+  })
+  const failed = (error: unknown): HealthReport => {
+    let detail = errorText(error)
+    for (const secret of options.redact ?? []) {
+      if (secret !== '') detail = detail.split(secret).join('***')
+    }
+    return { status: 'down', detail }
+  }
+  try {
+    return await Promise.race([check(controller.signal).catch(failed), timedOut])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export interface AdapterBase {
   /** What this adapter offers, for the app's per-slot report; each adapter answers for itself. */
   capabilities(): readonly string[]

@@ -62,10 +62,15 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value === undefined || value === '' ? undefined : value
 }
 
+/** The Redis server the primitives use: `infrastructure.redis.url`, else `REDIS_URL`. */
+export function redisUrlOf(config: NymbalConfig, env: NodeJS.ProcessEnv): string | undefined {
+  return config.infrastructure.redis?.url ?? nonEmpty(env['REDIS_URL'])
+}
+
 /** The `redis` block with its defaults: the URL from `REDIS_URL`, the prefix from `NYMBAL_REDIS_PREFIX`. */
 function redisConnection(config: NymbalConfig, env: NodeJS.ProcessEnv, slot: string) {
   const block = config.infrastructure.redis ?? {}
-  const url = block.url ?? nonEmpty(env['REDIS_URL'])
+  const url = redisUrlOf(config, env)
   if (url === undefined) {
     throw new ConfigError(
       `infrastructure.${slot} needs a Redis server: set infrastructure.redis.url or REDIS_URL`,
@@ -127,12 +132,19 @@ async function loadPrimitive<T>(
   return instance as T
 }
 
-async function resolveDocumentStore(
+/** A document store that must be initialized before use (postgres-jsonb creates its table). */
+type InitializableDocumentStore = DocumentStoreAdapter & { initialize?(): Promise<void> }
+
+/**
+ * The document store the config names, constructed and not initialized: `resolvePrimitives` initializes it, and
+ * `diagnose` must not (initializing postgres-jsonb creates its table).
+ */
+export async function buildDocumentStore(
   config: NymbalConfig,
   options: ResolvePrimitivesOptions,
   logger: Logger,
   env: NodeJS.ProcessEnv,
-): Promise<DocumentStoreAdapter> {
+): Promise<InitializableDocumentStore> {
   const choice = config.infrastructure.documentStore
   switch (choice) {
     case 'in-memory':
@@ -149,20 +161,13 @@ async function resolveDocumentStore(
           { code: 'config.postgres_url_missing', context: { slot: 'documentStore' } },
         )
       }
-      const store = await loadPrimitive<DocumentStoreAdapter & { initialize?(): Promise<void> }>(
+      return loadPrimitive<InitializableDocumentStore>(
         'documentStore',
         choice,
         { postgresUrl, prefix: JSONB_PREFIX },
         logger,
         env,
       )
-      try {
-        await store.initialize?.()
-      } catch (error) {
-        await store.close()
-        throw error
-      }
-      return store
     }
     default: {
       const exhaustive: never = choice
@@ -171,7 +176,7 @@ async function resolveDocumentStore(
   }
 }
 
-async function resolveEventBus(
+export async function buildEventBus(
   config: NymbalConfig,
   logger: Logger,
   env: NodeJS.ProcessEnv,
@@ -195,7 +200,7 @@ async function resolveEventBus(
   }
 }
 
-async function resolveMedia(
+export async function buildMedia(
   config: NymbalConfig,
   options: ResolvePrimitivesOptions,
   logger: Logger,
@@ -231,10 +236,11 @@ export async function resolvePrimitives(
   if (config.infrastructure.media === 's3') s3Connection(config, env)
   if (config.infrastructure.documentStore === 'redis') redisConnection(config, env, 'documentStore')
   if (config.infrastructure.eventBus === 'redis-streams') redisConnection(config, env, 'eventBus')
-  const media = await resolveMedia(config, options, logger, env)
-  const documentStore = await resolveDocumentStore(config, options, logger, env)
+  const media = await buildMedia(config, options, logger, env)
+  const documentStore = await buildDocumentStore(config, options, logger, env)
   try {
-    const eventBus = await resolveEventBus(config, logger, env)
+    if (config.infrastructure.documentStore === 'postgres-jsonb') await documentStore.initialize?.()
+    const eventBus = await buildEventBus(config, logger, env)
     return { documentStore, eventBus, media }
   } catch (error) {
     await documentStore.close()

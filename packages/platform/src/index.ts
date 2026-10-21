@@ -11,7 +11,9 @@ export {
 export {
   createCommandStore,
   rawClients,
+  sqliteFile,
   type CommandStore,
+  type CommandStoreOptions,
   type ReadTx,
   type Tx,
   type RawClients,
@@ -74,6 +76,13 @@ export {
 export * from './services/index.js'
 export * from './adapters/index.js'
 export { createLogger, type CreateLoggerOptions } from './logger.js'
+export {
+  diagnose,
+  type DiagnoseOptions,
+  type DiagnosisCheck,
+  type DiagnosisReport,
+  type DiagnosisStatus,
+} from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
 export {
   warmDocumentStore,

@@ -431,6 +431,60 @@ jobs:
       - name: Next.js on custom providers (functional, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --no-build --base "$GATE_BASE"
 
+  # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
+  # journeys tagged @nosearch run there.
+  e2e-astro-nosearch:
+    name: E2E — Astro with no search
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro with no search (@nosearch)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-nosearch" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-nosearch:
+    name: E2E — Next.js with no search
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js with no search (@nosearch)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
+
   scaffold-smoke:
     name: Scaffold smoke test
     runs-on: ubuntu-latest

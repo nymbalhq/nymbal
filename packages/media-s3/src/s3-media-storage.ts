@@ -1,5 +1,5 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import type { MediaStorage } from '@nymbalhq/types'
+import { HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { boundedHealthCheck, type HealthReport, type MediaStorage } from '@nymbalhq/types'
 
 /** Where the URL of an object starts, and where its key starts in the bucket. */
 export interface S3ObjectUrlOptions {
@@ -70,6 +70,23 @@ export function createS3MediaStorage(options: S3MediaStorageOptions): MediaStora
         }),
       )
       return { url: s3ObjectUrl(options, key) }
+    },
+    // HeadBucket reads the bucket's existence and our access to it; aborted at the bound, retries included.
+    healthCheck(): Promise<HealthReport> {
+      return boundedHealthCheck(
+        async (signal) => {
+          await client.send(new HeadBucketCommand({ Bucket: options.bucket }), {
+            abortSignal: signal,
+          })
+          return { status: 'healthy', detail: options.bucket }
+        },
+        {
+          redact: [
+            options.credentials?.accessKeyId ?? '',
+            options.credentials?.secretAccessKey ?? '',
+          ],
+        },
+      )
     },
   }
 }

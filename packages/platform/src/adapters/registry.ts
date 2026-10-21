@@ -60,24 +60,31 @@ export interface BuildAdaptersDeps {
  * else is a configuration mistake, refused before anything is built.
  */
 export function checkInjectedAdapters(config: NymbalConfig, injected: InjectedAdapters = {}): void {
-  for (const slot of COMMERCE_SLOTS) {
-    const provider = config.commerce[slot].provider
-    const given = injected[slot] !== undefined
-    if (provider === 'custom' && !given) {
-      throw new ConfigError(
-        `commerce.${slot}.provider is 'custom' but createApp was given no ${slot} adapter ` +
-          `(createApp(config, { adapters: { ${slot} } })); nymbal dev takes it from the \`adapters\` export of ` +
-          'nymbal.config.ts.',
-        { code: 'adapter.custom_mismatch', context: { slot } },
-      )
-    }
-    if (provider !== 'custom' && given) {
-      throw new ConfigError(
-        `createApp was given a ${slot} adapter, but commerce.${slot}.provider is '${provider}'; ` +
-          `set it to 'custom' to use the injected adapter.`,
-        { code: 'adapter.custom_mismatch', context: { slot, provider } },
-      )
-    }
+  for (const slot of COMMERCE_SLOTS) checkInjectedSlot(config, slot, injected)
+}
+
+/** `checkInjectedAdapters` for one slot. */
+export function checkInjectedSlot(
+  config: NymbalConfig,
+  slot: CommerceSlot,
+  injected: InjectedAdapters = {},
+): void {
+  const provider = config.commerce[slot].provider
+  const given = injected[slot] !== undefined
+  if (provider === 'custom' && !given) {
+    throw new ConfigError(
+      `commerce.${slot}.provider is 'custom' but createApp was given no ${slot} adapter ` +
+        `(createApp(config, { adapters: { ${slot} } })); nymbal dev takes it from the \`adapters\` export of ` +
+        'nymbal.config.ts.',
+      { code: 'adapter.custom_mismatch', context: { slot } },
+    )
+  }
+  if (provider !== 'custom' && given) {
+    throw new ConfigError(
+      `createApp was given a ${slot} adapter, but commerce.${slot}.provider is '${provider}'; ` +
+        `set it to 'custom' to use the injected adapter.`,
+      { code: 'adapter.custom_mismatch', context: { slot, provider } },
+    )
   }
 }
 
@@ -130,27 +137,50 @@ export function resolvePaymentsAdapter(
   })
 }
 
-export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterRegistry> {
-  const { config, logger, documentStore, repos, payments } = deps
+/** Builds and initializes one slot's adapter, as `buildAdapters` does; payments is `resolvePaymentsAdapter`. */
+export type SlotBuilders = {
+  [S in Exclude<CommerceSlot, 'payments'>]: () => Promise<SlotAdapter<S>>
+}
+
+/** Each commerce slot's builder but payments', for a caller that builds the slots one at a time. */
+export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments'>): SlotBuilders {
+  const { config, logger, documentStore, repos } = deps
   const injected = deps.injected ?? {}
   const slot = <S extends CommerceSlot>(name: S, builtIns: BuiltIns<S>) =>
     resolveSlot(name, config, logger, injected, builtIns)
+  return {
+    email: () =>
+      slot('email', {
+        native: () => createNativeEmailAdapter({ logger: logger.child({ adapter: 'email' }) }),
+      }),
+    search: () =>
+      slot('search', {
+        native: () =>
+          createNativeSearchAdapter({ documentStore, logger: logger.child({ adapter: 'search' }) }),
+      }),
+    reviews: () =>
+      slot('reviews', {
+        native: () =>
+          createNativeReviewsAdapter({ repos, logger: logger.child({ adapter: 'reviews' }) }),
+      }),
+    analytics: () => slot('analytics', { native: () => createNativeAnalyticsAdapter(logger) }),
+    shipping: () => slot('shipping', { native: () => createNativeShippingAdapter(logger) }),
+    tax: () => slot('tax', { native: () => createNativeTaxAdapter(logger) }),
+    ai: () => slot('ai', { none: () => null }),
+  }
+}
 
-  const email = await slot('email', {
-    native: () => createNativeEmailAdapter({ logger: logger.child({ adapter: 'email' }) }),
-  })
-  const search = await slot('search', {
-    native: () =>
-      createNativeSearchAdapter({ documentStore, logger: logger.child({ adapter: 'search' }) }),
-  })
-  const reviews = await slot('reviews', {
-    native: () =>
-      createNativeReviewsAdapter({ repos, logger: logger.child({ adapter: 'reviews' }) }),
-  })
-  const analytics = await slot('analytics', { native: () => createNativeAnalyticsAdapter(logger) })
-  const shipping = await slot('shipping', { native: () => createNativeShippingAdapter(logger) })
-  const tax = await slot('tax', { native: () => createNativeTaxAdapter(logger) })
-  const ai = await slot('ai', { none: () => null })
+export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterRegistry> {
+  const { logger, payments } = deps
+  const build = slotBuilders(deps)
+
+  const email = await build.email()
+  const search = await build.search()
+  const reviews = await build.reviews()
+  const analytics = await build.analytics()
+  const shipping = await build.shipping()
+  const tax = await build.tax()
+  const ai = await build.ai()
   const security = createMiddlewareSecurityAdapter({
     logger: logger.child({ adapter: 'security' }),
   })

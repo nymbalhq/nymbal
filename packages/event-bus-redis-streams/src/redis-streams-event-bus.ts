@@ -2,9 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { Redis } from 'ioredis'
 import {
   AdapterError,
+  boundedHealthCheck,
+  connectionSecrets,
+  HEALTH_CHECK_TIMEOUT_MS,
   ValidationError,
   type EventBusAdapter,
   type EventHandler,
+  type HealthReport,
   type Logger,
   type NymbalEvent,
   type Subscription,
@@ -121,6 +125,7 @@ function streamEntries(reply: unknown): Entry[] {
 export class RedisStreamsEventBus implements EventBusAdapter {
   readonly #cmd: Redis
   readonly #reader: Redis
+  readonly #url: string
   readonly #stream: string
   readonly #consumer = randomUUID()
   readonly #logger: Logger | undefined
@@ -140,6 +145,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
   constructor(cmd: Redis, reader: Redis, options: RedisStreamsEventBusOptions) {
     this.#cmd = cmd
     this.#reader = reader
+    this.#url = options.url
     this.#stream = `${options.prefix}:events`
     this.#logger = options.logger
     this.#ackTimeoutMs = options.ackTimeoutMs ?? 15_000
@@ -149,6 +155,10 @@ export class RedisStreamsEventBus implements EventBusAdapter {
 
   capabilities(): readonly string[] {
     return ['publish', 'subscribe', 'wildcard', 'replay', 'consumer-groups', 'fan-out']
+  }
+
+  healthCheck(): Promise<HealthReport> {
+    return pingRedis(this.#url)
   }
 
   async publish<T>(event: NymbalEvent<T>): Promise<void> {
@@ -725,6 +735,30 @@ function validate(event: NymbalEvent<unknown>): void {
   if (!event.metadata || !event.metadata.storeId || !event.metadata.environment) {
     throw new ValidationError('Event metadata is missing required fields', { context: { event } })
   }
+}
+
+/**
+ * PING on a client of its own that never retries and queues nothing, disconnected afterwards: the store's or bus's own
+ * clients retry a closed port for as long as the process lives, so they cannot answer within the bound.
+ */
+function pingRedis(url: string, timeoutMs = HEALTH_CHECK_TIMEOUT_MS): Promise<HealthReport> {
+  const client = new Redis(url, {
+    lazyConnect: true,
+    retryStrategy: () => null,
+    maxRetriesPerRequest: 0,
+    enableOfflineQueue: false,
+    connectTimeout: timeoutMs,
+  })
+  // connect() rejects with the same error, and the report carries it; without a listener ioredis would throw it.
+  client.on('error', () => undefined)
+  return boundedHealthCheck(
+    async () => {
+      await client.connect()
+      await client.ping()
+      return { status: 'healthy' }
+    },
+    { timeoutMs, redact: connectionSecrets(url) },
+  ).finally(() => client.disconnect())
 }
 
 async function connect(

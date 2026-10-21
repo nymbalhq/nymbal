@@ -870,6 +870,9 @@ const E2E_SERVES: Record<string, string[]> = {
   // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
   'astro-custom': [],
   'nextjs-custom': [],
+  // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
+  'astro-nosearch': [],
+  'nextjs-nosearch': [],
 }
 
 /**
@@ -1103,13 +1106,16 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     { name: 'e2e nextjs', command: e2e('nextjs'), needs: e2eNeeds },
     { name: 'e2e admin', command: e2e('admin'), needs: e2eNeeds },
   )
-  // The same journeys on the store whose search and payments are swapped for `custom` adapters. They prove the
-  // templates follow the adapters, which no store set changes, so they run on the default set only. Each target is
-  // its own invocation after the others: nextjs-custom serves the same templates/nextjs as nextjs.
+  // The same journeys on the store whose search and payments are swapped for `custom` adapters, and the @nosearch
+  // journeys on the store whose search offers nothing. They prove the templates follow the adapters, which no store
+  // set changes, so they run on the default set only. Each target is its own invocation after the others:
+  // nextjs-custom and nextjs-nosearch serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
     steps.push(
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
+      { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
+      { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
     )
   }
   return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }

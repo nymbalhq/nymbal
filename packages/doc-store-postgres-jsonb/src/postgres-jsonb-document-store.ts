@@ -1,8 +1,12 @@
 import pg from 'pg'
 import {
   AdapterError,
+  boundedHealthCheck,
+  connectionSecrets,
+  HEALTH_CHECK_TIMEOUT_MS,
   queryDocuments,
   type DocumentStoreAdapter,
+  type HealthReport,
   type Logger,
   type PutOptions,
   type QueryParams,
@@ -52,6 +56,7 @@ function narrowable(value: unknown): boolean {
  */
 export class PostgresJsonbDocumentStore implements DocumentStoreAdapter {
   readonly #pool: pg.Pool
+  readonly #url: string
   readonly #prefix: string
   readonly #now: () => number
   readonly #logger: Logger | undefined
@@ -61,6 +66,7 @@ export class PostgresJsonbDocumentStore implements DocumentStoreAdapter {
   constructor(options: PostgresJsonbDocumentStoreOptions) {
     this.#pool = new pg.Pool({ connectionString: options.postgresUrl, max: 5 })
     this.#pool.on('error', (err) => options.logger?.warn({ err }, 'postgres jsonb pool error'))
+    this.#url = options.postgresUrl
     this.#prefix = options.prefix
     this.#now = options.now ?? Date.now
     this.#logger = options.logger
@@ -89,6 +95,34 @@ export class PostgresJsonbDocumentStore implements DocumentStoreAdapter {
       this.#sweepTimer = setInterval(() => void this.sweep(), this.#sweepIntervalMs)
       this.#sweepTimer.unref()
     }
+  }
+
+  /**
+   * One read on a connection of its own, ended afterwards, so a server that cannot be reached leaves no connect
+   * attempt behind in the pool. `degraded` while the table `initialize()` creates is absent.
+   */
+  healthCheck(): Promise<HealthReport> {
+    const client = new pg.Client({
+      connectionString: this.#url,
+      connectionTimeoutMillis: HEALTH_CHECK_TIMEOUT_MS,
+    })
+    // connect() rejects with the same error, and the report carries it; without a listener pg would throw it.
+    client.on('error', () => undefined)
+    return boundedHealthCheck(
+      async () => {
+        await client.connect()
+        const { rows } = await client.query<{ table: string | null }>(
+          `SELECT to_regclass('${TABLE}')::text AS table`,
+        )
+        return rows[0]?.table == null
+          ? { status: 'degraded', detail: 'not initialized: run nymbal dev or migrate' }
+          : { status: 'healthy' }
+      },
+      { redact: connectionSecrets(this.#url) },
+    ).finally(() =>
+      // A probe that never connected has nothing to end; its failure is already the report.
+      client.end().catch(() => undefined),
+    )
   }
 
   async get<T>(collection: string, key: string): Promise<T | null> {

@@ -1,4 +1,5 @@
 import type { NymbalEvent, EventHandler } from '../events/envelope.js'
+import type { HealthReport } from './adapter-base.js'
 
 export interface RetryPolicy {
   maxAttempts: number
@@ -46,4 +47,9 @@ export interface EventBusAdapter {
   ): Promise<Subscription>
   unsubscribe(subscription: Subscription): Promise<void>
   close(): Promise<void>
+  /**
+   * Whether the bus can deliver, within `HEALTH_CHECK_TIMEOUT_MS`. Optional, so a bus written before it existed still
+   * type-checks; `nymbal doctor` reports one without it as `no healthCheck`.
+   */
+  healthCheck?(): Promise<HealthReport>
 }
