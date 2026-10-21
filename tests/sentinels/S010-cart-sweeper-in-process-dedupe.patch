@@ -7,7 +7,7 @@
 diff --git a/packages/platform/src/sweepers/index.ts b/packages/platform/src/sweepers/index.ts
 --- a/packages/platform/src/sweepers/index.ts
 +++ b/packages/platform/src/sweepers/index.ts
-@@ -3,10 +3,61 @@
+@@ -3,10 +3,61 @@ export {
    type SweeperHandle,
    type InventoryReservationSweeperDeps,
  } from './inventory-reservation-sweeper.js'
@@ -70,4 +70,4 @@ diff --git a/packages/platform/src/sweepers/index.ts b/packages/platform/src/swe
 +}
  export {
    startEventRetentionSweeper,
-   type EventRetentionSweeperDeps,
+   type EventArchiveWriter,
