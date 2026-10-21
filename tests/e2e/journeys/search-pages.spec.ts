@@ -89,7 +89,7 @@ test.beforeAll(async ({ playwright }) => {
         { timeout: 15_000 },
       )
       .toBe(PRODUCTS)
-    seeded = { token, slugs, categories }
+    seeded = { token, slugs, categories: [a, b] }
   } finally {
     await request.dispose()
   }
