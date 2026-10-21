@@ -122,4 +122,47 @@ describe('P3-07 AC-5: the environment wins in the API', () => {
     expect(writes.map((a) => a.status)).toEqual([403, 403])
     expect(before).toEqual(await storedSettings(raw))
   })
+
+  it.each([
+    ['ai', 'notDeclared'],
+    ['email', 'smtp.host'],
+    ['no-such-slot', 'apiKey'],
+  ])(
+    'AC-5 (Decision 6): a PUT to undeclared %s.%s answers 404 settings.unknown_field and writes no row',
+    async (slot, path) => {
+      const res = await putSetting(admin, slot, path, `p3-07-undeclared-${randomUUID()}`)
+      expect(res.status, JSON.stringify(res.body)).toBe(404)
+      expect(res.body.error?.code).toBe('settings.unknown_field')
+      const rows = await storedSettings(raw)
+      expect(rows.filter((r) => r.slot === slot && r.path === path)).toEqual([])
+    },
+  )
+
+  it('AC-5 (Decision 6): with NYMBAL_SECRETS_KEY unset, a PUT of a secret answers 503 settings.key_missing and writes no row', async () => {
+    const local = cleanups()
+    try {
+      local.add(setEnv({ [SECRETS_KEY]: undefined }))
+      const dir = mkdtempSync(join(tmpdir(), 'p3-07-key-missing-'))
+      local.add(() => rmSync(dir, { recursive: true, force: true }))
+      const target = join(dir, 'store.sqlite')
+      const keyless = await openStore({
+        dialect: 'sqlite',
+        target,
+        config: settingsConfig('sqlite', {
+          email: { provider: 'smtp', config: { smtp: { host: '127.0.0.1', port: 2525 } } },
+        }),
+      })
+      local.add(() => keyless.stop())
+      const value = `smtp-pass-p3-07-${randomUUID()}`
+      const res = await putSetting(await keyless.admin(), 'email', 'smtp.pass', value)
+      expect(res.status, JSON.stringify(res.body)).toBe(503)
+      expect(res.body.error?.code).toBe('settings.key_missing')
+      expect(JSON.stringify(res.body)).not.toContain(value)
+      const keylessRows = openReader('sqlite', target)
+      local.add(() => keylessRows.close())
+      expect((await storedSettings(keylessRows)).length).toBeLessThan(1)
+    } finally {
+      await local.run()
+    }
+  }, 60_000)
 })
