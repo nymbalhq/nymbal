@@ -81,6 +81,18 @@ const arbQtyAttr: fc.Arbitrary<string | null> = fc.oneof(
   fc.constant(null),
 )
 
+// P2-06 decisions 1 and 2: the element is a Lit element in an open shadow root; its button is read through
+// `shadowRoot`, once its render has settled (`updateComplete`).
+function shadow(el: Element): ShadowRoot {
+  const root = el.shadowRoot
+  if (root === null) throw new Error(`<${el.localName}> has no open shadow root`)
+  return root
+}
+
+async function settled(el: Element): Promise<void> {
+  await (el as Element & { updateComplete?: Promise<unknown> }).updateComplete
+}
+
 let api: ReturnType<typeof fakeApi>
 let client: NymbalClient
 
@@ -107,12 +119,15 @@ describe('P2-12: add-to-cart takes a quantity', () => {
         if (attr !== null && !setAfterConnect) el.setAttribute('qty', attr)
         el.addEventListener('nymbal:cart:item-added', (e) => added.push((e as CustomEvent).detail))
         document.body.appendChild(el)
+        await settled(el)
         if (attr !== null && setAfterConnect) el.setAttribute('qty', attr)
+        await settled(el)
 
         // The event follows an async POST; a 1 ms poll keeps 100 runs from costing 100 x waitFor's 50 ms default.
-        const button = el.querySelector('button')!
-        await vi.waitFor(() => expect(button.disabled).toBe(false), POLL)
-        button.click()
+        const root = shadow(el)
+        const button = () => root.querySelector('button')!
+        await vi.waitFor(() => expect(button().disabled).toBe(false), POLL)
+        button().click()
         await vi.waitFor(() => expect(added.length).toBeGreaterThan(0), POLL)
         el.remove()
 

@@ -52,7 +52,22 @@ function productWith(variantOptions: unknown[]): DenormalisedProduct {
   } as unknown as DenormalisedProduct
 }
 
-function mountSelector(product: DenormalisedProduct, optionsAttr?: string): HTMLElement {
+// P2-06 decisions 1 and 2: the element is a Lit element that renders in an open shadow root, so its options are read
+// through `shadowRoot`, once its render has settled (`updateComplete`).
+function shadow(el: Element): ShadowRoot {
+  const root = el.shadowRoot
+  if (root === null) throw new Error(`<${el.localName}> has no open shadow root`)
+  return root
+}
+
+async function settled(el: Element): Promise<void> {
+  await (el as Element & { updateComplete?: Promise<unknown> }).updateComplete
+}
+
+async function mountSelector(
+  product: DenormalisedProduct,
+  optionsAttr?: string,
+): Promise<HTMLElement> {
   const client: NymbalClient = createMockClient()
   ;(client.product as unknown as ReturnType<typeof createMockStore>).setState({
     product,
@@ -64,11 +79,12 @@ function mountSelector(product: DenormalisedProduct, optionsAttr?: string): HTML
   const el = document.createElement('nymbal-variant-selector')
   if (optionsAttr !== undefined) el.setAttribute('options', optionsAttr)
   document.body.appendChild(el)
+  await settled(el)
   return el
 }
 
 const shownOptions = (el: HTMLElement): string[] =>
-  [...el.querySelectorAll<HTMLElement>('[data-testid^="variant-option-"]')]
+  [...shadow(el).querySelectorAll<HTMLElement>('[data-testid^="variant-option-"]')]
     .map((b) => b.dataset.testid!)
     .sort()
 
@@ -86,11 +102,13 @@ const arbOptionList: fc.Arbitrary<VariantOption[]> = fc.uniqueArray(
 
 describe('P2-12: the variant selector takes one option shape', () => {
   it('AC-5: variants whose options are strings, JSON or not, render no option and log nothing', async () => {
-    const arbStringOptions = fc.oneof(arbOptionList.map((o) => JSON.stringify(o)), fc.string())
+    const arbStringOptions = fc.oneof(
+      arbOptionList.map((o) => JSON.stringify(o)),
+      fc.string(),
+    )
     await fc.assert(
       fc.asyncProperty(fc.array(arbStringOptions, { minLength: 2, maxLength: 4 }), async (raw) => {
-        const el = mountSelector(productWith(raw))
-        await Promise.resolve()
+        const el = await mountSelector(productWith(raw))
 
         expect(shownOptions(el)).toEqual([])
         for (const log of logs) expect(log.mock.calls).toEqual([])
@@ -112,8 +130,7 @@ describe('P2-12: the variant selector takes one option shape', () => {
             { name: 'Attr', values: [extra] },
             ...groups.map((name) => ({ name, values: [`${extra}x`] })),
           ])
-          const el = mountSelector(productWith(options), attr)
-          await Promise.resolve()
+          const el = await mountSelector(productWith(options), attr)
 
           expect(shownOptions(el)).toEqual(optionTestids(options))
           el.remove()
