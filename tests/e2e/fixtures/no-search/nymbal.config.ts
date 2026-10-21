@@ -53,8 +53,13 @@ export default {
   http: {
     adapter: 'fastify',
     port: 3021,
-    // The no-search storefronts' origins (tests/e2e/playwright.config.ts).
-    cors: { allowedOrigins: ['http://localhost:4341', 'http://localhost:3020'] },
+    // The no-search storefronts' origins; tests/e2e/playwright.config.ts moves them with the worktree's stack slot
+    // (scripts/stack.ts).
+    cors: {
+      allowedOrigins: env('NYMBAL_CORS_ORIGINS', 'http://localhost:4341,http://localhost:3020')
+        .split(',')
+        .map((origin) => origin.trim()),
+    },
   },
   deployment: {
     strategy: 'standard',

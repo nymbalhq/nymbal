@@ -45,6 +45,12 @@ export default {
   http: {
     adapter: 'fastify',
     port: 3001,
+    // The storefronts' origins; the E2E harness moves them with the worktree's stack slot (scripts/stack.ts).
+    cors: {
+      allowedOrigins: env('NYMBAL_CORS_ORIGINS', 'http://localhost:3000,http://localhost:4321')
+        .split(',')
+        .map((origin) => origin.trim()),
+    },
   },
   deployment: {
     strategy: 'standard',
