@@ -85,6 +85,22 @@ export {
 } from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
 export {
+  decrypt,
+  encrypt,
+  keyId,
+  keyProblem,
+  readSecretsKey,
+  settingAad,
+  SECRETS_KEY_ENV,
+  SECRETS_KEY_OLD_ENV,
+  type EncryptedValue,
+  type SecretsKey,
+  type StoredCipher,
+} from './settings/crypto.js'
+export { fillFromSettings, type SettingSource, type SettingValue } from './settings/resolve.js'
+export { scrub } from './settings/secret-set.js'
+export { isMissingSettingsTable } from './settings/load.js'
+export {
   warmDocumentStore,
   type WarmDocumentStoreDeps,
   type WarmResult,

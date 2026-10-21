@@ -5,6 +5,7 @@ export {
   knownRecipes,
   readRecipe,
   recipeFile,
+  settingsEnv,
 } from './holders.js'
 export {
   SCAFFOLD_DEFAULTS,
