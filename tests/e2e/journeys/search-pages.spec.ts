@@ -195,4 +195,33 @@ test.describe('Search pages: total, load more and the category facet', () => {
     await page.reload()
     expect(await showAll(page, api.total, api.slugs.length)).toEqual(api.slugs)
   })
+
+  // P2-06 AC-6: under shadow DOM the filter's light DOM is always empty, so the search layout reads the host's `empty`
+  // attribute, not `:empty`. A term with no match has no facets; the seeded token has the category facet when search
+  // reports `facet`. Kills: `:empty` matching always (the sidebar collapses with facets), or no `empty` reflected (an
+  // empty sidebar column shows without them).
+  test('AC-6 (P2-06): nymbal-product-filter reflects its facets as the empty host attribute: with none every filter has [empty] and is hidden, with facets none has [empty] and the filter shows', async ({
+    page,
+    request,
+  }) => {
+    const term = `nofacet${seeded.token}`
+    const none = await apiWalk(request, { q: term })
+    expect(none.facets).toEqual([])
+    await page.goto(`/search?q=${term}`)
+    await expect(page.getByRole('heading', { name: 'No results found' })).toBeVisible({
+      timeout: 15_000,
+    })
+    const filters = page.locator('nymbal-product-filter')
+    await expect(page.locator('nymbal-product-filter[empty]')).toHaveCount(await filters.count())
+    await expect(filters.first()).toBeHidden()
+
+    if (!(await storeCapabilities(request)).search.capabilities.includes('facet')) return
+    const full = await apiWalk(request, { q: seeded.token })
+    expect(full.facets.length, 'the seeded token has facets').toBeGreaterThan(0)
+    await page.goto(`/search?q=${seeded.token}`)
+    await expect(page.getByTestId('filter-group-category')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('nymbal-product-filter[empty]')).toHaveCount(0)
+    const box = await filters.first().boundingBox()
+    expect(box?.width ?? 0, 'the filter takes its column').toBeGreaterThan(0)
+  })
 })

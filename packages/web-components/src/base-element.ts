@@ -1,41 +1,82 @@
+import { css, LitElement, type PropertyDeclaration, type PropertyDeclarations } from 'lit'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { getClient } from './registry.js'
 
-/** `HTMLElement`, or a stand-in on a server, where the module is imported but no element is ever made. */
-export const HTMLElementBase =
-  typeof HTMLElement !== 'undefined' ? HTMLElement : (class {} as unknown as typeof HTMLElement)
+/** How an attribute's value reads: the React wrapper types its prop from this, and JSON travels stringified. */
+export type ElementAttributeType = 'string' | 'number' | 'boolean' | 'json'
 
-export abstract class NymbalElement extends HTMLElementBase {
+/**
+ * An element's public interface, declared once on the class. Its Lit properties are derived from `attributes`, and the
+ * React wrappers are generated from it, so neither can disagree with the element.
+ */
+export interface ElementSchema {
+  tag: string
+  /** The React wrapper's component name. */
+  reactName: string
+  /** `name` is the HTML attribute, `prop` the React prop and the Lit property. */
+  attributes: Array<{ name: string; prop: string; type: ElementAttributeType }>
+  /** `name` is the DOM event, `prop` the React handler, `detail` the TypeScript type of its detail. */
+  events: Array<{ name: string; prop: string; detail: string }>
+  /** Every `part` the element renders, for `::part()` styling. */
+  parts: string[]
+  /** Every named `slot` it renders, each with its default content as the fallback. */
+  slots: string[]
+  /** Whether the React wrapper passes children through. */
+  children: boolean
+}
+
+const TYPES: Record<ElementAttributeType, PropertyDeclaration['type']> = {
+  string: String,
+  number: Number,
+  boolean: Boolean,
+  // JSON attributes are parsed where they are read, so a malformed value is reported by the element that needs it.
+  json: String,
+}
+
+/** The Lit property declarations for a schema's attributes. */
+export function propertiesOf(schema: ElementSchema): PropertyDeclarations {
+  return Object.fromEntries(
+    schema.attributes.map((a) => [a.prop, { attribute: a.name, type: TYPES[a.type] }]),
+  )
+}
+
+/** A page's reset does not reach a shadow root, so each element brings the one it relied on in the light DOM. */
+export const baseStyles = css`
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+`
+
+interface Subscribable {
+  subscribe(fn: () => void): () => void
+}
+
+export abstract class NymbalElement extends LitElement {
+  declare static schema: ElementSchema
+
   private _unsubs: Array<() => void> = []
-  private _renderQueued = false
 
   protected get client(): NymbalClient {
     return getClient()
   }
 
-  protected subscribeToStore(store: { subscribe(fn: () => void): () => void }): void {
-    this._unsubs.push(store.subscribe(() => this.requestRender()))
+  /** The SDK stores the element renders from; it re-renders on each change while connected. */
+  protected stores(): Subscribable[] {
+    return []
   }
 
-  protected requestRender(): void {
-    if (this._renderQueued) return
-    this._renderQueued = true
-    queueMicrotask(() => {
-      this._renderQueued = false
-      this.render()
-    })
+  override connectedCallback(): void {
+    super.connectedCallback()
+    for (const store of this.stores()) {
+      this._unsubs.push(store.subscribe(() => this.requestUpdate()))
+    }
   }
 
-  connectedCallback(): void {
-    this.setup()
-    this.render()
-  }
-
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
+    super.disconnectedCallback()
     for (const fn of this._unsubs) fn()
     this._unsubs = []
   }
-
-  protected abstract setup(): void
-  protected abstract render(): void
 }
