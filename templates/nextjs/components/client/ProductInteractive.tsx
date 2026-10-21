@@ -1,7 +1,9 @@
 'use client'
 
-import type { DenormalisedProduct, DenormalisedVariant } from '@nymbalhq/sdk'
-import { useProduct, VariantSelector, AddToCart } from '@nymbalhq/react'
+import { useState } from 'react'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
+import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
+import { useProduct, VariantSelector, AddToCart, QuantitySelector } from '@nymbalhq/react'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/pdp.module.css'
 
@@ -15,17 +17,19 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
   const variant = selectedVariant ?? product.variants?.[0]
   const price = variant?.priceMinor ?? product.priceMinor ?? 0
   const currency = product.currency ?? 'GBP'
-  const stock = variant?.stock ?? (product.inStock ? 10 : 0)
+  // A product with no variants has nothing to sell, so it reads as out of stock.
+  const stock = variant?.stock ?? 0
+  const level = stockLevel(stock)
+
+  // The quantity belongs to the variant it was chosen for, so a variant change starts again at 1.
+  const [chosen, setChosen] = useState<{ variantId: string | undefined; qty: number }>({
+    variantId: variant?.id,
+    qty: 1,
+  })
+  const qty = chosen.variantId === variant?.id ? chosen.qty : 1
 
   // The selector derives its option groups from the product's variants.
   const hasVariantChoice = (product.variants?.length ?? 0) > 1
-
-  const handleVariantSelected = (e: CustomEvent<{ variant: unknown }>) => {
-    const v = e.detail.variant as DenormalisedVariant | undefined
-    if (v) {
-      // The product store handles variant selection internally
-    }
-  }
 
   return (
     <div>
@@ -37,24 +41,28 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
         {formatPrice(price, currency)}
       </div>
 
-      <div className={styles.stockBadge} data-testid="stock-badge">
-        {stock === 0 ? (
-          <span style={{ color: 'var(--nymbal-color-error)' }}>Out of Stock</span>
-        ) : stock < 5 ? (
-          <span style={{ color: 'var(--nymbal-color-warning)' }}>Low Stock — {stock} left</span>
-        ) : (
-          <span style={{ color: 'var(--nymbal-color-success)' }}>In Stock</span>
-        )}
+      <div className={styles.stockBadge} data-testid="stock-badge" data-level={level}>
+        <span className={styles.stockDot} aria-hidden="true" />
+        {STOCK_LABELS[level]}
       </div>
 
       {hasVariantChoice && (
         <div className={styles.variantSection}>
-          <VariantSelector onVariantSelected={handleVariantSelected} />
+          <VariantSelector />
         </div>
       )}
 
       <div className={styles.addToCartSection}>
-        <AddToCart variantId={variant?.id ?? product.id} disabled={stock === 0} />
+        <div className={styles.quantityWrapper}>
+          <QuantitySelector
+            key={variant?.id}
+            value={1}
+            min={1}
+            max={99}
+            onQuantityChange={(e) => setChosen({ variantId: variant?.id, qty: e.detail.value })}
+          />
+        </div>
+        <AddToCart variantId={variant?.id ?? product.id} qty={qty} disabled={stock <= 0} />
       </div>
     </div>
   )

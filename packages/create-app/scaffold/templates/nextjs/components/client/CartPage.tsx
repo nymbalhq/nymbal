@@ -76,6 +76,7 @@ export function CartPage() {
                       type="button"
                       className={styles.removeButton}
                       onClick={() => removeItem(item.variantId)}
+                      data-testid={`cart-remove-${item.variantId}`}
                       aria-label={`Remove ${item.productName} from cart`}
                     >
                       Remove

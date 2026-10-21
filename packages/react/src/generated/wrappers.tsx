@@ -22,8 +22,9 @@ declare module 'react' {
 
 export interface AddToCartProps {
   variantId?: string
+  qty?: number
   disabled?: boolean
-  onItemAdded?: (event: CustomEvent<{ variantId: string }>) => void
+  onItemAdded?: (event: CustomEvent<{ variantId: string; qty: number }>) => void
   children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
@@ -44,6 +45,16 @@ export const AddToCart = forwardRef<HTMLElement, AddToCartProps>(
       el.removeAttribute('variant-id')
     }
   }, [props.variantId])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.qty !== undefined) {
+      el.setAttribute('qty', String(props.qty))
+    } else {
+      el.removeAttribute('qty')
+    }
+  }, [props.qty])
 
   useEffect(() => {
     const el = ref.current
@@ -141,7 +152,6 @@ export const MiniCart = forwardRef<HTMLElement, MiniCartProps>(
 )
 
 export interface VariantSelectorProps {
-  options?: unknown
   onVariantSelected?: (event: CustomEvent<{ variant: unknown }>) => void
   className?: string
   style?: React.CSSProperties
@@ -153,15 +163,7 @@ export const VariantSelector = forwardRef<HTMLElement, VariantSelectorProps>(
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.options !== undefined) {
-      el.setAttribute('options', JSON.stringify(props.options))
-    } else {
-      el.removeAttribute('options')
-    }
-  }, [props.options])
+
 
   useEffect(() => {
     const el = ref.current
