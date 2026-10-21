@@ -28,6 +28,7 @@ import {
   rawClients,
   sqliteFile,
   type CommandStore,
+  type RawClients,
 } from './db/command-store.js'
 import { migrationState } from './db/migrate.js'
 import { createLogger } from './logger.js'
@@ -112,6 +113,17 @@ async function within<T>(
 function unavailableCommandStore(kind: CommandStore['kind']): CommandStore {
   const refuse = () => Promise.reject(new Error('the command store is down'))
   return { kind, read: refuse, transaction: refuse, savepoint: refuse, close: async () => {} }
+}
+
+/** The raw clients of a store that did not open: any use of a client throws, as a down store's would. */
+function unavailableRawClients(kind: CommandStore['kind']): RawClients {
+  const refuse = () => {
+    throw new Error('the command store is down')
+  }
+  const client = new Proxy({}, { get: () => refuse })
+  return kind === 'sqlite'
+    ? { kind, db: client as never, raw: client as never }
+    : { kind, db: client as never, pool: client as never }
 }
 
 function unavailableDocumentStore(): DocumentStoreAdapter {
@@ -314,7 +326,10 @@ export async function diagnose(
   const builders = slotBuilders({
     config,
     logger: adapterLogger,
-    documentStore: documentStore ?? unavailableDocumentStore(),
+    sql:
+      commandStore === undefined
+        ? unavailableRawClients(infrastructure.commandStore)
+        : rawClients(commandStore),
     repos: buildRepositories(
       commandStore ?? unavailableCommandStore(infrastructure.commandStore),
       documentStore ?? unavailableDocumentStore(),
