@@ -19,6 +19,7 @@
     "packages/platform/src/repositories/product.ts": 52.34,
     "packages/platform/src/repositories/refresh-token.ts": 65.45,
     "packages/platform/src/repositories/review.ts": 0,
+    "packages/platform/src/repositories/settings.ts": 70.59,
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
     "packages/platform/src/repositories/tx-required.test-d.ts": 0,
     "packages/platform/src/repositories/variant.ts": 42.2,
