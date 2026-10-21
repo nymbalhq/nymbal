@@ -62,6 +62,14 @@ const SQL = {
     GROUP BY c ORDER BY count DESC, c COLLATE "C" LIMIT $3`,
 } as const
 
+/** A named write: each pooled connection parses and plans it once, which a warm start's one-by-one upserts feel. The
+ *  reads stay unnamed, so each is planned for its own tsquery. */
+const named = (key: 'upsert' | 'remove', values: unknown[]): pg.QueryConfig => ({
+  name: `nymbal-search-${key}`,
+  text: SQL[key],
+  values,
+})
+
 export function createPostgresSearchIndex(pool: pg.Pool): SearchIndex {
   return {
     async upsert(rows) {
@@ -72,11 +80,11 @@ export function createPostgresSearchIndex(pool: pg.Pool): SearchIndex {
         cats: row.categoryIds,
         tsv: tsvectorLiteral(row),
       }))
-      if (batch.length > 0) await pool.query(SQL.upsert, [JSON.stringify(batch)])
+      if (batch.length > 0) await pool.query(named('upsert', [JSON.stringify(batch)]))
     },
 
     async remove(ids) {
-      if (ids.length > 0) await pool.query(SQL.remove, [ids])
+      if (ids.length > 0) await pool.query(named('remove', [ids]))
     },
 
     async page(terms, categories, limit, offset) {
