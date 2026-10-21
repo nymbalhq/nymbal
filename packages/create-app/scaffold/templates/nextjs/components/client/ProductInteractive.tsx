@@ -26,6 +26,8 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
     variantId: variant?.id,
     qty: 1,
   })
+  // Reset on the change itself, so a quantity left on a variant is not there again when the shopper comes back to it.
+  if (chosen.variantId !== variant?.id) setChosen({ variantId: variant?.id, qty: 1 })
   const qty = chosen.variantId === variant?.id ? chosen.qty : 1
 
   // The selector derives its option groups from the product's variants.

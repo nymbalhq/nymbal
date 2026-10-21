@@ -7,6 +7,7 @@ import {
   optionProduct,
   specStockLevel,
   type OptionCombination,
+  type ServedVariant,
 } from '../support/variants'
 
 // P2-12 on both templates: the shopper picks a quantity and a variant on the product page and gets exactly that in
@@ -201,6 +202,30 @@ test.describe('P2-12: PDP quantity and variants', () => {
         await expect(page.getByTestId('cart-drawer')).not.toBeInViewport()
       }
     }
+
+    // A quantity changed on a variant does not outlive it: away and back, add-to-cart adds what the stepper shows.
+    const [away, back] = product.variants.filter((v) => v.stock > 0 && v.id !== first.id)
+    const select = async (variant: ServedVariant) => {
+      for (const o of variant.options) {
+        await pdp.getByTestId(`variant-option-${o.name}-${o.value}`).click()
+      }
+      await expect(pdp.locator('nymbal-add-to-cart')).toHaveAttribute('variant-id', variant.id)
+    }
+    await select(back!)
+    await expect(input).toHaveValue('1')
+    await pdp.getByTestId('qty-increment').click()
+    await pdp.getByTestId('qty-increment').click()
+    await expect(input).toHaveValue('3')
+    await select(away!)
+    await select(back!)
+    const before = await cartQty(page, back!.id)
+    const shownOnReturn = Number(await input.inputValue())
+    await addToCart.click()
+    await expect
+      .poll(async () => (await cartQty(page, back!.id)) - before, { timeout: 10_000 })
+      .toBe(shownOnReturn)
+    await page.getByTestId('cart-drawer-close').click()
+    await expect(page.getByTestId('cart-drawer')).not.toBeInViewport()
 
     // The cart holds exactly the in-stock combinations, by the ids the API serves for them.
     expect((await cartLines(page)).map((l) => l.variantId).sort()).toEqual(
