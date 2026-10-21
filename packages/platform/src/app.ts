@@ -3,6 +3,7 @@ import { ConfigError, type CommerceSlot, type PaymentsAdapter } from '@nymbalhq/
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
 import type { ResolvePrimitivesOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
+import { rawClients } from './db/command-store.js'
 import {
   buildAdapters,
   checkInjectedAdapters,
@@ -109,7 +110,7 @@ export async function createApp(
     const adapters = await buildAdapters({
       config,
       logger: adapterLogger,
-      documentStore: platform.documentStore,
+      sql: rawClients(platform.commandStore),
       repos,
       payments,
       ...(options.adapters !== undefined && { injected: options.adapters }),

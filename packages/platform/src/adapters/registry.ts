@@ -3,12 +3,12 @@ import {
   type AiAdapter,
   type CommerceSlot,
   type CommerceSlotAdapters,
-  type DocumentStoreAdapter,
   type Logger,
   type PaymentsAdapter,
   type SecurityAdapter,
 } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
+import type { RawClients } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
 import { createNativeStubPaymentsAdapter } from './payments/native-stub.js'
@@ -48,7 +48,8 @@ type SlotAdapter<S extends CommerceSlot> = AdapterRegistry[S]
 export interface BuildAdaptersDeps {
   config: NymbalConfig
   logger: Logger
-  documentStore: DocumentStoreAdapter
+  /** The command store's own connection: the native search index lives in its database. */
+  sql: RawClients
   repos: Repositories
   injected?: InjectedAdapters
   /** The payments adapter `createApp` resolved before it opened the store. */
@@ -144,7 +145,7 @@ export type SlotBuilders = {
 
 /** Each commerce slot's builder but payments', for a caller that builds the slots one at a time. */
 export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments'>): SlotBuilders {
-  const { config, logger, documentStore, repos } = deps
+  const { config, logger, sql, repos } = deps
   const injected = deps.injected ?? {}
   const slot = <S extends CommerceSlot>(name: S, builtIns: BuiltIns<S>) =>
     resolveSlot(name, config, logger, injected, builtIns)
@@ -156,7 +157,7 @@ export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments'>): SlotBui
     search: () =>
       slot('search', {
         native: () =>
-          createNativeSearchAdapter({ documentStore, logger: logger.child({ adapter: 'search' }) }),
+          createNativeSearchAdapter({ sql, logger: logger.child({ adapter: 'search' }) }),
       }),
     reviews: () =>
       slot('reviews', {

@@ -93,6 +93,18 @@ class Scope {
 
 const context = new AsyncLocalStorage<Scope>()
 const rawByStore = new WeakMap<CommandStore, RawClients>()
+const turnByRaw = new WeakMap<BetterSqlite3.Database, <T>(fn: () => T) => Promise<T>>()
+
+/**
+ * Runs `fn`, synchronous statements on a SQLite store's raw connection, in that store's turn: at once inside this
+ * call chain's open read or transaction of the store, otherwise once the connection is free, as a read waits. A
+ * transaction holds the one connection across awaits, so a statement run on `raw` outside its turn would join, and
+ * roll back with, whichever transaction another call chain has open. For code handed only `rawClients`.
+ */
+export async function sqliteTurn<T>(raw: BetterSqlite3.Database, fn: () => T): Promise<T> {
+  const turn = turnByRaw.get(raw)
+  return turn === undefined ? fn() : turn(fn)
+}
 
 function liveScope(tx: ReadTx): Scope {
   if (!(tx instanceof Scope)) {
@@ -379,6 +391,15 @@ export function createCommandStore(
       },
     }
     rawByStore.set(store, { kind: 'sqlite', db, raw })
+    turnByRaw.set(raw, async (fn) => {
+      if (joinable(owner) !== undefined) return fn()
+      const release = await queue.acquire()
+      try {
+        return fn()
+      } finally {
+        release()
+      }
+    })
     return store
   }
 

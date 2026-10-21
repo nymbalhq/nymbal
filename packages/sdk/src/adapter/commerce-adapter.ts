@@ -11,6 +11,8 @@ import type {
   DenormalisedProduct,
   ProductListParams,
   ProductListResult,
+  ProductSearchParams,
+  ProductSearchResult,
   CheckoutDetails,
   CheckoutResult,
   RegisterParams,
@@ -34,7 +36,7 @@ export interface CommerceAdapter {
   products: {
     getBySlug(slug: string): Promise<DenormalisedProduct>
     list(params?: ProductListParams): Promise<ProductListResult>
-    search(query: string, params?: { limit?: number; cursor?: string }): Promise<ProductListResult>
+    search(query: string, params?: ProductSearchParams): Promise<ProductSearchResult>
   }
   checkout: {
     create(details: CheckoutDetails): Promise<CheckoutResult>

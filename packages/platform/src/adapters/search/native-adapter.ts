@@ -2,41 +2,62 @@ import {
   EVT_PRODUCT_CREATED,
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_UPDATED,
-  type DocumentStoreAdapter,
+  ValidationError,
   type Facet,
   type IndexResult,
   type Logger,
   type SearchAdapter,
   type SearchResult,
 } from '@nymbalhq/types'
+import type { RawClients } from '../../db/command-store.js'
 import { noopInitialize, okHealth } from '../base.js'
+import { createPostgresSearchIndex } from './postgres-index.js'
+import { createSqliteSearchIndex } from './sqlite-index.js'
+import { searchTerms, toIndexRow, type SearchIndex } from './terms.js'
 
-const INDEX_COLLECTION = 'search-index'
+const DEFAULT_LIMIT = 20
 
-interface IndexedDoc {
-  id: string
-  type: string
-  fields: Record<string, unknown>
-  text: string
+/** The cursor for a page starting at `offset`. It encodes any number; `search` rejects one that is not an offset. */
+export function encodeSearchCursor(offset: number): string {
+  return Buffer.from(String(offset), 'utf8').toString('base64url')
 }
 
-function flatten(value: unknown): string {
-  if (value == null) return ''
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
+function decodeSearchCursor(cursor: string): number {
+  const text = Buffer.from(cursor, 'base64url').toString('utf8')
+  const offset = Number(text)
+  if (
+    !/^\d+$/.test(text) ||
+    !Number.isSafeInteger(offset) ||
+    encodeSearchCursor(offset) !== cursor
+  ) {
+    throw new ValidationError('malformed search cursor')
   }
-  if (Array.isArray(value)) return value.map(flatten).join(' ')
-  if (typeof value === 'object') {
-    return Object.values(value).map(flatten).join(' ')
-  }
-  return ''
+  return offset
 }
 
+/** `filters.categoryIds` (one id or several, any of them); the only filter native supports. */
+function categoryFilter(filters: Record<string, unknown> | undefined): string[] | null {
+  const value = filters?.['categoryIds']
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string')
+  return null
+}
+
+const uniqueTerms = (query: string) => [...new Set(searchTerms(query))]
+
+/**
+ * Full-text search in the command store's own database: FTS5 on SQLite, a GIN-indexed tsvector on Postgres. Both
+ * match by `searchTerms` (every query term a prefix of a term in the name, a SKU, a variant name or the description)
+ * and rank every-term-in-the-name matches first, then name/SKU/variant-name matches, then by the engine's score.
+ */
 export function createNativeSearchAdapter(deps: {
-  documentStore: DocumentStoreAdapter
+  sql: RawClients
   logger: Logger
 }): SearchAdapter {
-  const { documentStore, logger } = deps
+  const { sql, logger } = deps
+  const index: SearchIndex =
+    sql.kind === 'sqlite' ? createSqliteSearchIndex(sql.raw) : createPostgresSearchIndex(sql.pool)
+
   return {
     kind: 'search',
     providerName: 'native',
@@ -47,76 +68,44 @@ export function createNativeSearchAdapter(deps: {
     healthCheck: () => okHealth(),
 
     async index(documents) {
-      const entries = new Map<string, IndexedDoc>()
-      for (const doc of documents) {
-        entries.set(doc.id, {
-          id: doc.id,
-          type: doc.type,
-          fields: doc.fields,
-          text: flatten(doc.fields).toLowerCase(),
-        })
-      }
-      await documentStore.batchPut(INDEX_COLLECTION, entries)
+      await index.upsert(documents.map(toIndexRow))
       logger.debug({ count: documents.length }, 'search.index')
       return { indexed: documents.length } satisfies IndexResult
     },
 
     async remove(ids) {
-      for (const id of ids) {
-        await documentStore.delete(INDEX_COLLECTION, id)
-      }
+      await index.remove(ids)
     },
 
     async search(query, params) {
-      const q = query.trim().toLowerCase()
-      const limit = params?.limit ?? 20
-      const result = await documentStore.query<IndexedDoc>(INDEX_COLLECTION, {
-        partitionKey: { field: 'type', value: 'product' },
-        limit: 1000,
-      })
-      const filtered = result.items.filter((item) => {
-        if (!q) return true
-        if (!item.text.includes(q)) return false
-        for (const [k, v] of Object.entries(params?.filters ?? {})) {
-          const field = (item.fields as Record<string, unknown>)[k]
-          if (field !== v) return false
-        }
-        return true
-      })
+      const offset = params?.cursor === undefined ? 0 : decodeSearchCursor(params.cursor)
+      const requested = params?.limit ?? DEFAULT_LIMIT
+      const limit = Number.isFinite(requested) ? Math.max(1, Math.floor(requested)) : DEFAULT_LIMIT
+      const terms = uniqueTerms(query)
+      if (terms.length === 0) return { items: [], total: 0, nextCursor: null }
+      const categories = categoryFilter(params?.filters)
+      const page = await index.page(terms, categories, limit, offset)
+      // A page past the last match has no rows to carry the total.
+      const total = page.total ?? (await index.count(terms, categories))
+      const end = offset + page.docs.length
       return {
-        items: filtered.slice(0, limit).map((it) => ({
-          id: it.id,
-          type: it.type,
-          fields: it.fields,
-        })),
-        total: filtered.length,
-        nextCursor: null,
+        items: page.docs,
+        total,
+        nextCursor: page.docs.length > 0 && end < total ? encodeSearchCursor(end) : null,
       } satisfies SearchResult
     },
 
-    async facet(field) {
-      const result = await documentStore.query<IndexedDoc>(INDEX_COLLECTION, {
-        partitionKey: { field: 'type', value: 'product' },
-        limit: 1000,
-      })
-      const counts = new Map<string, number>()
-      for (const item of result.items) {
-        const raw = (item.fields as Record<string, unknown>)[field]
-        if (raw == null) continue
-        const vals = Array.isArray(raw) ? raw : [raw]
-        for (const v of vals) {
-          const key = String(v)
-          counts.set(key, (counts.get(key) ?? 0) + 1)
-        }
-      }
-      const label = field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-      return {
-        field,
-        label,
-        values: [...counts.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([value, count]) => ({ value, count })),
-      } satisfies Facet
+    async facet(field, params) {
+      const label = field === 'categoryIds' ? 'Category' : field
+      if (field !== 'categoryIds') return { field, label, values: [] }
+      const terms = params?.query === undefined ? null : uniqueTerms(params.query)
+      if (terms !== null && terms.length === 0) return { field, label, values: [] }
+      const values = await index.categoryCounts(
+        terms,
+        categoryFilter(params?.filters),
+        params?.limit ?? null,
+      )
+      return { field, label, values } satisfies Facet
     },
   }
 }

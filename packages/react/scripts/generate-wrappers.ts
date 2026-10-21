@@ -109,7 +109,10 @@ const COMPONENTS: ComponentDef[] = [
   {
     tagName: 'nymbal-product-filter',
     reactName: 'ProductFilter',
-    attributes: [{ name: 'facets', reactProp: 'facets', type: 'json' }],
+    attributes: [
+      { name: 'facets', reactProp: 'facets', type: 'json' },
+      { name: 'source', reactProp: 'source', type: 'string' },
+    ],
     events: [
       {
         name: 'nymbal:filter:changed',

@@ -6,7 +6,10 @@ import { randomUUID } from 'node:crypto'
 // the SearchAdapter and PaymentsAdapter contracts written out; tests/contracts/custom-providers.test.ts runs both
 // adapter contracts on them, which is where a drift from @nymbalhq/types shows.
 //
-// - search: in memory, `index` and `search` only (no `facet`), a case-insensitive substring match on the name;
+// - search: in memory, `index` and `search` only (no `facet`). P2-07 decision 9: it matches by decision 3's rule (a
+//   term is a maximal run of ASCII letters and digits after lowercasing; every query term prefix-matches a term of
+//   the name, a SKU, a variant name or the description), filters by `categoryIds`, pages by an offset cursor and
+//   reports an exact total. Results are in index order: the fixture promises no ranking;
 // - payments: the native stub's `+stub-*` receipt-email rules, with `client()` null, so the storefront has no payment
 //   step to render.
 
@@ -21,12 +24,38 @@ export interface Doc {
 /** What the fixture's search offers: no `facet`, so the listing route sends no facets and no filter renders. */
 export const FIXTURE_SEARCH_CAPABILITIES: readonly string[] = ['index', 'search']
 
+/** Decision 3's terms of a text. */
+function termsOf(text: unknown): string[] {
+  return typeof text === 'string' ? (text.toLowerCase().match(/[a-z0-9]+/g) ?? []) : []
+}
+
+/** Every searchable term of a doc: name, each variant's SKU and name, description. */
+function docTerms(doc: Doc): string[] {
+  const variants = Array.isArray(doc.fields['variants'])
+    ? (doc.fields['variants'] as Array<Record<string, unknown>>)
+    : []
+  return [
+    ...termsOf(doc.fields['name']),
+    ...variants.flatMap((v) => [...termsOf(v['sku']), ...termsOf(v['name'])]),
+    ...termsOf(doc.fields['description']),
+  ]
+}
+
+/** The fixture's cursor for an offset: the decimal offset, base64url. Encodes anything; only search validates. */
+export function encodeFixtureCursor(offset: number): string {
+  return Buffer.from(String(offset), 'utf8').toString('base64url')
+}
+
+function decodeFixtureCursor(cursor: string): number {
+  const text = Buffer.from(cursor, 'base64url').toString('utf8')
+  if (!/^\d+$/.test(text) || encodeFixtureCursor(Number(text)) !== cursor) {
+    throw new Error(`malformed search cursor ${JSON.stringify(cursor)}`)
+  }
+  return Number(text)
+}
+
 export function createFixtureSearchAdapter() {
   const docs = new Map<string, Doc>()
-  const nameOf = (doc: Doc) => {
-    const name = doc.fields['name']
-    return typeof name === 'string' ? name.toLowerCase() : ''
-  }
   return {
     kind: 'search' as const,
     providerName: 'p2-05-fixture-search',
@@ -49,10 +78,25 @@ export function createFixtureSearchAdapter() {
       query: string,
       params?: { limit?: number; cursor?: string; filters?: Record<string, unknown> },
     ): Promise<{ items: Doc[]; total: number; nextCursor: string | null }> {
-      const q = query.trim().toLowerCase()
-      const hits = [...docs.values()].filter((doc) => q === '' || nameOf(doc).includes(q))
+      const offset = params?.cursor === undefined ? 0 : decodeFixtureCursor(params.cursor)
+      const q = termsOf(query)
+      if (q.length === 0) return { items: [], total: 0, nextCursor: null }
+      const category = params?.filters?.['categoryIds']
+      const hits = [...docs.values()].filter((doc) => {
+        if (category !== undefined) {
+          const ids = doc.fields['categoryIds']
+          if (!Array.isArray(ids) || !ids.includes(category)) return false
+        }
+        const terms = docTerms(doc)
+        return q.every((t) => terms.some((d) => d.startsWith(t)))
+      })
       const limit = params?.limit ?? 20
-      return { items: hits.slice(0, limit), total: hits.length, nextCursor: null }
+      const end = offset + limit
+      return {
+        items: hits.slice(offset, end),
+        total: hits.length,
+        nextCursor: end < hits.length ? encodeFixtureCursor(end) : null,
+      }
     },
 
     // Not offered (no `facet` capability); the method exists because the interface has it, and answers no values.

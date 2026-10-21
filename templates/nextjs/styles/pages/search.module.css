@@ -143,6 +143,30 @@
   margin-inline: auto;
 }
 
+/* ── Category filter and load more ───────────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--nymbal-spacing-lg);
+}
+
+@media (min-width: 769px) {
+  .layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+.sidebar {
+  align-self: start;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--nymbal-spacing-xl);
+}
+
 /* ── Loading ──────────────────────────────────────────────────────── */
 
 .loading {

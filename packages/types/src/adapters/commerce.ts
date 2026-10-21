@@ -137,6 +137,8 @@ export interface SearchResult {
 }
 
 export interface FacetParams {
+  /** Count only the documents this query matches. */
+  query?: string
   limit?: number
   filters?: Record<string, unknown>
 }

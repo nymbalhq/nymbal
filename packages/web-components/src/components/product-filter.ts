@@ -38,17 +38,28 @@ nymbal-product-filter .nymbal-filter-count {
 `
 
 
+/**
+ * The facet filter. By default it reads the `facets` attribute and filters the product list. With `source="search"`
+ * it renders the search's own facets and narrows the search to one category: choosing an option selects it, choosing
+ * the selected option again clears it.
+ */
 export class NymbalProductFilter extends NymbalElement {
   static get observedAttributes(): string[] {
-    return ['facets']
+    return ['facets', 'source']
   }
 
   protected setup(): void {
     injectStyles('nymbal-product-filter', STYLES)
+    // Both: a wrapper may set `source` after the element has connected.
     this.subscribeToStore(this.client.productList)
+    this.subscribeToStore(this.client.search)
   }
 
   protected render(): void {
+    if (this.isSearch()) {
+      this.renderSearch()
+      return
+    }
     const state = this.client.productList.getState()
     const facets = this.getFacets()
 
@@ -107,6 +118,49 @@ export class NymbalProductFilter extends NymbalElement {
         )
       })
     })
+  }
+
+  private renderSearch(): void {
+    const { facets, category } = this.client.search.getState()
+    const shown = facets.filter((f) => f.field === 'category')
+    this.innerHTML = shown
+      .map(
+        (facet) => `
+        <div class="nymbal-filter-group" data-testid="filter-group-${this.esc(facet.field)}">
+          <span class="nymbal-filter-label">${this.esc(facet.label)}</span>
+          ${facet.values
+            .map(
+              (v) => `
+              <label class="nymbal-filter-option" data-testid="filter-option-${this.esc(v.value)}">
+                <input type="checkbox" data-filter-value="${this.esc(v.value)}" ${v.value === category ? 'checked' : ''}>
+                <span>${this.esc(v.label ?? v.value)}</span>
+                ${v.count !== undefined ? `<span class="nymbal-filter-count">(${v.count})</span>` : ''}
+              </label>
+            `,
+            )
+            .join('')}
+        </div>
+      `,
+      )
+      .join('')
+
+    this.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const value = input.dataset['filterValue']!
+        void this.client.search.setCategory(input.checked ? value : null)
+        this.dispatchEvent(
+          new CustomEvent('nymbal:filter:changed', {
+            bubbles: true,
+            composed: true,
+            detail: { name: 'category', value: input.checked ? value : '' },
+          }),
+        )
+      })
+    })
+  }
+
+  private isSearch(): boolean {
+    return this.getAttribute('source') === 'search'
   }
 
   attributeChangedCallback(): void {

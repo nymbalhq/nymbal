@@ -5,13 +5,15 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { matchesQuery, type ContractProduct } from '../../../../tests/contracts/suites/search.js'
 import { FIXTURE_SEARCH_CAPABILITIES } from '../../../../tests/e2e/fixtures/custom-providers/adapters.js'
 
 // P2-05 AC-5 (integration) and decision 8: `nymbal dev --api-only`, run from the swap fixture's directory
 // (tests/e2e/fixtures/custom-providers), starts with both `custom` slots filled from the config's `adapters` export,
 // and the API it serves answers through them: the capabilities report is the fixture's (search without `facet`,
-// payments with no client), the listing has no facets, and search matches on the product name only. Kills: a CLI that
-// cannot run a `custom` slot (`adapter.custom_mismatch` at start), and one that starts on the native adapters anyway.
+// payments with no client), the listing has no facets, and search matches by P2-07 decision 3 (name, SKU, variant name
+// or description; decision 9 moved the fixture there). Kills: a CLI that cannot run a `custom` slot
+// (`adapter.custom_mismatch` at start), and one that starts on the native adapters anyway.
 // Spawns the built CLI (`pnpm build` first), on a free port and a fresh SQLite file of its own.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -107,18 +109,19 @@ describe('nymbal dev --api-only from the custom-providers fixture', () => {
     expect(res.data.payments.client).toBeNull()
   })
 
-  it('AC-5: the listing it serves has no facets, and search answers by name only: exactly the listed products whose name contains the term', async () => {
-    const listing = await get<{ items: Array<{ slug: string; name: string }>; facets?: unknown }>(
-      '/api/products?limit=100',
-    )
+  it('AC-5: the listing it serves has no facets, and search answers by decision 3: exactly the listed products whose name, SKU, variant name or description matches the term', async () => {
+    const listing = await get<{
+      items: Array<ContractProduct & { slug: string }>
+      facets?: unknown
+    }>('/api/products?limit=100')
     const found = await get<{ items: Array<{ slug: string }> }>(
       '/api/products/search?q=wool&limit=100',
     )
 
     expect(listing.status).toBe(200)
     expect(Object.hasOwn(listing.data, 'facets')).toBe(false)
-    const byName = listing.data.items.filter((p) => p.name.toLowerCase().includes('wool'))
-    expect(byName.length).toBeGreaterThan(0)
-    expect(found.data.items.map((p) => p.slug).sort()).toEqual(byName.map((p) => p.slug).sort())
+    const matching = listing.data.items.filter((p) => matchesQuery(p, 'wool'))
+    expect(matching.length).toBeGreaterThan(0)
+    expect(found.data.items.map((p) => p.slug).sort()).toEqual(matching.map((p) => p.slug).sort())
   })
 })
