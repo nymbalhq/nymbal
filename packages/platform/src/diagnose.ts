@@ -85,7 +85,8 @@ async function within<T>(
 ): Promise<Outcome<T>> {
   let timer: NodeJS.Timeout | undefined
   let timedOut = false
-  const work = run()
+  // A run that throws before returning a promise is a failed outcome like a rejection, not an escape.
+  const work = Promise.resolve().then(run)
   const timeout = new Promise<Outcome<T>>((resolveTimeout) => {
     timer = setTimeout(() => {
       timedOut = true

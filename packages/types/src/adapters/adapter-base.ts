@@ -78,7 +78,7 @@ export function displayUrl(url: string): string {
  * replaced; one still running when the bound passes is `down` with `timed out after <n> ms`, and its signal aborted.
  */
 export async function boundedHealthCheck(
-  check: (signal: AbortSignal) => Promise<HealthReport>,
+  check: (signal: AbortSignal) => Promise<HealthReport> | HealthReport,
   options: BoundedHealthCheckOptions = {},
 ): Promise<HealthReport> {
   const timeoutMs = options.timeoutMs ?? HEALTH_CHECK_TIMEOUT_MS
@@ -98,7 +98,12 @@ export async function boundedHealthCheck(
     return { status: 'down', detail }
   }
   try {
-    return await Promise.race([check(controller.signal).catch(failed), timedOut])
+    // Started inside a promise so a check that throws before returning one, or returns a plain report, is still
+    // mapped rather than escaping the caller.
+    const checked = Promise.resolve()
+      .then(() => check(controller.signal))
+      .catch(failed)
+    return await Promise.race([checked, timedOut])
   } finally {
     clearTimeout(timer)
   }
