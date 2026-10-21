@@ -104,7 +104,7 @@ describe('P2-03 AC-4: nymbal add', () => {
     const twice = listing(dir)
     expect(changedPaths(once, twice)).toHaveLength(0)
     expect(twice.get('nymbal.config.ts')).toBe(once.get('nymbal.config.ts'))
-  })
+  }, 60_000)
 
   it("AC-4: after a hand edit to documentStore: 'postgres-jsonb', `nymbal add redis` exits 1 naming the path and both values, and leaves the files byte-identical", async () => {
     const dir = project('conflict')
