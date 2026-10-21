@@ -43,6 +43,40 @@ function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
   }
 }
 
+/** The search's category counts in the listing's facet shape: field `category`, slug values, name labels. */
+async function searchCategoryFacet(
+  searchService: SearchService,
+  documentStore: DocumentStoreAdapter,
+  storeName: string,
+  query: string,
+  filters: Record<string, unknown> | undefined,
+): Promise<Facet> {
+  const [counts, categories] = await Promise.all([
+    searchService.facet('categoryIds', { query, ...(filters !== undefined && { filters }) }),
+    documentStore.query<{ id: string; slug: string; name: string }>('categories', {
+      partitionKey: { field: 'storeId', value: storeName },
+      limit: 500,
+    }),
+  ])
+  const byId = new Map(categories.items.map((c) => [c.id, c]))
+  return {
+    field: 'category',
+    label: 'Category',
+    values: counts.values.flatMap((v) => {
+      const category = byId.get(v.value)
+      return category === undefined
+        ? []
+        : [
+            {
+              value: category.slug,
+              label: category.name,
+              ...(v.count !== undefined && { count: v.count }),
+            },
+          ]
+    }),
+  }
+}
+
 export function registerProductRoutes(
   adapter: HttpAdapter,
   documentStore: DocumentStoreAdapter,
@@ -54,26 +88,40 @@ export function registerProductRoutes(
 ): void {
   adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
     try {
+      const nothing = { items: [], nextCursor: null, total: 0, facets: [] }
       const rawQ = ctx.query.q
-      const q = Array.isArray(rawQ) ? rawQ[0] : rawQ
-      if (!q || !q.trim()) return ok({ items: [], nextCursor: null, facets: [] })
-      if (!searchService) return ok({ items: [], nextCursor: null, facets: [] })
+      const q = (Array.isArray(rawQ) ? rawQ[0] : rawQ)?.trim()
+      if (!q || !searchService) return ok(nothing)
       const rawLimit = ctx.query.limit
       const limit = rawLimit
         ? Math.min(100, Math.max(1, Number(Array.isArray(rawLimit) ? rawLimit[0] : rawLimit) || 20))
         : 20
       const rawCursor = ctx.query.cursor
       const cursor = Array.isArray(rawCursor) ? rawCursor[0] : rawCursor
-      const searchResult = await searchService.products(q.trim(), {
+      const rawCategory = ctx.query.category
+      const categorySlug = Array.isArray(rawCategory) ? rawCategory[0] : rawCategory
+      let filters: Record<string, unknown> | undefined
+      if (categorySlug) {
+        const category = await documentStore.get<{ id: string }>('categories', categorySlug)
+        if (!category) return ok(nothing)
+        filters = { categoryIds: category.id }
+      }
+      const searchResult = await searchService.products(q, {
         limit,
         ...(cursor !== undefined && { cursor }),
+        ...(filters !== undefined && { filters }),
       })
       const slugs = searchResult.items
         .map((doc) => String((doc.fields as Record<string, unknown>)?.slug ?? ''))
         .filter(Boolean)
       const products = await Promise.all(slugs.map((slug) => documentStore.get('products', slug)))
+      // A hit whose product is gone is dropped from the page; the total is the index's.
       const items = products.filter(Boolean)
-      return ok({ items, nextCursor: searchResult.nextCursor, facets: [] })
+      const facets =
+        canFacet() && searchResult.total > 0
+          ? [await searchCategoryFacet(searchService, documentStore, storeName, q, filters)]
+          : []
+      return ok({ items, nextCursor: searchResult.nextCursor, total: searchResult.total, facets })
     } catch (err) {
       return renderError(err)
     }

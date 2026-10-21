@@ -44,6 +44,25 @@
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
 }
 
+/* ---- Category filter beside the results ---- */
+
+.search-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+/* The filter renders nothing when the search has no facets: the results take the width. */
+@media (min-width: 769px) {
+  .search-layout:has(nymbal-product-filter:not(:empty)) {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+.search-sidebar:has(nymbal-product-filter:empty) {
+  display: none;
+}
+
 /* ---- Results area ---- */
 
 .search-results {

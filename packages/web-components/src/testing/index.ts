@@ -28,7 +28,15 @@ export function createMockClient(): NymbalClient {
     error: null,
   })
   const productStore = createMockStore({ product: null, selectedVariant: null, loading: false, error: null })
-  const searchStore = createMockStore({ query: '', results: [], total: 0, loading: false })
+  const searchStore = createMockStore({
+    query: '',
+    category: null,
+    results: [],
+    total: 0,
+    nextCursor: null,
+    facets: [],
+    loading: false,
+  })
   const productListStore = createMockStore({ products: [], facets: [], filters: {}, sort: 'newest' as const, pagination: { cursor: null, hasMore: false }, loading: false, error: null })
   const authStore = createMockStore({ customer: null, isAuthenticated: false, loading: false, error: null })
   const checkoutStore = createMockStore({ step: 'contact' as const, email: '', shippingAddress: null, billingAddress: null, shippingMethod: null, paymentStatus: 'idle' as const, error: null, order: null })
@@ -58,6 +66,8 @@ export function createMockClient(): NymbalClient {
     search: {
       ...searchStore,
       search: async () => {},
+      loadMore: async () => {},
+      setCategory: async () => {},
       clearSearch: () => {},
     },
     auth: {

@@ -1,23 +1,43 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { useSearch } from '@nymbalhq/react'
+import { ProductFilter, useSearch } from '@nymbalhq/react'
 import { formatPrice } from '@/lib/format'
 import styles from '@/styles/pages/search.module.css'
 
 export function SearchResults() {
   const searchParams = useSearchParams()
   const query = searchParams.get('q') ?? ''
-  const { results, loading, search } = useSearch()
+  const category = searchParams.get('category')
+  const {
+    results,
+    total,
+    nextCursor,
+    facets,
+    loading,
+    query: searched,
+    category: searchedCategory,
+    search,
+    loadMore,
+  } = useSearch()
 
   useEffect(() => {
-    if (query) {
-      search(query)
+    // The filter has already searched the category it writes to the URL.
+    if (query && (query !== searched || category !== searchedCategory)) {
+      void search(query, { category })
     }
-  }, [query, search])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the URL changes, not on every store update
+  }, [query, category, search])
+
+  const onFilterChange = useCallback((event: CustomEvent<{ name: string; value: string }>) => {
+    const url = new URL(window.location.href)
+    if (event.detail.value) url.searchParams.set('category', event.detail.value)
+    else url.searchParams.delete('category')
+    window.history.replaceState(null, '', url.toString())
+  }, [])
 
   return (
     <div className={`container ${styles.page}`}>
@@ -30,7 +50,7 @@ export function SearchResults() {
         )}
       </div>
 
-      {loading ? (
+      {loading && results.length === 0 ? (
         <div className={styles.loading}>
           <div className="spinner spinner-lg" role="status">
             <span className="visually-hidden">Searching...</span>
@@ -57,48 +77,69 @@ export function SearchResults() {
             Use the search bar above to find what you are looking for.
           </p>
         </div>
-      ) : results && results.length > 0 ? (
-        <>
-          <p className={styles.resultCount}>
-            {results.length} result{results.length !== 1 ? 's' : ''} found
-          </p>
-          <div className={styles.grid}>
-            {results.map((product) => {
-              const media = Array.isArray(product.media) ? product.media : []
-              const imageUrl = media.length > 0 && typeof (media[0] as Record<string, unknown>)?.url === 'string'
-                ? (media[0] as Record<string, string>).url
-                : null
-              return (
-                <Link
-                  key={product.id}
-                  href={`/product/${product.slug}`}
-                  className={styles.productCard}
-                  data-testid={`product-card-${product.slug}`}
+      ) : results.length > 0 ? (
+        <div className={facets.length > 0 ? styles.layout : undefined}>
+          {facets.length > 0 && (
+            <aside className={styles.sidebar}>
+              <ProductFilter source="search" onFilterChange={onFilterChange} />
+            </aside>
+          )}
+          <div>
+            <p className={styles.resultCount} data-testid="search-total">
+              {total} result{total !== 1 ? 's' : ''} found
+            </p>
+            <div className={styles.grid}>
+              {results.map((product) => {
+                const media = Array.isArray(product.media) ? product.media : []
+                const imageUrl =
+                  media.length > 0 && typeof (media[0] as Record<string, unknown>)?.url === 'string'
+                    ? (media[0] as Record<string, string>).url
+                    : null
+                return (
+                  <Link
+                    key={product.id}
+                    href={`/product/${product.slug}`}
+                    className={styles.productCard}
+                    data-testid={`product-card-${product.slug}`}
+                  >
+                    <div className={styles.productImage}>
+                      {imageUrl && (
+                        <Image
+                          src={imageUrl}
+                          alt={product.name}
+                          width={400}
+                          height={400}
+                          sizes="(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 25vw"
+                        />
+                      )}
+                    </div>
+                    <div className={styles.productInfo}>
+                      <p className={styles.productName}>{product.name}</p>
+                      {product.priceMinor != null && product.currency && (
+                        <p className={styles.productPrice}>
+                          {formatPrice(product.priceMinor, product.currency)}
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+            {nextCursor !== null && (
+              <div className={styles.pagination}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void loadMore()}
+                  disabled={loading}
+                  data-testid="search-load-more"
                 >
-                  <div className={styles.productImage}>
-                    {imageUrl && (
-                      <Image
-                        src={imageUrl}
-                        alt={product.name}
-                        width={400}
-                        height={400}
-                        sizes="(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 25vw"
-                      />
-                    )}
-                  </div>
-                  <div className={styles.productInfo}>
-                    <p className={styles.productName}>{product.name}</p>
-                    {product.priceMinor != null && product.currency && (
-                      <p className={styles.productPrice}>
-                        {formatPrice(product.priceMinor, product.currency)}
-                      </p>
-                    )}
-                  </div>
-                </Link>
-              )
-            })}
+                  {loading ? 'Loading...' : 'Load more'}
+                </button>
+              </div>
+            )}
           </div>
-        </>
+        </div>
       ) : (
         <div className={styles.empty}>
           <div className={styles.emptyIcon}>

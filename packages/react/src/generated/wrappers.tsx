@@ -292,6 +292,7 @@ export const SearchBar = forwardRef<HTMLElement, SearchBarProps>(
 
 export interface ProductFilterProps {
   facets?: unknown
+  source?: string
   onFilterChange?: (event: CustomEvent<{ name: string; value: string }>) => void
   className?: string
   style?: React.CSSProperties
@@ -312,6 +313,16 @@ export const ProductFilter = forwardRef<HTMLElement, ProductFilterProps>(
       el.removeAttribute('facets')
     }
   }, [props.facets])
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.source !== undefined) {
+      el.setAttribute('source', String(props.source))
+    } else {
+      el.removeAttribute('source')
+    }
+  }, [props.source])
 
   useEffect(() => {
     const el = ref.current
