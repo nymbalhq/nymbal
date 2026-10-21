@@ -14,6 +14,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // healthCheck; a downtime case that passes on a dependency that still answers (`degraded` is not `down`) or hangs on
 // one that never does. Case names are matched by what they are about: pagination or cursor, idempotency, health,
 // down or unreachable.
+// P3-02 AC-1 (spec P3-02-replay-engine, decision 2) adds the document store suite's replaceCollection cases: an
+// in-memory store whose replaceCollection is not atomic, merges instead of replacing, or empties the collection before
+// a source that then throws, beside the real in-memory store as the control. Each defective store fails only cases
+// named for replaceCollection, among them the one about its defect (a reader during the replace, the exact new set,
+// a failing source). Kills: a suite without replaceCollection cases, or with cases these defects pass.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -24,6 +29,10 @@ const PAGINATION = /pagin|cursor/i
 const IDEMPOTENCY = /idempot/i
 const HEALTH = /health/i
 const DOWNTIME = /\bdown\b|unreachable/i
+const REPLACE = /replaceCollection/
+const CONCURRENT_READER = /reader|concurren|partial/i
+const STALE_KEYS = /stale|exact/i
+const FAILING_SOURCE = /fail|throw|reject/i
 
 interface Outcome {
   passed: string[]
@@ -138,6 +147,43 @@ describe('P2-13: the published suites fail an adapter with the defect they exist
     const run = compare('media-down-hangs', 'media-down-control', DOWNTIME)
 
     expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('P3-02: the published document store suite fails a replaceCollection with the defect it exists for', () => {
+  it('AC-1: a document store whose replaceCollection is not atomic fails the concurrent-reader replaceCollection case, and only replaceCollection cases; the real in-memory store passes every case', () => {
+    const run = compare('documents-replace-not-atomic', 'documents-control', REPLACE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(
+      run.failed.filter((name) => CONCURRENT_READER.test(name)).length,
+      run.why,
+    ).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-1: a document store whose replaceCollection keeps the old keys fails the exact-new-set replaceCollection case, and only replaceCollection cases', () => {
+    const run = compare('documents-replace-merges', 'documents-control', REPLACE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.failed.filter((name) => STALE_KEYS.test(name)).length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-1: a document store whose replaceCollection empties the collection before a source that throws fails the failing-source replaceCollection case, and only replaceCollection cases', () => {
+    const run = compare('documents-replace-failure-empties', 'documents-control', REPLACE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.failed.filter((name) => FAILING_SOURCE.test(name)).length, run.why).toBeGreaterThan(
+      0,
+    )
     expect(run.offTopic, run.why).toEqual([])
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)
