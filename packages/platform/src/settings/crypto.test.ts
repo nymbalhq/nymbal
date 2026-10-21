@@ -22,6 +22,9 @@ const valueArb = fc.oneof(
   fc.string({ unit: 'grapheme', minLength: 1, maxLength: 40 }),
 )
 
+// At least 16 UTF-16 code units, so at least 16 UTF-8 bytes.
+const longValueArb = fc.string({ minLength: 16, maxLength: 120 })
+
 const aad = (slot: string, path: string): string => `${slot}:${path}`
 
 type Row = ReturnType<typeof encrypt>
@@ -40,14 +43,26 @@ describe('P3-07 AC-1: encryption round trip and binding', () => {
 
   it('AC-1: two encryptions of one value differ, each with a 12-byte IV of its own', () => {
     fc.assert(
-      fc.property(keyArb, slotArb, pathArb, valueArb, (key, slot, path, value) => {
-        const a = encrypt(key, aad(slot, path), value)
-        const b = encrypt(key, aad(slot, path), value)
-        expect(bytesOf(a.iv).length).toBe(12)
-        expect(bytesOf(b.iv).length).toBe(12)
-        expect(bytesOf(a.iv).equals(bytesOf(b.iv))).toBe(false)
-        expect(bytesOf(a.ciphertext).equals(bytesOf(b.ciphertext))).toBe(false)
-      }),
+      fc.property(
+        keyArb,
+        slotArb,
+        pathArb,
+        valueArb,
+        longValueArb,
+        (key, slot, path, value, longValue) => {
+          const a = encrypt(key, aad(slot, path), value)
+          const b = encrypt(key, aad(slot, path), value)
+          expect(bytesOf(a.iv).length).toBe(12)
+          expect(bytesOf(b.iv).length).toBe(12)
+          expect(bytesOf(a.iv).equals(bytesOf(b.iv))).toBe(false)
+          // The 16-byte tag collides with probability 2^-128. A ciphertext is as long as its value, and two of n
+          // bytes under fresh IVs collide with probability 256^-n, so only a value of 16 bytes or more is compared.
+          expect(bytesOf(a.tag).equals(bytesOf(b.tag))).toBe(false)
+          const c = encrypt(key, aad(slot, path), longValue)
+          const d = encrypt(key, aad(slot, path), longValue)
+          expect(bytesOf(c.ciphertext).equals(bytesOf(d.ciphertext))).toBe(false)
+        },
+      ),
       { numRuns: 200 },
     )
   })
