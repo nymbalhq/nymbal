@@ -28,8 +28,16 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
     ]
   : []
 
+// Set by the gate when other worktrees' gates run Vitest at once (scripts/gate.ts): each run then takes a share of the
+// CPUs, since a worker per core in each starves the main processes.
+const sharedWorkers = process.env['NYMBAL_VITEST_MAX_WORKERS']
+if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
+  throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
+}
+
 export default defineConfig({
   test: {
+    ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
     projects: [
       {
         test: {

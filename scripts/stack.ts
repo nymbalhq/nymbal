@@ -382,6 +382,23 @@ function sharedElsewhere(dir: string, worktree: string): boolean {
     })
 }
 
+/**
+ * How many worktrees have a live shared hold, counting the caller's whether it holds one yet or not: the number of
+ * gates sharing the machine's CPU now. A hold whose pid is dead is not counted.
+ */
+export function liveHolders(cwd: string): number {
+  const heavy = heavyDir(cwd)
+  if (heavy === undefined) return 1
+  const { dir, worktree } = heavy
+  const worktrees = new Set([worktree])
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith('shared-')) continue
+    const hold = readHold(join(dir, name))
+    if (hold !== undefined && isAlive(hold.pid)) worktrees.add(hold.worktree)
+  }
+  return worktrees.size
+}
+
 const holdText = (worktree: string, label: string): string =>
   `${process.pid}\n${worktree}\n${label}\n${randomUUID()}\n`
 

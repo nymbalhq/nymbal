@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
@@ -19,6 +20,7 @@ import {
   acquireShared,
   composePorts,
   type Hold,
+  liveHolders,
   QUIET_MAX_WAIT_MS,
   type StackBlock,
   stack,
@@ -62,6 +64,27 @@ export type RunOptions = {
   env?: NodeJS.ProcessEnv
   /** How a step takes its hold; the quiet lock of `cwd`'s repository when not given. */
   acquire?: (mode: 'shared' | 'exclusive', label: string) => Promise<Hold>
+}
+
+/** The variable `vitest.config.ts` reads into `test.maxWorkers`; nested Vitest runs inherit it with the environment. */
+export const VITEST_WORKERS_ENV = 'NYMBAL_VITEST_MAX_WORKERS'
+
+/**
+ * The steps that run Vitest, themselves or nested (sentinels, tests-fail-on-base). Two gates' Vitest runs with a
+ * worker per core each starve each other's main process until a worker RPC times out, so each takes a share.
+ */
+const VITEST_STEPS = new Set([
+  'tests',
+  'integration-postgres',
+  'proof-kit-services',
+  'integration-stores',
+  'sentinels',
+  'tests-fail-on-base',
+])
+
+/** A Vitest step's workers when `holders` worktrees share `cpus`; none set when it is alone. */
+export function vitestWorkers(cpus: number, holders: number): number | undefined {
+  return holders <= 1 ? undefined : Math.max(1, Math.floor(cpus / holders))
 }
 
 export type RunResult = { exitCode: number; steps: Step[]; report: string }
@@ -414,8 +437,16 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
     const started = performance.now()
     let code: number
     let output: string
+    const workers = VITEST_STEPS.has(spec.name)
+      ? vitestWorkers(availableParallelism(), liveHolders(opts.cwd))
+      : undefined
+    if (workers !== undefined) log(`${spec.name}: ${workers} Vitest workers, the CPU shared\n`)
+    const env =
+      workers === undefined
+        ? opts.env
+        : { ...(opts.env ?? process.env), [VITEST_WORKERS_ENV]: String(workers) }
     try {
-      ;({ code, output } = await execute(spec.command, opts.cwd, opts.env))
+      ;({ code, output } = await execute(spec.command, opts.cwd, env))
     } finally {
       await hold?.()
     }
