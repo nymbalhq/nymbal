@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@nymbalhq/sdk": "workspace:*",
-    "@nymbalhq/types": "workspace:*"
+    "@nymbalhq/types": "workspace:*",
+    "lit": "^3.3.3"
   },
   "devDependencies": {
     "tsup": "^8.3.5",

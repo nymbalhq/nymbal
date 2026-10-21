@@ -1,3 +1,4 @@
+import '../elements/index.js'
 import { createNymbalClient } from '@nymbalhq/sdk'
 import { registerClient, registerComponents } from '@nymbalhq/web-components'
 

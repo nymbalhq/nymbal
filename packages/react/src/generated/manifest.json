@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-10-21T03:36:55.165Z",
-  "sourceHash": "06db030ae5c22130",
+  "generatedAt": "2026-10-21T14:15:33.988Z",
+  "sourceHash": "85cc4380880eaa39",
   "components": [
     "AddToCart",
     "CartDrawer",
     "MiniCart",
-    "VariantSelector",
+    "PaymentElement",
+    "ProductFilter",
     "QuantitySelector",
     "SearchBar",
-    "ProductFilter",
-    "PaymentElement",
     "SortDropdown",
-    "Toast"
+    "Toast",
+    "VariantSelector"
   ]
 }

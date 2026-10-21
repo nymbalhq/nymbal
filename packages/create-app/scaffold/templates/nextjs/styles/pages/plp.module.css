@@ -118,22 +118,9 @@
   color: var(--nymbal-color-text-muted);
 }
 
-/* The sort element renders the select. */
-.sortSelect select {
-  padding: 0.5rem 0.75rem;
-  font-size: var(--nymbal-font-size-sm);
-  border: 1px solid var(--nymbal-color-border);
-  border-radius: var(--nymbal-radius-md);
-  background: var(--nymbal-color-surface);
-  color: var(--nymbal-color-text);
-  cursor: pointer;
-  min-width: 10rem;
-}
-
-.sortSelect select:focus {
-  outline: none;
-  border-color: var(--nymbal-color-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+/* The sort element renders its select in its shadow root, styled there (::part(select)); the bar gives it a row. */
+.sortSelect {
+  width: 100%;
 }
 
 /* ── Product Grid ─────────────────────────────────────────────────── */
