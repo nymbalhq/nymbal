@@ -149,7 +149,7 @@ function statusFor(receiptEmail: string | undefined): PaymentStatus {
   return 'succeeded'
 }
 
-interface Refunded {
+export interface Refunded {
   refundId: string
   paymentId: string
   amountMinor: number
