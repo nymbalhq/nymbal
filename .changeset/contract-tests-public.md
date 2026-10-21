@@ -25,13 +25,16 @@ prints `certified <pkg> (<kind>): N cases passed` and exits 0 only when every ca
   `contractSuites` maps each kind to its suite, and the search oracle (`searchTerms`, `matchesQuery`,
   `toSearchDocument`) is exported.
 - A package may export `contractOptions: { options?, unreachable?, kind? }`: the options when no slot names it, the
-  options of an unreachable adapter, and a primitive's kind (`documentStore`, `eventBus` or `media`). `--slot` picks
-  the slot when several name the package. `--adapter` runs the monorepo's own contract files, as before.
+  options of an unreachable adapter, and a primitive's kind (`documentStore`, `eventBus` or `media`). Both go to
+  `createAdapter` and then to `initialize` when the adapter has one, as the slot's config does. A slot config holding
+  a value JSON cannot carry (a function, a Date, a BigInt) is refused with one line. `--slot` picks the slot when
+  several name the package. `--adapter` runs the monorepo's own contract files, as before.
 - Every commerce slot block takes an optional `package`, an npm package name. The kernel does not read it.
 - Native reviews page by cursor: `getProductReviews(productId, { limit, cursor })` returns a `nextCursor` until the
   last page, newest first. The native payments stub answers a refund repeated under one `idempotencyKey` with the
   first refund and refunds once. adapter-smtp's `healthCheck` reports `down` when the server cannot be reached
-  (`degraded` stays for a server that refuses the login), within 5 s.
+  (`degraded` stays for a server that refuses the login), within 5 s, and a send gives up after 4 s on a host that
+  does not connect, greet or answer, where nodemailer waited up to two minutes.
 - The Redis document store's client and the Redis Streams bus's command client no longer queue a command until the
   server returns: on a dead server it rejects within a few seconds, and the client keeps reconnecting, so commands
   succeed again once the server is back.

@@ -206,6 +206,13 @@ describe('P2-13 AC-6: nymbal test:contracts --package certifies a third-party ad
         refused.lines.filter((l) => /cursor|pagin/i.test(l) && /×|✗|✕|fail/i.test(l)).length,
         refused.out.slice(-3000),
       ).toBeGreaterThan(0)
+      // The fixture reads contractOptions.unreachable in initialize, as adapter-smtp reads its config. A failing run
+      // lists every case: both downtime cases pass there, in a suite as large as the one certified with no failure, so
+      // the certified count holds them, which it can only when the unreachable adapter is built as the certified one.
+      expect(
+        refused.lines.filter((l) => /✓/.test(l) && /unreachable dependency > down: /.test(l)),
+        refused.out.slice(-3000),
+      ).toHaveLength(2)
 
       expect(changedOutsideContracts(goodBefore, tree(good))).toEqual([])
       expect(changedOutsideContracts(badBefore, tree(bad))).toEqual([])

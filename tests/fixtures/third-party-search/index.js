@@ -6,7 +6,8 @@
 //
 // `createAdapter(options)` takes the `config` record of the store's slot that names this package. With
 // `ignoreCursor: true` its search reads page 1 whatever cursor it is given: the variant the published search suite
-// must refuse to certify.
+// must refuse to certify. Like adapter-smtp it reads its connection settings again in `initialize(config)`: there
+// `dead: true` points it at an index it cannot reach, so its health is `down` and its search rejects.
 
 /** Decision 3's terms of a text: maximal runs of ASCII letters and digits, lowercased. */
 function termsOf(text) {
@@ -37,14 +38,18 @@ function decodeCursor(cursor) {
 export function createAdapter(options = {}) {
   const ignoreCursor = options !== null && options.ignoreCursor === true
   const docs = new Map()
+  let dead = false
   return {
     kind: 'search',
     providerName: 'acme-search',
     capabilities: () => ['index', 'search'],
     producesEvents: [],
     consumesEvents: [],
-    initialize: async () => undefined,
-    healthCheck: async () => ({ status: 'healthy' }),
+    async initialize(config) {
+      dead = config !== null && typeof config === 'object' && config.dead === true
+    },
+    healthCheck: async () =>
+      dead ? { status: 'down', detail: 'index unreachable' } : { status: 'healthy' },
 
     async index(documents) {
       for (const doc of documents) docs.set(doc.id, { ...doc, fields: { ...doc.fields } })
@@ -56,6 +61,7 @@ export function createAdapter(options = {}) {
     },
 
     async search(query, params = {}) {
+      if (dead) throw new Error('search index unreachable')
       const offset = params.cursor === undefined || ignoreCursor ? 0 : decodeCursor(params.cursor)
       const q = termsOf(query)
       if (q.length === 0) return { items: [], total: 0, nextCursor: null }
@@ -83,5 +89,8 @@ export function createAdapter(options = {}) {
   }
 }
 
-/** What `nymbal test:contracts` falls back to when no slot of the store names this package. */
-export const contractOptions = { options: {} }
+/**
+ * What `nymbal test:contracts` falls back to when no slot of the store names this package, and the options of an
+ * adapter whose index cannot be reached, for the downtime cases.
+ */
+export const contractOptions = { options: {}, unreachable: { dead: true } }

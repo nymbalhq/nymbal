@@ -2,6 +2,7 @@ import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { findConfigFile, loadConfig } from '@nymbalhq/config'
 import { isInstalled } from '../recipes/holders.js'
 
@@ -36,7 +37,8 @@ interface VitestLike {
 }
 
 const firstLine = (text: string): string => text.split('\n')[0]!.trim()
-const messageOf = (err: unknown): string => firstLine(err instanceof Error ? err.message : String(err))
+const messageOf = (err: unknown): string =>
+  firstLine(err instanceof Error ? err.message : String(err))
 
 /** Where the project resolves `specifier`, as its own code would; a package it has not installed is the install line. */
 function resolveFrom(project: string, specifier: string, name: string, install: string): string {
@@ -78,6 +80,15 @@ async function slotOptions(
   }
   const block = picked[0]?.[1] as { config?: Record<string, unknown> } | undefined
   return block === undefined ? undefined : (block.config ?? {})
+}
+
+/** Whether a JSON round-trip gives `value` back unchanged; a value JSON cannot write (a BigInt, a cycle) does not. */
+function survivesJson(value: unknown): boolean {
+  try {
+    return isDeepStrictEqual(JSON.parse(JSON.stringify(value)), value)
+  } catch {
+    return false
+  }
 }
 
 async function closeProbe(adapter: unknown): Promise<void> {
@@ -141,7 +152,14 @@ export async function certifyPackage(input: {
   }
   const createAdapter = mod.createAdapter as (options: unknown) => unknown
   const extra = mod.contractOptions ?? {}
-  const options = (await slotOptions(project, pkg, slot)) ?? extra.options ?? {}
+  const fromSlot = await slotOptions(project, pkg, slot)
+  const options = fromSlot ?? extra.options ?? {}
+  // The generated file carries the slot's record as JSON, so a record JSON changes would certify another adapter.
+  if (fromSlot !== undefined && !survivesJson(fromSlot)) {
+    throw new CertifyError(
+      `the config of the slot naming ${pkg} holds a value JSON cannot carry (a function, Date, BigInt or undefined): certify it with plain data`,
+    )
+  }
 
   let kind: string | undefined
   try {
@@ -174,17 +192,19 @@ export async function certifyPackage(input: {
       `import * as adapter from ${JSON.stringify(pkg)}`,
       `import { contractSuites } from '@nymbalhq/contract-tests'`,
       ``,
-      `const options = ${JSON.stringify(options)}`,
+      fromSlot === undefined
+        ? `const options = adapter.contractOptions?.options ?? {}`
+        : `const options = ${JSON.stringify(fromSlot)}`,
       `const unreachable = adapter.contractOptions?.unreachable`,
       ``,
-      `async function build() {`,
-      `  const built = await adapter.createAdapter(options)`,
-      `  if (typeof built?.initialize === 'function') await built.initialize(options)`,
+      `async function build(config) {`,
+      `  const built = await adapter.createAdapter(config)`,
+      `  if (typeof built?.initialize === 'function') await built.initialize(config)`,
       `  return built`,
       `}`,
       ``,
-      `contractSuites[${JSON.stringify(kind)}](${JSON.stringify(pkg)}, build, {`,
-      `  ...(unreachable !== undefined && { unreachable: () => adapter.createAdapter(unreachable) }),`,
+      `contractSuites[${JSON.stringify(kind)}](${JSON.stringify(pkg)}, () => build(options), {`,
+      `  ...(unreachable !== undefined && { unreachable: () => build(unreachable) }),`,
       `})`,
       ``,
     ].join('\n'),

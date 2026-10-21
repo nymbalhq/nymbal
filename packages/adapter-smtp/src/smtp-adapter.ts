@@ -14,6 +14,8 @@ import {
   type TransactionalEmail,
 } from '@nymbalhq/types'
 
+const SMTP_TIMEOUT_MS = 4000
+
 export interface SmtpEmailAdapterConfig {
   from?: string
   smtp?: {
@@ -42,6 +44,10 @@ export function createSmtpEmailAdapter(deps: {
       host: cfg.smtp.host,
       port: cfg.smtp.port,
       secure: cfg.smtp.secure ?? cfg.smtp.port === 465,
+      // nodemailer waits two minutes to connect by default; a host that drops packets must fail inside the 6 s bound.
+      connectionTimeout: SMTP_TIMEOUT_MS,
+      greetingTimeout: SMTP_TIMEOUT_MS,
+      socketTimeout: SMTP_TIMEOUT_MS,
       ...(cfg.smtp.user !== undefined && cfg.smtp.pass !== undefined
         ? { auth: { user: cfg.smtp.user, pass: cfg.smtp.pass } }
         : {}),
