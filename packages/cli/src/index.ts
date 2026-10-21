@@ -9,6 +9,7 @@ import { configValidateCommand } from './commands/config-validate.js'
 import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
 import { secretsCommand } from './commands/secrets.js'
+import { eventsCommand } from './commands/events.js'
 import {
   testAllCommand,
   testCommand,
@@ -36,6 +37,7 @@ const main = defineCommand({
     add: addCommand,
     doctor: doctorCommand,
     secrets: secretsCommand,
+    events: eventsCommand,
     test: testCommand,
     'test:e2e': testE2eCommand,
     'test:visual': testVisualCommand,

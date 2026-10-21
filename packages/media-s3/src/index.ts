@@ -9,6 +9,11 @@ export {
   type S3MediaStorageOptions,
   type S3ObjectUrlOptions,
 } from './s3-media-storage.js'
+export {
+  createS3ObjectWriter,
+  type S3ObjectWriter,
+  type S3ObjectWriterOptions,
+} from './s3-object-writer.js'
 
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined

@@ -5,6 +5,7 @@ import type { AdapterRegistry } from '../adapters/registry.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { DeclaredSlot } from '../settings/load.js'
+import { runWithCorrelation } from '../events/correlation.js'
 import { createAuthMiddleware } from './auth-middleware.js'
 import { registerAuthRoutes } from './auth.js'
 import { registerProductRoutes } from './products.js'
@@ -35,9 +36,35 @@ export interface RegisterAllRoutesDeps {
   adminRoot?: string | null | undefined
 }
 
+/** Every handler runs in its request's correlation scope, so each event a route's services publish carries its id. */
+function correlatedAdapter(adapter: HttpAdapter): HttpAdapter {
+  return {
+    registerRoute(method, path, handler, options) {
+      adapter.registerRoute(
+        method,
+        path,
+        (ctx) => runWithCorrelation(ctx.correlationId, () => handler(ctx)),
+        options,
+      )
+    },
+    registerStreamRoute(method, path, handler, options) {
+      adapter.registerStreamRoute(
+        method,
+        path,
+        (ctx, stream) => runWithCorrelation(ctx.correlationId, () => handler(ctx, stream)),
+        options,
+      )
+    },
+    registerMiddleware: (middleware) => adapter.registerMiddleware(middleware),
+    setDefaultHeaders: (headers) => adapter.setDefaultHeaders(headers),
+    start: (port, host) => adapter.start(port, host),
+    stop: () => adapter.stop(),
+  }
+}
+
 export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   const { config, services, adapters, repos, documentStore, eventBus, publisher } = deps
-  const adapter = validatedAdapter(deps.adapter)
+  const adapter = validatedAdapter(correlatedAdapter(deps.adapter))
 
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))

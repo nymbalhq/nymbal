@@ -344,6 +344,7 @@ export const events = sqliteTable(
     id: text('id').notNull(),
     type: text('type').notNull(),
     envelope: text('envelope').notNull(),
+    correlationId: text('correlation_id').notNull(),
     createdAt: text('created_at').notNull(),
     deliveredAt: text('delivered_at'),
     attempts: integer('attempts').notNull().default(0),
@@ -352,6 +353,7 @@ export const events = sqliteTable(
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),
     undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+    correlationIdx: index('events_correlation_idx').on(t.correlationId, t.seq),
   }),
 )
 

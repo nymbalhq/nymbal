@@ -1,6 +1,7 @@
 import type { Logger } from '@nymbalhq/types'
 import type { InventoryService } from '../services/inventory-service.js'
 import type { InventoryReservationRepository } from '../repositories/inventory-reservation.js'
+import { newCorrelationId, runWithCorrelation } from '../events/correlation.js'
 
 export interface SweeperHandle {
   /** One sweep, awaited; the interval calls it. */
@@ -42,11 +43,13 @@ export function startInventoryReservationSweeper(
       running = false
     }
   }
+  // Each run is one operation: its events share an id of their own.
+  const run = () => runWithCorrelation(newCorrelationId('sweep:reservations'), tick)
   const handle = setInterval(() => {
-    void tick()
+    void run()
   }, intervalMs)
   return {
-    tick,
+    tick: run,
     stop() {
       clearInterval(handle)
     },

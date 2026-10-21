@@ -2,6 +2,7 @@ import { EVT_CART_ABANDONED, type Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { CartRepository } from '../repositories/cart.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { newCorrelationId, runWithCorrelation } from '../events/correlation.js'
 import type { SweeperHandle } from './inventory-reservation-sweeper.js'
 
 export interface CartAbandonmentSweeperDeps {
@@ -62,9 +63,11 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
     }
   }
 
-  const handle = setInterval(() => void tick(), intervalMs)
+  // Each run is one operation: its events share an id of their own.
+  const run = () => runWithCorrelation(newCorrelationId('sweep:cart-abandonment'), tick)
+  const handle = setInterval(() => void run(), intervalMs)
   return {
-    tick,
+    tick: run,
     stop() {
       clearInterval(handle)
     },

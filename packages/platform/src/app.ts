@@ -24,8 +24,10 @@ import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
+import { importProviderPackage } from './adapters/loader.js'
 import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
@@ -88,6 +90,45 @@ function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter)
   }
 }
 
+type EventArchiveOptions = Omit<NonNullable<NymbalConfig['events']['archive']>, 'adapter'>
+
+interface ObjectWriterModule {
+  createS3ObjectWriter?: (options: EventArchiveOptions) => EventArchiveWriter
+}
+
+/**
+ * The private object writer `events.archive` names, from `@nymbalhq/media-s3`, or undefined when no archive is set.
+ * Its credentials come from the AWS SDK's default chain, as media's do.
+ */
+async function eventArchiveWriter(config: NymbalConfig): Promise<EventArchiveWriter | undefined> {
+  const archive = config.events.archive
+  if (archive === undefined) return undefined
+  const { adapter, ...options } = archive
+  let mod: ObjectWriterModule | undefined
+  try {
+    mod = (await importProviderPackage('media', adapter, process.env)) as
+      | ObjectWriterModule
+      | undefined
+  } catch (error) {
+    if (!(error instanceof ConfigError && error.code === 'adapter.package_missing')) throw error
+    throw new ConfigError(
+      `events.archive needs @nymbalhq/media-s3: ${String(error.context['install'])}`,
+      {
+        code: 'adapter.package_missing',
+        cause: error,
+        context: error.context,
+      },
+    )
+  }
+  if (typeof mod?.createS3ObjectWriter !== 'function') {
+    throw new ConfigError('@nymbalhq/media-s3 exports no createS3ObjectWriter; upgrade it', {
+      code: 'adapter.package_invalid',
+      context: { package: '@nymbalhq/media-s3' },
+    })
+  }
+  return mod.createS3ObjectWriter(options)
+}
+
 export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
@@ -114,6 +155,7 @@ export async function createApp(
     settings.values,
   )
   refuseUnsafeProduction(config, payments)
+  const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
   // Until the app is returned, nothing else holds the connections the primitives and the command store open.
   let release = async (): Promise<void> => {
@@ -207,6 +249,8 @@ export async function createApp(
         eventLog: repos.eventLog,
         processedEvents: repos.processedEvent,
         logger,
+        retentionDays: config.events.retentionDays,
+        ...(archive !== undefined && { archive }),
       }),
     ]
 

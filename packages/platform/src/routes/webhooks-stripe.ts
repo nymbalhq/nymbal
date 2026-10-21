@@ -9,6 +9,7 @@ import type { CommandStore, Tx } from '../db/command-store.js'
 import type { OrderRepository } from '../repositories/order.js'
 import type { ProcessedEventRepository } from '../repositories/processed-event.js'
 import type { CheckoutService } from '../services/checkout-service.js'
+import { inOrderScope } from '../services/order-correlation.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { ok, fail, renderError } from './envelope.js'
 
@@ -30,14 +31,16 @@ export function registerStripeWebhookRoute(
 ): void {
   const { payments, checkout, publisher, store, processedEvents, orders } = deps
 
-  /** payment.failed for the intent, naming its order when there is one. */
+  /** payment.failed for the intent, naming its order, and under its checkout's id, when there is one. */
   async function publishFailed(tx: Tx, paymentIntentId: string, reason: string): Promise<void> {
     const order = paymentIntentId ? await orders.findByPaymentIntentId(tx, paymentIntentId) : null
-    await publisher.publish(EVT_PAYMENT_FAILED, {
-      paymentId: paymentIntentId,
-      orderId: order?.id ?? '',
-      reason,
-    })
+    await inOrderScope(order, () =>
+      publisher.publish(EVT_PAYMENT_FAILED, {
+        paymentId: paymentIntentId,
+        orderId: order?.id ?? '',
+        reason,
+      }),
+    )
   }
 
   async function handle(tx: Tx, result: WebhookResult) {

@@ -30,6 +30,7 @@
     "packages/platform/src/services/customer-service.ts": 86.67,
     "packages/platform/src/services/index.ts": 0,
     "packages/platform/src/services/inventory-service.ts": 65.38,
+    "packages/platform/src/services/order-correlation.ts": 100,
     "packages/platform/src/services/order-service.ts": 67.61,
     "packages/platform/src/services/product-service.ts": 53.68,
     "packages/platform/src/services/refund-service.ts": 82.44,

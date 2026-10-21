@@ -1,5 +1,5 @@
 {
-  "id": "8a0af65a-1300-4fe7-b3da-5e74082e452e",
+  "id": "1ad58d2d-e241-48ac-bd97-03b38f53ae32",
   "prevId": "15b34df7-8c67-4d6c-b202-ff2c3b67e8de",
   "version": "7",
   "dialect": "postgresql",
@@ -349,6 +349,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -396,6 +402,27 @@
           "columns": [
             {
               "expression": "delivered_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_correlation_idx": {
+          "name": "events_correlation_idx",
+          "columns": [
+            {
+              "expression": "correlation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1371,86 +1398,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.settings": {
-      "name": "settings",
-      "schema": "",
-      "columns": {
-        "slot": {
-          "name": "slot",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "path": {
-          "name": "path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ciphertext": {
-          "name": "ciphertext",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "plain": {
-          "name": "plain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "iv": {
-          "name": "iv",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tag": {
-          "name": "tag",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "settings_slot_path_pk": {
-          "name": "settings_slot_path_pk",
-          "columns": [
-            "slot",
-            "path"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "settings_one_value": {
-          "name": "settings_one_value",
-          "value": "(\"settings\".\"ciphertext\" IS NULL) <> (\"settings\".\"plain\" IS NULL) AND (\"settings\".\"ciphertext\" IS NULL OR (\"settings\".\"iv\" IS NOT NULL AND \"settings\".\"tag\" IS NOT NULL AND \"settings\".\"key_id\" IS NOT NULL))"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.stock_adjustments": {

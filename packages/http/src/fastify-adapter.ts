@@ -15,7 +15,12 @@ import type {
   StreamContext,
   StreamHandler,
 } from '@nymbalhq/types'
-import { HttpError, NymbalError } from '@nymbalhq/types'
+import {
+  CORRELATION_ID_HEADER,
+  HttpError,
+  isValidCorrelationId,
+  NymbalError,
+} from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 
@@ -55,7 +60,21 @@ export class FastifyHttpAdapter implements HttpAdapter {
       logger: false,
       trustProxy: options.trustProxy ?? false,
       disableRequestLogging: true,
+      // Fastify's default takes `req.id` from an inbound `request-id` header, unvalidated; the id is always ours.
+      requestIdHeader: false,
       genReqId: () => uuidv7(),
+    })
+    // Hooks rather than #buildContext and #applyEnvelope: Fastify's own 404 and body-parse 400 never reach a route
+    // handler, and they carry the id too.
+    this.#app.decorateRequest('correlationId', '')
+    this.#app.addHook('onRequest', async (req) => {
+      const inbound = req.headers[CORRELATION_ID_HEADER]
+      if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
+      else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
+    })
+    this.#app.addHook('onSend', async (req, reply, payload) => {
+      reply.header(CORRELATION_ID_HEADER, req.correlationId)
+      return payload
     })
     // A signed webhook is verified against the bytes sent, so a route registered with `rawBody` keeps them. The
     // body is still parsed by Fastify's own JSON parser, with its poisoning settings and its 400s.
@@ -164,8 +183,10 @@ export class FastifyHttpAdapter implements HttpAdapter {
         const raw = reply.raw
         // Taken now: a finished response detaches from its socket before `end`'s callback runs.
         const socket = req.raw.socket
+        // A hijacked reply skips onSend.
         raw.writeHead(200, {
           ...this.#defaultHeaders,
+          [CORRELATION_ID_HEADER]: ctx.correlationId,
           'content-type': 'text/event-stream',
           'cache-control': 'no-cache, no-transform',
           connection: 'keep-alive',
@@ -272,7 +293,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   }
 
   #buildContext(req: FastifyRequest, includeRawBody: boolean): RequestContext {
-    const correlationId = (req.headers['x-correlation-id'] as string | undefined) ?? req.id
+    const { correlationId } = req
     const logger = this.#logger.child({ requestId: req.id, correlationId })
     const ctx: RequestContext = {
       method: req.method as HttpMethod,
@@ -349,5 +370,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
 declare module 'fastify' {
   interface FastifyRequest {
     rawBody?: Buffer
+    /** Set by the onRequest hook before anything else runs. */
+    correlationId: string
   }
 }
