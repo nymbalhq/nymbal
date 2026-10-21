@@ -148,12 +148,16 @@
   margin-bottom: var(--nymbal-spacing-md);
 }
 
-.inStock {
+.stockBadge[data-level='in'] {
   background-color: #dcfce7;
   color: var(--nymbal-color-success);
 }
 
-.outOfStock {
+.stockBadge[data-level='low'] {
+  color: var(--nymbal-color-warning);
+}
+
+.stockBadge[data-level='out'] {
   background-color: #fef2f2;
   color: var(--nymbal-color-error);
 }

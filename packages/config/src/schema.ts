@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  KNOWN_INFRASTRUCTURE,
+  REMOVED_INFRASTRUCTURE_KEYS,
+  type InfrastructureSlot,
+} from './known-infrastructure.js'
 import { KNOWN_PROVIDERS, type CommerceSlot } from './known-providers.js'
 
 const rateLimitRuleSchema = z.object({
@@ -19,13 +24,125 @@ export const storeSchema = z.object({
   timezone: z.string().min(1),
 })
 
-export const infrastructureSchema = z.object({
-  cloud: z.enum(['local', 'aws', 'gcp', 'azure', 'docker']),
-  commandStore: z.enum(['sqlite', 'postgres']),
-  documentStore: z.enum(['in-memory', 'dynamodb', 'firestore', 'cosmosdb', 'postgres-jsonb']),
-  eventBus: z.enum(['in-process', 'eventbridge', 'pubsub', 'service-bus', 'redis-streams']),
-  compute: z.enum(['in-process', 'lambda', 'cloud-functions', 'azure-functions', 'worker-threads']),
-})
+const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')
+
+/** A slot's value must be one the slot lists; an unknown one is named with the list. */
+function infrastructureValue<const V extends readonly [string, ...string[]]>(
+  slot: InfrastructureSlot,
+  values: V,
+) {
+  return z.enum(values, {
+    errorMap: (issue, ctx) =>
+      issue.code === z.ZodIssueCode.invalid_enum_value
+        ? {
+            message: `unknown ${slot} '${String(issue.received)}'; the ${slot} values are ${quotedList(values)}`,
+          }
+        : { message: ctx.defaultError },
+  })
+}
+
+const INFRASTRUCTURE_KEYS = [...Object.keys(KNOWN_INFRASTRUCTURE), 'redis', 's3']
+
+function unrecognizedInfrastructureKeys(keys: string[]): string {
+  return keys
+    .map((key) =>
+      (REMOVED_INFRASTRUCTURE_KEYS as readonly string[]).includes(key)
+        ? `infrastructure.${key} was removed: it drives nothing, so delete it from the config`
+        : `unknown infrastructure key '${key}'; the infrastructure keys are ${quotedList(INFRASTRUCTURE_KEYS)}`,
+    )
+    .join('; ')
+}
+
+/** The shared Redis connection of the `redis` document store and the `redis-streams` bus. */
+export const redisSchema = z
+  .object({
+    /** Defaults to `REDIS_URL`. */
+    url: z.string().min(1).optional(),
+    /** Namespaces every key and stream; defaults to `NYMBAL_REDIS_PREFIX`, then `'nymbal'`. */
+    prefix: z.string().min(1).optional(),
+    /** How long a publish waits for the groups it delivers to (default 15 000). */
+    ackTimeoutMs: z.number().int().positive().optional(),
+    /** How long an entry may stay pending on a consumer before a live one takes it over (default 5 000). */
+    claimIdleMs: z.number().int().positive().optional(),
+    /** The approximate length each stream is trimmed to (default 10 000). */
+    streamMaxLen: z.number().int().positive().optional(),
+  })
+  .strict()
+
+const S3_KEYS = ['bucket', 'region', 'endpoint', 'prefix', 'publicUrl', 'forcePathStyle']
+
+/**
+ * The bucket `media: 's3'` stores in. Each field falls back to the environment in the platform; credentials are never
+ * config keys: the AWS SDK's default chain provides them.
+ */
+export const s3Schema = z
+  .object(
+    {
+      /** Defaults to `S3_BUCKET`; one of the two is required. */
+      bucket: z.string().min(1).optional(),
+      /** Defaults to `AWS_REGION`, then `'us-east-1'`. */
+      region: z.string().min(1).optional(),
+      /** An S3-compatible API (MinIO, R2); defaults to `S3_ENDPOINT`, then AWS. */
+      endpoint: z.string().min(1).optional(),
+      /** Where every object key starts; defaults to `NYMBAL_S3_PREFIX`, then none. */
+      prefix: z.string().optional(),
+      /** Where the bucket's objects are served from (a CDN); defaults to `S3_PUBLIC_URL`, then the bucket's own URL. */
+      publicUrl: z.string().min(1).optional(),
+      /** Path-style requests; true by default when an endpoint is set. */
+      forcePathStyle: z.boolean().optional(),
+    },
+    {
+      errorMap: (issue, ctx) =>
+        issue.code === z.ZodIssueCode.unrecognized_keys
+          ? {
+              message: `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`,
+            }
+          : { message: ctx.defaultError },
+    },
+  )
+  .strict()
+
+export const infrastructureSchema = z
+  .object(
+    {
+      commandStore: infrastructureValue('commandStore', KNOWN_INFRASTRUCTURE.commandStore),
+      documentStore: infrastructureValue('documentStore', KNOWN_INFRASTRUCTURE.documentStore),
+      eventBus: infrastructureValue('eventBus', KNOWN_INFRASTRUCTURE.eventBus),
+      media: infrastructureValue('media', KNOWN_INFRASTRUCTURE.media).default('local-fs'),
+      redis: redisSchema.optional(),
+      s3: s3Schema.optional(),
+    },
+    {
+      errorMap: (issue, ctx) =>
+        issue.code === z.ZodIssueCode.unrecognized_keys
+          ? { message: unrecognizedInfrastructureKeys(issue.keys) }
+          : { message: ctx.defaultError },
+    },
+  )
+  .strict()
+  .superRefine((infra, ctx) => {
+    if (infra.documentStore === 'postgres-jsonb' && infra.commandStore !== 'postgres') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['documentStore'],
+        message: `documentStore 'postgres-jsonb' shares the command store's Postgres connection, so it needs commandStore 'postgres' (not '${infra.commandStore}')`,
+      })
+    }
+    if (infra.eventBus === 'redis-streams' && infra.documentStore === 'in-memory') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['eventBus'],
+        message: `eventBus 'redis-streams' needs a shared documentStore ('redis' or 'postgres-jsonb'), not 'in-memory': a named group hands each event to one instance, so a per-process read model would miss the rest`,
+      })
+    }
+    if (infra.s3 !== undefined && infra.media !== 's3') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['s3'],
+        message: `infrastructure.s3 configures media 's3', but media is '${infra.media}': set media to 's3' or delete the s3 block`,
+      })
+    }
+  })
 
 export const securitySchema = z.object({
   adapter: z.enum(['middleware', 'cloudflare', 'aws-waf', 'akamai']),
@@ -147,31 +264,6 @@ export const nymbalConfigSchema = z
     }),
   })
   .superRefine((cfg, ctx) => {
-    // Local infrastructure restricts which document-store / event-bus options make sense.
-    if (cfg.infrastructure.cloud === 'local') {
-      if (!['in-memory', 'postgres-jsonb'].includes(cfg.infrastructure.documentStore)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['infrastructure', 'documentStore'],
-          message: `cloud=local only supports 'in-memory' or 'postgres-jsonb' for documentStore`,
-        })
-      }
-      if (!['in-process', 'redis-streams'].includes(cfg.infrastructure.eventBus)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['infrastructure', 'eventBus'],
-          message: `cloud=local only supports 'in-process' or 'redis-streams' for eventBus`,
-        })
-      }
-      if (!['in-process', 'worker-threads'].includes(cfg.infrastructure.compute)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['infrastructure', 'compute'],
-          message: `cloud=local only supports 'in-process' or 'worker-threads' for compute`,
-        })
-      }
-    }
-
     // SMTP left the kernel for @nymbalhq/adapter-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email
     if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {
@@ -180,17 +272,6 @@ export const nymbalConfigSchema = z
         path: ['commerce', 'email', 'config', 'transport'],
         message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/adapter-smtp)`,
       })
-    }
-
-    // middleware security adapter is v0.1 and not intended for managed-cloud production deployments.
-    if (cfg.security.adapter === 'middleware') {
-      if (['aws', 'gcp', 'azure'].includes(cfg.infrastructure.cloud)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['security', 'adapter'],
-          message: `security.adapter='middleware' is intended for local/docker development. Use a WAF adapter ('cloudflare', 'aws-waf', 'akamai') for cloud=${cfg.infrastructure.cloud}.`,
-        })
-      }
     }
   })
 

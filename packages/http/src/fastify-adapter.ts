@@ -254,7 +254,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
     await this.#app.listen({ port, host })
     this.#boundPort = (this.#app.server.address() as { port: number }).port
     this.#started = true
-    this.#logger.info({ port: this.#boundPort, host }, 'HTTP server listening')
+    this.#logger.debug({ port: this.#boundPort, host }, 'HTTP server listening')
   }
 
   async stop(): Promise<void> {

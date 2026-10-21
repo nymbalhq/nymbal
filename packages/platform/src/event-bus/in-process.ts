@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from 'uuid'
 import type {
   EventBusAdapter,
   EventHandler,
+  HealthReport,
   NymbalEvent,
   Subscription,
   SubscriptionConfig,
@@ -31,6 +32,11 @@ export class InProcessEventBus implements EventBusAdapter {
 
   capabilities(): readonly string[] {
     return ['publish', 'subscribe', 'wildcard', 'replay']
+  }
+
+  /** Delivery within the process: healthy whenever it can answer. */
+  async healthCheck(): Promise<HealthReport> {
+    return { status: 'healthy' }
   }
 
   async publish<T>(event: NymbalEvent<T>): Promise<void> {

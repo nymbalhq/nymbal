@@ -62,3 +62,11 @@ export const PRODUCT_SORT_KEYS = [
 ] as const
 export type ProductSortKey = (typeof PRODUCT_SORT_KEYS)[number]
 export const DEFAULT_PRODUCT_SORT: ProductSortKey = 'newest'
+/** What a storefront shows for each sort. */
+export const PRODUCT_SORT_LABELS: Readonly<Record<ProductSortKey, string>> = {
+  newest: 'Newest',
+  'price-asc': 'Price: Low to High',
+  'price-desc': 'Price: High to Low',
+  'name-asc': 'Name: A to Z',
+  'name-desc': 'Name: Z to A',
+}

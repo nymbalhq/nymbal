@@ -73,8 +73,16 @@ export interface ProductListState {
 
 export interface SearchState {
   query: string
+  /** The category slug the search is narrowed to, or null for every category. */
+  category: string | null
+  /** Every page loaded so far, in rank order. */
   results: DenormalisedProduct[]
+  /** The API's count of every match, not of the results loaded. */
   total: number
+  /** The next page's cursor; null when every match is loaded. */
+  nextCursor: string | null
+  /** The search's facets: the category facet when search reports `facet` and the query matches. */
+  facets: Facet[]
   loading: boolean
 }
 
@@ -122,6 +130,20 @@ export interface ProductListResult {
   items: DenormalisedProduct[]
   nextCursor: string | null
   facets?: Facet[]
+}
+
+export interface ProductSearchParams {
+  limit?: number
+  cursor?: string
+  /** A category slug, as on the listing. */
+  category?: string
+}
+
+export interface ProductSearchResult {
+  items: DenormalisedProduct[]
+  nextCursor: string | null
+  total: number
+  facets: Facet[]
 }
 
 export interface CheckoutDetails {

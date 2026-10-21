@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
 import { loadProject } from '../utils/project.js'
-import { createPlatform, runSeed } from '@nymbalhq/platform'
+import { createPlatform, resolvePrimitives, runSeed } from '@nymbalhq/platform'
 import { getCliVersion } from '../utils/version.js'
 import { migrateProject } from './migrate.js'
 
@@ -10,7 +10,7 @@ export const seedCommand = defineCommand({
     const { config, projectRoot } = await loadProject()
     // A fresh project has no tables yet; `nymbal dev` migrates before it seeds, and so does this.
     await migrateProject(config, projectRoot)
-    const platform = createPlatform(config)
+    const platform = createPlatform(config, await resolvePrimitives(config))
     try {
       const result = await runSeed({
         config,

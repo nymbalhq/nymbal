@@ -57,6 +57,33 @@ export const FULL_BUDGET_MS = 600_000
 export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
 /** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
 export const MAILPIT_URL = 'http://localhost:18025'
+export const REDIS_URL = 'redis://localhost:63799'
+/** The MinIO API compose.yaml publishes, on NYMBAL_MINIO_PORT when it is moved. */
+export const minioUrl = (port: string = '59000'): string => `http://localhost:${port}`
+
+/**
+ * The store sets the E2E suite runs on (`--stores`), as the variables the repo-root nymbal.config.ts reads. The first
+ * is the default and needs no service.
+ */
+export const STORE_SETS = {
+  'sqlite-memory': { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
+  'postgres-redis': { commandStore: 'postgres', documentStore: 'redis', eventBus: 'redis-streams' },
+  'postgres-jsonb': {
+    commandStore: 'postgres',
+    documentStore: 'postgres-jsonb',
+    eventBus: 'in-process',
+  },
+} as const
+export type StoreSet = keyof typeof STORE_SETS
+
+function usesRedis(set: { documentStore: string; eventBus: string }): boolean {
+  return set.documentStore === 'redis' || set.eventBus === 'redis-streams'
+}
+
+export function storeSet(name: string): StoreSet {
+  if (Object.hasOwn(STORE_SETS, name)) return name as StoreSet
+  throw new Error(`--stores takes ${Object.keys(STORE_SETS).join(', ')}, not "${name}"`)
+}
 
 const ROOT_CONFIG_FILES = new Set([
   'package.json',
@@ -782,6 +809,13 @@ export type PlanInput = {
   postgresUrl?: string | undefined
   /** Where `external` services have Mailpit's API. */
   mailpitUrl?: string | undefined
+  /** Where `external` services have Redis. */
+  redisUrl?: string | undefined
+  /** Where `external` services have an S3 API; with compose, the port compose.yaml publishes MinIO on. */
+  s3Endpoint?: string | undefined
+  minioPort?: string | undefined
+  /** The store set the E2E steps run on (`--stores`); `sqlite-memory`, today's plan, when not given. */
+  stores?: StoreSet | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
   noBuild?: boolean | undefined
   artefactPresent?: boolean | undefined
@@ -833,6 +867,12 @@ const E2E_SERVES: Record<string, string[]> = {
   astro: [],
   nextjs: [],
   admin: ['apps/admin/dist/index.html'],
+  // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
+  'astro-custom': [],
+  'nextjs-custom': [],
+  // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
+  'astro-nosearch': [],
+  'nextjs-nosearch': [],
 }
 
 /**
@@ -970,6 +1010,27 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const external = input.services === 'external'
   const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
   const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
+  const redisUrl = external ? (input.redisUrl ?? REDIS_URL) : REDIS_URL
+  const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisUrl)}`
+  // External services bring their own credentials in the environment; compose's MinIO has its default root ones.
+  const s3 = external
+    ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
+    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(input.minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+  // A set other than the default points the repo-root config at the composed services; the E2E server wrapper gives
+  // the run a database and a key prefix of its own.
+  const stores = storeSet(input.stores ?? 'sqlite-memory')
+  const set = STORE_SETS[stores]
+  const storeEnv =
+    stores === 'sqlite-memory'
+      ? ''
+      : [
+          `NYMBAL_COMMAND_STORE=${set.commandStore}`,
+          `NYMBAL_DOCUMENT_STORE=${set.documentStore}`,
+          `NYMBAL_EVENT_BUS=${set.eventBus}`,
+          `DATABASE_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`,
+          ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisUrl)}`] : []),
+        ].join(' ') + ' '
+  const e2eNeeds = stores === 'sqlite-memory' ? ['build'] : ['build', 'compose up']
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
   const lastFailed = input.rerun === undefined ? '' : ' --last-failed'
@@ -977,7 +1038,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+      `${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
@@ -1013,6 +1074,13 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       command: `${postgres} ${mailpit} pnpm exec vitest run --project proof-kit-services`,
       needs: ['compose up', 'build'],
     },
+    // The document store and bus contracts on Redis and Postgres JSONB, the S3 media storage on MinIO, and the kernel
+    // on them (it loads the built packages).
+    {
+      name: 'integration-stores',
+      command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores`,
+      needs: ['compose up', 'build'],
+    },
     mutated.length === 0
       ? {
           name: 'stryker',
@@ -1029,15 +1097,27 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     sentinels,
     {
       name: 'tests-fail-on-base',
-      command: `${postgres} ${mailpit} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
+      command: `${postgres} ${mailpit} ${redis} ${s3} node_modules/.bin/tsx scripts/tests-fail-on-base.ts ${base}`,
       needs: ['compose up'],
     },
     // The journeys run against the built packages: without a build they test nothing new. Playwright starts its own
-    // API, so they use none of the composed services.
-    { name: 'e2e astro', command: e2e('astro'), needs: ['build'] },
-    { name: 'e2e nextjs', command: e2e('nextjs'), needs: ['build'] },
-    { name: 'e2e admin', command: e2e('admin'), needs: ['build'] },
+    // API, which uses the composed services only on a --stores set other than sqlite-memory.
+    { name: 'e2e astro', command: e2e('astro'), needs: e2eNeeds },
+    { name: 'e2e nextjs', command: e2e('nextjs'), needs: e2eNeeds },
+    { name: 'e2e admin', command: e2e('admin'), needs: e2eNeeds },
   )
+  // The same journeys on the store whose search and payments are swapped for `custom` adapters, and the @nosearch
+  // journeys on the store whose search offers nothing. They prove the templates follow the adapters, which no store
+  // set changes, so they run on the default set only. Each target is its own invocation after the others:
+  // nextjs-custom and nextjs-nosearch serve the same templates/nextjs as nextjs.
+  if (stores === 'sqlite-memory') {
+    steps.push(
+      { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
+      { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
+      { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
+      { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
+    )
+  }
   return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
 }
 
@@ -1192,6 +1272,7 @@ async function main(argv: string[]): Promise<number> {
       services: { type: 'string', default: 'compose' },
       'no-build': { type: 'boolean', default: false },
       sentinels: { type: 'string', default: 'impacted' },
+      stores: { type: 'string' },
       'rerun-red': { type: 'boolean', default: false },
     },
   })
@@ -1218,6 +1299,8 @@ async function main(argv: string[]): Promise<number> {
   }
   const only = values.only?.split(',').map((name) => name.trim())
   if (only !== undefined && !values.full) throw new Error('--only needs --full')
+  const stores = values.stores === undefined ? undefined : storeSet(values.stores)
+  if (stores !== undefined && !values.full) throw new Error('--stores needs --full')
   if (values.sentinels !== 'all' && values.sentinels !== 'impacted') {
     throw new Error(`--sentinels takes all or impacted, not "${values.sentinels}"`)
   }
@@ -1233,6 +1316,9 @@ async function main(argv: string[]): Promise<number> {
   const remeasured = moved.filter((path) => mutated.includes(path))
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
+  const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
+  const s3Endpoint = process.env.NYMBAL_TEST_S3_ENDPOINT
+  const minioPort = process.env.NYMBAL_MINIO_PORT
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
@@ -1249,6 +1335,10 @@ async function main(argv: string[]): Promise<number> {
     services: values.services,
     ...(postgresUrl === undefined || postgresUrl === '' ? {} : { postgresUrl }),
     ...(mailpitUrl === undefined || mailpitUrl === '' ? {} : { mailpitUrl }),
+    ...(redisUrl === undefined || redisUrl === '' ? {} : { redisUrl }),
+    ...(s3Endpoint === undefined || s3Endpoint === '' ? {} : { s3Endpoint }),
+    ...(minioPort === undefined || minioPort === '' ? {} : { minioPort }),
+    ...(stores === undefined ? {} : { stores }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),

@@ -5,7 +5,14 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { nymbalConfigSchema } from '@nymbalhq/config'
-import { createPlatform, runSeed, runMigrations } from '@nymbalhq/platform'
+import {
+  createLocalFsMediaStorage,
+  createPlatform,
+  InMemoryDocumentStore,
+  InProcessEventBus,
+  runSeed,
+  runMigrations,
+} from '@nymbalhq/platform'
 import { createHttpServer } from '@nymbalhq/http'
 
 const VERSION = '0.1.0-smoke'
@@ -16,11 +23,9 @@ async function main() {
     store: { name: 'Smoke Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
-      cloud: 'local',
       commandStore: 'sqlite',
       documentStore: 'in-memory',
       eventBus: 'in-process',
-      compute: 'in-process',
     },
     security: {
       adapter: 'middleware',
@@ -43,7 +48,13 @@ async function main() {
     deployment: { strategy: 'standard' },
   })
 
-  const platform = createPlatform(config, { sqlitePath: join(tmp, 'smoke.db') })
+  // P2-02 decision 2: the primitives are resolved before createPlatform, which takes them as instances.
+  const platform = createPlatform(config, {
+    sqlitePath: join(tmp, 'smoke.db'),
+    documentStore: new InMemoryDocumentStore(),
+    eventBus: new InProcessEventBus(),
+    media: createLocalFsMediaStorage({ root: join(tmp, 'media') }),
+  })
   const migrationsRoot = new URL('../../packages/platform/migrations', import.meta.url).pathname
   await runMigrations(platform.commandStore, { migrationsRoot })
 

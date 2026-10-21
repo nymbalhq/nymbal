@@ -5,6 +5,7 @@ import type {
   Order,
   ReviewsResult,
   ReviewResult,
+  StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
@@ -12,6 +13,8 @@ import type {
   DenormalisedProduct,
   ProductListParams,
   ProductListResult,
+  ProductSearchParams,
+  ProductSearchResult,
   CheckoutDetails,
   CheckoutResult,
   RegisterParams,
@@ -22,6 +25,12 @@ import type {
 
 export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapter {
   return {
+    capabilities: {
+      get() {
+        return fetchClient.request<StoreCapabilities>('GET', '/api/capabilities')
+      },
+    },
+
     cart: {
       get() {
         return fetchClient.request<Cart>('GET', '/api/cart')
@@ -63,12 +72,13 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         const qs = search.toString()
         return fetchClient.request<ProductListResult>('GET', `/api/products${qs ? `?${qs}` : ''}`)
       },
-      search(query: string, params?: { limit?: number; cursor?: string }) {
+      search(query: string, params?: ProductSearchParams) {
         const search = new URLSearchParams()
         search.set('q', query)
         if (params?.limit !== undefined) search.set('limit', String(params.limit))
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
-        return fetchClient.request<ProductListResult>(
+        if (params?.category !== undefined) search.set('category', params.category)
+        return fetchClient.request<ProductSearchResult>(
           'GET',
           `/api/products/search?${search.toString()}`,
         )

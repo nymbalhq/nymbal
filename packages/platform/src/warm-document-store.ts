@@ -79,7 +79,7 @@ export async function warmDocumentStore(deps: WarmDocumentStoreDeps): Promise<Wa
     await eventBus.replay(events)
   }
 
-  logger.info(
+  logger.debug(
     { products: products.length, orders: orders.length, customers: customers.length },
     `Warmed document store: ${products.length} products, ${orders.length} orders, ${customers.length} customers`,
   )

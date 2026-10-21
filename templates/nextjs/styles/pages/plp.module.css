@@ -118,7 +118,8 @@
   color: var(--nymbal-color-text-muted);
 }
 
-.sortSelect {
+/* The sort element renders the select. */
+.sortSelect select {
   padding: 0.5rem 0.75rem;
   font-size: var(--nymbal-font-size-sm);
   border: 1px solid var(--nymbal-color-border);
@@ -129,7 +130,7 @@
   min-width: 10rem;
 }
 
-.sortSelect:focus {
+.sortSelect select:focus {
   outline: none;
   border-color: var(--nymbal-color-accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);

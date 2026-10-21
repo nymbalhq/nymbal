@@ -1,4 +1,4 @@
-export type { MediaStorage } from './storage.js'
+export type { MediaStorage } from '@nymbalhq/types'
 export {
   createLocalFsMediaStorage,
   LOCAL_FS_MEDIA_CAPABILITIES,

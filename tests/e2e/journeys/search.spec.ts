@@ -1,3 +1,4 @@
+import { storeCapabilities } from '../support/capabilities'
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
@@ -48,16 +49,27 @@ test.describe('Search', () => {
     }
   })
 
-  test('search bar navigates to search page on submit', async ({ page }) => {
+  // P2-05 AC-3: the header search bar renders from the search slot. The branch is the one GET /api/capabilities names
+  // (both the native and the custom-providers store report `search`); neither branch skips.
+  test('AC-3: the header search bar is present iff search reports search, and submitting a term opens the search page', async ({
+    page,
+    request,
+  }) => {
+    const caps = await storeCapabilities(request)
+    const canSearch = caps.search.capabilities.includes('search')
+
     await page.goto('/')
-    const searchInput = page.locator('[data-testid="search-input"]')
-    if ((await searchInput.count()) === 0) {
-      test.skip()
+    // The header has rendered its client elements (the mini-cart is one of them) before absence is read.
+    await expect(page.getByTestId('mini-cart')).toBeVisible({ timeout: 15000 })
+    const searchInput = page.getByTestId('search-input')
+    if (!canSearch) {
+      await expect(searchInput).toHaveCount(0)
       return
     }
-    await searchInput.fill('shoes')
+    await expect(searchInput.first()).toBeVisible()
+    await searchInput.first().fill('wool')
     await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/\/search/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/search\?(.*&)?q=wool(&|$)/, { timeout: 10000 })
   })
 
   test('AC-3: search round-trip: type query shows results, clear query returns to the search empty state', async ({

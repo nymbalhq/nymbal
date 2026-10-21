@@ -1,0 +1,17 @@
+{
+  "name": "postgres",
+  "summary": "Keep commands and events in Postgres instead of the local SQLite file.",
+  "install": [],
+  "set": [{ "path": "infrastructure.commandStore", "value": "postgres" }],
+  "env": [
+    {
+      "name": "DATABASE_URL",
+      "example": "postgres://user:pass@localhost:5432/nymbal",
+      "required": true,
+      "comment": "The Postgres database the command store connects to"
+    }
+  ],
+  "next": [
+    "Run nymbal migrate to create the tables in that database, then nymbal seed for the demo content."
+  ]
+}

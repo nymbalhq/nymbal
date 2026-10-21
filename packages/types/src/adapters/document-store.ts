@@ -1,3 +1,5 @@
+import type { HealthReport } from './adapter-base.js'
+
 export interface PutOptions {
   ttl?: number
   conditionKey?: string
@@ -13,8 +15,9 @@ export interface QueryParams {
     value: unknown
   }
   /**
-   * Orders the results without filtering them; `field` may be a dotted path (`priceRange.minMinor`). Ties break by
-   * document key, ascending, so the order is total. A cursor issued under one `orderBy` is refused under another.
+   * Orders the results without filtering them; `field` may be a dotted path (`priceRange.minMinor`). Values compare
+   * with `compareDocumentValues`; null and missing values come last in either direction, and ties break by document
+   * key, ascending, so the order is total. A cursor issued under one `orderBy` is refused under another.
    */
   orderBy?: { field: string; direction: 'asc' | 'desc'; nulls?: 'last' }
   limit?: number
@@ -36,4 +39,9 @@ export interface DocumentStoreAdapter {
   batchGet<T>(collection: string, keys: string[]): Promise<Map<string, T>>
   batchPut<T>(collection: string, items: Map<string, T>): Promise<void>
   close(): Promise<void>
+  /**
+   * Whether the store can serve, within `HEALTH_CHECK_TIMEOUT_MS`. Optional, so a store written before it existed
+   * still type-checks; `nymbal doctor` reports one without it as `no healthCheck`.
+   */
+  healthCheck?(): Promise<HealthReport>
 }

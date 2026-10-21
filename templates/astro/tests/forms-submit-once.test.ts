@@ -16,10 +16,6 @@ vi.mock('@nymbalhq/web-components', () => ({
   registerComponents: () => undefined,
 }))
 
-vi.mock('@stripe/stripe-js', () => ({
-  loadStripe: () => Promise.resolve(null),
-}))
-
 interface Route {
   method: string
   path: string
@@ -243,7 +239,7 @@ const CHECKOUT_MARKUP = `
     <form id="payment-form" novalidate>
       <input type="checkbox" id="billing-same" checked />
       <div id="billing-fields" style="display:none;"><div id="billing-form">${address('billing')}</div></div>
-      <div id="stripe-card-element" data-testid="stripe-card-element"></div>
+      <nymbal-payment-element data-testid="payment-element" client="null"></nymbal-payment-element>
       <button type="submit" data-testid="place-order">Place Order</button>
     </form>
   </section>
@@ -368,8 +364,6 @@ describe('AC-3: every mutating Astro form sends one request for two submits', ()
       vi.stubGlobal('fetch', vi.fn(api.fetchImpl))
       vi.stubGlobal('location', fakeLocation(form.page))
       vi.stubEnv('PUBLIC_NYMBAL_API_URL', API)
-      vi.stubEnv('PUBLIC_NYMBAL_PAYMENTS_PROVIDER', 'native-stub')
-      vi.stubEnv('PUBLIC_STRIPE_PUBLISHABLE_KEY', '')
       vi.resetModules()
       document.body.innerHTML = form.markup
       await form.load()

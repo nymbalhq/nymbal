@@ -78,6 +78,10 @@ jobs:
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
     services:
       postgres:
         image: postgres:16-alpine
@@ -125,10 +129,19 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      # MinIO for the S3 media suites. A service container cannot pass it `server /data`, so it is started here.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
       - name: Postgres integration
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
       - name: Proof kit services (Postgres race, Mailpit sink)
         run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
+      - name: Document stores and event bus on Redis and Postgres JSONB, the kernel on them, the E2E harness, nymbal add redis on a scaffold
+        run: pnpm exec tsx scripts/gate.ts --full --only integration-stores --no-build --services external --base "$GATE_BASE"
       - name: Platform and importers integration, contracts
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
@@ -170,11 +183,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [build]
-    # tests-fail-on-base runs every project against the base, so a new Postgres or Mailpit test needs its server here
-    # too, or it fails on base for want of one.
+    # tests-fail-on-base runs every project against the base, so a new Postgres, Mailpit or S3 test needs its server
+    # here too, or it fails on base for want of one.
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
     services:
       postgres:
         image: postgres:16-alpine
@@ -213,6 +230,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      # MinIO for the S3 media suites. A service container cannot pass it `server /data`, so it is started here.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
       # A pull request runs the sentinels its change can affect; a push to main or dev, like the nightly and the
       # release, runs every one.
       - name: Sentinels
@@ -236,7 +260,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      # integration-postgres and proof-kit-services have their own job, with the services they need.
+      # integration-postgres, integration-stores and proof-kit-services have their own job, with the services they need.
       # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
       # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
@@ -246,7 +270,7 @@ jobs:
           status=0
           pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
             --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
-            --project '!integration-postgres' --exclude 'packages/proof-kit/tests/services/**' || status=$?
+            --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**' || status=$?
           node -e '
             const fs = require("fs")
             const out = ["## Coverage", ""]
@@ -353,6 +377,114 @@ jobs:
       - name: Admin (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
 
+  # The same journeys on the custom-providers fixture store (search and payments swapped for custom adapters), in
+  # jobs of their own so the native ones keep their time.
+  e2e-astro-custom:
+    name: E2E — Astro on custom providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-custom:
+    name: E2E — Next.js on custom providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js on custom providers (functional, a11y)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --no-build --base "$GATE_BASE"
+
+  # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
+  # journeys tagged @nosearch run there.
+  e2e-astro-nosearch:
+    name: E2E — Astro with no search
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro with no search (@nosearch)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-nosearch" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-nosearch:
+    name: E2E — Next.js with no search
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js with no search (@nosearch)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
+
   scaffold-smoke:
     name: Scaffold smoke test
     runs-on: ubuntu-latest
@@ -387,8 +519,6 @@ jobs:
           pnpm exec nymbal dev --api-only &
           echo "ASTRO_API_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-astro
-        env:
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
       - name: Wait for the API (Astro)
         run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Astro dev server
@@ -422,8 +552,6 @@ jobs:
           pnpm exec nymbal dev --api-only &
           echo "NEXTJS_API_PID=$!" >> "$GITHUB_ENV"
         working-directory: smoke-nextjs
-        env:
-          NYMBAL_PAYMENTS_PROVIDER: native-stub
       - name: Wait for the API (Next.js)
         run: npx wait-on http://localhost:3001/health --timeout 60000
       - name: Start Next.js dev server

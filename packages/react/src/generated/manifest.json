@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-18T10:07:59.650Z",
-  "sourceHash": "a4ea466cc56bdcf1",
+  "generatedAt": "2026-10-21T03:36:55.165Z",
+  "sourceHash": "06db030ae5c22130",
   "components": [
     "AddToCart",
     "CartDrawer",
@@ -9,6 +9,8 @@
     "QuantitySelector",
     "SearchBar",
     "ProductFilter",
+    "PaymentElement",
+    "SortDropdown",
     "Toast"
   ]
 }

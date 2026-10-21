@@ -3,6 +3,13 @@ import '../styles/pages/checkout.css'
 import BaseLayout from '../layouts/BaseLayout.astro'
 import CheckoutSteps from '../components/CheckoutSteps.astro'
 import AddressForm from '../components/AddressForm.astro'
+import { fetchCapabilities } from '../lib/api'
+
+const capabilities = await fetchCapabilities()
+if (capabilities === null) {
+  throw new Error('The store did not answer GET /api/capabilities, so checkout cannot tell how to take a payment.')
+}
+const paymentClient = capabilities.payments.client
 ---
 
 <BaseLayout title="Checkout | Nymbal" description="Complete your purchase.">
@@ -69,10 +76,11 @@ import AddressForm from '../components/AddressForm.astro'
             </div>
 
             <div class="payment-section" style="margin-top: var(--nymbal-spacing-md, 1rem);">
-              <label style="margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">Card Details</label>
-              <div id="stripe-card-element" style="padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem); border: 1px solid var(--nymbal-color-border, #e4e4e7); border-radius: var(--nymbal-radius-md, 0.5rem); background: var(--nymbal-color-surface, #fff); min-height: 40px;" data-testid="stripe-card-element">
-                <!-- Stripe CardElement mounts here -->
-              </div>
+              {paymentClient !== null && (
+                <p class="checkout-section-title" style="font-size: 1rem; margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">Payment Details</p>
+              )}
+              <!-- The payments adapter's client half; a driver the project registers in src/lib/client.ts renders it. -->
+              <nymbal-payment-element data-testid="payment-element" client={JSON.stringify(paymentClient)}></nymbal-payment-element>
             </div>
 
             <div class="checkout-submit">

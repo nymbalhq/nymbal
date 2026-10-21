@@ -56,6 +56,11 @@ export type RawClients =
 export interface CommandStoreOptions {
   sqlitePath?: string
   postgresUrl?: string
+  /**
+   * For a caller that must change nothing: SQLite opens `readonly` on a file that must already exist, with no pragma
+   * (`journal_mode = WAL` rewrites a rollback-mode file's header); Postgres runs every transaction read-only.
+   */
+  readOnly?: boolean
 }
 
 type Client = { kind: 'sqlite'; db: SqliteClient } | { kind: 'postgres'; db: PostgresClient }
@@ -88,6 +93,18 @@ class Scope {
 
 const context = new AsyncLocalStorage<Scope>()
 const rawByStore = new WeakMap<CommandStore, RawClients>()
+const turnByRaw = new WeakMap<BetterSqlite3.Database, <T>(fn: () => T) => Promise<T>>()
+
+/**
+ * Runs `fn`, synchronous statements on a SQLite store's raw connection, in that store's turn: at once inside this
+ * call chain's open read or transaction of the store, otherwise once the connection is free, as a read waits. A
+ * transaction holds the one connection across awaits, so a statement run on `raw` outside its turn would join, and
+ * roll back with, whichever transaction another call chain has open. For code handed only `rawClients`.
+ */
+export async function sqliteTurn<T>(raw: BetterSqlite3.Database, fn: () => T): Promise<T> {
+  const turn = turnByRaw.get(raw)
+  return turn === undefined ? fn() : turn(fn)
+}
 
 function liveScope(tx: ReadTx): Scope {
   if (!(tx instanceof Scope)) {
@@ -311,15 +328,24 @@ async function beginImmediate(raw: BetterSqlite3.Database): Promise<void> {
   }
 }
 
+/** The SQLite file a store opens: `sqlitePath`, else `NYMBAL_SQLITE_PATH`, else `./nymbal.db`. */
+export function sqliteFile(options: CommandStoreOptions = {}): string {
+  return options.sqlitePath ?? envOptional('NYMBAL_SQLITE_PATH') ?? './nymbal.db'
+}
+
 export function createCommandStore(
   config: NymbalConfig,
   options: CommandStoreOptions = {},
 ): CommandStore {
   if (config.infrastructure.commandStore === 'sqlite') {
-    const path = options.sqlitePath ?? envOptional('NYMBAL_SQLITE_PATH') ?? './nymbal.db'
-    const raw = new BetterSqlite3(path)
-    raw.pragma('journal_mode = WAL')
-    raw.pragma('foreign_keys = ON')
+    const path = sqliteFile(options)
+    const raw = options.readOnly
+      ? new BetterSqlite3(path, { readonly: true, fileMustExist: true })
+      : new BetterSqlite3(path)
+    if (!options.readOnly) {
+      raw.pragma('journal_mode = WAL')
+      raw.pragma('foreign_keys = ON')
+    }
     const db = drizzleSqlite(raw, { schema: sqliteSchema })
     const client: Client = { kind: 'sqlite', db }
     // One connection: a transaction holds it from BEGIN to COMMIT across awaits, so every other read and transaction
@@ -365,6 +391,15 @@ export function createCommandStore(
       },
     }
     rawByStore.set(store, { kind: 'sqlite', db, raw })
+    turnByRaw.set(raw, async (fn) => {
+      if (joinable(owner) !== undefined) return fn()
+      const release = await queue.acquire()
+      try {
+        return fn()
+      } finally {
+        release()
+      }
+    })
     return store
   }
 
@@ -376,7 +411,10 @@ export function createCommandStore(
         { context: { commandStore: 'postgres' } },
       )
     }
-    const pool = new pg.Pool({ connectionString })
+    const pool = new pg.Pool({
+      connectionString,
+      ...(options.readOnly && { options: '-c default_transaction_read_only=on' }),
+    })
     const db = drizzlePg(pool, { schema: postgresSchema })
     const owner = {}
     const connect = async (): Promise<{ client: Client; connection: pg.PoolClient }> => {

@@ -140,6 +140,28 @@ export default defineConfig({
       },
       {
         test: {
+          // Needs Redis, Postgres and MinIO (NYMBAL_TEST_REDIS_URL, NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_S3_ENDPOINT;
+          // `docker compose up -d --wait` starts all three): the Redis and Postgres JSONB document stores, the Redis
+          // Streams bus and the S3 media storage against their contracts, the kernel on them (it loads the built
+          // packages), the S3 imports, and the E2E harness's per-run stores. `nymbal add redis` is proved on a scaffold
+          // made in the checkout as smoke-astro and installed with pnpm, so it needs the build, and no smoke-astro left
+          // there. Left out of the default run like integration-postgres (`pnpm test` leaves out integration-*), and
+          // gate:full and the PR's integration job run it.
+          name: 'integration-stores',
+          environment: 'node',
+          include: [
+            'packages/doc-store-redis/src/**/*.test.ts',
+            'packages/doc-store-postgres-jsonb/src/**/*.test.ts',
+            'packages/event-bus-redis-streams/src/**/*.test.ts',
+            'packages/platform/tests/primitives/**/*.test.ts',
+            'tests/stores/**/*.test.ts',
+          ],
+          testTimeout: 60000,
+          hookTimeout: 60000,
+        },
+      },
+      {
+        test: {
           name: 'proof-kit',
           environment: 'node',
           include: ['packages/proof-kit/tests/*.test.ts'],

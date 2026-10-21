@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { SearchBarWrapper } from '@/components/client/SearchBarWrapper'
 import { MiniCartWrapper } from '@/components/client/MiniCartWrapper'
+import { fetchCapabilities } from '@/lib/api'
 import styles from './Header.module.css'
 
 const NAV_LINKS = [
@@ -9,7 +10,9 @@ const NAV_LINKS = [
   { href: '/products?category=sale', label: 'Sale' },
 ]
 
-export function Header() {
+export async function Header() {
+  const capabilities = await fetchCapabilities()
+  const canSearch = capabilities?.search.capabilities.includes('search') ?? false
   return (
     <header className={styles.header} data-testid="site-header">
       <div className={`container ${styles.inner}`}>
@@ -30,9 +33,11 @@ export function Header() {
         </nav>
 
         <div className={styles.actions}>
-          <div className={styles.search}>
-            <SearchBarWrapper />
-          </div>
+          {canSearch && (
+            <div className={styles.search}>
+              <SearchBarWrapper />
+            </div>
+          )}
           <Link href="/account" className={styles.iconLink} aria-label="Account">
             <svg
               width="20"

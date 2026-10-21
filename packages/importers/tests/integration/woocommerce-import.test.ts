@@ -19,6 +19,8 @@ import {
   createNativeAiAdapter,
   createNativeSearchAdapter,
   createLogger,
+  createLocalFsMediaStorage,
+  rawClients,
 } from '@nymbalhq/platform'
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
@@ -110,7 +112,8 @@ async function buildTestEnv() {
   const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
-  const search = createNativeSearchAdapter({ documentStore, logger })
+  // P2-07 decision 1: the native search adapter is SQL over the command store's own database.
+  const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
 
   const product = createProductService({ store: commandStore, repos, publisher, logger })
   const category = createCategoryService({ repos, publisher, logger })
@@ -158,6 +161,14 @@ describe('WooCommerce importer integration', () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
+  // The store's local-fs media, as `nymbal import` passes it (P2-11 decision 5): the importer builds none of its own.
+  function localMedia() {
+    return createLocalFsMediaStorage({
+      root: join(tmpDir, 'public', 'imported-media'),
+      urlPrefix: '/imported-media',
+    })
+  }
+
   function opts(overrides: Partial<Parameters<typeof runWooCommerceImport>[0]> = {}) {
     return {
       credentials: DEFAULT_CREDS,
@@ -185,6 +196,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
 
     // Every source record arrives: imported counts equal the WooCommerce fixtures served.
@@ -204,6 +216,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
 
     expect(report.errors).toHaveLength(0)
@@ -225,6 +238,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
 
     expect(report.errors).toHaveLength(0)
@@ -244,6 +258,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
 
     const original = await env.commandStore.read((tx) =>
@@ -259,6 +274,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
 
     const order = await env.commandStore.read((tx) =>
@@ -276,6 +292,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: env.adapters,
+      media: localMedia(),
     })
     expect(r1.imported.products).toBe(2)
 
@@ -285,6 +302,7 @@ describe('WooCommerce importer integration', () => {
         services: env.services,
         repos: env.repos,
         adapters: env.adapters,
+        media: localMedia(),
       },
     )
     expect(r2.imported.products).toBe(2)
@@ -299,6 +317,7 @@ describe('WooCommerce importer integration', () => {
       services: env.services,
       repos: env.repos,
       adapters: { ...env.adapters, ai: mockAi },
+      media: localMedia(),
     })
 
     expect(aiComplete).not.toHaveBeenCalled()

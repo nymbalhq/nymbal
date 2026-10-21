@@ -1,3 +1,7 @@
+import { env } from '@nymbalhq/config'
+
+// The stores come from the environment so that one E2E suite runs on every store set (scripts/gate.ts --stores, the
+// nightly matrix); unset, they are SQLite, in-memory and in-process. The Redis URL is REDIS_URL.
 export default {
   store: {
     name: 'Nymbal Dev',
@@ -7,11 +11,10 @@ export default {
   },
   template: 'astro',
   infrastructure: {
-    cloud: 'local',
-    commandStore: 'sqlite',
-    documentStore: 'in-memory',
-    eventBus: 'in-process',
-    compute: 'in-process',
+    commandStore: env('NYMBAL_COMMAND_STORE', 'sqlite'),
+    documentStore: env('NYMBAL_DOCUMENT_STORE', 'in-memory'),
+    eventBus: env('NYMBAL_EVENT_BUS', 'in-process'),
+    redis: { prefix: env('NYMBAL_REDIS_PREFIX', 'nymbal') },
   },
   security: {
     adapter: 'middleware',

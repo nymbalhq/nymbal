@@ -1,8 +1,19 @@
-export { createPlatform, type Platform, type CreatePlatformOptions } from './platform.js'
+export {
+  createPlatform,
+  resolvePrimitives,
+  REDIS_DEFAULTS,
+  type Platform,
+  type CreatePlatformOptions,
+  type PlatformConnectionOptions,
+  type Primitives,
+  type ResolvePrimitivesOptions,
+} from './platform.js'
 export {
   createCommandStore,
   rawClients,
+  sqliteFile,
   type CommandStore,
+  type CommandStoreOptions,
   type ReadTx,
   type Tx,
   type RawClients,
@@ -28,9 +39,7 @@ export {
   InMemoryDocumentStore,
   type InMemoryDocumentStoreOptions,
 } from './document-store/in-memory.js'
-export { createDocumentStore } from './document-store/factory.js'
 export { InProcessEventBus, type InProcessEventBusOptions } from './event-bus/in-process.js'
-export { createEventBus } from './event-bus/factory.js'
 export {
   createEventBuilder,
   type EventBuilderContext,
@@ -67,6 +76,13 @@ export {
 export * from './services/index.js'
 export * from './adapters/index.js'
 export { createLogger, type CreateLoggerOptions } from './logger.js'
+export {
+  diagnose,
+  type DiagnoseOptions,
+  type DiagnosisCheck,
+  type DiagnosisReport,
+  type DiagnosisStatus,
+} from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
 export {
   warmDocumentStore,
@@ -76,6 +92,7 @@ export {
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,
+  LOCAL_FS_MEDIA_CAPABILITIES,
   type MediaStorage,
   type LocalFsMediaStorageOptions,
 } from './media/index.js'

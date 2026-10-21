@@ -5,11 +5,14 @@ import type {
   Order,
   ReviewsResult,
   ReviewResult,
+  StoreCapabilities,
 } from '@nymbalhq/types'
 import type {
   DenormalisedProduct,
   ProductListParams,
   ProductListResult,
+  ProductSearchParams,
+  ProductSearchResult,
   CheckoutDetails,
   CheckoutResult,
   RegisterParams,
@@ -19,6 +22,10 @@ import type {
 } from '../types.js'
 
 export interface CommerceAdapter {
+  /** What the store can do (GET /api/capabilities); an adapter without it cannot tell the storefront. */
+  capabilities?: {
+    get(): Promise<StoreCapabilities>
+  }
   cart: {
     get(): Promise<Cart>
     addItem(variantId: string, qty: number): Promise<Cart>
@@ -29,7 +36,7 @@ export interface CommerceAdapter {
   products: {
     getBySlug(slug: string): Promise<DenormalisedProduct>
     list(params?: ProductListParams): Promise<ProductListResult>
-    search(query: string, params?: { limit?: number; cursor?: string }): Promise<ProductListResult>
+    search(query: string, params?: ProductSearchParams): Promise<ProductSearchResult>
   }
   checkout: {
     create(details: CheckoutDetails): Promise<CheckoutResult>

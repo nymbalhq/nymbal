@@ -98,31 +98,44 @@ export function detectPackageManager(): PackageManager {
 
 function installCmd(pm: PackageManager): [string, string[]] {
   switch (pm) {
-    case 'pnpm': return ['pnpm', ['install']]
-    case 'bun': return ['bun', ['install']]
+    case 'pnpm':
+      return ['pnpm', ['install']]
+    case 'bun':
+      return ['bun', ['install']]
     case 'yarn-classic':
-    case 'yarn-berry': return ['yarn', ['install']]
-    default: return ['npm', ['install']]
+    case 'yarn-berry':
+      return ['yarn', ['install']]
+    default:
+      return ['npm', ['install']]
   }
 }
 
 function seedCmd(pm: PackageManager): [string, string[]] {
   switch (pm) {
-    case 'pnpm': return ['pnpm', ['exec', 'nymbal', 'seed']]
-    case 'bun': return ['bunx', ['nymbal', 'seed']]
-    case 'yarn-classic': return ['yarn', ['run', 'nymbal', 'seed']]
-    case 'yarn-berry': return ['yarn', ['exec', 'nymbal', 'seed']]
-    default: return ['npx', ['nymbal', 'seed']]
+    case 'pnpm':
+      return ['pnpm', ['exec', 'nymbal', 'seed']]
+    case 'bun':
+      return ['bunx', ['nymbal', 'seed']]
+    case 'yarn-classic':
+      return ['yarn', ['run', 'nymbal', 'seed']]
+    case 'yarn-berry':
+      return ['yarn', ['exec', 'nymbal', 'seed']]
+    default:
+      return ['npx', ['nymbal', 'seed']]
   }
 }
 
 function devCmd(pm: PackageManager): string {
   switch (pm) {
-    case 'pnpm': return 'pnpm dev'
-    case 'bun': return 'bun dev'
+    case 'pnpm':
+      return 'pnpm dev'
+    case 'bun':
+      return 'bun dev'
     case 'yarn-classic':
-    case 'yarn-berry': return 'yarn dev'
-    default: return 'npm run dev'
+    case 'yarn-berry':
+      return 'yarn dev'
+    default:
+      return 'npm run dev'
   }
 }
 
@@ -172,7 +185,8 @@ export function parseCliFlags(argv: string[]): CliFlags {
       let value = match[2]
       if (value === undefined) {
         const next = args[i + 1]
-        if (next === undefined || next.startsWith('-')) throw new CliFlagError(`--${flag} needs a value`)
+        if (next === undefined || next.startsWith('-'))
+          throw new CliFlagError(`--${flag} needs a value`)
         value = next
         i++
       }
@@ -187,10 +201,7 @@ export function parseCliFlags(argv: string[]): CliFlags {
   return flags
 }
 
-export async function main(
-  argv: string[] = process.argv,
-  deps: MainDeps = {},
-): Promise<void> {
+export async function main(argv: string[] = process.argv, deps: MainDeps = {}): Promise<void> {
   const run = deps.run ?? runCmd
   let flags: CliFlags
   try {
@@ -220,7 +231,9 @@ export async function main(
     if (existsSync(targetDir)) {
       const entries = await readdir(targetDir)
       if (entries.length > 0) {
-        process.stderr.write(`Error: Directory ${answers.directory} already exists and is not empty.\n`)
+        process.stderr.write(
+          `Error: Directory ${answers.directory} already exists and is not empty.\n`,
+        )
         process.exit(1)
       }
     } else {
@@ -325,9 +338,7 @@ export async function main(
   }
 
   const cmd = devCmd(pm)
-  const nextSteps = [
-    `  ${pc.cyan('cd')} ${answers.directory}`,
-  ]
+  const nextSteps = [`  ${pc.cyan('cd')} ${answers.directory}`]
   if (!shouldInstall) {
     const [ic] = installCmd(pm)
     nextSteps.push(`  ${pc.cyan(ic + ' install')}`)
@@ -434,11 +445,9 @@ export default defineConfig({
   template: '${answers.template}',
 
   infrastructure: {
-    cloud: 'local',
     commandStore: 'sqlite',
     documentStore: 'in-memory',
     eventBus: 'in-process',
-    compute: 'in-process',
   },
 
   security: {

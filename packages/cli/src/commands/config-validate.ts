@@ -12,7 +12,7 @@ export const configValidateCommand = defineCommand({
       console.log(pc.green(`✓ config valid`) + ` (${path})`)
       // eslint-disable-next-line no-console
       console.log(
-        `  template: ${config.template}, cloud: ${config.infrastructure.cloud}, commandStore: ${config.infrastructure.commandStore}`,
+        `  template: ${config.template}, commandStore: ${config.infrastructure.commandStore}, documentStore: ${config.infrastructure.documentStore}, eventBus: ${config.infrastructure.eventBus}`,
       )
       process.exit(0)
     } catch (err) {

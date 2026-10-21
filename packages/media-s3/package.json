@@ -1,0 +1,47 @@
+{
+  "name": "@nymbalhq/media-s3",
+  "version": "1.0.0",
+  "description": "S3 media storage for Nymbal: `infrastructure.media: 's3'`, on AWS or any S3-compatible bucket",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/media-s3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./recipes/*": "./recipes/*"
+  },
+  "files": [
+    "dist",
+    "recipes"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.600.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1153.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  }
+}

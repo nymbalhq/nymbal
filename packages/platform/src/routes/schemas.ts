@@ -103,6 +103,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
     body: optionalRefresh,
   },
 
+  // Store
+  'GET /api/capabilities': {
+    name: 'capabilities.get',
+    description:
+      'What the store can do, for a storefront: payments client half, search capabilities and sort keys.',
+  },
+
   // Catalogue
   'GET /api/categories': {
     name: 'categories.list',
@@ -110,8 +117,9 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/products/search': {
     name: 'products.search',
-    description: 'Search products by text.',
-    query: z.object({ q: queryValue, limit: queryValue, cursor: queryValue }),
+    description:
+      'Search products by text, optionally in one category, in relevance order, with the total and the category facet.',
+    query: z.object({ q: queryValue, limit: queryValue, cursor: queryValue, category: queryValue }),
   },
   'GET /api/products': {
     name: 'products.list',

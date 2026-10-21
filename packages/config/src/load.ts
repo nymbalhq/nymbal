@@ -3,7 +3,8 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createJiti } from 'jiti'
 import { z } from 'zod'
-import { ConfigError } from '@nymbalhq/types'
+import { ConfigError, type CommerceSlotAdapters } from '@nymbalhq/types'
+import { KNOWN_PROVIDERS } from './known-providers.js'
 import { nymbalConfigSchema, type NymbalConfig } from './schema.js'
 
 const CONFIG_FILE = 'nymbal.config.ts'
@@ -12,6 +13,8 @@ export interface LoadedConfig {
   config: NymbalConfig
   path: string
   projectRoot: string
+  /** The module's named `adapters` export: one adapter per slot whose provider is `custom`, for createApp. */
+  adapters?: Partial<CommerceSlotAdapters>
 }
 
 export function findConfigFile(startDir: string): string | null {
@@ -35,9 +38,9 @@ export async function loadConfig(startDir: string = process.cwd()): Promise<Load
   }
 
   const jiti = createJiti(pathToFileURL(path).href, { interopDefault: true })
-  let raw: unknown
+  let mod: Record<string, unknown>
   try {
-    raw = await jiti.import(path, { default: true })
+    mod = await jiti.import<Record<string, unknown>>(path)
   } catch (err) {
     throw new ConfigError(`Failed to load ${path}: ${(err as Error).message}`, {
       cause: err,
@@ -45,9 +48,11 @@ export async function loadConfig(startDir: string = process.cwd()): Promise<Load
     })
   }
 
+  const raw = mod['default'] ?? mod
+  const adapters = adaptersExport(mod['adapters'], path)
   try {
     const config = nymbalConfigSchema.parse(raw)
-    return { config, path, projectRoot: dirname(path) }
+    return { config, path, projectRoot: dirname(path), ...(adapters !== undefined && { adapters }) }
   } catch (err) {
     if (err instanceof z.ZodError) {
       throw new ConfigError(formatZodError(err, path), {
@@ -57,6 +62,26 @@ export async function loadConfig(startDir: string = process.cwd()): Promise<Load
     }
     throw err
   }
+}
+
+/** The `adapters` export, keyed by commerce slot; anything else is a mistake worth naming before createApp runs. */
+function adaptersExport(value: unknown, path: string): Partial<CommerceSlotAdapters> | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ConfigError(`${path}: the adapters export must be an object keyed by commerce slot`, {
+      code: 'config.adapters_invalid',
+      context: { path },
+    })
+  }
+  const slots = Object.keys(KNOWN_PROVIDERS)
+  const unknown = Object.keys(value).filter((key) => !slots.includes(key))
+  if (unknown.length > 0) {
+    throw new ConfigError(
+      `${path}: the adapters export names ${unknown.join(', ')}, which is no commerce slot (${slots.join(', ')})`,
+      { code: 'config.adapters_invalid', context: { path, unknown } },
+    )
+  }
+  return value as Partial<CommerceSlotAdapters>
 }
 
 function formatZodError(err: z.ZodError, path: string): string {
