@@ -7,6 +7,7 @@ import {
   type Facet,
   type HttpAdapter,
   type ReviewsAdapter,
+  type SearchAdapter,
 } from '@nymbalhq/types'
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
@@ -45,14 +46,14 @@ function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
 
 /** The search's category counts in the listing's facet shape: field `category`, slug values, name labels. */
 async function searchCategoryFacet(
-  searchService: SearchService,
+  facet: SearchAdapter['facet'],
   documentStore: DocumentStoreAdapter,
   storeName: string,
   query: string,
   filters: Record<string, unknown> | undefined,
 ): Promise<Facet> {
   const [counts, categories] = await Promise.all([
-    searchService.facet('categoryIds', { query, ...(filters !== undefined && { filters }) }),
+    facet('categoryIds', { query, ...(filters !== undefined && { filters }) }),
     documentStore.query<{ id: string; slug: string; name: string }>('categories', {
       partitionKey: { field: 'storeId', value: storeName },
       limit: 500,
@@ -85,6 +86,8 @@ export function registerProductRoutes(
   searchService?: SearchService,
   /** Whether the search adapter can facet; a listing offers no filter it cannot serve. */
   canFacet: () => boolean = () => true,
+  /** The search adapter's facet, for the search route's category counts within the query. */
+  searchFacet?: SearchAdapter['facet'],
 ): void {
   adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
     try {
@@ -118,8 +121,8 @@ export function registerProductRoutes(
       // A hit whose product is gone is dropped from the page; the total is the index's.
       const items = products.filter(Boolean)
       const facets =
-        canFacet() && searchResult.total > 0
-          ? [await searchCategoryFacet(searchService, documentStore, storeName, q, filters)]
+        canFacet() && searchFacet !== undefined && searchResult.total > 0
+          ? [await searchCategoryFacet(searchFacet, documentStore, storeName, q, filters)]
           : []
       return ok({ items, nextCursor: searchResult.nextCursor, total: searchResult.total, facets })
     } catch (err) {

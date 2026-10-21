@@ -25,11 +25,10 @@ export function SearchResults() {
   } = useSearch()
 
   useEffect(() => {
-    // The filter has already searched the category it writes to the URL.
+    // Runs when the URL changes; the filter has already searched the category it writes there.
     if (query && (query !== searched || category !== searchedCategory)) {
       void search(query, { category })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the URL changes, not on every store update
   }, [query, category, search])
 
   const onFilterChange = useCallback((event: CustomEvent<{ name: string; value: string }>) => {
