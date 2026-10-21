@@ -126,13 +126,10 @@ project="$parent/shop"
 # ─── first serve ─────────────────────────────────────────────────────────────────────────────────────────────────
 store_port="$(free_port)"
 store_url="http://localhost:$store_port"
-api_url="http://localhost:3001"
-if curl -s -o /dev/null --max-time 2 "$api_url/health"; then
-  echo "scaffold-clean: something already answers on $api_url; the generated config serves the API on 3001" >&2
-  exit 1
-fi
+api_port="$(free_port)"
+api_url="http://localhost:$api_port"
 serve_start="$(now_ms)"
-(cd "$project" && exec npx nymbal dev --storefront-port "$store_port") >"$work/dev.log" 2>&1 &
+(cd "$project" && exec npx nymbal dev --port "$api_port" --storefront-port "$store_port") >"$work/dev.log" 2>&1 &
 dev_pid=$!
 
 served=0

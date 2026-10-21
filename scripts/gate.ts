@@ -14,6 +14,7 @@ import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { loadSentinels, type Sentinel, touchedPaths } from './sentinels'
+import { composePorts, type StackBlock, stack, stackBlock } from './stack'
 import {
   aggregate,
   classifySource,
@@ -54,10 +55,13 @@ export type RunResult = { exitCode: number; steps: Step[]; report: string }
 
 export const GATE_BUDGET_MS = 60_000
 export const FULL_BUDGET_MS = 600_000
-export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
-/** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
-export const MAILPIT_URL = 'http://localhost:18025'
-export const REDIS_URL = 'redis://localhost:63799'
+const postgresUrl = (port: number): string => `postgres://postgres:nymbal@localhost:${port}/nymbal`
+const mailpitUrl = (port: number): string => `http://localhost:${port}`
+const redisUrl = (port: number): string => `redis://localhost:${port}`
+/** The services compose.yaml publishes in stack slot 0. */
+export const POSTGRES_URL = postgresUrl(stackBlock(0).postgres)
+export const MAILPIT_URL = mailpitUrl(stackBlock(0).mailpitUi)
+export const REDIS_URL = redisUrl(stackBlock(0).redis)
 /** The MinIO API compose.yaml publishes, on NYMBAL_MINIO_PORT when it is moved. */
 export const minioUrl = (port: string = '59000'): string => `http://localhost:${port}`
 
@@ -814,6 +818,8 @@ export type PlanInput = {
   /** Where `external` services have an S3 API; with compose, the port compose.yaml publishes MinIO on. */
   s3Endpoint?: string | undefined
   minioPort?: string | undefined
+  /** The worktree's stack slot: its compose project and service ports. Slot 0 when not given. */
+  stack?: StackBlock
   /** The store set the E2E steps run on (`--stores`); `sqlite-memory`, today's plan, when not given. */
   stores?: StoreSet | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
@@ -1008,14 +1014,30 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   if (!full) return { steps: select(steps, input), budgetMs: GATE_BUDGET_MS }
 
   const external = input.services === 'external'
-  const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
-  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
-  const redisUrl = external ? (input.redisUrl ?? REDIS_URL) : REDIS_URL
-  const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisUrl)}`
+  const block = input.stack ?? stackBlock(0)
+  const composedPostgres = postgresUrl(block.postgres)
+  const postgresAt = external ? (input.postgresUrl ?? composedPostgres) : composedPostgres
+  const composedMailpit = mailpitUrl(block.mailpitUi)
+  const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(postgresAt)}`
+  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? composedMailpit) : composedMailpit)} NYMBAL_TEST_MAILPIT_SMTP=localhost:${block.mailpitSmtp}`
+  const composedRedis = redisUrl(block.redis)
+  const redisAt = external ? (input.redisUrl ?? composedRedis) : composedRedis
+  const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisAt)}`
+  // An explicit NYMBAL_MINIO_PORT moves MinIO off the block's port, for compose and the endpoint alike.
+  const minioPort = input.minioPort ?? String(block.minio)
   // External services bring their own credentials in the environment; compose's MinIO has its default root ones.
   const s3 = external
     ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
-    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(input.minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+  // Slot 0 is compose.yaml's own project and default ports; another slot names both, so worktrees share no container.
+  const compose =
+    block.slot === 0
+      ? 'docker compose up -d --wait'
+      : `${Object.entries({ ...composePorts(block), NYMBAL_MINIO_PORT: minioPort })
+          .map(([name, value]) => `${name}=${shellWord(value)}`)
+          .join(' ')} docker compose -p ${block.project} up -d --wait`
+  // Playwright takes its servers' ports from the slot; slot 0 is what it resolves on its own in the main checkout.
+  const slotEnv = block.slot === 0 ? '' : `NYMBAL_STACK_SLOT=${block.slot} `
   // A set other than the default points the repo-root config at the composed services; the E2E server wrapper gives
   // the run a database and a key prefix of its own.
   const stores = storeSet(input.stores ?? 'sqlite-memory')
@@ -1027,8 +1049,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           `NYMBAL_COMMAND_STORE=${set.commandStore}`,
           `NYMBAL_DOCUMENT_STORE=${set.documentStore}`,
           `NYMBAL_EVENT_BUS=${set.eventBus}`,
-          `DATABASE_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`,
-          ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisUrl)}`] : []),
+          `DATABASE_URL=${shellWord(postgresAt)}`,
+          ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisAt)}`] : []),
         ].join(' ') + ' '
   const e2eNeeds = stores === 'sqlite-memory' ? ['build'] : ['build', 'compose up']
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
@@ -1038,7 +1060,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
@@ -1063,7 +1085,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           skip: 'services are external (--services external)',
           idle: true,
         }
-      : { name: 'compose up', command: 'docker compose up -d --wait' },
+      : { name: 'compose up', command: compose },
     {
       name: 'integration-postgres',
       command: `${postgres} pnpm exec vitest run --project integration-postgres`,
@@ -1319,6 +1341,8 @@ async function main(argv: string[]): Promise<number> {
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
   const s3Endpoint = process.env.NYMBAL_TEST_S3_ENDPOINT
   const minioPort = process.env.NYMBAL_MINIO_PORT
+  // Only gate:full starts services and servers; the plain gate needs no slot.
+  const block = values.full ? stack(root) : undefined
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
@@ -1339,6 +1363,7 @@ async function main(argv: string[]): Promise<number> {
     ...(s3Endpoint === undefined || s3Endpoint === '' ? {} : { s3Endpoint }),
     ...(minioPort === undefined || minioPort === '' ? {} : { minioPort }),
     ...(stores === undefined ? {} : { stores }),
+    ...(block === undefined ? {} : { stack: block }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
