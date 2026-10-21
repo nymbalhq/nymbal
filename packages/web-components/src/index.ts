@@ -1,6 +1,6 @@
 export { registerClient, getClient } from './registry.js'
 export { NymbalElement } from './base-element.js'
-export { injectStyles } from './styles.js'
+export type { ElementSchema, ElementAttributeType } from './base-element.js'
 
 import { NymbalAddToCart } from './components/add-to-cart.js'
 import { NymbalCartDrawer } from './components/cart-drawer.js'
@@ -31,19 +31,21 @@ export {
   NymbalSortDropdown,
 }
 
+const ELEMENTS = [
+  NymbalAddToCart,
+  NymbalCartDrawer,
+  NymbalMiniCart,
+  NymbalVariantSelector,
+  NymbalQuantitySelector,
+  NymbalSearchBar,
+  NymbalProductFilter,
+  NymbalToast,
+  NymbalPaymentElement,
+  NymbalSortDropdown,
+]
+
+/** Defines every element under its schema's tag, except a tag the project has already defined: the project's wins. */
 export function registerComponents(): void {
-  const components: Array<[string, CustomElementConstructor]> = [
-    ['nymbal-add-to-cart', NymbalAddToCart],
-    ['nymbal-cart-drawer', NymbalCartDrawer],
-    ['nymbal-mini-cart', NymbalMiniCart],
-    ['nymbal-variant-selector', NymbalVariantSelector],
-    ['nymbal-quantity-selector', NymbalQuantitySelector],
-    ['nymbal-search-bar', NymbalSearchBar],
-    ['nymbal-product-filter', NymbalProductFilter],
-    ['nymbal-toast', NymbalToast],
-    ['nymbal-payment-element', NymbalPaymentElement],
-    ['nymbal-sort-dropdown', NymbalSortDropdown],
-  ]
   // A driver the project registered under a built-in's name wins, as a project-defined tag does.
   const drivers: Array<[string, PaymentDriver]> = [
     ['test-mode', testModeDriver],
@@ -53,9 +55,9 @@ export function registerComponents(): void {
   for (const [name, driver] of drivers) {
     if (getPaymentDriver(name) === undefined) registerPaymentDriver(name, driver)
   }
-  for (const [name, ctor] of components) {
-    if (!customElements.get(name)) {
-      customElements.define(name, ctor)
+  for (const element of ELEMENTS) {
+    if (!customElements.get(element.schema.tag)) {
+      customElements.define(element.schema.tag, element)
     }
   }
 }

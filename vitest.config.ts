@@ -8,6 +8,11 @@ const NESTED_VITEST_RUNS = [
   'tests/contracts/contract-breakers.test.ts',
 ]
 
+// Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
+// (scripts/stack.ts), apart from every other suite on the machine.
+const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
+const PERF_POSTGRES = 'packages/platform/tests/postgres/search-performance.postgres.test.ts'
+
 // Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
 // without them), so it exists only when `scripts/scaffold-clean.sh <astro|nextjs>` has set them. Every other run
 // (`pnpm test`, coverage, `nymbal test`, tests-fail-on-base) then cannot select it.
@@ -23,8 +28,16 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
     ]
   : []
 
+// Set by the gate when other worktrees' gates run Vitest at once (scripts/gate.ts): each run then takes a share of the
+// CPUs, since a worker per core in each starves the main processes.
+const sharedWorkers = process.env['NYMBAL_VITEST_MAX_WORKERS']
+if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
+  throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
+}
+
 export default defineConfig({
   test: {
+    ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
     projects: [
       {
         test: {
@@ -62,6 +75,15 @@ export default defineConfig({
           name: 'platform-integration',
           environment: 'node',
           include: ['packages/platform/tests/integration/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, PERF],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
+          name: 'perf',
+          environment: 'node',
+          include: [PERF],
           testTimeout: 30000,
         },
       },
@@ -147,6 +169,16 @@ export default defineConfig({
           name: 'integration-postgres',
           environment: 'node',
           include: ['packages/platform/tests/postgres/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, PERF_POSTGRES],
+          testTimeout: 30000,
+        },
+      },
+      {
+        test: {
+          // Named under integration-* so the `!integration-*` runs leave it out with integration-postgres.
+          name: 'integration-postgres-perf',
+          environment: 'node',
+          include: [PERF_POSTGRES],
           testTimeout: 30000,
         },
       },
