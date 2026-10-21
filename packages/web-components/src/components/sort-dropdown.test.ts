@@ -60,7 +60,8 @@ function selectOf(el: HTMLElement, shape: Shape): HTMLSelectElement {
   const root = shadow(el)
   const select =
     shape === 'slotted'
-      ? el.querySelector<HTMLSelectElement>(':scope > select')
+      ? ([...el.children].find((c): c is HTMLSelectElement => c instanceof HTMLSelectElement) ??
+        null)
       : root.querySelector<HTMLSelectElement>('select[part~="select"]')
   if (select === null) throw new Error(`nymbal-sort-dropdown (${shape}) has no <select>`)
   return select
@@ -72,7 +73,8 @@ describe('nymbal-sort-dropdown: decision 3a', () => {
   it('a slotted <select> is assigned to the default slot, and the shadow root renders no <select> of its own', async () => {
     const keys = [...PRODUCT_SORT_KEYS]
     const el = await mount('slotted', keys, DEFAULT_PRODUCT_SORT)
-    const slotted = el.querySelector(':scope > select')
+    const slotted =
+      [...el.children].find((c): c is HTMLSelectElement => c instanceof HTMLSelectElement) ?? null
     const slot = shadow(el).querySelector<HTMLSlotElement>('slot:not([name])')
 
     expect(slot?.assignedElements()).toContain(slotted)
