@@ -40,12 +40,15 @@ function FieldRow({ slot, field, onSaved }: FieldRowProps) {
   const save = useSaveSetting()
   const clear = useClearSetting()
   const [error, setError] = useState<string | null>(null)
+  // isPending reaches the button only at the next render, after a double click's second click has landed.
+  const saving = useRef(false)
   const id = fieldId(slot, field.path)
   const fromEnvironment = field.source === 'config' || field.source === 'env'
 
   const handleSave = async () => {
     const value = input.current?.value ?? ''
-    if (value === '') return
+    if (value === '' || saving.current) return
+    saving.current = true
     setError(null)
     try {
       await save.mutateAsync({ slot, path: field.path, value })
@@ -53,6 +56,8 @@ function FieldRow({ slot, field, onSaved }: FieldRowProps) {
       onSaved()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'The value was not saved')
+    } finally {
+      saving.current = false
     }
   }
 

@@ -1,6 +1,7 @@
 import type { NymbalConfig } from '@nymbalhq/config'
 import {
   EVT_SETTINGS_CHANGED,
+  SECRET_MIN_LENGTH,
   type AdapterSetting,
   type HttpAdapter,
   type RequestContext,
@@ -123,6 +124,15 @@ export function registerAdminSettingsRoutes(
         if (target.refused !== undefined) return target.refused
         const { owner, decl } = target
         const { value } = ctx.body as { value: string }
+        // The scrub set skips values this short, so a shorter secret would reach logs and error bodies unmasked.
+        if (decl.secret && value.length < SECRET_MIN_LENGTH) {
+          return fail(
+            'settings.secret_too_short',
+            `${owner.slot}.${decl.path} is a secret: it needs at least ${SECRET_MIN_LENGTH} characters`,
+            400,
+            { slot: owner.slot, path: decl.path, minLength: SECRET_MIN_LENGTH },
+          )
+        }
         const base = {
           slot: owner.slot,
           path: decl.path,
