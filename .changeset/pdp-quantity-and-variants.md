@@ -14,8 +14,10 @@ The product page adds the quantity and the variant the shopper picks, the same w
 - `<nymbal-add-to-cart qty>` (React: `qty`) adds that many units: a whole number clamped to 1-99, and anything else
   is 1. `nymbal:cart:item-added` carries `{ variantId, qty }`.
 - Both PDPs wire a `<nymbal-quantity-selector>` to add-to-cart, and the quantity starts again at 1 when the variant
-  changes. Astro's `/cart` steps each line with `<nymbal-quantity-selector>`, as Next does. On both templates,
-  decrement stops at 1 and the line's `cart-remove-<variantId>` button removes it.
+  changes. `<nymbal-quantity-selector>` shows and emits a whole number: a typed or set value is truncated toward zero
+  and clamped to `min`-`max`, and anything that is not a number is `min`, so a typed 2.7 shows and adds 2. Astro's
+  `/cart` steps each line with `<nymbal-quantity-selector>`, as Next does. On both templates, decrement stops at 1 and
+  the line's `cart-remove-<variantId>` button removes it.
 - The product read model always serves `variants[].options` as `VariantOption[]`, including for products projected
   from older events that stored the options as a JSON string.
 

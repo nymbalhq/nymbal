@@ -13,10 +13,12 @@ import {
 // P2-12 on both templates: the shopper picks a quantity and a variant on the product page and gets exactly that in
 // the cart, and the cart page's steppers change the line in the API.
 //
-// AC-2 (`cart.quantity`): the PDP's quantity selector sets what add-to-cart adds; /cart's selector on the line moves
-// the API quantity up and down, cannot go below 1, and the line's remove button empties it. Kills: a decorative
-// stepper (Astro's PDP adds 1 whatever it shows), a PDP without one (Next), and a cart page whose steppers or remove
-// button differ between the templates (Astro's hand-rolled buttons, which remove at 1; Next's untested remove).
+// AC-2 (`cart.quantity`): the PDP's quantity selector sets what add-to-cart adds, stepped or typed (a typed fraction
+// shows and adds its whole part); /cart's selector on the line moves the API quantity up and down, cannot go below 1,
+// and the line's remove button empties it. Kills: a decorative stepper (Astro's PDP adds 1 whatever it shows), a PDP
+// without one (Next), a selector that shows one quantity and emits another, a PDP that adds the quantity from before
+// the click committed the typing, and a cart page whose steppers or remove button differ between the templates
+// (Astro's hand-rolled buttons, which remove at 1; Next's untested remove).
 //
 // AC-3 (`browse.variant-shape`): a product of two options of two values each, one combination at stock 0 and one at
 // stock 2. Both PDPs render exactly the options the API serves; selecting each combination shows its price, a
@@ -62,11 +64,11 @@ const COMBINATIONS: OptionCombination[] = [
 ]
 
 test.describe('P2-12: PDP quantity and variants', () => {
-  test('AC-2: the PDP adds the quantity its selector shows (3), the badge reads it, /cart steps the API line to 4 then 3, stops at 1, and cart-remove empties it', async ({
+  test('AC-2: the PDP adds the quantity its selector shows (3 by steps, then a typed 5.7 shown and added as 5 on an immediate click), the badge reads it, /cart steps the API line up one and back, stops at 1, and cart-remove empties it', async ({
     page,
     request,
   }) => {
-    test.setTimeout(60_000)
+    test.setTimeout(90_000)
     const product = await ownProduct(request, await adminToken(request), 20)
     await page.goto(`/product/${product.slug}`)
     await page.waitForLoadState('networkidle')
@@ -79,13 +81,28 @@ test.describe('P2-12: PDP quantity and variants', () => {
       await pdp.getByTestId('qty-increment').click()
       await expect(input).toHaveValue(String(1 + i))
     }
-    const shown = Number(await input.inputValue())
-    expect(shown).toBe(1 + increments)
+    const stepped = Number(await input.inputValue())
+    expect(stepped).toBe(1 + increments)
 
     await pdp.getByTestId('add-to-cart').click()
     await expect
       .poll(() => cartQty(page, product.variantId), { timeout: 10_000 })
-      .toBe(shown)
+      .toBe(stepped)
+    await page.getByTestId('cart-drawer-close').click()
+    await expect(page.getByTestId('cart-drawer')).not.toBeInViewport()
+
+    // A typed fraction, then Add at once: the press itself commits the typing (blur, then change), and there is no
+    // delay between mousedown and mouseup for an update to land in. The selector shows the whole part, and that is
+    // what add-to-cart adds.
+    await input.fill('5.7')
+    await pdp.getByTestId('add-to-cart').click()
+    await expect(input, 'a typed fraction shows as its whole part').toHaveValue('5')
+    const typed = Number(await input.inputValue())
+    await expect
+      .poll(() => cartQty(page, product.variantId), { timeout: 10_000 })
+      .toBe(stepped + typed)
+    const shown = stepped + typed
+
     const lines = await cartLines(page)
     expect(lines.map((l) => [l.variantId, l.qty])).toEqual([[product.variantId, shown]])
     await expect(page.getByTestId('mini-cart-badge')).toHaveText(

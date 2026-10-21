@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
 import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
 import { useProduct, VariantSelector, AddToCart, QuantitySelector } from '@nymbalhq/react'
@@ -29,6 +29,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
   // Reset on the change itself, so a quantity left on a variant is not there again when the shopper comes back to it.
   if (chosen.variantId !== variant?.id) setChosen({ variantId: variant?.id, qty: 1 })
   const qty = chosen.variantId === variant?.id ? chosen.qty : 1
+  const addToCartRef = useRef<HTMLElement>(null)
 
   // The selector derives its option groups from the product's variants.
   const hasVariantChoice = (product.variants?.length ?? 0) > 1
@@ -61,10 +62,20 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
             value={1}
             min={1}
             max={99}
-            onQuantityChange={(e) => setChosen({ variantId: variant?.id, qty: e.detail.value })}
+            onQuantityChange={(e) => {
+              // A typed quantity changes on blur, and the press on Add is what blurs it: the wrapper's effect lands
+              // after a fast click has already read `qty`, so the element gets it here, in the same event.
+              addToCartRef.current?.setAttribute('qty', String(e.detail.value))
+              setChosen({ variantId: variant?.id, qty: e.detail.value })
+            }}
           />
         </div>
-        <AddToCart variantId={variant?.id ?? product.id} qty={qty} disabled={stock <= 0} />
+        <AddToCart
+          ref={addToCartRef}
+          variantId={variant?.id ?? product.id}
+          qty={qty}
+          disabled={stock <= 0}
+        />
       </div>
     </div>
   )
