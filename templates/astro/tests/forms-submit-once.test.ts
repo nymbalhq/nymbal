@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // is P2-15 AC-4 (`packages/web-components/src/components/account-forms.test.ts`).
 //
 // P2-16 moved checkout into `nymbal-checkout` (decision 6 deletes `scripts/checkout.ts`). Its 'place order' case, two
-// submits sending one POST /api/checkout and a refusal re-arming it, is P2-16 AC-2 (k rapid place-order submits make
-// one submitPayment) and AC-3 (a failure re-enables place-order and the next press makes one more), in
+// submits sending one POST /api/checkout and a refusal re-arming it, is P2-16 AC-2 (k rapid Place Order submits make
+// one submitPayment) and AC-3 (a failure re-enables Place Order and the next press makes one more), in
 // `packages/web-components/src/components/checkout.test.ts`. Review stays here.
 
 const API = 'http://api.test'
