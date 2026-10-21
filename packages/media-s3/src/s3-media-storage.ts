@@ -27,8 +27,28 @@ export const DEFAULT_S3_REGION = 'us-east-1'
 
 const trimTrailingSlashes = (s: string): string => s.replace(/\/+$/, '')
 
+/** The connection fields every client of this package is made from. */
+export interface S3ClientOptions {
+  /** `us-east-1` when not given. */
+  region?: string
+  endpoint?: string
+  /** True by default when an endpoint is set: an S3-compatible server rarely has per-bucket hostnames. */
+  forcePathStyle?: boolean
+  /** When not given, the AWS SDK's default chain provides them (the environment, a profile, a role). */
+  credentials?: { accessKeyId: string; secretAccessKey: string }
+}
+
+export function s3Client(options: S3ClientOptions): S3Client {
+  return new S3Client({
+    region: options.region ?? DEFAULT_S3_REGION,
+    forcePathStyle: options.forcePathStyle ?? options.endpoint !== undefined,
+    ...(options.endpoint !== undefined && { endpoint: options.endpoint }),
+    ...(options.credentials !== undefined && { credentials: options.credentials }),
+  })
+}
+
 /** The object's key in the bucket. Only the prefix is normalised: the key stays verbatim, so distinct keys stay distinct objects. */
-function objectKey(prefix: string | undefined, key: string): string {
+export function objectKey(prefix: string | undefined, key: string): string {
   const trimmed = (prefix ?? '').replace(/^\/+|\/+$/g, '')
   return trimmed === '' ? key : `${trimmed}/${key}`
 }
@@ -52,12 +72,7 @@ export function s3ObjectUrl(options: S3ObjectUrlOptions, key: string): string {
  * the `publicUrl` in front of it) must already serve its objects publicly.
  */
 export function createS3MediaStorage(options: S3MediaStorageOptions): MediaStorage {
-  const client = new S3Client({
-    region: options.region ?? DEFAULT_S3_REGION,
-    forcePathStyle: options.forcePathStyle ?? options.endpoint !== undefined,
-    ...(options.endpoint !== undefined && { endpoint: options.endpoint }),
-    ...(options.credentials !== undefined && { credentials: options.credentials }),
-  })
+  const client = s3Client(options)
   return {
     capabilities: () => S3_MEDIA_CAPABILITIES,
     async put(key, body, contentType) {

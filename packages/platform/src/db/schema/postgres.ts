@@ -344,6 +344,7 @@ export const events = pgTable(
     id: text('id').notNull(),
     type: text('type').notNull(),
     envelope: jsonb('envelope').notNull(),
+    correlationId: text('correlation_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
@@ -352,6 +353,7 @@ export const events = pgTable(
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),
     undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+    correlationIdx: index('events_correlation_idx').on(t.correlationId, t.seq),
   }),
 )
 

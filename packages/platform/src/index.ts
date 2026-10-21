@@ -52,6 +52,12 @@ export {
   type CreatePublisherOptions,
 } from './events/publisher.js'
 export { createRelay, type Relay, type CreateRelayOptions } from './events/relay.js'
+export {
+  currentCorrelationId,
+  isValidCorrelationId,
+  newCorrelationId,
+  runWithCorrelation,
+} from './events/correlation.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
@@ -71,6 +77,7 @@ export {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   type SweeperHandle,
+  type EventArchiveWriter,
   type EventRetentionSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
