@@ -52,7 +52,8 @@
   gap: var(--nymbal-spacing-lg, 1.5rem);
 }
 
-/* The filter carries `empty` when the search has no facets: the results take the width. */
+/* The filter carries `empty` when the search has no facets: the results take the width. The page serves it with
+   `empty`, so no sidebar column is drawn before the element runs. */
 @media (min-width: 769px) {
   .search-layout:has(nymbal-product-filter:not([empty])) {
     grid-template-columns: 240px minmax(0, 1fr);

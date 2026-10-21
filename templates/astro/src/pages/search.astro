@@ -25,7 +25,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
     <p class="search-query-label" id="search-query-label" style="display:none; margin-bottom: var(--nymbal-spacing-md, 1rem);"></p>
     <div class="search-layout">
       <aside class="search-sidebar">
-        <nymbal-product-filter source="search"></nymbal-product-filter>
+        <nymbal-product-filter source="search" empty></nymbal-product-filter>
       </aside>
       <div id="search-results" data-testid="search-results">
         <div class="search-empty">
