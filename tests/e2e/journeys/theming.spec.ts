@@ -4,9 +4,9 @@ import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
 // P2-06 AC-4 and AC-5 on every storefront target.
-// - theming.override-wins: a tag the project defines before the page's scripts run (as its elements entry would) is
+// - theming.override-wins: a nymbal-mini-cart the project defines before the page's scripts run (as its elements entry would) is
 //   the one the page uses, and the store still works around it: adding to cart from a PDP lands the line in
-//   GET /api/cart, and the mini-cart badge shows its quantity. Kills: registerComponents() redefining or throwing on a
+//   GET /api/cart. Kills: registerComponents() redefining or throwing on a
 //   defined tag, or one override breaking the other elements.
 // - theming.tokens-apply: the add-to-cart button, a part in the element's shadow root, is painted with
 //   --nymbal-color-primary as the template's own tokens.css declares it and :root resolves it. Kills: tokens that do
@@ -38,29 +38,26 @@ function declared(css: string, property: string): string | undefined {
 }
 
 test.describe('Theming', () => {
-  test('AC-4: theming.override-wins: a nymbal-toast the project defines first is the page’s, and adding to cart from a PDP still lands the line in GET /api/cart with the mini-cart badge at its quantity', async ({
+  test('AC-4: theming.override-wins: a nymbal-mini-cart the project defines first is the header’s, and adding to cart from a PDP with the package’s nymbal-add-to-cart lands the line in GET /api/cart', async ({
     page,
   }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
     await page.addInitScript(() => {
-      class ProjectToast extends HTMLElement {
+      class ProjectMiniCart extends HTMLElement {
         static projectOwned = true
 
+        // The marker lives in the project's own shadow root: React hydrates the header's light DOM on nextjs, and a
+        // light-DOM child it did not render is a hydration error, not the defect this test is for.
         connectedCallback(): void {
-          if (this.querySelector('[data-testid="project-toast-marker"]') !== null) return
+          if (this.shadowRoot !== null) return
           const marker = document.createElement('span')
-          marker.dataset['testid'] = 'project-toast-marker'
-          marker.hidden = true
-          this.append(marker)
-        }
-
-        show(message: string): void {
-          const line = document.createElement('p')
-          line.dataset['testid'] = 'project-toast-message'
-          line.textContent = message
-          this.append(line)
+          marker.dataset['testid'] = 'project-mini-cart-marker'
+          marker.textContent = 'cart'
+          this.attachShadow({ mode: 'open' }).append(marker)
         }
       }
-      customElements.define('nymbal-toast', ProjectToast)
+      customElements.define('nymbal-mini-cart', ProjectMiniCart)
     })
 
     const product = (await (
@@ -71,29 +68,51 @@ test.describe('Theming', () => {
       timeout: 15_000,
     })
 
-    // The page's nymbal-toast is the project's class: every one on the page carries its marker.
-    const toasts = page.locator('nymbal-toast')
-    await expect(toasts.first()).toBeAttached({ timeout: 15_000 })
-    await expect(page.locator('nymbal-toast [data-testid="project-toast-marker"]')).toHaveCount(
-      await toasts.count(),
+    // The header's nymbal-mini-cart is the project's class: each one carries the project's marker (in its shadow root),
+    // and none holds a part the package renders, in light DOM or shadow root.
+    const miniCarts = page.locator('header nymbal-mini-cart')
+    await expect(miniCarts.first()).toBeAttached({ timeout: 15_000 })
+    const count = await miniCarts.count()
+    await expect(miniCarts.getByTestId('project-mini-cart-marker')).toHaveCount(count)
+    const packageParts = await miniCarts.evaluateAll(
+      (elements) =>
+        elements.filter(
+          (el) =>
+            el.querySelector(
+              '[data-testid="mini-cart"], [data-testid="mini-cart-badge"], [part]',
+            ) !== null ||
+            (el.shadowRoot?.querySelector(
+              '[part], [data-testid]:not([data-testid="project-mini-cart-marker"])',
+            ) ?? null) !== null,
+        ).length,
     )
+    expect(packageParts, 'header mini-carts holding a package part').toBe(0)
     const owner = await page.evaluate(
       () =>
-        (customElements.get('nymbal-toast') as unknown as { projectOwned?: boolean } | undefined)
-          ?.projectOwned === true,
+        (
+          customElements.get('nymbal-mini-cart') as unknown as
+            | { projectOwned?: boolean }
+            | undefined
+        )?.projectOwned === true,
     )
-    expect(owner, 'customElements holds the project’s nymbal-toast').toBe(true)
+    expect(owner, 'customElements holds the project’s nymbal-mini-cart').toBe(true)
 
-    // The other elements still work: the add lands in the cart, and the badge shows the cart's quantity.
-    await page.getByTestId('add-to-cart').click()
-    await expect(
-      page.getByTestId('cart-drawer').locator('[data-testid^="cart-item-"]').first(),
-    ).toBeVisible({ timeout: 10_000 })
-    const cart = (await (await page.request.get(`${API_URL}/api/cart`)).json()) as ApiCart
-    expect(cart.data.items.map((item) => item.productName)).toContain(product.data.name)
-    const quantity = cart.data.items.reduce((sum, item) => sum + item.qty, 0)
-    expect(quantity).toBeGreaterThan(0)
-    await expect(page.getByTestId('mini-cart-badge')).toHaveText(String(quantity))
+    // The package's other elements still work: the PDP's nymbal-add-to-cart puts the line in the cart.
+    const before = (await (await page.request.get(`${API_URL}/api/cart`)).json()) as ApiCart
+    const qtyOf = (cart: ApiCart): number =>
+      cart.data.items
+        .filter((item) => item.productName === product.data.name)
+        .reduce((sum, item) => sum + item.qty, 0)
+    await page.locator('nymbal-add-to-cart').getByTestId('add-to-cart').click()
+    await expect
+      .poll(
+        async () =>
+          qtyOf((await (await page.request.get(`${API_URL}/api/cart`)).json()) as ApiCart),
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(qtyOf(before))
+
+    expect(errors, 'pageerror during the journey').toEqual([])
   })
 
   test('AC-5: theming.tokens-apply: the PDP add-to-cart part="button" is painted with --nymbal-color-primary as the template’s own tokens.css declares it and :root resolves it', async ({
