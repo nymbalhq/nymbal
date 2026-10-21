@@ -152,3 +152,55 @@ describe('P2-04 AC-6: drift', () => {
     expect(await adapter.drift(config)).toEqual({ drift: false, differences: [] })
   })
 })
+
+// Diff review M2: a dashboard reorder that moves a Nymbal rule above one of the owner's is drift at that rule's
+// `position`, and apply puts the owner's rules first again with one PUT, after which apply writes nothing.
+// Kills: a diff by ref alone, which sees no change in a reorder.
+describe('drift and apply see a dashboard reorder', () => {
+  it("a Nymbal rule moved above an owner rule is one difference at its position; apply restores the owner's rules first with one PUT, and a second apply writes nothing", async () => {
+    const { zoneId, adapter, config } = await applied()
+    const before = fake.rules(zoneId, CUSTOM)!
+    const owner = before.filter((r) => !isNymbal(r))
+    const ours = before.filter(isNymbal)
+    expect(owner.length).toBe(OWNER_CUSTOM_RULES.length)
+    expect(ours.length).toBeGreaterThanOrEqual(2)
+    expect(before.slice(owner.length)).toEqual(ours)
+
+    // The dashboard drag of the first Nymbal rule above the last owner rule: [..., N1, owner last, N2, ...].
+    const [first, ...rest] = ours
+    const lastOwner = owner[owner.length - 1]!
+    for (const rule of [lastOwner, ...rest]) fake.remove(zoneId, CUSTOM, String(rule.ref))
+    for (const rule of [lastOwner, ...rest]) fake.add(zoneId, CUSTOM, rule)
+    const moved = fake.rules(zoneId, CUSTOM)!
+    expect(moved.map((r) => r.ref)).toEqual([
+      ...owner.slice(0, -1).map((r) => r.ref),
+      first!.ref,
+      lastOwner.ref,
+      ...rest.map((r) => r.ref),
+    ])
+
+    expect(await adapter.drift(config)).toEqual({
+      drift: true,
+      differences: [
+        {
+          path: `${CUSTOM}/${String(first!.ref)}/position`,
+          configured: owner.length,
+          actual: owner.length - 1,
+        },
+      ],
+    })
+
+    const writesBefore = fake.writes(zoneId).length
+    await adapter.apply(config)
+    const writes = fake.writes(zoneId).slice(writesBefore)
+    expect(writes.map((w) => [w.method, w.path.endsWith(`/phases/${CUSTOM}/entrypoint`)])).toEqual([
+      ['PUT', true],
+    ])
+    expect(fake.rules(zoneId, CUSTOM)!.map((r) => r.ref)).toEqual(before.map((r) => r.ref))
+    expect(await adapter.drift(config)).toEqual({ drift: false, differences: [] })
+
+    const writesAfter = fake.writes(zoneId).length
+    await adapter.apply(config)
+    expect(fake.writes(zoneId).length).toBe(writesAfter)
+  })
+})

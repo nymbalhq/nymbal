@@ -65,7 +65,8 @@ const isPlan = (value: unknown): value is Plan =>
 export interface PhasePlan {
   phase: Phase
   add: Rule[]
-  change: Array<{ ref: string; from: Rule; to: Rule }>
+  /** `position` is set when the rule is out of place: its index on the zone, and the one `apply` writes it at. */
+  change: Array<{ ref: string; from: Rule; to: Rule; position?: { from: number; to: number } }>
   remove: Rule[]
 }
 
@@ -109,14 +110,52 @@ function byRef(rules: readonly Rule[]): Map<string, Rule> {
   return new Map(rules.filter(isNymbalRule).map((r) => [r.ref as string, r]))
 }
 
+/** A rule's identity within a phase: its ref when Nymbal's, its id when the owner's. */
+const keyOf = (rule: Rule): string =>
+  isNymbalRule(rule) ? `ref:${String(rule.ref)}` : `id:${String(rule.id)}`
+
+/**
+ * The Nymbal rules a dashboard reorder put out of place, by ref, with their index on the zone and the one `apply`
+ * writes them at. The kept rules are in place when they are one run, in the config's order; owner rules after that run
+ * are the dashboard's default place for a new rule, so they move nothing. Indexes count only the rules both sides keep.
+ */
+function misplaced(
+  live: readonly Rule[],
+  desired: readonly Rule[],
+): Map<string, { from: number; to: number }> {
+  const wanted = byRef(desired)
+  const kept = live.filter((r) => !isNymbalRule(r) || wanted.has(r.ref as string))
+  const ours = kept.flatMap((r, i) => (isNymbalRule(r) ? [i] : []))
+  const liveRefs = ours.map((i) => kept[i]!.ref as string)
+  const present = new Set(liveRefs)
+  const inOrder = desired.filter((r) => present.has(r.ref as string)).map((r) => r.ref as string)
+  const oneRun = ours.length === 0 || ours[ours.length - 1]! - ours[0]! === ours.length - 1
+  const out = new Map<string, { from: number; to: number }>()
+  if (oneRun && liveRefs.every((ref, i) => ref === inOrder[i])) return out
+  const written = nextRules(kept, desired).filter(
+    (r) => !isNymbalRule(r) || present.has(r.ref as string),
+  )
+  const target = new Map(written.map((r, i) => [keyOf(r), i]))
+  for (const i of ours) {
+    const ref = kept[i]!.ref as string
+    const to = target.get(keyOf(kept[i]!))!
+    if (to !== i) out.set(ref, { from: i, to })
+  }
+  return out
+}
+
 function diffPhase(phase: Phase, live: readonly Rule[], desired: readonly Rule[]): PhasePlan {
   const current = byRef(live)
   const wanted = byRef(desired)
+  const moved = misplaced(live, desired)
   const plan: PhasePlan = { phase, add: [], change: [], remove: [] }
   for (const [ref, to] of wanted) {
     const from = current.get(ref)
+    const position = moved.get(ref)
     if (from === undefined) plan.add.push(to)
-    else if (changedFields(to, from).length > 0) plan.change.push({ ref, from, to })
+    else if (changedFields(to, from).length > 0 || position !== undefined) {
+      plan.change.push({ ref, from, to, ...(position !== undefined && { position }) })
+    }
   }
   for (const [ref, rule] of current) if (!wanted.has(ref)) plan.remove.push(rule)
   return plan
@@ -342,12 +381,19 @@ export function createCloudflareSecurityAdapter(deps: {
         for (const rule of add) {
           differences.push({ path: `${phase}/${rule.ref}`, configured: rule, actual: undefined })
         }
-        for (const { ref, from, to } of change) {
+        for (const { ref, from, to, position } of change) {
           for (const field of changedFields(to, from)) {
             differences.push({
               path: `${phase}/${ref}/${field}`,
               configured: to[field],
               actual: from[field],
+            })
+          }
+          if (position !== undefined) {
+            differences.push({
+              path: `${phase}/${ref}/position`,
+              configured: position.to,
+              actual: position.from,
             })
           }
         }

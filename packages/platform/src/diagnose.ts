@@ -20,6 +20,7 @@ import {
   checkInjectedSlot,
   COMMERCE_SLOTS,
   resolvePaymentsAdapter,
+  resolveSecurityAdapter,
   slotBuilders,
   type InjectedAdapters,
 } from './adapters/registry.js'
@@ -152,9 +153,9 @@ function notChecked(prerequisite: string): string {
 
 /**
  * Checks a project without changing it: its config, the packages its providers live in, the command store and its
- * migrations, and the health of every commerce slot and primitive. It builds what `createApp` builds, through the same
- * registry and constructors, and nothing more: no warm-up, no relay, no sweeper, no migrator, no seed, and no
- * primitive's `initialize()`. The command store is opened read-only. Every connection is closed before it returns.
+ * migrations, and the health of every commerce slot, the security slot and every primitive. It builds what `createApp`
+ * builds, through the same registry and constructors, and nothing more: no warm-up, no relay, no sweeper, no migrator,
+ * no seed, and no primitive's `initialize()` (the security adapter's makes no request). The command store is opened read-only. Every connection is closed before it returns.
  */
 export async function diagnose(
   input: NymbalConfig,
@@ -163,7 +164,9 @@ export async function diagnose(
   const parsed = nymbalConfigSchema.safeParse(input)
   if (!parsed.success) {
     const detail = parsed.error.issues
-      .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : '<root>'}: ${issue.message}`)
+      .map(
+        (issue) => `${issue.path.length > 0 ? issue.path.join('.') : '<root>'}: ${issue.message}`,
+      )
       .join('; ')
     return { checks: [{ name: 'config', status: 'down', detail }] }
   }
@@ -185,12 +188,10 @@ export async function diagnose(
   }
 
   const packages: DiagnosisCheck[] = []
-  for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES]) {
+  for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES, 'security'] as const) {
     const entry = PROVIDER_PACKAGES[slot]?.[providers[slot]]
     if (entry === undefined) continue
-    const found = await within(timeoutMs, () =>
-      importProviderPackage(slot, providers[slot], env),
-    )
+    const found = await within(timeoutMs, () => importProviderPackage(slot, providers[slot], env))
     packages.push({
       name: `package ${slot}`,
       status: found.ok ? 'ok' : 'down',
@@ -261,7 +262,11 @@ export async function diagnose(
             status: 'down',
             detail: `${state.value.pending} pending: run \`nymbal migrate\``,
           }
-        : { name: 'migrations', status: 'ok', detail: `${state.value.applied} applied, none pending` }
+        : {
+            name: 'migrations',
+            status: 'ok',
+            detail: `${state.value.applied} applied, none pending`,
+          }
   }
 
   const primitiveOptions = {
@@ -347,7 +352,11 @@ export async function diagnose(
         : builders[slot]()
     })
     if (!adapter.ok) {
-      slots.push({ name: `slot ${slot}`, status: 'down', detail: described(provider, adapter.detail) })
+      slots.push({
+        name: `slot ${slot}`,
+        status: 'down',
+        detail: described(provider, adapter.detail),
+      })
     } else if (adapter.value === null) {
       slots.push({ name: `slot ${slot}`, status: 'ok', detail: provider })
     } else {
@@ -355,11 +364,28 @@ export async function diagnose(
     }
   }
 
+  const securityAdapter = await within(timeoutMs, () =>
+    resolveSecurityAdapter(config, adapterLogger, env),
+  )
+  slots.push(
+    securityAdapter.ok
+      ? fromReport('slot security', providers.security, await health(securityAdapter.value))
+      : {
+          name: 'slot security',
+          status: 'down',
+          detail: described(providers.security, securityAdapter.detail),
+        },
+  )
+
   const primitives: DiagnosisCheck[] = []
   for (const name of PRIMITIVES) {
     const primitive = built[name]
     if (primitive === undefined) {
-      primitives.push({ name: `primitive ${name}`, status: 'down', detail: primitiveFailures[name] ?? '' })
+      primitives.push({
+        name: `primitive ${name}`,
+        status: 'down',
+        detail: primitiveFailures[name] ?? '',
+      })
     } else {
       primitives.push(fromReport(`primitive ${name}`, subject(name), await health(primitive)))
     }

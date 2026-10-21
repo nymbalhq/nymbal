@@ -147,6 +147,7 @@ export function resolvePaymentsAdapter(
 export async function resolveSecurityAdapter(
   config: NymbalConfig,
   logger: Logger,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<SecurityAdapter> {
   const choice = config.security.adapter
   const slotLogger = logger.child({ adapter: 'security' })
@@ -156,7 +157,7 @@ export async function resolveSecurityAdapter(
   const adapter = (await loadProviderAdapter('security', choice, {
     config: blockConfig,
     logger: slotLogger,
-    env: process.env,
+    env,
   })) as SecurityAdapter | undefined
   if (adapter === undefined) {
     const known = ['middleware', ...Object.keys(PROVIDER_PACKAGES.security)]

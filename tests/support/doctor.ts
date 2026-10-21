@@ -166,7 +166,8 @@ export function commerceSlots(config: NymbalConfig): Array<{ slot: string; provi
 /**
  * The check names decision 4 gives a config, as a sorted set: `config`, `package <slot>` for every slot or
  * primitive whose provider has a package (PROVIDER_PACKAGES), `command store`, `migrations`, `slot <name>` per
- * commerce slot and `primitive <name>` per primitive.
+ * commerce slot, `slot security` (with `package security` when `security.adapter` has a package) and
+ * `primitive <name>` per primitive.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations']
@@ -177,6 +178,10 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     ) {
       names.push(`package ${slot}`)
     }
+  }
+  names.push('slot security')
+  if (PROVIDER_PACKAGES.security[config.security.adapter] !== undefined) {
+    names.push('package security')
   }
   const infra = config.infrastructure as unknown as Record<string, string | undefined>
   for (const primitive of PRIMITIVES) {
