@@ -52,6 +52,16 @@ nymbal-quantity-selector input::-webkit-inner-spin-button {
 }
 `
 
+/**
+ * A quantity as a whole number of units in `min`-`max`: a number is truncated toward zero and clamped, anything else is
+ * `min`. Add-to-cart takes only integers, so the selector shows and emits the same integer.
+ */
+function wholeQuantity(raw: string | null, min: number, max: number): number {
+  const n = raw === null || raw.trim() === '' ? Number.NaN : Number(raw)
+  if (Number.isNaN(n)) return min
+  return Math.min(max, Math.max(min, Math.trunc(n)))
+}
+
 export class NymbalQuantitySelector extends NymbalElement {
   static get observedAttributes(): string[] {
     return ['value', 'min', 'max']
@@ -61,12 +71,15 @@ export class NymbalQuantitySelector extends NymbalElement {
 
   protected setup(): void {
     injectStyles('nymbal-quantity-selector', STYLES)
-    this._value = Number(this.getAttribute('value')) || 1
+    this._value = wholeQuantity(this.getAttribute('value'), ...this.bounds())
+  }
+
+  private bounds(): [number, number] {
+    return [Number(this.getAttribute('min')) || 1, Number(this.getAttribute('max')) || 99]
   }
 
   protected render(): void {
-    const min = Number(this.getAttribute('min')) || 1
-    const max = Number(this.getAttribute('max')) || 99
+    const [min, max] = this.bounds()
 
     this.innerHTML = `
       <button data-testid="qty-decrement" aria-label="Decrease quantity" ${this._value <= min ? 'disabled' : ''}>&#8722;</button>
@@ -92,8 +105,7 @@ export class NymbalQuantitySelector extends NymbalElement {
 
     const input = this.querySelector('input')
     input?.addEventListener('change', () => {
-      const val = Math.min(max, Math.max(min, Number(input.value) || min))
-      this._value = val
+      this._value = wholeQuantity(input.value, min, max)
       this.emitChange()
       this.render()
     })
@@ -101,7 +113,7 @@ export class NymbalQuantitySelector extends NymbalElement {
 
   attributeChangedCallback(name: string): void {
     if (name === 'value') {
-      this._value = Number(this.getAttribute('value')) || 1
+      this._value = wholeQuantity(this.getAttribute('value'), ...this.bounds())
     }
     if (this.isConnected) this.requestRender()
   }

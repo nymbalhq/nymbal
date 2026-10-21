@@ -27,9 +27,19 @@ nymbal-add-to-cart button:disabled {
 }
 `
 
+const MIN_QTY = 1
+const MAX_QTY = 99
+
+/** The `qty` attribute as a whole number of units: a non-integer is 1, and the result is clamped to 1-99. */
+function quantityOf(attr: string | null): number {
+  const n = attr === null || attr.trim() === '' ? Number.NaN : Number(attr)
+  const whole = Number.isInteger(n) ? n : MIN_QTY
+  return Math.min(MAX_QTY, Math.max(MIN_QTY, whole))
+}
+
 export class NymbalAddToCart extends NymbalElement {
   static get observedAttributes(): string[] {
-    return ['variant-id', 'disabled']
+    return ['variant-id', 'qty', 'disabled']
   }
 
   private button!: HTMLButtonElement
@@ -65,13 +75,14 @@ export class NymbalAddToCart extends NymbalElement {
   private handleClick = async (): Promise<void> => {
     const variantId = this.getAttribute('variant-id')
     if (!variantId) return
+    const qty = quantityOf(this.getAttribute('qty'))
     try {
-      await this.client.cart.addItem(variantId)
+      await this.client.cart.addItem(variantId, qty)
       this.dispatchEvent(
         new CustomEvent('nymbal:cart:item-added', {
           bubbles: true,
           composed: true,
-          detail: { variantId },
+          detail: { variantId, qty },
         }),
       )
     } catch {

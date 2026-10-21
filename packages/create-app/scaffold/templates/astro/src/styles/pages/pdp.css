@@ -149,11 +149,15 @@
   font-weight: var(--nymbal-font-weight-medium, 500);
 }
 
-.pdp-stock.in-stock {
+.pdp-stock[data-level='in'] {
   color: var(--nymbal-color-success, #16a34a);
 }
 
-.pdp-stock.out-of-stock {
+.pdp-stock[data-level='low'] {
+  color: var(--nymbal-color-warning, #d97706);
+}
+
+.pdp-stock[data-level='out'] {
   color: var(--nymbal-color-error, #dc2626);
 }
 

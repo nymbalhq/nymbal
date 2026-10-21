@@ -53,11 +53,12 @@ interface OptionGroup {
   values: string[]
 }
 
-export class NymbalVariantSelector extends NymbalElement {
-  static get observedAttributes(): string[] {
-    return ['options']
-  }
+/** A variant's options when they are the `VariantOption[]` the read model serves; any other shape offers none. */
+function optionsOf(variant: DenormalisedVariant): VariantOption[] {
+  return Array.isArray(variant.options) ? variant.options : []
+}
 
+export class NymbalVariantSelector extends NymbalElement {
   protected setup(): void {
     injectStyles('nymbal-variant-selector', STYLES)
     this.subscribeToStore(this.client.product)
@@ -79,9 +80,9 @@ export class NymbalVariantSelector extends NymbalElement {
         <span class="nymbal-option-label">${this.esc(group.name)}</span>
         <div class="nymbal-option-buttons">
           ${group.values.map((value) => {
-            const isSelected = selected?.options.some(
-              (o: VariantOption) => o.name === group.name && o.value === value,
-            ) ?? false
+            const isSelected =
+              selected !== null &&
+              optionsOf(selected).some((o) => o.name === group.name && o.value === value)
             return `<button
               class="nymbal-option-btn"
               data-testid="variant-option-${this.esc(group.name)}-${this.esc(value)}"
@@ -103,22 +104,15 @@ export class NymbalVariantSelector extends NymbalElement {
 
         const currentSelections = new Map<string, string>()
         if (selected) {
-          for (const opt of selected.options as VariantOption[]) {
+          for (const opt of optionsOf(selected)) {
             currentSelections.set(opt.name, opt.value)
           }
         }
         currentSelections.set(optionName, optionValue)
 
-        const match = product.variants.find((v: DenormalisedVariant) => {
-          const vRaw = v.options
-          let vOpts: VariantOption[] = []
-          if (typeof vRaw === 'string') {
-            try { vOpts = JSON.parse(vRaw) } catch (e) { console.warn('[variant-selector] malformed variant options JSON', e); vOpts = [] }
-          } else if (Array.isArray(vRaw)) {
-            vOpts = vRaw
-          }
-          return vOpts.every((o) => currentSelections.get(o.name) === o.value)
-        })
+        const match = product.variants.find((v: DenormalisedVariant) =>
+          optionsOf(v).every((o) => currentSelections.get(o.name) === o.value),
+        )
 
         if (match) {
           this.client.product.selectVariant(match)
@@ -134,30 +128,10 @@ export class NymbalVariantSelector extends NymbalElement {
     })
   }
 
-  attributeChangedCallback(): void {
-    if (this.isConnected) this.requestRender()
-  }
-
   private getOptionGroups(product: DenormalisedProduct): OptionGroup[] {
-    const optionsAttr = this.getAttribute('options')
-    if (optionsAttr) {
-      try {
-        return JSON.parse(optionsAttr) as OptionGroup[]
-      } catch (e) {
-        console.warn('[variant-selector] malformed options attribute, falling back to variant derivation', e)
-      }
-    }
-
     const groups = new Map<string, Set<string>>()
     for (const variant of product.variants) {
-      const raw = variant.options
-      let opts: VariantOption[] = []
-      if (typeof raw === 'string') {
-        try { opts = JSON.parse(raw) } catch (e) { console.warn('[variant-selector] malformed variant options in getOptionGroups', e); opts = [] }
-      } else if (Array.isArray(raw)) {
-        opts = raw
-      }
-      for (const opt of opts) {
+      for (const opt of optionsOf(variant)) {
         let values = groups.get(opt.name)
         if (!values) {
           values = new Set()

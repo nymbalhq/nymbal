@@ -48,21 +48,12 @@ function renderCart() {
           </button>
         </div>
         <div class="cart-line-quantity">
-          <button
-            type="button"
-            class="cart-line-quantity-btn"
-            data-action="decrement"
+          <nymbal-quantity-selector
+            value="${item.qty}"
+            min="1"
+            max="99"
             data-variant-id="${item.variantId}"
-            aria-label="Decrease quantity"
-          >-</button>
-          <span class="cart-line-quantity-value">${item.qty}</span>
-          <button
-            type="button"
-            class="cart-line-quantity-btn"
-            data-action="increment"
-            data-variant-id="${item.variantId}"
-            aria-label="Increase quantity"
-          >+</button>
+          ></nymbal-quantity-selector>
         </div>
         <span class="cart-line-total">${formatPrice(item.priceMinor * item.qty, currency)}</span>
       </div>
@@ -115,27 +106,11 @@ function bindCartActions() {
     })
   })
 
-  container!.querySelectorAll('.cart-line-quantity-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const el = btn as HTMLElement
-      const variantId = el.dataset.variantId
-      const action = el.dataset.action
-      if (!variantId) return
-
-      const state = client.cart.getState()
-      const item = (state.items ?? []).find((i: any) => i.variantId === variantId)
-      if (!item) return
-
-      if (action === 'increment') {
-        client.cart.updateQuantity(variantId, item.qty + 1)
-      } else if (action === 'decrement') {
-        if (item.qty <= 1) {
-          client.cart.removeItem(variantId)
-        } else {
-          client.cart.updateQuantity(variantId, item.qty - 1)
-        }
-      }
-    })
+  container!.querySelectorAll<HTMLElement>('nymbal-quantity-selector').forEach((selector) => {
+    selector.addEventListener('nymbal:quantity:changed', ((e: CustomEvent<{ value: number }>) => {
+      const variantId = selector.dataset.variantId
+      if (variantId) client.cart.updateQuantity(variantId, e.detail.value)
+    }) as EventListener)
   })
 }
 

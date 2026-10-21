@@ -32,13 +32,14 @@ const COMPONENTS: ComponentDef[] = [
     reactName: 'AddToCart',
     attributes: [
       { name: 'variant-id', reactProp: 'variantId', type: 'string' },
+      { name: 'qty', reactProp: 'qty', type: 'number' },
       { name: 'disabled', reactProp: 'disabled', type: 'boolean' },
     ],
     events: [
       {
         name: 'nymbal:cart:item-added',
         reactProp: 'onItemAdded',
-        detailType: '{ variantId: string }',
+        detailType: '{ variantId: string; qty: number }',
       },
     ],
     hasChildren: true,
@@ -62,7 +63,7 @@ const COMPONENTS: ComponentDef[] = [
   {
     tagName: 'nymbal-variant-selector',
     reactName: 'VariantSelector',
-    attributes: [{ name: 'options', reactProp: 'options', type: 'json' }],
+    attributes: [],
     events: [
       {
         name: 'nymbal:variant:selected',

@@ -35,7 +35,8 @@ const images = Array.isArray(product.media) && product.media.length > 0
   : [{ url: `https://picsum.photos/seed/${product.slug}/600/600`, alt: product.name }]
 
 const defaultVariant = product.variants?.[0]
-const stock = defaultVariant?.stock ?? (product.inStock ? 10 : 0)
+// A product with no variants has nothing to sell, so it reads as out of stock.
+const stock = defaultVariant?.stock ?? 0
 
 const jsonLd = productJsonLd(product, Astro.url.origin)
 const breadcrumb = breadcrumbJsonLd([
@@ -80,6 +81,8 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
             <nymbal-quantity-selector value="1" min="1" max="99"></nymbal-quantity-selector>
             <nymbal-add-to-cart
               variant-id={defaultVariant?.id ?? product.id}
+              qty="1"
+              disabled={stock <= 0}
             ></nymbal-add-to-cart>
           </div>
         </div>
