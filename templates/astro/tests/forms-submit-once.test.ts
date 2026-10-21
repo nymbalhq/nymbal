@@ -5,12 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // holds each form's mutating response pending. Two `form.requestSubmit()` calls send exactly one request to that form's
 // route: `requestSubmit()` fires `submit` even while the handler has disabled the button, so a handler with no
 // in-flight flag of its own (today: every one of them) sends two. Once the held response is refused, the guard lets go:
-// a third submit sends one more request, so a guard that locks the form for good does not pass. Pattern:
-// `checkout-script.test.ts`.
+// a third submit sends one more request, so a guard that locks the form for good does not pass.
 //
 // P2-15 moved login, register and profile into `nymbal-login-form`, `nymbal-register-form` and
 // `nymbal-profile-form` (decision 7 deletes `auth-forms.ts` and `profile-form.ts`); their one-call-per-submission case
-// is P2-15 AC-4 (`packages/web-components/src/components/account-forms.test.ts`). Checkout and review stay here.
+// is P2-15 AC-4 (`packages/web-components/src/components/account-forms.test.ts`).
+//
+// P2-16 moved checkout into `nymbal-checkout` (decision 6 deletes `scripts/checkout.ts`). Its 'place order' case, two
+// submits sending one POST /api/checkout and a refusal re-arming it, is P2-16 AC-2 (k rapid place-order submits make
+// one submitPayment) and AC-3 (a failure re-enables place-order and the next press makes one more), in
+// `packages/web-components/src/components/checkout.test.ts`. Review stays here.
 
 const API = 'http://api.test'
 
@@ -168,53 +172,6 @@ const REVIEW_MARKUP = `
   </form>
 `
 
-const address = (id: string) =>
-  [
-    'firstName',
-    'lastName',
-    'addressLine1',
-    'addressLine2',
-    'city',
-    'region',
-    'postalCode',
-    'country',
-  ]
-    .map((name) => `<input id="${id}-${name}" name="${name}" data-testid="${id}-${name}" />`)
-    .join('')
-
-/** The ids and names `src/pages/checkout.astro` (and its AddressForm) give the checkout script. */
-const CHECKOUT_MARKUP = `
-  <div id="checkout-steps-container">
-    <div data-testid="checkout-step-contact"></div>
-    <div class="checkout-step-divider"></div>
-    <div data-testid="checkout-step-shipping"></div>
-    <div class="checkout-step-divider"></div>
-    <div data-testid="checkout-step-payment"></div>
-  </div>
-  <div id="checkout-error" style="display:none;" data-testid="checkout-error" role="alert"></div>
-  <section id="checkout-contact">
-    <form id="contact-form">
-      <input type="email" id="contact-email" name="email" data-testid="contact-email" />
-      <button type="submit" data-testid="contact-continue">Continue</button>
-    </form>
-  </section>
-  <section id="checkout-shipping" style="display:none;">
-    <form id="shipping-form">
-      <div data-testid="shipping-form">${address('shipping')}</div>
-      <button type="submit" data-testid="shipping-continue">Continue</button>
-    </form>
-  </section>
-  <section id="checkout-payment" style="display:none;">
-    <form id="payment-form" novalidate>
-      <input type="checkbox" id="billing-same" checked />
-      <div id="billing-fields" style="display:none;"><div id="billing-form">${address('billing')}</div></div>
-      <nymbal-payment-element data-testid="payment-element" client="null"></nymbal-payment-element>
-      <button type="submit" data-testid="place-order">Place Order</button>
-    </form>
-  </section>
-  <aside id="checkout-summary" data-testid="checkout-summary"></aside>
-`
-
 /**
  * The review script moved out of its inline `<script>` (P1-15 decision 3). Resolved when the test runs, not when the
  * file is transformed, so a missing one fails its own test and not the others.
@@ -235,27 +192,6 @@ interface FormCase {
 }
 
 const cases: FormCase[] = [
-  {
-    name: 'place order',
-    route: { method: 'POST', path: '/api/checkout' },
-    page: 'http://shop.test/checkout',
-    markup: CHECKOUT_MARKUP,
-    formId: 'payment-form',
-    submitTestId: 'place-order',
-    load: () => import('../src/scripts/checkout'),
-    fill: () => {
-      setValue('contact-email', 'ada@ac3.test')
-      byTestId('contact-continue').click()
-      setValue('shipping-firstName', 'Ada')
-      setValue('shipping-lastName', 'Lovelace')
-      setValue('shipping-addressLine1', '1 Guard St')
-      setValue('shipping-city', 'London')
-      setValue('shipping-region', 'England')
-      setValue('shipping-postalCode', 'E1 6AN')
-      setValue('shipping-country', 'GB')
-      byTestId('shipping-continue').click()
-    },
-  },
   {
     name: 'review',
     route: { method: 'POST', path: '/api/reviews' },
