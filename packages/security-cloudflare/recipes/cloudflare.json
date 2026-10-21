@@ -1,0 +1,34 @@
+{
+  "name": "cloudflare",
+  "summary": "Put the store's rate limits, geo blocks, custom rules and managed rulesets on its Cloudflare zone.",
+  "install": ["@nymbalhq/security-cloudflare"],
+  "set": [
+    { "path": "security.adapter", "value": "cloudflare" },
+    {
+      "path": "security.cloudflare",
+      "value": {
+        "zoneId": { "env": "CLOUDFLARE_ZONE_ID" },
+        "apiToken": { "env": "CLOUDFLARE_API_TOKEN" }
+      }
+    }
+  ],
+  "env": [
+    {
+      "name": "CLOUDFLARE_ZONE_ID",
+      "example": "",
+      "required": true,
+      "comment": "The zone's ID (Cloudflare dashboard, the domain's Overview page, API section)"
+    },
+    {
+      "name": "CLOUDFLARE_API_TOKEN",
+      "example": "",
+      "required": true,
+      "comment": "An API token scoped to that zone only, with Zone › Zone › Read and Zone › Zone WAF › Edit"
+    }
+  ],
+  "next": [
+    "Create the API token in the Cloudflare dashboard (My Profile, API Tokens) with two permissions on this zone only: Zone › Zone › Read and Zone › Zone WAF › Edit.",
+    "Behind Cloudflare every request reaches the API from an edge address: set http.trustProxy: true so the in-process rate limiter keys on the client, not on the edge.",
+    "Run nymbal security:plan to see the rules, then nymbal security:apply to put them on the zone; nymbal security:drift reports a dashboard edit."
+  ]
+}

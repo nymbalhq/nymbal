@@ -5,18 +5,20 @@ import { ConfigError, type AdapterContext, type Slot } from '@nymbalhq/types'
 export interface ProviderPackage {
   /** The adapter package, which exports `createAdapter(ctx: AdapterContext)`. */
   package: string
-  /** The provider SDK the package peers, which the project installs beside it. */
-  sdk: string
+  /** The provider SDK the package peers, which the project installs beside it; none when it talks HTTP itself. */
+  sdk?: string
 }
+
+type Packages<P extends ProviderPackage> = Readonly<Record<string, P>>
 
 /**
  * The providers that live in their own package, by slot then provider. The kernel imports a package only when the
  * config names its provider; `native`, `none`, `custom` and the kernel's own primitives (`in-memory`, `in-process`,
- * `local-fs`) have no entry.
+ * `local-fs`) have no entry. Every package peers its provider's SDK but the security ones, which call an HTTP API.
  */
 export const PROVIDER_PACKAGES: Readonly<
-  Partial<Record<Slot, Readonly<Record<string, ProviderPackage>>>>
-> = {
+  Partial<Record<Exclude<Slot, 'security'>, Packages<Required<ProviderPackage>>>>
+> & { readonly security: Packages<ProviderPackage> } = {
   payments: { stripe: { package: '@nymbalhq/adapter-stripe', sdk: 'stripe' } },
   ai: { anthropic: { package: '@nymbalhq/adapter-anthropic', sdk: '@anthropic-ai/sdk' } },
   email: { smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' } },
@@ -28,12 +30,14 @@ export const PROVIDER_PACKAGES: Readonly<
     'redis-streams': { package: '@nymbalhq/event-bus-redis-streams', sdk: 'ioredis' },
   },
   media: { s3: { package: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' } },
+  security: { cloudflare: { package: '@nymbalhq/security-cloudflare' } },
 }
 
 const INFRASTRUCTURE_SLOTS: ReadonlySet<Slot> = new Set(['documentStore', 'eventBus', 'media'])
 
 /** How the config names a slot's choice, for messages: `payments.provider 'stripe'`, `documentStore 'redis'`. */
 function choiceOf(slot: Slot, provider: string): string {
+  if (slot === 'security') return `security.adapter '${provider}'`
   return INFRASTRUCTURE_SLOTS.has(slot)
     ? `infrastructure.${slot} '${provider}'`
     : `${slot}.provider '${provider}'`
@@ -114,7 +118,8 @@ export async function importProviderPackage(
   } catch (error) {
     const missing = missingPackage(error)
     if (missing !== entry.package && missing !== entry.sdk) throw error
-    const install = installLine([entry.package, entry.sdk], env, process.cwd())
+    const packages = entry.sdk === undefined ? [entry.package] : [entry.package, entry.sdk]
+    const install = installLine(packages, env, process.cwd())
     throw new ConfigError(`${choiceOf(slot, provider)} needs ${entry.package}: ${install}`, {
       code: 'adapter.package_missing',
       cause: error,

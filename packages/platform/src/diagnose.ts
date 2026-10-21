@@ -181,6 +181,7 @@ export async function diagnose(
     documentStore: infrastructure.documentStore,
     eventBus: infrastructure.eventBus,
     media: infrastructure.media,
+    security: config.security.adapter,
   }
 
   const packages: DiagnosisCheck[] = []

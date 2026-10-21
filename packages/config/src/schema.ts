@@ -144,7 +144,21 @@ export const infrastructureSchema = z
     }
   })
 
-export const securitySchema = z.object({
+/** Where a `cloudflare` store's rules go: required when `security.adapter` is `cloudflare`, read with `env()`. */
+const cloudflareSchema = z.object({
+  zoneId: z.string().optional(),
+  apiToken: z.string().optional(),
+  /** The Cloudflare v4 API; the adapter defaults it to https://api.cloudflare.com/client/v4. */
+  apiBase: z.string().url().optional(),
+})
+
+const customRuleSchema = z.object({
+  name: z.string().min(1),
+  expression: z.string().min(1),
+  action: z.enum(['block', 'managed_challenge', 'js_challenge', 'log']),
+})
+
+const securityFields = z.object({
   adapter: z.enum(['middleware', 'cloudflare', 'aws-waf', 'akamai']),
   rateLimit: z
     .record(
@@ -184,6 +198,41 @@ export const securitySchema = z.object({
         .default('7d'),
     })
     .default({}),
+  cloudflare: cloudflareSchema.optional(),
+  geo: z
+    .object({
+      block: z
+        .array(z.string().regex(/^[A-Z]{2}$/, 'geo.block codes are ISO 3166 alpha-2, like "RU"'))
+        .default([]),
+    })
+    .default({ block: [] }),
+  customRules: z.array(customRuleSchema).default([]),
+  managedRulesets: z.array(z.enum(['cloudflare', 'owasp'])).default([]),
+})
+
+export const securitySchema = securityFields.superRefine((security, ctx) => {
+  if (security.adapter === 'cloudflare') {
+    for (const field of ['zoneId', 'apiToken'] as const) {
+      if (!security.cloudflare?.[field]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['cloudflare', field],
+          message: `security.adapter 'cloudflare' needs security.cloudflare.${field}`,
+        })
+      }
+    }
+  }
+  const seen = new Set<string>()
+  security.customRules.forEach((rule, i) => {
+    if (seen.has(rule.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customRules', i, 'name'],
+        message: `customRules has two rules named '${rule.name}'; names must be unique`,
+      })
+    }
+    seen.add(rule.name)
+  })
 })
 
 /**
