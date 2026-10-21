@@ -8,6 +8,9 @@ import { expect, test } from '../support/fixtures'
 // P2-07 AC-8 (decision 8) on every storefront target: astro, nextjs, and the fixture store's astro-custom and
 // nextjs-custom. The file creates products of its own sharing a unique token term, across two seeded categories, so
 // the expectation is the API read at the moment of the assertion, over products no other journey touches.
+// The admin API cannot create a category, so the two are seeded ones that no other journey needs to hold seeded
+// products only: not `apparel` (the listing screenshot refuses a product created after the seed) and not `books`
+// (the card price journey needs its product on that category's first page).
 // - Every target: /search?q=<token> shows `search-total` with the API's total, and its first page plus
 //   `search-load-more` clicks until the button is gone show exactly the API's full cursor walk.
 // - When GET /api/capabilities reports `facet` for search: choosing `filter-option-<slug>` shows exactly the API's
@@ -17,6 +20,7 @@ import { expect, test } from '../support/fixtures'
 // its search cannot serve.
 
 const PRODUCTS = 26
+const CATEGORY_SLUGS = ['home', 'electronics'] as const
 
 interface ApiSearchPage {
   items: Array<{ slug: string }>
@@ -38,10 +42,12 @@ test.beforeAll(async ({ playwright }) => {
   try {
     const categoriesRes = await request.get(`${API_URL}/api/categories`)
     expect(categoriesRes.status(), 'GET /api/categories').toBe(200)
-    const categories = (
-      (await categoriesRes.json()) as { data: Array<{ id: string; slug: string }> }
-    ).data.slice(0, 2)
-    expect(categories.length, 'two seeded categories').toBe(2)
+    const all = ((await categoriesRes.json()) as { data: Array<{ id: string; slug: string }> }).data
+    const categories = CATEGORY_SLUGS.map((slug) => all.find((c) => c.slug === slug))
+    expect(
+      categories.map((c) => c?.slug),
+      `seeded categories ${CATEGORY_SLUGS.join(', ')}`,
+    ).toEqual([...CATEGORY_SLUGS])
     const [a, b] = categories as [{ id: string; slug: string }, { id: string; slug: string }]
 
     const token = `sp${randomUUID().replace(/-/g, '').slice(0, 10)}`
