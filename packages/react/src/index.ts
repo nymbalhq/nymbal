@@ -30,6 +30,14 @@ export {
   PaymentElement,
   SortDropdown,
   Toast,
+  CartPage,
+  ProductCard,
+  SearchResults,
+  LoginForm,
+  RegisterForm,
+  ProfileForm,
+  AddressForm,
+  AddressBook,
 } from './generated/wrappers.js'
 
 export type {
@@ -43,4 +51,12 @@ export type {
   PaymentElementProps,
   SortDropdownProps,
   ToastProps,
+  CartPageProps,
+  ProductCardProps,
+  SearchResultsProps,
+  LoginFormProps,
+  RegisterFormProps,
+  ProfileFormProps,
+  AddressFormProps,
+  AddressBookProps,
 } from './generated/wrappers.js'

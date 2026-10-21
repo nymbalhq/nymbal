@@ -90,6 +90,13 @@ function attributesOf(
   return attrs.sort(([a], [b]) => a.localeCompare(b))
 }
 
+/** A wrapper's compiled render function as source: equal source, with the same React imports, renders the same. */
+function codeOf(wrapper: Wrapper | undefined, name: string): string {
+  const render = (wrapper as { render?: unknown } | undefined)?.render
+  if (typeof render !== 'function') throw new Error(`${name} is not a forwardRef component`)
+  return render.toString()
+}
+
 // ─── Generated schemas ──────────────────────────────────────────────────────
 
 const lower = fc.stringMatching(/^[a-z]{2,8}$/)
@@ -177,6 +184,9 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
   it('AC-2: property: adding an attribute to a copy of a real element’s schema adds exactly that one prop to its wrapper and changes no other wrapper', () => {
     expect(realSchemas.length, 'the package exports its element schemas').toBeGreaterThan(0)
     const before = load(generateWrappers(realSchemas))
+    const beforeCode = new Map(
+      realSchemas.map((s) => [s.reactName, codeOf(before[s.reactName], s.reactName)]),
+    )
     fc.assert(
       fc.property(
         fc
@@ -189,7 +199,7 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
               index: fc.constant(index),
               added: fc.constant(added),
               addedValue: valueOf(added.type).filter((v) => v !== false),
-              values: fc.tuple(...realSchemas.map((s) => propsFor(s.attributes))),
+              values: propsFor(realSchemas[index]!.attributes),
             }),
           ),
         ({ index, added, addedValue, values }) => {
@@ -198,20 +208,19 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
           )
           const after = load(generateWrappers(changed))
           expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort())
-          // Every other wrapper renders the same attributes from the same props.
+          // Every other wrapper compiles to the same render function, so it renders the same for every props, not
+          // only sampled ones; rendering all of them twice per run is what timed out under coverage.
           realSchemas.forEach((s, i) => {
-            const others = i === index ? [] : [values[i]!]
-            for (const props of others) {
-              expect(attributesOf(after[s.reactName], s.tag, props), s.reactName).toEqual(
-                attributesOf(before[s.reactName], s.tag, props),
-              )
-            }
+            if (i === index) return
+            expect(codeOf(after[s.reactName], s.reactName), s.reactName).toBe(
+              beforeCode.get(s.reactName),
+            )
           })
           // The changed one renders what it did, plus the one attribute the new prop sets.
           const target = realSchemas[index]!
-          const was = attributesOf(before[target.reactName], target.tag, values[index]!)
+          const was = attributesOf(before[target.reactName], target.tag, values)
           const now = attributesOf(after[target.reactName], target.tag, {
-            ...values[index]!,
+            ...values,
             [added.prop]: addedValue,
           })
           expect(was.map(([n]) => n)).not.toContain(added.name)
