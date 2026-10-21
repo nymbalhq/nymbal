@@ -20,6 +20,7 @@ import {
   createNativeSearchAdapter,
   createLogger,
   createLocalFsMediaStorage,
+  rawClients,
 } from '@nymbalhq/platform'
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
@@ -111,7 +112,8 @@ async function buildTestEnv() {
   const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
-  const search = createNativeSearchAdapter({ documentStore, logger })
+  // P2-07 decision 1: the native search adapter is SQL over the command store's own database.
+  const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
 
   const product = createProductService({ store: commandStore, repos, publisher, logger })
   const category = createCategoryService({ repos, publisher, logger })
