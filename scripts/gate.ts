@@ -911,7 +911,7 @@ function rerunTestsCommand(red: RedTest[]): string {
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
-/** The `perf` project's timing-bound file, which `pnpm test` would collect too; `perf-postgres` is apart already. */
+/** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 /** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
 const SHARED_HOLD_STEPS = new Set([
@@ -1180,12 +1180,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : { name: 'compose up', command: compose },
     {
       name: 'integration-postgres',
-      command: `${postgres} pnpm exec vitest run --project integration-postgres${picked('perf-postgres') ? '' : ' --project perf-postgres'}`,
+      command: `${postgres} pnpm exec vitest run --project integration-postgres${picked('perf-postgres') ? '' : ' --project integration-postgres-perf'}`,
       needs: ['compose up'],
     },
     {
       name: 'perf-postgres',
-      command: `${postgres} pnpm exec vitest run --project perf-postgres`,
+      command: `${postgres} pnpm exec vitest run --project integration-postgres-perf`,
       needs: ['compose up'],
     },
     {

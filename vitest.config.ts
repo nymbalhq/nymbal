@@ -13,30 +13,6 @@ const NESTED_VITEST_RUNS = [
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
 const PERF_POSTGRES = 'packages/platform/tests/postgres/search-performance.postgres.test.ts'
 
-/** The `--project` filters this run was given, in Vitest's own wildcard form (a leading `!` negates). */
-function projectFilters(argv: string[]): Array<{ negated: boolean; regexp: RegExp }> {
-  const patterns = argv.flatMap((arg, i) =>
-    arg === '--project' ? [argv[i + 1] ?? ''] : arg.startsWith('--project=') ? [arg.slice(10)] : [],
-  )
-  return patterns.map((pattern) => {
-    const negated = pattern.startsWith('!')
-    const body = `${(negated ? pattern.slice(1) : pattern)
-      .split('*')
-      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('.*')}$`
-    return { negated, regexp: new RegExp(`^${negated ? `(?!${body})` : body}`, 'i') }
-  })
-}
-
-// perf-postgres needs Postgres as integration-postgres does, and the file throws at collection without it. A run whose
-// filter leaves integration-postgres out (`pnpm test`, ci.yml's coverage job: `!integration-*`) leaves it out too,
-// unless the filter names it.
-const filters = projectFilters(process.argv)
-const postgresFilteredOut =
-  filters.length > 0 &&
-  !filters.some(({ regexp }) => regexp.test('integration-postgres')) &&
-  !filters.some(({ negated, regexp }) => !negated && regexp.test('perf-postgres'))
-
 // Needs a scaffolded project and its running storefront (NYMBAL_SCAFFOLD_DIR, NYMBAL_STORE_URL; throws at collection
 // without them), so it exists only when `scripts/scaffold-clean.sh <astro|nextjs>` has set them. Every other run
 // (`pnpm test`, coverage, `nymbal test`, tests-fail-on-base) then cannot select it.
@@ -186,18 +162,15 @@ export default defineConfig({
           testTimeout: 30000,
         },
       },
-      ...(postgresFilteredOut
-        ? []
-        : [
-            {
-              test: {
-                name: 'perf-postgres',
-                environment: 'node' as const,
-                include: [PERF_POSTGRES],
-                testTimeout: 30000,
-              },
-            },
-          ]),
+      {
+        test: {
+          // Named under integration-* so the `!integration-*` runs leave it out with integration-postgres.
+          name: 'integration-postgres-perf',
+          environment: 'node',
+          include: [PERF_POSTGRES],
+          testTimeout: 30000,
+        },
+      },
       {
         test: {
           // Needs Redis, Postgres and MinIO (NYMBAL_TEST_REDIS_URL, NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_S3_ENDPOINT;

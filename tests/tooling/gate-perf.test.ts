@@ -99,7 +99,7 @@ describe('AC-8: the timing-bound tests run apart, under the quiet lock', () => {
   it('AC-8 (b): each timing-bound file is in exactly its own project, and the sentinel suite collects neither', async () => {
     const projects = await collecting([])
     expect(projects.get(PERF_FILE)).toEqual(['perf'])
-    expect(projects.get(PERF_POSTGRES_FILE)).toEqual(['perf-postgres'])
+    expect(projects.get(PERF_POSTGRES_FILE)).toEqual(['integration-postgres-perf'])
     const sentinelSuite = await collecting(sentinelSuiteArgs())
     // The suite still collects the rest of platform-integration: only the timing-bound files leave it.
     const integration = [...projects].filter(([, names]) => names.includes('platform-integration'))
