@@ -249,6 +249,8 @@ test.describe('P3-07 the admin Settings page', () => {
     const bodies: Array<{ url: string; text: string }> = []
     const reading: Array<Promise<void>> = []
     page.on('response', (response) => {
+      // The admin's event stream stays open on every page, so its body never ends; AC-4 checks its envelope.
+      if ((response.headers()['content-type'] ?? '').includes('text/event-stream')) return
       reading.push(
         response
           .text()
