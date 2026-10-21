@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { nymbalConfigSchema } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
@@ -21,8 +22,13 @@ import {
 // Acceptance tests for P2-09 AC-5 (b) to (e) (spec P2-09-dev-stage, decision 4; Fable spec M3, M6): each failure
 // exits 1 and has a `down` line naming its cause, and the other checks still run, with the same names as the healthy
 // run of the same config; after a config failure only `config` appears.
-// (b) a configured provider's package is not installed: `package payments` carries the loader's install line;
-// (c) a database with 2 migrations unapplied: `migrations` names the count and `nymbal migrate`;
+// (b) a configured provider's package is not installed: `package payments` carries the loader's install line. In the
+//     monorepo the kernel resolves @nymbalhq/adapter-stripe from packages/platform/node_modules whatever the cwd, so
+//     the child runs with a module.register() resolve hook (as P2-01 AC-7's adapter-graph fixture does) that resolves
+//     the adapter as if imported from an empty directory: Node raises its own not-installed error, for the doctor and
+//     for the kernel loader alike;
+// (c) a database with 2 migrations unapplied: `migrations` names the count and `nymbal migrate`. Rows go by rowid:
+//     Drizzle's SQLite journal declares `id SERIAL PRIMARY KEY`, not a rowid alias, so every `id` is NULL;
 // (d) a missing SQLite file: `command store` is down, `migrations` is `down … not checked: command store down`, and the
 //     file still does not exist afterwards;
 // (e) a slot-rule violation (documentStore 'postgres-jsonb' on a SQLite command store): only `config`, carrying the
@@ -45,6 +51,33 @@ let dir = ''
 let healthy: CliRun
 
 const repo = onDefaultStores(repoConfig)
+
+/**
+ * NODE_OPTIONS for a child in which each of `specifiers` resolves as if imported from an empty directory under `dir`
+ * (no node_modules above it), so Node raises the error it raises for a package that is not installed.
+ */
+function hiding(specifiers: string[]): string {
+  const nowhere = mkdtempSync(join(dir, 'nowhere-'))
+  const hooks = join(nowhere, 'hide-hooks.mjs')
+  const entry = join(nowhere, 'hide-register.mjs')
+  writeFileSync(
+    hooks,
+    [
+      `const hide = ${JSON.stringify(specifiers)}`,
+      `const parentURL = ${JSON.stringify(pathToFileURL(join(nowhere, 'x.mjs')).href)}`,
+      'export async function resolve(specifier, context, nextResolve) {',
+      '  if (hide.includes(specifier)) return nextResolve(specifier, { ...context, parentURL })',
+      '  return nextResolve(specifier, context)',
+      '}',
+      '',
+    ].join('\n'),
+  )
+  writeFileSync(
+    entry,
+    `import { register } from 'node:module'\nregister(${JSON.stringify(pathToFileURL(hooks).href)})\n`,
+  )
+  return `--import=${pathToFileURL(entry).href}`
+}
 const names = (lines: DoctorLine[]) => lines.map((l) => l.name)
 const line = (run: CliRun, name: string) => doctorLines(run.out).find((l) => l.name === name)
 
@@ -88,8 +121,11 @@ describe('P2-09 AC-5: each failure exits 1 and names its cause', () => {
     )
     const sqlitePath = join(project, 'nymbal.db')
     await migratedSqlite(sqlitePath)
-    const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath })
     const stripe = PROVIDER_PACKAGES.payments!['stripe']!
+    const env = cliEnv({
+      NYMBAL_SQLITE_PATH: sqlitePath,
+      NODE_OPTIONS: hiding([stripe.package]),
+    })
 
     const run = await runCli(['doctor'], { cwd: project, env })
     const pkg = line(run, 'package payments')
@@ -106,12 +142,17 @@ describe('P2-09 AC-5: each failure exits 1 and names its cause', () => {
     const sqlitePath = join(dir, 'pending.db')
     await migratedSqlite(sqlitePath)
     const raw = new BetterSqlite3(sqlitePath)
+    const count = () =>
+      (raw.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get() as { n: number }).n
+    const before = count()
     raw
       .prepare(
-        `DELETE FROM __drizzle_migrations WHERE id IN (SELECT id FROM __drizzle_migrations ORDER BY created_at DESC LIMIT ${PENDING})`,
+        `DELETE FROM __drizzle_migrations WHERE rowid IN (SELECT rowid FROM __drizzle_migrations ORDER BY created_at DESC, rowid DESC LIMIT ${PENDING})`,
       )
       .run()
+    const after = count()
     raw.close()
+    expect(after).toBe(before - PENDING)
 
     const run = await runCli(['doctor'], {
       cwd: REPO_ROOT,
