@@ -1,10 +1,16 @@
 import type { Metadata } from 'next'
-import { AddressManager } from '@/components/client/AddressManager'
+import AddressBook from './AddressesView'
+import styles from '@/styles/pages/account.module.css'
 
 export const metadata: Metadata = {
   title: 'Addresses',
 }
 
 export default function AddressesPage() {
-  return <AddressManager />
+  return (
+    <div>
+      <h2 className={styles.pageTitle}>Addresses</h2>
+      <AddressBook />
+    </div>
+  )
 }

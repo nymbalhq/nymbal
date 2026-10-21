@@ -60,26 +60,6 @@
   max-width: 32rem;
 }
 
-.account-form-actions {
-  display: flex;
-  gap: var(--nymbal-spacing-sm, 0.5rem);
-  margin-top: var(--nymbal-spacing-lg, 1.5rem);
-  padding-top: var(--nymbal-spacing-lg, 1.5rem);
-  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
-}
-
-.account-form-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--nymbal-spacing-md, 1rem);
-}
-
-@media (min-width: 641px) {
-  .account-form-row {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 /* ---- Order list ---- */
 
 .order-list {
@@ -189,70 +169,6 @@
   text-decoration: underline;
 }
 
-/* ---- Address cards ---- */
-
-.address-list {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--nymbal-spacing-md, 1rem);
-}
-
-@media (min-width: 641px) {
-  .address-list {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.address-card {
-  border: 1px solid var(--nymbal-color-border, #e4e4e7);
-  border-radius: var(--nymbal-radius-lg, 0.75rem);
-  padding: var(--nymbal-spacing-lg, 1.5rem);
-  position: relative;
-}
-
-.address-card.default {
-  border-color: var(--nymbal-color-accent, #2563eb);
-}
-
-.address-card-badge {
-  display: inline-flex;
-  font-size: var(--nymbal-font-size-xs, 0.75rem);
-  font-weight: var(--nymbal-font-weight-medium, 500);
-  color: var(--nymbal-color-accent, #2563eb);
-  background-color: rgba(37, 99, 235, 0.08);
-  padding: 2px var(--nymbal-spacing-sm, 0.5rem);
-  border-radius: var(--nymbal-radius-full, 9999px);
-  margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
-}
-
-.address-card-name {
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
-  font-weight: var(--nymbal-font-weight-bold, 700);
-  color: var(--nymbal-color-primary, #18181b);
-  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
-}
-
-.address-card-line {
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
-  color: var(--nymbal-color-text-muted, #71717a);
-  line-height: 1.5;
-}
-
-.address-card-actions {
-  display: flex;
-  gap: var(--nymbal-spacing-sm, 0.5rem);
-  margin-top: var(--nymbal-spacing-md, 1rem);
-  padding-top: var(--nymbal-spacing-md, 1rem);
-  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
-}
-
-.address-card-actions button,
-.address-card-actions a {
-  font-size: var(--nymbal-font-size-xs, 0.75rem);
-  font-weight: var(--nymbal-font-weight-medium, 500);
-  padding: var(--nymbal-spacing-xs, 0.25rem) var(--nymbal-spacing-sm, 0.5rem);
-}
-
 /* ---- Auth pages (login/register) ---- */
 
 .auth-page {
@@ -285,12 +201,6 @@
   color: var(--nymbal-color-text-muted, #71717a);
   text-align: center;
   margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
-}
-
-.auth-card .btn {
-  width: 100%;
-  justify-content: center;
-  margin-top: var(--nymbal-spacing-sm, 0.5rem);
 }
 
 .auth-footer {

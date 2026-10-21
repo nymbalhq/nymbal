@@ -1,7 +1,5 @@
 ---
 import '../styles/pages/search.css'
-import '../styles/pages/home.css'
-import '../styles/pages/plp.css'
 import BaseLayout from '../layouts/BaseLayout.astro'
 ---
 
@@ -22,18 +20,11 @@ import BaseLayout from '../layouts/BaseLayout.astro'
   </div>
 
   <div class="container section">
-    <p class="search-query-label" id="search-query-label" style="display:none; margin-bottom: var(--nymbal-spacing-md, 1rem);"></p>
     <div class="search-layout">
       <aside class="search-sidebar">
         <nymbal-product-filter source="search" empty></nymbal-product-filter>
       </aside>
-      <div id="search-results" data-testid="search-results">
-        <div class="search-empty">
-          <div class="search-empty-icon" aria-hidden="true">&#128269;</div>
-          <h2 class="search-empty-title">Search our store</h2>
-          <p class="search-empty-text">Type a keyword to find products.</p>
-        </div>
-      </div>
+      <nymbal-search-results data-testid="search-results"></nymbal-search-results>
     </div>
   </div>
 </BaseLayout>
