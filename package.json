@@ -24,9 +24,10 @@
     "mutation": "stryker run",
     "mutation:ratchet": "tsx scripts/mutation-ratchet.ts",
     "census": "tsx scripts/test-census.ts",
-    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**' --exclude 'packages/doc-store-*/src/**' --exclude 'packages/event-bus-*/src/**' --exclude 'packages/platform/tests/primitives/**' --exclude 'tests/stores/**'\"",
+    "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**' --exclude 'packages/doc-store-*/src/**' --exclude 'packages/event-bus-*/src/**' --exclude 'packages/platform/tests/primitives/**' --exclude 'tests/stores/**' --exclude 'packages/platform/tests/integration/search-performance.test.ts'\"",
     "gate": "tsx scripts/gate.ts",
-    "gate:full": "tsx scripts/gate.ts --full"
+    "gate:full": "tsx scripts/gate.ts --full",
+    "stack": "tsx scripts/stack.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

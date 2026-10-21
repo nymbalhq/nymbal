@@ -53,8 +53,13 @@ export default {
   http: {
     adapter: 'fastify',
     port: 3011,
-    // The custom storefronts' origins (tests/e2e/playwright.config.ts), not the schema's default 3000 and 4321.
-    cors: { allowedOrigins: ['http://localhost:4331', 'http://localhost:3010'] },
+    // The custom storefronts' origins, not the schema's default 3000 and 4321; tests/e2e/playwright.config.ts moves
+    // them with the worktree's stack slot (scripts/stack.ts).
+    cors: {
+      allowedOrigins: env('NYMBAL_CORS_ORIGINS', 'http://localhost:4331,http://localhost:3010')
+        .split(',')
+        .map((origin) => origin.trim()),
+    },
   },
   deployment: {
     strategy: 'standard',

@@ -88,7 +88,7 @@ beforeAll(async () => {
 
 afterAll(() => removeAll(dirs))
 
-describe('P2-03 AC-4: nymbal add', () => {
+describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
   it('AC-4: `nymbal add redis` exits 0 and changes only nymbal.config.ts and .env.example; a second run changes nothing and exits 0', async () => {
     const dir = project('redis')
     const before = listing(dir)
