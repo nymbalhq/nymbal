@@ -36,6 +36,8 @@ function load(source: string): Record<string, Wrapper> {
     '@nymbalhq/web-components': {},
   }
   const require = (id: string): unknown => {
+    // P2-08: each wrapper imports its own element's subpath, which is not under test here either.
+    if (id.startsWith('@nymbalhq/web-components/elements/')) return {}
     if (!(id in modules)) throw new Error(`generated wrappers import ${id}`)
     return modules[id]
   }
@@ -85,7 +87,8 @@ function attributesOf(
   if (wrapper === undefined) throw new Error(`no wrapper for ${tag}`)
   const { container } = render(React.createElement(wrapper, props))
   const el = container.querySelector(tag)
-  const attrs = el === null ? [] : [...el.attributes].map((a): [string, string] => [a.name, a.value])
+  const attrs =
+    el === null ? [] : [...el.attributes].map((a): [string, string] => [a.name, a.value])
   cleanup()
   return attrs.sort(([a], [b]) => a.localeCompare(b))
 }
@@ -163,9 +166,10 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
             const el = container.querySelector(s.tag)
             expect(el, `${s.reactName} renders <${s.tag}>`).not.toBeNull()
             for (const a of s.attributes) {
-              expect(readBack(a.type, el!.getAttribute(a.name)), `${a.prop} sets ${a.name}`).toEqual(
-                props[a.prop],
-              )
+              expect(
+                readBack(a.type, el!.getAttribute(a.name)),
+                `${a.prop} sets ${a.name}`,
+              ).toEqual(props[a.prop])
             }
             for (const e of s.events) {
               el!.dispatchEvent(new CustomEvent(e.name, { detail: { value: detail } }))
@@ -224,7 +228,10 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
             [added.prop]: addedValue,
           })
           expect(was.map(([n]) => n)).not.toContain(added.name)
-          expect(now.filter(([n]) => n !== added.name), target.reactName).toEqual(was)
+          expect(
+            now.filter(([n]) => n !== added.name),
+            target.reactName,
+          ).toEqual(was)
           expect(now.length, `${target.reactName} gains exactly one attribute`).toBe(was.length + 1)
           const raw = now.find(([n]) => n === added.name)?.[1] ?? null
           expect(readBack(added.type, raw), `${added.prop} sets ${added.name}`).toEqual(addedValue)
