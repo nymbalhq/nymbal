@@ -4,6 +4,7 @@ import '../../styles/pages/home.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import Breadcrumb from '../../components/Breadcrumb.astro'
 import ProductCard from '../../components/ProductCard.astro'
+import { EAGER_CARDS } from '../../lib/listing'
 import Pagination from '../../components/Pagination.astro'
 import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
 import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
@@ -58,8 +59,8 @@ const facets = productResult.facets ?? []
         )}
 
         <div class="product-grid" id="product-grid">
-          {products.map((product) => (
-            <ProductCard product={product} />
+          {products.map((product, i) => (
+            <ProductCard product={product} eager={i < EAGER_CARDS} />
           ))}
         </div>
 

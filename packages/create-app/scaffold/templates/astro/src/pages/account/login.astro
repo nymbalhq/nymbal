@@ -19,5 +19,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
 </BaseLayout>
 
 <script>
+  import '../../lib/client.js'
+  import { NymbalLoginForm } from '@nymbalhq/web-components/elements/nymbal-login-form'
   import '../../scripts/signed-in-redirect.js'
+
+  NymbalLoginForm.define()
 </script>

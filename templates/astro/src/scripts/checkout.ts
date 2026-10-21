@@ -1,8 +1,10 @@
 import type { PaymentConfirmContext, PaymentConfirmation } from '@nymbalhq/sdk'
-import type { NymbalPaymentElement } from '@nymbalhq/web-components'
+import { NymbalPaymentElement } from '@nymbalhq/web-components/elements/nymbal-payment-element'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
 import { submitOnce } from '../lib/submit-once.js'
+
+NymbalPaymentElement.define()
 
 const steps = ['contact', 'shipping', 'payment'] as const
 type Step = (typeof steps)[number]

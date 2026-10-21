@@ -1,6 +1,7 @@
 import { css, html, nothing } from 'lit'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { buttonStyles } from '../view-styles.js'
+import { NymbalProductCard } from './product-card.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-search-results',
@@ -30,6 +31,7 @@ const SCHEMA: ElementSchema = {
  */
 export class NymbalSearchResults extends NymbalElement {
   static override schema = SCHEMA
+  static uses = [NymbalProductCard]
   static override properties = propertiesOf(SCHEMA)
   static override styles = [
     baseStyles,

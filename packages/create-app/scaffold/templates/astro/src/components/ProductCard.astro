@@ -11,9 +11,11 @@ interface Props {
     media: any
     imageUrl?: string
   }
+  /** The card is in a listing's first row, so its image is the page's likely LCP: fetched at once, not lazily. */
+  eager?: boolean
 }
 
-const { product } = Astro.props
+const { product, eager = false } = Astro.props
 const imageUrl =
   product.imageUrl ??
   (Array.isArray(product.media) && product.media[0]?.url) ??
@@ -33,7 +35,8 @@ const price =
     src={imageUrl}
     alt={product.name}
     class="product-card-image"
-    loading="lazy"
+    loading={eager ? 'eager' : 'lazy'}
+    fetchpriority={eager ? 'high' : undefined}
     width="600"
     height="600"
   />

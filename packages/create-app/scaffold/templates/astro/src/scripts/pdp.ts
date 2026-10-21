@@ -1,6 +1,13 @@
 import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
+import { NymbalAddToCart } from '@nymbalhq/web-components/elements/nymbal-add-to-cart'
+import { NymbalQuantitySelector } from '@nymbalhq/web-components/elements/nymbal-quantity-selector'
+import { NymbalVariantSelector } from '@nymbalhq/web-components/elements/nymbal-variant-selector'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
+
+NymbalVariantSelector.define()
+NymbalQuantitySelector.define()
+NymbalAddToCart.define()
 
 const slug = document.querySelector<HTMLElement>('[data-product-slug]')?.dataset.productSlug
 const addRow = document.querySelector<HTMLElement>('.pdp-add-row')

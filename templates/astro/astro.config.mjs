@@ -11,4 +11,6 @@ export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   server: { port },
+  // The page's CSS travels in its HTML, so the first paint waits on no stylesheet request (perf-budgets.json: LCP).
+  build: { inlineStylesheets: 'always' },
 })

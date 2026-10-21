@@ -1,4 +1,14 @@
 import '../lib/client.js'
+import { NymbalCartDrawer } from '@nymbalhq/web-components/elements/nymbal-cart-drawer'
+import { NymbalMiniCart } from '@nymbalhq/web-components/elements/nymbal-mini-cart'
+import { NymbalSearchBar } from '@nymbalhq/web-components/elements/nymbal-search-bar'
+import { NymbalToast } from '@nymbalhq/web-components/elements/nymbal-toast'
+
+// The layout's elements; each page script defines the ones its page renders.
+NymbalSearchBar.define()
+NymbalMiniCart.define()
+NymbalCartDrawer.define()
+NymbalToast.define()
 
 // Navigate to checkout when the cart drawer checkout button is clicked
 document.addEventListener('nymbal:cart:checkout-clicked', () => {

@@ -471,3 +471,9 @@ label {
   justify-content: center;
   min-height: 12rem;
 }
+
+/* Before the cart page element is defined it holds the space its loading state does, so the footer stays put. */
+nymbal-cart-page:not(:defined) {
+  display: block;
+  min-height: 100vh;
+}

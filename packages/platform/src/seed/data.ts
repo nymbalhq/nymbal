@@ -65,3 +65,15 @@ export const seedProducts: SeedProduct[] = [
   { slug: 'accelerate', title: 'Accelerate', description: 'The science of lean software and DevOps.', priceMinor: 2400, categorySlug: 'books', imageUrl: img('accelerate') },
   { slug: 'working-effectively-with-legacy-code', title: 'Working Effectively with Legacy Code', description: 'Michael Feathers on rescuing complex codebases.', priceMinor: 3400, categorySlug: 'books', imageUrl: img('legacy-code') },
 ]
+
+const escapeXml = (text: string): string =>
+  text.replace(/[<>&'"]/g, (c) => `&#${c.charCodeAt(0)};`)
+
+/** A 600×600 placeholder for a seed product, its colour derived from the slug, so no image host is needed. */
+export function seedImage(product: SeedProduct): Uint8Array {
+  let hash = 0
+  for (const char of product.slug) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  const hue = hash % 360
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600"><rect width="600" height="600" fill="hsl(${hue} 45% 82%)"/><circle cx="300" cy="260" r="120" fill="hsl(${hue} 40% 62%)"/><text x="300" y="480" font-family="system-ui,sans-serif" font-size="32" text-anchor="middle" fill="hsl(${hue} 40% 22%)">${escapeXml(product.title)}</text></svg>`
+  return new TextEncoder().encode(svg)
+}

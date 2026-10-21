@@ -3,7 +3,7 @@ import type { CustomerAddress } from '@nymbalhq/types'
 import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement } from '../form-element.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
-import type { NymbalAddressForm } from './address-form.js'
+import { NymbalAddressForm } from './address-form.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-address-book',
@@ -40,6 +40,7 @@ const SCHEMA: ElementSchema = {
 /** The signed-in customer's saved addresses, and the form that adds one. */
 export class NymbalAddressBook extends NymbalFormElement {
   static override schema = SCHEMA
+  static uses = [NymbalAddressForm]
   static override properties = propertiesOf(SCHEMA)
   static override styles = [
     baseStyles,

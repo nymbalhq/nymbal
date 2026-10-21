@@ -1,4 +1,9 @@
+import { NymbalProductFilter } from '@nymbalhq/web-components/elements/nymbal-product-filter'
+import { NymbalSearchResults } from '@nymbalhq/web-components/elements/nymbal-search-results'
 import { client } from '../lib/client.js'
+
+NymbalProductFilter.define()
+NymbalSearchResults.define()
 
 // The page owns the term and the category: the URL and the search input search, `nymbal-search-results` renders.
 const searchInput = document.getElementById('search-input') as HTMLInputElement | null

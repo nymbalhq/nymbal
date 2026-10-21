@@ -7,3 +7,10 @@ import BaseLayout from '../layouts/BaseLayout.astro'
     <nymbal-cart-page></nymbal-cart-page>
   </div>
 </BaseLayout>
+
+<script>
+  import '../lib/client.js'
+  import { NymbalCartPage } from '@nymbalhq/web-components/elements/nymbal-cart-page'
+
+  NymbalCartPage.define()
+</script>
