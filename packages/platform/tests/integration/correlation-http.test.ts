@@ -198,38 +198,44 @@ describe('P3-01 AC-3: the inbound x-correlation-id is used only when well formed
     },
   )
 
-  it('AC-3: property: whatever string is sent as x-correlation-id, the echoed id matches decision 3: the value itself when well formed, else a fresh uuidv7', async () => {
+  it('AC-3: property: whatever strings are sent as x-correlation-id (or none) and as request-id, the echoed id matches decision 3: the x-correlation-id itself when well formed, else a fresh uuidv7, never the request-id', async () => {
     const latin1 = fc
       .integer({ min: 0x20, max: 0xff })
       .filter((c) => c !== 0x7f)
       .map((c) => String.fromCharCode(c))
+    const headerValue = fc.oneof(
+      fc.stringMatching(/^[A-Za-z0-9._:-]{1,128}$/),
+      fc.string({ unit: latin1, maxLength: 140 }),
+      fc.string({ unit: latin1, minLength: 129, maxLength: 300 }),
+      fc.string({
+        unit: fc.constantFrom('a', '9', '.', ':', '-', '_', ' ', '\t', '<', '/'),
+        maxLength: 130,
+      }),
+    )
     await fc.assert(
       fc.asyncProperty(
-        fc.oneof(
-          fc.stringMatching(/^[A-Za-z0-9._:-]{1,128}$/),
-          fc.string({ unit: latin1, maxLength: 140 }),
-          fc.string({
-            unit: fc.constantFrom('a', '9', '.', ':', '-', '_', ' ', '\t', '<', '/'),
-            maxLength: 130,
-          }),
-        ),
-        async (sent) => {
+        fc.option(headerValue, { nil: undefined }),
+        headerValue,
+        async (sent, requestId) => {
           const res = await send(served.baseUrl, {
             method: 'GET',
             path: '/api/products?limit=1',
-            headers: { [CORRELATION_HEADER]: sent },
+            headers: {
+              ...(sent !== undefined && { [CORRELATION_HEADER]: sent }),
+              'request-id': requestId,
+            },
           })
-          const received = asReceived(sent)
+          const received = sent === undefined ? undefined : asReceived(sent)
           const echoed = res.correlationId ?? ''
+          const context = `sent ${JSON.stringify(sent)}, request-id ${JSON.stringify(requestId)}, echoed ${JSON.stringify(echoed)}`
 
+          expect(DECISION_3.test(echoed), context).toBe(true)
+          // Well formed: the value itself; otherwise (or absent) a fresh uuidv7, whatever request-id said.
           expect(
-            DECISION_3.test(echoed),
-            `sent ${JSON.stringify(sent)}, echoed ${JSON.stringify(echoed)}`,
-          ).toBe(true)
-          // Well formed: the value itself; otherwise a fresh uuidv7.
-          expect(
-            DECISION_3.test(received) ? echoed === received : UUID_V7.test(echoed),
-            `sent ${JSON.stringify(sent)}, echoed ${JSON.stringify(echoed)}`,
+            received !== undefined && DECISION_3.test(received)
+              ? echoed === received
+              : UUID_V7.test(echoed) && echoed !== asReceived(requestId),
+            context,
           ).toBe(true)
         },
       ),

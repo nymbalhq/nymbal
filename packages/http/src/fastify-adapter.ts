@@ -60,6 +60,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
       logger: false,
       trustProxy: options.trustProxy ?? false,
       disableRequestLogging: true,
+      // Fastify's default takes `req.id` from an inbound `request-id` header, unvalidated; the id is always ours.
+      requestIdHeader: false,
       genReqId: () => uuidv7(),
     })
     // Hooks rather than #buildContext and #applyEnvelope: Fastify's own 404 and body-parse 400 never reach a route
@@ -67,8 +69,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
     this.#app.decorateRequest('correlationId', '')
     this.#app.addHook('onRequest', async (req) => {
       const inbound = req.headers[CORRELATION_ID_HEADER]
-      req.correlationId =
-        typeof inbound === 'string' && isValidCorrelationId(inbound) ? inbound : req.id
+      if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
+      else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
     })
     this.#app.addHook('onSend', async (req, reply, payload) => {
       reply.header(CORRELATION_ID_HEADER, req.correlationId)

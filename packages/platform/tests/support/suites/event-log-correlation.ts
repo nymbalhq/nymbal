@@ -102,9 +102,13 @@ function query(
   store: CommandStore,
   repos: Repositories,
   correlationId: string,
+  types?: string[],
 ): Promise<QueriedRow[]> {
   return store.read((tx) =>
-    repos.eventLog.queryByCorrelation(tx, correlationId, { limit: 1000 }),
+    repos.eventLog.queryByCorrelation(tx, correlationId, {
+      limit: 1000,
+      ...(types !== undefined && { types }),
+    }),
   ) as Promise<QueriedRow[]>
 }
 
@@ -199,22 +203,48 @@ export function eventLogCorrelationSuite(
         ;({ store, repos } = await open(target))
       }, 60_000)
 
-      it('AC-5: property: for any appended envelopes, queryByCorrelation(c) equals the envelopes with correlationId c, in seq order', async () => {
+      it('AC-5: property: for any appended envelopes and any types filter, queryByCorrelation(c) equals the envelopes with correlationId c whose type matches a glob, in seq order', async () => {
+        // `_` and `%` are LIKE's metacharacters on Postgres and must match only themselves; `*` matches any run.
+        const typeArb = fc
+          .string({ unit: fc.constantFrom('a', '_', '%', '.'), minLength: 1, maxLength: 3 })
+          .map((t) => `ac5.${t}`)
+        const globArb = fc.oneof(
+          fc.constant('*'),
+          fc
+            .string({ unit: fc.constantFrom('a', '_', '%', '.', '*'), maxLength: 4 })
+            .map((g) => `ac5.${g}`),
+        )
+        const globMatches = (glob: string, type: string) =>
+          new RegExp(
+            `^${glob
+              .split('*')
+              .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+              .join('.*')}$`,
+            's',
+          ).test(type)
         await fc.assert(
           fc.asyncProperty(
-            fc.array(fc.nat({ max: 3 }), { minLength: 1, maxLength: 14 }),
-            async (picks) => {
+            fc.array(fc.tuple(fc.nat({ max: 3 }), typeArb), { minLength: 1, maxLength: 14 }),
+            fc.option(fc.array(globArb, { minLength: 1, maxLength: 3 }), { nil: undefined }),
+            async (picks, types) => {
               const run = randomUUID()
               const pool = [0, 1, 2, 3].map((k) => `ac5-${run}-${k}`)
-              const envelopes = picks.map((k, i) =>
-                makeEvent(`ac5.prop${i % 3}.v1`, { k, i }, { correlationId: pool[k]! }),
+              const envelopes = picks.map(([k, type], i) =>
+                makeEvent(type, { k, i }, { correlationId: pool[k]! }),
               ) as NymbalEvent<unknown>[]
               await store.transaction((tx) => repos.eventLog.append(tx, envelopes))
 
               for (const id of pool) {
-                const got = await query(store, repos, id)
-                expect(got.map((row) => row.event)).toEqual(
-                  envelopes.filter((e) => e.correlationId === id),
+                const got = await query(store, repos, id, types)
+                expect(
+                  got.map((row) => row.event),
+                  `types ${JSON.stringify(types)}`,
+                ).toEqual(
+                  envelopes.filter(
+                    (e) =>
+                      e.correlationId === id &&
+                      (types === undefined || types.some((glob) => globMatches(glob, e.type))),
+                  ),
                 )
                 expect(got.map((row) => row.seq)).toEqual(
                   got.map((row) => row.seq).sort((x, y) => x - y),
