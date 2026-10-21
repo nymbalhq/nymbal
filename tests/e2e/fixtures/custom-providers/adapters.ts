@@ -11,7 +11,8 @@ import { randomUUID } from 'node:crypto'
 //   the name, a SKU, a variant name or the description), filters by `categoryIds`, pages by an offset cursor and
 //   reports an exact total. Results are in index order: the fixture promises no ranking;
 // - payments: the native stub's `+stub-*` receipt-email rules, with `client()` null, so the storefront has no payment
-//   step to render.
+//   step to render. A refund repeated with the same idempotency key answers the first refund again and moves no money
+//   (P2-13 decision 4: the payments contract's idempotency case runs on this fixture too).
 
 export type Health = { status: 'healthy' | 'degraded' | 'down'; detail?: string }
 
@@ -148,8 +149,19 @@ function statusFor(receiptEmail: string | undefined): PaymentStatus {
   return 'succeeded'
 }
 
+interface Refunded {
+  refundId: string
+  paymentId: string
+  amountMinor: number
+  currency: string
+  reason: string | null
+  status: 'succeeded'
+}
+
 export function createFixturePaymentsAdapter() {
   const intents = new Map<string, Intent>()
+  /** The first answer to each idempotency key: a retry gets it back. */
+  const refunds = new Map<string, Refunded>()
   const toIntent = (i: Intent) => ({
     id: i.id,
     clientSecret: `${i.id}_secret`,
@@ -201,15 +213,22 @@ export function createFixturePaymentsAdapter() {
       amountMinor?: number,
       reason?: string,
       opts?: { idempotencyKey?: string; currency?: string },
-    ) {
-      const answer = (amount: number, currency: string) => ({
-        refundId: `re_fixture_${randomUUID()}`,
-        paymentId,
-        amountMinor: amount,
-        currency,
-        reason: reason ?? null,
-        status: 'succeeded' as const,
-      })
+    ): Promise<Refunded> {
+      const replay =
+        opts?.idempotencyKey === undefined ? undefined : refunds.get(opts.idempotencyKey)
+      if (replay !== undefined) return replay
+      const answer = (amount: number, currency: string): Refunded => {
+        const refund: Refunded = {
+          refundId: `re_fixture_${randomUUID()}`,
+          paymentId,
+          amountMinor: amount,
+          currency,
+          reason: reason ?? null,
+          status: 'succeeded' as const,
+        }
+        if (opts?.idempotencyKey !== undefined) refunds.set(opts.idempotencyKey, refund)
+        return refund
+      }
       if (!paymentId.startsWith(ID_PREFIX)) {
         throw new FixturePaymentError('refund_rejected', `${paymentId} is not a fixture intent`)
       }

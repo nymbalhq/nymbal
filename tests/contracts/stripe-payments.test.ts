@@ -16,6 +16,11 @@ const WEBHOOK_SECRET = 'whsec_test_mock'
  * the Stripe payments adapter makes. Request bodies are form-encoded (that is
  * what stripe-node sends) and the mock honours the amount/currency the
  * adapter sent — nothing the contract asserts is hardcoded here.
+ *
+ * P2-13 decision 4 (spec P2-13-contract-tests-public, Fable spec B3): refunds behave as Stripe's do, so the payments
+ * contract's idempotency case can see a double refund. A POST with an Idempotency-Key it has answered before gets that
+ * answer again and moves nothing; a refund needs a succeeded intent and never exceeds what is left of the amount
+ * received, else it is an invalid request (which the adapter reports as refund_rejected).
  */
 
 /** Stripe wire shape (provider boundary), not a Nymbal domain type. */
@@ -31,15 +36,31 @@ interface MockStripeIntent {
 }
 
 const intents = new Map<string, MockStripeIntent>()
+/** What has been refunded of each intent, in minor units. */
+const refunded = new Map<string, number>()
+/** Each Idempotency-Key's first answer, replayed to a retry as Stripe does. */
+const answered = new Map<string, { statusCode: number; body: unknown }>()
 let seq = 0
 
+/** The Idempotency-Key a response answers, when its request carried one. */
+const keyOf = new WeakMap<ServerResponse, string>()
+
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
-  res.writeHead(statusCode, { 'content-type': 'application/json' })
+  const key = keyOf.get(res)
+  if (key !== undefined) answered.set(key, { statusCode, body })
+  res.writeHead(statusCode, { 'content-type': 'application/json', 'stripe-should-retry': 'false' })
   res.end(JSON.stringify(body))
 }
 
-function sendStripeError(res: ServerResponse, statusCode: number, message: string): void {
-  sendJson(res, statusCode, { error: { type: 'invalid_request_error', message } })
+function sendStripeError(
+  res: ServerResponse,
+  statusCode: number,
+  message: string,
+  code?: string,
+): void {
+  sendJson(res, statusCode, {
+    error: { type: 'invalid_request_error', message, ...(code !== undefined && { code }) },
+  })
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -67,6 +88,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   const method = req.method ?? 'GET'
   const body = await readBody(req)
   const params = new URLSearchParams(body)
+
+  const header = req.headers['idempotency-key']
+  const key = Array.isArray(header) ? header[0] : header
+  const replay = method === 'POST' && key !== undefined ? answered.get(key) : undefined
+  if (replay !== undefined) {
+    sendJson(res, replay.statusCode, replay.body)
+    return
+  }
+  if (method === 'POST' && key !== undefined) keyOf.set(res, key)
 
   if (method === 'POST' && path === '/v1/payment_intents') {
     const amountRaw = params.get('amount')
@@ -124,12 +154,42 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       sendStripeError(res, 404, `No such payment_intent: '${paymentIntentId ?? ''}'`)
       return
     }
+    if (intent.status !== 'succeeded') {
+      sendStripeError(
+        res,
+        400,
+        `This PaymentIntent (${intent.id}) does not have a successful charge to refund.`,
+        'payment_intent_unexpected_state',
+      )
+      return
+    }
+    const left = (intent.amount_received ?? 0) - (refunded.get(intent.id) ?? 0)
     const amountRaw = params.get('amount')
+    const amount = amountRaw !== null ? Number(amountRaw) : left
+    if (left <= 0) {
+      sendStripeError(
+        res,
+        400,
+        `Charge for ${intent.id} has already been refunded.`,
+        'charge_already_refunded',
+      )
+      return
+    }
+    if (amount <= 0 || amount > left) {
+      sendStripeError(
+        res,
+        400,
+        `Refund amount (${amount}) is greater than unrefunded amount on charge (${left})`,
+        'amount_too_large',
+      )
+      return
+    }
+    refunded.set(intent.id, (refunded.get(intent.id) ?? 0) + amount)
     seq += 1
     sendJson(res, 200, {
       id: `re_${seq}`,
       object: 'refund',
-      amount: amountRaw !== null ? Number(amountRaw) : intent.amount,
+      amount,
       currency: intent.currency,
       payment_intent: intent.id,
       reason: params.get('reason'),
@@ -196,7 +256,45 @@ function buildAdapter() {
   })
 }
 
-runPaymentsContract(buildAdapter)
+// P2-13 AC-4 and AC-5: the refund idempotency case against the mock's replay, parsing one signed webhook twice, and the
+// downtime cases on a port nobody listens on.
+runPaymentsContract('stripe', buildAdapter, {
+  unreachable: () =>
+    createStripePaymentsAdapter({
+      logger,
+      config: {
+        secretKey: SECRET_KEY,
+        webhookSecret: WEBHOOK_SECRET,
+        host: '127.0.0.1',
+        port: closedPort,
+        protocol: 'http',
+      },
+    }),
+  signedWebhook: () => {
+    const rawBody = JSON.stringify({
+      id: 'evt_contract_p2_13',
+      object: 'event',
+      api_version: '2025-02-24.acacia',
+      created: Math.floor(Date.now() / 1000),
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_webhook_p2_13',
+          object: 'payment_intent',
+          amount: 1234,
+          amount_received: 1234,
+          currency: 'gbp',
+          status: 'succeeded',
+        },
+      },
+    })
+    const signature = new Stripe(SECRET_KEY).webhooks.generateTestHeaderString({
+      payload: rawBody,
+      secret: WEBHOOK_SECRET,
+    })
+    return { rawBody, signature }
+  },
+})
 
 describe('Stripe payments adapter against the mock Stripe API', () => {
   it('captures the full amount and reports succeeded status', async () => {

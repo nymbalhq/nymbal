@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import type { SearchAdapter, SearchDocument } from '@nymbalhq/types'
-import { matchesQuery, type ContractProduct } from '../../../../tests/contracts/suites/search'
+import { matchesQuery, type ContractProduct } from '../../../contract-tests/src/index.js'
 
 // P2-07 AC-7: a 10k-product catalogue with realistic names, descriptions, SKUs and 20 categories, the same on every
 // run (a seeded generator), and the 50 queries the benchmark times: one and two terms, prefixes, hits and misses.

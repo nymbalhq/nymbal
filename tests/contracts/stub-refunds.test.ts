@@ -108,3 +108,43 @@ describe('native stub: refunds (AC-9)', () => {
     expect(foreign?.code).toBe('payment.refund_rejected')
   })
 })
+
+// P2-13 AC-4 (spec P2-13-contract-tests-public, decision 4, Fable spec B3): the stub keeps a key → refund map, so a
+// refund repeated with the same idempotency key answers the first refund and refunds once. Seen through the payments
+// surface alone (Fable recheck M1): after T/2 twice under one key, the remainder still fits and one more minor unit
+// does not. Kills: a stub that mints a new id and adds the amount on every call (native-stub.ts today).
+describe('native stub: a refund repeated with one idempotency key refunds once (P2-13 AC-4)', () => {
+  it('AC-4: over generated amounts T, refunding T/2 twice under key K gives one refund id; T − T/2 then succeeds and one more minor unit is refund_rejected', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 2, max: 1_000_000 }),
+        fc.constantFrom('EUR', 'JPY', 'GBP'),
+        fc.uuid(),
+        async (total, currency, key) => {
+          const stub = build()
+          const intent = await stub.createPaymentIntent({ amountMinor: total, currency })
+          const half = Math.floor(total / 2)
+
+          const first = await stub.refund(intent.id, half, 'requested_by_customer', {
+            idempotencyKey: key,
+          })
+          const again = await stub.refund(intent.id, half, 'requested_by_customer', {
+            idempotencyKey: key,
+          })
+          expect(again.refundId).toBe(first.refundId)
+          expect(again.amountMinor).toBe(first.amountMinor)
+          const rest = await stub.refund(intent.id, total - half, 'requested_by_customer', {
+            idempotencyKey: `${key}-rest`,
+          })
+          const over = await rejection(
+            stub.refund(intent.id, 1, 'requested_by_customer', { idempotencyKey: `${key}-over` }),
+          )
+
+          expect(rest.amountMinor + first.amountMinor).toBe(total)
+          expect(over?.code).toBe('payment.refund_rejected')
+        },
+      ),
+      { numRuns: 50 },
+    )
+  })
+})
