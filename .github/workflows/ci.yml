@@ -17,7 +17,7 @@ env:
 jobs:
   build:
     name: Build all packages, templates and admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -49,7 +49,7 @@ jobs:
 
   gate:
     name: Gate — lint, typecheck, tests, census trend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -72,7 +72,7 @@ jobs:
 
   integration:
     name: Integration — Postgres, Redis, contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     env:
@@ -147,7 +147,7 @@ jobs:
 
   mutation:
     name: Mutation — Stryker (incremental)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
     # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
     timeout-minutes: 45
@@ -180,7 +180,7 @@ jobs:
 
   sentinels:
     name: Sentinels and tests-fail-on-base
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [build]
     # tests-fail-on-base runs every project against the base, so a new Postgres, Mailpit or S3 test needs its server
@@ -244,7 +244,7 @@ jobs:
 
   coverage:
     name: Coverage gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -301,7 +301,7 @@ jobs:
 
   e2e-astro:
     name: E2E — Astro
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -327,7 +327,7 @@ jobs:
 
   e2e-nextjs:
     name: E2E — Next.js
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -353,7 +353,7 @@ jobs:
 
   e2e-admin:
     name: E2E — Admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -381,7 +381,7 @@ jobs:
   # jobs of their own so the native ones keep their time.
   e2e-astro-custom:
     name: E2E — Astro on custom providers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -407,7 +407,7 @@ jobs:
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -435,7 +435,7 @@ jobs:
   # journeys tagged @nosearch run there.
   e2e-astro-nosearch:
     name: E2E — Astro with no search
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -461,7 +461,7 @@ jobs:
 
   e2e-nextjs-nosearch:
     name: E2E — Next.js with no search
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -487,7 +487,7 @@ jobs:
 
   scaffold-smoke:
     name: Scaffold smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -570,7 +570,7 @@ jobs:
 
   scaffold-clean:
     name: Scaffold from a clean machine (${{ matrix.template }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -600,7 +600,7 @@ jobs:
     name: Changeset
     # The main -> dev back-merge carries no changes of its own.
     if: github.event_name == 'pull_request' && github.head_ref != 'main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:

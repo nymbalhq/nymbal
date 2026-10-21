@@ -11,7 +11,7 @@ env:
 jobs:
   perf-astro:
     name: Performance — Astro
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CI: true
       NYMBAL_TEMPLATE: astro
@@ -52,7 +52,7 @@ jobs:
 
   perf-nextjs:
     name: Performance — Next.js
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CI: true
       NYMBAL_TEMPLATE: nextjs
@@ -93,7 +93,7 @@ jobs:
 
   build:
     name: Build all packages, templates and admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -123,7 +123,7 @@ jobs:
 
   mutation-full:
     name: Mutation — full Stryker run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build]
     timeout-minutes: 120
     steps:
@@ -151,7 +151,7 @@ jobs:
 
   gate-full:
     name: Gate — full, end to end
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -182,7 +182,7 @@ jobs:
   e2e-full:
     # gate-full already runs the desktop projects; this job adds the mobile ones.
     name: E2E — ${{ matrix.target }}, mobile
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build]
     timeout-minutes: 45
     strategy:
@@ -225,7 +225,7 @@ jobs:
     # The same journeys, unedited, on the other store sets: every implementation must give the storefront and
     # the admin the same products, orders, carts, accounts and live events.
     name: E2E — ${{ matrix.target }} on ${{ matrix.stores }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build]
     timeout-minutes: 45
     strategy:
