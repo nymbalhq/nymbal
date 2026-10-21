@@ -143,10 +143,10 @@ export class NymbalAddressBook extends NymbalFormElement {
   }
 
   private renderAddress(a: CustomerAddress) {
-    const isDefault = a.isDefaultShipping || a.isDefaultBilling
     return html`
       <div part="address" data-testid="address-${a.id}">
-        ${isDefault ? html`<span part="address-badge">Default</span>` : nothing}
+        ${a.isDefaultShipping ? html`<span part="address-badge">Default Shipping</span>` : nothing}
+        ${a.isDefaultBilling ? html`<span part="address-badge">Default Billing</span>` : nothing}
         <div part="address-line">${a.firstName} ${a.lastName}</div>
         <div part="address-line">${a.addressLine1}</div>
         ${a.addressLine2 ? html`<div part="address-line">${a.addressLine2}</div>` : nothing}

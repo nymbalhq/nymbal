@@ -46,7 +46,7 @@ const FIELDS: Array<Omit<FieldSpec, 'id' | 'name'> & { name: FieldName; full?: b
 
 /**
  * The address fields, with ids and test ids `<id-prefix>-<field>`. It renders no `<form>`: the view that holds it owns
- * the submit and reads `value`.
+ * the submit (Enter in a field submits it) and reads `value`.
  */
 export class NymbalAddressForm extends NymbalElement {
   static override schema = SCHEMA
@@ -100,10 +100,23 @@ export class NymbalAddressForm extends NymbalElement {
     for (const input of this.renderRoot.querySelectorAll('input')) input.value = ''
   }
 
+  /**
+   * The inputs sit in this shadow root, so they have no form owner and Enter in one submits nothing natively. Enter
+   * submits the form that holds this element instead, as it would if the fields were its own.
+   */
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' || event.isComposing || event.defaultPrevented) return
+    if (!(event.target instanceof HTMLInputElement)) return
+    const form = this.closest('form')
+    if (form === null) return
+    event.preventDefault()
+    form.requestSubmit()
+  }
+
   protected override render() {
     const prefix = this.idPrefix ?? 'address'
     return html`
-      <div part="fields">
+      <div part="fields" @keydown=${this.onKeydown}>
         ${FIELDS.map(
           ({ full, ...f }) =>
             html`<div class=${full ? 'full' : ''}>

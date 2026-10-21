@@ -25,6 +25,9 @@ export class NymbalLoginForm extends NymbalFormElement {
   static override properties = propertiesOf(SCHEMA)
   static override styles = [baseStyles, buttonStyles, fieldStyles]
 
+  // The page leaves on success; a second sign-in while it does would only race the redirect.
+  protected override readonly lockOnSuccess = true
+
   protected override async send(): Promise<void> {
     await this.client.auth.login(this.value('email'), this.value('password'))
     this.emit('nymbal:auth:signed-in', { customer: this.client.auth.getState().customer })

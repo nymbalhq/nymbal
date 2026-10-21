@@ -46,6 +46,8 @@ export abstract class NymbalFormElement extends NymbalElement {
   protected pending = false
   protected error: string | null = null
   protected notice: string | null = null
+  /** Keeps the submit disabled after a success, for a form whose page navigates away on it. */
+  protected readonly lockOnSuccess: boolean = false
 
   /** Reads the fields and makes the call; it must call the SDK before its first `await`. */
   protected abstract send(): Promise<void>
@@ -70,7 +72,7 @@ export abstract class NymbalFormElement extends NymbalElement {
   }
 
   private settle(error: string | null): void {
-    this.pending = false
+    this.pending = error === null && this.lockOnSuccess
     this.error = error
     this.requestUpdate()
   }

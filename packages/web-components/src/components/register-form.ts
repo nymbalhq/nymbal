@@ -36,7 +36,13 @@ export class NymbalRegisterForm extends NymbalFormElement {
     `,
   ]
 
+  // The page leaves on success; a second submit while it does would try to register the email twice.
+  protected override readonly lockOnSuccess = true
+
   protected override async send(): Promise<void> {
+    if (this.value('password') !== this.value('confirmPassword')) {
+      throw new Error('Passwords do not match.')
+    }
     await this.client.auth.register({
       email: this.value('email'),
       password: this.value('password'),
@@ -91,6 +97,15 @@ export class NymbalRegisterForm extends NymbalFormElement {
           required: true,
           minlength: 8,
           placeholder: 'Choose a password',
+        })}
+        ${renderField({
+          id: 'register-confirmPassword',
+          name: 'confirmPassword',
+          label: 'Confirm Password',
+          type: 'password',
+          autocomplete: 'new-password',
+          required: true,
+          placeholder: 'Confirm your password',
         })}
         ${renderField({
           id: 'register-phone',

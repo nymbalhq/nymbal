@@ -147,6 +147,31 @@ test.describe('Search', () => {
     await expect(page).not.toHaveURL(/[?&]q=/)
   })
 
+  // The URL owns the term: Next's search store is a client singleton that outlives a client-side navigation, so a Back
+  // to a bare /search must not show the term the shopper left.
+  test('a client-side Back from a popular search to a bare /search shows the no-term state, not the term left behind', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'nextjs',
+      'Astro’s /search has no popular-search links, and its Back reloads the page with a fresh store',
+    )
+    const noTerm = page.getByRole('heading', { name: 'Search our store' })
+    const resultsFor = page.locator('nymbal-search-results').getByText('Results for')
+    await page.goto('/search')
+    await expect(noTerm).toBeVisible({ timeout: 15000 })
+
+    await page.locator('a[href="/search?q=Shirts"]').click()
+    await expect(page).toHaveURL(/\/search\?q=Shirts$/)
+    await expect(resultsFor).toBeVisible({ timeout: 15000 })
+
+    await page.goBack()
+    await expect(page).not.toHaveURL(/[?&]q=/)
+    await expect(noTerm).toBeVisible({ timeout: 10000 })
+    await expect(resultsFor).toHaveCount(0)
+    await expect(page.locator('[data-testid^="product-card-"]')).toHaveCount(0)
+  })
+
   test('AC-9: a query containing markup is rendered as text, not elements', async ({ page }) => {
     const payload = '<img src=x id=xss-probe onerror="window.__xss=1">'
     await page.goto(`/search?q=${encodeURIComponent(payload)}`)

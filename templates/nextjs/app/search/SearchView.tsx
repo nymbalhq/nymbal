@@ -13,14 +13,24 @@ export function SearchView() {
   const searchParams = useSearchParams()
   const query = searchParams.get('q') ?? ''
   const category = searchParams.get('category')
-  const { results, facets, query: searched, category: searchedCategory, search } = useSearch()
+  const {
+    results,
+    facets,
+    query: searched,
+    category: searchedCategory,
+    search,
+    clearSearch,
+  } = useSearch()
 
   useEffect(() => {
-    // Runs when the URL changes; the filter has already searched the category it writes there.
-    if (query && (query !== searched || category !== searchedCategory)) {
+    // Runs when the URL changes; the filter has already searched the category it writes there. The store outlives
+    // the page on a client-side navigation, so a URL with no term clears what an earlier visit searched.
+    if (!query) {
+      if (searched) clearSearch()
+    } else if (query !== searched || category !== searchedCategory) {
       void search(query, { category })
     }
-  }, [query, category, search])
+  }, [query, category, search, clearSearch])
 
   const onFilterChange = useCallback((event: CustomEvent<{ name: string; value: string }>) => {
     const url = new URL(window.location.href)

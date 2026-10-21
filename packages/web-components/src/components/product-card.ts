@@ -19,7 +19,16 @@ interface CardProduct {
   priceMinor?: number | null
   priceRange?: { minMinor: number; maxMinor: number } | null
   currency?: string | null
+  imageUrl?: string | null
   media?: Array<{ url?: string; alt?: string }>
+}
+
+/** The product's own image, else a placeholder seeded by its slug so a card without media keeps its shape. */
+function imageOf(p: CardProduct): { url: string; alt: string } {
+  if (typeof p.imageUrl === 'string' && p.imageUrl !== '') return { url: p.imageUrl, alt: p.name }
+  const media = p.media?.find((m) => typeof m.url === 'string' && m.url !== '')
+  if (media !== undefined) return { url: media.url!, alt: media.alt ?? p.name }
+  return { url: `https://picsum.photos/seed/${encodeURIComponent(p.slug)}/600/600`, alt: p.name }
 }
 
 function parse(raw: string | undefined): CardProduct | null {
@@ -107,7 +116,7 @@ export class NymbalProductCard extends NymbalElement {
   protected override render() {
     const p = parse(this.product)
     if (p === null) return nothing
-    const image = p.media?.find((m) => typeof m.url === 'string' && m.url !== '')
+    const image = imageOf(p)
     const price = priceOf(p)
     return html`
       <a
@@ -116,16 +125,14 @@ export class NymbalProductCard extends NymbalElement {
         data-testid="product-card-${p.slug}"
       >
         <div part="media">
-          ${image
-            ? html`<img
-                part="image"
-                src=${image.url!}
-                alt=${image.alt ?? p.name}
-                loading="lazy"
-                width="600"
-                height="600"
-              />`
-            : nothing}
+          <img
+            part="image"
+            src=${image.url}
+            alt=${image.alt}
+            loading="lazy"
+            width="600"
+            height="600"
+          />
         </div>
         <div part="body">
           <span part="name">${p.name}</span>

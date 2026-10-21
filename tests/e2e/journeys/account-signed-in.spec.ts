@@ -233,6 +233,7 @@ test.describe('Account views are elements', () => {
     await register.getByTestId('register-lastName').fill(shopper.lastName)
     await register.getByTestId('register-email').fill(shopper.email)
     await register.getByTestId('register-password').fill(shopper.password)
+    await register.getByTestId('register-confirmPassword').fill(shopper.password)
     await register.getByTestId('register-submit').click()
     await page.waitForURL(onAccountHome, { timeout: 15_000 })
 

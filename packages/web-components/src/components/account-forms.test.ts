@@ -7,8 +7,11 @@ import { setupMockClient } from '../testing/index.js'
 // submission. The shopper clicks the submit control, then the form is submitted k - 1 more times (`requestSubmit()`,
 // which fires `submit` even while the control is disabled) while that first call is pending. The call carries the
 // form's fields; while it is pending the submit control is disabled; once it succeeds the form's event fires once and
-// the control re-enables; once it fails the error text shows, the control re-enables and no event fires.
-// Kills: a double click double-submitting, a failure leaving the form stuck, success firing twice or not at all.
+// the control re-enables, except on login and register, whose page navigates away on success: their control stays
+// disabled through the redirect (the human's ruling, 2026-10-21); once it fails the error text shows, the control
+// re-enables and no event fires. Register also asks for the password twice and a mismatch makes no call.
+// Kills: a double click double-submitting, a failure leaving the form stuck, success firing twice or not at all, a
+// sign-in form that re-arms while the page leaves, a mistyped password registered.
 
 interface Deferred {
   promise: Promise<void>
@@ -64,6 +67,8 @@ interface FormCase {
   showsError(before: string, after: string, err: Error): boolean
   /** Checks a success event's detail. */
   detail?(detail: unknown): void
+  /** The submit stays disabled after a success, because the page navigates away on it. */
+  locksOnSuccess?: boolean
 }
 
 const word = fc.stringMatching(/^[A-Z][a-z]{1,9}$/)
@@ -120,18 +125,21 @@ const CASES: FormCase[] = [
     args: (f) => [f['login-email'], f['login-password']],
     showsError: shows,
     detail: signedInDetail,
+    locksOnSuccess: true,
   },
   {
     tag: 'nymbal-register-form',
     submitTestId: 'register-submit',
     event: 'nymbal:auth:signed-in',
-    fields: fc.record({
-      'register-email': email,
-      'register-password': password,
-      'register-firstName': word,
-      'register-lastName': word,
-      'register-phone': phone,
-    }),
+    fields: fc
+      .record({
+        'register-email': email,
+        'register-password': password,
+        'register-firstName': word,
+        'register-lastName': word,
+        'register-phone': phone,
+      })
+      .map((f) => ({ ...f, 'register-confirmPassword': f['register-password'] })),
     rig(held) {
       const client = setupMockClient()
       const call = vi.fn(async () => {
@@ -152,6 +160,7 @@ const CASES: FormCase[] = [
     ],
     showsError: shows,
     detail: signedInDetail,
+    locksOnSuccess: true,
   },
   {
     tag: 'nymbal-profile-form',
@@ -275,7 +284,10 @@ function type(el: Element, id: string, value: string): void {
 
 describe('the moved account forms call the SDK once per submission', () => {
   for (const form of CASES) {
-    it(`AC-4: property: ${form.tag}: k = 1-5 submits while the first call is pending make one call with the form’s fields; success fires ${form.event} once and re-enables ${form.submitTestId}; failure shows the error, re-enables it and fires nothing`, async () => {
+    const afterSuccess = form.locksOnSuccess
+      ? `keeps ${form.submitTestId} disabled`
+      : `re-enables ${form.submitTestId}`
+    it(`AC-4: property: ${form.tag}: k = 1-5 submits while the first call is pending make one call with the form’s fields; success fires ${form.event} once and ${afterSuccess}; failure shows the error, re-enables it and fires nothing`, async () => {
       expect(
         customElements.get(form.tag),
         `${form.tag} is defined by registerComponents()`,
@@ -322,10 +334,17 @@ describe('the moved account forms call the SDK once per submission', () => {
               else held.reject(err)
               await flush(el)
 
+              const locked = succeeds && form.locksOnSuccess === true
               expect(
                 deepByTestId<HTMLButtonElement>(el, form.submitTestId).disabled,
-                'submit re-enables once the call settles',
-              ).toBe(false)
+                locked
+                  ? 'submit stays disabled after a success, through the redirect'
+                  : 'submit re-enables once the call settles',
+              ).toBe(locked)
+              if (locked) {
+                formEl!.requestSubmit()
+                await flush(el)
+              }
               expect(events, `${form.event} events`).toHaveLength(succeeds ? 1 : 0)
               for (const detail of events) form.detail?.(detail)
               // The error text shows after a failure, and only then.
@@ -343,4 +362,42 @@ describe('the moved account forms call the SDK once per submission', () => {
       )
     })
   }
+})
+
+describe('nymbal-register-form asks for the password twice', () => {
+  it('property: a confirmation that differs from the password shows "Passwords do not match." and makes no register call; the submit re-enables', async () => {
+    await fc.assert(
+      fc.asyncProperty(email, password, password, async (address, first, second) => {
+        fc.pre(first !== second)
+        document.body.innerHTML = ''
+        const client = setupMockClient()
+        const call = vi.fn(async () => undefined)
+        auth(client)['register'] = call
+        const events: unknown[] = []
+        const listener = (e: Event) => events.push(e)
+        document.addEventListener('nymbal:auth:signed-in', listener)
+        try {
+          const el = document.createElement('nymbal-register-form')
+          document.body.appendChild(el)
+          await flush(el)
+          type(el, 'register-email', address)
+          type(el, 'register-password', first)
+          type(el, 'register-confirmPassword', second)
+          await flush(el)
+          expect(deepText(el)).not.toContain('Passwords do not match.')
+
+          deepByTestId<HTMLButtonElement>(el, 'register-submit').click()
+          await flush(el)
+
+          expect(call).not.toHaveBeenCalled()
+          expect(events).toHaveLength(0)
+          expect(deepText(el)).toContain('Passwords do not match.')
+          expect(deepByTestId<HTMLButtonElement>(el, 'register-submit').disabled).toBe(false)
+        } finally {
+          document.removeEventListener('nymbal:auth:signed-in', listener)
+        }
+      }),
+      { numRuns: 20 },
+    )
+  })
 })

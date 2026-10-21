@@ -111,8 +111,10 @@ describe('nymbal-cart-page agrees with the cart store', () => {
         for (const [i, item] of items.entries()) {
           const shown = lines(root)[i]!
           expect(shown.textContent, `line ${i}: name`).toContain(item.productName)
-          expect(shown.textContent, `line ${i}: price each`).toContain(
-            formatPrice(item.priceMinor, currency),
+          // The price-each part alone: the whole line also holds its total, and £11.00 contains £1.00.
+          const each = shown.querySelector('[part~="item-price"]')
+          expect(each?.textContent?.replace(/\s+/g, ' ').trim(), `line ${i}: price each`).toBe(
+            `${formatPrice(item.priceMinor, currency)} each`,
           )
           expect(await shownQty(shown), `line ${i}: quantity`).toBe(String(item.qty))
         }
