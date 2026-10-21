@@ -11,6 +11,7 @@ import {
   type ProductSnapshot,
   type ProductCreatedV1Payload,
   type ProductUpdatedV1Payload,
+  type VariantOption,
 } from '@nymbalhq/types'
 
 const PRODUCTS = 'products'
@@ -37,7 +38,7 @@ export interface DenormalisedProduct {
     name: string
     priceMinor: number
     stock: number
-    options: unknown
+    options: VariantOption[]
   }>
   categoryIds: string[]
   categories: Array<{ id: string; name: string; slug: string }>
@@ -47,11 +48,36 @@ export interface DenormalisedProduct {
   sortKey?: string
 }
 
+const isVariantOption = (o: unknown): o is VariantOption =>
+  typeof o === 'object' &&
+  o !== null &&
+  typeof (o as VariantOption).name === 'string' &&
+  typeof (o as VariantOption).value === 'string'
+
+/**
+ * Older product events stored a variant's options as a JSON string; the read model always holds the array, so no
+ * storefront parses them.
+ */
+function variantOptions(raw: unknown, logger: Logger, sku: string): VariantOption[] {
+  let value = raw
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw)
+    } catch (err) {
+      logger.warn({ sku, err }, 'variant options are not JSON; projected as none')
+      return []
+    }
+  }
+  if (!Array.isArray(value)) return []
+  return value.filter(isVariantOption).map((o) => ({ name: o.name, value: o.value }))
+}
+
 function denormalise(
   p: ProductSnapshot,
   storeId: string,
   storeCurrency: string,
   categories: Array<{ id: string; name: string; slug: string }>,
+  logger: Logger,
 ): DenormalisedProduct {
   const prices = p.variants.map((v) => v.priceMinor)
   const priceRange = prices.length
@@ -79,7 +105,7 @@ function denormalise(
       name: v.name,
       priceMinor: v.priceMinor,
       stock: v.stock,
-      options: v.options,
+      options: variantOptions(v.options, logger, v.sku),
     })),
     categoryIds: p.categoryIds,
     categories,
@@ -123,7 +149,7 @@ export async function registerProductProjection(
   ) => {
     const { product } = event.payload
     const categories = await resolveCategories(product.categoryIds, documentStore, storeId)
-    const doc = denormalise(product, storeId, currency, categories)
+    const doc = denormalise(product, storeId, currency, categories, logger)
     await documentStore.put<DenormalisedProduct>(PRODUCTS, product.slug, doc)
     for (const cat of categories) {
       await documentStore.put(

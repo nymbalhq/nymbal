@@ -1,67 +1,58 @@
+import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
 import { formatPrice } from '../lib/format.js'
 
 const slug = document.querySelector<HTMLElement>('[data-product-slug]')?.dataset.productSlug
+const addRow = document.querySelector<HTMLElement>('.pdp-add-row')
+const quantity = addRow?.querySelector('nymbal-quantity-selector')
+const addToCart = addRow?.querySelector('nymbal-add-to-cart')
+
+function setQuantity(qty: number): void {
+  quantity?.setAttribute('value', String(qty))
+  addToCart?.setAttribute('qty', String(qty))
+}
 
 if (slug) {
-  client.product.loadBySlug(slug)
+  // The server rendered variants[0]; a change from it resets the quantity.
+  let shownVariantId = addToCart?.getAttribute('variant-id') ?? null
+
+  addRow?.addEventListener('nymbal:quantity:changed', ((e: CustomEvent<{ value: number }>) => {
+    addToCart?.setAttribute('qty', String(e.detail.value))
+  }) as EventListener)
 
   client.product.subscribe(() => {
-    const state = client.product.getState()
-    if (!state.product) return
+    const { product, selectedVariant } = client.product.getState()
+    if (!product) return
+    const variant = selectedVariant ?? product.variants?.[0]
 
-    const product = state.product
-    const selectedVariant = state.selectedVariant ?? product.variants?.[0]
-
-    // Update price display
     const priceEl = document.querySelector('[data-testid="product-price"]')
-    if (priceEl && selectedVariant) {
+    if (priceEl) {
       const price = formatPrice(
-        selectedVariant.priceMinor ?? product.priceMinor,
+        variant?.priceMinor ?? product.priceMinor ?? 0,
         product.currency ?? 'GBP',
       )
       priceEl.innerHTML = `<span>${price}</span>`
     }
 
-    // Update stock badge
-    const stockEl = document.querySelector('[data-testid="stock-badge"]')
-    if (stockEl && selectedVariant) {
-      const stock = selectedVariant.stock ?? 0
-      let statusClass: string
-      let label: string
-
-      if (stock <= 0) {
-        statusClass = 'out-of-stock'
-        label = 'Out of Stock'
-      } else if (stock < 5) {
-        statusClass = 'low-stock'
-        label = 'Low Stock'
-      } else {
-        statusClass = 'in-stock'
-        label = 'In Stock'
-      }
-
-      stockEl.className = `pdp-stock ${statusClass}`
-      stockEl.innerHTML = `<span class="pdp-stock-dot" aria-hidden="true"></span>${label}`
+    const stock = variant?.stock ?? 0
+    const level = stockLevel(stock)
+    const badge = document.querySelector<HTMLElement>('[data-testid="stock-badge"]')
+    if (badge) {
+      badge.dataset.level = level
+      const label = badge.querySelector('[data-stock-label]')
+      if (label) label.textContent = STOCK_LABELS[level]
     }
 
-    // Update add-to-cart variant-id
-    const addToCart = document.querySelector('nymbal-add-to-cart')
-    if (addToCart && selectedVariant) {
-      addToCart.setAttribute('variant-id', selectedVariant.id)
-      if (selectedVariant.stock <= 0) {
-        addToCart.setAttribute('disabled', '')
-      } else {
-        addToCart.removeAttribute('disabled')
-      }
+    if (addToCart && variant) {
+      addToCart.setAttribute('variant-id', variant.id)
+      addToCart.toggleAttribute('disabled', stock <= 0)
+    }
+
+    if (variant && variant.id !== shownVariantId) {
+      shownVariantId = variant.id
+      setQuantity(1)
     }
   })
 
-  // Listen for variant selection from the web component
-  document.addEventListener('nymbal:variant:selected', ((e: CustomEvent) => {
-    const variantId = e.detail?.variantId
-    if (variantId) {
-      client.product.selectVariant(variantId)
-    }
-  }) as EventListener)
+  client.product.loadBySlug(slug)
 }
