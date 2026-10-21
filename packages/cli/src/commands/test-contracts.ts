@@ -82,6 +82,27 @@ async function slotOptions(
   return block === undefined ? undefined : (block.config ?? {})
 }
 
+/**
+ * `value` with every own key whose value is `undefined` dropped, at any depth: an unset optional
+ * (`apiKey: process.env.ACME_KEY`) is absent, as JSON leaves it. Anything but a plain object or array, and a cycle, is
+ * kept as it is, for survivesJson to refuse.
+ */
+function withoutUndefined(value: unknown, path: Set<object> = new Set()): unknown {
+  if (value === null || typeof value !== 'object' || path.has(value)) return value
+  const proto = Object.getPrototypeOf(value) as unknown
+  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value
+  path.add(value)
+  const out = Array.isArray(value)
+    ? value.map((item) => withoutUndefined(item, path))
+    : Object.fromEntries(
+        Object.entries(value)
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => [k, withoutUndefined(v, path)]),
+      )
+  path.delete(value)
+  return out
+}
+
 /** Whether a JSON round-trip gives `value` back unchanged; a value JSON cannot write (a BigInt, a cycle) does not. */
 function survivesJson(value: unknown): boolean {
   try {
@@ -152,12 +173,14 @@ export async function certifyPackage(input: {
   }
   const createAdapter = mod.createAdapter as (options: unknown) => unknown
   const extra = mod.contractOptions ?? {}
-  const fromSlot = await slotOptions(project, pkg, slot)
+  const slotConfig = await slotOptions(project, pkg, slot)
+  const fromSlot =
+    slotConfig === undefined ? undefined : (withoutUndefined(slotConfig) as Record<string, unknown>)
   const options = fromSlot ?? extra.options ?? {}
   // The generated file carries the slot's record as JSON, so a record JSON changes would certify another adapter.
   if (fromSlot !== undefined && !survivesJson(fromSlot)) {
     throw new CertifyError(
-      `the config of the slot naming ${pkg} holds a value JSON cannot carry (a function, Date, BigInt or undefined): certify it with plain data`,
+      `the config of the slot naming ${pkg} holds a value JSON cannot carry (a function, Date, BigInt or cycle): certify it with plain data`,
     )
   }
 

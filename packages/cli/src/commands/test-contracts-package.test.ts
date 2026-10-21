@@ -49,6 +49,8 @@ afterAll(() => {
 interface Scratch {
   /** The slot's `config` record: the adapter's options. */
   config?: Record<string, unknown>
+  /** The slot's `config` as TypeScript source, for a record JSON cannot write (a Date, an undefined value). */
+  configSource?: string
   /** The package the search slot names. */
   slotPackage?: string
   /** Linked into node_modules, by name. */
@@ -60,6 +62,8 @@ function link(project: string, name: string, target: string): void {
   mkdirSync(dirname(at), { recursive: true })
   symlinkSync(target, at, 'dir')
 }
+
+const CONFIG_SOURCE = '<slot config source>'
 
 /** A store project in a fresh temp directory, far from the workspace's node_modules. */
 function scratchProject(s: Scratch): string {
@@ -81,6 +85,7 @@ function scratchProject(s: Scratch): string {
     provider: 'custom',
     package: s.slotPackage ?? PKG,
     ...(s.config !== undefined && { config: s.config }),
+    ...(s.configSource !== undefined && { config: CONFIG_SOURCE }),
   }
   writeFileSync(
     join(project, 'nymbal.config.ts'),
@@ -109,7 +114,7 @@ function scratchProject(s: Scratch): string {
       },
       null,
       2,
-    )}\n`,
+    ).replace(JSON.stringify(CONFIG_SOURCE), s.configSource ?? '')}\n`,
   )
   return project
 }
@@ -248,6 +253,37 @@ describe('P2-13 AC-6: nymbal test:contracts --package certifies a third-party ad
     expect(run.lines[0]).toContain(NO_FACTORY_PKG)
     expect(run.lines[0]).toContain('createAdapter')
   }, 90_000)
+
+  it(
+    'AC-6: a slot config holding a Date exits 1 with one line naming the package and JSON, and changes nothing; one whose only odd value is an undefined key is certified',
+    () => {
+      const dated = scratchProject({
+        links: ALL_LINKS,
+        configSource: '{ ignoreCursor: false, since: new Date(0) }',
+      })
+      const unset = scratchProject({
+        links: ALL_LINKS,
+        configSource: '{ ignoreCursor: false, apiKey: undefined }',
+      })
+      const before = tree(dated)
+
+      const refused = certify(dated, PKG, 60_000)
+      const certified = certify(unset, PKG)
+
+      expect(refused.status, refused.out).toBe(1)
+      expect(refused.lines, refused.out).toHaveLength(1)
+      expect(refused.lines[0]).toContain(PKG)
+      expect(refused.lines[0]).toContain('JSON')
+      expect(changedOutsideContracts(before, tree(dated))).toEqual([])
+
+      expect(certified.status, certified.out.slice(-3000)).toBe(0)
+      expect(CERTIFIED.exec(certified.out)?.slice(1, 3), certified.out.slice(-3000)).toEqual([
+        PKG,
+        'search',
+      ])
+    },
+    CERTIFY_WITHIN_MS + 90_000,
+  )
 
   it('AC-6: a package the project has not installed exits 1 with one line naming it and the line that installs it', () => {
     const project = scratchProject({
