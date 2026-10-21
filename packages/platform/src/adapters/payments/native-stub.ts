@@ -62,6 +62,8 @@ function toIntent(intent: StubIntent): PaymentIntent {
 export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): PaymentsAdapter {
   const { logger } = deps
   const intents = new Map<string, StubIntent>()
+  /** Each idempotency key's first refund, which a retry under the key gets back without refunding again. */
+  const refunds = new Map<string, Refund>()
   return {
     kind: 'payments',
     providerName: 'native-stub',
@@ -102,15 +104,26 @@ export function createNativeStubPaymentsAdapter(deps: { logger: Logger }): Payme
     },
 
     async refund(paymentId, amountMinor, reason, opts): Promise<Refund> {
+      const key = opts?.idempotencyKey
+      const replay = key === undefined ? undefined : refunds.get(key)
+      if (replay !== undefined) {
+        // As a provider does, a key answers only the payment it was first used for.
+        if (replay.paymentId !== paymentId) throw rejected(`idempotency key ${key} was used for another payment`)
+        return replay
+      }
       if (!paymentId.startsWith(STUB_ID_PREFIX)) throw rejected(`${paymentId} is not a stub intent`)
-      const answer = (amount: number, currency: string): Refund => ({
-        refundId: `re_stub_${uuidv7()}`,
-        paymentId,
-        amountMinor: amount,
-        currency,
-        reason: reason ?? null,
-        status: 'succeeded',
-      })
+      const answer = (amount: number, currency: string): Refund => {
+        const refund: Refund = {
+          refundId: `re_stub_${uuidv7()}`,
+          paymentId,
+          amountMinor: amount,
+          currency,
+          reason: reason ?? null,
+          status: 'succeeded',
+        }
+        if (key !== undefined) refunds.set(key, refund)
+        return refund
+      }
       const intent = intents.get(paymentId)
       if (!intent) {
         if (amountMinor === undefined || amountMinor <= 0 || opts?.currency === undefined) {

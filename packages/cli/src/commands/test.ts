@@ -1,6 +1,7 @@
 import { defineCommand } from 'citty'
 import { loadConfig } from '@nymbalhq/config'
 import { run, runOrFail } from '../utils/spawn.js'
+import { CertifyError, certifyPackage } from './test-contracts.js'
 
 export const testCommand = defineCommand({
   meta: { name: 'test', description: 'Run unit + integration tests (vitest)' },
@@ -55,11 +56,34 @@ export const testVisualCommand = defineCommand({
 })
 
 export const testContractsCommand = defineCommand({
-  meta: { name: 'test:contracts', description: 'Run adapter contract tests' },
+  meta: { name: 'test:contracts', description: 'Run adapter contract tests, or certify an adapter package' },
   args: {
     adapter: { type: 'string', description: 'Run only contracts for a specific adapter (e.g. payments, email)' },
+    package: {
+      type: 'string',
+      description: "Certify an installed adapter package against the published suite for its kind",
+    },
+    slot: { type: 'string', description: 'With --package: the commerce slot whose config builds it' },
   },
   async run({ args }) {
+    if (args.package) {
+      const code = await certifyPackage({
+        pkg: String(args.package),
+        ...(args.slot !== undefined && { slot: String(args.slot) }),
+        cwd: process.cwd(),
+      }).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        const line = err instanceof CertifyError ? message : `test:contracts: ${message}`
+        process.stderr.write(`${line.split('\n')[0]}\n`)
+        return 1
+      })
+      // Exits once the output is written: an adapter under test may hold a connection open after its suite.
+      await Promise.all([
+        new Promise((done) => process.stdout.write('', done)),
+        new Promise((done) => process.stderr.write('', done)),
+      ])
+      process.exit(code)
+    }
     const vArgs = [
       'vitest', 'run',
       '--project', 'contracts-native',

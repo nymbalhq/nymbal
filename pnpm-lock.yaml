@@ -312,6 +312,9 @@ importers:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
     devDependencies:
       tsup:
         specifier: ^8.3.5

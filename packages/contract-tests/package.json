@@ -1,9 +1,16 @@
 {
   "name": "@nymbalhq/contract-tests",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Reusable contract test suites for all Nymbal adapter interfaces",
+  "version": "1.0.0",
+  "description": "The contract suites every Nymbal adapter passes, for certifying your own: `nymbal test:contracts --package <pkg>`",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/contract-tests"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -13,7 +20,13 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./kinds": {
+      "types": "./dist/kinds.d.ts",
+      "import": "./dist/kinds.js",
+      "default": "./dist/kinds.js"
     }
   },
   "files": [
@@ -25,7 +38,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nymbalhq/types": "workspace:*"
+    "@nymbalhq/types": "workspace:*",
+    "fast-check": "^4.10.2"
   },
   "peerDependencies": {
     "vitest": ">=3.0.0"

@@ -766,11 +766,20 @@ async function connect(
   logger: Logger | undefined,
   role: 'commands' | 'reader',
 ): Promise<Redis> {
-  // The reader blocks on the stream and retries for as long as it takes; a command gives up, so a publish fails.
-  const client = new Redis(url, {
-    lazyConnect: true,
-    ...(role === 'reader' && { maxRetriesPerRequest: null }),
-  })
+  // The reader blocks on the stream and retries for as long as it takes. A command waits out at most two reconnect
+  // attempts (each a connect of at most 2 s, a second apart) and then rejects, so a publish on a dead server fails
+  // within the bound; the client keeps reconnecting, so publishes succeed again once the server is back.
+  const client = new Redis(
+    url,
+    role === 'reader'
+      ? { lazyConnect: true, maxRetriesPerRequest: null }
+      : {
+          lazyConnect: true,
+          maxRetriesPerRequest: 1,
+          retryStrategy: (times: number) => Math.min(times * 200, 1000),
+          connectTimeout: 2000,
+        },
+  )
   client.on('error', (err: Error) => logger?.warn({ err, role }, 'redis connection error'))
   try {
     await client.connect()

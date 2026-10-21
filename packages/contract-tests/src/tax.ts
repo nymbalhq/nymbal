@@ -1,37 +1,48 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { TaxAdapter } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
 
-export function runTaxContract(build: () => TaxAdapter): void {
-  describe('TaxAdapter contract', () => {
-    it('calculate returns totalTaxMinor >= 0', async () => {
-      const adapter = build()
-      const result = await adapter.calculate({
-        currency: 'GBP',
-        shippingCountry: 'GB',
-        shippingRegion: 'England',
-        lines: [{ amountMinor: 1000, qty: 2 }],
-      })
-      expect(typeof result.totalTaxMinor).toBe('number')
-      expect(result.totalTaxMinor).toBeGreaterThanOrEqual(0)
-      expect(result.ratePerLine).toHaveLength(1)
-      expect(typeof result.ratePerLine[0]!.taxMinor).toBe('number')
-    })
+const REQUEST = {
+  currency: 'GBP',
+  shippingCountry: 'GB',
+  shippingRegion: 'England',
+  lines: [{ amountMinor: 1000, qty: 2 }],
+}
 
-    it('calculate with zero amount returns zero tax', async () => {
-      const adapter = build()
-      const result = await adapter.calculate({
-        currency: 'GBP',
-        shippingCountry: 'GB',
-        shippingRegion: 'England',
-        lines: [{ amountMinor: 0, qty: 1 }],
-      })
-      expect(result.totalTaxMinor).toBe(0)
-    })
+export function runTaxContract(
+  name: string,
+  build: Build<TaxAdapter>,
+  options: ContractOptions<TaxAdapter> = {},
+): void {
+  describe(`TaxAdapter contract: ${name}`, () => {
+    it(
+      'calculate returns totalTaxMinor >= 0',
+      async () => {
+        const adapter = await build()
+        const result = await adapter.calculate(REQUEST)
+        expect(typeof result.totalTaxMinor).toBe('number')
+        expect(result.totalTaxMinor).toBeGreaterThanOrEqual(0)
+        expect(result.ratePerLine).toHaveLength(1)
+        expect(typeof result.ratePerLine[0]!.taxMinor).toBe('number')
+      },
+      CASE_MS,
+    )
 
-    it('healthCheck returns a valid report', async () => {
-      const adapter = build()
-      const report = await adapter.healthCheck()
-      expect(['healthy', 'degraded', 'down']).toContain(report.status)
-    })
+    it(
+      'calculate with zero amount returns zero tax',
+      async () => {
+        const adapter = await build()
+        const result = await adapter.calculate({
+          ...REQUEST,
+          lines: [{ amountMinor: 0, qty: 1 }],
+        })
+        expect(result.totalTaxMinor).toBe(0)
+      },
+      CASE_MS,
+    )
+
+    healthAndDowntime(build, options.unreachable, 'calculate()', (adapter) =>
+      adapter.calculate(REQUEST),
+    )
   })
 }
