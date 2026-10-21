@@ -16,6 +16,7 @@ import { registerClient } from '../registry.js'
 
 const API = 'http://api.test'
 const VARIANT = 'var-p2-12-qty'
+const POLL = { interval: 1, timeout: 1000 }
 
 interface ItemPost {
   variantId: unknown
@@ -108,10 +109,11 @@ describe('P2-12: add-to-cart takes a quantity', () => {
         document.body.appendChild(el)
         if (attr !== null && setAfterConnect) el.setAttribute('qty', attr)
 
+        // The event follows an async POST; a 1 ms poll keeps 100 runs from costing 100 x waitFor's 50 ms default.
         const button = el.querySelector('button')!
-        await vi.waitFor(() => expect(button.disabled).toBe(false))
+        await vi.waitFor(() => expect(button.disabled).toBe(false), POLL)
         button.click()
-        await vi.waitFor(() => expect(added.length).toBeGreaterThan(0))
+        await vi.waitFor(() => expect(added.length).toBeGreaterThan(0), POLL)
         el.remove()
 
         const want = expectedQty(attr)
