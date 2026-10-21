@@ -83,6 +83,9 @@ export function searchBackfillSuite(
       const db = await fresh()
       try {
         const token = `bf${randomUUID().replace(/-/g, '').slice(0, 12)}`
+        // Only the name carries the token: decision 3 also matches SKUs, so a SKU holding it would keep the renamed
+        // product matching and hide an index that appends the new name instead of replacing the old.
+        const skuToken = `sk${randomUUID().replace(/-/g, '').slice(0, 12)}`
         const ids: string[] = []
         const first = await db.open()
         const target = first.target
@@ -95,7 +98,7 @@ export function searchBackfillSuite(
               status: 'active',
               variants: [
                 {
-                  sku: `BF-${token}-${i}`,
+                  sku: `BF-${skuToken}-${i}`,
                   name: 'Default',
                   priceMinor: 1000,
                   stock: 1,
