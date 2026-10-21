@@ -28,9 +28,15 @@ export function errorText(error: unknown): string {
 }
 
 /**
+ * The shortest value worth removing from text as a secret. A shorter one is too likely to be an ordinary word (a local
+ * password of `nymbal`), whose removal garbles the text; user info and query strings go with the URL rewrite anyway.
+ */
+export const SECRET_MIN_LENGTH = 8
+
+/**
  * The values in a connection URL that are credentials or may carry one: its password and its query values, and its
- * user unless `user` is false, each as written and decoded. Values shorter than 4 characters are left out, so a
- * redaction never eats a common word. A user (often `nymbal`) is worth hiding in a driver's error, not in our own text.
+ * user unless `user` is false, each as written and decoded, if at least `SECRET_MIN_LENGTH` long. A user is worth
+ * hiding in a driver's error, not in our own text.
  */
 export function connectionSecrets(url: string, options: { user?: boolean } = {}): string[] {
   let parsed: URL
@@ -51,7 +57,7 @@ export function connectionSecrets(url: string, options: { user?: boolean } = {})
       return value
     }
   })
-  return [...new Set([...raw, ...decoded])].filter((value) => value.length >= 4)
+  return [...new Set([...raw, ...decoded])].filter((value) => value.length >= SECRET_MIN_LENGTH)
 }
 
 /**

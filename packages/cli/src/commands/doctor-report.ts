@@ -1,7 +1,7 @@
 import pc from 'picocolors'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { DiagnosisReport } from '@nymbalhq/platform'
-import { connectionSecrets, displayUrl } from '@nymbalhq/types'
+import { connectionSecrets, displayUrl, SECRET_MIN_LENGTH } from '@nymbalhq/types'
 
 export interface FormatDoctorOptions {
   json: boolean
@@ -34,13 +34,11 @@ const SECRET_KEY = /secret|passw(?:or)?d|^pass$|token|api[-_]?key|private[-_]?ke
 /** Environment variables whose values are secrets: `STRIPE_SECRET_KEY`, `SMTP_PASS`, `AWS_SECRET_ACCESS_KEY`. */
 const SECRET_ENV =
   /SECRET|PASSWORD|PASSWD|(?:^|_)PASS(?:$|_)|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY/i
-/** A value too plain to be a secret: removing it would only garble the text. */
-const PLAIN = /^(?:true|false|yes|no|on|off|\d{1,5})$/i
 const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"`<>]+/gi
 const TRAILING_PUNCTUATION = /[.,;:)\]}]+$/
 
 function addSecret(into: Set<string>, value: string): void {
-  if (value.length >= 4 && !PLAIN.test(value)) into.add(value)
+  if (value.length >= SECRET_MIN_LENGTH) into.add(value)
 }
 
 function collectFromConfig(value: unknown, key: string, into: Set<string>, seen: WeakSet<object>) {

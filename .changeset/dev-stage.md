@@ -28,6 +28,6 @@
   so a primitive written against the earlier interface still type-checks; doctor reports one without it as
   `no healthCheck`. Every bundled primitive implements it, bounded at 5 s: Redis and Redis Streams `PING`, Postgres
   JSONB a read (and `degraded` until its table exists), S3 `HeadBucket`, local-fs the root's write permission (never a
-  write). `@nymbalhq/types` adds `HEALTH_CHECK_TIMEOUT_MS`, `boundedHealthCheck`, `connectionSecrets`, `displayUrl` and
-  `errorText` for implementing one.
+  write). `@nymbalhq/types` adds `HEALTH_CHECK_TIMEOUT_MS`, `boundedHealthCheck`, `connectionSecrets`, `displayUrl`,
+  `errorText` and `SECRET_MIN_LENGTH` for implementing one.
 - `createCommandStore` takes `readOnly: true` to open the store without changing it.
