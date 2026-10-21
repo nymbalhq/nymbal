@@ -91,6 +91,7 @@ async function walk(
   // Room for every page an exact walk needs, and two more: a walk past it is one whose cursor does not advance.
   const maxPages = Math.ceil(expectedMatches / limit) + 2
   const pages: SearchResult[] = []
+  const seen = new Set<string>()
   let cursor: string | undefined
   for (;;) {
     const page = await adapter.search(query, {
@@ -99,6 +100,11 @@ async function walk(
       ...(filters !== undefined && { filters }),
     })
     pages.push(page)
+    // Fails at the first repeat rather than after the whole walk: a cursor read as page 1 then costs two pages, not
+    // every page, on each of the runs fast-check shrinks through.
+    const again = page.items.map((item) => item.id).filter((id) => seen.has(id))
+    expect(again, `the walk for "${query}": an id came back on page ${pages.length}`).toEqual([])
+    for (const item of page.items) seen.add(item.id)
     if (page.nextCursor === null) return pages
     expect(
       pages.length,
@@ -220,15 +226,17 @@ export function runSearchContract(
           const adapter = await build()
           await fc.assert(
             fc.asyncProperty(
+              // The page size first: fast-check shrinks the arguments in order, so a failing walk shrinks its limit
+              // before its catalogue, and the catalogue's products are shrunk once there are few of them.
+              fc.integer({ min: 1, max: 40 }),
               fc.array(fc.record({ first: genProduct, second: fc.option(genProduct) }), {
                 maxLength: 300,
                 size: 'large',
               }),
               fc.array(word, { maxLength: 2 }),
-              fc.integer({ min: 1, max: 40 }),
               fc.integer({ min: 0, max: CATEGORIES - 1 }),
               fc.func(fc.boolean()),
-              async (catalogue, queryWords, limit, filterCategory, removeIt) => {
+              async (limit, catalogue, queryWords, filterCategory, removeIt) => {
                 const token = runToken()
                 const cats = runCategories(token)
                 const first = catalogue.map((c, i) => materialise(token, c.first, i, cats))
