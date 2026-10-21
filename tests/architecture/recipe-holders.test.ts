@@ -85,7 +85,7 @@ function leaves(recipe: Recipe): Array<[string, RecipeValue]> {
 }
 
 describe('P2-03 AC-1: recipe holders', () => {
-  it('AC-1: RECIPE_HOLDERS maps the four recipes to the packages decision 1 names', () => {
+  it('AC-1 (and P2-04 AC-9): RECIPE_HOLDERS maps the five recipes to the packages decision 1 and P2-04 name', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
   })
 

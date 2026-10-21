@@ -143,3 +143,59 @@ describe('P2-01 AC-6: provider SDKs live in adapter packages, never in the kerne
     expect(offenders).toEqual([])
   })
 })
+
+// Acceptance tests for P2-04 AC-10 (spec P2-04-cloudflare-waf, Decision 1): @nymbalhq/security-cloudflare publishes as
+// the adapter packages do: in the changesets fixed group at the kernel's version, `dist` and `recipes` in `files` and
+// `./recipes/*` exported, depending on @nymbalhq/types and never on the kernel, with no Cloudflare SDK anywhere (it
+// talks to the API with fetch), and peered by the kernel as optional and linked for the workspace, so the kernel's
+// loader resolves it. Kills: a new package outside the group (P2-02's 2.0.0 slip), its recipe missing from the tarball,
+// and a package the kernel cannot resolve from a project.
+
+const SECURITY = { dir: 'packages/security-cloudflare', name: '@nymbalhq/security-cloudflare' }
+
+describe('P2-04 AC-10: @nymbalhq/security-cloudflare publishes like the adapter packages', () => {
+  it("AC-10: it is in the fixed group the kernel is in, at the kernel's version", () => {
+    const changesets = JSON.parse(
+      readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
+    ) as { fixed: string[][] }
+    const group = changesets.fixed.find((g) => g.includes('@nymbalhq/platform')) ?? []
+
+    expect(group).toContain(SECURITY.name)
+    expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
+    expect(read(SECURITY.dir).version).toBe(read('packages/platform').version)
+  })
+
+  it('AC-10: its files hold dist and recipes, and it exports ./recipes/*', () => {
+    expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
+    const m = read(SECURITY.dir) as PackageManifest & { exports?: Record<string, unknown> }
+    const files = (Array.isArray(m.files) ? (m.files as string[]) : []).map((f) =>
+      f.replace(/^\.\//, '').replace(/\/$/, ''),
+    )
+
+    expect(m.name).toBe(SECURITY.name)
+    expect(['dist', 'recipes'].filter((f) => !files.includes(f))).toEqual([])
+    expect(m.exports?.['./recipes/*']).toBe('./recipes/*')
+  })
+
+  it('AC-10: it depends on @nymbalhq/types, never on the kernel, and lists no Cloudflare SDK and no peer', () => {
+    expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
+    const m = read(SECURITY.dir)
+
+    expect(Object.keys(m.dependencies ?? {})).toContain('@nymbalhq/types')
+    expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
+    expect(
+      listed(m, DEPENDENCY_FIELDS).filter((n) => n === 'cloudflare' || n.startsWith('cloudflare/')),
+    ).toEqual([])
+    expect(Object.keys(m.peerDependencies ?? {})).toEqual([])
+  })
+
+  it('AC-10: the kernel peers it as optional and links it for the workspace, as it does the adapter packages', () => {
+    const platform = read('packages/platform')
+
+    expect(platform.peerDependencies?.[SECURITY.name]).toBe(
+      platform.peerDependencies?.['@nymbalhq/adapter-stripe'],
+    )
+    expect(platform.peerDependenciesMeta?.[SECURITY.name]?.optional).toBe(true)
+    expect(platform.devDependencies?.[SECURITY.name]).toBe('workspace:*')
+  })
+})
