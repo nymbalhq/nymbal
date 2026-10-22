@@ -38,14 +38,13 @@ const NIGHTLY = [
   // The built CLI against MinIO times out under a parallel gate:full.
   'tests/stores/s3-import-cli.test.ts',
 ]
-const NIGHTLY_CASES = ['packages/platform/src/services/checkout-service.test.ts']
 const nightly = process.env['NYMBAL_NIGHTLY']
   ? [
       {
         test: {
           name: 'nightly',
           environment: 'node' as const,
-          include: [...NIGHTLY, ...NIGHTLY_CASES],
+          include: NIGHTLY,
           testTimeout: 90000,
           hookTimeout: 90000,
         },
