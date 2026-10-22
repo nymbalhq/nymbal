@@ -64,6 +64,13 @@
       "when": 1792609199341,
       "tag": "0008_event_correlation",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792617492050,
+      "tag": "0009_settings",
+      "breakpoints": true
     }
   ]
 }
