@@ -22,6 +22,7 @@ export interface LoginFormProps {
   onSignedIn?: (event: CustomEvent<{ customer: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -43,7 +44,7 @@ export const LoginForm = /* @__PURE__ */ forwardRef<HTMLElement, LoginFormProps>
     useDefine(NymbalLoginForm)
 
     return (
-      <nymbal-login-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-login-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-login-form>
     )

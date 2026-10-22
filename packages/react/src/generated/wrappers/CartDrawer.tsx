@@ -23,6 +23,7 @@ export interface CartDrawerProps {
   onCheckoutClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -52,7 +53,7 @@ export const CartDrawer = /* @__PURE__ */ forwardRef<HTMLElement, CartDrawerProp
     useDefine(NymbalCartDrawer)
 
     return (
-      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-cart-drawer>
     )

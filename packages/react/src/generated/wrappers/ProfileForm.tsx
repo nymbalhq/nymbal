@@ -22,6 +22,7 @@ export interface ProfileFormProps {
   onSaved?: (event: CustomEvent<{ customer: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -43,7 +44,7 @@ export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormPr
     useDefine(NymbalProfileForm)
 
     return (
-      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-profile-form>
     )

@@ -24,6 +24,7 @@ export interface SearchBarProps {
   onSearchSelect?: (event: CustomEvent<{ product: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -63,7 +64,7 @@ export const SearchBar = /* @__PURE__ */ forwardRef<HTMLElement, SearchBarProps>
     useDefine(NymbalSearchBar)
 
     return (
-      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-search-bar>
     )

@@ -23,6 +23,7 @@ export interface PaymentElementProps {
   onStatusChange?: (event: CustomEvent<{ status: 'pending' | 'ready' | 'error' }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -52,7 +53,7 @@ export const PaymentElement = /* @__PURE__ */ forwardRef<HTMLElement, PaymentEle
     useDefine(NymbalPaymentElement)
 
     return (
-      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-payment-element>
     )

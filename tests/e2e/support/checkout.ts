@@ -114,19 +114,35 @@ export function orderNumberOf(page: Page): string {
   return decodeURIComponent(match[1]!)
 }
 
-/** Flags, in `window`, any moment the page (its title or body) says "Order confirmed", even briefly. */
+/**
+ * Flags, in `window`, any moment the page (its title, its body or any shadow root in it) says "Order confirmed", even
+ * briefly. A document `MutationObserver` never sees a mutation inside a shadow tree, and the body's `textContent`
+ * leaves shadow-root text out (P2-16 Decision 8), so every root `attachShadow` creates is observed and read too.
+ */
 export async function watchConfirmedClaim(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const w = window as unknown as { __nymbalSaidConfirmed?: boolean }
+    const roots: ShadowRoot[] = []
     const check = () => {
-      const shown = `${document.title} ${document.body?.textContent ?? ''}`
+      const shown = [document.title, document.body?.textContent ?? '']
+        .concat(roots.map((root) => root.textContent ?? ''))
+        .join(' ')
       if (/order confirmed/i.test(shown)) w.__nymbalSaidConfirmed = true
     }
-    new MutationObserver(check).observe(document, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    })
+    const watch = (target: Node) =>
+      new MutationObserver(check).observe(target, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      })
+    const attachShadow = Element.prototype.attachShadow
+    Element.prototype.attachShadow = function (this: Element, init: ShadowRootInit): ShadowRoot {
+      const root = attachShadow.call(this, init)
+      roots.push(root)
+      watch(root)
+      return root
+    }
+    watch(document)
   })
 }
 

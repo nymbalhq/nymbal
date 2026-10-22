@@ -22,6 +22,7 @@ export interface AddressFormProps {
   idPrefix?: string
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -45,7 +46,7 @@ export const AddressForm = /* @__PURE__ */ forwardRef<HTMLElement, AddressFormPr
     useDefine(NymbalAddressForm)
 
     return (
-      <nymbal-address-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-address-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-address-form>
     )

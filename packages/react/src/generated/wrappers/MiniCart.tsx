@@ -22,6 +22,7 @@ export interface MiniCartProps {
   onClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -43,7 +44,7 @@ export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
     useDefine(NymbalMiniCart)
 
     return (
-      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-mini-cart>
     )

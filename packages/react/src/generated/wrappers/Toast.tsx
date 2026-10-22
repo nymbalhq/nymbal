@@ -23,6 +23,7 @@ export interface ToastProps {
   durationMs?: number
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -56,7 +57,7 @@ export const Toast = /* @__PURE__ */ forwardRef<HTMLElement, ToastProps>(
     useDefine(NymbalToast)
 
     return (
-      <nymbal-toast ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-toast ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-toast>
     )

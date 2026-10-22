@@ -26,6 +26,7 @@ export interface AddToCartProps {
   children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -75,7 +76,7 @@ export const AddToCart = /* @__PURE__ */ forwardRef<HTMLElement, AddToCartProps>
     useDefine(NymbalAddToCart)
 
     return (
-      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         {props.children}
       </nymbal-add-to-cart>
     )

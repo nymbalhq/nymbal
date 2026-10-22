@@ -25,6 +25,7 @@ export interface QuantitySelectorProps {
   onQuantityChange?: (event: CustomEvent<{ value: number }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -74,7 +75,7 @@ export const QuantitySelector = /* @__PURE__ */ forwardRef<HTMLElement, Quantity
     useDefine(NymbalQuantitySelector)
 
     return (
-      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-quantity-selector>
     )

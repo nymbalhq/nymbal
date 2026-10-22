@@ -17,6 +17,7 @@ import { NymbalRegisterForm } from './components/register-form.js'
 import { NymbalProfileForm } from './components/profile-form.js'
 import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
+import { NymbalCheckout } from './components/checkout.js'
 
 const ELEMENTS = [
   NymbalAddToCart,
@@ -37,6 +38,7 @@ const ELEMENTS = [
   NymbalProfileForm,
   NymbalAddressForm,
   NymbalAddressBook,
+  NymbalCheckout,
 ]
 
 /**

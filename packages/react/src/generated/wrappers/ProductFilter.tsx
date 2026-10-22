@@ -24,6 +24,7 @@ export interface ProductFilterProps {
   onFilterChange?: (event: CustomEvent<{ name: string; value: string }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -63,7 +64,7 @@ export const ProductFilter = /* @__PURE__ */ forwardRef<HTMLElement, ProductFilt
     useDefine(NymbalProductFilter)
 
     return (
-      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-product-filter>
     )

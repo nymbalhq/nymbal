@@ -22,6 +22,7 @@ export interface VariantSelectorProps {
   onVariantSelected?: (event: CustomEvent<{ variant: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -43,7 +44,7 @@ export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSe
     useDefine(NymbalVariantSelector)
 
     return (
-      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-variant-selector>
     )

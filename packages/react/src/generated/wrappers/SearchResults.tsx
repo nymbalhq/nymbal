@@ -21,6 +21,7 @@ function useDefine(element: { define(): void }): void {
 export interface SearchResultsProps {
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -36,7 +37,7 @@ export const SearchResults = /* @__PURE__ */ forwardRef<HTMLElement, SearchResul
     useDefine(NymbalSearchResults)
 
     return (
-      <nymbal-search-results ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-search-results ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-search-results>
     )

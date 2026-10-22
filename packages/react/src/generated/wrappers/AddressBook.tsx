@@ -22,6 +22,7 @@ export interface AddressBookProps {
   onChanged?: (event: CustomEvent<{ address: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -43,7 +44,7 @@ export const AddressBook = /* @__PURE__ */ forwardRef<HTMLElement, AddressBookPr
     useDefine(NymbalAddressBook)
 
     return (
-      <nymbal-address-book ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-address-book ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-address-book>
     )

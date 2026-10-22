@@ -28,6 +28,8 @@ function generatePropInterface(schema: ElementSchema): string {
   }
   lines.push(`  className?: string`)
   lines.push(`  style?: React.CSSProperties`)
+  // The named slot this element fills in its parent element (the checkout's payment slot).
+  lines.push(`  slot?: string`)
   lines.push(`  'data-testid'?: string`)
   return `export interface ${schema.reactName}Props {\n${lines.join('\n')}\n}`
 }
@@ -86,7 +88,7 @@ ${eventEffects}
     useDefine(${elementClass(schema)})
 
     return (
-      <${schema.tag} ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <${schema.tag} ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         ${childSlot}
       </${schema.tag}>
     )

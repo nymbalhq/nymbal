@@ -22,6 +22,7 @@ export interface ProductCardProps {
   product?: unknown
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -45,7 +46,7 @@ export const ProductCard = /* @__PURE__ */ forwardRef<HTMLElement, ProductCardPr
     useDefine(NymbalProductCard)
 
     return (
-      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-product-card>
     )

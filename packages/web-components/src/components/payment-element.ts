@@ -148,7 +148,7 @@ export class NymbalPaymentElement extends NymbalElement {
     const generation = ++this._generation
     this._driver = null
     this._mounted = Promise.resolve(true)
-    this.replaceChildren()
+    this.clear()
 
     const client = parseClient(attribute)
     if (client === undefined)
@@ -184,8 +184,19 @@ export class NymbalPaymentElement extends NymbalElement {
     p.setAttribute('data-testid', 'payment-element-error')
     p.setAttribute('role', 'alert')
     p.textContent = message
-    this.replaceChildren(p)
+    this.clear(p)
     this.setStatus('error')
+  }
+
+  /**
+   * Replaces what a driver or an error rendered. Lit's marker comment stays: its next update (a new `client`) writes
+   * at it, and throws once it is gone.
+   */
+  private clear(...nodes: Node[]): void {
+    for (const child of [...this.childNodes]) {
+      if (child.nodeType !== Node.COMMENT_NODE) child.remove()
+    }
+    this.append(...nodes)
   }
 
   private setStatus(status: PaymentElementStatus): void {
