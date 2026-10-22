@@ -7,7 +7,9 @@ import { mutateSet } from './gate'
 
 // The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
 // file below its entry fails. `check` runs in gate:full after Stryker and `check --static` (entries against the
-// mutate set, no report) in the plain gate; `update` raises entries and never lowers one.
+// mutate set, no report) in the plain gate; `update` raises entries and never lowers one: with `--total` every
+// file, otherwise only the files changed since the base (`--base`, GATE_BASE, origin/dev) or named by `--files`,
+// and files with no entry yet.
 // Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100.
 
 export type Scores = Record<string, number>
@@ -80,8 +82,49 @@ export function raise(ratchet: Scores, scores: Scores): Scores {
   return Object.fromEntries(Object.entries(raised).sort(([a], [b]) => a.localeCompare(b)))
 }
 
+/**
+ * `raise`, confined to `changed` and to files with no entry yet: an incremental run measures the files a change
+ * touched, and the rest of its scores carry one-mutant noise from a cache (raising 16 entries to one run's exact
+ * scores made the next run red in five untouched files on 2026-10-22). Those files keep their entries.
+ */
+export function raiseWithin(ratchet: Scores, scores: Scores, changed: Iterable<string>): Scores {
+  const within = new Set(changed)
+  const eligible = Object.fromEntries(
+    Object.entries(scores).filter(([file]) => within.has(file) || ratchet[file] === undefined),
+  )
+  return raise(ratchet, eligible)
+}
+
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, 'utf8')) as T
+}
+
+/** The merge base of HEAD and `ref`, or undefined when `ref` does not resolve. */
+function mergeBase(root: string, ref: string): string | undefined {
+  const r = spawnSync('git', ['merge-base', 'HEAD', ref], { cwd: root, encoding: 'utf8' })
+  return r.status === 0 ? r.stdout.trim() : undefined
+}
+
+/**
+ * The files `update` may raise: `--files` when given, else the work tree's changes against the merge base with
+ * `--base` (GATE_BASE in CI, origin/dev by default, origin/main before dev exists).
+ */
+function raisable(root: string, files: string | undefined, base: string | undefined): string[] {
+  if (files !== undefined)
+    return files
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean)
+  const refs = base === undefined ? ['origin/dev', 'origin/main'] : [base]
+  const at = refs.map((ref) => mergeBase(root, ref)).find((sha) => sha !== undefined)
+  if (at === undefined) {
+    throw new Error(
+      `update raises the files changed since ${refs.join(' or ')}, which does not resolve: pass --base <ref> or --files <a,b>`,
+    )
+  }
+  return execFileSync('git', ['diff', '--name-only', at], { cwd: root, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
 }
 
 /** The tracked files in Stryker's mutate set, or undefined outside a git work tree, where nothing is tracked. */
@@ -171,6 +214,7 @@ async function update(
   ratchetPath: string,
   total: boolean,
   command: string,
+  changed: () => string[],
 ): Promise<number> {
   const before: Ratchet | undefined = existsSync(ratchetPath)
     ? readJson<Ratchet>(ratchetPath)
@@ -187,7 +231,14 @@ async function update(
   const follow = (scores: Scores): Scores =>
     Object.fromEntries(Object.entries(scores).filter(([path]) => inSet.has(path)))
   const dropped = Object.keys(before?.files ?? {}).filter((path) => !inSet.has(path))
-  const files = raise(follow(before?.files ?? {}), follow(scoreByFile(report)))
+  const held = follow(before?.files ?? {})
+  const scores = follow(scoreByFile(report))
+  // A full run's scores are all measured afresh; an incremental run's are trusted only where the change reached.
+  const files = total ? raise(held, scores) : raiseWithin(held, scores, changed())
+  const kept = Object.keys(scores).filter((path) => {
+    const was = held[path]
+    return was !== undefined && files[path] === was && (scores[path] ?? 0) > was
+  })
   let next: Ratchet
   if (total) {
     // The total stands for the whole mutate set, so a report from a run over part of it cannot set it.
@@ -212,6 +263,9 @@ async function update(
   for (const path of dropped) {
     process.stdout.write(`dropped (not in the mutate set): ${path}\n`)
   }
+  for (const path of kept) {
+    process.stdout.write(`kept (not changed in the range; --files to raise it): ${path}\n`)
+  }
   process.stdout.write(
     `wrote ${ratchetPath}: ${Object.keys(next.files).length} file(s), total ${next.total.toFixed(2)}\n`,
   )
@@ -228,6 +282,8 @@ async function main(argv: string[]): Promise<number> {
       total: { type: 'boolean', default: false },
       command: { type: 'string', default: DEFAULT_COMMAND },
       static: { type: 'boolean', default: false },
+      files: { type: 'string' },
+      base: { type: 'string', default: process.env['GATE_BASE'] },
     },
   })
   const [subcommand] = positionals
@@ -235,13 +291,16 @@ async function main(argv: string[]): Promise<number> {
   if (subcommand === 'check' && values.static) return staticCheck(ratchetPath)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
     throw new Error(
-      'usage: mutation-ratchet.ts check --static [--ratchet <file>] | check|update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>]',
+      'usage: mutation-ratchet.ts check --static [--ratchet <file>] | check --report <mutation.json> [--ratchet <file>] | update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
     )
   }
   const report = readJson<unknown>(resolve(values.report))
+  const base = values.base === undefined || values.base === '' ? undefined : values.base
   return subcommand === 'check'
     ? check(report, ratchetPath)
-    : update(report, ratchetPath, values.total, values.command)
+    : update(report, ratchetPath, values.total, values.command, () =>
+        raisable(process.cwd(), values.files, base),
+      )
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

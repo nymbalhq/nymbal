@@ -23,6 +23,7 @@ type Ratchet = { measuredAt: string; command: string; total: number; files: Scor
 type RatchetModule = {
   scoreByFile: (report: unknown) => Scores
   raise: (ratchet: Scores, scores: Scores) => Scores
+  raiseWithin: (ratchet: Scores, scores: Scores, changed: Iterable<string>) => Scores
 }
 
 async function ratchetModule(): Promise<RatchetModule> {
@@ -380,10 +381,27 @@ describe('AC-3: the ratchet only rises', () => {
     )
   })
 
-  it('AC-3: property: update without --total raises file entries through the CLI and leaves total, measuredAt and command as they were', async () => {
+  it('audit 2026-10-22: property: raiseWithin raises a file iff it is in `changed` or has no entry; every other entry stays as it was', async () => {
+    const { raise, raiseWithin } = await ratchetModule()
+    fc.assert(
+      fc.property(scores, scores, fc.array(fc.nat({ max: 12 }).map(pathOf)), (r, s, changed) => {
+        const within = raiseWithin(r, s, changed)
+        const all = raise(r, s)
+        expect(Object.keys(within).sort()).toEqual(Object.keys(all).sort())
+        for (const f of Object.keys(within)) {
+          const eligible = changed.includes(f) || !(f in r)
+          expect(within[f], `${f} ${eligible ? 'raised' : 'kept'}`).toBe(eligible ? all[f] : r[f])
+        }
+      }),
+      { numRuns: 300 },
+    )
+  })
+
+  it('AC-3 (audit 2026-10-22): property: update without --total raises, through the CLI, the entries of the files --files names and the files with no entry, keeps the rest, and leaves total, measuredAt and command as they were', async () => {
     const fileCase = fc.record({
       score: exactScore,
       inReport: fc.boolean(),
+      changed: fc.boolean(),
       ratchet: fc.option(fc.integer({ min: 0, max: 10000 }), { nil: undefined }),
     })
     // Paths from the real mutate set: update keeps entries only for those (AC-5b).
@@ -394,12 +412,15 @@ describe('AC-3: the ratchet only rises', () => {
         const rep: Record<string, Status[]> = {}
         const files: Scores = {}
         const expected: Scores = {}
+        const changed: string[] = []
         cases.forEach((c, i) => {
           const path = set[i]!
           const cents = centsOf(c.score.killed, c.score.n)
           if (c.inReport) rep[path] = exactFile(c.score.killed, c.score.n, c.score.ignored)
           if (c.ratchet !== undefined) files[path] = c.ratchet / 100
-          const best = Math.max(c.inReport ? cents : -1, c.ratchet ?? -1)
+          if (c.changed) changed.push(path)
+          const raisable = c.changed || c.ratchet === undefined
+          const best = Math.max(c.inReport && raisable ? cents : -1, c.ratchet ?? -1)
           if (best >= 0) expected[path] = best / 100
         })
         const before: Ratchet = {
@@ -416,14 +437,64 @@ describe('AC-3: the ratchet only rises', () => {
           reportFile,
           '--ratchet',
           ratchetFile,
+          '--files',
+          changed.join(','),
         ])
         expect(code, output).toBe(0)
         const after = readRatchet(ratchetFile)
         expect(after.files).toEqual(expected)
         expect({ ...after, files: before.files }).toEqual(before)
+        const kept = cases.flatMap((c, i) =>
+          c.inReport &&
+          !c.changed &&
+          c.ratchet !== undefined &&
+          centsOf(c.score.killed, c.score.n) > c.ratchet
+            ? [set[i] as string]
+            : [],
+        )
+        for (const path of kept)
+          expect(output, path).toContain(
+            `kept (not changed in the range; --files to raise it): ${path}`,
+          )
       }),
       { numRuns: 10 },
     )
+  })
+
+  it('audit 2026-10-22: update without --files raises the files changed since --base; a base that does not resolve is refused naming --files', async () => {
+    const dir = scratch()
+    const set = await mutateSet()
+    const ratchetFile = writeJson(dir, 'mutation-ratchet.json', {
+      measuredAt: '2026-10-01T00:00:00.000Z',
+      command: 'fixture',
+      total: 50,
+      files: { [set[0]!]: 10 },
+    })
+    const reportFile = writeJson(dir, 'mutation.json', report({ [set[0]!]: exactFile(4, 4, 0) }))
+    const refused = await cli([
+      'update',
+      '--report',
+      reportFile,
+      '--ratchet',
+      ratchetFile,
+      '--base',
+      'no-such-ref',
+    ])
+    expect(refused.code, refused.output).toBe(2)
+    expect(refused.output).toMatch(/--files/)
+    expect(readRatchet(ratchetFile).files).toEqual({ [set[0]!]: 10 })
+    // HEAD as the base: the range holds the work tree's uncommitted changes, never a fixture under tmp.
+    const kept = await cli([
+      'update',
+      '--report',
+      reportFile,
+      '--ratchet',
+      ratchetFile,
+      '--base',
+      'HEAD',
+    ])
+    expect(kept.code, kept.output).toBe(0)
+    expect(kept.output).toMatch(/kept/)
   })
 
   it('AC-3: update --total sets total to the whole report score, and measuredAt and command, from a report covering the mutate set', async () => {
@@ -546,12 +617,15 @@ describe('AC-5b: the ratchet follows the mutate set', () => {
           }
           const ratchetFile = writeJson(dir, 'mutation-ratchet.json', before)
           const reportFile = writeJson(dir, 'mutation.json', report(rep))
+          // Every path in the range: the drop is what this test is about.
           const { code, output } = await cli([
             'update',
             '--report',
             reportFile,
             '--ratchet',
             ratchetFile,
+            '--files',
+            set.join(','),
           ])
           expect(code, output).toBe(0)
           const after = readRatchet(ratchetFile)
@@ -591,7 +665,9 @@ describe('AC-5b: the ratchet follows the mutate set', () => {
         expect(code, output).toBe(missing.length > 0 || stale ? 1 : 0)
         expect(named(output, set), output).toEqual(missing)
         expect(named(output, [GONE]), output).toEqual(stale ? [GONE] : [])
-        if (missing.length > 0) expect(output).toMatch(/--files/)
+        expect(/--files/.test(output), 'the hint names --files iff an entry is missing').toBe(
+          missing.length > 0,
+        )
       }),
       { numRuns: 8 },
     )
