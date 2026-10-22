@@ -167,3 +167,10 @@ export interface AdapterErrorV1Payload {
   error: { code: string; message: string }
   context: Record<string, unknown>
 }
+
+/** A Settings field was saved or cleared; never the value. `source` is where the field comes from afterwards. */
+export interface SettingsChangedV1Payload {
+  slot: string
+  path: string
+  source: 'settings' | null
+}

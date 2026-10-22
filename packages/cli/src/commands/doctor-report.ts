@@ -1,6 +1,6 @@
 import pc from 'picocolors'
 import type { NymbalConfig } from '@nymbalhq/config'
-import type { DiagnosisReport } from '@nymbalhq/platform'
+import { scrub as scrubSettings, type DiagnosisReport } from '@nymbalhq/platform'
 import { connectionSecrets, displayUrl, SECRET_MIN_LENGTH } from '@nymbalhq/types'
 
 export interface FormatDoctorOptions {
@@ -30,7 +30,8 @@ const JSON_STATUS: Record<Status, 'ok' | 'degraded' | 'down'> = {
 const COLOUR = { ok: pc.green, warn: pc.yellow, down: pc.red }
 
 /** Config keys whose values are secrets: `secretKey`, `webhookSecret`, `jwtSecret`, SMTP's `pass`, an `apiKey`. */
-const SECRET_KEY = /secret|passw(?:or)?d|^pass$|token|api[-_]?key|private[-_]?key|credential|access[-_]?key/i
+const SECRET_KEY =
+  /secret|passw(?:or)?d|^pass$|token|api[-_]?key|private[-_]?key|credential|access[-_]?key/i
 /** Environment variables whose values are secrets: `STRIPE_SECRET_KEY`, `SMTP_PASS`, `AWS_SECRET_ACCESS_KEY`. */
 const SECRET_ENV =
   /SECRET|PASSWORD|PASSWD|(?:^|_)PASS(?:$|_)|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIAL|ACCESS_KEY/i
@@ -44,7 +45,8 @@ function addSecret(into: Set<string>, value: string): void {
 function collectFromConfig(value: unknown, key: string, into: Set<string>, seen: WeakSet<object>) {
   if (typeof value === 'string') {
     if (SECRET_KEY.test(key)) addSecret(into, value)
-    if (value.includes('://')) for (const s of connectionSecrets(value, { user: false })) addSecret(into, s)
+    if (value.includes('://'))
+      for (const s of connectionSecrets(value, { user: false })) addSecret(into, s)
     return
   }
   if (value === null || typeof value !== 'object' || seen.has(value)) return
@@ -59,14 +61,18 @@ function secretsOf(config: NymbalConfig | undefined, env: NodeJS.ProcessEnv): st
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined) continue
     if (SECRET_ENV.test(name)) addSecret(found, value)
-    if (value.includes('://')) for (const s of connectionSecrets(value, { user: false })) addSecret(found, s)
+    if (value.includes('://'))
+      for (const s of connectionSecrets(value, { user: false })) addSecret(found, s)
   }
   return [...found].sort((a, b) => b.length - a.length)
 }
 
-/** A detail as it may be printed: on one line, every URL as `scheme://host:port/db`, and no secret value. */
+/**
+ * A detail as it may be printed: on one line, every URL as `scheme://host:port/db`, and no secret value, whether the
+ * config and env hold it or diagnose decrypted it from Settings.
+ */
 function scrub(detail: string, secrets: readonly string[]): string {
-  let text = detail.replace(URL_IN_TEXT, (match) => {
+  let text = scrubSettings(detail).replace(URL_IN_TEXT, (match) => {
     const trailing = TRAILING_PUNCTUATION.exec(match)?.[0] ?? ''
     return displayUrl(match.slice(0, match.length - trailing.length)) + trailing
   })
@@ -88,7 +94,11 @@ export function formatDoctorReport(report: DiagnosisReport, options: FormatDocto
   if (options.json) {
     return JSON.stringify(
       {
-        checks: checks.map((c) => ({ name: c.name, status: JSON_STATUS[c.status], detail: c.detail })),
+        checks: checks.map((c) => ({
+          name: c.name,
+          status: JSON_STATUS[c.status],
+          detail: c.detail,
+        })),
       },
       null,
       2,
@@ -101,5 +111,7 @@ export function formatDoctorReport(report: DiagnosisReport, options: FormatDocto
   })
   const count = (s: 'ok' | 'warn' | 'down') =>
     checks.filter((c) => TEXT_STATUS[c.status] === s).length
-  return [...lines, '', `${count('down')} down, ${count('warn')} warn, ${count('ok')} ok`].join('\n')
+  return [...lines, '', `${count('down')} down, ${count('warn')} warn, ${count('ok')} ok`].join(
+    '\n',
+  )
 }

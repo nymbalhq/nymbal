@@ -43,6 +43,7 @@ export interface NymbalEventMap {
   [C.EVT_PAYMENT_REFUNDED]: P.PaymentRefundedV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
+  [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload
 }
 
 export type NymbalEventType = keyof NymbalEventMap

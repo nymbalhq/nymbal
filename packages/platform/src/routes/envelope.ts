@@ -8,6 +8,7 @@ import {
   ValidationError,
   type ResponseEnvelope,
 } from '@nymbalhq/types'
+import { scrubDeep } from '../settings/secret-set.js'
 
 export interface Envelope<T> {
   data?: T
@@ -49,7 +50,12 @@ const CHECKOUT_STATUS: Record<string, number> = {
   'checkout.variant_missing': 422,
 }
 
+/** The answer for an error a route caught, with no secret Settings hold in its message or context. */
 export function renderError(err: unknown): ResponseEnvelope<Envelope<never>> {
+  return scrubDeep(errorEnvelope(err))
+}
+
+function errorEnvelope(err: unknown): ResponseEnvelope<Envelope<never>> {
   if (err instanceof HttpError) {
     return fail(err.code, err.message, err.status)
   }
