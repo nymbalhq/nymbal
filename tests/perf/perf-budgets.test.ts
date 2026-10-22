@@ -26,9 +26,6 @@ const baseline = JSON.parse(
 ) as { commit: string; scriptBytes: number }
 
 const LIMITS = { lcpMs: 2500, cls: 0.1, tbtMs: 200 } as const
-// The recorded exception (spec ruling 3): Next renders the cart only after hydration, so nextjs / cart has 3000 ms
-// until P2-18 server-renders it.
-const lcpLimitMs = (at: string): number => (at === 'nextjs / cart' ? 3000 : LIMITS.lcpMs)
 const PAGES = ['home', 'listing', 'product', 'cart', 'checkout'] as const
 const TEMPLATES = ['astro', 'nextjs'] as const
 
@@ -154,7 +151,7 @@ describe('P2-08 AC-2: the run fails a slow page', () => {
 })
 
 describe('P2-08 AC-4: the budgets hold', () => {
-  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (nextjs / cart 3000 ms until P2-18), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
+  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (P2-18 AC-6: no exception), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     expect(real.status, tail(real.output)).toBe(0)
     expect(real.report, 'reports/perf-budgets.json after the real run').toBeDefined()
@@ -162,7 +159,7 @@ describe('P2-08 AC-4: the budgets hold', () => {
     expect(pages).toEqual(TEMPLATES.flatMap((t) => PAGES.map((p) => `${t} / ${p}`)).sort())
     for (const r of real.report!) {
       const at = `${r.template} / ${r.page}`
-      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(lcpLimitMs(at))
+      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(LIMITS.lcpMs)
       expect(r.measured.cls, `${at} cls`).toBeLessThanOrEqual(LIMITS.cls)
       expect(r.measured.tbtMs, `${at} tbtMs`).toBeLessThanOrEqual(LIMITS.tbtMs)
       expect(r.measured.scriptBytes, `${at} scriptBytes`).toBeLessThanOrEqual(r.budget.scriptBytes)
