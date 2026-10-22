@@ -936,6 +936,9 @@ export type LastRun = {
   steps: Record<string, StepStatus>
   vitest: RedTest[]
   e2e: Record<string, boolean>
+  /** Each step's milliseconds, in plan order, and the first red step: what gate-runs.tsv keeps per run. */
+  stepsMs: Record<string, number>
+  redStep: string | null
 }
 
 const LAST_RUN = 'reports/last-run.json'
@@ -1351,6 +1354,8 @@ function writeLastRun(root: string, steps: Step[], startedMs: number): void {
     sha: git(root, ['rev-parse', 'HEAD']).trim(),
     diffHash: diffHash(root),
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
+    stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
+    redStep: steps.find((s) => s.status === 'red')?.name ?? null,
     vitest:
       status('tests') === 'red'
         ? testsWith(
