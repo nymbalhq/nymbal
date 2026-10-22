@@ -28,6 +28,31 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
     ]
   : []
 
+// Quarantined (gate skill, "Running it"): each went red then green with no code change in a gate or CI. It runs in
+// the `nightly` project (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until the board row that owns it closes,
+// and its home project leaves it out. A single quarantined case stays in its file behind
+// `it.runIf(process.env.NYMBAL_NIGHTLY)`, and its file is listed in the nightly project's include.
+const NIGHTLY = [
+  // CLI spawns time out under load (P2-13's CI red; the gate on 2026-10-22).
+  'packages/cli/src/commands/add.test.ts',
+  // The built CLI against MinIO times out under a parallel gate:full.
+  'tests/stores/s3-import-cli.test.ts',
+]
+const NIGHTLY_CASES = ['packages/platform/src/services/checkout-service.test.ts']
+const nightly = process.env['NYMBAL_NIGHTLY']
+  ? [
+      {
+        test: {
+          name: 'nightly',
+          environment: 'node' as const,
+          include: [...NIGHTLY, ...NIGHTLY_CASES],
+          testTimeout: 90000,
+          hookTimeout: 90000,
+        },
+      },
+    ]
+  : []
+
 // Set by the gate when other worktrees' gates run Vitest at once (scripts/gate.ts): each run then takes a share of the
 // CPUs, since a worker per core in each starves the main processes.
 const sharedWorkers = process.env['NYMBAL_VITEST_MAX_WORKERS']
@@ -51,7 +76,7 @@ export default defineConfig({
           name: 'cli',
           environment: 'node',
           include: ['packages/cli/src/**/*.test.ts'],
-          exclude: [...configDefaults.exclude, ...NESTED_VITEST_RUNS],
+          exclude: [...configDefaults.exclude, ...NESTED_VITEST_RUNS, ...NIGHTLY],
         },
       },
       {
@@ -199,6 +224,7 @@ export default defineConfig({
             'tests/stores/**/*.test.ts',
             ...NESTED_VITEST_RUNS,
           ],
+          exclude: [...configDefaults.exclude, ...NIGHTLY],
           testTimeout: 60000,
           hookTimeout: 60000,
         },
@@ -253,6 +279,7 @@ export default defineConfig({
         },
       },
       ...scaffoldClean,
+      ...nightly,
       {
         test: {
           name: 'architecture',

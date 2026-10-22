@@ -191,6 +191,8 @@ function otherLoopback(endpoint: string): string {
   return u.origin
 }
 
+// Quarantined to the nightly project (vitest.config.ts): the built CLI against MinIO times out under a parallel
+// gate:full, red then green with no code change; the board row owns it.
 describe("P2-11 AC-5: nymbal import into a store with media 's3' serves every image from the bucket", () => {
   it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
     const dir = project({

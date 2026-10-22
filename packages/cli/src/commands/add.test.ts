@@ -88,6 +88,8 @@ beforeAll(async () => {
 
 afterAll(() => removeAll(dirs))
 
+// Quarantined to the nightly project (vitest.config.ts): the CLI spawns time out under load, red then green with no
+// code change; the board row owns it.
 describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
   it('AC-4: `nymbal add redis` exits 0 and changes only nymbal.config.ts and .env.example; a second run changes nothing and exits 0', async () => {
     const dir = project('redis')
