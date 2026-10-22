@@ -2,8 +2,16 @@ import { EVT_CART_ABANDONED, type Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { CartRepository } from '../repositories/cart.js'
 import type { EventPublisher } from '../events/publisher.js'
-import { newCorrelationId, runWithCorrelation } from '../events/correlation.js'
+import {
+  currentCorrelationId,
+  newCorrelationId,
+  runWithCorrelation,
+} from '../events/correlation.js'
+import { runAsActor } from '../audit/actor.js'
+import { audit, auditedCommand } from '../audit/audit.js'
 import type { SweeperHandle } from './inventory-reservation-sweeper.js'
+
+const COMMAND = 'cart.sweepAbandoned'
 
 export interface CartAbandonmentSweeperDeps {
   store: CommandStore
@@ -34,8 +42,16 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
     try {
       const at = now()
       const window = { at, cutoff: new Date(at.getTime() - inactivityMs) }
+      // The run is one command, noted only once it changes a cart. Its subject is the run, never a cart's token: a token
+      // is a bearer credential, and an entry is kept for good.
+      const noteRun = () =>
+        audit.note(COMMAND, [{ type: 'sweep', id: currentCorrelationId() ?? 'cart-abandonment' }])
       // Expired carts go first, so a cart past its expiry is never notified.
-      const expired = await store.transaction((tx) => carts.deleteExpired(tx, at))
+      const expired = await store.transaction(async (tx) => {
+        const deleted = await carts.deleteExpired(tx, at)
+        if (deleted > 0) noteRun()
+        return deleted
+      })
       let abandoned = 0
       // Pages follow the token order rather than "whatever is still unclaimed", so a pass ends even when another
       // sweeper holds or has taken some of the rows.
@@ -46,6 +62,7 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
           for (const token of tokens) {
             const claimed = await carts.claimAbandoned(tx, token, window)
             if (claimed === null) continue
+            noteRun()
             await publisher.publish(EVT_CART_ABANDONED, {
               cartId: claimed.token,
               lastActivityAt: claimed.lastActivityAt,
@@ -63,8 +80,13 @@ export function startCartAbandonmentSweeper(deps: CartAbandonmentSweeperDeps): S
     }
   }
 
-  // Each run is one operation: its events share an id of their own.
-  const run = () => runWithCorrelation(newCorrelationId('sweep:cart-abandonment'), tick)
+  // Each run is one operation: its events share an id of their own, and it is one command of the system's.
+  const run = () =>
+    runWithCorrelation(newCorrelationId('sweep:cart-abandonment'), () =>
+      runAsActor({ kind: 'system', id: 'cart-abandonment' }, () =>
+        auditedCommand(store, COMMAND, tick),
+      ),
+    )
   const handle = setInterval(() => void run(), intervalMs)
   return {
     tick: run,

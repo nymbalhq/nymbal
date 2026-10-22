@@ -185,6 +185,7 @@ export const devCommand = defineCommand({
           eventBus: platform.eventBus,
           logger: platform.logger,
           version,
+          search: app.adapters.search,
         })
       }
     }
@@ -201,7 +202,9 @@ export const devCommand = defineCommand({
     const apiUrl = `http://localhost:${config.http.port}`
     const printSummary = (storefront: DevSummaryInfo['storefront']) => {
       // eslint-disable-next-line no-console
-      console.log(renderDevSummary(summaryInfo(config, app, apiUrl, storefront, adminRoot !== null)))
+      console.log(
+        renderDevSummary(summaryInfo(config, app, apiUrl, storefront, adminRoot !== null)),
+      )
     }
 
     const stopApi: ShutdownStep[] = [

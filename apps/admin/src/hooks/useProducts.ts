@@ -28,7 +28,12 @@ export function useProduct(idOrSlug: string) {
 export function useCreateProduct() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (product: Partial<ProductSnapshot>) => api.post<ProductSnapshot>('/api/admin/products', product),
+    mutationFn: ({ product, idempotencyKey }: { product: Partial<ProductSnapshot>; idempotencyKey?: string }) =>
+      api.post<ProductSnapshot>(
+        '/api/admin/products',
+        product,
+        idempotencyKey === undefined ? undefined : { idempotencyKey },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products', 'list'] })
     },
@@ -38,8 +43,20 @@ export function useCreateProduct() {
 export function useUpdateProduct() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<ProductSnapshot> }) =>
-      api.patch<ProductSnapshot>(`/api/admin/products/${id}`, data),
+    mutationFn: ({
+      id,
+      data,
+      idempotencyKey,
+    }: {
+      id: string
+      data: Partial<ProductSnapshot>
+      idempotencyKey?: string
+    }) =>
+      api.patch<ProductSnapshot>(
+        `/api/admin/products/${id}`,
+        data,
+        idempotencyKey === undefined ? undefined : { idempotencyKey },
+      ),
     onSuccess: (updated) => {
       queryClient.setQueryData(['products', 'detail', updated.id], updated)
       queryClient.setQueryData(['products', 'detail', updated.slug], updated)

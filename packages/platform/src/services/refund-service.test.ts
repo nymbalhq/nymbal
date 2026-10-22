@@ -25,6 +25,10 @@ import { createEventPublisher, createRelay } from '../index.js'
 import { wirePublisher } from '../tests/publisher.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 import { formatMoney } from '../money.js'
 import { createOrderService } from './order-service.js'
 import { createRefundService, settlementOf, PROVIDER_REFUND_REASON } from './refund-service.js'
@@ -556,6 +560,66 @@ describe('RefundService: P1-13 decision 4', () => {
       ),
       { numRuns: 40 },
     )
+    await env.store.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('RefundService: audit notes', () => {
+  it('AC-2: under an actor with no opener, a refund leaves one applied entry naming the order', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    const { refund } = await runAsActor(importer, () =>
+      env.refunds.refund({ orderId: order.id, amountMinor: 100, actor: 'a' }),
+    )
+    expect(refund.status).toBe('succeeded')
+    expect(await noted(env.store)).toEqual([
+      {
+        actor: importer,
+        command: 'order.refund',
+        subjects: [{ type: 'order', id: order.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+    await env.store.close()
+  })
+
+  it('AC-2: a refund refused before its transaction is recorded as order.refund refused, naming the order', async () => {
+    const env = await setup()
+    const order = await paidOrder(env)
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(env.store, undefined, () =>
+          env.refunds.refund({ orderId: order.id, amountMinor: 0, actor: 'a' }),
+        ),
+      ),
+    ).rejects.toThrow(ValidationError)
+    expect(env.calls).toHaveLength(0)
+    expect(await noted(env.store)).toEqual([
+      {
+        actor: admin,
+        command: 'order.refund',
+        subjects: [{ type: 'order', id: order.id }],
+        outcome: 'refused',
+        status: 400,
+      },
+    ])
     await env.store.close()
   })
 })

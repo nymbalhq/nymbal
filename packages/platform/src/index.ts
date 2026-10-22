@@ -58,6 +58,8 @@ export {
   newCorrelationId,
   runWithCorrelation,
 } from './events/correlation.js'
+export { actorOf, currentActor, runAsActor, type Actor } from './audit/actor.js'
+export { audit, auditedCommand } from './audit/audit.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
@@ -108,10 +110,22 @@ export { fillFromSettings, type SettingSource, type SettingValue } from './setti
 export { scrub } from './settings/secret-set.js'
 export { isMissingSettingsTable } from './settings/load.js'
 export {
-  warmDocumentStore,
-  type WarmDocumentStoreDeps,
-  type WarmResult,
-} from './warm-document-store.js'
+  CATCH_UP_MARGIN_MS,
+  diffReadModel,
+  READ_MODEL_NAMES,
+  READ_MODELS,
+  rebuild,
+  RebuildError,
+  type CatchUpFailure,
+  type CollectionDiff,
+  type ReadModel,
+  type ReadModelDiff,
+  type ReadModelName,
+  type RebuildDeps,
+  type RebuildReport,
+  type RebuildReportEntry,
+} from './read-models/index.js'
+export { openReadModels, type OpenReadModelsOptions } from './read-models/open.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

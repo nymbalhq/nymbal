@@ -7,6 +7,7 @@ import {
   type CustomerAddress,
   type Logger,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -50,6 +51,7 @@ export function createCustomerService(deps: {
     },
     async updateProfile(customerId, patch) {
       return store.transaction(async (tx) => {
+        audit.note('customer.update', [{ type: 'customer', id: customerId }])
         await loadOrThrow(tx, customerId)
         const now = new Date()
         await repos.customer.update(tx, customerId, { ...patch, updatedAt: now })
@@ -64,6 +66,7 @@ export function createCustomerService(deps: {
     },
     async addAddress(customerId, addr) {
       return store.transaction(async (tx) => {
+        audit.note('customer.addAddress', [{ type: 'customer', id: customerId }])
         const customer = await loadOrThrow(tx, customerId)
         const newAddr: CustomerAddress = { ...addr, id: uuidv7() }
         const defaultBilling = newAddr.isDefaultBilling
@@ -82,6 +85,7 @@ export function createCustomerService(deps: {
     },
     async deleteAddress(customerId, addressId) {
       await store.transaction(async (tx) => {
+        audit.note('customer.removeAddress', [{ type: 'customer', id: customerId }])
         const customer = await loadOrThrow(tx, customerId)
         const addresses = customer.addresses.filter((a) => a.id !== addressId)
         if (addresses.length === customer.addresses.length) {

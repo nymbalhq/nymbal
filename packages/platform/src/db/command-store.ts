@@ -75,6 +75,8 @@ class Scope {
   failure: { error: unknown } | undefined
   /** Sends held until the outermost commits; the same function held twice runs once. */
   readonly held = new Set<() => Promise<void>>()
+  /** Writes run in the transaction once its callback has settled, before COMMIT; each function once. */
+  readonly beforeCommit: Array<(tx: Tx) => Promise<void>> = []
   /** Savepoints opened so far, for unique names. */
   savepoints = 0
 
@@ -144,6 +146,26 @@ export async function afterCommit(send: () => Promise<void>): Promise<void> {
   await send()
 }
 
+/** The transaction open in the current async call chain, as an opaque token, or undefined outside one or in a read. */
+export function openTransaction(): object | undefined {
+  const scope = context.getStore()
+  return scope !== undefined && scope.writable && !scope.settled ? scope : undefined
+}
+
+/**
+ * Holds `write` to run in the transaction open in the current async call chain, after the outermost callback has
+ * settled and before COMMIT, so it commits or rolls back with that transaction's work; a write that throws rolls it
+ * back. The same function held twice runs once; one held inside a savepoint that rolls back is dropped with it, so
+ * holding it again after that queues it again. Throws when no transaction is open.
+ */
+export function beforeCommit(write: (tx: Tx) => Promise<void>): void {
+  const scope = context.getStore()
+  if (scope === undefined || !scope.writable || scope.settled) {
+    throw new Error('beforeCommit() was called outside CommandStore.transaction()')
+  }
+  if (!scope.beforeCommit.includes(write)) scope.beforeCommit.push(write)
+}
+
 /** For migrations, seeding and tests only; no repository or service imports it. */
 export function rawClients(store: CommandStore): RawClients {
   const clients = rawByStore.get(store)
@@ -181,6 +203,7 @@ async function savepoint<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T
   const name = `nymbal_sp_${(scope.savepoints += 1)}`
   const failure = scope.failure
   const held = new Set(scope.held)
+  const writes = scope.beforeCommit.length
   await exec(`SAVEPOINT ${name}`)
   try {
     const result = await fn(scope as unknown as Tx)
@@ -197,6 +220,7 @@ async function savepoint<T>(scope: Scope, fn: (tx: Tx) => Promise<T>): Promise<T
     // The failure recorded inside, and the sends held inside, went with the writes the rollback undid.
     scope.failure = failure
     for (const send of scope.held) if (!held.has(send)) scope.held.delete(send)
+    scope.beforeCommit.length = writes
     throw error
   }
 }
@@ -239,7 +263,14 @@ async function runTransaction<T>(
     await connection.begin()
     begun = true
     try {
-      result = await context.run(scope, () => fn(scope as unknown as Tx))
+      result = await context.run(scope, async () => {
+        const value = await fn(scope as unknown as Tx)
+        // A write held by another write runs too; none runs once a joined block has failed.
+        for (let i = 0; i < scope.beforeCommit.length && scope.failure === undefined; i += 1) {
+          await scope.beforeCommit[i]!(scope as unknown as Tx)
+        }
+        return value
+      })
     } finally {
       // Once its callback has settled, nothing joins this transaction or writes through its handle.
       scope.settled = true

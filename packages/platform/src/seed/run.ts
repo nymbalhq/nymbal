@@ -8,6 +8,7 @@ import type {
   Logger,
   MediaStorage,
   Role,
+  SearchAdapter,
 } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { rawClients, type CommandStore } from '../db/command-store.js'
@@ -19,7 +20,7 @@ import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import { seedCategories, seedImage, seedProducts, type SeedProduct } from './data.js'
 import { buildRepositories } from '../repositories/index.js'
-import { warmDocumentStore } from '../warm-document-store.js'
+import { READ_MODEL_NAMES, rebuild } from '../read-models/index.js'
 
 export interface SeedDeps {
   config: NymbalConfig
@@ -33,6 +34,8 @@ export interface SeedDeps {
    * instead of the third-party placeholder host: a store measured or run offline then serves its own images.
    */
   media?: MediaStorage
+  /** The search index to rebuild with the document store; without it the next start's rebuild fills it. */
+  search?: SearchAdapter
 }
 
 export interface SeedResult {
@@ -334,83 +337,6 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   }
   await insertCustomer(commandStore, adminCustomer)
 
-  // Document-store read-model rebuild
-  const productDocs = new Map<string, Record<string, unknown>>()
-  for (let i = 0; i < productInserts.length; i++) {
-    const p = productInserts[i]!
-    const v = variantInserts[i]!
-    const seed = seedProducts[i] as SeedProduct
-    const catSlug = seed.categorySlug
-    productDocs.set(p.slug, {
-      id: p.id,
-      storeId: config.store.name,
-      slug: p.slug,
-      name: p.name,
-      description: p.description,
-      shortDescription: p.shortDescription,
-      status: p.status,
-      type: p.type,
-      media: p.media,
-      priceMinor: v.priceMinor,
-      currency: config.store.currency,
-      categorySlugs: [catSlug],
-      variants: [
-        {
-          id: v.id,
-          sku: v.sku,
-          name: v.name,
-          priceMinor: v.priceMinor,
-          stock: v.stock,
-          options: v.options,
-        },
-      ],
-      variantCount: 1,
-      inStock: true,
-      priceRange: { minMinor: v.priceMinor, maxMinor: v.priceMinor },
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    })
-  }
-  await documentStore.batchPut('products', productDocs)
-
-  // Secondary index: products-by-category
-  const byCategory = new Map<string, Record<string, unknown>>()
-  for (let i = 0; i < productInserts.length; i++) {
-    const p = productInserts[i]!
-    const seed = seedProducts[i] as SeedProduct
-    const doc = productDocs.get(p.slug)!
-    byCategory.set(`category:${seed.categorySlug}#product:${p.slug}`, {
-      partitionKey: `category:${seed.categorySlug}`,
-      sortKey: `product:${p.slug}`,
-      ...doc,
-    })
-  }
-  await documentStore.batchPut('products-by-category', byCategory)
-
-  // Category docs
-  const categoryDocs = new Map<string, Record<string, unknown>>()
-  for (const c of categoryInserts) {
-    categoryDocs.set(c.slug, {
-      id: c.id,
-      storeId: config.store.name,
-      slug: c.slug,
-      name: c.name,
-      description: c.description,
-      position: c.position,
-      createdAt: now.toISOString(),
-    })
-  }
-  await documentStore.batchPut('categories', categoryDocs)
-
-  // Customer profile (no PII)
-  await documentStore.put('customer-profiles', demoCustomer.id, {
-    customerId: demoCustomer.id,
-    orderCount: 0,
-    totalSpentMinor: 0,
-    segment: 'new',
-    createdAt: now.toISOString(),
-  })
-
   // Emit events
   const events = [
     ...categoryInserts.map((c) =>
@@ -496,8 +422,18 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     'Seed complete',
   )
 
-  const repos = buildRepositories(commandStore, documentStore)
-  await warmDocumentStore({ config, repos, eventBus, logger, version })
+  const search = deps.search
+  await rebuild(
+    search === undefined ? READ_MODEL_NAMES.filter((name) => name !== 'search') : READ_MODEL_NAMES,
+    {
+      config,
+      store: commandStore,
+      repos: buildRepositories(commandStore, documentStore),
+      documentStore,
+      ...(search !== undefined && { search }),
+      logger,
+    },
+  )
 
   return {
     categories: categoryInserts.length,

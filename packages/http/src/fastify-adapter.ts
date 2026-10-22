@@ -17,6 +17,7 @@ import type {
 } from '@nymbalhq/types'
 import {
   CORRELATION_ID_HEADER,
+  IDEMPOTENT_REPLAYED_HEADER,
   HttpError,
   isValidCorrelationId,
   NymbalError,
@@ -101,6 +102,8 @@ export class FastifyHttpAdapter implements HttpAdapter {
         origin: options.cors.allowedOrigins,
         credentials: options.cors.credentials,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+        // A browser client on an allowed origin reads the request's id and whether a keyed write was a replay.
+        exposedHeaders: [CORRELATION_ID_HEADER, IDEMPOTENT_REPLAYED_HEADER],
       })
     }
     // The token a client on another origin of the same site echoes in `x-csrf-token`: it cannot read this cookie.

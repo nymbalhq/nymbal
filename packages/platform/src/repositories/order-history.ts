@@ -68,7 +68,7 @@ export function createOrderHistoryRepository(store: CommandStore): OrderHistoryR
           .select()
           .from(sqliteSchema.orderHistory)
           .where(eq(sqliteSchema.orderHistory.orderId, orderId))
-          .orderBy(asc(sqliteSchema.orderHistory.timestamp))
+          .orderBy(asc(sqliteSchema.orderHistory.timestamp), asc(sqliteSchema.orderHistory.id))
           .all()
         return rows.map((r) => rowToEntry(r as Record<string, unknown>))
       }
@@ -76,7 +76,7 @@ export function createOrderHistoryRepository(store: CommandStore): OrderHistoryR
         .select()
         .from(postgresSchema.orderHistory)
         .where(eq(postgresSchema.orderHistory.orderId, orderId))
-        .orderBy(asc(postgresSchema.orderHistory.timestamp))
+        .orderBy(asc(postgresSchema.orderHistory.timestamp), asc(postgresSchema.orderHistory.id))
       return rows.map((r) => rowToEntry(r as Record<string, unknown>))
     },
   }

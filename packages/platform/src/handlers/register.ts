@@ -29,6 +29,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     documentStore,
     logger: handlerLogger.child({ projection: 'category' }),
     storeId: config.store.name,
+    repos,
   })
   await registerProductProjection({
     eventBus,
@@ -36,6 +37,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     logger: handlerLogger.child({ projection: 'product' }),
     storeId: config.store.name,
     currency: config.store.currency,
+    repos,
   })
   await registerOrderProjection({
     eventBus,
@@ -55,9 +57,9 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     eventBus,
     documentStore,
     logger: handlerLogger.child({ projection: 'inventory' }),
-    variantRepo: repos.variant,
-    productRepo: repos.product,
-    productCategoryRepo: repos.productCategory,
+    storeId: config.store.name,
+    currency: config.store.currency,
+    repos,
   })
 
   await registerEmailHandler({
@@ -71,6 +73,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
   await registerSearchHandler({
     eventBus,
     search: adapters.search,
+    repos,
   })
   await registerReviewsHandler({
     eventBus,

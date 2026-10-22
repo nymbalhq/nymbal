@@ -11,10 +11,14 @@ import type { ProcessedEventRepository } from '../repositories/processed-event.j
 import type { CheckoutService } from '../services/checkout-service.js'
 import { inOrderScope } from '../services/order-correlation.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { runAsActor, type Actor } from '../audit/actor.js'
 import { ok, fail, renderError } from './envelope.js'
 
 /** The handler name of this route's processed-event records. */
 const HANDLER = 'webhook:stripe'
+
+/** The provider's deliveries act as the system, not as the anonymous caller the request's principal says. */
+const WEBHOOK_ACTOR: Actor = { kind: 'system', id: 'stripe-webhook' }
 
 export interface RegisterStripeWebhookDeps {
   payments: PaymentsAdapter
@@ -73,37 +77,43 @@ export function registerStripeWebhookRoute(
   adapter.registerRoute(
     'POST',
     '/api/webhooks/stripe',
-    async (ctx) => {
-      try {
-        const rawSig = ctx.headers['stripe-signature']
-        const sig = Array.isArray(rawSig) ? rawSig[0] : rawSig
-        if (!sig) return fail('webhook.signature_missing', 'stripe-signature header missing', 400)
-        // The signature covers the exact bytes sent; a body re-serialised from its parse would not verify.
-        if (ctx.rawBody === undefined) {
-          return fail('webhook.raw_body_missing', 'the HTTP adapter kept no raw request body', 500)
-        }
-        let result: WebhookResult
+    (ctx) =>
+      runAsActor(WEBHOOK_ACTOR, async () => {
         try {
-          result = await payments.parseWebhook(ctx.rawBody, sig)
-        } catch (err) {
-          if (err instanceof PaymentError && err.code === 'payment.webhook_invalid') {
-            return fail('webhook.invalid', 'signature verification failed', 400)
+          const rawSig = ctx.headers['stripe-signature']
+          const sig = Array.isArray(rawSig) ? rawSig[0] : rawSig
+          if (!sig) return fail('webhook.signature_missing', 'stripe-signature header missing', 400)
+          // The signature covers the exact bytes sent; a body re-serialised from its parse would not verify.
+          if (ctx.rawBody === undefined) {
+            return fail(
+              'webhook.raw_body_missing',
+              'the HTTP adapter kept no raw request body',
+              500,
+            )
           }
-          throw err
-        }
-        if (!result.verified) return fail('webhook.invalid', 'signature verification failed', 400)
+          let result: WebhookResult
+          try {
+            result = await payments.parseWebhook(ctx.rawBody, sig)
+          } catch (err) {
+            if (err instanceof PaymentError && err.code === 'payment.webhook_invalid') {
+              return fail('webhook.invalid', 'signature verification failed', 400)
+            }
+            throw err
+          }
+          if (!result.verified) return fail('webhook.invalid', 'signature verification failed', 400)
 
-        // The record commits with the work or its recorded outcome, so a delivery whose work threw is run again.
-        return await store.transaction(async (tx) => {
-          if (await processedEvents.seen(tx, HANDLER, result.eventId)) return ok({ deduped: true })
-          const answer = await handle(tx, result)
-          await processedEvents.markProcessed(tx, HANDLER, result.eventId, new Date())
-          return answer
-        })
-      } catch (err) {
-        return renderError(err)
-      }
-    },
+          // The record commits with the work or its recorded outcome, so a delivery whose work threw is run again.
+          return await store.transaction(async (tx) => {
+            if (await processedEvents.seen(tx, HANDLER, result.eventId))
+              return ok({ deduped: true })
+            const answer = await handle(tx, result)
+            await processedEvents.markProcessed(tx, HANDLER, result.eventId, new Date())
+            return answer
+          })
+        } catch (err) {
+          return renderError(err)
+        }
+      }),
     { csrf: false, rawBody: true },
   )
 }

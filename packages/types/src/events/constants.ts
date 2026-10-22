@@ -19,6 +19,7 @@ export const EVT_ORDER_DELIVERED = 'order.delivered.v1'
 export const EVT_ORDER_CANCELLED = 'order.cancelled.v1'
 export const EVT_ORDER_REFUNDED = 'order.refunded.v1'
 export const EVT_ORDER_PARTIALLY_REFUNDED = 'order.partially_refunded.v1'
+export const EVT_ORDER_STATUS_CHANGED = 'order.status_changed.v1'
 
 // Inventory
 export const EVT_INVENTORY_CHANGED = 'inventory.changed.v1'
@@ -43,6 +44,7 @@ export const EVT_CART_ABANDONED = 'cart.abandoned.v1'
 export const EVT_CART_CONVERTED = 'cart.converted.v1'
 
 // Payment
+export const EVT_PAYMENT_INTENT_CREATED = 'payment.intent_created.v1'
 export const EVT_PAYMENT_CAPTURED = 'payment.captured.v1'
 export const EVT_PAYMENT_FAILED = 'payment.failed.v1'
 export const EVT_PAYMENT_REFUNDED = 'payment.refunded.v1'
@@ -68,6 +70,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ORDER_CANCELLED,
   EVT_ORDER_REFUNDED,
   EVT_ORDER_PARTIALLY_REFUNDED,
+  EVT_ORDER_STATUS_CHANGED,
   EVT_INVENTORY_CHANGED,
   EVT_INVENTORY_RESERVED,
   EVT_INVENTORY_RELEASED,
@@ -82,6 +85,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_CART_UPDATED,
   EVT_CART_ABANDONED,
   EVT_CART_CONVERTED,
+  EVT_PAYMENT_INTENT_CREATED,
   EVT_PAYMENT_CAPTURED,
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,

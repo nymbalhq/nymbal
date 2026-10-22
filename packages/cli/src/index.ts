@@ -10,6 +10,8 @@ import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
 import { secretsCommand } from './commands/secrets.js'
 import { eventsCommand } from './commands/events.js'
+import { auditCommand } from './commands/audit.js'
+import { replayCommand } from './commands/replay.js'
 import {
   testAllCommand,
   testCommand,
@@ -38,6 +40,8 @@ const main = defineCommand({
     doctor: doctorCommand,
     secrets: secretsCommand,
     events: eventsCommand,
+    audit: auditCommand,
+    replay: replayCommand,
     test: testCommand,
     'test:e2e': testE2eCommand,
     'test:visual': testVisualCommand,

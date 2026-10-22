@@ -14,6 +14,10 @@ import { createEventPublisher, createRelay } from '../index.js'
 import { wirePublisher } from '../tests/publisher.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 import { v7 as uuidv7 } from 'uuid'
 
 async function setup() {
@@ -313,6 +317,58 @@ describe('ProductService', () => {
     expect(updated.name).toBe('Updated')
     expect(updated.seoTitle).toBe('New SEO')
     expect(updated.metadata).toMatchObject({ updated: true })
+    await commandStore.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('ProductService: audit notes', () => {
+  it('AC-2: under an actor with no opener, create, update, publish, unpublish and delete each leave one applied entry naming the product', async () => {
+    const { service, commandStore } = await setup()
+    const created = await runAsActor(importer, () =>
+      service.create({ slug: 'audited', name: 'Audited', status: 'draft' }),
+    )
+    await runAsActor(importer, () => service.update(created.id, { name: 'Renamed' }))
+    await runAsActor(importer, () => service.publish(created.id))
+    await runAsActor(importer, () => service.unpublish(created.id))
+    await runAsActor(importer, () => service.delete(created.id))
+    const subjects = [{ type: 'product', id: created.id }]
+    expect(await noted(commandStore)).toEqual([
+      { actor: importer, command: 'product.create', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'product.update', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'product.publish', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'product.unpublish', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'product.delete', subjects, outcome: 'applied', status: null },
+    ])
+    await commandStore.close()
+  })
+
+  it('AC-2: a create refused before its transaction is recorded as product.create refused; with no actor nothing is recorded', async () => {
+    const { service, commandStore } = await setup()
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(commandStore, undefined, () => service.create({ slug: '', name: 'Blank' })),
+      ),
+    ).rejects.toThrow(ValidationError)
+    await service.create({ slug: 'unscoped', name: 'No actor' })
+    expect(await noted(commandStore)).toEqual([
+      { actor: admin, command: 'product.create', subjects: [], outcome: 'refused', status: 400 },
+    ])
     await commandStore.close()
   })
 })

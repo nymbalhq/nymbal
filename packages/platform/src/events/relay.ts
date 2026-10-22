@@ -3,6 +3,8 @@ import type { EventBusAdapter, EventHandler, Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
 import { outsideCorrelation } from './correlation.js'
+import { outsideActor } from '../audit/actor.js'
+import { outsideCommand } from '../audit/audit.js'
 
 /** Hands committed events from the log to the bus. */
 export interface Relay {
@@ -121,8 +123,9 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   function request(): Promise<void> {
     if (!active) {
       idle = deferred()
-      // A pass delivers every operation's events, not only the requester's: its handlers run in no scope of the caller.
-      return outsideCorrelation(run)
+      // A pass delivers every operation's events, not only the requester's: its handlers run in no scope of the caller,
+      // neither its correlation id nor its actor and command, so a handler's writes are never the caller's entry.
+      return outsideCorrelation(() => outsideActor(() => outsideCommand(run)))
     }
     followUp ??= deferred()
     return followUp.promise

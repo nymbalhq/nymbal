@@ -2,7 +2,7 @@ import { defineCommand } from 'citty'
 import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/prompts'
 import p from 'picocolors'
 import { loadProject } from '../utils/project.js'
-import { createApp, newCorrelationId, runWithCorrelation } from '@nymbalhq/platform'
+import { createApp, newCorrelationId, runAsActor, runWithCorrelation } from '@nymbalhq/platform'
 import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
@@ -124,9 +124,10 @@ export const importCommand = defineCommand({
     loadSpin.stop('Platform ready')
 
     try {
-      // One run is one operation: every event the import causes carries one id.
+      // One run is one operation: every event the import causes carries one id, and every write it makes is the
+      // import's, one audit entry per record written.
       const report = await runWithCorrelation(newCorrelationId('import:woocommerce'), () =>
-        runWooCommerceImport(
+        runAsActor({ kind: 'import', id: 'woocommerce' }, () => runWooCommerceImport(
           {
             credentials: { url: storeUrl, consumerKey, consumerSecret },
             entities: entityList,
@@ -155,7 +156,7 @@ export const importCommand = defineCommand({
               }
             },
           },
-        ),
+        )),
       )
 
       const reportPath = await writeReport(report, projectRoot, config.store.name)

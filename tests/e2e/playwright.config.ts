@@ -64,6 +64,13 @@ const noSearchSqlitePath = (process.env.NYMBAL_E2E_NOSEARCH_SQLITE_PATH ??= join
   `nymbal-e2e-nosearch-${Date.now()}-${process.pid}.db`,
 ))
 
+// P3-02 AC-6: where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and
+// the key prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
+const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
+  tmpdir(),
+  `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
+))
+
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
   command: `node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only --port ${block.api}`,
@@ -74,6 +81,7 @@ const apiServer = {
   env: {
     NYMBAL_SQLITE_PATH: sqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroURL, nextjsURL),
+    NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
@@ -197,11 +205,11 @@ export default defineConfig({
       },
     },
     // The same journey files on the fixture store. Visual snapshots are keyed by project and shot on the native
-    // store, so the custom runs leave them out.
+    // store, so the custom runs leave them out, and the rebuild journey (@rebuild) replays the native store's own.
     {
       name: 'astro-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch/,
+      grepInvert: /@visual|@nosearch|@rebuild/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
@@ -210,7 +218,7 @@ export default defineConfig({
     {
       name: 'nextjs-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch/,
+      grepInvert: /@visual|@nosearch|@rebuild/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,

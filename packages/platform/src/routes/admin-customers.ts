@@ -2,6 +2,7 @@ import type { HttpAdapter, Customer, Order } from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
+import { audit } from '../audit/audit.js'
 import { requireRole } from './role-middleware.js'
 
 export interface NoteEntry {
@@ -179,6 +180,7 @@ export function registerAdminCustomersRoutes(
         const noted = await store.transaction(async (tx) => {
           const raw = await repos.customer.findById(tx, id)
           if (!raw) return false
+          audit.note('customer.addNote', [{ type: 'customer', id }])
           const existingNotes = (raw.metadata.adminNotes as NoteEntry[] | undefined) ?? []
           const updatedMeta = {
             ...raw.metadata,
