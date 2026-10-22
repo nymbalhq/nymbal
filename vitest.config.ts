@@ -30,8 +30,10 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
 
 // Quarantined (gate skill, "Running it"): each went red then green with no code change in a gate or CI. It runs in
 // the `nightly` project (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until the board row that owns it closes,
-// and its home project leaves it out. A single quarantined case stays in its file behind
-// `it.runIf(process.env.NYMBAL_NIGHTLY)`, and its file is listed in the nightly project's include.
+// and its home project leaves it out: through that project's own `exclude` when it has one (cli), else behind
+// `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the file (integration-stores), because a project-level `exclude`
+// replaces the `--exclude` list the sentinels control run passes and would let the whole project in. A single
+// quarantined case stays in its file the same way, with its file in the nightly project's include.
 const NIGHTLY = [
   // CLI spawns time out under load (P2-13's CI red; the gate on 2026-10-22).
   'packages/cli/src/commands/add.test.ts',
@@ -223,7 +225,6 @@ export default defineConfig({
             'tests/stores/**/*.test.ts',
             ...NESTED_VITEST_RUNS,
           ],
-          exclude: [...configDefaults.exclude, ...NIGHTLY],
           testTimeout: 60000,
           hookTimeout: 60000,
         },

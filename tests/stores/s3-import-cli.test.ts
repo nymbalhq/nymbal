@@ -192,68 +192,72 @@ function otherLoopback(endpoint: string): string {
 }
 
 // Quarantined to the nightly project (vitest.config.ts): the built CLI against MinIO times out under a parallel
-// gate:full, red then green with no code change; the board row owns it.
-describe("P2-11 AC-5: nymbal import into a store with media 's3' serves every image from the bucket", () => {
-  it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
-    const dir = project({
-      commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
-      media: 's3',
-    })
-    const publicUrl = `${otherLoopback(bucket.endpoint)}/${bucket.name}`
-    const env = envFor(dir, {
-      S3_BUCKET: bucket.name,
-      S3_ENDPOINT: bucket.endpoint,
-      S3_PUBLIC_URL: publicUrl,
-      AWS_ACCESS_KEY_ID: bucket.credentials.accessKeyId,
-      AWS_SECRET_ACCESS_KEY: bucket.credentials.secretAccessKey,
-    })
+// gate:full, red then green with no code change; the board row owns it. Gated here, not by a project exclude: one
+// on integration-stores would replace the sentinels control run's --exclude list.
+describe.runIf(process.env['NYMBAL_NIGHTLY'])(
+  "P2-11 AC-5: nymbal import into a store with media 's3' serves every image from the bucket",
+  () => {
+    it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
+      const dir = project({
+        commandStore: 'sqlite',
+        documentStore: 'in-memory',
+        eventBus: 'in-process',
+        media: 's3',
+      })
+      const publicUrl = `${otherLoopback(bucket.endpoint)}/${bucket.name}`
+      const env = envFor(dir, {
+        S3_BUCKET: bucket.name,
+        S3_ENDPOINT: bucket.endpoint,
+        S3_PUBLIC_URL: publicUrl,
+        AWS_ACCESS_KEY_ID: bucket.credentials.accessKeyId,
+        AWS_SECRET_ACCESS_KEY: bucket.credentials.secretAccessKey,
+      })
 
-    const migrated = await nymbal(dir, env, ['migrate'])
-    expect(migrated.code, migrated.output.slice(-3000)).toBe(0)
-    const imported = await nymbal(dir, env, IMPORT(woo.url))
-    expect(imported.code, imported.output.slice(-3000)).toBe(0)
+      const migrated = await nymbal(dir, env, ['migrate'])
+      expect(migrated.code, migrated.output.slice(-3000)).toBe(0)
+      const imported = await nymbal(dir, env, IMPORT(woo.url))
+      expect(imported.code, imported.output.slice(-3000)).toBe(0)
 
-    const media = mediaBySlug(await listProducts(await startApi(dir, env)))
-    for (const product of woo.products) {
-      const urls = media.get(product.slug)
-      expect(urls, `${product.slug} is not listed`).toBeDefined()
-      expect(urls!.length, product.slug).toBe(product.images.length)
-      for (const [i, url] of urls!.entries()) {
-        const source = product.images[i]!
-        expect(url.startsWith(`${publicUrl}/`), `${url} is not under ${publicUrl}/`).toBe(true)
-        const got = await anonymousGet(url)
-        expect(got.status, url).toBe(200)
-        expect(hex(got.bytes), `${url} vs ${source.src}`).toBe(hex(source.bytes))
-        expect(got.contentType, url).toBe(source.contentType)
+      const media = mediaBySlug(await listProducts(await startApi(dir, env)))
+      for (const product of woo.products) {
+        const urls = media.get(product.slug)
+        expect(urls, `${product.slug} is not listed`).toBeDefined()
+        expect(urls!.length, product.slug).toBe(product.images.length)
+        for (const [i, url] of urls!.entries()) {
+          const source = product.images[i]!
+          expect(url.startsWith(`${publicUrl}/`), `${url} is not under ${publicUrl}/`).toBe(true)
+          const got = await anonymousGet(url)
+          expect(got.status, url).toBe(200)
+          expect(hex(got.bytes), `${url} vs ${source.src}`).toBe(hex(source.bytes))
+          expect(got.contentType, url).toBe(source.contentType)
+        }
       }
-    }
-    expect((await bucket.keys()).length).toBe(woo.images.size)
-  }, 180_000)
+      expect((await bucket.keys()).length).toBe(woo.images.size)
+    }, 180_000)
 
-  it('AC-5: the same import with the default local-fs keeps /imported-media/... URLs, each a file under public/imported-media holding its source image’s bytes', async () => {
-    const dir = project({
-      commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
-    })
-    const env = envFor(dir)
+    it('AC-5: the same import with the default local-fs keeps /imported-media/... URLs, each a file under public/imported-media holding its source image’s bytes', async () => {
+      const dir = project({
+        commandStore: 'sqlite',
+        documentStore: 'in-memory',
+        eventBus: 'in-process',
+      })
+      const env = envFor(dir)
 
-    const migrated = await nymbal(dir, env, ['migrate'])
-    expect(migrated.code, migrated.output.slice(-3000)).toBe(0)
-    const imported = await nymbal(dir, env, IMPORT(woo.url))
-    expect(imported.code, imported.output.slice(-3000)).toBe(0)
+      const migrated = await nymbal(dir, env, ['migrate'])
+      expect(migrated.code, migrated.output.slice(-3000)).toBe(0)
+      const imported = await nymbal(dir, env, IMPORT(woo.url))
+      expect(imported.code, imported.output.slice(-3000)).toBe(0)
 
-    const media = mediaBySlug(await listProducts(await startApi(dir, env)))
-    for (const product of woo.products) {
-      const urls = media.get(product.slug) ?? []
-      expect(urls.length, product.slug).toBe(product.images.length)
-      for (const [i, url] of urls.entries()) {
-        expect(url.startsWith('/imported-media/'), url).toBe(true)
-        const file = readFileSync(join(dir, 'public', url))
-        expect(hex(file), url).toBe(hex(product.images[i]!.bytes))
+      const media = mediaBySlug(await listProducts(await startApi(dir, env)))
+      for (const product of woo.products) {
+        const urls = media.get(product.slug) ?? []
+        expect(urls.length, product.slug).toBe(product.images.length)
+        for (const [i, url] of urls.entries()) {
+          expect(url.startsWith('/imported-media/'), url).toBe(true)
+          const file = readFileSync(join(dir, 'public', url))
+          expect(hex(file), url).toBe(hex(product.images[i]!.bytes))
+        }
       }
-    }
-  }, 180_000)
-})
+    }, 180_000)
+  },
+)
