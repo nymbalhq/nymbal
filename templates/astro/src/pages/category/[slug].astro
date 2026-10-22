@@ -1,11 +1,8 @@
 ---
 import '../../styles/pages/plp.css'
-import '../../styles/pages/home.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import Breadcrumb from '../../components/Breadcrumb.astro'
-import ProductCard from '../../components/ProductCard.astro'
-import { EAGER_CARDS } from '../../lib/listing'
-import Pagination from '../../components/Pagination.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardProductOf } from '@nymbalhq/web-components/ssr'
 import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
 import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
 
@@ -30,7 +27,7 @@ const facets = productResult.facets ?? []
   description={category?.description ?? `Browse ${categoryName} products.`}
 >
   <div class="container section">
-    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: categoryName }]} />
+    <NymbalElement tag="nymbal-breadcrumb" attributes={{ items: JSON.stringify([{ label: 'Home', href: '/' }, { label: categoryName }]) }} />
 
     <div class="plp-header">
       <h1 class="plp-title">{categoryName}</h1>
@@ -39,7 +36,6 @@ const facets = productResult.facets ?? []
           {category.description}
         </p>
       )}
-      <p class="plp-count" id="product-count">{products.length} products</p>
     </div>
 
     <div class="plp-layout">
@@ -69,20 +65,15 @@ const facets = productResult.facets ?? []
           </div>
         )}
 
-        <div class="product-grid" id="product-grid" data-category={slug}>
-          {products.map((product, i) => (
-            <ProductCard product={product} eager={i < EAGER_CARDS} />
-          ))}
-        </div>
-
-        {products.length === 0 && (
-          <div class="plp-empty">
-            <h2 class="plp-empty-title">No products found</h2>
-            <p class="plp-empty-text">Check back soon for new arrivals.</p>
-          </div>
-        )}
-
-        <Pagination />
+        <NymbalElement
+          tag="nymbal-product-grid"
+          attributes={{
+            products: JSON.stringify(products.map(cardProductOf)),
+            source: 'product-list',
+            ...(productResult.nextCursor !== null && { 'has-more': '' }),
+            'data-category': slug!,
+          }}
+        />
       </div>
     </div>
   </div>

@@ -364,24 +364,3 @@ label {
   color: var(--nymbal-color-error, #dc2626);
   margin-top: var(--nymbal-spacing-xs, 0.25rem);
 }
-
-/* ---- Product grid ---- */
-
-.product-grid {
-  display: grid;
-  gap: var(--nymbal-spacing-md, 1rem);
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 641px) {
-  .product-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--nymbal-spacing-lg, 1.5rem);
-  }
-}
-
-@media (min-width: 1025px) {
-  .product-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}

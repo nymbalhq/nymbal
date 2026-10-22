@@ -39,6 +39,17 @@ export {
   AddressForm,
   AddressBook,
   Checkout,
+  ProductGrid,
+  ProductPrice,
+  StockBadge,
+  Breadcrumb,
+  ImageGallery,
+  SiteHeader,
+  SiteFooter,
+  CategoryNav,
+  ReviewList,
+  ReviewForm,
+  OrderSummary,
 } from './generated/wrappers.js'
 
 export type {
@@ -61,4 +72,15 @@ export type {
   AddressFormProps,
   AddressBookProps,
   CheckoutProps,
+  ProductGridProps,
+  ProductPriceProps,
+  StockBadgeProps,
+  BreadcrumbProps,
+  ImageGalleryProps,
+  SiteHeaderProps,
+  SiteFooterProps,
+  CategoryNavProps,
+  ReviewListProps,
+  ReviewFormProps,
+  OrderSummaryProps,
 } from './generated/wrappers.js'

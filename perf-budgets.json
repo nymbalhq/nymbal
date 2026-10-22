@@ -4,31 +4,31 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 20480
+      "scriptBytes": 27648
     },
     "listing": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 24576
+      "scriptBytes": 30720
     },
     "product": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 25600
+      "scriptBytes": 34816
     },
     "cart": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 25600
+      "scriptBytes": 27648
     },
     "checkout": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 29696
+      "scriptBytes": 31744
     }
   },
   "nextjs": {
@@ -36,31 +36,31 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 179200
+      "scriptBytes": 187392
     },
     "listing": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 183296
+      "scriptBytes": 190464
     },
     "product": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 184320
+      "scriptBytes": 191488
     },
     "cart": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 178176
+      "scriptBytes": 190464
     },
     "checkout": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 181248
+      "scriptBytes": 193536
     }
   }
 }

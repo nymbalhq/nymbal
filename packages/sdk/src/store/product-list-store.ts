@@ -48,7 +48,9 @@ export function createProductListStore(adapter: CommerceAdapter): ProductListSto
       const filters = { ...store.getState().filters }
       if (params.category !== undefined) filters['category'] = params.category
       else delete filters['category']
-      store.setState({ filters, sort: params.sort ?? DEFAULT_PRODUCT_SORT })
+      // Loading from this update on: an update that is not loading is a settled answer, which a server-rendered
+      // listing gives its cards way to.
+      store.setState({ filters, sort: params.sort ?? DEFAULT_PRODUCT_SORT, loading: true })
     }
     const request = buildParams()
     if (params?.cursor !== undefined) request.cursor = params.cursor

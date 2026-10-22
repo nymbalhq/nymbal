@@ -1,5 +1,6 @@
 ---
-import Footer from '../../components/Footer.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { FOOTER } from '../../lib/chrome'
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=300')
 ---
-<Footer />
+<NymbalElement tag="nymbal-site-footer" attributes={FOOTER} />

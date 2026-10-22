@@ -1,10 +1,9 @@
 ---
 import '../styles/global.css'
-import '../lib/server-elements'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import SkipNav from '../components/SkipNav.astro'
-import Header from '../components/Header.astro'
-import Footer from '../components/Footer.astro'
-import { fetchCart, type CartProjection } from '../lib/api'
+import { FOOTER, HEADER, headerSlots } from '../lib/chrome'
+import { fetchCapabilities, fetchCart, type CartProjection } from '../lib/api'
 
 interface Props {
   title: string
@@ -18,6 +17,8 @@ interface Props {
 const { title, description = 'Shop the Nymbal store', ogImage, jsonLd } = Astro.props
 const cart =
   Astro.props.cart !== undefined ? Astro.props.cart : await fetchCart(Astro.request.headers.get('cookie'))
+const capabilities = await fetchCapabilities()
+const canSearch = capabilities?.search.capabilities.includes('search') ?? false
 const canonicalUrl = Astro.url.href
 ---
 <!doctype html>
@@ -43,11 +44,13 @@ const canonicalUrl = Astro.url.href
   </head>
   <body>
     <SkipNav />
-    <Header cartCount={cart?.itemCount} />
+    <NymbalElement tag="nymbal-site-header" attributes={HEADER}>
+      <Fragment set:html={headerSlots(canSearch, cart?.itemCount)} />
+    </NymbalElement>
     <main id="main">
       <slot />
     </main>
-    <Footer />
+    <NymbalElement tag="nymbal-site-footer" attributes={FOOTER} />
 
     <!-- Web component overlays (rendered outside main flow) -->
     <nymbal-cart-drawer></nymbal-cart-drawer>

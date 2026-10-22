@@ -1,11 +1,16 @@
 import { css, html, nothing } from 'lit'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { formatPrice } from '../format.js'
+import { navigateOnClick } from '../navigate.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-product-card',
   reactName: 'ProductCard',
-  attributes: [{ name: 'product', prop: 'product', type: 'json' }],
+  // `eager`: the card is in a grid's first row, so its image is the page's likely LCP and is fetched at once.
+  attributes: [
+    { name: 'product', prop: 'product', type: 'json' },
+    { name: 'eager', prop: 'eager', type: 'boolean' },
+  ],
   events: [],
   parts: ['card', 'media', 'image', 'body', 'name', 'price'],
   slots: [],
@@ -13,7 +18,7 @@ const SCHEMA: ElementSchema = {
 }
 
 /** The fields a card reads; a search result or a listing product carries them. */
-interface CardProduct {
+export interface CardProduct {
   slug: string
   name: string
   priceMinor?: number | null
@@ -31,6 +36,29 @@ function imageOf(p: CardProduct): { url: string; alt: string } {
   return { url: `https://picsum.photos/seed/${encodeURIComponent(p.slug)}/600/600`, alt: p.name }
 }
 
+/**
+ * A product as a card reads it, and nothing else: a listing's products carry their variants, descriptions and
+ * categories, which a page of cards would otherwise put in its HTML once per card.
+ */
+export function cardProductOf(p: Omit<CardProduct, 'media'> & { media?: unknown }): CardProduct {
+  const list = Array.isArray(p.media) ? (p.media as NonNullable<CardProduct['media']>) : []
+  const media = list.find((m) => typeof m.url === 'string' && m.url !== '')
+  const image =
+    typeof p.imageUrl === 'string' && p.imageUrl !== ''
+      ? { imageUrl: p.imageUrl }
+      : media === undefined
+        ? {}
+        : { media: [{ url: media.url!, ...(media.alt !== undefined && { alt: media.alt }) }] }
+  return {
+    slug: p.slug,
+    name: p.name,
+    priceMinor: p.priceMinor ?? null,
+    priceRange: p.priceRange ?? null,
+    currency: p.currency ?? null,
+    ...image,
+  }
+}
+
 function parse(raw: string | undefined): CardProduct | null {
   if (raw === undefined || raw === '') return null
   try {
@@ -42,16 +70,10 @@ function parse(raw: string | undefined): CardProduct | null {
   }
 }
 
+/** The "from" price, which the price sorts order by: the cheapest variant's when the product has a range. */
 function priceOf(p: CardProduct): string | null {
-  const currency = p.currency ?? 'GBP'
-  if (p.priceMinor != null) return formatPrice(p.priceMinor, currency)
-  if (p.priceRange != null) {
-    const { minMinor, maxMinor } = p.priceRange
-    return minMinor === maxMinor
-      ? formatPrice(minMinor, currency)
-      : `${formatPrice(minMinor, currency)} – ${formatPrice(maxMinor, currency)}`
-  }
-  return null
+  const from = p.priceRange?.minMinor ?? p.priceMinor
+  return from == null ? null : formatPrice(from, p.currency ?? 'GBP')
 }
 
 /** One product as a link to its page: image, name and price. */
@@ -112,6 +134,7 @@ export class NymbalProductCard extends NymbalElement {
   ]
 
   declare product: string | undefined
+  declare eager: boolean | undefined
 
   protected override render() {
     const p = parse(this.product)
@@ -123,13 +146,15 @@ export class NymbalProductCard extends NymbalElement {
         part="card"
         href="/product/${encodeURIComponent(p.slug)}"
         data-testid="product-card-${p.slug}"
+        @click=${navigateOnClick}
       >
         <div part="media">
           <img
             part="image"
             src=${image.url}
             alt=${image.alt}
-            loading="lazy"
+            loading=${this.eager === true ? 'eager' : 'lazy'}
+            fetchpriority=${this.eager === true ? 'high' : nothing}
             width="600"
             height="600"
           />

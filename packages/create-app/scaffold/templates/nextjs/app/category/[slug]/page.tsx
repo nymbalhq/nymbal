@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { fetchProducts, fetchCategories, fetchCapabilities, sortFromSearchParams } from '@/lib/api'
-import { Breadcrumb } from '@/components/server/Breadcrumb'
-import { ProductGrid } from '@/components/client/ProductGrid'
+import { cardProductOf, renderNymbal } from '@/lib/render'
+import { Breadcrumb, ProductGrid } from '@/components/client/elements'
+import { ListingControls } from '@/components/client/ListingControls'
 import styles from '@/styles/pages/plp.module.css'
 
 interface CategoryPageProps {
@@ -10,9 +11,7 @@ interface CategoryPageProps {
   searchParams: Promise<{ sort?: string | string[] }>
 }
 
-export async function generateMetadata({
-  params,
-}: CategoryPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
   const { slug } = await params
   const categories = await fetchCategories()
   const category = categories.find((c) => c.slug === slug)
@@ -34,28 +33,36 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
 
   const category = categories.find((c) => c.slug === slug)
   if (!category) notFound()
+  const crumbs = [{ label: 'Home', href: '/' }, { label: category.name }]
+  const cards = items.map(cardProductOf)
+  const grid = {
+    products: JSON.stringify(cards),
+    source: 'product-list',
+    ...(nextCursor !== null && { 'has-more': '' }),
+  }
 
   return (
     <div className={`container ${styles.page}`}>
       <Breadcrumb
-        items={[
-          { label: 'Home', href: '/' },
-          { label: category.name },
-        ]}
+        items={crumbs}
+        serverHtml={renderNymbal('nymbal-breadcrumb', { items: JSON.stringify(crumbs) }).__html}
       />
       <h1 className={styles.pageTitle}>{category.name}</h1>
-      {category.description && (
-        <p className="text-muted mb-lg">{category.description}</p>
-      )}
-      <ProductGrid
-        initialProducts={items}
-        initialCursor={nextCursor}
-        initialSort={sort}
-        initialFacets={facets ?? []}
+      {category.description && <p className="text-muted mb-lg">{category.description}</p>}
+      <ListingControls
+        sort={sort}
+        category={slug}
+        facets={facets ?? []}
         sortKeys={capabilities?.catalog.sortKeys ?? []}
         defaultSort={capabilities?.catalog.defaultSort}
-        categorySlug={slug}
-      />
+      >
+        <ProductGrid
+          products={cards}
+          source="product-list"
+          hasMore={nextCursor !== null}
+          serverHtml={renderNymbal('nymbal-product-grid', grid).__html}
+        />
+      </ListingControls>
     </div>
   )
 }

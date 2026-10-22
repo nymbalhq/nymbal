@@ -1,117 +1,40 @@
-import Link from 'next/link'
 import { headers } from 'next/headers'
-import { SearchBarWrapper } from '@/components/client/SearchBarWrapper'
-import { MiniCartWrapper } from '@/components/client/MiniCartWrapper'
+import { SiteHeader } from '@/components/client/elements'
 import { fetchCapabilities, fetchCart } from '@/lib/api'
-import { renderNymbal } from '@/lib/render'
-import styles from './Header.module.css'
+import { HEADER } from '@/lib/chrome'
+import { renderElement, renderNymbal } from '@/lib/render'
 
-const NAV_LINKS = [
-  { href: '/products', label: 'Shop' },
-  { href: '/products?category=new', label: 'New Arrivals' },
-  { href: '/products?category=sale', label: 'Sale' },
-]
-
+/**
+ * The store's header with the page's search bar and mini-cart as its light-DOM children, each rendered by the server
+ * with the slot it fills; React cannot give children beside the header's server HTML, so they go in that HTML.
+ */
 export async function Header() {
   const [capabilities, cart] = await Promise.all([
     fetchCapabilities(),
     headers().then((h) => fetchCart(h.get('cookie'))),
   ])
-  const count = cart?.itemCount
-  const miniCart = renderNymbal(
-    'nymbal-mini-cart',
-    count === undefined ? {} : { count: String(count) },
-  ).__html
   const canSearch = capabilities?.search.capabilities.includes('search') ?? false
+  const miniCart: Record<string, string> = { slot: 'cart' }
+  if (cart !== null) miniCart['count'] = String(cart.itemCount)
+  const children = [
+    canSearch
+      ? renderElement('nymbal-search-bar', {
+          attributes: { slot: 'search', placeholder: 'Search products...', 'debounce-ms': '300' },
+        })
+      : '',
+    renderElement('nymbal-mini-cart', { attributes: miniCart }),
+  ].join('')
+  const serverHtml = renderNymbal(
+    'nymbal-site-header',
+    { links: JSON.stringify(HEADER.links), logo: HEADER.logo, 'account-href': HEADER.accountHref },
+    children,
+  ).__html
   return (
-    <header className={styles.header} data-testid="site-header">
-      <div className={`container ${styles.inner}`}>
-        <Link href="/" className={styles.logo}>
-          Nymbal
-        </Link>
-
-        <nav className={styles.nav} aria-label="Main navigation">
-          <ul className={styles.navList}>
-            {NAV_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href} className={styles.navLink}>
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className={styles.actions}>
-          {canSearch && (
-            <div className={styles.search}>
-              <SearchBarWrapper />
-            </div>
-          )}
-          <Link href="/account" className={styles.iconLink} aria-label="Account">
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-          </Link>
-          <MiniCartWrapper count={count} serverHtml={miniCart} />
-        </div>
-
-        <input
-          type="checkbox"
-          id="mobile-menu-toggle"
-          className={styles.menuCheckbox}
-          aria-hidden="true"
-        />
-        <label
-          htmlFor="mobile-menu-toggle"
-          className={styles.menuButton}
-          aria-label="Toggle menu"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
-        </label>
-
-        <nav className={styles.mobileNav} aria-label="Mobile navigation">
-          <ul className={styles.mobileNavList}>
-            {NAV_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link href={link.href} className={styles.mobileNavLink}>
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-            <li>
-              <Link href="/account" className={styles.mobileNavLink}>
-                Account
-              </Link>
-            </li>
-          </ul>
-        </nav>
-      </div>
-    </header>
+    <SiteHeader
+      links={HEADER.links}
+      logo={HEADER.logo}
+      accountHref={HEADER.accountHref}
+      serverHtml={serverHtml}
+    />
   )
 }

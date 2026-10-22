@@ -1,14 +1,8 @@
 ---
 import '../../styles/pages/pdp.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import Breadcrumb from '../../components/Breadcrumb.astro'
-import ImageGallery from '../../components/ImageGallery.astro'
-import PriceDisplay from '../../components/PriceDisplay.astro'
-import StockBadge from '../../components/StockBadge.astro'
-import ReviewList from '../../components/ReviewList.astro'
-import ReviewForm from '../../components/ReviewForm.astro'
-import RelatedProducts from '../../components/RelatedProducts.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardProductOf } from '@nymbalhq/web-components/ssr'
 import { fetchProduct, fetchReviews, fetchProducts } from '../../lib/api'
 import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
 
@@ -21,7 +15,7 @@ const [reviewsResult, relatedResult] = await Promise.all([
   fetchReviews(product.id),
   fetchProducts({
     limit: 4,
-    category: product.categoryIds?.[0] ?? undefined,
+    category: product.categories?.[0]?.slug,
   }),
 ])
 
@@ -52,26 +46,32 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
 
 <BaseLayout title={`${product.name} | Nymbal`} description={product.shortDescription ?? product.description ?? ''} jsonLd={jsonLd}>
   <div class="container section" data-product-slug={product.slug}>
-    <Breadcrumb
-      items={[
-        { label: 'Home', href: '/' },
-        { label: 'Products', href: '/products' },
-        { label: product.name },
-      ]}
+    <NymbalElement
+      tag="nymbal-breadcrumb"
+      attributes={{
+        items: JSON.stringify([
+          { label: 'Home', href: '/' },
+          { label: 'Products', href: '/products' },
+          { label: product.name },
+        ]),
+      }}
     />
 
     <div class="pdp-layout">
-      <ImageGallery images={images} />
+      <NymbalElement tag="nymbal-image-gallery" attributes={{ class: 'pdp-gallery', images: JSON.stringify(images) }} />
 
       <div class="pdp-info">
         <h1 class="pdp-title" data-testid="product-title">{product.name}</h1>
 
-        <PriceDisplay
-          priceMinor={defaultVariant?.priceMinor ?? product.priceMinor}
-          currency={product.currency ?? 'GBP'}
+        <NymbalElement
+          tag="nymbal-product-price"
+          attributes={{
+            'product-id': product.id,
+            'price-minor': String(defaultVariant?.priceMinor ?? product.priceMinor ?? 0),
+            currency: product.currency ?? 'GBP',
+          }}
         />
-
-        <StockBadge stock={stock} />
+        <NymbalElement tag="nymbal-stock-badge" attributes={{ 'product-id': product.id, stock: String(stock) }} />
 
         <div class="pdp-actions">
           {hasVariantChoice && (
@@ -101,11 +101,16 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
 
     <section class="pdp-reviews">
       <h2 class="pdp-reviews-title">Customer Reviews</h2>
-      <ReviewList reviews={reviews} />
-      <ReviewForm productId={product.id} />
+      <NymbalElement tag="nymbal-review-list" attributes={{ reviews: JSON.stringify(reviews) }} />
+      <NymbalElement tag="nymbal-review-form" attributes={{ class: 'pdp-review-form', 'product-id': product.id }} />
     </section>
 
-    <RelatedProducts products={relatedProducts} />
+    {relatedProducts.length > 0 && (
+      <section class="section">
+        <h2 class="section-title">You may also like</h2>
+        <NymbalElement tag="nymbal-product-grid" attributes={{ products: JSON.stringify(relatedProducts.map(cardProductOf)) }} />
+      </section>
+    )}
   </div>
 </BaseLayout>
 

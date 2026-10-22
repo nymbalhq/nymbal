@@ -44,6 +44,12 @@
 
 /* ---- Order details card ---- */
 
+.confirmation-summary {
+  display: block;
+  margin-bottom: var(--nymbal-spacing-xl, 2rem);
+  text-align: left;
+}
+
 .confirmation-card {
   text-align: left;
   background-color: #fafafa;

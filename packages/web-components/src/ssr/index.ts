@@ -5,6 +5,8 @@ import { collectResultSync } from '@lit-labs/ssr/lib/render-result.js'
 import type { LitElement } from 'lit'
 import { ELEMENTS } from '../register-components.js'
 
+export { cardProductOf, type CardProduct } from '../components/product-card.js'
+
 restoreCreateRenderRoot()
 
 /** Thrown for a tag the server does not render: neither a package element nor one a project registered. */
@@ -77,8 +79,20 @@ function defineAll(): void {
   for (const tag of new Set([...projectElements.keys(), ...PACKAGE.keys()])) {
     const element = classFor(tag)!
     if (customElements.get(tag) === undefined) customElements.define(tag, element)
-    else if (customElements.getName(element) === null) customElements.define(`${tag}-server`, element)
+    else if (customElements.getName(element) === null)
+      customElements.define(`${tag}-server`, element)
   }
+}
+
+/**
+ * The elements' styles, with their indentation collapsed: written for reading, they would otherwise be bytes a page
+ * downloads before its first paint, once per element.
+ */
+function compactStyles(html: string): string {
+  return html.replace(
+    /<style>([^<]*)<\/style>/g,
+    (_, css: string) => `<style>${css.replace(/\s+/g, ' ').trim()}</style>`,
+  )
 }
 
 export interface RenderOptions {
@@ -116,7 +130,7 @@ export function renderElement(tag: string, options: RenderOptions = {}): string 
     deferHydration: false,
   }
   const attributes = collectResultSync(renderer.renderAttributes())
-  const shadow = collectResultSync(renderer.renderShadow(renderInfo))
+  const shadow = compactStyles(collectResultSync(renderer.renderShadow(renderInfo)))
   const { mode = 'open' } = renderer.shadowRootOptions
   return `<${tag}${attributes}><template shadowrootmode="${mode}">${shadow}</template>${options.children ?? ''}</${tag}>`
 }
