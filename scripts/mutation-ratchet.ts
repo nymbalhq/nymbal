@@ -6,7 +6,8 @@ import { parseArgs } from 'node:util'
 import { mutateSet } from './gate'
 
 // The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
-// file below its entry fails. `check` runs in the gate after Stryker; `update` raises entries and never lowers one.
+// file below its entry fails. `check` runs in gate:full after Stryker and `check --static` (entries against the
+// mutate set, no report) in the plain gate; `update` raises entries and never lowers one.
 // Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100.
 
 export type Scores = Record<string, number>
@@ -127,6 +128,44 @@ async function check(report: unknown, ratchetPath: string): Promise<number> {
   return 0
 }
 
+/**
+ * The ratchet against the mutate set, with no report: every tracked file in the set has an entry and every entry
+ * names a file in it. Cheap enough for the plain gate, where a miss costs seconds instead of a gate:full's stryker
+ * step finding it after everything else ran.
+ */
+async function staticCheck(ratchetPath: string): Promise<number> {
+  const ratchet = readJson<Ratchet>(ratchetPath)
+  const set = await trackedMutateSet(process.cwd())
+  if (set === undefined) {
+    throw new Error(
+      `check --static reads Stryker's mutate set from git: run it inside the repository`,
+    )
+  }
+  const inSet = new Set(set)
+  const unheld = set.filter((path) => ratchet.files[path] === undefined)
+  const gone = Object.keys(ratchet.files).filter((path) => !inSet.has(path))
+  for (const path of unheld) process.stdout.write(`no ratchet entry: ${path}\n`)
+  for (const path of gone) process.stdout.write(`entry names no file in the mutate set: ${path}\n`)
+  if (unheld.length > 0) {
+    process.stdout.write(
+      'a new file needs its measured score: pnpm exec stryker run --mutate <file> && pnpm mutation:ratchet update --report reports/mutation/mutation.json --files <file>\n',
+    )
+  }
+  if (gone.length > 0) {
+    process.stdout.write(
+      'a stale entry is dropped by: pnpm mutation:ratchet update --report reports/mutation/mutation.json\n',
+    )
+  }
+  if (unheld.length > 0 || gone.length > 0) {
+    process.stdout.write(
+      `mutation ratchet: ${unheld.length + gone.length} entry(ies) out of step with the mutate set\n`,
+    )
+    return 1
+  }
+  process.stdout.write(`mutation ratchet: ${set.length} entries, one per file in the mutate set\n`)
+  return 0
+}
+
 async function update(
   report: unknown,
   ratchetPath: string,
@@ -188,16 +227,18 @@ async function main(argv: string[]): Promise<number> {
       ratchet: { type: 'string', default: 'mutation-ratchet.json' },
       total: { type: 'boolean', default: false },
       command: { type: 'string', default: DEFAULT_COMMAND },
+      static: { type: 'boolean', default: false },
     },
   })
   const [subcommand] = positionals
+  const ratchetPath = resolve(values.ratchet)
+  if (subcommand === 'check' && values.static) return staticCheck(ratchetPath)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
     throw new Error(
-      'usage: mutation-ratchet.ts check|update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>]',
+      'usage: mutation-ratchet.ts check --static [--ratchet <file>] | check|update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>]',
     )
   }
   const report = readJson<unknown>(resolve(values.report))
-  const ratchetPath = resolve(values.ratchet)
   return subcommand === 'check'
     ? check(report, ratchetPath)
     : update(report, ratchetPath, values.total, values.command)

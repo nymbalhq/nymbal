@@ -571,6 +571,38 @@ describe('AC-5b: the ratchet follows the mutate set', () => {
     )
   })
 
+  it('audit 2026-10-22: check --static needs no report; it exits 1 naming exactly the mutate-set files with no entry and the entries naming no file', async () => {
+    const set = await mutateSet()
+    const GONE = 'packages/platform/src/services/gone-service.ts'
+    await fc.assert(
+      fc.asyncProperty(fc.subarray(set), fc.boolean(), async (missing, stale) => {
+        const dir = scratch()
+        const files: Scores = Object.fromEntries(
+          set.filter((p) => !missing.includes(p)).map((p, i) => [p, (i * 37) % 100]),
+        )
+        if (stale) files[GONE] = 50
+        const ratchetFile = writeJson(dir, 'mutation-ratchet.json', {
+          measuredAt: '2026-10-01T00:00:00.000Z',
+          command: 'fixture',
+          total: 50,
+          files,
+        })
+        const { code, output } = await cli(['check', '--static', '--ratchet', ratchetFile])
+        expect(code, output).toBe(missing.length > 0 || stale ? 1 : 0)
+        expect(named(output, set), output).toEqual(missing)
+        expect(named(output, [GONE]), output).toEqual(stale ? [GONE] : [])
+        if (missing.length > 0) expect(output).toMatch(/--files/)
+      }),
+      { numRuns: 8 },
+    )
+  })
+
+  it('audit 2026-10-22: check --static passes on the committed ratchet', async () => {
+    const { code, output } = await cli(['check', '--static'])
+    expect(code, output).toBe(0)
+    expect(output).toMatch(new RegExp(`\\b${(await mutateSet()).length} entries\\b`))
+  })
+
   it('AC-5b: property: check names exactly the mutate-set files with no entry, with the hint to run update', async () => {
     const set = await mutateSet()
     await fc.assert(

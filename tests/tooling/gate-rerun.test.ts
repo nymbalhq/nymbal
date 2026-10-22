@@ -45,6 +45,7 @@ function rerunRepo(): Repo {
         scripts: {
           lint: 'node log.cjs lint',
           typecheck: 'node log.cjs typecheck',
+          'mutation:ratchet': 'true',
           test: 'vitest run',
         },
       }),

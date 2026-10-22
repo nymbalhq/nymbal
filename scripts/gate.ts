@@ -144,6 +144,18 @@ function isDocumentation(path: string): boolean {
   return path.endsWith('.md') || path.startsWith('docs/')
 }
 
+/**
+ * The harness's own Vitest projects: 63 files and most of the suite's file time (tooling 378 s of 512 s measured on
+ * 2026-10-22), moved only by the harness. The plain gate leaves them out unless the change touches the harness;
+ * gate:full and dev CI run them whatever changed.
+ */
+export const HARNESS_PROJECTS = ['tooling', 'architecture']
+
+/** A change to the harness: its scripts, or its own test projects. */
+export function isHarnessPath(path: string): boolean {
+  return /^(?:scripts|tests\/tooling|tests\/architecture)\//.test(path)
+}
+
 /** Which tests a change set needs: all when configuration moved, none for documentation only, else the changed ones. */
 export function selectTests(changed: string[]): {
   mode: 'all' | 'changed' | 'none'
@@ -214,11 +226,13 @@ export function workspaceClosure(root: string, start: string): string[] {
 const NAMED_TEST_FILE =
   /\b(?:packages|tests|apps|templates)\/[\w./[\]-]+\.(?:test|spec)\.[cm]?[jt]sx?\b/g
 
-/** A change that can move every sentinel: configuration, the runner, or the sentinels themselves. */
+/**
+ * A change that can move every sentinel: the runner, or the sentinels themselves. A configuration change does not:
+ * dev CI runs every sentinel on every push, so a local gate:full selects by the changed files alone (P2-13 spent
+ * 246 s of 533 s on all of them for a package.json change).
+ */
 function selectsEverySentinel(path: string): boolean {
-  return (
-    isConfiguration(path) || path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
-  )
+  return path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
 }
 
 /**
@@ -1097,6 +1111,10 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  const harnessApart =
+    full || changed.some(isHarnessPath)
+      ? ''
+      : HARNESS_PROJECTS.map((name) => ` --project ${shellWord(`!${name}`)}`).join('')
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1121,13 +1139,20 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           ? {
               name: 'tests',
               command:
-                `pnpm run test --changed ${base} --passWithNoTests${perfApart} ${VITEST_JSON}` +
+                `pnpm run test --changed ${base} --passWithNoTests${perfApart}${harnessApart} ${VITEST_JSON}` +
                 (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
               ...buildNeeds,
             }
-          : { name: 'tests', command: `pnpm run test${perfApart} ${VITEST_JSON}`, ...buildNeeds }
+          : {
+              name: 'tests',
+              command: `pnpm run test${perfApart}${harnessApart} ${VITEST_JSON}`,
+              ...buildNeeds,
+            }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
+    // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
+    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22).
+    { name: 'ratchet', command: 'pnpm --silent mutation:ratchet check --static' },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,

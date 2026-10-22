@@ -11,7 +11,8 @@ import { parseYaml } from './workflow-yaml'
 // selectSentinels(sentinels, changed, closure) is exported by scripts/gate.ts; `closure(packageDir)` is the
 // workspace closure of a package, `(dir) => workspaceClosure(root, dir)` in the gate. A sentinel is selected when a
 // changed file is a path its patch touches, its `# killed-by` file, or inside the closure of the killed-by file's
-// package; a configuration file, scripts/sentinels.ts or tests/sentinels/** selects every one. The plan takes the
+// package; scripts/sentinels.ts or tests/sentinels/** selects every one, and since the harness audit of 2026-10-22 a
+// configuration file selects none on its own (dev CI runs them all on every push). The plan takes the
 // selection as `sentinels: 'all' | Set<string>`; the CLI's `--sentinels all|impacted` defaults to impacted.
 // P1-20 AC-4 (spec P1-20-loop-waits-less) replaces AC-14's workflow assertion: ci.yml's sentinel job passes
 // `--sentinels impacted` on a pull request and `all` on a push; the nightly keeps `all`.
@@ -75,15 +76,21 @@ describe('AC-13: selectSentinels selects by patch target, killed-by file and clo
     expect(select(['packages/types/src/index.ts'])).toEqual(ALL)
   })
 
+  it.each(['scripts/sentinels.ts', 'tests/sentinels/S001-sqlite-transaction-passthrough.patch'])(
+    'AC-13: %s selects every sentinel',
+    (path) => {
+      expect(select([path, 'templates/astro/src/pages/index.astro'])).toEqual(ALL)
+    },
+  )
+
   it.each([
     'package.json',
     'pnpm-lock.yaml',
     'vitest.config.ts',
     'packages/web-components/package.json',
-    'scripts/sentinels.ts',
-    'tests/sentinels/S001-sqlite-transaction-passthrough.patch',
-  ])('AC-13: %s selects every sentinel', (path) => {
-    expect(select([path, 'templates/astro/src/pages/index.astro'])).toEqual(ALL)
+  ])('audit 2026-10-22: %s, a configuration file, selects no sentinel by itself', (path) => {
+    expect(select([path, 'templates/astro/src/pages/index.astro'])).toEqual([])
+    expect(select([path, 'packages/types/src/index.ts'])).toEqual(ALL)
   })
 
   it('AC-13: property: the selection is a subset of all ids, and growing `changed` never removes an id', () => {
