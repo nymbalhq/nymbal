@@ -50,6 +50,7 @@ describe('product facets integration: category → product → GET /api/products
       documentStore: env.documentStore,
       logger,
       storeId: 'test',
+      repos: env.repos,
     })
     await registerProductProjection({
       eventBus: env.eventBus,
@@ -110,7 +111,7 @@ describe('product facets integration: category → product → GET /api/products
   it('category filter returns only matching products with correct facets', async () => {
     const env = await createTestEnv()
 
-    await registerCategoryProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test' })
+    await registerCategoryProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test', repos: env.repos })
     await registerProductProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test', currency: 'GBP', repos: env.repos })
 
     const fiction = await env.category.create({ slug: 'fiction', name: 'Fiction', description: '' })
