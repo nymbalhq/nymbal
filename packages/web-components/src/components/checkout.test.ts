@@ -744,3 +744,51 @@ describe('P2-16 AC-4: the payment element mounts once', () => {
     expect(removed.filter((node) => node === r.pay || node === first)).toEqual([])
   })
 })
+
+describe('P2-16 diff review B1: a step change never moves what is under the cursor', () => {
+  // happy-dom lays nothing out, so the main column's height is modelled: the shown step's own height, raised to the
+  // column's min-height, as a browser lays out a block. Payment is shorter than shipping, as on a desktop store.
+  const STEP_HEIGHT = { contact: 260, shipping: 720, payment: 410 } as const
+
+  function laidOut(el: HTMLElement): HTMLElement {
+    const main = rootOf(el).querySelector<HTMLElement>("[part~='main']")
+    expect(main, "[part~='main'] inside nymbal-checkout").not.toBeNull()
+    Object.defineProperty(main!, 'offsetHeight', {
+      configurable: true,
+      get: () => {
+        const shown = (Object.keys(STEP_HEIGHT) as Array<keyof typeof STEP_HEIGHT>).find(
+          (step) => !byTestId(el, `checkout-${step}`).hidden,
+        )
+        const own = shown === undefined ? 0 : STEP_HEIGHT[shown]
+        return Math.max(own, Number.parseFloat(main!.style.minHeight) || 0)
+      },
+    })
+    return main!
+  }
+
+  // Kills: the shorter payment step rendered at its own height in the frame of the shipping submit, so the page
+  // shortens and a double click's second click lands on a footer link that rose under the cursor.
+  it('B1: shipping → payment: within the step-change frame, and a frame later, the main column is no shorter than the shipping step it replaced', async () => {
+    const r = await rig()
+    const main = laidOut(r.el)
+
+    await afterFrame(r.el)
+    type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
+    click(byTestId(r.el, 'contact-continue'), 1)
+    await afterFrame(r.el)
+    fillAddress(r.el, 'shipping', SHOPPER.shipping)
+    const before = main.offsetHeight
+    expect(before).toBe(STEP_HEIGHT.shipping)
+
+    click(byTestId(r.el, 'shipping-continue'), 1)
+    await settle(r.el)
+    expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown').toBe(false)
+    expect(main.offsetHeight, 'in the step-change frame').toBeGreaterThanOrEqual(before)
+
+    await nextFrame()
+    expect(
+      main.offsetHeight,
+      'a frame later, when a second click can still come',
+    ).toBeGreaterThanOrEqual(before)
+  })
+})

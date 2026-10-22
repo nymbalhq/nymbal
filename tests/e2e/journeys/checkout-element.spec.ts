@@ -197,4 +197,57 @@ test.describe('Checkout is an element', () => {
     expect(orders.map((o) => o.orderNumber)).toEqual([orderNumberOf(page)])
     expect(orders.length).toBe(before.length + 1)
   })
+
+  // Kills: a step change that shortens the page under a still cursor, so a double click's second click lands outside
+  // the element (Next's footer: /account/register), where its multi-click guards cannot see it. Each size is double
+  // clicked twice over: as Playwright does, and as a person does, the second click once the payment step is shown.
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
+  ]) {
+    for (const hand of ['dblclick', 'person'] as const) {
+      test(`diff review B1: at ${viewport.width}x${viewport.height}, a double click (${hand}) on shipping-continue leaves the page on /checkout with place-order shown, sends no POST /api/checkout and creates no order`, async ({
+        page,
+        request,
+      }) => {
+        test.setTimeout(90_000)
+        await page.setViewportSize(viewport)
+        const token = await adminToken(request)
+        const product = await ownProduct(request, token, 5)
+        const buyer = email('b1')
+        const before = await ordersFor(request, token, buyer)
+
+        await openCheckout(page, product)
+        const posts = checkoutPosts(page)
+        const checkout = page.locator('nymbal-checkout')
+        await checkout.getByTestId('contact-email').fill(buyer, { timeout: 15_000 })
+        await checkout.getByTestId('contact-continue').click()
+        for (const field of FIELDS) {
+          const value = SHIPPING[field]
+          if (value !== undefined) await checkout.getByTestId(`shipping-${field}`).fill(value)
+        }
+        const cont = checkout.getByTestId('shipping-continue')
+        if (hand === 'dblclick') {
+          await cont.dblclick()
+        } else {
+          await cont.scrollIntoViewIfNeeded()
+          const box = await cont.boundingBox()
+          expect(box, 'shipping-continue is laid out').not.toBeNull()
+          await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+          await page.mouse.down({ clickCount: 1 })
+          await page.mouse.up({ clickCount: 1 })
+          // A person's second click comes after the payment step has rendered and settled, not in its frame.
+          await expect(checkout.getByTestId('place-order')).toBeVisible()
+          await page.mouse.down({ clickCount: 2 })
+          await page.mouse.up({ clickCount: 2 })
+        }
+        await page.waitForLoadState('networkidle')
+
+        expect(new URL(page.url()).pathname).toBe('/checkout')
+        await expect(checkout.getByTestId('place-order')).toBeVisible()
+        expect(posts, 'POST /api/checkout from the double click').toEqual([])
+        expect(await ordersFor(request, token, buyer)).toEqual(before)
+      })
+    }
+  }
 })

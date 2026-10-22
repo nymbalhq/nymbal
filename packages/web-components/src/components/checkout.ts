@@ -327,6 +327,7 @@ export class NymbalCheckout extends NymbalElement {
   }
 
   private go(step: Step): void {
+    this.holdMainHeight()
     this.step = step
     this.error = null
     this.stepChanging = true
@@ -335,6 +336,20 @@ export class NymbalCheckout extends NymbalElement {
       if (turn === this.stepTurn) this.stepChanging = false
     })
     this.requestUpdate()
+  }
+
+  /**
+   * Keeps the main column as tall as the tallest step it has shown. A shorter next step would shorten the page under a
+   * still cursor, and a double click's second click would land on whatever rose there (a footer link), outside this
+   * element, where neither multi-click guard sees it. Held, not released after a frame: a person's second click comes
+   * several frames after the first.
+   */
+  private holdMainHeight(): void {
+    const main = this.renderRoot.querySelector<HTMLElement>("[part~='main']")
+    if (main === null) return
+    const height = main.offsetHeight
+    if (height > (Number.parseFloat(main.style.minHeight) || 0))
+      main.style.minHeight = `${height}px`
   }
 
   private showError(message: string): void {
