@@ -44,6 +44,7 @@ export * from './processed-event.js'
 export * from './event-log.js'
 export * from './cart.js'
 export * from './settings.js'
+export * from './page.js'
 
 export interface Repositories {
   product: ProductRepository

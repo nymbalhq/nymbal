@@ -457,8 +457,8 @@ describe('AC-19: the real sentinel set', () => {
     },
     S009: {
       kind: 'injected',
-      path: 'packages/platform/src/warm-document-store.ts',
-      marks: /eventBus\.replay\(events\)/,
+      path: 'packages/platform/src/read-models/index.ts',
+      marks: /await h\.handle\(event\)/,
     },
     S010: {
       kind: 'injected',

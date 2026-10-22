@@ -354,6 +354,7 @@ export const events = sqliteTable(
     idUnique: uniqueIndex('events_id_unique').on(t.id),
     undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
     correlationIdx: index('events_correlation_idx').on(t.correlationId, t.seq),
+    catchUpIdx: index('events_catch_up_idx').on(t.deadAt, t.deliveredAt, t.seq),
   }),
 )
 

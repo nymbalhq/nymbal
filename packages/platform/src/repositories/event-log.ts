@@ -69,6 +69,15 @@ export interface EventLogRepository extends StoreRepository {
   ): Promise<LoggedEvent[]>
   /** The highest `seq` in the log, or 0 when it is empty. */
   maxSeq(tx: ReadTx): Promise<number>
+  /**
+   * What a read-model rebuild re-applies after its swap: every event that is not dead and was delivered at or after
+   * `since`, or not yet delivered, by `seq`. `afterSeq` and `limit` page through them.
+   */
+  listForCatchUp(
+    tx: ReadTx,
+    since: Date,
+    page?: { afterSeq?: number; limit?: number },
+  ): Promise<LoggedEvent[]>
   /** Delivered events delivered before `at`, by `seq`: what retention may archive. Undelivered and dead events never are. */
   listDeliveredBefore(tx: ReadTx, at: Date, limit: number): Promise<LoggedEvent[]>
   /** Deletes the delivered events with these `seq`s; returns how many. */
@@ -78,6 +87,8 @@ export interface EventLogRepository extends StoreRepository {
 // SQLite's bound-parameter limit is per statement; eight columns a row keeps a chunk well under it.
 const APPEND_CHUNK = 100
 const DELETE_CHUNK = 500
+/** The page `listForCatchUp` reads when it is given none. */
+const CATCH_UP_LIMIT = 10_000
 
 /** A type glob as a SQLite GLOB pattern: `*` stays the wildcard, and GLOB's other metacharacters match themselves. */
 function sqliteGlob(glob: string): string {
@@ -122,6 +133,23 @@ function rowToLogged(row: {
 export function createEventLogRepository(store: CommandStore): EventLogRepository {
   const s = sqliteSchema.events
   const p = postgresSchema.events
+  // The columns `rowToLogged` reads.
+  const sqliteLogged = {
+    seq: s.seq,
+    envelope: s.envelope,
+    deliveredAt: s.deliveredAt,
+    attempts: s.attempts,
+    deadAt: s.deadAt,
+    createdAt: s.createdAt,
+  }
+  const postgresLogged = {
+    seq: p.seq,
+    envelope: p.envelope,
+    deliveredAt: p.deliveredAt,
+    attempts: p.attempts,
+    deadAt: p.deadAt,
+    createdAt: p.createdAt,
+  }
 
   function sqliteWhere(filter: Partial<EventLogFilter>): SQL[] {
     const where: SQL[] = []
@@ -304,6 +332,40 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         .select({ max: sql<string | null>`max(${p.seq})` })
         .from(p)
       return Number(row?.max ?? 0)
+    },
+    // Only the columns a LoggedEvent maps: a boot rebuild runs this on a store not yet migrated past 0007.
+    async listForCatchUp(tx, since, page = {}) {
+      const afterSeq = page.afterSeq ?? 0
+      const limit = page.limit ?? CATCH_UP_LIMIT
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select(sqliteLogged)
+          .from(s)
+          .where(
+            and(
+              isNull(s.deadAt),
+              or(isNull(s.deliveredAt), gte(s.deliveredAt, since.toISOString())),
+              gt(s.seq, afterSeq),
+            ),
+          )
+          .orderBy(asc(s.seq))
+          .limit(limit)
+          .all()
+          .map(rowToLogged)
+      }
+      const rows = await postgresDb(tx)
+        .select(postgresLogged)
+        .from(p)
+        .where(
+          and(
+            isNull(p.deadAt),
+            or(isNull(p.deliveredAt), gte(p.deliveredAt, since)),
+            gt(p.seq, afterSeq),
+          ),
+        )
+        .orderBy(asc(p.seq))
+        .limit(limit)
+      return rows.map(rowToLogged)
     },
     listDeliveredBefore(tx, at, limit) {
       return select(
