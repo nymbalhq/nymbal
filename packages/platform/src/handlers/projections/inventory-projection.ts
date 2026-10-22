@@ -1,53 +1,40 @@
 import {
   EVT_INVENTORY_CHANGED,
-  type DocumentStoreAdapter,
   type EventBusAdapter,
   type EventHandler,
   type InventoryChangedV1Payload,
-  type Logger,
 } from '@nymbalhq/types'
-import type { VariantRepository } from '../../repositories/variant.js'
-import type { ProductRepository } from '../../repositories/product.js'
-import type { ProductCategoryRepository } from '../../repositories/product-category.js'
-import type { DenormalisedProduct } from './product-projection.js'
+import { subscribeDerived, type DerivedHandler } from '../derived.js'
+import { productReprojector, type ProductProjectionDeps } from './product-projection.js'
 
-const PRODUCTS = 'products'
-
-export interface RegisterInventoryProjectionDeps {
+export interface RegisterInventoryProjectionDeps extends ProductProjectionDeps {
   eventBus: EventBusAdapter
-  documentStore: DocumentStoreAdapter
-  logger: Logger
-  variantRepo: VariantRepository
-  productRepo: ProductRepository
-  productCategoryRepo: ProductCategoryRepository
+}
+
+/** A stock change re-projects the variant's product, so `products` and `products-by-category` both carry it. */
+export function inventoryProjection(deps: ProductProjectionDeps): DerivedHandler[] {
+  const products = productReprojector(deps)
+  const { repos, logger } = deps
+
+  const handler: EventHandler<InventoryChangedV1Payload> = async (event) => {
+    const { variantId, newQty } = event.payload
+    const variant = await repos.variant.store.read((tx) => repos.variant.findById(tx, variantId))
+    if (!variant) return
+    await products.reproject(variant.productId)
+    logger.debug({ variantId, newQty }, 'inventory projection updated')
+  }
+
+  return [
+    {
+      name: 'inventory-projection',
+      types: [EVT_INVENTORY_CHANGED],
+      handle: handler as EventHandler,
+    },
+  ]
 }
 
 export async function registerInventoryProjection(
   deps: RegisterInventoryProjectionDeps,
 ): Promise<void> {
-  const { eventBus, documentStore, logger, variantRepo, productRepo } = deps
-
-  const handler: EventHandler<InventoryChangedV1Payload> = async (event) => {
-    const { variantId, newQty } = event.payload
-    const product = await variantRepo.store.read(async (tx) => {
-      const variant = await variantRepo.findById(tx, variantId)
-      return variant ? productRepo.findById(tx, variant.productId) : null
-    })
-    if (!product) return
-    const doc = await documentStore.get<DenormalisedProduct>(PRODUCTS, product.slug)
-    if (!doc) return
-    const variants = doc.variants.map((v) => (v.id === variantId ? { ...v, stock: newQty } : v))
-    const inStock = variants.some((v) => v.stock > 0)
-    await documentStore.put<DenormalisedProduct>(PRODUCTS, product.slug, {
-      ...doc,
-      variants,
-      inStock,
-    })
-    logger.debug({ variantId, newQty, slug: product.slug }, 'inventory projection updated')
-  }
-
-  await eventBus.subscribe(EVT_INVENTORY_CHANGED, handler as EventHandler, {
-    name: 'inventory-projection',
-    derived: true,
-  })
+  await subscribeDerived(deps.eventBus, inventoryProjection(deps))
 }

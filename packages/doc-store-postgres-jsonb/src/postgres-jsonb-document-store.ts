@@ -243,6 +243,46 @@ export class PostgresJsonbDocumentStore implements DocumentStoreAdapter {
     }
   }
 
+  /**
+   * One transaction: the collection's rows are deleted and the new ones inserted, so a reader (on another connection)
+   * sees the old rows until the commit and the new ones after it. A source that throws rolls it back.
+   */
+  async replaceCollection<T>(
+    collection: string,
+    entries: AsyncIterable<[string, T]>,
+  ): Promise<void> {
+    const client = await this.#pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(`DELETE FROM ${TABLE} WHERE prefix = $1 AND collection = $2`, [
+        this.#prefix,
+        collection,
+      ])
+      let chunk = new Map<string, string>()
+      const flush = async () => {
+        if (chunk.size === 0) return
+        await client.query(
+          `INSERT INTO ${TABLE} (prefix, collection, key, doc, expires_at)
+           SELECT $1, $2, k, d, NULL FROM unnest($3::text[], $4::jsonb[]) AS t(k, d)
+           ON CONFLICT (prefix, collection, key) DO UPDATE SET doc = EXCLUDED.doc, expires_at = NULL`,
+          [this.#prefix, collection, [...chunk.keys()], [...chunk.values()]],
+        )
+        chunk = new Map()
+      }
+      for await (const [key, doc] of entries) {
+        chunk.set(key, JSON.stringify(doc))
+        if (chunk.size >= BATCH_ROWS) await flush()
+      }
+      await flush()
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
   /** Deletes this prefix's expired rows. Reads never return them in the meantime. */
   async sweep(): Promise<void> {
     try {

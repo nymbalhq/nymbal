@@ -6,6 +6,7 @@ import {
   EVT_ORDER_PAID,
   EVT_PAYMENT_CAPTURED,
   EVT_PAYMENT_FAILED,
+  EVT_PAYMENT_INTENT_CREATED,
   EVT_PAYMENT_REFUNDED,
   NotFoundError,
   OrderConflictError,
@@ -717,6 +718,10 @@ export function createCheckoutService(
     const answer = await store.transaction(async (tx) => {
       await repos.cart.lock(tx, input.cartToken)
       await repos.order.setPaymentIntent(tx, order.id, intent.id, new Date())
+      await publisher.publish(EVT_PAYMENT_INTENT_CREATED, {
+        paymentId: intent.id,
+        orderId: order.id,
+      })
       let payment: CheckoutPayment
       const outcome = outcomeOf(intent.status)
       if (outcome === 'succeeded') {

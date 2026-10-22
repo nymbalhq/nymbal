@@ -1,134 +1,9 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3cbfa50e-e5cd-4dcb-9c02-12ff0e27d948",
+  "id": "2327646a-a596-4c20-8e22-9d06a0e7a47a",
   "prevId": "e6b5bba1-22e6-4893-832e-cf34966d7ca6",
   "tables": {
-    "audit_entries": {
-      "name": "audit_entries",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "at": {
-          "name": "at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_kind": {
-          "name": "actor_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "subjects": {
-          "name": "subjects",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "correlation_id": {
-          "name": "correlation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "request_hash": {
-          "name": "request_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "response_status": {
-          "name": "response_status",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "response_body": {
-          "name": "response_body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "audit_entries_applied_key_unique": {
-          "name": "audit_entries_applied_key_unique",
-          "columns": [
-            "actor_id",
-            "command",
-            "idempotency_key"
-          ],
-          "isUnique": true,
-          "where": "\"audit_entries\".\"outcome\" = 'applied' AND \"audit_entries\".\"idempotency_key\" IS NOT NULL"
-        },
-        "audit_entries_at_idx": {
-          "name": "audit_entries_at_idx",
-          "columns": [
-            "at",
-            "id"
-          ],
-          "isUnique": false
-        },
-        "audit_entries_correlation_idx": {
-          "name": "audit_entries_correlation_idx",
-          "columns": [
-            "correlation_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "audit_entries_outcome": {
-          "name": "audit_entries_outcome",
-          "value": "\"audit_entries\".\"outcome\" IN ('applied', 'refused', 'replayed')"
-        }
-      }
-    },
     "carts": {
       "name": "carts",
       "columns": {
@@ -516,6 +391,15 @@
           "name": "events_correlation_idx",
           "columns": [
             "correlation_id",
+            "seq"
+          ],
+          "isUnique": false
+        },
+        "events_catch_up_idx": {
+          "name": "events_catch_up_idx",
+          "columns": [
+            "dead_at",
+            "delivered_at",
             "seq"
           ],
           "isUnique": false

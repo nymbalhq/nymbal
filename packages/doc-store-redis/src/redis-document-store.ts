@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Redis } from 'ioredis'
 import {
   AdapterError,
@@ -95,6 +96,8 @@ interface Scripted {
 }
 
 const SWEEP_BATCH = 500
+/** Documents per HSET while a replace stages its new contents. */
+const REPLACE_BATCH = 500
 
 /** A document store on Redis: one hash per collection under the prefix, ordered and filtered by the reference. */
 export class RedisDocumentStore implements DocumentStoreAdapter {
@@ -206,6 +209,45 @@ export class RedisDocumentStore implements DocumentStoreAdapter {
       .hset(this.#docs(collection), ...fields)
       .zrem(this.#expiry(collection), ...items.keys())
       .exec()
+  }
+
+  /**
+   * Writes the new contents to a staging hash under the prefix, then swaps it in with RENAME in one MULTI, dropping the
+   * collection's expiry index with it (the new documents have no TTL). A source that throws deletes the staging hash.
+   */
+  async replaceCollection<T>(
+    collection: string,
+    entries: AsyncIterable<[string, T]>,
+  ): Promise<void> {
+    const staging = `${this.#prefix}:stage:${randomUUID()}:doc:${collection}`
+    let staged = 0
+    try {
+      let fields: string[] = []
+      const flush = async () => {
+        if (fields.length === 0) return
+        await this.#client.hset(staging, ...fields)
+        fields = []
+      }
+      for await (const [key, doc] of entries) {
+        fields.push(key, JSON.stringify({ d: doc, e: null } satisfies Stored))
+        staged += 1
+        if (fields.length >= REPLACE_BATCH * 2) await flush()
+      }
+      await flush()
+    } catch (error) {
+      await this.#client
+        .del(staging)
+        .catch((err: unknown) =>
+          this.#logger?.warn({ err, staging }, 'redis document store: a staging hash was left'),
+        )
+      throw error
+    }
+    const swap = this.#client.multi()
+    if (staged > 0) swap.rename(staging, this.#docs(collection))
+    else swap.del(this.#docs(collection))
+    const results = await swap.del(this.#expiry(collection)).exec()
+    const failed = results?.find(([err]) => err !== null)?.[0]
+    if (failed) throw failed
   }
 
   /** Removes every document whose TTL has passed. Reads never return them in the meantime. */

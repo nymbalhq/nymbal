@@ -75,8 +75,15 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1792644705746,
-      "tag": "0010_audit_entries",
+      "when": 1792645028362,
+      "tag": "0010_catch_up_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792659500377,
+      "tag": "0011_audit_entries",
       "breakpoints": true
     }
   ]

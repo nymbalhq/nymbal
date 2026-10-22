@@ -9,7 +9,7 @@
 Every change an admin, a shopper or the system makes to the store's records leaves an audit entry, and an admin write
 sent with an `Idempotency-Key` applies once, however often it is retried.
 
-- **Audit entries.** Migration `0010_audit_entries` adds an append-only `audit_entries` table (both dialects; its
+- **Audit entries.** Migration `0011_audit_entries` adds an append-only `audit_entries` table (both dialects; its
   triggers refuse updates and deletes, and the event-retention sweep never touches it). One entry per outermost
   command, written in the command's transaction, so a rolled-back write leaves none. It names the actor (`admin:<id>`,
   `customer:<id>`, `guest:anonymous`, `system:<sweeper>`, `system:stripe-webhook`, `import:woocommerce`), the command

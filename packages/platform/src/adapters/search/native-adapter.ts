@@ -7,6 +7,7 @@ import {
   type IndexResult,
   type Logger,
   type SearchAdapter,
+  type SearchDocument,
   type SearchResult,
 } from '@nymbalhq/types'
 import type { RawClients } from '../../db/command-store.js'
@@ -45,6 +46,17 @@ function categoryFilter(filters: Record<string, unknown> | undefined): string[] 
 
 const uniqueTerms = (query: string) => [...new Set(searchTerms(query))]
 
+function indexOn(sql: RawClients): SearchIndex {
+  return sql.kind === 'sqlite'
+    ? createSqliteSearchIndex(sql.raw)
+    : createPostgresSearchIndex(sql.pool)
+}
+
+/** Every document the native index in this command store's database holds, by id: what a dry run compares. */
+export function nativeIndexDocuments(sql: RawClients): Promise<SearchDocument[]> {
+  return indexOn(sql).all()
+}
+
 /**
  * Full-text search in the command store's own database: FTS5 on SQLite, a GIN-indexed tsvector on Postgres. Both
  * match by `searchTerms` (every query term a prefix of a term in the name, a SKU, a variant name or the description)
@@ -55,8 +67,7 @@ export function createNativeSearchAdapter(deps: {
   logger: Logger
 }): SearchAdapter {
   const { sql, logger } = deps
-  const index: SearchIndex =
-    sql.kind === 'sqlite' ? createSqliteSearchIndex(sql.raw) : createPostgresSearchIndex(sql.pool)
+  const index = indexOn(sql)
 
   return {
     kind: 'search',
@@ -75,6 +86,13 @@ export function createNativeSearchAdapter(deps: {
 
     async remove(ids) {
       await index.remove(ids)
+    },
+
+    async replaceAll(documents) {
+      const rows = []
+      for await (const doc of documents) rows.push(toIndexRow(doc))
+      await index.replace(rows)
+      logger.debug({ count: rows.length }, 'search.replaceAll')
     },
 
     async search(query, params) {

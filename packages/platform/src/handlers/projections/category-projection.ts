@@ -10,35 +10,41 @@ import {
   type EventHandler,
   type Logger,
 } from '@nymbalhq/types'
+import type { Repositories } from '../../repositories/index.js'
+import { buildCategoryDoc, CATEGORIES } from '../../read-models/builders.js'
+import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
-const CATEGORIES = 'categories'
-
-export interface RegisterCategoryProjectionDeps {
-  eventBus: EventBusAdapter
+export interface CategoryProjectionDeps {
   documentStore: DocumentStoreAdapter
   logger: Logger
   storeId: string
+  repos: Pick<Repositories, 'category'>
 }
 
-export async function registerCategoryProjection(
-  deps: RegisterCategoryProjectionDeps,
-): Promise<void> {
-  const { eventBus, documentStore, logger, storeId } = deps
+export interface RegisterCategoryProjectionDeps extends CategoryProjectionDeps {
+  eventBus: EventBusAdapter
+}
+
+/**
+ * The `categories` documents, built from the category row read at handle time: a re-applied old delivery then writes
+ * what a rebuild writes, not the payload it carried.
+ */
+export function categoryProjection(deps: CategoryProjectionDeps): DerivedHandler[] {
+  const { documentStore, logger, storeId, repos } = deps
 
   const onUpsert: EventHandler<CategoryCreatedV1Payload | CategoryUpdatedV1Payload> = async (
     event,
   ) => {
-    const { category } = event.payload
-    await documentStore.put(CATEGORIES, category.slug, {
-      id: category.id,
-      storeId,
-      parentId: category.parentId,
-      slug: category.slug,
-      name: category.name,
-      description: category.description,
-      position: category.position,
-      createdAt: category.createdAt,
-    })
+    const { id, slug } = event.payload.category
+    const category = await repos.category.store.read((tx) => repos.category.findById(tx, id))
+    if (!category) {
+      // The slug may since have gone to another category, whose document stays.
+      const stored = await documentStore.get<{ id: string }>(CATEGORIES, slug)
+      if (stored?.id === id) await documentStore.delete(CATEGORIES, slug)
+      logger.debug({ slug, eventType: event.type }, 'category gone; projection deleted')
+      return
+    }
+    await documentStore.put(CATEGORIES, category.slug, buildCategoryDoc(category, storeId))
     logger.debug({ slug: category.slug, eventType: event.type }, 'category projected')
   }
 
@@ -47,12 +53,22 @@ export async function registerCategoryProjection(
     logger.debug({ slug: event.payload.slug }, 'category projection deleted')
   }
 
-  await eventBus.subscribe([EVT_CATEGORY_CREATED, EVT_CATEGORY_UPDATED], onUpsert as EventHandler, {
-    name: 'category-projection-upsert',
-    derived: true,
-  })
-  await eventBus.subscribe(EVT_CATEGORY_DELETED, onDeleted as EventHandler, {
-    name: 'category-projection-delete',
-    derived: true,
-  })
+  return [
+    {
+      name: 'category-projection-upsert',
+      types: [EVT_CATEGORY_CREATED, EVT_CATEGORY_UPDATED],
+      handle: onUpsert as EventHandler,
+    },
+    {
+      name: 'category-projection-delete',
+      types: [EVT_CATEGORY_DELETED],
+      handle: onDeleted as EventHandler,
+    },
+  ]
+}
+
+export async function registerCategoryProjection(
+  deps: RegisterCategoryProjectionDeps,
+): Promise<void> {
+  await subscribeDerived(deps.eventBus, categoryProjection(deps))
 }

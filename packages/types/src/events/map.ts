@@ -20,6 +20,7 @@ export interface NymbalEventMap {
   [C.EVT_ORDER_CANCELLED]: P.OrderCancelledV1Payload
   [C.EVT_ORDER_REFUNDED]: P.OrderRefundedV1Payload
   [C.EVT_ORDER_PARTIALLY_REFUNDED]: P.OrderPartiallyRefundedV1Payload
+  [C.EVT_ORDER_STATUS_CHANGED]: P.OrderStatusChangedV1Payload
 
   [C.EVT_INVENTORY_CHANGED]: P.InventoryChangedV1Payload
   [C.EVT_INVENTORY_RESERVED]: P.InventoryReservedV1Payload
@@ -38,6 +39,7 @@ export interface NymbalEventMap {
   [C.EVT_CART_ABANDONED]: P.CartAbandonedV1Payload
   [C.EVT_CART_CONVERTED]: P.CartConvertedV1Payload
 
+  [C.EVT_PAYMENT_INTENT_CREATED]: P.PaymentIntentCreatedV1Payload
   [C.EVT_PAYMENT_CAPTURED]: P.PaymentCapturedV1Payload
   [C.EVT_PAYMENT_FAILED]: P.PaymentFailedV1Payload
   [C.EVT_PAYMENT_REFUNDED]: P.PaymentRefundedV1Payload

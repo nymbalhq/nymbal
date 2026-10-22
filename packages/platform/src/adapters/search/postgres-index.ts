@@ -71,17 +71,48 @@ const named = (key: 'upsert' | 'remove', values: unknown[]): pg.QueryConfig => (
   values,
 })
 
+const REPLACE_CHUNK = 500
+
+const toBatch = (rows: IndexRow[]) =>
+  latestById(rows).map((row) => ({
+    id: row.id,
+    type: row.type,
+    fields: row.fields,
+    cats: row.categoryIds,
+    tsv: tsvectorLiteral(row),
+  }))
+
 export function createPostgresSearchIndex(pool: pg.Pool): SearchIndex {
   return {
     async upsert(rows) {
-      const batch = latestById(rows).map((row) => ({
-        id: row.id,
-        type: row.type,
-        fields: row.fields,
-        cats: row.categoryIds,
-        tsv: tsvectorLiteral(row),
-      }))
+      const batch = toBatch(rows)
       if (batch.length > 0) await pool.query(named('upsert', [JSON.stringify(batch)]))
+    },
+
+    async replace(rows) {
+      const batch = toBatch(rows)
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query('DELETE FROM search_documents')
+        for (let i = 0; i < batch.length; i += REPLACE_CHUNK) {
+          const chunk = batch.slice(i, i + REPLACE_CHUNK)
+          await client.query(named('upsert', [JSON.stringify(chunk)]))
+        }
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined)
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+
+    async all() {
+      const result = await pool.query<SearchDocument>(
+        'SELECT id, type, fields FROM search_documents ORDER BY id COLLATE "C"',
+      )
+      return result.rows.map(({ id, type, fields }) => ({ id, type, fields }))
     },
 
     async remove(ids) {

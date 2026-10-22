@@ -4,6 +4,7 @@ import {
   EVT_ORDER_DELIVERED,
   EVT_ORDER_PLACED,
   EVT_ORDER_SHIPPED,
+  EVT_ORDER_STATUS_CHANGED,
   NotFoundError,
   OrderConflictError,
   StatusTransitionError,
@@ -163,7 +164,13 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
       return store.transaction(async (tx) => {
         audit.note('order.updateStatus', [{ type: 'order', id }])
         const order = await requireOrder(tx, id)
-        return doTransition(tx, order, toStatus, actor, note)
+        const fresh = await doTransition(tx, order, toStatus, actor, note)
+        await publisher.publish(EVT_ORDER_STATUS_CHANGED, {
+          orderId: fresh.id,
+          from: order.status,
+          to: fresh.status,
+        })
+        return fresh
       })
     },
     async markShipped(id, trackingNumber, carrier, actor) {

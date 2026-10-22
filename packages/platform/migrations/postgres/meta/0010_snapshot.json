@@ -1,164 +1,9 @@
 {
-  "id": "ab694c9c-c85a-445e-afa5-8144848e96c3",
+  "id": "81418af0-ebe2-4e82-bf09-d6cf90df3ac5",
   "prevId": "42ee29b2-a8ab-4b27-b582-c7d94477b67b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.audit_entries": {
-      "name": "audit_entries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_kind": {
-          "name": "actor_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "command": {
-          "name": "command",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subjects": {
-          "name": "subjects",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "correlation_id": {
-          "name": "correlation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "request_hash": {
-          "name": "request_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "response_status": {
-          "name": "response_status",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "response_body": {
-          "name": "response_body",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "audit_entries_applied_key_unique": {
-          "name": "audit_entries_applied_key_unique",
-          "columns": [
-            {
-              "expression": "actor_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "command",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"audit_entries\".\"outcome\" = 'applied' AND \"audit_entries\".\"idempotency_key\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "audit_entries_at_idx": {
-          "name": "audit_entries_at_idx",
-          "columns": [
-            {
-              "expression": "at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "audit_entries_correlation_idx": {
-          "name": "audit_entries_correlation_idx",
-          "columns": [
-            {
-              "expression": "correlation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "audit_entries_outcome": {
-          "name": "audit_entries_outcome",
-          "value": "\"audit_entries\".\"outcome\" IN ('applied', 'refused', 'replayed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.carts": {
       "name": "carts",
       "schema": "",
@@ -578,6 +423,33 @@
           "columns": [
             {
               "expression": "correlation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_catch_up_idx": {
+          "name": "events_catch_up_idx",
+          "columns": [
+            {
+              "expression": "dead_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "delivered_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

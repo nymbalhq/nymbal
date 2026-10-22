@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, sql } from 'drizzle-orm'
 import type { Variant, VariantOption, VariantStatus, VariantDimensions } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -112,6 +112,7 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
           .select()
           .from(sqliteSchema.variants)
           .where(eq(sqliteSchema.variants.productId, productId))
+          .orderBy(asc(sqliteSchema.variants.createdAt), asc(sqliteSchema.variants.id))
           .all()
         return rows.map((r) => rowToVariant('sqlite', r as Record<string, unknown>))
       }
@@ -119,6 +120,7 @@ export function createVariantRepository(store: CommandStore): VariantRepository 
         .select()
         .from(postgresSchema.variants)
         .where(eq(postgresSchema.variants.productId, productId))
+        .orderBy(asc(postgresSchema.variants.createdAt), asc(postgresSchema.variants.id))
       return rows.map((r) => rowToVariant('postgres', r as Record<string, unknown>))
     },
     async insert(tx, v) {

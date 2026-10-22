@@ -140,6 +140,7 @@ function unavailableDocumentStore(): DocumentStoreAdapter {
     query: refuse,
     batchGet: refuse,
     batchPut: refuse,
+    replaceCollection: refuse,
     close: async () => {},
   }
 }
