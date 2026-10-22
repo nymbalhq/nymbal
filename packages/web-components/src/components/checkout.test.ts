@@ -767,8 +767,9 @@ describe('P2-16 diff review B1: a step change never moves what is under the curs
   }
 
   // Kills: the shorter payment step rendered at its own height in the frame of the shipping submit, so the page
-  // shortens and a double click's second click lands on a footer link that rose under the cursor.
-  it('B1: shipping → payment: within the step-change frame, and a frame later, the main column is no shorter than the shipping step it replaced', async () => {
+  // shortens and a double click's second click lands on a footer link that rose under the cursor; and a hold never
+  // released, which leaves the payment step a blank gap the height of the shipping step above the summary.
+  it("B1, W1: shipping → payment: the main column is no shorter than the shipping step it replaced until 600 ms after the step change (a double click is at most 500 ms), then it is the payment step's own height", async () => {
     const r = await rig()
     const main = laidOut(r.el)
 
@@ -780,15 +781,65 @@ describe('P2-16 diff review B1: a step change never moves what is under the curs
     const before = main.offsetHeight
     expect(before).toBe(STEP_HEIGHT.shipping)
 
-    click(byTestId(r.el, 'shipping-continue'), 1)
-    await settle(r.el)
-    expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown').toBe(false)
-    expect(main.offsetHeight, 'in the step-change frame').toBeGreaterThanOrEqual(before)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      click(byTestId(r.el, 'shipping-continue'), 1)
+      await settle(r.el)
+      expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown').toBe(false)
+      expect(main.offsetHeight, 'in the step-change frame').toBeGreaterThanOrEqual(before)
 
-    await nextFrame()
-    expect(
-      main.offsetHeight,
-      'a frame later, when a second click can still come',
-    ).toBeGreaterThanOrEqual(before)
+      vi.advanceTimersByTime(500)
+      expect(
+        main.offsetHeight,
+        "500 ms later, when a double click's second click can still come",
+      ).toBeGreaterThanOrEqual(before)
+
+      vi.advanceTimersByTime(100)
+      expect(main.offsetHeight, '600 ms later, the hold is released').toBe(STEP_HEIGHT.payment)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Kills: a release timer left from the first step change cutting short the hold of a later one, and a timer that
+  // outlives the element.
+  it('W1: a step change inside the hold restarts its 600 ms, and disconnecting releases it', async () => {
+    const r = await rig()
+    const main = laidOut(r.el)
+
+    await afterFrame(r.el)
+    type(byTestId<HTMLInputElement>(r.el, 'contact-email'), SHOPPER.email)
+    click(byTestId(r.el, 'contact-continue'), 1)
+    await afterFrame(r.el)
+    fillAddress(r.el, 'shipping', SHOPPER.shipping)
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      click(byTestId(r.el, 'shipping-continue'), 1)
+      await afterFrame(r.el)
+      vi.advanceTimersByTime(400)
+      const back = byTestId(r.el, 'checkout-payment').querySelector<HTMLElement>("[part~='back']")
+      expect(back, "the payment step's back button").not.toBeNull()
+      click(back!, 1)
+      await afterFrame(r.el)
+      expect(byTestId(r.el, 'checkout-shipping').hidden, 'back on the shipping step').toBe(false)
+      click(byTestId(r.el, 'shipping-continue'), 1)
+      await afterFrame(r.el)
+      expect(byTestId(r.el, 'checkout-payment').hidden, 'the payment step is shown again').toBe(
+        false,
+      )
+
+      vi.advanceTimersByTime(500)
+      expect(
+        main.offsetHeight,
+        '900 ms after the first step change, 500 ms after the last',
+      ).toBeGreaterThanOrEqual(STEP_HEIGHT.shipping)
+
+      r.el.remove()
+      expect(main.style.minHeight, 'disconnected, the hold is released').toBe('')
+      expect(vi.getTimerCount(), 'no release timer outlives the element').toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

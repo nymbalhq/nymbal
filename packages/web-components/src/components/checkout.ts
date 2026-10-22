@@ -76,6 +76,8 @@ const STEP_LABELS: Record<Step, string> = {
   payment: 'Payment',
 }
 
+/** Outlasts the 500 ms an OS allows between the two clicks of a double click. */
+const STEP_HEIGHT_HOLD_MS = 600
 const PAYMENT_FAILED = 'Payment failed. Please try again.'
 
 /** No payment element: nothing to confirm, as for a payments adapter with no client half. */
@@ -294,6 +296,7 @@ export class NymbalCheckout extends NymbalElement {
   /** True from a step change until the next animation frame (Decision 4's multi-click rule). */
   private stepChanging = false
   private stepTurn = 0
+  private heightRelease: ReturnType<typeof setTimeout> | undefined
 
   protected override stores() {
     return [this.client.cart]
@@ -307,6 +310,7 @@ export class NymbalCheckout extends NymbalElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback()
     this.removeEventListener('nymbal:payment:status', this.onPaymentStatus)
+    this.releaseMainHeight()
   }
 
   private readonly onPaymentStatus = (): void => this.requestUpdate()
@@ -339,10 +343,10 @@ export class NymbalCheckout extends NymbalElement {
   }
 
   /**
-   * Keeps the main column as tall as the tallest step it has shown. A shorter next step would shorten the page under a
-   * still cursor, and a double click's second click would land on whatever rose there (a footer link), outside this
-   * element, where neither multi-click guard sees it. Held, not released after a frame: a person's second click comes
-   * several frames after the first.
+   * Keeps the main column at least as tall as the step it replaces until a double click is over. A shorter next step
+   * would shorten the page under a still cursor, and the second click would land on whatever rose there (a footer
+   * link), outside this element, where neither multi-click guard sees it. Released after 600 ms, past the 500 ms an OS
+   * allows between the two clicks of a double click, so the column then settles to the shown step's own height.
    */
   private holdMainHeight(): void {
     const main = this.renderRoot.querySelector<HTMLElement>("[part~='main']")
@@ -350,6 +354,15 @@ export class NymbalCheckout extends NymbalElement {
     const height = main.offsetHeight
     if (height > (Number.parseFloat(main.style.minHeight) || 0))
       main.style.minHeight = `${height}px`
+    clearTimeout(this.heightRelease)
+    this.heightRelease = setTimeout(() => this.releaseMainHeight(), STEP_HEIGHT_HOLD_MS)
+  }
+
+  private releaseMainHeight(): void {
+    clearTimeout(this.heightRelease)
+    this.heightRelease = undefined
+    const main = this.renderRoot.querySelector<HTMLElement>("[part~='main']")
+    if (main !== null) main.style.minHeight = ''
   }
 
   private showError(message: string): void {

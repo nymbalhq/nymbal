@@ -250,4 +250,45 @@ test.describe('Checkout is an element', () => {
       })
     }
   }
+
+  // Kills: the step height held past a double click, so the payment step keeps the taller shipping step's height and a
+  // phone shows a screen of blank space between Place Order and the order summary below it.
+  test('walk W1: at 412x915, within 1 s of the payment step, the order summary starts less than 120 px below place-order', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+
+    // Narrowed once on /checkout: at 412 px Astro's dev toolbar covers the cart drawer's Checkout button.
+    await openCheckout(page, product)
+    await page.setViewportSize({ width: 412, height: 915 })
+    const checkout = page.locator('nymbal-checkout')
+    await checkout.getByTestId('contact-email').fill(email('w1'), { timeout: 15_000 })
+    await checkout.getByTestId('contact-continue').click()
+    for (const field of FIELDS) {
+      const value = SHIPPING[field]
+      if (value !== undefined) await checkout.getByTestId(`shipping-${field}`).fill(value)
+    }
+    await checkout.getByTestId('shipping-continue').click()
+    await expect(checkout.getByTestId('place-order')).toBeVisible()
+
+    const gap = async (): Promise<number> => {
+      const place = await checkout.getByTestId('place-order').boundingBox()
+      const summary = await checkout.getByTestId('checkout-summary').boundingBox()
+      expect(place, 'place-order is laid out').not.toBeNull()
+      expect(summary, 'the order summary is laid out').not.toBeNull()
+      return summary!.y - (place!.y + place!.height)
+    }
+    // Within 1 s of the payment step: the hold outlasts a double click (600 ms), then the column takes its own height.
+    await expect
+      .poll(gap, {
+        message: 'px between place-order and the summary below it',
+        intervals: [100],
+        timeout: 1_000,
+      })
+      .toBeLessThan(120)
+    expect(await gap(), 'the summary is below place-order').toBeGreaterThanOrEqual(0)
+  })
 })
