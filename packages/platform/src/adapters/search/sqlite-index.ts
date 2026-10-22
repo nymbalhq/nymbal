@@ -26,6 +26,8 @@ const SQL = {
       name_terms = excluded.name_terms, strong_terms = excluded.strong_terms, body_terms = excluded.body_terms
     WHERE search_documents.type IS NOT excluded.type OR search_documents.fields IS NOT excluded.fields`,
   remove: `DELETE FROM search_documents WHERE id = ?`,
+  clear: `DELETE FROM search_documents`,
+  all: `SELECT id, type, fields FROM search_documents ORDER BY id`,
   // Rank: every term in the name, then every term in name, SKU or variant name, then bm25 (lower is better), then id.
   page: `WITH ${matching(true)},
     named AS MATERIALIZED (
@@ -75,24 +77,40 @@ export function createSqliteSearchIndex(raw: BetterSqlite3.Database): SearchInde
     cats: cats(categories),
   })
 
+  const write = (rows: IndexRow[]) => {
+    const upsert = statement('upsert')
+    for (const row of latestById(rows)) {
+      upsert.run({
+        id: row.id,
+        type: row.type,
+        fields: JSON.stringify(row.fields),
+        cats: JSON.stringify(row.categoryIds),
+        name: row.name.join(' '),
+        strong: row.strong.join(' '),
+        body: row.body.join(' '),
+      })
+    }
+  }
+
   return {
-    upsert: (rows) =>
-      sqliteTurn(raw, () => {
-        const upsert = statement('upsert')
+    upsert: (rows) => sqliteTurn(raw, () => raw.transaction(write)(rows)),
+
+    replace: (rows) =>
+      sqliteTurn(raw, () =>
         raw.transaction((batch: IndexRow[]) => {
-          for (const row of batch) {
-            upsert.run({
-              id: row.id,
-              type: row.type,
-              fields: JSON.stringify(row.fields),
-              cats: JSON.stringify(row.categoryIds),
-              name: row.name.join(' '),
-              strong: row.strong.join(' '),
-              body: row.body.join(' '),
-            })
-          }
-        })(latestById(rows))
-      }),
+          statement('clear').run()
+          write(batch)
+        })(rows),
+      ),
+
+    all: () =>
+      sqliteTurn(raw, () =>
+        (statement('all').all() as Array<Omit<PageRow, 'total'>>).map((r) => ({
+          id: r.id,
+          type: r.type,
+          fields: JSON.parse(r.fields) as Record<string, unknown>,
+        })),
+      ),
 
     remove: (ids) =>
       sqliteTurn(raw, () => {

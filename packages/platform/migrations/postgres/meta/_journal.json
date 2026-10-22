@@ -71,6 +71,13 @@
       "when": 1792617492782,
       "tag": "0009_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792645028362,
+      "tag": "0010_catch_up_index",
+      "breakpoints": true
     }
   ]
 }

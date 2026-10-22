@@ -38,6 +38,12 @@ export interface DocumentStoreAdapter {
   query<T>(collection: string, params: QueryParams): Promise<QueryResult<T>>
   batchGet<T>(collection: string, keys: string[]): Promise<Map<string, T>>
   batchPut<T>(collection: string, items: Map<string, T>): Promise<void>
+  /**
+   * Replaces the whole collection with `entries`: afterwards it holds exactly those documents (none with a TTL), and a
+   * reader at any moment sees either the old contents or the new, never a mix. A source that throws leaves the old
+   * contents in place, and the call rejects with its error.
+   */
+  replaceCollection<T>(collection: string, entries: AsyncIterable<[string, T]>): Promise<void>
   close(): Promise<void>
   /**
    * Whether the store can serve, within `HEALTH_CHECK_TIMEOUT_MS`. Optional, so a store written before it existed

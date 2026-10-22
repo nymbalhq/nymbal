@@ -61,6 +61,10 @@ export type QueryTerms = readonly string[]
 export interface SearchIndex {
   upsert(rows: IndexRow[]): Promise<void>
   remove(ids: string[]): Promise<void>
+  /** Deletes every row and writes `rows`, in one transaction. */
+  replace(rows: IndexRow[]): Promise<void>
+  /** Every document the index holds, by id. */
+  all(): Promise<SearchDocument[]>
   /** One page in rank order, and the match count when the page has rows. */
   page(
     terms: QueryTerms,

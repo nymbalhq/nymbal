@@ -19,7 +19,7 @@ import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type Relay } from './events/relay.js'
 import { registerHandlers } from './handlers/register.js'
-import { warmDocumentStore } from './warm-document-store.js'
+import { READ_MODEL_NAMES, rebuild } from './read-models/index.js'
 import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
@@ -220,12 +220,15 @@ export async function createApp(
       logger,
     })
 
-    await warmDocumentStore({
+    // Every read model is rebuilt from the tables before anything is served, so a fresh process serves what a
+    // long-running one does.
+    await rebuild(READ_MODEL_NAMES, {
       config,
+      store: platform.commandStore,
       repos,
-      eventBus: platform.eventBus,
+      documentStore: platform.documentStore,
+      search: adapters.search,
       logger,
-      version,
     })
 
     // Events committed before a crash, or whose delivery failed, go out before the app serves anything.
