@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
+import { renderElement } from '../ssr/index.js'
 import {
   addresses,
   cards,
@@ -80,6 +81,45 @@ for (const tag of ['nymbal-cart-page', 'nymbal-checkout', 'nymbal-cart-drawer'])
           const plain = await mount(tag)
           expect(partTexts(plain, 'item-name'), 'no property').toEqual(names(stored))
           plain.remove()
+        }),
+        { numRuns: 10 },
+      )
+    })
+
+    // A store that settled before the element connected (Next's router restoring a cached page after the cart
+    // changed elsewhere) gives no update after subscription, so the stale property must give way at connect, both on a
+    // plain mount and once a host given the server's string has hydrated it. Kills: a property dropped only by a later
+    // update, which shows one cart beside a badge and an order of another.
+    it(`AC-2: property: ${tag} connected with a cart property while the cart store has already settled shows the store's lines when mounted, and lets the property go once it has hydrated the server's render`, async () => {
+      await fc.assert(
+        fc.asyncProperty(cart('p-', 1), cart('s-', 1), async (property, stored) => {
+          const c = client()
+          c['cart']!.setState(settledCart(stored))
+
+          const el = await mount(tag, { cart: JSON.stringify(property) })
+          expect(partTexts(el, 'item-name'), 'mounted').toEqual(names(stored))
+          el.remove()
+
+          // Parsed detached, then inserted, so the element connects with the server's template as its child (happy-dom
+          // parses into a connected parent node by node, and the element would connect before the template exists).
+          const container = document.createElement('div')
+          container.innerHTML = renderElement(tag, {
+            attributes: { cart: JSON.stringify(property) },
+          })
+          document.body.append(container)
+          const hydrated = container.firstElementChild!
+          await settled(hydrated)
+          expect(
+            [...hydrated.children].some((ch) => ch.localName === 'template'),
+            'the server template became the shadow root',
+          ).toBe(false)
+          // happy-dom's TreeWalker does not descend past a filtered first child, so Lit's hydration binds no parts
+          // here and the shadow DOM cannot change after it: what is observable is that the property gave way once
+          // the server's render was hydrated (the browser re-render is the E2E journeys').
+          expect((hydrated as Element & { cart?: unknown }).cart, 'the cart property gave way').toBe(
+            undefined,
+          )
+          container.remove()
         }),
         { numRuns: 10 },
       )

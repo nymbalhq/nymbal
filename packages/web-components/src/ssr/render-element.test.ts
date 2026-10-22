@@ -311,18 +311,20 @@ describe('P2-18 AC-1: renderElement renders every element', () => {
           const out = renderElement(tag, { attributes })
           const expected = partCounts(serverTemplate(parse(out).firstElementChild!)!.content)
 
+          // Parsed detached, then inserted, as a browser's innerHTML does: happy-dom parses into a connected parent
+          // node by node, so the element would connect before its template child exists and never meet it.
           const container = document.createElement('div')
-          document.body.append(container)
           const errors = await errorsDuring(async () => {
             container.innerHTML = out
+            document.body.append(container)
             await settled(container.firstElementChild!)
           })
           expect(errors, `${tag} upgrading its template`).toEqual([])
           const el = container.firstElementChild!
           expect(
-            el.querySelector(':scope > template[shadowrootmode]'),
+            [...el.children].some((c) => c.localName === 'template'),
             'the template is gone',
-          ).toBeNull()
+          ).toBe(false)
           expect(el.shadowRoot, `${tag} has an open shadow root`).not.toBeNull()
           expect(partCounts(el.shadowRoot!)).toEqual(expected)
           container.remove()

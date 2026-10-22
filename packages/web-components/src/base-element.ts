@@ -7,7 +7,7 @@ import {
   type PropertyValues,
 } from 'lit'
 import type { NymbalClient } from '@nymbalhq/sdk'
-import { getClient, hasClient } from './registry.js'
+import { getClient, hasClient, hasSettled } from './registry.js'
 import { define, type NymbalElementClass } from './define.js'
 
 /** How an attribute's value reads: the React wrapper types its prop from this, and JSON travels stringified. */
@@ -126,6 +126,16 @@ export abstract class NymbalElement extends LitElement {
         }),
       )
     }
+    // A hydrating element keeps the server's properties for its first render (see `update`).
+    if (!this._serverRender) this.takeSettledStores()
+  }
+
+  /**
+   * A store that settled before this element connected sends it no update, so the properties a server gave (a page
+   * restored from a router's cache after the cart changed elsewhere) give way to it here.
+   */
+  private takeSettledStores(): void {
+    for (const store of this.stores()) if (hasSettled(store)) this.storeSettled(store)
   }
 
   /**
@@ -153,10 +163,13 @@ export abstract class NymbalElement extends LitElement {
 
   protected override update(changed: PropertyValues): void {
     super.update(changed)
-    if (this._serverRender) {
-      this._serverRender = false
-      this.requestUpdate()
-    }
+    if (!this._serverRender) return
+    // The render above hydrated the server's; this one, in the same update, is from the stores. A scheduled update
+    // here would be a second update per element, which Lit warns of.
+    this._serverRender = false
+    if (this.hasClient) this.takeSettledStores()
+    this.willUpdate(changed)
+    super.update(changed)
   }
 
   override disconnectedCallback(): void {
