@@ -1,4 +1,4 @@
-import { and, desc, eq, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, notInArray } from 'drizzle-orm'
 import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -10,6 +10,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
 
 export interface OrderInsert {
@@ -90,6 +91,8 @@ export interface OrderRepository extends StoreRepository {
     tx: ReadTx,
     opts?: { status?: OrderStatus; limit?: number; offset?: number },
   ): Promise<Order[]>
+  /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
+  listPage(tx: ReadTx, page: KeysetPage): Promise<Order[]>
   insert(tx: Tx, o: OrderInsert): Promise<void>
   setStatus(tx: Tx, id: string, status: OrderStatus, updatedAt: Date): Promise<void>
   /** Sets `status` only while the order is still `from`; false when it was not, so a concurrent writer got there
@@ -228,6 +231,27 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .where(eq(postgresSchema.orders.customerId, customerId))
         .orderBy(desc(postgresSchema.orders.createdAt))
         .limit(limit)
+      return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
+    },
+    async listPage(tx, page) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orders
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(page.after === undefined ? undefined : gt(t.id, page.after))
+          .orderBy(asc(t.id))
+          .limit(page.limit)
+          .all()
+        return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.orders
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(page.after === undefined ? undefined : gt(t.id, page.after))
+        .orderBy(asc(t.id))
+        .limit(page.limit)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
     },
     async list(tx, opts = {}) {

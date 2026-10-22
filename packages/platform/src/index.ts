@@ -108,10 +108,22 @@ export { fillFromSettings, type SettingSource, type SettingValue } from './setti
 export { scrub } from './settings/secret-set.js'
 export { isMissingSettingsTable } from './settings/load.js'
 export {
-  warmDocumentStore,
-  type WarmDocumentStoreDeps,
-  type WarmResult,
-} from './warm-document-store.js'
+  CATCH_UP_MARGIN_MS,
+  diffReadModel,
+  READ_MODEL_NAMES,
+  READ_MODELS,
+  rebuild,
+  RebuildError,
+  type CatchUpFailure,
+  type CollectionDiff,
+  type ReadModel,
+  type ReadModelDiff,
+  type ReadModelName,
+  type RebuildDeps,
+  type RebuildReport,
+  type RebuildReportEntry,
+} from './read-models/index.js'
+export { openReadModels, type OpenReadModelsOptions } from './read-models/open.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

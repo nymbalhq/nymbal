@@ -5,14 +5,20 @@ import {
   type DocumentStoreContractOptions,
 } from '@nymbalhq/contract-tests'
 import type { DocumentStoreAdapter, Logger } from '@nymbalhq/types'
-import { deleteUnder, keysUnder, redisServerUrl, uniquePrefix } from '../../../tests/support/redis'
+import {
+  deleteUnder,
+  keysUnder,
+  redis,
+  redisServerUrl,
+  uniquePrefix,
+} from '../../../tests/support/redis'
 import {
   closeBounded,
   settleWithin,
   tcpProxy,
   type TcpProxy,
 } from '../../../tests/support/tcp-proxy'
-import { createAdapter } from './index.js'
+import { createAdapter, createRedisDocumentStore } from './index.js'
 
 // P2-02 AC-2 on @nymbalhq/doc-store-redis (spec P2-02-primitives-are-protocols), against the composed Redis, and
 // P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): runDocumentStoreContract from the published package runs the
@@ -23,6 +29,10 @@ import { createAdapter } from './index.js'
 // construction is left on a port that refuses. Kills, beyond the suite's: a key written outside the prefix (the E2E
 // teardown would leave it behind), a client that retries a dead host forever (decision 4, B1: an unbounded `hget` was
 // still pending at 15 s), and a bound that stops the client reconnecting when the host returns.
+// P3-02 AC-1 (spec P3-02-replay-engine, decision 2), the Redis half beyond the suite's replaceCollection cases: the
+// replace writes a staging hash and RENAMEs it, with the expiry index alongside, and a source that fails deletes the
+// staging keys. Kills: staging keys left behind by a failed rebuild, and an expiry index left holding the old set's
+// keys after the docs hash was swapped.
 
 const url = redisServerUrl()
 const run = uniquePrefix('doc-redis')
@@ -136,4 +146,85 @@ describe('P2-13 AC-5 (decision 4, B1): the Redis document store’s client is bo
       await closeBounded(() => store.close())
     }
   }, 60_000)
+})
+
+/** Every key under `prefix` with its contents, as Redis holds them: what a replace may and may not leave behind. */
+async function keyspace(on: string, prefix: string): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const key of (await keysUnder(on, prefix)).sort()) {
+    const [type] = (await redis(on, [['TYPE', key]])) as [string]
+    const [value] =
+      type === 'hash'
+        ? await redis(on, [['HGETALL', key]])
+        : type === 'zset'
+          ? await redis(on, [['ZRANGE', key, '0', '-1', 'WITHSCORES']])
+          : type === 'set'
+            ? await redis(on, [['SMEMBERS', key]])
+            : await redis(on, [['GET', key]])
+    out[key] = { type, value: type === 'set' ? (value as string[]).sort() : value }
+  }
+  return out
+}
+
+describe('P3-02 AC-1: the Redis replace swaps the docs hash and its expiry index, and cleans its staging keys', () => {
+  it('AC-1: a replace whose source throws after two entries leaves every key under the prefix as it was (no staging key, the old set intact); a replace that succeeds leaves the new set exactly, an expiry index holding only keys of that set, and no key outside the store’s own', async () => {
+    let now = Date.UTC(2026, 9, 21)
+    const prefix = `${run}-replace`
+    const store = await createRedisDocumentStore({
+      url,
+      prefix,
+      sweepIntervalMs: 0,
+      now: () => now,
+    })
+    try {
+      await store.put('p3-02', 'old-ttl', { id: 'old-ttl', part: 'p' }, { ttl: 60 })
+      await store.put('p3-02', 'kept', { id: 'kept', part: 'p', v: 'old' })
+      await store.put('p3-02', 'gone', { id: 'gone', part: 'p' })
+      await store.put('p3-02-other', 'x', { id: 'x', part: 'p' }, { ttl: 60 })
+      const before = await keyspace(url, prefix)
+
+      async function* failing(): AsyncGenerator<[string, unknown]> {
+        yield ['kept', { id: 'kept', part: 'p', v: 'new' }]
+        yield ['new', { id: 'new', part: 'p' }]
+        throw new Error('p3-02: the source failed')
+      }
+      const failed = await store.replaceCollection('p3-02', failing()).then(
+        () => null,
+        (error: unknown) => error,
+      )
+      expect(String(failed)).toContain('p3-02: the source failed')
+      expect(await keyspace(url, prefix)).toEqual(before)
+
+      async function* good(): AsyncGenerator<[string, unknown]> {
+        yield ['kept', { id: 'kept', part: 'p', v: 'new' }]
+        yield ['new', { id: 'new', part: 'p' }]
+      }
+      await store.replaceCollection('p3-02', good())
+      const all = await store.query('p3-02', { partitionKey: { field: 'part', value: '*' } })
+      expect(all.items).toEqual([
+        { id: 'kept', part: 'p', v: 'new' },
+        { id: 'new', part: 'p' },
+      ])
+
+      const docs = `${prefix}:doc:p3-02`
+      const expiry = `${prefix}:exp:p3-02`
+      const [fields] = (await redis(url, [['HKEYS', docs]])) as [string[]]
+      const [expiring] = (await redis(url, [['ZRANGE', expiry, '0', '-1']])) as [string[]]
+      for (const key of expiring) expect(fields, `expiry index entry ${key}`).toContain(key)
+      const own = new Set([
+        docs,
+        expiry,
+        `${prefix}:doc:p3-02-other`,
+        `${prefix}:exp:p3-02-other`,
+        `${prefix}:expiring`,
+      ])
+      expect((await keysUnder(url, prefix)).filter((key) => !own.has(key))).toEqual([])
+      // The other collection's TTL document is untouched by the replace, and still expires.
+      expect(await store.get('p3-02-other', 'x')).toEqual({ id: 'x', part: 'p' })
+      now += 61_000
+      expect(await store.get('p3-02-other', 'x')).toBeNull()
+    } finally {
+      await store.close()
+    }
+  })
 })

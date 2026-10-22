@@ -118,6 +118,16 @@ export class InMemoryDocumentStore implements DocumentStoreAdapter {
     }
   }
 
+  /** Builds the new contents in a map of their own and swaps it in, so a reader sees one set or the other. */
+  async replaceCollection<T>(
+    collection: string,
+    entries: AsyncIterable<[string, T]>,
+  ): Promise<void> {
+    const next = new Map<string, Entry>()
+    for await (const [key, doc] of entries) next.set(key, { doc, expiresAt: null })
+    this.#data.set(collection, next)
+  }
+
   async close(): Promise<void> {
     if (this.#sweepTimer) clearInterval(this.#sweepTimer)
     this.#data.clear()
