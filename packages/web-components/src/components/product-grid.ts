@@ -14,11 +14,13 @@ const SCHEMA: ElementSchema = {
   reactName: 'ProductGrid',
   // `products`: the cards a server read. `source="product-list"`: the grid is a listing's, and follows the product-list
   // store once it settles (a sort, a filter, load more); without it the grid is static. `has-more`: the server's page
-  // has a next one, so its render shows load more exactly when the store will.
+  // has a next one, so its render shows load more exactly when the store will. `lazy`: the grid sits below the fold
+  // (a product page's related grid), so no card is eager and its images never outrank the page's LCP image.
   attributes: [
     { name: 'products', prop: 'products', type: 'json' },
     { name: 'source', prop: 'source', type: 'string' },
     { name: 'has-more', prop: 'hasMore', type: 'boolean' },
+    { name: 'lazy', prop: 'lazy', type: 'boolean' },
   ],
   events: [],
   parts: ['grid', 'empty', 'count', 'load-more'],
@@ -86,6 +88,7 @@ export class NymbalProductGrid extends NymbalElement {
   declare products: unknown
   declare source: string | undefined
   declare hasMore: boolean | undefined
+  declare lazy: boolean | undefined
 
   private get listing(): boolean {
     return this.source === 'product-list'
@@ -140,7 +143,7 @@ export class NymbalProductGrid extends NymbalElement {
                     product=${JSON.stringify(
                       cardProductOf(p as Parameters<typeof cardProductOf>[0]),
                     )}
-                    ?eager=${i < EAGER_CARDS}
+                    ?eager=${this.lazy !== true && i < EAGER_CARDS}
                   ></nymbal-product-card>`,
               )}
             </div>

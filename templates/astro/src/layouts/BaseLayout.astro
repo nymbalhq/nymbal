@@ -29,6 +29,8 @@ const canonicalUrl = Astro.url.href
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalUrl} />
+    <!-- A page's own head links, early: the product page preloads its LCP image here. -->
+    <slot name="head" />
 
     <!-- Open Graph -->
     <meta property="og:title" content={title} />

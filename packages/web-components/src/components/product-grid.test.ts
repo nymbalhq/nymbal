@@ -9,7 +9,7 @@ import { cards } from '../__fixtures__/server-data.js'
 //   `client.productList.loadMore()` once per click, and hides once the store's cursor is null. A grid without `source`
 //   (home, related) never subscribes to the store: whatever the store does, it shows its attribute.
 // - AC-1 (Invariants): the first four cards of any grid are `eager`, the rest are not, from the attribute and from the
-//   store alike, so the listing's LCP image is never lazy.
+//   store alike, so the listing's LCP image is never lazy; under `lazy` (a grid below the fold) no card is eager.
 // - The P1-11 store walk, carried over from templates/astro/tests/plp-script.test.ts (whose `renderGrid` this element
 //   replaces): a product named with markup shows its name as text and adds no element.
 // Kills: a load-more that calls twice or not at all, shows when the server said there is no more, or stays after the
@@ -130,7 +130,7 @@ describe('P2-17 AC-2: the grid’s load-more follows the product-list store', ()
 })
 
 describe('P2-17 AC-1: the first four cards of a grid are eager', () => {
-  it('AC-1: property: card i carries eager exactly when i < 4, from the products attribute and from the store', async () => {
+  it('AC-1: property: card i carries eager exactly when i < 4 and the grid is not lazy, from the products attribute and from the store', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(
@@ -147,20 +147,26 @@ describe('P2-17 AC-1: the first four cards of a grid are eager', () => {
             selector: (c) => c.slug,
           },
         ),
-        async (property, stored) => {
+        fc.boolean(),
+        async (property, stored, lazy) => {
           document.body.innerHTML = ''
           const c = client()
-          const el = await mount({ source: 'product-list', products: JSON.stringify(property) })
+          const el = await mount({
+            source: 'product-list',
+            products: JSON.stringify(property),
+            ...(lazy && { lazy: '' }),
+          })
           const eager = (): boolean[] => cardsIn(el).map((card) => card.hasAttribute('eager'))
-          expect(eager()).toEqual(property.map((_, i) => i < 4))
+          const expected = (list: unknown[]): boolean[] => list.map((_, i) => !lazy && i < 4)
+          expect(eager(), `lazy=${lazy}, from the attribute`).toEqual(expected(property))
 
           c.productList.setState(settledList(stored, null))
           await settled(el)
           expect(slugsOf(el)).toEqual(stored.map((p) => p.slug))
-          expect(eager()).toEqual(stored.map((_, i) => i < 4))
+          expect(eager(), `lazy=${lazy}, from the store`).toEqual(expected(stored))
         },
       ),
-      { numRuns: 15 },
+      { numRuns: 20 },
     )
   })
 })

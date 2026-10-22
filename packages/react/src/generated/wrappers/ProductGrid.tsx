@@ -6,7 +6,7 @@ import { NymbalProductGrid } from '@nymbalhq/web-components/elements/nymbal-prod
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-product-grid': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'products' | 'source' | 'has-more'> & { 'products'?: string | undefined; 'source'?: string | undefined; 'has-more'?: string | undefined }
+      'nymbal-product-grid': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'products' | 'source' | 'has-more' | 'lazy'> & { 'products'?: string | undefined; 'source'?: string | undefined; 'has-more'?: string | undefined; 'lazy'?: string | undefined }
     }
   }
 }
@@ -22,6 +22,7 @@ export interface ProductGridProps {
   products?: unknown
   source?: string
   hasMore?: boolean
+  lazy?: boolean
   className?: string
   style?: React.CSSProperties
   slot?: string
@@ -65,12 +66,22 @@ export const ProductGrid = /* @__PURE__ */ forwardRef<HTMLElement, ProductGridPr
     }
   }, [props.hasMore])
 
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.lazy) {
+      el.setAttribute('lazy', '')
+    } else {
+      el.removeAttribute('lazy')
+    }
+  }, [props.lazy])
+
 
 
     useDefine(NymbalProductGrid)
 
     return (
-      <nymbal-product-grid ref={ref as React.Ref<HTMLElement>} products={props.products === undefined ? undefined : JSON.stringify(props.products)} source={props.source} has-more={props.hasMore ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-product-grid ref={ref as React.Ref<HTMLElement>} products={props.products === undefined ? undefined : JSON.stringify(props.products)} source={props.source} has-more={props.hasMore ? '' : undefined} lazy={props.lazy ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

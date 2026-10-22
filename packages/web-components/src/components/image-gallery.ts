@@ -106,6 +106,7 @@ export class NymbalImageGallery extends NymbalElement {
         alt=${main.alt ?? ''}
         width="600"
         height="600"
+        fetchpriority="high"
         data-testid="product-gallery"
       />
       ${images.length > 1

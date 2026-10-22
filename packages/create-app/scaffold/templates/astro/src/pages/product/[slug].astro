@@ -45,6 +45,8 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
 ---
 
 <BaseLayout title={`${product.name} | Nymbal`} description={product.shortDescription ?? product.description ?? ''} jsonLd={jsonLd}>
+  <!-- The gallery's main image is the page's LCP: the browser starts it before it parses the body. -->
+  <link slot="head" rel="preload" as="image" href={images[0]!.url} fetchpriority="high" />
   <div class="container section" data-product-slug={product.slug}>
     <NymbalElement
       tag="nymbal-breadcrumb"
@@ -108,7 +110,10 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
     {relatedProducts.length > 0 && (
       <section class="section">
         <h2 class="section-title">You may also like</h2>
-        <NymbalElement tag="nymbal-product-grid" attributes={{ products: JSON.stringify(relatedProducts.map(cardProductOf)) }} />
+        <NymbalElement
+          tag="nymbal-product-grid"
+          attributes={{ products: JSON.stringify(relatedProducts.map(cardProductOf)), lazy: '' }}
+        />
       </section>
     )}
   </div>

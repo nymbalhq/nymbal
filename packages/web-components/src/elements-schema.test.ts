@@ -1333,6 +1333,7 @@ const INTERFACE: Array<{
       { name: 'products', type: 'json' },
       { name: 'source', type: 'string' },
       { name: 'has-more', type: 'boolean' },
+      { name: 'lazy', type: 'boolean' },
     ],
   },
   {

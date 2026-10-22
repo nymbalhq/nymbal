@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { preload } from 'react-dom'
 import { fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { productJsonLd } from '@/lib/seo'
@@ -80,6 +81,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
           alt: m.alt ?? product.name,
         }))
       : [{ url: `https://picsum.photos/seed/${product.slug}/600/600`, alt: product.name }]
+  // The gallery's main image is the page's LCP: React hoists the preload into the head, so the browser starts it
+  // before it parses the body.
+  preload(images[0]!.url, { as: 'image', fetchPriority: 'high' })
   const crumbs = [
     { label: 'Home', href: '/' },
     { label: 'Products', href: '/products' },
@@ -155,8 +159,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <h2 className="section-title">You may also like</h2>
             <ProductGrid
               products={related}
+              lazy
               serverHtml={
-                renderNymbal('nymbal-product-grid', { products: JSON.stringify(related) }).__html
+                renderNymbal('nymbal-product-grid', { products: JSON.stringify(related), lazy: '' })
+                  .__html
               }
             />
           </section>
