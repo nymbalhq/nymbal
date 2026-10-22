@@ -29,6 +29,7 @@
   "next": [
     "Create the API token in the Cloudflare dashboard (My Profile, API Tokens) with two permissions on this zone only: Zone › Zone › Read and Zone › Zone WAF › Edit.",
     "Behind Cloudflare every request reaches the API from an edge address: set http.trustProxy: true so the in-process rate limiter keys on the client, not on the edge.",
+    "The zone's plan limits security.rateLimit: the Free plan allows one rate limit with a 10s window, Pro two with 10s or 1m (the scaffold's four fit Business and up). A throttle action needs the Enterprise plan: on Free, Pro or Business change the scaffold's two throttle entries (/api/*, /webhooks/*) to block or challenge. nymbal security:plan names each limit the plan refuses.",
     "Run nymbal security:plan to see the rules, then nymbal security:apply to put them on the zone; nymbal security:drift reports a dashboard edit."
   ]
 }

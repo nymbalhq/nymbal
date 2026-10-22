@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '@nymbalhq/config'
 import { PROVIDER_PACKAGES } from '@nymbalhq/platform'
 import { readRecipe } from '../recipes/index.js'
+import { WINDOW_PERIODS } from '../../../security-cloudflare/src/rules.js'
 import {
   REPO,
   changedPaths,
@@ -251,8 +252,11 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
 // Acceptance tests for P2-04 AC-9 (spec P2-04-cloudflare-waf, Interface Recipe; takes P2-03 `cloudflare-recipe`):
 // `nymbal add cloudflare` on a copy of the same scaffold installs the package PROVIDER_PACKAGES names for the security
 // slot, sets `security.adapter` and `security.cloudflare` to the two `env()` reads, and adds both variables to
-// .env.example; its next steps name the token scopes and `http.trustProxy`. Kills: no recipe, a recipe that installs
-// something the loader does not ask for, and a token written into the config.
+// .env.example; its next steps name the token scopes and `http.trustProxy`. The scaffold's rate limits all use a
+// window Cloudflare has a period for, so the store's first `security:plan` is not refused on every entry, and the next
+// steps say what the zone's plan still refuses (throttle below Enterprise, the rate-limit count). Kills: no recipe, a
+// recipe that installs something the loader does not ask for, a token written into the config, and a scaffold window
+// (`60s`) the edge cannot apply.
 
 describe('P2-04 AC-9: nymbal add cloudflare', () => {
   const securityPackage = (): string | undefined =>
@@ -302,13 +306,24 @@ describe('P2-04 AC-9: nymbal add cloudflare', () => {
         apiToken: set.CLOUDFLARE_API_TOKEN,
       }),
     )
+
+    // Every rate limit the scaffold ships keeps a window the Cloudflare adapter has a period for, so the store's
+    // first security:plan is refused only for what the zone's plan disallows, never for the window itself.
+    const rateLimit = security['rateLimit'] as Record<string, { window: string }>
+    expect(Object.keys(rateLimit).length).toBeGreaterThanOrEqual(4)
+    for (const [path, rule] of Object.entries(rateLimit)) {
+      expect(Object.keys(WINDOW_PERIODS), `${path}: window ${rule.window}`).toContain(rule.window)
+    }
   }, 60_000)
 
-  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit) and http.trustProxy", async () => {
+  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
     const dir = project('cloudflare-next')
     const next = (await readRecipe('cloudflare', dir)).next.join('\n')
     expect(next).toMatch(/Zone WAF/)
     expect(next).toMatch(/Zone\s*›?\s*Zone\s*›?\s*Read|Zone Read/)
     expect(next).toContain('trustProxy')
+    expect(next).toMatch(/throttle[^.]*Enterprise/)
+    expect(next).toMatch(/block or challenge/)
+    expect(next).toMatch(/Free plan allows one rate limit/)
   })
 })
