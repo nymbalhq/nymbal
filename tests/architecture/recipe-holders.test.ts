@@ -193,7 +193,7 @@ describe('P2-03 AC-1: recipe holders', () => {
       ) as unknown
       expect(inTarball, name).toEqual(await readRecipe(name, project))
     }
-  }, 60_000)
+  }, 120_000) // four sync `npm pack`s: 5-50 s under load, 53 s seen beside a gate:full (2026-10-22)
 
   it("AC-1: no recipe sets a credential or prefix: '', and every key or secret it sets is an env() value", async () => {
     const all: Array<[string, RecipeValue]> = []

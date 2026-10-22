@@ -183,7 +183,7 @@ export const ARTEFACT: Record<string, string> = {
 export const GATE_PACKAGE_JSON = JSON.stringify({
   name: 'gate-scratch',
   private: true,
-  scripts: { lint: 'true', typecheck: 'true', sentinels: 'true' },
+  scripts: { lint: 'true', typecheck: 'true', sentinels: 'true', 'mutation:ratchet': 'true' },
 })
 
 export const STRYKER_CONFIG = "export default { mutate: ['nothing/**/*.ts'] }\n"

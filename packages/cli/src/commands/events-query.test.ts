@@ -153,7 +153,8 @@ function query(args: string[]) {
   return runCli(['events', 'query', ...args], { cwd: project.dir, env: project.env })
 }
 
-describe('P3-01 AC-6: nymbal events query', () => {
+// The built CLI opens the store afresh per run: 5 s was hit under load (2026-10-22).
+describe('P3-01 AC-6: nymbal events query', { timeout: 30_000 }, () => {
   it('AC-6: --correlation <the checkout’s id> prints exactly that checkout’s events, one line each, in seq order, and exits 0', async () => {
     const run = await query(['--correlation', checkoutId])
     expect(run.code, run.out.slice(-3000)).toBe(0)
