@@ -4,12 +4,14 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { delimiter, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { gzipSync } from 'node:zlib'
@@ -130,7 +132,7 @@ function findChrome(): string {
 }
 
 const children: ChildProcess[] = []
-/** The seed images put in a template's public directory, and the run's own directory: removed when it ends. */
+/** The seed images the run added to a template's public directory: removed when it ends, with the run's directory. */
 const placed: string[] = []
 let work: string | undefined
 
@@ -195,9 +197,38 @@ function run(
     fail(`${command} ${args.join(' ')} failed (${result.status ?? result.signal})`)
 }
 
-async function waitFor(url: string, timeoutMs: number): Promise<void> {
+/** Whether something answers on the port: a server left on it would be measured in place of the run's own. */
+function listening(port: number): Promise<boolean> {
+  return new Promise((done) => {
+    const socket = connect({ port, host: 'localhost' })
+    socket.setTimeout(2000)
+    socket.once('connect', () => {
+      socket.destroy()
+      done(true)
+    })
+    socket.once('timeout', () => {
+      socket.destroy()
+      done(false)
+    })
+    socket.once('error', () => done(false))
+  })
+}
+
+async function assertPortsFree(ports: number[]): Promise<void> {
+  for (const port of ports) {
+    if (await listening(port)) {
+      fail(`port ${port} is in use: stop what is listening there (lsof -i :${port}), then run again`)
+    }
+  }
+}
+
+/** Resolves once the URL answers; fails when the server meant to answer it exits first. */
+async function waitFor(url: string, timeoutMs: number, server: ChildProcess): Promise<void> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
+    if (server.exitCode !== null || server.signalCode !== null) {
+      fail(`${url}: its server exited (${server.exitCode ?? server.signalCode}) before it answered`)
+    }
     try {
       const response = await fetch(url)
       if (response.ok) return
@@ -209,9 +240,10 @@ async function waitFor(url: string, timeoutMs: number): Promise<void> {
   }
 }
 
+/** The median of the runs that measured; NaN only when none did. */
 function median(values: number[]): number {
-  if (values.some((v) => Number.isNaN(v))) return Number.NaN
-  const sorted = [...values].sort((a, b) => a - b)
+  const sorted = values.filter((v) => !Number.isNaN(v)).sort((a, b) => a - b)
+  if (sorted.length === 0) return Number.NaN
   const mid = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
 }
@@ -374,13 +406,28 @@ const templateDir = (template: Template, dir: string | undefined): string =>
 
 const bin = (dir: string, name: string): string => join(dir, 'node_modules/.bin', name)
 
-/** The seed images in the template's public directory, which the build copies (Astro) or serves (Next). */
-function placeImages(media: string, dir: string): string {
+/**
+ * The seed images in the template's public directory, which the build copies (Astro) or serves (Next). That directory
+ * is also the local media root of a store run from the template, so what is already there stays: only the files this
+ * run adds are returned, for removal.
+ */
+function placeImages(media: string, dir: string): string[] {
   const target = join(dir, 'public/imported-media')
-  rmSync(target, { recursive: true, force: true })
-  mkdirSync(target, { recursive: true })
-  cpSync(media, target, { recursive: true })
-  return target
+  if (!existsSync(target)) {
+    mkdirSync(target, { recursive: true })
+    cpSync(media, target, { recursive: true })
+    return [target]
+  }
+  const added: string[] = []
+  for (const file of readdirSync(media, { recursive: true, withFileTypes: true })) {
+    if (!file.isFile()) continue
+    const to = join(target, relative(media, join(file.parentPath, file.name)))
+    if (existsSync(to)) continue
+    mkdirSync(dirname(to), { recursive: true })
+    cpSync(join(file.parentPath, file.name), to)
+    added.push(to)
+  }
+  return added
 }
 
 /**
@@ -394,14 +441,17 @@ const templateEnv = (api: string): NodeJS.ProcessEnv => ({
   NEXT_PUBLIC_NYMBAL_API_URL: api,
 })
 
-function startStorefront(template: Template, dir: string, port: number, api: string): void {
+function startStorefront(
+  template: Template,
+  dir: string,
+  port: number,
+  api: string,
+): ChildProcess {
   const env = templateEnv(api)
-  if (template === 'astro') {
-    // --ignore-lock: Astro backgrounds `astro preview` under an agent, as it does `astro dev`.
-    serve(bin(dir, 'astro'), ['preview', '--ignore-lock', '--port', String(port)], dir, env)
-  } else {
-    serve(bin(dir, 'next'), ['start', '-p', String(port)], dir, env)
-  }
+  // --ignore-lock: Astro backgrounds `astro preview` under an agent, as it does `astro dev`.
+  return template === 'astro'
+    ? serve(bin(dir, 'astro'), ['preview', '--ignore-lock', '--port', String(port)], dir, env)
+    : serve(bin(dir, 'next'), ['start', '-p', String(port)], dir, env)
 }
 
 function buildTemplate(dir: string, api: string): void {
@@ -435,8 +485,12 @@ function updatedBudgets(current: Budgets, results: PageResult[]): Budgets {
     const bytes = r.measured.scriptBytes
     if (Number.isNaN(bytes))
       fail(`${r.template} / ${r.page} was not measured; the budgets are left as they were`)
+    // A stored limit above the absolute one is a recorded exception (nextjs / cart LCP until P2-18): it stays.
+    const stored = current[r.template]?.[r.page]
     ;(next[r.template] ??= {})[r.page] = {
-      ...LIMITS,
+      lcpMs: Math.max(LIMITS.lcpMs, stored?.lcpMs ?? 0),
+      cls: Math.max(LIMITS.cls, stored?.cls ?? 0),
+      tbtMs: Math.max(LIMITS.tbtMs, stored?.tbtMs ?? 0),
       scriptBytes: Math.ceil((bytes * SCRIPT_HEADROOM) / KIB) * KIB,
     }
   }
@@ -454,21 +508,22 @@ async function main(): Promise<number> {
   const media = join(work, 'media')
   const env = { NYMBAL_SQLITE_PATH: join(work, 'perf.db') }
   try {
+    await assertPortsFree([block.api, ...opts.templates.map((t) => ports[t])])
     run('node', [CLI, 'seed', '--local-images', '--media-root', media], REPO, env)
-    serve('node', [CLI, 'dev', '--api-only', '--port', String(block.api)], REPO, {
+    const apiServer = serve('node', [CLI, 'dev', '--api-only', '--port', String(block.api)], REPO, {
       ...env,
       NYMBAL_CORS_ORIGINS: opts.templates.map((t) => `http://localhost:${ports[t]}`).join(','),
     })
-    await waitFor(`${api}/health`, 90_000)
+    await waitFor(`${api}/health`, 90_000, apiServer)
 
     const results: PageResult[] = []
     for (const template of opts.templates) {
       const dir = templateDir(template, opts.dir)
-      placed.push(placeImages(media, dir))
+      placed.push(...placeImages(media, dir))
       buildTemplate(dir, api)
-      startStorefront(template, dir, ports[template], api)
+      const storefront = startStorefront(template, dir, ports[template], api)
       const origin = `http://localhost:${ports[template]}`
-      await waitFor(origin, 120_000)
+      await waitFor(origin, 120_000, storefront)
       results.push(...(await measure(chrome, template, origin, opts.runs)))
     }
 

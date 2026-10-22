@@ -13,7 +13,7 @@ import { astroWithHeavyHome, heavyScriptGzipBytes } from './fixtures/heavy-home'
 //   template without the fixture, fail too), and a scriptBytes that is not the gzip sum of the page's scripts.
 // - AC-4 kills: today's failures left in place (Astro LCP 3158 ms, Next CLS 0.133), a page left out of the run, and
 //   per-page loading that saves nothing on Astro `/` against 606e5aa (tests/perf/fixtures/astro-home-606e5aa.json).
-// Without Chrome the tests skip and say so: Lighthouse cannot run.
+// Without Chrome the tests skip and say so (Lighthouse cannot run), except under CI, where they fail.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const REPORT = join(REPO, 'reports/perf-budgets.json')
@@ -113,6 +113,8 @@ let real: Run
 let copy: string | undefined
 
 beforeAll(async () => {
+  // On a CI runner Chrome is part of the job: missing, it fails the suite rather than skipping the budgets.
+  if (chrome === undefined && process.env.CI) throw new Error(NO_CHROME)
   if (chrome === undefined) return
   copy = astroWithHeavyHome(REPO)
   fixture = await perfBudgets(['--template', 'astro', '--dir', copy])

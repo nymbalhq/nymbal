@@ -94,6 +94,12 @@ jobs:
       # then as committed (it must pass, and writes the report the pull request quotes).
       - name: perf:budgets (tests/perf)
         run: pnpm exec vitest run --config tests/perf/vitest.config.ts
+      # AC-3 and AC-5: each page loads only its own elements, seen only in a production build (the dev-server E2E
+      # jobs cannot): both templates built for this slot's API, then the journeys in tests/e2e/prod.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Production E2E (tests/e2e/prod)
+        run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
       - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
