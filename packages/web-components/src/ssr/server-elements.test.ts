@@ -33,12 +33,11 @@ function projectElement(tag: string, marker: string): NymbalElementClass {
 function serverParts(out: string): string[] {
   const parsed = document.createElement('template')
   parsed.innerHTML = out
-  const shadow = parsed.content.firstElementChild?.querySelector(
-    ':scope > template[shadowrootmode]',
-  )
-  if (!(shadow instanceof HTMLTemplateElement))
+  // The host's first child, found without `:scope`, which happy-dom's selector engine never matches.
+  const shadow = parsed.content.firstElementChild?.firstElementChild
+  if (shadow?.localName !== 'template' || shadow.getAttribute('shadowrootmode') !== 'open')
     throw new Error(`no declarative shadow root in ${out}`)
-  return [...shadow.content.querySelectorAll('[part]')].flatMap((n) =>
+  return [...(shadow as HTMLTemplateElement).content.querySelectorAll('[part]')].flatMap((n) =>
     (n.getAttribute('part') ?? '').split(/\s+/).filter((p) => p !== ''),
   )
 }

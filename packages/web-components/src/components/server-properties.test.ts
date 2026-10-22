@@ -246,10 +246,11 @@ describe('P2-18 AC-2: nymbal-profile-form', () => {
 
 describe('P2-18 AC-2: nymbal-address-book', () => {
   /** The ids of the addresses the book lists, in order. */
+  // The part token read exactly: happy-dom's `[part~="address"]` also matches `address-line` and `address-badge`.
   const listed = (el: Element): string[] =>
-    [...shadow(el).querySelectorAll('[part~="address"]')].map((n) =>
-      (n.getAttribute('data-testid') ?? '').replace(/^address-/, ''),
-    )
+    [...shadow(el).querySelectorAll('[part]')]
+      .filter((n) => (n.getAttribute('part') ?? '').split(/\s+/).includes('address'))
+      .map((n) => (n.getAttribute('data-testid') ?? '').replace(/^address-/, ''))
 
   /** The address book has no store: its settled update is the answer to `customer.addresses.list()`. */
   function heldList(c: Client): { answer(list: unknown[]): Promise<void> } {

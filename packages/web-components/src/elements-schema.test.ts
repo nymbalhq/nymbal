@@ -942,11 +942,11 @@ describe('P2-15 AC-1: the moved views carry the interface the templates call the
 // summary is built as the cart page's is, with names as text. Kills: a checkout that copies the address fields, an
 // Enter that submits nothing, a product name rendered as markup, a summary that adds up the lines itself.
 describe('P2-16 AC-1: nymbal-checkout meets the foundation', () => {
-  it('AC-1: nymbal-checkout’s schema: reactName Checkout, no attributes, nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (P2-18’s cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
     const schema = schemaOf(customElements.get('nymbal-checkout'))
     expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
     expect(schema?.reactName).toBe('Checkout')
-    expect(schema?.attributes).toEqual([])
+    expect(schema?.attributes).toEqual([{ name: 'cart', prop: 'cart', type: 'json' }])
     expect(schema?.events).toContainEqual({
       name: 'nymbal:checkout:placed',
       prop: 'onPlaced',

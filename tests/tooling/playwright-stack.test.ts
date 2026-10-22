@@ -61,6 +61,8 @@ const STORES = {
   native: { api: 'api', storefronts: ['astro', 'nextjs'] },
   custom: { api: 'customApi', storefronts: ['astroCustom', 'nextjsCustom'] },
   nosearch: { api: 'noSearchApi', storefronts: ['astroNoSearch', 'nextjsNoSearch'] },
+  // P2-18 (spec answer 2): the project-elements fixture.
+  override: { api: 'overrideApi', storefronts: ['astroOverride', 'nextjsOverride'] },
 } as const satisfies Record<string, { api: PortField; storefronts: PortField[] }>
 
 type Target = {
@@ -111,6 +113,18 @@ const TARGETS: Target[] = [
     store: 'nosearch',
     storefronts: ['nextjsNoSearch'],
   },
+  {
+    name: 'astro-override',
+    env: { NYMBAL_E2E_TARGET: 'astro-override' },
+    store: 'override',
+    storefronts: ['astroOverride'],
+  },
+  {
+    name: 'nextjs-override',
+    env: { NYMBAL_E2E_TARGET: 'nextjs-override' },
+    store: 'override',
+    storefronts: ['nextjsOverride'],
+  },
 ]
 
 /** Each Playwright project's baseURL, by the block field it is served on (`admin` is the API's /admin/). */
@@ -121,6 +135,8 @@ const PROJECT_FIELDS: Record<string, PortField | 'admin'> = {
   'nextjs-custom': 'nextjsCustom',
   'astro-nosearch': 'astroNoSearch',
   'nextjs-nosearch': 'nextjsNoSearch',
+  'astro-override': 'astroOverride',
+  'nextjs-override': 'nextjsOverride',
   'astro-mobile': 'astro',
   'nextjs-mobile': 'nextjs',
   admin: 'admin',

@@ -12,6 +12,10 @@ export const SLOT0_PORTS = {
   noSearchApi: 3021,
   astroNoSearch: 4341,
   nextjsNoSearch: 3020,
+  // P2-18 (spec answer 2): the project-elements fixture's store and its two storefronts.
+  overrideApi: 3041,
+  astroOverride: 4361,
+  nextjsOverride: 3040,
   walkApi: 3031,
   walkAstro: 4351,
   walkNextjs: 3030,
