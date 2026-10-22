@@ -1,9 +1,10 @@
 import type { APIRequestContext, Page, Request, Response } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '../../support/fixtures'
-import { API_URL } from '../../support/csrf'
+import { API_URL, csrf } from '../../support/csrf'
 import { placeOrder, SHIPPING_ADDRESS, signInAsAdmin } from '../../support/admin'
-import { adminToken, ownProduct, type OwnProduct } from '../../support/checkout'
+import { adminToken, type OwnProduct } from '../../support/checkout'
 
 // P3-04 AC-5 (spec P3-04-audit-trail, decisions 5, 7, 8 and 10), journeys audit.retry-applies-once and
 // audit.activity-lists-commands: the admin's own requests, captured as the page sends them. A stock adjust re-sent once
@@ -109,6 +110,46 @@ async function historyOf(request: APIRequestContext, token: string, product: Own
   return ((await res.json()) as { data: Array<{ adjustment: number }> }).data
 }
 
+/**
+ * A draft product with one variant at `stock`, listed by the admin inventory before this returns. Draft, because the
+ * storefront does not serve it, so no other journey's `placeOrder` can buy it and move its stock.
+ */
+async function draftProduct(
+  request: APIRequestContext,
+  token: string,
+  stock: number,
+): Promise<OwnProduct> {
+  const tag = randomUUID().slice(0, 8)
+  const name = `Activity Draft ${tag}`
+  const res = await request.post(`${API_URL}/api/admin/products`, {
+    headers: { ...(await csrf(request)), ...auth(token) },
+    data: {
+      slug: `p3-04-${tag}`,
+      name,
+      description: 'A draft product of one activity journey.',
+      status: 'draft',
+      variants: [{ sku: `P304-${tag}`, name: 'Default', priceMinor: 1999, stock, options: [] }],
+    },
+  })
+  expect(res.status(), `POST /api/admin/products: ${await res.text()}`).toBe(201)
+  const body = (await res.json()) as { data: { slug: string; variants: Array<{ id: string }> } }
+  const product = { slug: body.data.slug, variantId: body.data.variants[0]!.id, name }
+  await expect
+    .poll(
+      async () => {
+        const listed = await request.get(
+          `${API_URL}/api/admin/inventory?q=${encodeURIComponent(name)}`,
+          { headers: auth(token) },
+        )
+        const rows = ((await listed.json()) as { data?: Array<{ variantId: string }> }).data ?? []
+        return rows.some((r) => r.variantId === product.variantId)
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true)
+  return product
+}
+
 /** Sets an activity filter, whichever control the page uses for it. */
 async function filterBy(page: Page, which: 'actor' | 'command' | 'subject', value: string) {
   const control = page.getByTestId(`activity-filter-${which}`)
@@ -130,9 +171,10 @@ test.describe('P3-04 AC-5: retry and the Activity page', () => {
     request,
   }) => {
     const token = await adminToken(request)
-    const product = await ownProduct(request, token, 10)
+    const product = await draftProduct(request, token, 10)
     await signInAsAdmin(page)
 
+    const before = await stockOf(request, token, product)
     const first = await adjustThroughPage(page, product, 3)
     const key = (await first.request.allHeaders())['idempotency-key'] ?? ''
     expect(KEY_PATTERN.test(key), `the page's Idempotency-Key ${JSON.stringify(key)}`).toBe(true)
@@ -142,8 +184,12 @@ test.describe('P3-04 AC-5: retry and the Activity page', () => {
     expect(replay.status(), await replay.text()).toBe(first.response.status())
     expect((await replay.json()) as unknown).toEqual(firstBody)
     expect(replay.headers()['idempotent-replayed']).toBe('true')
-    expect(await stockOf(request, token, product)).toBe(10 + 3)
-    expect((await historyOf(request, token, product)).map((h) => h.adjustment)).toEqual([3])
+    const after = await stockOf(request, token, product)
+    expect(after - before, `stock ${before} before the adjust, ${after} after its replay`).toBe(3)
+    expect(
+      (await historyOf(request, token, product)).filter((h) => h.adjustment === 3).length,
+      'the +3 rows in GET …/history',
+    ).toBe(1)
   })
 
   test('AC-5: the stock-history drawer lists the variant’s adjustments as GET …/history answers them', async ({
@@ -151,7 +197,7 @@ test.describe('P3-04 AC-5: retry and the Activity page', () => {
     request,
   }) => {
     const token = await adminToken(request)
-    const product = await ownProduct(request, token, 10)
+    const product = await draftProduct(request, token, 10)
     await signInAsAdmin(page)
 
     const first = await adjustThroughPage(page, product, 2)
@@ -175,7 +221,7 @@ test.describe('P3-04 AC-5: retry and the Activity page', () => {
     const token = await adminToken(request)
     const me = await request.get(`${API_URL}/api/admin/me`, { headers: auth(token) })
     const adminId = ((await me.json()) as { data: { userId: string } }).data.userId
-    const stocked = await ownProduct(request, token, 10)
+    const stocked = await draftProduct(request, token, 10)
     const email = `e2e-p3-04-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`
     const order = await placeOrder(request, email)
     const cartCookies = (await request.storageState()).cookies
