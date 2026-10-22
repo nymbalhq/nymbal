@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Recipe } from '@nymbalhq/types'
 
 /**
@@ -81,4 +82,53 @@ export async function readRecipe(name: string, projectRoot: string): Promise<Rec
     !Array.isArray(recipe.next)
   if (malformed) throw new Error(`${file} is not a ${name} recipe`)
   return recipe
+}
+
+/** The ESM entry of a package directory: its `exports['.']` import condition, else `module`, else `main`. */
+function entryOf(dir: string, manifest: Record<string, unknown>): string | null {
+  const exportsField = manifest['exports'] as Record<string, unknown> | string | undefined
+  const root = typeof exportsField === 'object' ? exportsField['.'] : exportsField
+  const entry =
+    typeof root === 'string'
+      ? root
+      : typeof root === 'object' && root !== null
+        ? ((root as Record<string, unknown>)['import'] ??
+          (root as Record<string, unknown>)['default'])
+        : (manifest['module'] ?? manifest['main'])
+  return typeof entry === 'string' ? join(dir, entry) : null
+}
+
+/**
+ * The environment variables the Nymbal packages in `packages` declare as settings (their `settings` export), as the
+ * project has them installed: a variable the admin's Settings can fill as well as `.env`. A package that is not
+ * installed, or whose SDK is not yet, declares nothing here.
+ */
+export async function settingsEnv(
+  packages: readonly string[],
+  projectRoot: string,
+): Promise<Set<string>> {
+  const names = new Set<string>()
+  for (const pkg of packages.filter((p) => p.startsWith('@nymbalhq/'))) {
+    const dir = packageDir(pkg, projectRoot)
+    if (dir === null) continue
+    const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >
+    const entry = entryOf(dir, manifest)
+    if (entry === null || !existsSync(entry)) continue
+    let mod: { settings?: unknown }
+    try {
+      mod = (await import(pathToFileURL(entry).href)) as { settings?: unknown }
+    } catch (error) {
+      // `--no-install` may leave the provider's SDK out; the hint then names `.env` alone.
+      if ((error as { code?: unknown }).code === 'ERR_MODULE_NOT_FOUND') continue
+      throw error
+    }
+    if (!Array.isArray(mod.settings)) continue
+    for (const setting of mod.settings as Array<{ env?: unknown }>) {
+      if (typeof setting?.env === 'string') names.add(setting.env)
+    }
+  }
+  return names
 }

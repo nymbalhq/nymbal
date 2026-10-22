@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigError, type AdapterContext, type Slot } from '@nymbalhq/types'
+import {
+  ConfigError,
+  type AdapterContext,
+  type AdapterSetting,
+  type ProviderPackageModule,
+  type Slot,
+} from '@nymbalhq/types'
 
 export interface ProviderPackage {
   /** The adapter package, which exports `createAdapter(ctx: AdapterContext)`. */
@@ -89,10 +95,22 @@ function missingPackage(error: unknown): string | null {
 
 interface AdapterModule {
   createAdapter?: (ctx: AdapterContext) => unknown
+  settings?: unknown
 }
 
-interface ProviderModule {
-  createAdapter: (ctx: AdapterContext) => unknown
+export type ProviderModule = ProviderPackageModule
+
+function isSetting(value: unknown): value is AdapterSetting {
+  const s = value as Partial<AdapterSetting> | null
+  return (
+    typeof s === 'object' &&
+    s !== null &&
+    typeof s.path === 'string' &&
+    s.path !== '' &&
+    typeof s.label === 'string' &&
+    typeof s.secret === 'boolean' &&
+    (s.env === undefined || typeof s.env === 'string')
+  )
 }
 
 /**
@@ -127,7 +145,21 @@ export async function importProviderPackage(
       context: { slot, provider, package: entry.package },
     })
   }
+  if (
+    mod.settings !== undefined &&
+    !(Array.isArray(mod.settings) && (mod.settings as unknown[]).every(isSetting))
+  ) {
+    throw new ConfigError(
+      `${entry.package} exports \`settings\` that is not an array of { path, label, secret, env? }`,
+      { code: 'adapter.package_invalid', context: { slot, provider, package: entry.package } },
+    )
+  }
   return mod as ProviderModule
+}
+
+/** The fields a provider package lets Settings fill: its `settings` export, or none. */
+export function declaredSettings(mod: ProviderModule | undefined): readonly AdapterSetting[] {
+  return mod?.settings ?? []
 }
 
 /**

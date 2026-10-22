@@ -1,5 +1,14 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ShoppingBag, Package, Boxes, Users, LogOut, Loader2 } from 'lucide-react'
+import {
+  LayoutDashboard,
+  ShoppingBag,
+  Package,
+  Boxes,
+  Users,
+  Settings,
+  LogOut,
+  Loader2,
+} from 'lucide-react'
 import { useMe } from '@/hooks/useMe'
 import { useAuth } from '@/hooks/useAuth'
 import { useOrders } from '@/hooks/useOrders'
@@ -13,6 +22,7 @@ const navItems = [
   { to: '/products', label: 'Products', icon: Package, end: false },
   { to: '/inventory', label: 'Inventory', icon: Boxes, end: false },
   { to: '/customers', label: 'Customers', icon: Users, end: false },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ]
 
 function PendingOrdersBadge() {
