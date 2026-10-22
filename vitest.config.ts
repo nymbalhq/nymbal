@@ -117,7 +117,10 @@ export default defineConfig({
         test: {
           name: 'adapters',
           environment: 'node',
-          include: ['packages/adapter-*/src/**/*.test.ts'],
+          include: [
+            'packages/adapter-*/src/**/*.test.ts',
+            'packages/security-cloudflare/src/**/*.test.ts',
+          ],
         },
       },
       {

@@ -129,12 +129,16 @@ export type CommerceSlot =
   | 'tax'
   | 'ai'
 
-/** Every slot an adapter package can fill: the commerce slots and the infrastructure primitives. */
-export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media'
+/**
+ * Every slot an adapter package can fill: the commerce slots, the infrastructure primitives and `security`, whose
+ * choice is `security.adapter`.
+ */
+export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media' | 'security'
 
 /**
  * What the kernel hands an adapter package's `createAdapter`. A package that serves more than one slot switches on
- * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, or a primitive's connection block.
+ * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, a primitive's connection block, or for
+ * `security` the block named after the adapter (`security.cloudflare`).
  */
 export interface AdapterContext {
   slot: Slot

@@ -20,6 +20,7 @@ import {
   checkInjectedSlot,
   COMMERCE_SLOTS,
   resolvePaymentsAdapter,
+  resolveSecurityAdapter,
   slotBuilders,
   type InjectedAdapters,
 } from './adapters/registry.js'
@@ -156,9 +157,9 @@ function notChecked(prerequisite: string): string {
 
 /**
  * Checks a project without changing it: its config, the packages its providers live in, the command store and its
- * migrations, and the health of every commerce slot and primitive. It builds what `createApp` builds, through the same
- * registry and constructors, and nothing more: no warm-up, no relay, no sweeper, no migrator, no seed, and no
- * primitive's `initialize()`. The command store is opened read-only. Every connection is closed before it returns.
+ * migrations, and the health of every commerce slot, the security slot and every primitive. It builds what `createApp`
+ * builds, through the same registry and constructors, and nothing more: no warm-up, no relay, no sweeper, no migrator,
+ * no seed, and no primitive's `initialize()` (the security adapter's makes no request). The command store is opened read-only. Every connection is closed before it returns.
  */
 export async function diagnose(
   input: NymbalConfig,
@@ -189,10 +190,11 @@ export async function diagnose(
     documentStore: infrastructure.documentStore,
     eventBus: infrastructure.eventBus,
     media: infrastructure.media,
+    security: config.security.adapter,
   }
 
   const packages: DiagnosisCheck[] = []
-  for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES]) {
+  for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES, 'security'] as const) {
     const entry = PROVIDER_PACKAGES[slot]?.[providers[slot]]
     if (entry === undefined) continue
     const found = await within(timeoutMs, () => importProviderPackage(slot, providers[slot], env))
@@ -383,6 +385,19 @@ export async function diagnose(
       slots.push(fromReport(`slot ${slot}`, provider, await health(adapter.value)))
     }
   }
+
+  const securityAdapter = await within(timeoutMs, () =>
+    resolveSecurityAdapter(config, adapterLogger, env),
+  )
+  slots.push(
+    securityAdapter.ok
+      ? fromReport('slot security', providers.security, await health(securityAdapter.value))
+      : {
+          name: 'slot security',
+          status: 'down',
+          detail: described(providers.security, securityAdapter.detail),
+        },
+  )
 
   const primitives: DiagnosisCheck[] = []
   for (const name of PRIMITIVES) {

@@ -28,6 +28,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/event-bus-redis-streams',
   '@nymbalhq/media-s3',
   '@nymbalhq/proof-kit',
+  '@nymbalhq/security-cloudflare',
   '@nymbalhq/test-factories',
 ])
 

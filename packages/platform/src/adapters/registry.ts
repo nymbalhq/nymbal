@@ -18,7 +18,7 @@ import { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
-import { declaredSettings, importProviderPackage } from './loader.js'
+import { declaredSettings, importProviderPackage, loadProviderAdapter, PROVIDER_PACKAGES } from './loader.js'
 import { createNotConfiguredAdapter } from './not-configured.js'
 import { fillFromSettings, missingSecrets, type SettingValue } from '../settings/resolve.js'
 
@@ -56,6 +56,8 @@ export interface BuildAdaptersDeps {
   injected?: InjectedAdapters
   /** The payments adapter `createApp` resolved before it opened the store. */
   payments: PaymentsAdapter
+  /** The security adapter `createApp` resolved before it opened the store. */
+  security: SecurityAdapter
   /** The values Settings hold for the slots' declared fields, decrypted: what fills what the config leaves unset. */
   settings?: readonly SettingValue[]
 }
@@ -163,13 +165,43 @@ export function resolvePaymentsAdapter(
   )
 }
 
+/**
+ * The adapter `security.adapter` names, initialized with its own block (`security.cloudflare`): `middleware` is the
+ * kernel's, `cloudflare` its package's. One with neither is refused rather than run as middleware.
+ */
+export async function resolveSecurityAdapter(
+  config: NymbalConfig,
+  logger: Logger,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SecurityAdapter> {
+  const choice = config.security.adapter
+  const slotLogger = logger.child({ adapter: 'security' })
+  if (choice === 'middleware') return createMiddlewareSecurityAdapter({ logger: slotLogger })
+  const blockConfig: Record<string, unknown> =
+    choice === 'cloudflare' ? { ...config.security.cloudflare } : {}
+  const adapter = (await loadProviderAdapter('security', choice, {
+    config: blockConfig,
+    logger: slotLogger,
+    env,
+  })) as SecurityAdapter | undefined
+  if (adapter === undefined) {
+    const known = ['middleware', ...Object.keys(PROVIDER_PACKAGES.security)]
+    throw new ConfigError(
+      `security.adapter '${choice}' has no adapter; the security adapters are ${known.join(', ')}`,
+      { code: 'config.security_adapter_unknown', context: { adapter: choice, known } },
+    )
+  }
+  await adapter.initialize(blockConfig)
+  return adapter
+}
+
 /** Builds and initializes one slot's adapter, as `buildAdapters` does; payments is `resolvePaymentsAdapter`. */
 export type SlotBuilders = {
   [S in Exclude<CommerceSlot, 'payments'>]: () => Promise<SlotAdapter<S>>
 }
 
 /** Each commerce slot's builder but payments', for a caller that builds the slots one at a time. */
-export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments'>): SlotBuilders {
+export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments' | 'security'>): SlotBuilders {
   const { config, logger, sql, repos } = deps
   const injected = deps.injected ?? {}
   const settings = deps.settings ?? []
@@ -198,7 +230,7 @@ export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments'>): SlotBui
 }
 
 export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterRegistry> {
-  const { logger, payments } = deps
+  const { payments, security } = deps
   const build = slotBuilders(deps)
 
   const email = await build.email()
@@ -208,9 +240,6 @@ export async function buildAdapters(deps: BuildAdaptersDeps): Promise<AdapterReg
   const shipping = await build.shipping()
   const tax = await build.tax()
   const ai = await build.ai()
-  const security = createMiddlewareSecurityAdapter({
-    logger: logger.child({ adapter: 'security' }),
-  })
 
   return { security, payments, email, search, reviews, analytics, shipping, tax, ai }
 }

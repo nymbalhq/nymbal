@@ -34,6 +34,8 @@ const GUARDED_PACKAGES = [
   'doc-store-postgres-jsonb',
   'event-bus-redis-streams',
   'media-s3',
+  // P2-04: the Cloudflare security adapter, a server-side package like the adapters above.
+  'security-cloudflare',
 ] as const
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.

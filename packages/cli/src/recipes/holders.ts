@@ -10,6 +10,7 @@ import type { Recipe } from '@nymbalhq/types'
  * that package, so a package brings its own recipe; this table only says where to look.
  */
 export const RECIPE_HOLDERS: Readonly<Record<string, string>> = {
+  cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
   redis: '@nymbalhq/doc-store-redis',
   s3: '@nymbalhq/media-s3',

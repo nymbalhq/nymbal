@@ -3,6 +3,10 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { loadConfig } from '@nymbalhq/config'
+import { PROVIDER_PACKAGES } from '@nymbalhq/platform'
+import { readRecipe } from '../recipes/index.js'
+import { WINDOW_PERIODS } from '../../../security-cloudflare/src/rules.js'
 import {
   REPO,
   changedPaths,
@@ -35,7 +39,8 @@ function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [k, v] of Object.entries(process.env)) {
     if (k === 'npm_config_user_agent') continue
-    if (/^(STRIPE_|S3_|AWS_|NYMBAL_S3_|NYMBAL_REDIS_|REDIS_|DATABASE_URL$)/.test(k)) continue
+    if (/^(STRIPE_|S3_|AWS_|NYMBAL_S3_|NYMBAL_REDIS_|REDIS_|CLOUDFLARE_|DATABASE_URL$)/.test(k))
+      continue
     if (k.startsWith('VITEST')) continue
     env[k] = v
   }
@@ -141,13 +146,13 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
-  it('AC-4: an unknown recipe exits 1, lists postgres, redis, s3, stripe, and changes nothing', async () => {
+  it('AC-4 (and P2-04 AC-9): an unknown recipe exits 1, lists cloudflare, postgres, redis, s3, stripe, and changes nothing', async () => {
     const dir = project('unknown')
     const before = listing(dir)
 
     const result = await add(dir, 'p2-03-no-such-recipe', '--no-install')
     expect(result.code, result.output).toBe(1)
-    expect(result.output).toMatch(/postgres,\s*redis,\s*s3,\s*stripe/)
+    expect(result.output).toMatch(/cloudflare,\s*postgres,\s*redis,\s*s3,\s*stripe/)
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
@@ -241,5 +246,84 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(postgres.output).toContain('xFrameOptions')
     expect(readFileSync(path, 'utf8')).toBe(edited)
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
+  })
+})
+
+// Acceptance tests for P2-04 AC-9 (spec P2-04-cloudflare-waf, Interface Recipe; takes P2-03 `cloudflare-recipe`):
+// `nymbal add cloudflare` on a copy of the same scaffold installs the package PROVIDER_PACKAGES names for the security
+// slot, sets `security.adapter` and `security.cloudflare` to the two `env()` reads, and adds both variables to
+// .env.example; its next steps name the token scopes and `http.trustProxy`. The scaffold's rate limits all use a
+// window Cloudflare has a period for, so the store's first `security:plan` is not refused on every entry, and the next
+// steps say what the zone's plan still refuses (throttle below Enterprise, the rate-limit count). Kills: no recipe, a
+// recipe that installs something the loader does not ask for, a token written into the config, and a scaffold window
+// (`60s`) the edge cannot apply.
+
+describe('P2-04 AC-9: nymbal add cloudflare', () => {
+  const securityPackage = (): string | undefined =>
+    (PROVIDER_PACKAGES as Readonly<Record<string, Readonly<Record<string, { package: string }>>>>)[
+      'security'
+    ]?.['cloudflare']?.package
+
+  it('AC-9: --dry-run names the install of the package PROVIDER_PACKAGES.security.cloudflare names and changes nothing; the run sets security.adapter and security.cloudflare to the two env() reads and adds both variables to .env.example', async () => {
+    const dir = project('cloudflare')
+    const before = listing(dir)
+    const pkg = securityPackage()
+    expect(pkg).toBe('@nymbalhq/security-cloudflare')
+
+    const dry = await add(dir, 'cloudflare', '--dry-run')
+    expect(dry.code, dry.output).toBe(0)
+    expect(dry.output).toContain(`pnpm add ${pkg}`)
+    expect((await readRecipe('cloudflare', dir)).install).toEqual([pkg])
+    expect(changedPaths(before, listing(dir))).toHaveLength(0)
+
+    const result = await add(dir, 'cloudflare', '--no-install')
+    expect(result.code, result.output).toBe(0)
+    expect(changedPaths(before, listing(dir))).toEqual(['.env.example', 'nymbal.config.ts'])
+    const source = readFileSync(join(dir, 'nymbal.config.ts'), 'utf8')
+    expect(source).toMatch(/zoneId: env\(['"]CLOUDFLARE_ZONE_ID['"]\)/)
+    expect(source).toMatch(/apiToken: env\(['"]CLOUDFLARE_API_TOKEN['"]\)/)
+    const example = readFileSync(join(dir, '.env.example'), 'utf8')
+    expect(example).toMatch(/^CLOUDFLARE_ZONE_ID=$/m)
+    expect(example).toMatch(/^CLOUDFLARE_API_TOKEN=$/m)
+
+    // Loaded with both variables set, as `nymbal dev` loads it, the config carries what the environment holds.
+    const set = { CLOUDFLARE_ZONE_ID: 'p2-04-zone-3f9a', CLOUDFLARE_API_TOKEN: 'p2-04-token-8c1d' }
+    const saved = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]))
+    Object.assign(process.env, set)
+    let security: Record<string, unknown>
+    try {
+      security = (await loadConfig(dir)).config.security as Record<string, unknown>
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+    expect(security['adapter']).toBe('cloudflare')
+    expect(security['cloudflare']).toEqual(
+      expect.objectContaining({
+        zoneId: set.CLOUDFLARE_ZONE_ID,
+        apiToken: set.CLOUDFLARE_API_TOKEN,
+      }),
+    )
+
+    // Every rate limit the scaffold ships keeps a window the Cloudflare adapter has a period for, so the store's
+    // first security:plan is refused only for what the zone's plan disallows, never for the window itself.
+    const rateLimit = security['rateLimit'] as Record<string, { window: string }>
+    expect(Object.keys(rateLimit).length).toBeGreaterThanOrEqual(4)
+    for (const [path, rule] of Object.entries(rateLimit)) {
+      expect(Object.keys(WINDOW_PERIODS), `${path}: window ${rule.window}`).toContain(rule.window)
+    }
+  }, 60_000)
+
+  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
+    const dir = project('cloudflare-next')
+    const next = (await readRecipe('cloudflare', dir)).next.join('\n')
+    expect(next).toMatch(/Zone WAF/)
+    expect(next).toMatch(/Zone\s*›?\s*Zone\s*›?\s*Read|Zone Read/)
+    expect(next).toContain('trustProxy')
+    expect(next).toMatch(/throttle[^.]*Enterprise/)
+    expect(next).toMatch(/block or challenge/)
+    expect(next).toMatch(/Free plan allows one rate limit/)
   })
 })

@@ -459,10 +459,10 @@ export default defineConfig({
   security: {
     adapter: 'middleware',
     rateLimit: {
-      '/checkout': { requests: 10, window: '60s', action: 'block' },
-      '/auth/*': { requests: 5, window: '60s', action: 'challenge' },
-      '/api/*': { requests: 100, window: '60s', action: 'throttle' },
-      '/webhooks/*': { requests: 200, window: '60s', action: 'throttle' },
+      '/checkout': { requests: 10, window: '1m', action: 'block' },
+      '/auth/*': { requests: 5, window: '1m', action: 'challenge' },
+      '/api/*': { requests: 100, window: '1m', action: 'throttle' },
+      '/webhooks/*': { requests: 200, window: '1m', action: 'throttle' },
     },
     botProtection: { mode: 'managed', allowList: ['googlebot', 'bingbot', 'stripe-webhooks'] },
     headers: {
