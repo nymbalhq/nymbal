@@ -52,6 +52,12 @@ export {
   type CreatePublisherOptions,
 } from './events/publisher.js'
 export { createRelay, type Relay, type CreateRelayOptions } from './events/relay.js'
+export {
+  currentCorrelationId,
+  isValidCorrelationId,
+  newCorrelationId,
+  runWithCorrelation,
+} from './events/correlation.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
@@ -71,6 +77,7 @@ export {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   type SweeperHandle,
+  type EventArchiveWriter,
   type EventRetentionSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
@@ -84,6 +91,22 @@ export {
   type DiagnosisStatus,
 } from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
+export {
+  decrypt,
+  encrypt,
+  keyId,
+  keyProblem,
+  readSecretsKey,
+  settingAad,
+  SECRETS_KEY_ENV,
+  SECRETS_KEY_OLD_ENV,
+  type EncryptedValue,
+  type SecretsKey,
+  type StoredCipher,
+} from './settings/crypto.js'
+export { fillFromSettings, type SettingSource, type SettingValue } from './settings/resolve.js'
+export { scrub } from './settings/secret-set.js'
+export { isMissingSettingsTable } from './settings/load.js'
 export {
   warmDocumentStore,
   type WarmDocumentStoreDeps,

@@ -20,6 +20,8 @@ export {
   httpSchema,
   deploymentSchema,
   featuresSchema,
+  eventsSchema,
+  eventArchiveSchema,
   type NymbalConfig,
   type NymbalConfigInput,
 } from './schema.js'

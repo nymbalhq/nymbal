@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   RECIPE_HOLDERS as HOLDERS,
@@ -84,6 +85,47 @@ function leaves(recipe: Recipe): Array<[string, RecipeValue]> {
   return recipe.set.flatMap(({ path, value }) => walk(path, value))
 }
 
+const last = (path: string): string => path.split('.').pop()!
+
+/** The recipe's leaves, each path prefixed with the recipe's name. */
+function labelled(recipe: Recipe): Array<[string, RecipeValue]> {
+  return leaves(recipe).map(([path, value]): [string, RecipeValue] => [
+    `${recipe.name}: ${path}`,
+    value,
+  ])
+}
+
+/** The key or secret leaves whose value is not an env() call. */
+function literalSecrets(all: Array<[string, RecipeValue]>): string[] {
+  return all
+    .filter(([path, value]) => /key|secret|password|token/i.test(last(path)) && !isEnvRef(value))
+    .map(([path]) => path)
+}
+
+/** What a workspace package exports as `settings`, read from its source entry; none when it exports none. */
+async function declaredSettings(pkg: string): Promise<Array<{ path: string }>> {
+  const dir = dirOf(pkg)
+  expect(dir, `${pkg} is a workspace member`).toBeDefined()
+  const mod = (await import(join(REPO_ROOT, dir!, 'src/index.ts'))) as { settings?: unknown }
+  return Array.isArray(mod.settings) ? (mod.settings as Array<{ path: string }>) : []
+}
+
+/** The leaves at `commerce.<slot>.config.<p>` where `p` is a declared path or inside one. */
+function declaredSet(
+  all: Array<[string, RecipeValue]>,
+  declared: Array<{ path: string }>,
+): string[] {
+  return all
+    .filter(([path]) => {
+      const inConfig = /^[^:]+: commerce\.[^.]+\.config\.(.+)$/.exec(path)?.[1]
+      return (
+        inConfig !== undefined &&
+        declared.some((d) => inConfig === d.path || inConfig.startsWith(`${d.path}.`))
+      )
+    })
+    .map(([path]) => path)
+}
+
 describe('P2-03 AC-1: recipe holders', () => {
   it('AC-1: RECIPE_HOLDERS maps the four recipes to the packages decision 1 names', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
@@ -157,21 +199,83 @@ describe('P2-03 AC-1: recipe holders', () => {
     const all: Array<[string, RecipeValue]> = []
     for (const name of RECIPE_NAMES) {
       const recipe = await readRecipe(name, project)
-      all.push(
-        ...leaves(recipe).map(([path, value]): [string, RecipeValue] => [
-          `${name}: ${path}`,
-          value,
-        ]),
-      )
+      all.push(...labelled(recipe))
     }
-    const last = (path: string): string => path.split('.').pop()!
     expect(
       all.filter(([path]) => /(^|\.| )s3\.[^.]*key|accessKeyId$|secretAccessKey$/i.test(path)),
     ).toEqual([])
     expect(all.filter(([path, value]) => last(path) === 'prefix' && value === '')).toEqual([])
-    const secrets = all.filter(([path]) => /key|secret|password|token/i.test(last(path)))
-    expect(secrets.filter(([, value]) => !isEnvRef(value))).toEqual([])
-    // The stripe recipe's secretKey and webhookSecret: the check above ran on something.
-    expect(secrets.length).toBeGreaterThanOrEqual(2)
+    expect(literalSecrets(all)).toEqual([])
+  })
+
+  // P3-07 Decision 1: a field a provider package declares in `settings` is the admin's or `.env`'s to fill, so the
+  // recipe leaves it out of `set` (an env() there throws before Settings are read). Since then no shipped recipe sets a
+  // key or secret, so the check above runs on nothing shipped; the property below keeps it live.
+  it('AC-1 (P3-07 Decision 1): no shipped recipe sets a field its holder or an installed provider declares in settings', async () => {
+    let pairs = 0
+    const offending: string[] = []
+    for (const name of RECIPE_NAMES) {
+      const recipe = await readRecipe(name, project)
+      const pkgs = new Set([
+        RECIPE_HOLDERS[name]!,
+        ...recipe.install.filter((p) => p.startsWith('@nymbalhq/')),
+      ])
+      for (const pkg of pkgs) {
+        const declared = await declaredSettings(pkg)
+        pairs += declared.length
+        offending.push(
+          ...declaredSet(labelled(recipe), declared).map((p) => `${pkg} declares ${p}`),
+        )
+      }
+    }
+    expect(offending).toEqual([])
+    // The stripe recipe and @nymbalhq/adapter-stripe's three fields: the check above ran on something.
+    expect(pairs).toBeGreaterThanOrEqual(3)
+  })
+
+  it('AC-1: on a generated recipe that writes env() at a declared key or secret, both checks see it, and a literal in its place is refused', async () => {
+    const declared = await declaredSettings(RECIPE_HOLDERS['stripe']!)
+    const secretPaths = declared
+      .map((d) => d.path)
+      .filter((p) => /key|secret|password|token/i.test(last(p)))
+    expect(secretPaths.length).toBeGreaterThan(0)
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...secretPaths),
+        fc.stringMatching(/^P3_07_[A-Z][A-Z0-9_]{0,10}$/),
+        fc.stringMatching(/^[a-z][a-z0-9_]{0,15}$/),
+        fc.boolean(),
+        (field, envName, literal, nested) => {
+          const at = (value: RecipeValue): Recipe => ({
+            name: 'generated',
+            summary: 'A generated recipe that writes a declared field',
+            install: [],
+            set: nested
+              ? [
+                  {
+                    path: 'commerce.payments',
+                    value: { provider: 'stripe', config: { [field]: value } },
+                  },
+                ]
+              : [{ path: `commerce.payments.config.${field}`, value }],
+            env: [{ name: envName, example: '', required: true, comment: '' }],
+            next: [],
+          })
+          const viaEnv = labelled(at({ env: envName }))
+          expect(
+            viaEnv.filter(([path]) => /key|secret|password|token/i.test(last(path))).length,
+          ).toBeGreaterThan(0)
+          expect(literalSecrets(viaEnv)).toEqual([])
+          expect(declaredSet(viaEnv, declared)).toEqual([
+            `generated: commerce.payments.config.${field}`,
+          ])
+          const viaLiteral = labelled(at(literal))
+          expect(literalSecrets(viaLiteral)).toEqual([
+            `generated: commerce.payments.config.${field}`,
+          ])
+        },
+      ),
+      { numRuns: 50 },
+    )
   })
 })

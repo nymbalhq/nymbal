@@ -1,16 +1,18 @@
-import { pino, type Logger as PinoLogger } from 'pino'
+import { pino, type DestinationStream, type Logger as PinoLogger } from 'pino'
 import type { Logger } from '@nymbalhq/types'
 
 export interface CreateLoggerOptions {
   level?: string
   pretty?: boolean
   base?: Record<string, unknown>
+  /** Where the JSON lines go instead of stdout; a destination is never pretty-printed. */
+  destination?: DestinationStream
 }
 
 export function createLogger(options: CreateLoggerOptions = {}): Logger {
   const isProduction = process.env.NODE_ENV === 'production'
-  const pretty = options.pretty ?? !isProduction
-  const logger = pino({
+  const pretty = options.destination === undefined && (options.pretty ?? !isProduction)
+  const settings = {
     level: options.level ?? process.env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
     base: options.base ?? {},
     ...(pretty && {
@@ -19,7 +21,9 @@ export function createLogger(options: CreateLoggerOptions = {}): Logger {
         options: { colorize: true, translateTime: 'HH:MM:ss.l', ignore: 'pid,hostname' },
       },
     }),
-  })
+  }
+  const logger =
+    options.destination === undefined ? pino(settings) : pino(settings, options.destination)
   return wrap(logger)
 }
 

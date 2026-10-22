@@ -122,7 +122,7 @@ const XML_ENTITIES: Record<string, string> = {
 const unescapeXml = (s: string): string =>
   s.replace(/&(amp|lt|gt|quot|apos);/g, (e) => XML_ENTITIES[e] ?? e)
 
-/** A bucket this run made, with anonymous download on its objects. */
+/** A bucket this run made: public-read (createPublicBucket) or private (createPrivateBucket). */
 export interface TestBucket {
   name: string
   endpoint: string
@@ -132,6 +132,8 @@ export interface TestBucket {
   url: string
   /** Every object key in the bucket. */
   keys(): Promise<string[]>
+  /** A signed GET of the object at `key`: its status and bytes. */
+  getObject(key: string): Promise<{ status: number; bytes: Uint8Array }>
   /** Deletes every object, then the bucket. */
   remove(): Promise<void>
 }
@@ -171,7 +173,20 @@ export async function createPublicBucket(
     }),
     `PutBucketPolicy ${name}`,
   )
+  return bucketHandle(name, endpoint)
+}
 
+/** Creates `name` (default: a fresh unique name) with no bucket policy: only signed requests may read its objects. */
+export async function createPrivateBucket(
+  label: string,
+  name = uniqueBucketName(label),
+): Promise<TestBucket> {
+  const endpoint = s3Endpoint()
+  await expectOk(await s3Request('PUT', [name]), `CreateBucket ${name}`)
+  return bucketHandle(name, endpoint)
+}
+
+function bucketHandle(name: string, endpoint: string): TestBucket {
   const keys = async (): Promise<string[]> => {
     const out: string[] = []
     let token: string | undefined
@@ -197,6 +212,10 @@ export async function createPublicBucket(
     credentials: s3Credentials(),
     url: `${endpoint}/${name}`,
     keys,
+    async getObject(key) {
+      const res = await s3Request('GET', [name, ...key.split('/')])
+      return { status: res.status, bytes: new Uint8Array(await res.arrayBuffer()) }
+    },
     async remove() {
       for (const key of await keys()) {
         await expectOk(await s3Request('DELETE', [name, ...key.split('/')]), `DeleteObject ${key}`)

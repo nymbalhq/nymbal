@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { EventBusAdapter, EventHandler, Logger } from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
+import { outsideCorrelation } from './correlation.js'
 
 /** Hands committed events from the log to the bus. */
 export interface Relay {
@@ -120,7 +121,8 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   function request(): Promise<void> {
     if (!active) {
       idle = deferred()
-      return run()
+      // A pass delivers every operation's events, not only the requester's: its handlers run in no scope of the caller.
+      return outsideCorrelation(run)
     }
     followUp ??= deferred()
     return followUp.promise

@@ -10,6 +10,8 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  check,
+  customType,
 } from 'drizzle-orm/pg-core'
 
 // --- Categories ------------------------------------------------------------
@@ -344,6 +346,7 @@ export const events = pgTable(
     id: text('id').notNull(),
     type: text('type').notNull(),
     envelope: jsonb('envelope').notNull(),
+    correlationId: text('correlation_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
@@ -352,6 +355,7 @@ export const events = pgTable(
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),
     undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
+    correlationIdx: index('events_correlation_idx').on(t.correlationId, t.seq),
   }),
 )
 
@@ -364,6 +368,38 @@ export const processedEvents = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.handlerName, t.eventId] }),
+  }),
+)
+
+// --- Settings --------------------------------------------------------------
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+})
+
+/**
+ * Values a store owner entered in the admin for the fields a provider package declares: a secret as AES-256-GCM
+ * ciphertext with its IV, tag and key id, anything else as `plain`.
+ */
+export const settings = pgTable(
+  'settings',
+  {
+    slot: text('slot').notNull(),
+    path: text('path').notNull(),
+    ciphertext: bytea('ciphertext'),
+    plain: text('plain'),
+    iv: bytea('iv'),
+    tag: bytea('tag'),
+    keyId: text('key_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    updatedBy: text('updated_by'),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.slot, t.path] }),
+    oneValue: check(
+      'settings_one_value',
+      sql`(${t.ciphertext} IS NULL) <> (${t.plain} IS NULL) AND (${t.ciphertext} IS NULL OR (${t.iv} IS NOT NULL AND ${t.tag} IS NOT NULL AND ${t.keyId} IS NOT NULL))`,
+    ),
   }),
 )
 
@@ -383,4 +419,5 @@ export const schema = {
   carts,
   events,
   processedEvents,
+  settings,
 }
