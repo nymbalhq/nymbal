@@ -1,5 +1,5 @@
 import type { Category } from '../domain/category.js'
-import type { Order } from '../domain/order.js'
+import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 
@@ -76,6 +76,12 @@ export interface OrderPartiallyRefundedV1Payload {
   currency: string
   reason: string
 }
+/** A status change no other order event names (an admin moving an order to confirmed or processing). */
+export interface OrderStatusChangedV1Payload {
+  orderId: string
+  from: OrderStatus
+  to: OrderStatus
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string
@@ -142,6 +148,11 @@ export interface CartConvertedV1Payload {
   orderId: string
 }
 
+/** The provider's intent for an order, stored on the order whatever its outcome. */
+export interface PaymentIntentCreatedV1Payload {
+  paymentId: string
+  orderId: string
+}
 export interface PaymentCapturedV1Payload {
   paymentId: string
   orderId: string
@@ -166,4 +177,11 @@ export interface AdapterErrorV1Payload {
   adapterName: string
   error: { code: string; message: string }
   context: Record<string, unknown>
+}
+
+/** A Settings field was saved or cleared; never the value. `source` is where the field comes from afterwards. */
+export interface SettingsChangedV1Payload {
+  slot: string
+  path: string
+  source: 'settings' | null
 }

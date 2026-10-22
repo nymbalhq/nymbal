@@ -1,18 +1,15 @@
 name: CI
 
+# Tasks merge into dev locally (scripts/merge-to-dev.sh, after a green gate:full at the merged sha), so CI runs on
+# the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first.
 on:
   push:
     branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
 
 env:
   PNPM_VERSION: '9.12.3'
-  # The base every gate.ts call diffs against: the target branch on a pull request, the previous tip on a push.
-  GATE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+  # The base every gate.ts call diffs against: the previous tip of the pushed branch, so one merge's own changes.
+  GATE_BASE: ${{ github.event.before }}
 
 jobs:
   build:
@@ -237,16 +234,18 @@ jobs:
             pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
             || { docker logs minio; exit 1; }
-      # A pull request runs the sentinels its change can affect; a push to main or dev, like the nightly and the
-      # release, runs every one.
+      # A push to main or dev, like the nightly and the release, runs every sentinel.
       - name: Sentinels
-        run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels ${{ github.event_name == 'pull_request' && 'impacted' || 'all' }} --no-build --services external --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels all --no-build --services external --base "$GATE_BASE"
 
   coverage:
     name: Coverage gate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # Not a gate step: four of CI's reds since 2026-10-19 were this job alone (a timeout, a runner), each holding the
+    # next merge for a CI run. The job still goes red on a crash; the run does not.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -598,8 +597,9 @@ jobs:
 
   changeset:
     name: Changeset
-    # The main -> dev back-merge carries no changes of its own.
-    if: github.event_name == 'pull_request' && github.head_ref != 'main'
+    # A task's merge into dev (merge-to-dev.sh writes `Merge feat/…` or `Merge fix/…`), never the main -> dev
+    # back-merge, which carries the release commit and no changes of its own.
+    if: github.ref == 'refs/heads/dev' && (startsWith(github.event.head_commit.message, 'Merge feat/') || startsWith(github.event.head_commit.message, 'Merge fix/'))
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -614,4 +614,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       # A diff whose only package files are tests needs no changeset; any other defers to `changeset status`.
-      - run: pnpm exec tsx scripts/changeset-needed.ts --base origin/${{ github.base_ref }}
+      - run: pnpm exec tsx scripts/changeset-needed.ts --base "$GATE_BASE"

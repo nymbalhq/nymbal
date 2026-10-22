@@ -153,6 +153,11 @@ export interface SearchAdapter extends CommerceAdapter {
   readonly kind: 'search'
   index(documents: SearchDocument[]): Promise<IndexResult>
   remove(documentIds: string[]): Promise<void>
+  /**
+   * Replaces the whole index with `documents`, so nothing outside them survives. Optional: without it a rebuild can
+   * only `index` every document, and cannot remove ids the index holds beyond them (it has no way to list them).
+   */
+  replaceAll?(documents: Iterable<SearchDocument> | AsyncIterable<SearchDocument>): Promise<void>
   search(query: string, params?: SearchParams): Promise<SearchResult>
   facet(field: string, params?: FacetParams): Promise<Facet>
 }

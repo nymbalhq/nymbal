@@ -5,8 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // holds each form's mutating response pending. Two `form.requestSubmit()` calls send exactly one request to that form's
 // route: `requestSubmit()` fires `submit` even while the handler has disabled the button, so a handler with no
 // in-flight flag of its own (today: every one of them) sends two. Once the held response is refused, the guard lets go:
-// a third submit sends one more request, so a guard that locks the form for good does not pass. Pattern:
-// `checkout-script.test.ts`.
+// a third submit sends one more request, so a guard that locks the form for good does not pass.
+//
+// P2-15 moved login, register and profile into `nymbal-login-form`, `nymbal-register-form` and
+// `nymbal-profile-form` (decision 7 deletes `auth-forms.ts` and `profile-form.ts`); their one-call-per-submission case
+// is P2-15 AC-4 (`packages/web-components/src/components/account-forms.test.ts`).
+//
+// P2-16 moved checkout into `nymbal-checkout` (decision 6 deletes `scripts/checkout.ts`). Its 'place order' case, two
+// submits sending one POST /api/checkout and a refusal re-arming it, is P2-16 AC-2 (k rapid Place Order submits make
+// one submitPayment) and AC-3 (a failure re-enables Place Order and the next press makes one more), in
+// `packages/web-components/src/components/checkout.test.ts`. Review stays here.
 
 const API = 'http://api.test'
 
@@ -146,41 +154,6 @@ function setValue(id: string, value: string) {
   byTestId<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(id).value = value
 }
 
-/** The ids, names and test ids of `src/pages/account/login.astro`. */
-const LOGIN_MARKUP = `
-  <div id="login-error" style="display:none;" role="alert"></div>
-  <form id="login-form" data-testid="login-form">
-    <input type="email" id="login-email" name="email" required data-testid="login-email" />
-    <input type="password" id="login-password" name="password" required data-testid="login-password" />
-    <button type="submit" data-testid="login-submit">Sign In</button>
-  </form>
-`
-
-/** The ids, names and test ids of `src/pages/account/register.astro`. */
-const REGISTER_MARKUP = `
-  <div id="register-error" style="display:none;" role="alert"></div>
-  <form id="register-form" data-testid="register-form">
-    <input type="text" id="register-firstName" name="firstName" data-testid="register-firstName" />
-    <input type="text" id="register-lastName" name="lastName" data-testid="register-lastName" />
-    <input type="email" id="register-email" name="email" required data-testid="register-email" />
-    <input type="password" id="register-password" name="password" required minlength="8" data-testid="register-password" />
-    <input type="tel" id="register-phone" name="phone" data-testid="register-phone" />
-    <button type="submit" data-testid="register-submit">Create Account</button>
-  </form>
-`
-
-/** The ids, names and test ids of `src/pages/account/profile.astro`. */
-const PROFILE_MARKUP = `
-  <form id="profile-form" data-testid="profile-form">
-    <input type="text" id="profile-firstName" name="firstName" data-testid="profile-firstName" />
-    <input type="text" id="profile-lastName" name="lastName" data-testid="profile-lastName" />
-    <input type="email" id="profile-email" name="email" disabled data-testid="profile-email" />
-    <input type="tel" id="profile-phone" name="phone" data-testid="profile-phone" />
-    <button type="submit" data-testid="profile-save">Save Changes</button>
-    <p id="profile-message" style="display:none;"></p>
-  </form>
-`
-
 /** The ids, names and test ids of `src/components/ReviewForm.astro` for product `prod-1`. */
 const REVIEW_MARKUP = `
   <form id="review-form" data-product-id="prod-1" data-testid="review-form">
@@ -199,56 +172,9 @@ const REVIEW_MARKUP = `
   </form>
 `
 
-const address = (id: string) =>
-  [
-    'firstName',
-    'lastName',
-    'addressLine1',
-    'addressLine2',
-    'city',
-    'region',
-    'postalCode',
-    'country',
-  ]
-    .map((name) => `<input id="${id}-${name}" name="${name}" data-testid="${id}-${name}" />`)
-    .join('')
-
-/** The ids and names `src/pages/checkout.astro` (and its AddressForm) give the checkout script. */
-const CHECKOUT_MARKUP = `
-  <div id="checkout-steps-container">
-    <div data-testid="checkout-step-contact"></div>
-    <div class="checkout-step-divider"></div>
-    <div data-testid="checkout-step-shipping"></div>
-    <div class="checkout-step-divider"></div>
-    <div data-testid="checkout-step-payment"></div>
-  </div>
-  <div id="checkout-error" style="display:none;" data-testid="checkout-error" role="alert"></div>
-  <section id="checkout-contact">
-    <form id="contact-form">
-      <input type="email" id="contact-email" name="email" data-testid="contact-email" />
-      <button type="submit" data-testid="contact-continue">Continue</button>
-    </form>
-  </section>
-  <section id="checkout-shipping" style="display:none;">
-    <form id="shipping-form">
-      <div data-testid="shipping-form">${address('shipping')}</div>
-      <button type="submit" data-testid="shipping-continue">Continue</button>
-    </form>
-  </section>
-  <section id="checkout-payment" style="display:none;">
-    <form id="payment-form" novalidate>
-      <input type="checkbox" id="billing-same" checked />
-      <div id="billing-fields" style="display:none;"><div id="billing-form">${address('billing')}</div></div>
-      <nymbal-payment-element data-testid="payment-element" client="null"></nymbal-payment-element>
-      <button type="submit" data-testid="place-order">Place Order</button>
-    </form>
-  </section>
-  <aside id="checkout-summary" data-testid="checkout-summary"></aside>
-`
-
 /**
- * The profile and review scripts move out of their inline `<script>`s (decision 3). Resolved when the test runs, not
- * when the file is transformed, so a missing one fails its own test and not the other four.
+ * The review script moved out of its inline `<script>` (P1-15 decision 3). Resolved when the test runs, not when the
+ * file is transformed, so a missing one fails its own test and not the others.
  */
 const importScript = (name: string): Promise<unknown> =>
   import(/* @vite-ignore */ `../src/scripts/${name}.ts`)
@@ -266,70 +192,6 @@ interface FormCase {
 }
 
 const cases: FormCase[] = [
-  {
-    name: 'login',
-    route: { method: 'POST', path: '/api/auth/login' },
-    page: 'http://shop.test/account/login',
-    markup: LOGIN_MARKUP,
-    formId: 'login-form',
-    submitTestId: 'login-submit',
-    load: () => import('../src/scripts/auth-forms'),
-    fill: () => {
-      setValue('login-email', 'ada@ac3.test')
-      setValue('login-password', 'CorrectHorse123!')
-    },
-  },
-  {
-    name: 'register',
-    route: { method: 'POST', path: '/api/auth/register' },
-    page: 'http://shop.test/account/register',
-    markup: REGISTER_MARKUP,
-    formId: 'register-form',
-    submitTestId: 'register-submit',
-    load: () => import('../src/scripts/auth-forms'),
-    fill: () => {
-      setValue('register-firstName', 'Ada')
-      setValue('register-lastName', 'Lovelace')
-      setValue('register-email', 'ada@ac3.test')
-      setValue('register-password', 'CorrectHorse123!')
-      setValue('register-phone', '+44 7700 900000')
-    },
-  },
-  {
-    name: 'place order',
-    route: { method: 'POST', path: '/api/checkout' },
-    page: 'http://shop.test/checkout',
-    markup: CHECKOUT_MARKUP,
-    formId: 'payment-form',
-    submitTestId: 'place-order',
-    load: () => import('../src/scripts/checkout'),
-    fill: () => {
-      setValue('contact-email', 'ada@ac3.test')
-      byTestId('contact-continue').click()
-      setValue('shipping-firstName', 'Ada')
-      setValue('shipping-lastName', 'Lovelace')
-      setValue('shipping-addressLine1', '1 Guard St')
-      setValue('shipping-city', 'London')
-      setValue('shipping-region', 'England')
-      setValue('shipping-postalCode', 'E1 6AN')
-      setValue('shipping-country', 'GB')
-      byTestId('shipping-continue').click()
-    },
-  },
-  {
-    name: 'profile',
-    route: { method: 'PATCH', path: '/api/customers/me' },
-    page: 'http://shop.test/account/profile',
-    markup: PROFILE_MARKUP,
-    formId: 'profile-form',
-    submitTestId: 'profile-save',
-    load: () => importScript('profile-form'),
-    fill: () => {
-      setValue('profile-firstName', 'Augusta')
-      setValue('profile-lastName', 'King')
-      setValue('profile-phone', '+44 7700 900001')
-    },
-  },
   {
     name: 'review',
     route: { method: 'POST', path: '/api/reviews' },

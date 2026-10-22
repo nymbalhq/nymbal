@@ -113,6 +113,32 @@ const answersArb: fc.Arbitrary<Answers> = fc.record({
   seedDemo: fc.boolean(),
 })
 
+/** A recipe that writes one env() call, as no shipped recipe does since P3-07: what the `binds env` guard refuses. */
+const envWriterArb: fc.Arbitrary<Recipe> = fc
+  .record({
+    name: fc.stringMatching(/^generated-[a-z]{1,8}$/),
+    envName: fc.stringMatching(/^P3_07_[A-Z][A-Z0-9_]{0,10}$/),
+    fallback: fc.option(fc.stringMatching(/^[a-z][a-z0-9-]{0,11}$/), { nil: undefined }),
+    at: fc.constantFrom('infrastructure.redis', 'commerce.email', 'commerce.payments'),
+  })
+  .map(({ name, envName, fallback, at }) => {
+    const ref: RecipeValue = { env: envName, ...(fallback !== undefined && { default: fallback }) }
+    const value: RecipeValue =
+      at === 'infrastructure.redis'
+        ? { url: ref }
+        : at === 'commerce.email'
+          ? { provider: 'smtp', config: { smtp: { host: ref } } }
+          : { provider: 'stripe', config: { secretKey: ref } }
+    return {
+      name,
+      summary: 'A generated recipe that writes env()',
+      install: [],
+      set: [{ path: at, value }],
+      env: [{ name: envName, example: '', required: fallback === undefined, comment: '' }],
+      next: [],
+    }
+  })
+
 interface Variation {
   order: number[]
   comments: boolean[]
@@ -473,22 +499,30 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       plain.replace(head, `${head}import env from './env'\n`),
       plain.replace(head, `${head}const env = (name: string) => process.env[name] ?? ''\n`),
     ]
-    const writers = recipes.filter((r) => envNames(r).length > 0)
-    expect(writers.length, 'a recipe writes env()').toBeGreaterThan(0)
-    for (const source of foreign) {
-      for (const recipe of writers) {
-        let message = ''
-        try {
-          applyRecipeToConfig(source, recipe, { force: false })
-        } catch (error) {
-          message = (error as Error).message
+    // P3-07 Decision 1: no shipped recipe writes env() any more (Stripe's declared fields left `set`), so the guard is
+    // exercised by generated recipes that do, at slot and infrastructure paths the scaffold leaves at their defaults,
+    // with and without a default.
+    fc.assert(
+      fc.property(envWriterArb, (recipe) => {
+        expect(envNames(recipe).length).toBeGreaterThan(0)
+        for (const source of foreign) {
+          let message = ''
+          try {
+            applyRecipeToConfig(source, recipe, { force: false })
+          } catch (error) {
+            message = (error as Error).message
+          }
+          expect(message, `${recipe.name} on:\n${source.split('\n', 3).join('\n')}`).toMatch(
+            /edit by hand/i,
+          )
+          expect(message).toContain('binds `env`')
+          for (const { path } of recipe.set) expect(message).toContain(path)
         }
-        expect(message, `${recipe.name} on:\n${source.split('\n', 3).join('\n')}`).toMatch(
-          /edit by hand/i,
-        )
-        expect(message).toContain('binds `env`')
-        for (const { path } of recipe.set) expect(message).toContain(path)
-      }
+      }),
+      { numRuns: 50 },
+    )
+    const writers = recipes.filter((r) => envNames(r).length > 0)
+    for (const source of foreign) {
       for (const recipe of recipes.filter((r) => !writers.includes(r))) {
         const applied = sourceOf(applyRecipeToConfig(source, recipe, { force: false }), recipe.name)
         expect(applied.changed.length, recipe.name).toBeGreaterThan(0)

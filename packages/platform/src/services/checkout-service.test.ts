@@ -802,8 +802,6 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   // write: a captured payment for a non-pending order is then reported as amount_mismatch or stock_unavailable.
   it('decision 4 check order: status is decided before amount, so a non-pending order never reports amount_mismatch', async () => {
     const env = await setup()
-    const cancelled = await placeOrder(env, [{ priceMinor: 820, stock: 3, qty: 1 }])
-    await env.checkout.cancel(cancelled.started.orderId, 'admin cancelled')
     const confirmed = await placeOrder(env, [{ priceMinor: 540, stock: 3, qty: 1 }])
     await env.checkout.finalize(confirmed.started.paymentIntent.id, confirmed.paid)
     // The cancelled leg's backstop refunds whatever amount it is handed; the provider answers it, so a generated amount
@@ -838,6 +836,11 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
         fc.integer({ min: 0, max: 100_000 }),
         fc.constantFrom('GBP', 'usd'),
         async (amountMinor, currency) => {
+          // A cancelled order, so a payment intent, of its own per run: the backstop's refund row takes uuidv5 of
+          // the intent as its id, and a generated amount of 0 leaves the order's capturedMinor at 0, so a second
+          // delivery to one intent would insert that id again (UNIQUE constraint failed: order_refunds.id).
+          const cancelled = await placeOrder(env, [{ priceMinor: 820, stock: 3, qty: 1 }])
+          await env.checkout.cancel(cancelled.started.orderId, 'admin cancelled')
           const wrongOrRight = { amountMinor, currency }
           expect(await backstop.finalize(cancelled.started.paymentIntent.id, wrongOrRight)).toEqual(
             {
@@ -849,13 +852,13 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
           expect(
             await env.checkout.finalize(confirmed.started.paymentIntent.id, wrongOrRight),
           ).toEqual({ orderNumber: confirmed.started.orderNumber, finalized: true })
+          expect(await events(env, EVT_ORDER_PAID, cancelled.started.orderId)).toHaveLength(0)
+          expect((await orderOf(env, cancelled.started.orderId)).status).toBe('cancelled')
         },
       ),
       { numRuns: 15 },
     )
     expect(await events(env, EVT_ORDER_PAID, confirmed.started.orderId)).toHaveLength(1)
-    expect(await events(env, EVT_ORDER_PAID, cancelled.started.orderId)).toHaveLength(0)
-    expect((await orderOf(env, cancelled.started.orderId)).status).toBe('cancelled')
     await env.commandStore.close()
   })
 

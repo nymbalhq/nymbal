@@ -1,3 +1,5 @@
+import type { Page } from '@playwright/test'
+import { adminToken, ownProduct } from '../support/checkout'
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
@@ -120,5 +122,74 @@ test.describe('Cart interactions', () => {
     // (the badge is empty at zero).
     await expect(drawer.locator(`[data-testid="cart-item-${variantId}"]`)).toHaveCount(0)
     await expect(badge).toHaveText(initialCount > 0 ? String(initialCount) : '')
+  })
+})
+
+// P2-15 AC-5 (theming.views-are-elements): the cart page is `nymbal-cart-page` on both templates. Its lines are in the
+// element's shadow root, not the template's markup, and agree with GET /api/cart: one line per item in its order,
+// each with its product name, and the summary showing the API's subtotalMinor (P2-15 decision 2).
+
+interface ApiCartLines {
+  data: {
+    items: Array<{ variantId: string; productName: string; qty: number }>
+    subtotalMinor: number
+    currency: string
+  }
+}
+
+/** The cart lines `nymbal-cart-page` renders in its shadow root: test id and text, in document order. */
+function cartPageLines(page: Page): Promise<Array<{ id: string; text: string }> | null> {
+  return page.evaluate(() => {
+    const root = document.querySelector('nymbal-cart-page')?.shadowRoot
+    if (!root) return null
+    return [...root.querySelectorAll('[data-testid^="cart-item-"]')].map((line) => ({
+      id: line.getAttribute('data-testid') ?? '',
+      text: line.textContent ?? '',
+    }))
+  })
+}
+
+test.describe('Cart page element', () => {
+  test('AC-5: theming.views-are-elements: /cart with two lines added from PDPs renders them inside nymbal-cart-page’s shadow root as GET /api/cart holds them, with its subtotalMinor as the subtotal', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(60_000)
+    const token = await adminToken(request)
+    // Products of this test's own, so no other journey moves their stock or their lines.
+    const products = [await ownProduct(request, token, 5), await ownProduct(request, token, 5)]
+    for (const product of products) {
+      await page.goto(`/product/${product.slug}`)
+      await page.getByTestId('add-to-cart').click()
+      await expect(
+        page.getByTestId('cart-drawer').getByTestId(`cart-item-${product.variantId}`),
+      ).toBeVisible({ timeout: 10_000 })
+    }
+
+    await page.goto('/cart')
+    const cart = (await (await page.request.get(`${API_URL}/api/cart`)).json()) as ApiCartLines
+    expect(cart.data.items.map((i) => i.variantId).sort()).toEqual(
+      products.map((p) => p.variantId).sort(),
+    )
+    await expect
+      .poll(async () => (await cartPageLines(page))?.map((line) => line.id), { timeout: 15_000 })
+      .toEqual(cart.data.items.map((i) => `cart-item-${i.variantId}`))
+    const lines = (await cartPageLines(page))!
+    for (const [i, item] of cart.data.items.entries()) {
+      expect(lines[i]!.text, `line ${i}`).toContain(item.productName)
+    }
+
+    const subtotal = new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: cart.data.currency,
+    }).format(cart.data.subtotalMinor / 100)
+    const summary = await page.evaluate(
+      () =>
+        document
+          .querySelector('nymbal-cart-page')
+          ?.shadowRoot?.querySelector('[data-testid="cart-summary"]')?.textContent ?? null,
+    )
+    expect(summary, 'cart-summary inside nymbal-cart-page').not.toBeNull()
+    expect(summary).toContain(subtotal)
   })
 })

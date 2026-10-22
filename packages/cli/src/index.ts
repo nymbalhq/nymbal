@@ -8,6 +8,10 @@ import { importCommand } from './commands/import.js'
 import { configValidateCommand } from './commands/config-validate.js'
 import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
+import { secretsCommand } from './commands/secrets.js'
+import { eventsCommand } from './commands/events.js'
+import { auditCommand } from './commands/audit.js'
+import { replayCommand } from './commands/replay.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -44,6 +48,10 @@ const main = defineCommand({
     'security:apply': securityApplyCommand,
     'security:drift': securityDriftCommand,
     'security:inspect': securityInspectCommand,
+    secrets: secretsCommand,
+    events: eventsCommand,
+    audit: auditCommand,
+    replay: replayCommand,
     test: testCommand,
     'test:e2e': testE2eCommand,
     'test:visual': testVisualCommand,

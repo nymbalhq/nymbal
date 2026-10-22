@@ -19,6 +19,7 @@ import {
   type PaymentsAdapter,
   type Refund,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { OrderRefundInsert } from '../repositories/order-refund.js'
@@ -120,6 +121,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
     tx: Tx,
     input: RefundInput,
   ): Promise<{ order: Order; row: OrderRefundInsert } | { repeat: RefundResult }> {
+    audit.note('order.refund', [{ type: 'order', id: input.orderId }])
     const order = await repos.order.lock(tx, input.orderId)
     if (!order) throw new NotFoundError('order', input.orderId)
     if (input.requestId !== undefined) {
@@ -283,6 +285,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
 
   return {
     async refund(input) {
+      audit.note('order.refund', [{ type: 'order', id: input.orderId }])
       if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0) {
         throw new ValidationError('amountMinor must be a positive whole number of minor units', {
           context: { amountMinor: input.amountMinor },

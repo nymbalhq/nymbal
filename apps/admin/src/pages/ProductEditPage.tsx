@@ -13,6 +13,7 @@ import { MediaUploader } from '@/components/products/MediaUploader'
 import { SeoPreview } from '@/components/products/SeoPreview'
 import { AiEnrichButton } from '@/components/products/AiEnrichButton'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
+import { useIntentKey } from '@/hooks/useIntentKey'
 import { tid } from '@/lib/testid'
 import type { ProductSnapshot, ProductStatus, Variant, ProductMedia } from '@nymbalhq/types'
 
@@ -50,6 +51,8 @@ export function ProductEditPage() {
   const [form, setForm] = useState<Partial<ProductSnapshot>>(DEFAULT_PRODUCT)
   const [isDirty, setIsDirty] = useState(false)
   const [slugManual, setSlugManual] = useState(false)
+  // One save is one intent: a double click on Save sends one key, the next save another.
+  const [saveKey, renewSaveKey] = useIntentKey()
 
   useEffect(() => {
     if (existingProduct) {
@@ -70,11 +73,13 @@ export function ProductEditPage() {
   }
 
   const handleSave = async () => {
+    const idempotencyKey = saveKey
+    renewSaveKey()
     if (isNew) {
-      const created = await createProduct.mutateAsync(form)
+      const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
       navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
-      await updateProduct.mutateAsync({ id: existingProduct.id, data: form })
+      await updateProduct.mutateAsync({ id: existingProduct.id, data: form, idempotencyKey })
       setIsDirty(false)
     }
   }

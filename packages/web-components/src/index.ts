@@ -12,6 +12,15 @@ import { NymbalProductFilter } from './components/product-filter.js'
 import { NymbalToast } from './components/toast.js'
 import { NymbalPaymentElement } from './components/payment-element.js'
 import { NymbalSortDropdown } from './components/sort-dropdown.js'
+import { NymbalCartPage } from './components/cart-page.js'
+import { NymbalProductCard } from './components/product-card.js'
+import { NymbalSearchResults } from './components/search-results.js'
+import { NymbalLoginForm } from './components/login-form.js'
+import { NymbalRegisterForm } from './components/register-form.js'
+import { NymbalProfileForm } from './components/profile-form.js'
+import { NymbalAddressForm } from './components/address-form.js'
+import { NymbalAddressBook } from './components/address-book.js'
+import { NymbalCheckout } from './components/checkout.js'
 import { getPaymentDriver, registerPaymentDriver, type PaymentDriver } from '@nymbalhq/sdk'
 import { testModeDriver } from './payment-drivers/test-mode.js'
 import { stripeDriver } from './payment-drivers/stripe.js'
@@ -29,6 +38,15 @@ export {
   NymbalToast,
   NymbalPaymentElement,
   NymbalSortDropdown,
+  NymbalCartPage,
+  NymbalProductCard,
+  NymbalSearchResults,
+  NymbalLoginForm,
+  NymbalRegisterForm,
+  NymbalProfileForm,
+  NymbalAddressForm,
+  NymbalAddressBook,
+  NymbalCheckout,
 }
 
 const ELEMENTS = [
@@ -42,6 +60,15 @@ const ELEMENTS = [
   NymbalToast,
   NymbalPaymentElement,
   NymbalSortDropdown,
+  NymbalCartPage,
+  NymbalProductCard,
+  NymbalSearchResults,
+  NymbalLoginForm,
+  NymbalRegisterForm,
+  NymbalProfileForm,
+  NymbalAddressForm,
+  NymbalAddressBook,
+  NymbalCheckout,
 ]
 
 /** Defines every element under its schema's tag, except a tag the project has already defined: the project's wins. */

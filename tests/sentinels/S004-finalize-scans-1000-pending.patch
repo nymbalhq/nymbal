@@ -1,19 +1,19 @@
 # id: S004
 # kind: injected
 # defect: finalize lists at most 1000 pending orders and filters in JS instead of findByPaymentIntentId, so the 1001st pending order cannot be finalised
-# where: packages/platform/src/services/checkout-service.ts:762
+# where: packages/platform/src/services/checkout-service.ts:769
 # killed-by: P1-02 acceptance tests (packages/platform/tests/integration/checkout-transaction.test.ts AC-11)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/checkout-transaction.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts
-@@ -759,7 +759,8 @@
+@@ -766,7 +766,8 @@ export function createCheckoutService(
+ 
+   async function finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult> {
      return store.transaction(async (tx) => {
-       const outcome = (order: Order | null, reason: string) =>
-         recordOutcome(tx, paymentIntentId, order, reason)
 -      const order = await repos.order.findByPaymentIntentId(tx, paymentIntentId)
 +      const pending = await repos.order.list(tx, { status: 'pending', limit: 1000 })
 +      const order = pending.find((o) => o.paymentIntentId === paymentIntentId) ?? null
-       if (order === null || order.status !== 'pending') {
-         return settled(tx, paymentIntentId, order, paid)
-       }
+       // Whichever request delivered the payment, its outcome publishes under the checkout's id.
+       return inOrderScope(order, () => finalizeLoaded(tx, paymentIntentId, paid, order))
+     })

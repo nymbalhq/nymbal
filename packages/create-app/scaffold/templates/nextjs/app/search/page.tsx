@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
-import { SearchResults } from '@/components/client/SearchResults'
+import { SearchView } from './SearchView'
 
 export const metadata: Metadata = {
   title: 'Search',
@@ -18,7 +18,7 @@ export default function SearchPage() {
         </div>
       }
     >
-      <SearchResults />
+      <SearchView />
     </Suspense>
   )
 }

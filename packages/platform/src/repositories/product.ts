@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { asc, eq, gt } from 'drizzle-orm'
 import type { Product, ProductStatus, ProductType, ProductMedia } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -10,6 +10,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { KeysetPage } from './page.js'
 import { parseJson, serialiseJson, fromTimestamp } from './json.js'
 
 export interface ProductInsert {
@@ -66,6 +67,8 @@ export interface ProductRepository extends StoreRepository {
     tx: ReadTx,
     opts?: { status?: ProductStatus; limit?: number; offset?: number },
   ): Promise<Product[]>
+  /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
+  listPage(tx: ReadTx, page: KeysetPage): Promise<Product[]>
   insert(tx: Tx, p: ProductInsert): Promise<void>
   update(tx: Tx, id: string, patch: ProductUpdate): Promise<void>
   delete(tx: Tx, id: string): Promise<void>
@@ -91,6 +94,27 @@ export function createProductRepository(store: CommandStore): ProductRepository 
     },
     async findBySlug(tx, slug) {
       return _find(tx, 'slug', slug)
+    },
+    async listPage(tx, page) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.products
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(page.after === undefined ? undefined : gt(t.id, page.after))
+          .orderBy(asc(t.id))
+          .limit(page.limit)
+          .all()
+        return rows.map((r) => rowToProduct('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.products
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(page.after === undefined ? undefined : gt(t.id, page.after))
+        .orderBy(asc(t.id))
+        .limit(page.limit)
+      return rows.map((r) => rowToProduct('postgres', r as Record<string, unknown>))
     },
     async list(tx, opts = {}) {
       const limit = opts.limit ?? 100

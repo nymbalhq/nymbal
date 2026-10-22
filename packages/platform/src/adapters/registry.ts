@@ -18,7 +18,9 @@ import { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
-import { loadProviderAdapter, PROVIDER_PACKAGES } from './loader.js'
+import { declaredSettings, importProviderPackage, loadProviderAdapter, PROVIDER_PACKAGES } from './loader.js'
+import { createNotConfiguredAdapter } from './not-configured.js'
+import { fillFromSettings, missingSecrets, type SettingValue } from '../settings/resolve.js'
 
 /** One adapter per commerce slot. */
 export type CommerceAdapters = CommerceSlotAdapters
@@ -56,6 +58,8 @@ export interface BuildAdaptersDeps {
   payments: PaymentsAdapter
   /** The security adapter `createApp` resolved before it opened the store. */
   security: SecurityAdapter
+  /** The values Settings hold for the slots' declared fields, decrypted: what fills what the config leaves unset. */
+  settings?: readonly SettingValue[]
 }
 
 /**
@@ -95,7 +99,9 @@ type BuiltIns<S extends CommerceSlot> = Readonly<Record<string, () => SlotAdapte
 
 /**
  * The slot's adapter, from the injected ones (`custom`), an adapter package, or the kernel's own, initialized with the
- * slot's config block. A provider none of them has is refused, never replaced by a stand-in.
+ * slot's config block. A package's declared settings fill the block where it is unset (config, then env, then
+ * `settings`); a declared secret set nowhere gives the not-configured adapter instead of building the package. A
+ * provider none of them has is refused, never replaced by a stand-in.
  */
 async function resolveSlot<S extends CommerceSlot>(
   slot: S,
@@ -103,19 +109,30 @@ async function resolveSlot<S extends CommerceSlot>(
   logger: Logger,
   injected: InjectedAdapters,
   builtIns: BuiltIns<S>,
+  settings: readonly SettingValue[],
 ): Promise<SlotAdapter<S>> {
   const block = config.commerce[slot]
-  const blockConfig = block.config ?? {}
+  let blockConfig = block.config ?? {}
   let adapter: SlotAdapter<S> | undefined
   if (block.provider === 'custom') {
     adapter = injected[slot] as SlotAdapter<S> | undefined
   } else {
-    adapter = (await loadProviderAdapter(slot, block.provider, {
-      config: blockConfig,
-      logger: logger.child({ adapter: slot }),
-      env: process.env,
-    })) as SlotAdapter<S> | undefined
-    if (adapter === undefined && Object.hasOwn(builtIns, block.provider)) {
+    const mod = await importProviderPackage(slot, block.provider, process.env)
+    if (mod !== undefined) {
+      const declared = declaredSettings(mod)
+      blockConfig = fillFromSettings(slot, blockConfig, declared, settings, process.env)
+      const missing = missingSecrets(blockConfig, declared)
+      adapter = (
+        missing.length > 0
+          ? createNotConfiguredAdapter(slot, block.provider, missing)
+          : await mod.createAdapter({
+              slot,
+              config: blockConfig,
+              logger: logger.child({ adapter: slot }),
+              env: process.env,
+            })
+      ) as SlotAdapter<S>
+    } else if (Object.hasOwn(builtIns, block.provider)) {
       adapter = builtIns[block.provider]!()
     }
   }
@@ -133,11 +150,19 @@ export function resolvePaymentsAdapter(
   config: NymbalConfig,
   logger: Logger,
   injected: InjectedAdapters = {},
+  settings: readonly SettingValue[] = [],
 ): Promise<PaymentsAdapter> {
-  return resolveSlot('payments', config, logger, injected, {
-    native: () =>
-      createNativeStubPaymentsAdapter({ logger: logger.child({ adapter: 'payments' }) }),
-  })
+  return resolveSlot(
+    'payments',
+    config,
+    logger,
+    injected,
+    {
+      native: () =>
+        createNativeStubPaymentsAdapter({ logger: logger.child({ adapter: 'payments' }) }),
+    },
+    settings,
+  )
 }
 
 /**
@@ -179,8 +204,9 @@ export type SlotBuilders = {
 export function slotBuilders(deps: Omit<BuildAdaptersDeps, 'payments' | 'security'>): SlotBuilders {
   const { config, logger, sql, repos } = deps
   const injected = deps.injected ?? {}
+  const settings = deps.settings ?? []
   const slot = <S extends CommerceSlot>(name: S, builtIns: BuiltIns<S>) =>
-    resolveSlot(name, config, logger, injected, builtIns)
+    resolveSlot(name, config, logger, injected, builtIns, settings)
   return {
     email: () =>
       slot('email', {

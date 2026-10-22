@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Page } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { adminToken, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
@@ -181,5 +181,122 @@ test.describe('Signed-in account', () => {
       timeout: 10_000,
     })
     expect(onAccountHome(new URL(page.url()))).toBe(true)
+  })
+})
+
+// P2-15 AC-5 (theming.views-are-elements): register, sign in, the profile and the add-address form are each an
+// element (`nymbal-register-form`, `nymbal-login-form`, `nymbal-profile-form`, `nymbal-address-book`) on both
+// templates. Each control is in its element's shadow root, each action reaches the API (read back with a token of the
+// test's own), and sign-in still lands on `?redirect` as both templates' login does today.
+
+/** Whether `[data-testid=testId]` is inside `<host>`'s shadow root (or one nested in it), not in the light DOM. */
+function inShadowOf(page: Page, host: string, testId: string): Promise<boolean> {
+  return page.evaluate(
+    ([tag, id]) => {
+      const root = document.querySelector(tag!)?.shadowRoot
+      if (!root) return false
+      const has = (r: ParentNode): boolean =>
+        r.querySelector(`[data-testid="${id}"]`) !== null ||
+        [...r.querySelectorAll('*')].some((n) => n.shadowRoot !== null && has(n.shadowRoot))
+      return has(root)
+    },
+    [host, testId],
+  )
+}
+
+async function apiToken(request: APIRequestContext, shopper: Shopper): Promise<string> {
+  const res = await request.post(`${API}/api/auth/login`, {
+    headers: await csrf(request, API),
+    data: { email: shopper.email, password: shopper.password },
+  })
+  expect(res.ok(), `POST /api/auth/login: ${await res.text()}`).toBe(true)
+  return ((await res.json()) as { data: { accessToken: string } }).data.accessToken
+}
+
+interface Me {
+  data: { email: string; firstName: string; lastName: string }
+}
+
+test.describe('Account views are elements', () => {
+  test('AC-5: theming.views-are-elements: register, sign in, profile and add-address each go through their element, GET /api/customers/me and /addresses show each change, and sign-in lands on ?redirect', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const shopper = newShopper()
+
+    // Register through nymbal-register-form.
+    await page.goto('/account/register')
+    await expect.poll(() => inShadowOf(page, 'nymbal-register-form', 'register-submit')).toBe(true)
+    const register = page.locator('nymbal-register-form')
+    await register.getByTestId('register-firstName').fill(shopper.firstName)
+    await register.getByTestId('register-lastName').fill(shopper.lastName)
+    await register.getByTestId('register-email').fill(shopper.email)
+    await register.getByTestId('register-password').fill(shopper.password)
+    await register.getByTestId('register-confirmPassword').fill(shopper.password)
+    await register.getByTestId('register-submit').click()
+    await page.waitForURL(onAccountHome, { timeout: 15_000 })
+
+    const token = await apiToken(request, shopper)
+    const auth = { headers: { authorization: `Bearer ${token}` } }
+    const me = async (): Promise<Me['data']> =>
+      ((await (await request.get(`${API}/api/customers/me`, auth)).json()) as Me).data
+    const registered = await me()
+    expect(registered.email).toBe(shopper.email)
+    expect(registered.firstName).toBe(shopper.firstName)
+
+    // Signed out (no refresh cookie, no stored token), sign in through nymbal-login-form from a guarded page's link.
+    await page.context().clearCookies()
+    await page.evaluate(() => {
+      localStorage.clear()
+      sessionStorage.clear()
+    })
+    await page.goto('/account/login?redirect=%2Faccount%2Fprofile')
+    await expect.poll(() => inShadowOf(page, 'nymbal-login-form', 'login-submit')).toBe(true)
+    const login = page.locator('nymbal-login-form')
+    await login.getByTestId('login-email').fill(shopper.email)
+    await login.getByTestId('login-password').fill(shopper.password)
+    await login.getByTestId('login-submit').click()
+    await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account/profile', {
+      timeout: 15_000,
+    })
+
+    // Edit the profile through nymbal-profile-form.
+    const profile = page.locator('nymbal-profile-form')
+    await expect(profile.getByTestId('profile-firstName')).toHaveValue(shopper.firstName, {
+      timeout: 10_000,
+    })
+    expect(await inShadowOf(page, 'nymbal-profile-form', 'profile-save')).toBe(true)
+    const lastName = `Edited${randomUUID().slice(0, 6)}`
+    expect(lastName).not.toBe(registered.lastName)
+    await profile.getByTestId('profile-lastName').fill(lastName)
+    await profile.getByTestId('profile-save').click()
+    await expect.poll(async () => (await me()).lastName, { timeout: 10_000 }).toBe(lastName)
+    expect((await me()).firstName).toBe(registered.firstName)
+
+    // Add an address through nymbal-address-book.
+    const addresses = async (): Promise<Array<{ addressLine1: string }>> =>
+      (
+        (await (await request.get(`${API}/api/customers/me/addresses`, auth)).json()) as {
+          data: Array<{ addressLine1: string }>
+        }
+      ).data
+    const before = (await addresses()).length
+    await page.goto('/account/addresses')
+    await expect.poll(() => inShadowOf(page, 'nymbal-address-book', 'save-address')).toBe(true)
+    expect(await inShadowOf(page, 'nymbal-address-book', 'addresses-list')).toBe(true)
+    const book = page.locator('nymbal-address-book')
+    const line1 = `${randomUUID().slice(0, 6)} Element Lane`
+    await book.getByTestId('new-address-firstName').fill(shopper.firstName)
+    await book.getByTestId('new-address-lastName').fill(lastName)
+    await book.getByTestId('new-address-addressLine1').fill(line1)
+    await book.getByTestId('new-address-city').fill('London')
+    await book.getByTestId('new-address-region').fill('Greater London')
+    await book.getByTestId('new-address-postalCode').fill('E1 6AN')
+    await book.getByTestId('new-address-country').fill('GB')
+    await book.getByTestId('save-address').click()
+    await expect.poll(async () => (await addresses()).length, { timeout: 10_000 }).toBe(before + 1)
+    expect((await addresses()).map((a) => a.addressLine1)).toContain(line1)
+    await expect(book.getByTestId('addresses-list')).toContainText(line1, { timeout: 10_000 })
   })
 })

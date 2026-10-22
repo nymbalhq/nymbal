@@ -1,22 +1,34 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED, type NymbalEvent } from '@nymbalhq/types'
-import { warmDocumentStore } from '../../src/warm-document-store.js'
+import { EVT_PRODUCT_UPDATED, type NymbalEvent } from '@nymbalhq/types'
+import { rebuild } from '../../src/read-models/index.js'
 import { createKernel, seedVariant, type Kernel, type Seeded } from '../support/kernel.js'
+import { openRaw } from '../support/raw.js'
+import { ALL_MODELS, rebuildDeps } from '../support/read-models.js'
 
-// P1-03 AC-10 on SQLite, no Mailpit: warm-up hands its synthetic events only to subscriptions registered as derived
-// (SubscriptionConfig.derived), through EventBusAdapter.replay, never through publish/publishBatch. A probe that is
-// not derived (as the email handler is not) hears nothing from warm-up but still hears real commands; a derived probe
-// and the search index (a derived subscriber) are rebuilt. Sentinel S009 runs this file.
+// P1-03 AC-10 on SQLite, as P3-02 decision 5 restates it: warm-up writes only derived read models. Boot warm is now
+// the rebuild of every read model (P3-02), with no synthetic events. Called directly, on a kernel whose last commands
+// are seconds old (so its catch-up has events to apply), it restores a product's document and its search entry after
+// both were removed, while a subscriber that is not derived (as the email handler is not) hears nothing from it, and
+// the event log, the processed-event records and the product's rows are unchanged; a later real command still reaches
+// that subscriber. Sentinel S009 runs this file.
+// Kills: catch-up handing its events to the bus's publish (every subscriber, side effects included, hears them on
+// every boot and every replay: each restart re-sends recent order confirmations), a rebuild that writes to the
+// command store, and one that does not rebuild the document store or the index.
 
 let k: Kernel
 let seeded: Seeded
 let productName: string
+let productSlug: string
 
 beforeAll(async () => {
   k = await createKernel({ dialect: 'sqlite' })
   seeded = await seedVariant(k, 4)
-  productName = (await k.services.product.getById(seeded.productId)).name
+  const product = await k.services.product.getById(seeded.productId)
+  productName = product.name
+  productSlug = product.slug
+  await k.services.product.update(seeded.productId, { description: 'recent, so catch-up sees it' })
+  await k.app.relay.drain()
 }, 60_000)
 
 afterAll(async () => {
@@ -27,42 +39,45 @@ async function searchIds(query: string): Promise<string[]> {
   return (await k.app.adapters.search.search(query)).items.map((item) => item.id)
 }
 
-describe('AC-10: warm-up feeds derived state only', () => {
-  it('AC-10: warmDocumentStore called directly reaches the derived probe and rebuilds the search index, but not the non-derived probe; a later real command still reaches the non-derived probe', async () => {
+/** What a write by warm-up to the command store would change: the event log as stored, processed events, the product. */
+async function commandStoreState() {
+  const raw = openRaw('sqlite', k.target)
+  try {
+    return {
+      events: await raw.rows(
+        'SELECT seq, id, delivered_at, attempts, dead_at FROM events ORDER BY seq',
+      ),
+      processed: await raw.count('processed_events'),
+      product: await raw.rows('SELECT * FROM products WHERE id = ?', [seeded.productId]),
+      variants: await raw.rows('SELECT * FROM variants WHERE product_id = ?', [seeded.productId]),
+    }
+  } finally {
+    await raw.close()
+  }
+}
+
+describe('AC-10: warm-up writes only derived read models', () => {
+  it('AC-10: the boot rebuild, called directly, restores a removed product document and search entry, while the non-derived probe hears nothing and the event log, processed events and the product rows are unchanged; a later real command still reaches the non-derived probe', async () => {
     const sideEffect: NymbalEvent<unknown>[] = []
-    const derived: NymbalEvent<unknown>[] = []
     await k.eventBus.subscribe('*', (event) => {
       sideEffect.push(event)
     })
-    await k.eventBus.subscribe(
-      '*',
-      (event) => {
-        derived.push(event)
-      },
-      { name: 'ac10-derived-probe', derived: true },
-    )
+    const doc = await k.documentStore.get<{ id: string }>('products', productSlug)
+    expect(doc?.id, 'the product is projected before the wipe').toBe(seeded.productId)
+    await k.documentStore.delete('products', productSlug)
     await k.app.adapters.search.remove([seeded.productId])
     expect(await searchIds(productName), 'the index was cleared').not.toContain(seeded.productId)
+    const stateBefore = await commandStoreState()
 
-    await warmDocumentStore({
-      config: k.config,
-      repos: k.app.repos,
-      eventBus: k.eventBus,
-      logger: k.logger,
-      version: '0.0.0',
-    })
+    await rebuild(ALL_MODELS, rebuildDeps(k))
 
     expect(
       sideEffect.map((e) => e.type),
       'warm-up reached a subscriber that is not derived',
     ).toEqual([])
-    const warmedProducts = derived
-      .filter((e) => e.type === EVT_PRODUCT_CREATED)
-      .map((e) => (e.payload as { product: { id: string } }).product.id)
-    // One synthetic product.created.v1 per product row, the seeded one among them.
-    expect(warmedProducts).toContain(seeded.productId)
-    expect(warmedProducts.slice().sort()).toEqual(
-      (await k.store.read((tx) => k.repos.product.list(tx))).map((p) => p.id).sort(),
+    expect(stateBefore, 'warm-up wrote to the command store').toEqual(await commandStoreState())
+    expect(doc, 'the product document, rebuilt').toEqual(
+      await k.documentStore.get('products', productSlug),
     )
     expect(await searchIds(productName)).toContain(seeded.productId)
 
@@ -71,7 +86,8 @@ describe('AC-10: warm-up feeds derived state only', () => {
     expect(
       sideEffect
         .filter((e) => e.type === EVT_PRODUCT_UPDATED)
-        .map((e) => (e.payload as { product: { id: string } }).product.id),
+        .map((e) => e.payload as { product?: { id: string }; productId?: string })
+        .map((p) => p.product?.id ?? p.productId),
     ).toEqual([seeded.productId])
   })
 })

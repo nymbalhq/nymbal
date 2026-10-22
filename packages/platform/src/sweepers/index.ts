@@ -9,5 +9,6 @@ export {
 } from './cart-abandonment-sweeper.js'
 export {
   startEventRetentionSweeper,
+  type EventArchiveWriter,
   type EventRetentionSweeperDeps,
 } from './event-retention-sweeper.js'

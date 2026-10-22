@@ -146,3 +146,28 @@ export interface AdapterContext {
   logger: Logger
   env: NodeJS.ProcessEnv
 }
+
+/**
+ * One field of a slot's config block that a store owner may fill from the admin's Settings, as a provider package
+ * declares it in its `settings` export. The config block wins, then `env`, then a saved value.
+ */
+export interface AdapterSetting {
+  /** A dot path inside the slot's config block: `secretKey`, `smtp.pass`. */
+  path: string
+  label: string
+  /** Stored encrypted and never shown again once saved. */
+  secret: boolean
+  /** The environment variable that sets the field when the config block does not. */
+  env?: string
+  /**
+   * The adapter works without it (SMTP without authentication), so a secret left unset does not leave the slot
+   * unconfigured.
+   */
+  optional?: boolean
+}
+
+/** What a provider package exports: `createAdapter`, and the fields it lets Settings fill. */
+export interface ProviderPackageModule {
+  createAdapter(ctx: AdapterContext): unknown
+  settings?: readonly AdapterSetting[]
+}

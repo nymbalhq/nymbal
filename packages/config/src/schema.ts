@@ -309,6 +309,34 @@ export const featuresSchema = z.object({
   autoUpdates: z.boolean().default(false),
 })
 
+/**
+ * The bucket delivered events past retention are archived to before they are deleted. Its objects hold customer
+ * data, so it must be private: never the media bucket, which serves its objects publicly. Credentials come from the
+ * AWS SDK's default chain, as `infrastructure.s3`'s do.
+ */
+export const eventArchiveSchema = z
+  .object({
+    adapter: z.literal('s3'),
+    bucket: z.string().min(1),
+    /** Where every archive key starts; none when not given. */
+    prefix: z.string().optional(),
+    /** `'us-east-1'` when not given. */
+    region: z.string().min(1).optional(),
+    /** An S3-compatible API (MinIO, R2). */
+    endpoint: z.string().min(1).optional(),
+    /** Path-style requests; true by default when an endpoint is set. */
+    forcePathStyle: z.boolean().optional(),
+  })
+  .strict()
+
+export const eventsSchema = z
+  .object({
+    /** Days a delivered event stays in the log. */
+    retentionDays: z.number().int().min(1).default(30),
+    archive: eventArchiveSchema.optional(),
+  })
+  .strict()
+
 export const nymbalConfigSchema = z
   .object({
     store: storeSchema,
@@ -323,8 +351,21 @@ export const nymbalConfigSchema = z
       heartbeat: false,
       autoUpdates: false,
     }),
+    events: eventsSchema.default({}),
   })
   .superRefine((cfg, ctx) => {
+    const archiveBucket = cfg.events.archive?.bucket
+    if (
+      archiveBucket !== undefined &&
+      cfg.infrastructure.media === 's3' &&
+      archiveBucket === cfg.infrastructure.s3?.bucket
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['events', 'archive', 'bucket'],
+        message: `events.archive.bucket is infrastructure.s3.bucket ('${archiveBucket}'), the media bucket, which serves its objects publicly; archive events to a private bucket of their own`,
+      })
+    }
     // SMTP left the kernel for @nymbalhq/adapter-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email
     if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {

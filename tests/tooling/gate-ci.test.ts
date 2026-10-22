@@ -309,7 +309,7 @@ describe('AC-8: an --only run is red when any selected step is skipped for a fai
       JSON.stringify({
         name: 'gate-scratch',
         private: true,
-        scripts: { lint: 'true', typecheck: 'true', sentinels: 'true' },
+        scripts: { lint: 'true', typecheck: 'true', sentinels: 'true', 'mutation:ratchet': 'true' },
       }),
     )
     write(dir, 'stryker.config.mjs', "export default { mutate: ['src/**/*.ts'] }\n")

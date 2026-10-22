@@ -7,12 +7,21 @@ declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
       'nymbal-add-to-cart': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-address-book': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-address-form': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-cart-drawer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-cart-page': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-checkout': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-login-form': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-mini-cart': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-payment-element': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-product-card': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-product-filter': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-profile-form': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-quantity-selector': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-register-form': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-search-bar': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-search-results': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-sort-dropdown': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-toast': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
       'nymbal-variant-selector': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
@@ -28,6 +37,7 @@ export interface AddToCartProps {
   children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -75,9 +85,73 @@ export const AddToCart = forwardRef<HTMLElement, AddToCartProps>(
   }, [props.onItemAdded])
 
     return (
-      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         {props.children}
       </nymbal-add-to-cart>
+    )
+  },
+)
+
+export interface AddressBookProps {
+  onChanged?: (event: CustomEvent<{ address: unknown }>) => void
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const AddressBook = forwardRef<HTMLElement, AddressBookProps>(
+  function AddressBook(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onChanged) return
+    const handler = props.onChanged as EventListener
+    el.addEventListener('nymbal:address-book:changed', handler)
+    return () => el.removeEventListener('nymbal:address-book:changed', handler)
+  }, [props.onChanged])
+
+    return (
+      <nymbal-address-book ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-address-book>
+    )
+  },
+)
+
+export interface AddressFormProps {
+  idPrefix?: string
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const AddressForm = forwardRef<HTMLElement, AddressFormProps>(
+  function AddressForm(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.idPrefix !== undefined) {
+      el.setAttribute('id-prefix', String(props.idPrefix))
+    } else {
+      el.removeAttribute('id-prefix')
+    }
+  }, [props.idPrefix])
+
+
+
+    return (
+      <nymbal-address-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-address-form>
     )
   },
 )
@@ -87,6 +161,7 @@ export interface CartDrawerProps {
   onCheckoutClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -114,9 +189,96 @@ export const CartDrawer = forwardRef<HTMLElement, CartDrawerProps>(
   }, [props.onCheckoutClick])
 
     return (
-      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-cart-drawer>
+    )
+  },
+)
+
+export interface CartPageProps {
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const CartPage = forwardRef<HTMLElement, CartPageProps>(
+  function CartPage(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+
+
+    return (
+      <nymbal-cart-page ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-cart-page>
+    )
+  },
+)
+
+export interface CheckoutProps {
+  onPlaced?: (event: CustomEvent<{ orderNumber: string }>) => void
+  children?: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const Checkout = forwardRef<HTMLElement, CheckoutProps>(
+  function Checkout(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onPlaced) return
+    const handler = props.onPlaced as EventListener
+    el.addEventListener('nymbal:checkout:placed', handler)
+    return () => el.removeEventListener('nymbal:checkout:placed', handler)
+  }, [props.onPlaced])
+
+    return (
+      <nymbal-checkout ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        {props.children}
+      </nymbal-checkout>
+    )
+  },
+)
+
+export interface LoginFormProps {
+  onSignedIn?: (event: CustomEvent<{ customer: unknown }>) => void
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const LoginForm = forwardRef<HTMLElement, LoginFormProps>(
+  function LoginForm(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onSignedIn) return
+    const handler = props.onSignedIn as EventListener
+    el.addEventListener('nymbal:auth:signed-in', handler)
+    return () => el.removeEventListener('nymbal:auth:signed-in', handler)
+  }, [props.onSignedIn])
+
+    return (
+      <nymbal-login-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-login-form>
     )
   },
 )
@@ -125,6 +287,7 @@ export interface MiniCartProps {
   onClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -144,7 +307,7 @@ export const MiniCart = forwardRef<HTMLElement, MiniCartProps>(
   }, [props.onClick])
 
     return (
-      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-mini-cart>
     )
@@ -156,6 +319,7 @@ export interface PaymentElementProps {
   onStatusChange?: (event: CustomEvent<{ status: 'pending' | 'ready' | 'error' }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -183,9 +347,42 @@ export const PaymentElement = forwardRef<HTMLElement, PaymentElementProps>(
   }, [props.onStatusChange])
 
     return (
-      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-payment-element>
+    )
+  },
+)
+
+export interface ProductCardProps {
+  product?: unknown
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const ProductCard = forwardRef<HTMLElement, ProductCardProps>(
+  function ProductCard(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.product !== undefined) {
+      el.setAttribute('product', JSON.stringify(props.product))
+    } else {
+      el.removeAttribute('product')
+    }
+  }, [props.product])
+
+
+
+    return (
+      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-product-card>
     )
   },
 )
@@ -196,6 +393,7 @@ export interface ProductFilterProps {
   onFilterChange?: (event: CustomEvent<{ name: string; value: string }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -233,9 +431,40 @@ export const ProductFilter = forwardRef<HTMLElement, ProductFilterProps>(
   }, [props.onFilterChange])
 
     return (
-      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-product-filter>
+    )
+  },
+)
+
+export interface ProfileFormProps {
+  onSaved?: (event: CustomEvent<{ customer: unknown }>) => void
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const ProfileForm = forwardRef<HTMLElement, ProfileFormProps>(
+  function ProfileForm(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onSaved) return
+    const handler = props.onSaved as EventListener
+    el.addEventListener('nymbal:profile:saved', handler)
+    return () => el.removeEventListener('nymbal:profile:saved', handler)
+  }, [props.onSaved])
+
+    return (
+      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-profile-form>
     )
   },
 )
@@ -247,6 +476,7 @@ export interface QuantitySelectorProps {
   onQuantityChange?: (event: CustomEvent<{ value: number }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -294,9 +524,40 @@ export const QuantitySelector = forwardRef<HTMLElement, QuantitySelectorProps>(
   }, [props.onQuantityChange])
 
     return (
-      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-quantity-selector>
+    )
+  },
+)
+
+export interface RegisterFormProps {
+  onSignedIn?: (event: CustomEvent<{ customer: unknown }>) => void
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const RegisterForm = forwardRef<HTMLElement, RegisterFormProps>(
+  function RegisterForm(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !props.onSignedIn) return
+    const handler = props.onSignedIn as EventListener
+    el.addEventListener('nymbal:auth:signed-in', handler)
+    return () => el.removeEventListener('nymbal:auth:signed-in', handler)
+  }, [props.onSignedIn])
+
+    return (
+      <nymbal-register-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-register-form>
     )
   },
 )
@@ -307,6 +568,7 @@ export interface SearchBarProps {
   onSearchSelect?: (event: CustomEvent<{ product: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -344,9 +606,33 @@ export const SearchBar = forwardRef<HTMLElement, SearchBarProps>(
   }, [props.onSearchSelect])
 
     return (
-      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-search-bar>
+    )
+  },
+)
+
+export interface SearchResultsProps {
+  className?: string
+  style?: React.CSSProperties
+  slot?: string
+  'data-testid'?: string
+}
+
+export const SearchResults = forwardRef<HTMLElement, SearchResultsProps>(
+  function SearchResults(props, forwardedRef) {
+    const innerRef = useRef<HTMLElement>(null)
+    const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
+
+
+
+
+
+    return (
+      <nymbal-search-results ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+        
+      </nymbal-search-results>
     )
   },
 )
@@ -358,6 +644,7 @@ export interface SortDropdownProps {
   onSortChange?: (event: CustomEvent<{ sort: string }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -405,7 +692,7 @@ export const SortDropdown = forwardRef<HTMLElement, SortDropdownProps>(
   }, [props.onSortChange])
 
     return (
-      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-sort-dropdown>
     )
@@ -417,6 +704,7 @@ export interface ToastProps {
   durationMs?: number
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -448,7 +736,7 @@ export const Toast = forwardRef<HTMLElement, ToastProps>(
 
 
     return (
-      <nymbal-toast ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-toast ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-toast>
     )
@@ -459,6 +747,7 @@ export interface VariantSelectorProps {
   onVariantSelected?: (event: CustomEvent<{ variant: unknown }>) => void
   className?: string
   style?: React.CSSProperties
+  slot?: string
   'data-testid'?: string
 }
 
@@ -478,7 +767,7 @@ export const VariantSelector = forwardRef<HTMLElement, VariantSelectorProps>(
   }, [props.onVariantSelected])
 
     return (
-      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
         
       </nymbal-variant-selector>
     )

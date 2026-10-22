@@ -5,12 +5,17 @@ import { AdapterError } from '@nymbalhq/types'
 export interface AnthropicAiAdapterConfig {
   apiKey: string
   model?: string
+  /** Where the Messages API is; Anthropic's own when omitted (a stand-in for tests). */
+  baseUrl?: string
   logger: Logger
 }
 
 export function createAnthropicAiAdapter(config: AnthropicAiAdapterConfig): AiAdapter {
   const model = config.model ?? 'claude-sonnet-4-6'
-  const client = new Anthropic({ apiKey: config.apiKey })
+  const client = new Anthropic({
+    apiKey: config.apiKey,
+    ...(config.baseUrl !== undefined && { baseURL: config.baseUrl }),
+  })
 
   return {
     kind: 'ai',

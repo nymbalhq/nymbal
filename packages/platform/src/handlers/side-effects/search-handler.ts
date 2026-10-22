@@ -8,48 +8,58 @@ import {
   type ProductDeletedV1Payload,
   type ProductUpdatedV1Payload,
   type SearchAdapter,
-  type SearchDocument,
 } from '@nymbalhq/types'
+import type { Repositories } from '../../repositories/index.js'
+import { buildSearchDoc } from '../../read-models/builders.js'
+import { productSnapshot } from '../../read-models/sources.js'
+import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
-export interface RegisterSearchHandlerDeps {
-  eventBus: EventBusAdapter
+export interface SearchHandlerDeps {
   search: SearchAdapter
+  repos: Pick<Repositories, 'product' | 'variant' | 'category' | 'productCategory'>
 }
 
-export async function registerSearchHandler(deps: RegisterSearchHandlerDeps): Promise<void> {
-  const { eventBus, search } = deps
+export interface RegisterSearchHandlerDeps extends SearchHandlerDeps {
+  eventBus: EventBusAdapter
+}
+
+/**
+ * The search index, from the product's rows at handle time. Derived state: indexing and removing by id is idempotent,
+ * so no processed-event record is kept, and a rebuild refills it.
+ */
+export function searchHandler(deps: SearchHandlerDeps): DerivedHandler[] {
+  const { search, repos } = deps
 
   const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (
     event,
   ) => {
-    const p = event.payload.product
-    const doc: SearchDocument = {
-      id: p.id,
-      type: 'product',
-      fields: {
-        slug: p.slug,
-        name: p.name,
-        description: p.description,
-        status: p.status,
-        categoryIds: p.categoryIds,
-        variants: p.variants.map((v) => ({ sku: v.sku, name: v.name, priceMinor: v.priceMinor })),
-      },
-    }
-    await search.index([doc])
+    const { id } = event.payload.product
+    const snapshot = await repos.product.store.read(async (tx) => {
+      const product = await repos.product.findById(tx, id)
+      return product ? productSnapshot(tx, repos, product) : null
+    })
+    if (snapshot) await search.index([buildSearchDoc(snapshot)])
+    else await search.remove([id])
   }
 
   const onDelete: EventHandler<ProductDeletedV1Payload> = async (event) => {
     await search.remove([event.payload.productId])
   }
 
-  // Derived state: indexing and removing by document id is idempotent, so no processed-event record is kept, and
-  // warm-up's replay rebuilds the index.
-  await eventBus.subscribe([EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED], onUpsert as EventHandler, {
-    name: 'search-product-upsert',
-    derived: true,
-  })
-  await eventBus.subscribe(EVT_PRODUCT_DELETED, onDelete as EventHandler, {
-    name: 'search-product-delete',
-    derived: true,
-  })
+  return [
+    {
+      name: 'search-product-upsert',
+      types: [EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED],
+      handle: onUpsert as EventHandler,
+    },
+    {
+      name: 'search-product-delete',
+      types: [EVT_PRODUCT_DELETED],
+      handle: onDelete as EventHandler,
+    },
+  ]
+}
+
+export async function registerSearchHandler(deps: RegisterSearchHandlerDeps): Promise<void> {
+  await subscribeDerived(deps.eventBus, searchHandler(deps))
 }

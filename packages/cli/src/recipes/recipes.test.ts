@@ -229,23 +229,27 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     ).toEqual(['S3_BUCKET'])
 
     expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/adapter-stripe', 'stripe'])
-    expect(applied({}, r('stripe'))).toEqual({
-      commerce: {
-        payments: {
-          provider: 'stripe',
-          config: {
-            secretKey: placeholder('STRIPE_SECRET_KEY'),
-            webhookSecret: placeholder('STRIPE_WEBHOOK_SECRET'),
-          },
-        },
-      },
-    })
+    // P3-07 Decision 1: the fields the Stripe package declares as settings leave `set` (an unset variable would throw at
+    // loadConfig before Settings could fill them), so the recipe sets the provider and writes no env() at all; the
+    // variables stay in `.env`, required, for a deploy that sets them there.
+    const stripe = applied({}, r('stripe'))
+    expect(getPath(stripe, 'commerce.payments.provider')).toBe('stripe')
+    expect(
+      ['secretKey', 'webhookSecret', 'publishableKey'].filter(
+        (field) => getPath(stripe, `commerce.payments.config.${field}`) !== undefined,
+      ),
+    ).toEqual([])
+    expect(leaves(r('stripe')).filter(([, value]) => isEnvRef(value))).toEqual([])
     expect(
       r('stripe')
         .env.map((e) => e.name)
         .sort(),
     ).toEqual(['STRIPE_PUBLISHABLE_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'])
-    expect(r('stripe').env.find((e) => e.name === 'STRIPE_SECRET_KEY')?.required).toBe(true)
+    expect(
+      r('stripe')
+        .env.filter((e) => e.name === 'STRIPE_SECRET_KEY' || e.name === 'STRIPE_WEBHOOK_SECRET')
+        .map((e) => e.required),
+    ).toEqual([true, true])
     expect(r('stripe').next.join('\n')).toContain('/api/webhooks/stripe')
   })
 
