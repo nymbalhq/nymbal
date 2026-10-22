@@ -28,9 +28,37 @@ export class ProjectMiniCart extends LitElement {
   }
 }
 
-/** The project's server-side overrides, by tag. */
-export const serverElements = { 'nymbal-mini-cart': ProjectMiniCart }
+// P2-17 AC-4 (spec Decision 8): the project also overrides the site footer, one of the chrome elements P2-17 adds.
+export class ProjectSiteFooter extends LitElement {
+  /** Read by footer-override.spec.ts: the class customElements holds under the tag is the project's. */
+  static projectOwned = true
 
-if (typeof window !== 'undefined' && customElements.get('nymbal-mini-cart') === undefined) {
-  customElements.define('nymbal-mini-cart', ProjectMiniCart)
+  static schema = {
+    tag: 'nymbal-site-footer',
+    reactName: 'SiteFooter',
+    attributes: [],
+    events: [],
+    parts: ['project-marker'],
+    slots: [],
+    children: false,
+  }
+
+  render() {
+    return html`<p part="project-marker" data-testid="project-site-footer-marker">footer</p>`
+  }
+}
+
+/** The project's server-side overrides, by tag. */
+export const serverElements = {
+  'nymbal-mini-cart': ProjectMiniCart,
+  'nymbal-site-footer': ProjectSiteFooter,
+}
+
+if (typeof window !== 'undefined') {
+  if (customElements.get('nymbal-mini-cart') === undefined) {
+    customElements.define('nymbal-mini-cart', ProjectMiniCart)
+  }
+  if (customElements.get('nymbal-site-footer') === undefined) {
+    customElements.define('nymbal-site-footer', ProjectSiteFooter)
+  }
 }

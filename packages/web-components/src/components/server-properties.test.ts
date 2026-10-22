@@ -2,13 +2,16 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 import { renderElement } from '../ssr/index.js'
+import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
 import {
   addresses,
   cards,
   cart,
   customer,
   facets,
+  formatMoney,
   optionValuesOf,
+  pdpProduct,
   variantProduct,
   type CartProjection,
 } from '../__fixtures__/server-data.js'
@@ -116,9 +119,10 @@ for (const tag of ['nymbal-cart-page', 'nymbal-checkout', 'nymbal-cart-drawer'])
           // happy-dom's TreeWalker does not descend past a filtered first child, so Lit's hydration binds no parts
           // here and the shadow DOM cannot change after it: what is observable is that the property gave way once
           // the server's render was hydrated (the browser re-render is the E2E journeys').
-          expect((hydrated as Element & { cart?: unknown }).cart, 'the cart property gave way').toBe(
-            undefined,
-          )
+          expect(
+            (hydrated as Element & { cart?: unknown }).cart,
+            'the cart property gave way',
+          ).toBe(undefined)
           container.remove()
         }),
         { numRuns: 10 },
@@ -327,6 +331,259 @@ describe('P2-18 AC-2: nymbal-address-book', () => {
         plain.remove()
       }),
       { numRuns: 10 },
+    )
+  })
+})
+
+// ─── P2-17 AC-2 (spec Decision 1): the grid, the PDP's price and its stock badge ─────────────────────────────────
+//
+// The same rule for the three store-backed elements P2-17 adds. `nymbal-product-grid` with `source="product-list"`
+// shows its `products` attribute's cards until the product-list store's first settled update, then the store's items
+// in the store's order, following every later settled update (a sort, a load-more). `nymbal-product-price` and
+// `nymbal-stock-badge` show their attributes until the product store settles on the product their `product-id` names,
+// then the selected variant's price and stock, following `selectVariant`; a store settled on another product (the one a
+// Next soft navigation PDP → PDP left behind) is ignored. The badge's level and label are the one rule of
+// @nymbalhq/types (P2-12), negatives included; the two tests that held that rule over the templates' badges
+// (templates/{astro,nextjs}/tests/stock-badge.test.*) go with the badges. Kills: a grid that re-renders from its
+// attribute after the store moved, or shows the store before it settled; a price or badge that ignores the selected
+// variant, follows another product's store, or keeps a rule of its own.
+
+describe('P2-17 AC-2: nymbal-product-grid source="product-list"', () => {
+  /** The slugs of the cards the grid renders, in order. */
+  const slugs = (el: Element): string[] =>
+    [...shadow(el).querySelectorAll('nymbal-product-card')].map(
+      (c) => (JSON.parse(c.getAttribute('product') ?? '{}') as { slug?: string }).slug ?? '',
+    )
+  const listed = (products: Array<{ slug: string }>, cursor: string | null) => ({
+    products,
+    pagination: { cursor, hasMore: cursor !== null },
+    loading: false,
+    error: null,
+  })
+
+  it('AC-2: property: the grid shows its products attribute’s cards through a loading update, the store’s items in the store’s order after the first settled one and after each later one (sort orders), and the store’s with no attribute', async () => {
+    expect(
+      customElements.get('nymbal-product-grid'),
+      'nymbal-product-grid is defined by registerComponents()',
+    ).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        cards('p-', 1),
+        cards('s-', 1).chain((stored) =>
+          fc.tuple(
+            fc.constant(stored),
+            fc.array(fc.shuffledSubarray(stored, { minLength: stored.length }), {
+              minLength: 1,
+              maxLength: 3,
+            }),
+          ),
+        ),
+        async (property, [stored, orders]) => {
+          const c = client()
+          const el = await mount('nymbal-product-grid', {
+            source: 'product-list',
+            products: JSON.stringify(property),
+          })
+          expect(slugs(el)).toEqual(property.map((p) => p.slug))
+
+          await update(el, c['productList']!, { loading: true })
+          expect(slugs(el), 'after loading: true').toEqual(property.map((p) => p.slug))
+
+          await update(el, c['productList']!, listed(stored, null))
+          expect(slugs(el), 'after the store settled').toEqual(stored.map((p) => p.slug))
+
+          for (const order of orders) {
+            await update(el, c['productList']!, { loading: true })
+            await update(el, c['productList']!, listed(order, null))
+            expect(slugs(el), 'after a re-sort settled').toEqual(order.map((p) => p.slug))
+          }
+          el.remove()
+
+          const plain = await mount('nymbal-product-grid', { source: 'product-list' })
+          expect(slugs(plain), 'no attribute').toEqual(orders.at(-1)!.map((p) => p.slug))
+          plain.remove()
+        },
+      ),
+      { numRuns: 10 },
+    )
+  })
+})
+
+/** A store's product with variant `i` selected, settled. */
+const selected = (product: { variants: unknown[] }, i: number) => ({
+  product,
+  selectedVariant: product.variants[i],
+  loading: false,
+  error: null,
+})
+
+describe('P2-17 AC-2: nymbal-product-price', () => {
+  const price = (el: Element): string[] => partTexts(el, 'price')
+
+  it('AC-2: property: the price shows its price-minor through a loading update and while the store holds another product, the selected variant’s price once the store settles on its product-id, and each variant selectVariant chooses after', async () => {
+    expect(
+      customElements.get('nymbal-product-price'),
+      'nymbal-product-price is defined by registerComponents()',
+    ).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 100_000 }),
+        pdpProduct('s-'),
+        pdpProduct('o-'),
+        fc.array(fc.nat(), { maxLength: 4 }),
+        async (attribute, product, other, picks) => {
+          const c = client()
+          const el = await mount('nymbal-product-price', {
+            'product-id': product.id,
+            'price-minor': String(attribute),
+            currency: 'GBP',
+          })
+          const shown = [formatMoney(attribute)]
+          expect(price(el)).toEqual(shown)
+          expect(
+            shadow(el).querySelector('[part~="price"]')?.getAttribute('data-testid'),
+            'the price part carries data-testid="product-price"',
+          ).toBe('product-price')
+
+          await update(el, c['product']!, { loading: true })
+          expect(price(el), 'after loading: true').toEqual(shown)
+
+          await update(el, c['product']!, selected(other, 0))
+          expect(price(el), 'the store settled on another product').toEqual(shown)
+
+          await update(el, c['product']!, selected(product, 0))
+          expect(price(el), 'settled on this product').toEqual([
+            formatMoney(product.variants[0]!.priceMinor),
+          ])
+
+          for (const pick of picks) {
+            const variant = product.variants[pick % product.variants.length]!
+            await update(el, c['product']!, { selectedVariant: variant })
+            expect(price(el), `selectVariant(${variant.id})`).toEqual([
+              formatMoney(variant.priceMinor),
+            ])
+          }
+          el.remove()
+
+          const plain = await mount('nymbal-product-price', { 'product-id': product.id })
+          const now = (
+            c['product'] as unknown as { getState(): { selectedVariant: { priceMinor: number } } }
+          ).getState().selectedVariant
+          expect(price(plain), 'no price-minor').toEqual([formatMoney(now.priceMinor)])
+          plain.remove()
+        },
+      ),
+      { numRuns: 15 },
+    )
+  })
+
+  it('AC-2: property: connected while the product store has already settled, the price shows the store’s selected variant when it is its product, and its own price-minor when it is another', async () => {
+    expect(
+      customElements.get('nymbal-product-price'),
+      'nymbal-product-price is defined by registerComponents()',
+    ).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 100_000 }),
+        pdpProduct('s-'),
+        fc.boolean(),
+        async (attribute, product, same) => {
+          const c = client()
+          c['product']!.setState(selected(product, product.variants.length - 1))
+          const el = await mount('nymbal-product-price', {
+            'product-id': same ? product.id : `${product.id}-other`,
+            'price-minor': String(attribute),
+            currency: 'GBP',
+          })
+          expect(price(el)).toEqual([
+            formatMoney(same ? product.variants.at(-1)!.priceMinor : attribute),
+          ])
+          el.remove()
+        },
+      ),
+      { numRuns: 15 },
+    )
+  })
+})
+
+describe('P2-17 AC-2: nymbal-stock-badge', () => {
+  /** The badge's level and label, as the shopper's page shows them. */
+  const badge = (el: Element) => {
+    const node = shadow(el).querySelector('[part~="badge"]')
+    return {
+      testid: node?.getAttribute('data-testid') ?? null,
+      level: node?.getAttribute('data-level') ?? null,
+      label: partTexts(el, 'label').join(' '),
+    }
+  }
+  const expected = (stock: number) => ({
+    testid: 'stock-badge',
+    level: stockLevel(stock),
+    label: STOCK_LABELS[stockLevel(stock)],
+  })
+
+  it('AC-2: property: the badge shows data-level = stockLevel(stock) and STOCK_LABELS[level] for its stock attribute (negatives included) through a loading update and another product’s store, then for the selected variant once the store settles on its product-id, and for each variant selectVariant chooses after', async () => {
+    expect(
+      customElements.get('nymbal-stock-badge'),
+      'nymbal-stock-badge is defined by registerComponents()',
+    ).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.oneof(fc.integer({ min: -20, max: 20 }), fc.integer()),
+        pdpProduct('s-'),
+        pdpProduct('o-'),
+        fc.array(fc.nat(), { maxLength: 4 }),
+        async (stock, product, other, picks) => {
+          const c = client()
+          const el = await mount('nymbal-stock-badge', {
+            'product-id': product.id,
+            stock: String(stock),
+          })
+          expect(badge(el)).toEqual(expected(stock))
+
+          await update(el, c['product']!, { loading: true })
+          expect(badge(el), 'after loading: true').toEqual(expected(stock))
+
+          await update(el, c['product']!, selected(other, 0))
+          expect(badge(el), 'the store settled on another product').toEqual(expected(stock))
+
+          await update(el, c['product']!, selected(product, 0))
+          expect(badge(el), 'settled on this product').toEqual(expected(product.variants[0]!.stock))
+
+          for (const pick of picks) {
+            const variant = product.variants[pick % product.variants.length]!
+            await update(el, c['product']!, { selectedVariant: variant })
+            expect(badge(el), `selectVariant(${variant.id})`).toEqual(expected(variant.stock))
+          }
+          el.remove()
+        },
+      ),
+      { numRuns: 20 },
+    )
+  })
+
+  it('AC-2: property: connected while the product store has already settled, the badge shows the store’s selected variant when it is its product, and its own stock when it is another', async () => {
+    expect(
+      customElements.get('nymbal-stock-badge'),
+      'nymbal-stock-badge is defined by registerComponents()',
+    ).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: -5, max: 20 }),
+        pdpProduct('s-'),
+        fc.boolean(),
+        async (stock, product, same) => {
+          const c = client()
+          c['product']!.setState(selected(product, product.variants.length - 1))
+          const el = await mount('nymbal-stock-badge', {
+            'product-id': same ? product.id : `${product.id}-other`,
+            stock: String(stock),
+          })
+          expect(badge(el)).toEqual(expected(same ? product.variants.at(-1)!.stock : stock))
+          el.remove()
+        },
+      ),
+      { numRuns: 15 },
     )
   })
 })

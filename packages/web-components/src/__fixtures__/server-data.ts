@@ -180,3 +180,146 @@ export const addresses = (prefix: string, minLength = 0) =>
   fc.uniqueArray(address(prefix), { minLength, maxLength: 3, selector: (a) => a.id })
 
 export const SORT_KEYS = ['newest', 'price-asc', 'price-desc', 'name-asc']
+
+// ─── P2-17: the data the eleven new elements take as attributes (spec Decision 1) ──────────────────────────────
+
+const prefixed = (prefix: string) => word.map((w) => `${prefix}${w}`)
+const path = word.map((w) => `/${w}`)
+
+/** `nymbal-breadcrumb items`: `[{ label, href? }]`. */
+export const crumbs = (prefix: string) =>
+  fc.array(fc.record({ label: prefixed(prefix), href: fc.option(path, { nil: undefined }) }), {
+    maxLength: 4,
+  })
+
+/** `nymbal-image-gallery images`: `[{ url, alt }]`. */
+export const images = (prefix: string, minLength = 0) =>
+  fc.uniqueArray(
+    fc.record({
+      url: word.map((w) => `https://example.test/${prefix}${w}.jpg`),
+      alt: prefixed(prefix),
+    }),
+    { minLength, maxLength: 4, selector: (i) => i.url },
+  )
+
+/** `nymbal-site-header links` and a footer column's links: `[{ label, href }]`. */
+export const links = (prefix: string, minLength = 0) =>
+  fc.uniqueArray(fc.record({ label: prefixed(prefix), href: path }), {
+    minLength,
+    maxLength: 4,
+    selector: (l) => l.href,
+  })
+
+/** `nymbal-site-footer columns`: `[{ heading, links }]`. */
+export const columns = (prefix: string, minLength = 0) =>
+  fc.array(fc.record({ heading: prefixed(prefix), links: links(prefix) }), {
+    minLength,
+    maxLength: 3,
+  })
+
+/** `nymbal-category-nav categories`: the `Category` shape `GET /api/categories` serves. */
+export const categories = (prefix: string, minLength = 0) =>
+  fc.uniqueArray(
+    fc.record({
+      id: word.map((w) => `${prefix}cat-${w}`),
+      parentId: fc.constant(null),
+      name: prefixed(prefix),
+      slug: prefixed(prefix),
+      description: fc.constantFrom('', 'A category'),
+      position: fc.nat({ max: 9 }),
+      createdAt: fc.constant('2026-10-22T00:00:00.000Z'),
+    }),
+    { minLength, maxLength: 4, selector: (c) => c.slug },
+  )
+
+/** `nymbal-review-list reviews`: approved reviews as `GET /api/products/:id/reviews` serves them. */
+export const reviews = (prefix: string) =>
+  fc.uniqueArray(
+    fc.record({
+      id: word.map((w) => `${prefix}rev-${w}`),
+      productId: fc.constant(`${prefix}p1`),
+      customerId: fc.constant(null),
+      orderId: fc.constant(null),
+      rating: fc.integer({ min: 1, max: 5 }),
+      title: prefixed(prefix),
+      body: word,
+      moderationStatus: fc.constant('approved'),
+      submittedAt: fc.constant('2026-10-22T00:00:00.000Z'),
+      moderatedAt: fc.constant(null),
+      moderatedBy: fc.constant(null),
+    }),
+    { maxLength: 4, selector: (r) => r.id },
+  )
+
+export interface SummaryLine {
+  name: string
+  qty: number
+  unitPriceMinor: number
+  lineTotalMinor: number
+}
+
+/** `nymbal-order-summary items`: `[{ name, qty, unitPriceMinor, lineTotalMinor }]`, each line's total qty × unit. */
+export const summaryLines = (prefix: string, minLength = 0) =>
+  fc
+    .array(
+      fc.record({
+        name: prefixed(prefix),
+        qty: fc.integer({ min: 1, max: 9 }),
+        unitPriceMinor: money,
+      }),
+      { minLength, maxLength: 4 },
+    )
+    .map((lines): SummaryLine[] =>
+      lines.map((l) => ({ ...l, lineTotalMinor: l.qty * l.unitPriceMinor })),
+    )
+
+export interface PdpVariant {
+  id: string
+  sku: string
+  name: string
+  priceMinor: number
+  stock: number
+  options: Array<{ name: string; value: string }>
+}
+
+/** A product whose variants carry their own price and stock (negatives included), as the product store holds it. */
+export const pdpProduct = (prefix: string) =>
+  fc
+    .tuple(
+      word.map((w) => `${prefix}prod-${w}`),
+      fc.array(fc.record({ priceMinor: money, stock: fc.integer({ min: -5, max: 20 }) }), {
+        minLength: 1,
+        maxLength: 4,
+      }),
+    )
+    .map(([id, rows]) => {
+      const variants: PdpVariant[] = rows.map((r, i) => ({
+        id: `${id}-v${i}`,
+        sku: `${id}-SKU-${i}`,
+        name: `Variant ${i}`,
+        priceMinor: r.priceMinor,
+        stock: r.stock,
+        options: [{ name: 'Size', value: `S${i}` }],
+      }))
+      return {
+        id,
+        slug: id,
+        name: 'Product',
+        description: '',
+        shortDescription: '',
+        status: 'active',
+        type: 'variable',
+        media: [],
+        variantCount: variants.length,
+        inStock: variants.some((v) => v.stock > 0),
+        priceRange: null,
+        currency: 'GBP',
+        priceMinor: variants[0]!.priceMinor,
+        variants,
+      }
+    })
+
+/** Money as the storefronts show it (`en-GB`), written out here as the suites' oracle. */
+export function formatMoney(minor: number, currency = 'GBP'): string {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(minor / 100)
+}

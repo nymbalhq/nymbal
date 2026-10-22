@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { seedProducts } from '../../../packages/platform/src/seed/data'
+import { seedCategories, seedProducts } from '../../../packages/platform/src/seed/data'
 import { blockExternalRequests, expect, test } from '../support/fixtures'
 
 // P2-08 AC-3 (Decision 2) on production builds of both templates (playwright.prod.config.ts): on each page of
@@ -9,6 +9,13 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 //
 // "Defined" is every name passed to customElements.define, recorded from before the first script runs, so a tag the
 // test has never heard of still counts.
+//
+// P2-17 AC-8 (Decision 5): the pages render the eleven new elements, so each page's list names the ones it must render
+// (and so define): the layout's `nymbal-site-header` and `nymbal-site-footer` everywhere; the home's featured grid
+// and category nav; the listings' `nymbal-product-grid` (the card through `uses`); the product page's price, badge,
+// breadcrumb, gallery, review list and form and the related grid. A category page joins the pages. The invariant is
+// unchanged: rendered ⊆ defined ⊆ rendered ∪ mayRender. Kills: a page that renders the old template markup, or
+// defines an element it never renders (the PDP's elements on the home).
 
 const PRODUCT = seedProducts[0]!.slug
 
@@ -18,17 +25,57 @@ const PRODUCT = seedProducts[0]!.slug
  * choice, which the first seeded product is not, and Next's checkout renders the payment element at the payment step,
  * after the one this test sees. Defining those there is allowed and not required.
  */
-const PAGES: Array<{ name: string; path: string; line: boolean; mayRender: string[] }> = [
-  { name: 'home', path: '/', line: false, mayRender: [] },
-  { name: 'listing', path: '/products', line: false, mayRender: [] },
+const CATEGORY = seedCategories[0]!.slug
+const LAYOUT = ['nymbal-site-header', 'nymbal-site-footer']
+const GRID = ['nymbal-product-grid', 'nymbal-product-card']
+
+const PAGES: Array<{
+  name: string
+  path: string
+  line: boolean
+  mayRender: string[]
+  /** P2-17: the elements this page renders, and so defines. */
+  renders: string[]
+}> = [
+  {
+    name: 'home',
+    path: '/',
+    line: false,
+    mayRender: [],
+    renders: [...LAYOUT, ...GRID, 'nymbal-category-nav'],
+  },
+  { name: 'listing', path: '/products', line: false, mayRender: [], renders: [...LAYOUT, ...GRID] },
+  {
+    name: 'category',
+    path: `/category/${CATEGORY}`,
+    line: false,
+    mayRender: [],
+    renders: [...LAYOUT, ...GRID],
+  },
   {
     name: 'product',
     path: `/product/${PRODUCT}`,
     line: false,
     mayRender: ['nymbal-variant-selector'],
+    renders: [
+      ...LAYOUT,
+      'nymbal-product-price',
+      'nymbal-stock-badge',
+      'nymbal-breadcrumb',
+      'nymbal-image-gallery',
+      'nymbal-review-list',
+      'nymbal-review-form',
+      ...GRID,
+    ],
   },
-  { name: 'cart', path: '/cart', line: true, mayRender: [] },
-  { name: 'checkout', path: '/checkout', line: true, mayRender: ['nymbal-payment-element'] },
+  { name: 'cart', path: '/cart', line: true, mayRender: [], renders: LAYOUT },
+  {
+    name: 'checkout',
+    path: '/checkout',
+    line: true,
+    mayRender: ['nymbal-payment-element'],
+    renders: LAYOUT,
+  },
 ]
 
 /** Spec AC-3: on `/` these are undefined (`nymbal-checkout` as the spec names it, beside the payment element). */
@@ -92,8 +139,8 @@ test.describe('P2-08 AC-3: pages load only their elements (production build)', (
     await recordDefinitions(page)
   })
 
-  for (const { name, path, line, mayRender } of PAGES) {
-    test(`AC-3: ${name} (${path}) defines every Nymbal element it renders and no other`, async ({
+  for (const { name, path, line, mayRender, renders } of PAGES) {
+    test(`AC-3: ${name} (${path}) defines every Nymbal element it renders and no other (P2-17 AC-8: it renders ${renders.join(', ')})`, async ({
       page,
     }) => {
       if (line) await addOneLine(page)
@@ -116,6 +163,10 @@ test.describe('P2-08 AC-3: pages load only their elements (production build)', (
         .toEqual({ definedNotRendered: [], renderedNotDefined: [] })
       const { defined, rendered } = await elementsOf(page)
       expect(rendered.length).toBeGreaterThan(0)
+      expect(
+        renders.filter((t) => !rendered.includes(t)),
+        `P2-17 AC-8: elements ${name} must render`,
+      ).toEqual([])
       // rendered ⊆ defined ⊆ rendered ∪ mayRender
       expect(defined.filter((t) => rendered.includes(t))).toEqual(rendered)
       expect(defined.filter((t) => !rendered.includes(t)).every((t) => mayRender.includes(t))).toBe(

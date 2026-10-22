@@ -131,6 +131,7 @@ test.describe('P2-18 AC-4: the pages are rendered with JavaScript off', () => {
     )
   })
 
+  // P2-17 (spec, Tests this task obsoletes): the header is nymbal-site-header with the mini-cart as its light-DOM child.
   test('AC-4: theming.server-rendered: the header’s nymbal-mini-cart shows the cart’s item count on /', async ({
     browser,
   }, testInfo) => {
@@ -138,7 +139,9 @@ test.describe('P2-18 AC-4: the pages are rendered with JavaScript off', () => {
     const count = cart.items.reduce((n, l) => n + l.qty, 0)
     const { page } = await open(off, '/')
 
-    const badges = page.locator('header nymbal-mini-cart').getByTestId('mini-cart-badge')
+    const badges = page
+      .locator('nymbal-site-header nymbal-mini-cart')
+      .getByTestId('mini-cart-badge')
     const texts = (await badges.allTextContents()).map((t) => t.trim())
     expect(texts.length, 'header mini-cart badges').toBeGreaterThan(0)
     expect(texts).toEqual(texts.map(() => String(count)))
