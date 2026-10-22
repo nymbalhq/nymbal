@@ -21,6 +21,7 @@
       "@nymbalhq/doc-store-postgres-jsonb",
       "@nymbalhq/event-bus-redis-streams",
       "@nymbalhq/media-s3",
+      "@nymbalhq/security-cloudflare",
       "@nymbalhq/contract-tests"
     ]
   ],

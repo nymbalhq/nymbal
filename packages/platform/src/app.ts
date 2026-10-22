@@ -9,6 +9,7 @@ import {
   checkInjectedAdapters,
   COMMERCE_SLOTS,
   resolvePaymentsAdapter,
+  resolveSecurityAdapter,
   type AdapterRegistry,
   type InjectedAdapters,
 } from './adapters/registry.js'
@@ -155,6 +156,7 @@ export async function createApp(
     settings.values,
   )
   refuseUnsafeProduction(config, payments)
+  const security = await resolveSecurityAdapter(config, adapterLogger)
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
   // Until the app is returned, nothing else holds the connections the primitives and the command store open.
@@ -174,6 +176,7 @@ export async function createApp(
       sql: rawClients(platform.commandStore),
       repos,
       payments,
+      security,
       settings: settings.values,
       ...(options.adapters !== undefined && { injected: options.adapters }),
     })

@@ -267,22 +267,25 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     let related = 0
     for (const recipe of await allRecipes()) {
       for (const [path, value] of leaves(recipe)) {
+        // P2-04 decision 1: `security` is a slot too, its choice `security.adapter`, and its package peers no SDK.
         const slot =
-          /^infrastructure\.(\w+)$/.exec(path)?.[1] ?? /^commerce\.(\w+)\.provider$/.exec(path)?.[1]
+          /^infrastructure\.(\w+)$/.exec(path)?.[1] ??
+          /^commerce\.(\w+)\.provider$/.exec(path)?.[1] ??
+          (path === 'security.adapter' ? 'security' : undefined)
         if (slot === undefined || typeof value !== 'string') continue
         const entry = (
-          PROVIDER_PACKAGES as Record<string, Record<string, { package: string; sdk: string }>>
+          PROVIDER_PACKAGES as Record<string, Record<string, { package: string; sdk?: string }>>
         )[slot]?.[value]
         if (entry === undefined) continue
         related += 1
-        const wanted = [entry.package, entry.sdk]
+        const wanted = [entry.package, ...(entry.sdk === undefined ? [] : [entry.sdk])]
         expect(
           recipe.install.filter((p) => wanted.includes(p)).length,
           `${recipe.name} ${path}=${value} installs ${wanted.join(' and ')}`,
         ).toBe(unique(wanted).length)
       }
     }
-    // redis sets two such slots, s3 and stripe one each: a relation over nothing proves nothing.
+    // redis sets two such slots, s3, stripe and cloudflare one each: a relation over nothing proves nothing.
     expect(related).toBeGreaterThanOrEqual(RECIPE_NAMES.length)
   })
 })

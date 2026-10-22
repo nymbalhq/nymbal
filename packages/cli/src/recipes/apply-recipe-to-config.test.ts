@@ -420,23 +420,30 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       fc.asyncProperty(fc.constantFrom(...targets), otherArb, async ({ recipe, entry }, other) => {
         const wanted = entry.value
         const wantedLeaf =
-          typeof wanted === 'object' && !isEnvRef(wanted)
+          typeof wanted === 'object' && !isEnvRef(wanted) && 'provider' in wanted
             ? (wanted as { provider?: unknown }).provider
             : wanted
         fc.pre(!SCAFFOLD_DEFAULTS.includes(other) && other !== wantedLeaf)
-        const key = entry.path.split('.').pop()!
-        const held =
+        const [parent, key] = entry.path.split('.') as [string, string]
+        expect(entry.path.split('.'), 'a set path is <property>.<key>').toHaveLength(2)
+        // The other value goes inside the entry's own parent object: at the key's line when the scaffold has one,
+        // else as a new first line of that object. Scoped to the parent, so `security.adapter` is not `http.adapter`.
+        const parentOpen = `\n  ${parent}: {\n`
+        const start = plain.indexOf(parentOpen)
+        expect(start, `the scaffold has a ${parent} object`).toBeGreaterThanOrEqual(0)
+        const bodyStart = start + parentOpen.length
+        const bodyEnd = plain.indexOf('\n  },', bodyStart)
+        const body = plain.slice(bodyStart, bodyEnd)
+        const heldBody =
           key === 'payments'
-            ? plain.replace(
+            ? body.replace(
                 /payments: \{ provider: 'native' \}/,
                 `payments: { provider: '${other}' }`,
               )
-            : new RegExp(`^ {4}${key}: '`, 'm').test(plain)
-              ? plain.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
-              : plain.replace(
-                  '  infrastructure: {\n',
-                  `  infrastructure: {\n    ${key}: '${other}',\n`,
-                )
+            : new RegExp(`^ {4}${key}: '`, 'm').test(body)
+              ? body.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
+              : `    ${key}: '${other}',\n${body}`
+        const held = plain.slice(0, bodyStart) + heldBody + plain.slice(bodyEnd)
         expect(held, 'the generator placed the other value').not.toBe(plain)
 
         const refused = applyRecipeToConfig(held, recipe, { force: false })

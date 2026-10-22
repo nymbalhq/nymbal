@@ -13,6 +13,12 @@ import { eventsCommand } from './commands/events.js'
 import { auditCommand } from './commands/audit.js'
 import { replayCommand } from './commands/replay.js'
 import {
+  securityApplyCommand,
+  securityDriftCommand,
+  securityInspectCommand,
+  securityPlanCommand,
+} from './commands/security.js'
+import {
   testAllCommand,
   testCommand,
   testContractsCommand,
@@ -38,6 +44,10 @@ const main = defineCommand({
     'config:validate': configValidateCommand,
     add: addCommand,
     doctor: doctorCommand,
+    'security:plan': securityPlanCommand,
+    'security:apply': securityApplyCommand,
+    'security:drift': securityDriftCommand,
+    'security:inspect': securityInspectCommand,
     secrets: secretsCommand,
     events: eventsCommand,
     audit: auditCommand,

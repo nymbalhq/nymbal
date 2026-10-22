@@ -1,0 +1,45 @@
+{
+  "name": "@nymbalhq/security-cloudflare",
+  "version": "1.0.0",
+  "description": "Cloudflare WAF for Nymbal: the `cloudflare` security adapter, with rules applied by command",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/security-cloudflare"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./recipes/*": "./recipes/*"
+  },
+  "files": [
+    "dist",
+    "recipes"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^3.0.0"
+  }
+}
