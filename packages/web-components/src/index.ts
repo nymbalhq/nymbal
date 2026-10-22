@@ -20,6 +20,7 @@ import { NymbalRegisterForm } from './components/register-form.js'
 import { NymbalProfileForm } from './components/profile-form.js'
 import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
+import { NymbalCheckout } from './components/checkout.js'
 import { getPaymentDriver, registerPaymentDriver, type PaymentDriver } from '@nymbalhq/sdk'
 import { testModeDriver } from './payment-drivers/test-mode.js'
 import { stripeDriver } from './payment-drivers/stripe.js'
@@ -45,6 +46,7 @@ export {
   NymbalProfileForm,
   NymbalAddressForm,
   NymbalAddressBook,
+  NymbalCheckout,
 }
 
 const ELEMENTS = [
@@ -66,6 +68,7 @@ const ELEMENTS = [
   NymbalProfileForm,
   NymbalAddressForm,
   NymbalAddressBook,
+  NymbalCheckout,
 ]
 
 /** Defines every element under its schema's tag, except a tag the project has already defined: the project's wins. */
