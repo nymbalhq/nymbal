@@ -19,9 +19,9 @@ type EventDef = ElementSchema['events'][number]
 type AttrType = 'string' | 'number' | 'boolean' | 'json'
 type Wrapper = React.ComponentType<Record<string, unknown>>
 
-/** Compiles generated TSX and evaluates it, with React as the only real import. */
-function load(source: string): Record<string, Wrapper> {
-  const { outputText } = ts.transpileModule(source, {
+/** Generates the wrappers for `schemas`, compiles the TSX and evaluates it, with React as the only real import. */
+function load(schemas: ElementSchema[]): Record<string, Wrapper> {
+  const { outputText } = ts.transpileModule(generateWrappers(schemas), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
@@ -35,9 +35,15 @@ function load(source: string): Record<string, Wrapper> {
     // The elements themselves are not under test here: the wrapper's tag stays a plain element.
     '@nymbalhq/web-components': {},
   }
+  // P2-08: each wrapper imports its element's class from the element's own subpath. The element is not under test
+  // here, so its class is a stub whose define() does nothing and the tag stays a plain element.
+  const subpath = '@nymbalhq/web-components/elements/'
+  const elements = new Map(
+    schemas.map((s) => [`${subpath}${s.tag}`, { [`Nymbal${s.reactName}`]: { define() {} } }]),
+  )
   const require = (id: string): unknown => {
-    // P2-08: each wrapper imports its own element's subpath, which is not under test here either.
-    if (id.startsWith('@nymbalhq/web-components/elements/')) return {}
+    const element = elements.get(id)
+    if (element !== undefined) return element
     if (!(id in modules)) throw new Error(`generated wrappers import ${id}`)
     return modules[id]
   }
@@ -156,7 +162,7 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
           ),
         ),
         ([list, values, detail]) => {
-          const mod = load(generateWrappers(list))
+          const mod = load(list)
           list.forEach((s, i) => {
             const wrapper = mod[s.reactName]
             expect(wrapper, `${s.reactName} is exported`).toBeDefined()
@@ -187,7 +193,7 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
 
   it('AC-2: property: adding an attribute to a copy of a real element’s schema adds exactly that one prop to its wrapper and changes no other wrapper', () => {
     expect(realSchemas.length, 'the package exports its element schemas').toBeGreaterThan(0)
-    const before = load(generateWrappers(realSchemas))
+    const before = load(realSchemas)
     const beforeCode = new Map(
       realSchemas.map((s) => [s.reactName, codeOf(before[s.reactName], s.reactName)]),
     )
@@ -210,7 +216,7 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
           const changed = realSchemas.map((s, i) =>
             i === index ? { ...s, attributes: [...s.attributes, added] } : s,
           )
-          const after = load(generateWrappers(changed))
+          const after = load(changed)
           expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort())
           // Every other wrapper compiles to the same render function, so it renders the same for every props, not
           // only sampled ones; rendering all of them twice per run is what timed out under coverage.

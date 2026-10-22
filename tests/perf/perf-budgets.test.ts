@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,6 +26,9 @@ const baseline = JSON.parse(
 ) as { commit: string; scriptBytes: number }
 
 const LIMITS = { lcpMs: 2500, cls: 0.1, tbtMs: 200 } as const
+// The recorded exception (spec ruling 3): Next renders the cart only after hydration, so nextjs / cart has 3000 ms
+// until P2-18 server-renders it.
+const lcpLimitMs = (at: string): number => (at === 'nextjs / cart' ? 3000 : LIMITS.lcpMs)
 const PAGES = ['home', 'listing', 'product', 'cart', 'checkout'] as const
 const TEMPLATES = ['astro', 'nextjs'] as const
 
@@ -65,20 +68,36 @@ function findChrome(): string | undefined {
   )
 }
 
-function perfBudgets(args: string[]): Run {
+// Async, so the Vitest worker keeps answering its RPC while the runs take minutes: a blocking spawnSync timed the
+// worker out and failed the suite with every test passing.
+function perfBudgets(args: string[]): Promise<Run> {
   rmSync(REPORT, { force: true })
-  const result = spawnSync('pnpm', ['perf:budgets', ...args], {
-    cwd: REPO,
-    encoding: 'utf8',
-    timeout: RUN_TIMEOUT_MS,
-    maxBuffer: 256 * 1024 * 1024,
-    env: { ...process.env, FORCE_COLOR: '0' },
+  return new Promise((resolve) => {
+    const chunks: string[] = []
+    const child = spawn('pnpm', ['perf:budgets', ...args], {
+      cwd: REPO,
+      env: { ...process.env, FORCE_COLOR: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    child.stdout.setEncoding('utf8').on('data', (c: string) => chunks.push(c))
+    child.stderr.setEncoding('utf8').on('data', (c: string) => chunks.push(c))
+    const timer = setTimeout(() => {
+      chunks.push(`\nperf:budgets ${args.join(' ')} timed out after ${RUN_TIMEOUT_MS} ms`)
+      child.kill('SIGTERM')
+    }, RUN_TIMEOUT_MS)
+    const finish = (status: number | null): void => {
+      clearTimeout(timer)
+      const report = existsSync(REPORT)
+        ? (JSON.parse(readFileSync(REPORT, 'utf8')) as ReportRow[])
+        : undefined
+      resolve({ status, output: chunks.join(''), report })
+    }
+    child.on('error', (error) => {
+      chunks.push(`\n${error.message}`)
+      finish(null)
+    })
+    child.on('close', (code) => finish(code))
   })
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}${result.error ? `\n${result.error.message}` : ''}`
-  const report = existsSync(REPORT)
-    ? (JSON.parse(readFileSync(REPORT, 'utf8')) as ReportRow[])
-    : undefined
-  return { status: result.status, output, report }
 }
 
 const tail = (output: string): string => output.split('\n').slice(-40).join('\n')
@@ -93,11 +112,11 @@ let fixture: Run
 let real: Run
 let copy: string | undefined
 
-beforeAll(() => {
+beforeAll(async () => {
   if (chrome === undefined) return
   copy = astroWithHeavyHome(REPO)
-  fixture = perfBudgets(['--template', 'astro', '--dir', copy])
-  real = perfBudgets([])
+  fixture = await perfBudgets(['--template', 'astro', '--dir', copy])
+  real = await perfBudgets([])
 })
 
 // The copy's node_modules is a symlink: removing the copy removes the link, never the template's packages.
@@ -133,7 +152,7 @@ describe('P2-08 AC-2: the run fails a slow page', () => {
 })
 
 describe('P2-08 AC-4: the budgets hold', () => {
-  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms, CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
+  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (nextjs / cart 3000 ms until P2-18), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     expect(real.status, tail(real.output)).toBe(0)
     expect(real.report, 'reports/perf-budgets.json after the real run').toBeDefined()
@@ -141,7 +160,7 @@ describe('P2-08 AC-4: the budgets hold', () => {
     expect(pages).toEqual(TEMPLATES.flatMap((t) => PAGES.map((p) => `${t} / ${p}`)).sort())
     for (const r of real.report!) {
       const at = `${r.template} / ${r.page}`
-      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(LIMITS.lcpMs)
+      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(lcpLimitMs(at))
       expect(r.measured.cls, `${at} cls`).toBeLessThanOrEqual(LIMITS.cls)
       expect(r.measured.tbtMs, `${at} tbtMs`).toBeLessThanOrEqual(LIMITS.tbtMs)
       expect(r.measured.scriptBytes, `${at} scriptBytes`).toBeLessThanOrEqual(r.budget.scriptBytes)
