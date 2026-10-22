@@ -149,6 +149,42 @@ jobs:
           path: reports/mutation
           if-no-files-found: warn
 
+  quarantine:
+    # The tests the gate skill quarantined (vitest.config.ts, NIGHTLY): red then green with no code change in a gate
+    # or CI. Each has an owner row on the board and runs here, apart from every gate, until that row closes.
+    name: Quarantined tests
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 30
+    env:
+      CI: true
+      NYMBAL_NIGHTLY: '1'
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      # MinIO for the S3 import suite, as in ci.yml's integration job.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
+      - name: The quarantined tests
+        run: pnpm exec vitest run --project nightly
+
   gate-full:
     name: Gate — full, end to end
     runs-on: ubuntu-24.04
