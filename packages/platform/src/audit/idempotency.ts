@@ -103,11 +103,16 @@ export async function auditedRoute(
  * with the response, is appended before COMMIT. A concurrent first attempt that commits the key first makes this one's
  * insert fail on the partial unique index, which rolls this one's work back; it is then answered as a replay. A refused
  * command is never stored for replay: its retry runs again.
+ *
+ * A `provider` command (one that moves money through the payments provider) runs outside the key's transaction instead,
+ * so the service's own transactions commit as it designed them (a refund's pending row before the provider is called)
+ * and no transaction is held across the provider's round trip. Its `applied` row is appended afterwards; once-only
+ * between two concurrent first attempts rests on the service's own guards under the order's lock.
  */
 export async function idempotentCommand(
   store: CommandStore,
   command: string,
-  request: { actor: Actor; key: string; hash: string },
+  request: { actor: Actor; key: string; hash: string; provider?: boolean },
   run: () => Promise<ResponseEnvelope>,
 ): Promise<ResponseEnvelope> {
   const scope = openCommand(command, {
@@ -123,6 +128,7 @@ export async function idempotentCommand(
       const applied = await appliedNow(tx)
       return applied === null ? null : answerApplied(tx, scope, applied)
     })
+  if (request.provider === true) return outsideTransaction(store, scope, replayIfApplied, run)
 
   const ran: { answer?: ResponseEnvelope } = {}
   try {
@@ -151,6 +157,39 @@ export async function idempotentCommand(
   }
   // The command refused or faulted, its work rolled back or never written; both paths here set the answer.
   const answer = ran.answer!
+  const replay = await replayIfApplied()
+  if (replay !== null) return replay
+  if (refused(answer.status)) await recordRefusal(store, scope, answer.status)
+  return answer
+}
+
+/**
+ * A keyed provider command: the applied key is read in a short transaction, the command runs in none, and its `applied`
+ * row is appended in another. A unique loss there means a concurrent attempt applied the key first: its answer is this
+ * one's, as is a refusal (a loser's 409 under the order's lock) when the winner has committed by then.
+ */
+async function outsideTransaction(
+  store: CommandStore,
+  scope: KeyedScope,
+  replayIfApplied: () => Promise<ResponseEnvelope | null>,
+  run: () => Promise<ResponseEnvelope>,
+): Promise<ResponseEnvelope> {
+  const earlier = await replayIfApplied()
+  if (earlier !== null) return earlier
+  const answer = await runInCommand(scope, run)
+  if (succeeded(answer.status)) {
+    const body: unknown = JSON.parse(JSON.stringify(answer.body ?? null))
+    try {
+      await store.transaction((tx) =>
+        appendAuditEntry(tx, entryOf(scope, 'applied', { status: answer.status, body })),
+      )
+      return answer
+    } catch (err) {
+      const replay = await replayIfApplied()
+      if (replay !== null) return replay
+      throw err
+    }
+  }
   const replay = await replayIfApplied()
   if (replay !== null) return replay
   if (refused(answer.status)) await recordRefusal(store, scope, answer.status)

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { EVT_INVENTORY_CHANGED } from '@nymbalhq/types'
+import { EVT_INVENTORY_CHANGED, type PaymentsAdapter } from '@nymbalhq/types'
 import {
   adminSession,
   auditRows,
@@ -13,7 +13,7 @@ import {
 } from '../audit.js'
 import { eventsAfter, payloadOf } from '../correlation.js'
 import { serveKernel, type ServedKernel } from '../http.js'
-import { seedVariant, type Kernel } from '../kernel.js'
+import { checkoutOf, seedVariant, type Kernel } from '../kernel.js'
 import { maxSeq } from '../outbox.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 
@@ -22,9 +22,12 @@ import { openRaw, stockOf, type RawReader } from '../raw.js'
 // another or all at once, apply once: one stock move, one stock_adjustments row, one inventory.changed, one `applied`
 // and n-1 `replayed` entries, and every answer equal to the applied one. A keyed create replays its 201. A key reused
 // with another body (or another variant) is refused with 409 and changes nothing. A refused command is never replayed.
-// Without a key every request applies, as today, each leaving its own `applied` entry.
+// Without a key every request applies, as today, each leaving its own `applied` entry. A keyed refund over a provider
+// capture commits its pending row before the provider moves money, and a same-key retry sent while the provider is
+// answering moves none.
 // Kills: a retry that double-applies (today); a concurrent retry that races past the lookup; a reused key accepted
-// with a new body; a request hash without the path params; a refused answer replayed.
+// with a new body; a request hash without the path params; a refused answer replayed; a keyed refund run inside the
+// key's transaction (its pending row uncommitted while money moves, the connection held across the provider call).
 
 const adjustPath = (variantId: string) => `/api/admin/inventory/${variantId}/adjust`
 
@@ -150,6 +153,53 @@ export function idempotencySuite(
       expect(second.body).toEqual(first.body)
       expect([first.replayed, second.replayed]).toEqual([null, 'true'])
       expect(await raw.count('products', 'slug = ?', [slug])).toBe(1)
+      expect(outcomesOf(await auditRows(raw, 'idempotency_key = ?', [key]))).toEqual([
+        'applied',
+        'replayed',
+      ])
+    })
+
+    it('AC-1 (decision 5): a keyed refund over a provider capture commits its pending row before the provider is called, and the same-key retry sent while the provider answers calls it no more: one refund row, one applied and one replayed entry, equal answers', async () => {
+      const seeded = await seedVariant(k, 3, { priceMinor: 4_000 })
+      const order = await checkoutOf(k, seeded, 2, `ac1-refund-${randomUUID()}@p3-04.test`)
+      expect(order.orderStatus).toBe('confirmed')
+      const key = `ac1.refund.${randomUUID()}`
+      const body = { amountMinor: 1_000 }
+      const send = () =>
+        admin.send('POST', `/api/admin/orders/${order.orderId}/refund`, body, {
+          [IDEMPOTENCY_KEY]: key,
+        })
+      const pendingAtProvider: number[] = []
+      const retries: Answer[] = []
+      const payments: PaymentsAdapter = k.app.adapters.payments
+      const providerRefund = payments.refund
+      let calls = 0
+      payments.refund = (async (...args: Parameters<PaymentsAdapter['refund']>) => {
+        calls += 1
+        const pending = await raw.count('order_refunds', "order_id = ? AND status = 'pending'", [
+          order.orderId,
+        ])
+        pendingAtProvider.push(pending)
+        // A retry sent while a transaction holds the refund would wait on it for ever: sent only once the row committed.
+        if (calls === 1 && pending === 1) retries.push(await send())
+        return providerRefund.apply(payments, args)
+      }) as PaymentsAdapter['refund']
+
+      let first: Answer
+      try {
+        first = await send()
+      } finally {
+        payments.refund = providerRefund
+      }
+      const answers = [first, ...retries]
+      const context = JSON.stringify(answers.map((a) => [a.status, a.replayed, a.body]))
+
+      expect(pendingAtProvider, `committed pending rows seen at each provider call (${context})`).toEqual([1])
+      expect(retries.length, context).toBe(1)
+      expect(answers.map((a) => a.status), context).toEqual([200, 200])
+      expect(appliedAnswers(answers).length, context).toBe(1)
+      expect(answers[1]!.body, context).toEqual(answers[0]!.body)
+      expect(await raw.count('order_refunds', 'order_id = ?', [order.orderId])).toBe(1)
       expect(outcomesOf(await auditRows(raw, 'idempotency_key = ?', [key]))).toEqual([
         'applied',
         'replayed',

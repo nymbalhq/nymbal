@@ -17,6 +17,11 @@ export interface RouteSchema {
    * or null when it changes none an audit covers (a cart, a session, a ticket).
    */
   command?: string | null
+  /**
+   * The command moves money through the payments provider. A keyed one does not run inside the key's transaction:
+   * the service commits its own steps around the provider call, so what it holds is committed before money moves.
+   */
+  provider?: true
 }
 
 const id = z.string().min(1)
@@ -316,6 +321,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/orders/:id/mark-paid': {
     name: 'admin.orders.markPaid',
     command: 'order.markPaid',
+    provider: true,
     description:
       "Record a payment of the order's total taken outside the store, confirming the order.",
     params: orderIdParams,
@@ -337,6 +343,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
     command: 'order.refund',
+    provider: true,
     description:
       'Refund part or all of what an order captured, through the payments provider. A repeated requestId answers the refund it made and moves no money.',
     params: orderIdParams,

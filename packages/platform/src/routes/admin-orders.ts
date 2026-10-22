@@ -13,6 +13,7 @@ import { orderPayment, type RefundService } from '../services/refund-service.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
 import { audit } from '../audit/audit.js'
+import { idempotencyKeyOf } from '../audit/idempotency.js'
 import { requireRole } from './role-middleware.js'
 
 export interface NoteEntry {
@@ -276,11 +277,15 @@ export function registerAdminOrdersRoutes(
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
         const body = ctx.body as { amountMinor: number; reason?: string; requestId?: string }
+        // A keyed refund runs outside the key's transaction, so a retry whose first attempt moved money but never
+        // recorded its key must still find that refund: the key stands in for a requestId the caller did not send.
+        const keyed = idempotencyKeyOf(ctx)
+        const requestId = body.requestId ?? ('key' in keyed ? keyed.key : undefined)
         const result = await refund.refund({
           orderId: id,
           amountMinor: body.amountMinor,
           ...(body.reason !== undefined && { reason: body.reason }),
-          ...(body.requestId !== undefined && { requestId: body.requestId }),
+          ...(requestId !== undefined && { requestId }),
           actor: `admin:${ctx.auth!.userId}`,
         })
         return ok(result)

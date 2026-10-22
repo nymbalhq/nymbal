@@ -103,6 +103,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
     registerRoute(method, path, handler, options) {
       const command = commandOf(method, path)
       const adminWrite = command !== undefined && path.startsWith('/api/admin/')
+      const provider = routeSchemas[`${method} ${path}`]?.provider === true
       adapter.registerRoute(
         method,
         path,
@@ -117,7 +118,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
             return idempotentCommand(
               store,
               command,
-              { actor, key: keyed.key, hash: requestHash(ctx) },
+              { actor, key: keyed.key, hash: requestHash(ctx), provider },
               run,
             )
           })

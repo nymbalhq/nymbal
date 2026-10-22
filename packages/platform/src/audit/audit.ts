@@ -18,8 +18,8 @@ import { currentActor, type Actor } from './actor.js'
 // same scope, so a checkout's reservations are subjects of its one entry.
 //
 // The `applied` row is held in the first transaction a service notes in and commits or rolls back with it, so a
-// rolled-back write leaves no entry. A keyed admin write is the exception: its opener runs the whole command in one
-// transaction and appends the row itself, with the response its replays answer (idempotency.ts).
+// rolled-back write leaves no entry. A keyed admin write is the exception: its opener appends the row itself, with the
+// response its replays answer, in the command's transaction or, for a provider command, after it (idempotency.ts).
 
 /** The open command: what its entry will say. */
 export interface CommandScope {
@@ -34,8 +34,7 @@ export interface CommandScope {
   readonly owned: boolean
   readonly idempotencyKey: string | null
   readonly requestHash: string | null
-  /** The transaction the `applied` row is held in, and whether that transaction committed. */
-  heldIn: object | undefined
+  /** The `applied` row committed. */
   written: boolean
 }
 
@@ -56,7 +55,6 @@ export function openCommand(
     owned: opts.owned ?? false,
     idempotencyKey: opts.idempotencyKey ?? null,
     requestHash: opts.requestHash ?? null,
-    heldIn: undefined,
     written: false,
   }
 }
@@ -94,18 +92,32 @@ function complete(scope: CommandScope): scope is CommandScope & { actor: Actor; 
   return scope.actor !== undefined && scope.command !== undefined
 }
 
-/** Holds the scope's `applied` row in the transaction open now, unless it already is or has committed. */
+/** Each scope's two hooks, made once: a transaction holds the same function once however many notes register it. */
+const hooks = new WeakMap<
+  CommandScope,
+  { write: (tx: Tx) => Promise<void>; committed: () => Promise<void> }
+>()
+
+/**
+ * Holds the scope's `applied` row in the transaction open now, unless it has committed. Every note holds it again: a
+ * savepoint that rolls back drops what was held inside it, and a later note in the same transaction must restore it.
+ */
 function hold(scope: CommandScope): void {
-  if (scope.owned || scope.written || !complete(scope)) return
-  const tx = openTransaction()
-  if (tx === undefined || tx === scope.heldIn) return
-  scope.heldIn = tx
-  beforeCommit(async (held: Tx) => {
-    if (!scope.written && complete(scope)) await appendAuditEntry(held, entryOf(scope, 'applied'))
-  })
-  void afterCommit(async () => {
-    scope.written = true
-  })
+  if (scope.owned || scope.written || !complete(scope) || openTransaction() === undefined) return
+  let held = hooks.get(scope)
+  if (held === undefined) {
+    held = {
+      async write(tx: Tx) {
+        if (!scope.written && complete(scope)) await appendAuditEntry(tx, entryOf(scope, 'applied'))
+      },
+      async committed() {
+        scope.written = true
+      },
+    }
+    hooks.set(scope, held)
+  }
+  beforeCommit(held.write)
+  void afterCommit(held.committed)
 }
 
 function record(

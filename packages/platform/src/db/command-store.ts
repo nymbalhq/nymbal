@@ -75,7 +75,7 @@ class Scope {
   failure: { error: unknown } | undefined
   /** Sends held until the outermost commits; the same function held twice runs once. */
   readonly held = new Set<() => Promise<void>>()
-  /** Writes run in the transaction once its callback has settled, before COMMIT. */
+  /** Writes run in the transaction once its callback has settled, before COMMIT; each function once. */
   readonly beforeCommit: Array<(tx: Tx) => Promise<void>> = []
   /** Savepoints opened so far, for unique names. */
   savepoints = 0
@@ -155,14 +155,15 @@ export function openTransaction(): object | undefined {
 /**
  * Holds `write` to run in the transaction open in the current async call chain, after the outermost callback has
  * settled and before COMMIT, so it commits or rolls back with that transaction's work; a write that throws rolls it
- * back. Throws when no transaction is open.
+ * back. The same function held twice runs once; one held inside a savepoint that rolls back is dropped with it, so
+ * holding it again after that queues it again. Throws when no transaction is open.
  */
 export function beforeCommit(write: (tx: Tx) => Promise<void>): void {
   const scope = context.getStore()
   if (scope === undefined || !scope.writable || scope.settled) {
     throw new Error('beforeCommit() was called outside CommandStore.transaction()')
   }
-  scope.beforeCommit.push(write)
+  if (!scope.beforeCommit.includes(write)) scope.beforeCommit.push(write)
 }
 
 /** For migrations, seeding and tests only; no repository or service imports it. */
