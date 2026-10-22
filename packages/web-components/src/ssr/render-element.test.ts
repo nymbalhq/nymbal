@@ -332,7 +332,7 @@ describe('P2-18 AC-1: renderElement renders every element', () => {
     })
   }
 
-  it('AC-1: nymbal-payment-element is refused with an UnknownElement error naming P2-16, as is a tag neither the package nor the registry knows', () => {
+  it('AC-1: nymbal-payment-element is refused with an UnknownElement error naming the tag as client-mounted, as is a tag neither the package nor the registry knows', () => {
     const nameOf = (tag: string): string[] => {
       try {
         renderElement(tag)
@@ -343,6 +343,6 @@ describe('P2-18 AC-1: renderElement renders every element', () => {
     }
     expect(nameOf(PAYMENT)).toContain('UnknownElement')
     expect(nameOf('nymbal-no-such-element')).toContain('UnknownElement')
-    expect(() => renderElement(PAYMENT)).toThrow(/P2-16/)
+    expect(() => renderElement(PAYMENT)).toThrow(/nymbal-payment-element .*client-mounted/)
   })
 })
