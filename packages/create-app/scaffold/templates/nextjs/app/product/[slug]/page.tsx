@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { preload } from 'react-dom'
 import { fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { productJsonLd } from '@/lib/seo'
@@ -81,9 +80,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
           alt: m.alt ?? product.name,
         }))
       : [{ url: `https://picsum.photos/seed/${product.slug}/600/600`, alt: product.name }]
-  // The gallery's main image is the page's LCP: React hoists the preload into the head, so the browser starts it
-  // before it parses the body.
-  preload(images[0]!.url, { as: 'image', fetchPriority: 'high' })
   const crumbs = [
     { label: 'Home', href: '/' },
     { label: 'Products', href: '/products' },
@@ -92,6 +88,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <>
+      {/* The gallery's main image is the page's LCP: a preload link, which React hoists into the head, starts it
+          before the browser parses the body. */}
+      <link rel="preload" as="image" href={images[0]!.url} fetchPriority="high" />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

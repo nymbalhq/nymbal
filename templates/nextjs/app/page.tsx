@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { fetchProducts, fetchCategories } from '@/lib/api'
-import { cardProductOf, renderNymbal } from '@/lib/render'
+import { cardImageOf, cardProductOf, renderNymbal } from '@/lib/render'
 import { organizationJsonLd } from '@/lib/seo'
 import { HeroSection } from '@/components/server/HeroSection'
 import { CategoryNav, ProductGrid } from '@/components/client/elements'
@@ -13,6 +13,9 @@ export default async function HomePage() {
     fetchCategories(),
   ])
   const products = items.map(cardProductOf)
+  // The first card's image is the page's likely LCP, and the preload scanner never reaches it inside the grid's shadow
+  // root: a preload link, which React hoists into the head, starts it.
+  const firstImage = products[0] === undefined ? null : cardImageOf(products[0]).url
 
   const jsonLd = organizationJsonLd(
     'Nymbal Store',
@@ -21,6 +24,9 @@ export default async function HomePage() {
 
   return (
     <>
+      {firstImage !== null && (
+        <link rel="preload" as="image" href={firstImage} fetchPriority="high" />
+      )}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

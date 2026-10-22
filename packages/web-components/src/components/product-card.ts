@@ -28,8 +28,11 @@ export interface CardProduct {
   media?: Array<{ url?: string; alt?: string }>
 }
 
-/** The product's own image, else a placeholder seeded by its slug so a card without media keeps its shape. */
-function imageOf(p: CardProduct): { url: string; alt: string } {
+/**
+ * The product's own image, else a placeholder seeded by its slug so a card without media keeps its shape. Exported so
+ * a page preloads exactly the image its first card requests.
+ */
+export function cardImageOf(p: CardProduct): { url: string; alt: string } {
   if (typeof p.imageUrl === 'string' && p.imageUrl !== '') return { url: p.imageUrl, alt: p.name }
   const media = p.media?.find((m) => typeof m.url === 'string' && m.url !== '')
   if (media !== undefined) return { url: media.url!, alt: media.alt ?? p.name }
@@ -139,7 +142,7 @@ export class NymbalProductCard extends NymbalElement {
   protected override render() {
     const p = parse(this.product)
     if (p === null) return nothing
-    const image = imageOf(p)
+    const image = cardImageOf(p)
     const price = priceOf(p)
     return html`
       <a

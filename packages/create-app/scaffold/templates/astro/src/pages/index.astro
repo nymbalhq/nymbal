@@ -1,7 +1,7 @@
 ---
 import '../styles/pages/home.css'
 import NymbalElement from '@nymbalhq/web-components/astro'
-import { cardProductOf } from '@nymbalhq/web-components/ssr'
+import { cardImageOf, cardProductOf } from '@nymbalhq/web-components/ssr'
 import BaseLayout from '../layouts/BaseLayout.astro'
 import HeroSection from '../components/HeroSection.astro'
 import NewsletterSignup from '../components/NewsletterSignup.astro'
@@ -12,11 +12,16 @@ const [productResult, categories] = await Promise.all([
   fetchProducts({ limit: 8 }),
   fetchCategories(),
 ])
+const products = productResult.items.map(cardProductOf)
+// The first card's image is the page's likely LCP, and the preload scanner never reaches it inside the grid's shadow
+// root: the head starts it.
+const firstImage = products[0] === undefined ? null : cardImageOf(products[0]).url
 
 const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
 ---
 
 <BaseLayout title="Nymbal — Modern Storefront" jsonLd={jsonLd}>
+  {firstImage && <link slot="head" rel="preload" as="image" href={firstImage} fetchpriority="high" />}
   <HeroSection />
 
   <section class="section container">
@@ -30,7 +35,7 @@ const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
         <h2 class="section-title" style="margin-bottom: 0;">Featured Products</h2>
         <a href="/products" class="featured-link">View all</a>
       </div>
-      <NymbalElement tag="nymbal-product-grid" attributes={{ products: JSON.stringify(productResult.items.map(cardProductOf)) }} />
+      <NymbalElement tag="nymbal-product-grid" attributes={{ products: JSON.stringify(products) }} />
     </div>
   </section>
 

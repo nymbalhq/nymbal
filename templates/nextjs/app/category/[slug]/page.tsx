@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { fetchProducts, fetchCategories, fetchCapabilities, sortFromSearchParams } from '@/lib/api'
-import { cardProductOf, renderNymbal } from '@/lib/render'
+import { cardImageOf, cardProductOf, renderNymbal } from '@/lib/render'
 import { Breadcrumb, ProductGrid } from '@/components/client/elements'
 import { ListingControls } from '@/components/client/ListingControls'
 import styles from '@/styles/pages/plp.module.css'
@@ -35,6 +35,9 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
   if (!category) notFound()
   const crumbs = [{ label: 'Home', href: '/' }, { label: category.name }]
   const cards = items.map(cardProductOf)
+  // The first card's image is the page's LCP, and the preload scanner never reaches it inside the grid's shadow root:
+  // a preload link, which React hoists into the head, starts it.
+  const firstImage = cards[0] === undefined ? null : cardImageOf(cards[0]).url
   const grid = {
     products: JSON.stringify(cards),
     source: 'product-list',
@@ -43,6 +46,9 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
 
   return (
     <div className={`container ${styles.page}`}>
+      {firstImage !== null && (
+        <link rel="preload" as="image" href={firstImage} fetchPriority="high" />
+      )}
       <Breadcrumb
         items={crumbs}
         serverHtml={renderNymbal('nymbal-breadcrumb', { items: JSON.stringify(crumbs) }).__html}

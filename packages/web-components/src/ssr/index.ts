@@ -5,7 +5,7 @@ import { collectResultSync } from '@lit-labs/ssr/lib/render-result.js'
 import type { LitElement } from 'lit'
 import { ELEMENTS } from '../register-components.js'
 
-export { cardProductOf, type CardProduct } from '../components/product-card.js'
+export { cardImageOf, cardProductOf, type CardProduct } from '../components/product-card.js'
 
 restoreCreateRenderRoot()
 
