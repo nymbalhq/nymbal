@@ -1,6 +1,11 @@
-import type { DenormalisedProduct, ProductListResult, ReviewsListResult } from '@nymbalhq/sdk'
+import type {
+  DenormalisedProduct,
+  ProductListResult,
+  ProductSearchResult,
+  ReviewsListResult,
+} from '@nymbalhq/sdk'
 import { DEFAULT_PRODUCT_SORT, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
-import type { Category, Order, ProductSortKey, StoreCapabilities } from '@nymbalhq/types'
+import type { Cart, Category, Order, ProductSortKey, StoreCapabilities } from '@nymbalhq/types'
 
 const API_URL = import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -99,5 +104,68 @@ export async function fetchReviews(productId: string): Promise<ReviewsListResult
   } catch (err) {
     console.error('[api] fetchReviews failed', err)
     return { items: [], nextCursor: null }
+  }
+}
+
+/** The cart the cart elements take as their `cart` attribute: its lines and sums, never the cart token. */
+export interface CartProjection {
+  items: Cart['items']
+  subtotalMinor: number
+  currency: string
+  itemCount: number
+}
+
+const CART_COOKIE = 'nymbal.cart'
+
+/** The `nymbal.cart` value in a request's Cookie header, or null. */
+function cartToken(cookie: string | null): string | null {
+  for (const pair of (cookie ?? '').split(';')) {
+    const [name, ...value] = pair.trim().split('=')
+    if (name === CART_COOKIE && value.length > 0) return value.join('=')
+  }
+  return null
+}
+
+/**
+ * The shopper's cart, read with the request's `nymbal.cart` cookie, as the projection the elements take. Null without
+ * the cookie: `GET /api/cart` with none would make a cart the page could not keep, so the element renders its shell
+ * and the browser fills it. The cookie reaches this server when the store and the API share a host or a proxy.
+ */
+export async function fetchCart(cookie: string | null): Promise<CartProjection | null> {
+  const token = cartToken(cookie)
+  if (token === null) return null
+  try {
+    const res = await fetch(`${API_URL}/api/cart`, {
+      headers: { Cookie: `${CART_COOKIE}=${token}` },
+    })
+    if (!res.ok) return null
+    const { items, subtotalMinor, currency } = ((await res.json()) as { data: Cart }).data
+    return {
+      items,
+      subtotalMinor,
+      currency,
+      itemCount: items.reduce((n, item) => n + item.qty, 0),
+    }
+  } catch (err) {
+    console.error('[api] fetchCart failed', err)
+    return null
+  }
+}
+
+/** The search the search page shows for `q` (and its category), as the search store would hold it. */
+export async function fetchSearch(
+  q: string,
+  category: string | null,
+): Promise<ProductSearchResult | null> {
+  const url = new URL('/api/products/search', API_URL)
+  url.searchParams.set('q', q)
+  if (category) url.searchParams.set('category', category)
+  try {
+    const res = await fetch(url.toString())
+    if (!res.ok) return null
+    return ((await res.json()) as { data: ProductSearchResult }).data ?? null
+  } catch (err) {
+    console.error('[api] fetchSearch failed', err)
+    return null
   }
 }

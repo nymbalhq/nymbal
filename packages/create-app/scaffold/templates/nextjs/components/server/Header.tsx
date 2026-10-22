@@ -1,7 +1,9 @@
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import { SearchBarWrapper } from '@/components/client/SearchBarWrapper'
 import { MiniCartWrapper } from '@/components/client/MiniCartWrapper'
-import { fetchCapabilities } from '@/lib/api'
+import { fetchCapabilities, fetchCart } from '@/lib/api'
+import { renderNymbal } from '@/lib/render'
 import styles from './Header.module.css'
 
 const NAV_LINKS = [
@@ -11,7 +13,15 @@ const NAV_LINKS = [
 ]
 
 export async function Header() {
-  const capabilities = await fetchCapabilities()
+  const [capabilities, cart] = await Promise.all([
+    fetchCapabilities(),
+    headers().then((h) => fetchCart(h.get('cookie'))),
+  ])
+  const count = cart?.itemCount
+  const miniCart = renderNymbal(
+    'nymbal-mini-cart',
+    count === undefined ? {} : { count: String(count) },
+  ).__html
   const canSearch = capabilities?.search.capabilities.includes('search') ?? false
   return (
     <header className={styles.header} data-testid="site-header">
@@ -54,7 +64,7 @@ export async function Header() {
               <circle cx="12" cy="7" r="4" />
             </svg>
           </Link>
-          <MiniCartWrapper />
+          <MiniCartWrapper count={count} serverHtml={miniCart} />
         </div>
 
         <input

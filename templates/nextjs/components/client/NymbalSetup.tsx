@@ -14,14 +14,15 @@ export function NymbalSetup({ children }: { children: ReactNode }) {
   const initialized = useRef(false)
 
   // A layout effect runs before every passive effect of the commit, so the client is registered before any wrapper
-  // defines its element (each wrapper defines its own, so a route loads only the elements it renders).
+  // defines its element (each wrapper defines its own, so a route loads only the elements it renders). The cart starts
+  // loading first, so an element the server rendered from the cart keeps showing it until the load settles.
   useLayoutEffect(() => {
     if (!initialized.current) {
       registerClient(client)
+      void client.cart.load()
       NymbalSearchBar.define()
       NymbalMiniCart.define()
       NymbalCartDrawer.define()
-      client.cart.load()
       void restoreSession()
       initialized.current = true
     }

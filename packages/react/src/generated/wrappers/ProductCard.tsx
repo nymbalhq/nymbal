@@ -6,7 +6,7 @@ import { NymbalProductCard } from '@nymbalhq/web-components/elements/nymbal-prod
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-product-card': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-product-card': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'product'> & { 'product'?: string | undefined }
     }
   }
 }
@@ -24,6 +24,8 @@ export interface ProductCardProps {
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const ProductCard = /* @__PURE__ */ forwardRef<HTMLElement, ProductCardProps>(
@@ -46,7 +48,11 @@ export const ProductCard = /* @__PURE__ */ forwardRef<HTMLElement, ProductCardPr
     useDefine(NymbalProductCard)
 
     return (
-      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-product-card>
     )

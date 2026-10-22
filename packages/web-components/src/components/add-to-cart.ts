@@ -70,7 +70,8 @@ export class NymbalAddToCart extends NymbalElement {
 
   protected override render() {
     const variantId = this.getAttribute('variant-id')
-    const { loading } = this.client.cart.getState()
+    // Until it reads the cart store (a server render, and the first render taking that over) the cart is not adding.
+    const loading = this.readsStores && this.client.cart.getState().loading
     return html`<button
       type="button"
       part="button"

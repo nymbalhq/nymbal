@@ -1,12 +1,28 @@
 import { css, html, nothing } from 'lit'
-import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import type { SearchState } from '@nymbalhq/sdk'
+import {
+  baseStyles,
+  NymbalElement,
+  parsedJson,
+  propertiesOf,
+  type ElementSchema,
+} from '../base-element.js'
 import { buttonStyles } from '../view-styles.js'
 import { NymbalProductCard } from './product-card.js'
+
+type Shown = Pick<SearchState, 'query' | 'results' | 'total' | 'nextCursor' | 'loading'> & {
+  given: boolean
+}
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-search-results',
   reactName: 'SearchResults',
-  attributes: [],
+  // The search a server ran: the store's `results` (the card products) and the term they answer, shown until the
+  // search store settles.
+  attributes: [
+    { name: 'results', prop: 'results', type: 'json' },
+    { name: 'query', prop: 'query', type: 'string' },
+  ],
   events: [],
   parts: [
     'query',
@@ -89,8 +105,29 @@ export class NymbalSearchResults extends NymbalElement {
     `,
   ]
 
+  declare results: unknown
+  declare query: string | undefined
+
   protected override stores() {
     return [this.client.search]
+  }
+
+  protected override storeSettled(): void {
+    this.results = undefined
+  }
+
+  /**
+   * The results a server gave while they stand (`given`), else the search store's; with neither, no search. Given
+   * results are shown whether or not the server named their term.
+   */
+  private shown(): Shown {
+    const given = parsedJson<SearchState['results']>(this, 'results', this.results)
+    if (given === undefined && this.readsStores) {
+      return { ...this.client.search.getState(), given: false }
+    }
+    const results = given ?? []
+    const query = this.query ?? ''
+    return { query, results, total: results.length, nextCursor: null, loading: false, given: true }
   }
 
   private empty(title: string, text: string, slot: string) {
@@ -105,14 +142,13 @@ export class NymbalSearchResults extends NymbalElement {
     `
   }
 
-  private body() {
-    const state = this.client.search.getState()
+  private body(state: Shown) {
     const { results, query } = state
     // A load-more or a category change keeps the results shown until its answer replaces them.
     if (state.loading && results.length === 0) {
       return html`<div part="loading" role="status">Searching...</div>`
     }
-    if (query === '') {
+    if (query === '' && !(state.given && results.length > 0)) {
       return this.empty('Search our store', 'Type a keyword to find products.', 'no-term')
     }
     if (results.length === 0) {
@@ -154,10 +190,11 @@ export class NymbalSearchResults extends NymbalElement {
   }
 
   protected override render() {
-    const { query } = this.client.search.getState()
+    const state = this.shown()
+    const { query } = state
     return html`
       ${query === '' ? nothing : html`<p part="query">Results for <strong>"${query}"</strong></p>`}
-      ${this.body()}
+      ${this.body(state)}
     `
   }
 }

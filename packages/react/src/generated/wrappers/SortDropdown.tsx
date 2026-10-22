@@ -6,7 +6,7 @@ import { NymbalSortDropdown } from '@nymbalhq/web-components/elements/nymbal-sor
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-sort-dropdown': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-sort-dropdown': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'sort-keys' | 'value' | 'default-sort'> & { 'sort-keys'?: string | undefined; 'value'?: string | undefined; 'default-sort'?: string | undefined }
     }
   }
 }
@@ -27,6 +27,8 @@ export interface SortDropdownProps {
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const SortDropdown = /* @__PURE__ */ forwardRef<HTMLElement, SortDropdownProps>(
@@ -75,7 +77,11 @@ export const SortDropdown = /* @__PURE__ */ forwardRef<HTMLElement, SortDropdown
     useDefine(NymbalSortDropdown)
 
     return (
-      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-sort-dropdown ref={ref as React.Ref<HTMLElement>} sort-keys={props.sortKeys === undefined ? undefined : JSON.stringify(props.sortKeys)} value={props.value} default-sort={props.defaultSort} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-sort-dropdown>
     )

@@ -1,20 +1,30 @@
 ---
+import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
-import { fetchCapabilities } from '../lib/api'
+import { fetchCapabilities, fetchCart } from '../lib/api'
 
-const capabilities = await fetchCapabilities()
+const [capabilities, cart] = await Promise.all([
+  fetchCapabilities(),
+  fetchCart(Astro.request.headers.get('cookie')),
+])
 if (capabilities === null) {
   throw new Error('The store did not answer GET /api/capabilities, so checkout cannot tell how to take a payment.')
 }
-const paymentClient = capabilities.payments.client
+const escapeAttribute = (value: string): string =>
+  value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')
+// The payments adapter's client half, the checkout's light-DOM child in its payment slot; a driver the project
+// registers in src/lib/client.ts renders it. HTML, not markup: Astro would take `slot="payment"` on a component's
+// child as a slot of NymbalElement's own.
+const paymentElement = `<nymbal-payment-element slot="payment" data-testid="payment-element" client="${escapeAttribute(
+  JSON.stringify(capabilities.payments.client),
+)}"></nymbal-payment-element>`
 ---
 
-<BaseLayout title="Checkout | Nymbal" description="Complete your purchase.">
+<BaseLayout title="Checkout | Nymbal" description="Complete your purchase." cart={cart}>
   <div class="container section">
-    <nymbal-checkout>
-      <!-- The payments adapter's client half; a driver the project registers in src/lib/client.ts renders it. -->
-      <nymbal-payment-element slot="payment" data-testid="payment-element" client={JSON.stringify(paymentClient)}></nymbal-payment-element>
-    </nymbal-checkout>
+    <NymbalElement tag="nymbal-checkout" attributes={cart === null ? {} : { cart: JSON.stringify(cart) }}>
+      <Fragment set:html={paymentElement} />
+    </NymbalElement>
   </div>
 </BaseLayout>
 

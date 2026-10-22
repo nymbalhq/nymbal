@@ -4,7 +4,8 @@ import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-mini-cart',
   reactName: 'MiniCart',
-  attributes: [],
+  // The cart's item count a server read, shown until the cart store settles.
+  attributes: [{ name: 'count', prop: 'count', type: 'number' }],
   events: [{ name: 'nymbal:mini-cart:clicked', prop: 'onClick', detail: 'void' }],
   parts: ['button', 'icon', 'badge'],
   slots: ['icon'],
@@ -58,12 +59,23 @@ export class NymbalMiniCart extends NymbalElement {
     `,
   ]
 
+  declare count: number | undefined
+
   protected override stores() {
     return [this.client.cart]
   }
 
+  protected override storeSettled(): void {
+    this.count = undefined
+  }
+
+  private itemCount(): number {
+    if (typeof this.count === 'number' && Number.isFinite(this.count)) return this.count
+    return this.readsStores ? this.client.cart.getState().itemCount : 0
+  }
+
   protected override render() {
-    const { itemCount } = this.client.cart.getState()
+    const itemCount = this.itemCount()
     return html`<button
       type="button"
       part="button"

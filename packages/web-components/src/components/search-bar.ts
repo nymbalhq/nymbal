@@ -17,6 +17,9 @@ const SCHEMA: ElementSchema = {
   children: false,
 }
 
+/** What a search bar shows before any search, and on a server. */
+const NO_SEARCH = { query: '', loading: false, results: [] as DenormalisedProduct[] }
+
 function formatPrice(minor: number, currency: string): string {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100)
 }
@@ -93,7 +96,7 @@ export class NymbalSearchBar extends NymbalElement {
   }
 
   protected override render() {
-    const state = this.client.search.getState()
+    const state = this.readsStores ? this.client.search.getState() : NO_SEARCH
     const placeholder = this.getAttribute('placeholder') ?? 'Search products...'
 
     let results: unknown = nothing

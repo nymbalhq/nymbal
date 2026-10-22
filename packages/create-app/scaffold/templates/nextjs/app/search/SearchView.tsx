@@ -3,13 +3,23 @@
 import { useCallback, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import type { DenormalisedProduct } from '@nymbalhq/sdk'
 import { ProductFilter, SearchResults, useSearch } from '@nymbalhq/react'
 import styles from '@/styles/pages/search.module.css'
 
 const POPULAR = ['Shirts', 'Shoes', 'Jackets', 'Accessories', 'New Arrivals']
 
-/** The URL owns the term and the category; `SearchResults` renders the store's answer. */
-export function SearchView() {
+/**
+ * The URL owns the term and the category; `SearchResults` renders the store's answer, and until the store has one, the
+ * results the server fetched for the URL (`given`, rendered in `serverHtml`).
+ */
+export function SearchView({
+  given,
+  serverHtml,
+}: {
+  given: { results: DenormalisedProduct[]; query: string } | null
+  serverHtml: string
+}) {
   const searchParams = useSearchParams()
   const query = searchParams.get('q') ?? ''
   const category = searchParams.get('category')
@@ -53,7 +63,12 @@ export function SearchView() {
             <ProductFilter source="search" onFilterChange={onFilterChange} />
           </aside>
         )}
-        <SearchResults data-testid="search-results" />
+        <SearchResults
+          data-testid="search-results"
+          results={given?.results}
+          query={given?.query}
+          serverHtml={serverHtml}
+        />
       </div>
 
       <div className={styles.suggestions}>

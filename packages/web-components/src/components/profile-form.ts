@@ -1,12 +1,14 @@
 import { css, html, nothing } from 'lit'
-import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
+import type { Customer } from '@nymbalhq/types'
+import { baseStyles, parsedJson, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement, renderField } from '../form-element.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-profile-form',
   reactName: 'ProfileForm',
-  attributes: [],
+  // The customer a server read, shown until the auth store settles.
+  attributes: [{ name: 'customer', prop: 'customer', type: 'json' }],
   events: [
     {
       name: 'nymbal:profile:saved',
@@ -39,8 +41,14 @@ export class NymbalProfileForm extends NymbalFormElement {
     `,
   ]
 
+  declare customer: unknown
+
   protected override stores() {
     return [this.client.auth]
+  }
+
+  protected override storeSettled(): void {
+    this.customer = undefined
   }
 
   protected override async send(): Promise<void> {
@@ -58,7 +66,9 @@ export class NymbalProfileForm extends NymbalFormElement {
   }
 
   protected override render() {
-    const customer = this.client.auth.getState().customer
+    const customer =
+      parsedJson<Customer>(this, 'customer', this.customer) ??
+      (this.readsStores ? this.client.auth.getState().customer : null)
     return html`
       ${this.renderError()}
       <form part="form" data-testid="profile-form" @submit=${this.onSubmit}>

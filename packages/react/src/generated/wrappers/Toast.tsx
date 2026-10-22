@@ -6,7 +6,7 @@ import { NymbalToast } from '@nymbalhq/web-components/elements/nymbal-toast'
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-toast': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-toast': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'position' | 'duration-ms'> & { 'position'?: string | undefined; 'duration-ms'?: number | undefined }
     }
   }
 }
@@ -25,6 +25,8 @@ export interface ToastProps {
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const Toast = /* @__PURE__ */ forwardRef<HTMLElement, ToastProps>(
@@ -57,7 +59,11 @@ export const Toast = /* @__PURE__ */ forwardRef<HTMLElement, ToastProps>(
     useDefine(NymbalToast)
 
     return (
-      <nymbal-toast ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-toast ref={ref as React.Ref<HTMLElement>} position={props.position} duration-ms={props.durationMs} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-toast>
     )

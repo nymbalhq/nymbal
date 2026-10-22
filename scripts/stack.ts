@@ -31,6 +31,9 @@ export type StackBlock = {
   noSearchApi: number
   astroNoSearch: number
   nextjsNoSearch: number
+  overrideApi: number
+  astroOverride: number
+  nextjsOverride: number
   walkApi: number
   walkAstro: number
   walkNextjs: number
@@ -55,6 +58,10 @@ const SLOT0: Record<PortField, number> = {
   noSearchApi: 3021,
   astroNoSearch: 4341,
   nextjsNoSearch: 3020,
+  // The project-elements fixture's store (tests/e2e/fixtures/override-elements), each template on it.
+  overrideApi: 3041,
+  astroOverride: 4361,
+  nextjsOverride: 3040,
   walkApi: 3031,
   walkAstro: 4351,
   walkNextjs: 3030,

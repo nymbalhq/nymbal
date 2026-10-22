@@ -7,7 +7,8 @@ import { plan, type StepSpec } from '../../scripts/gate'
 // and `--rerun-red` re-runs a step with `--last-failed` in that same dir. Plan level: the commands are the contract.
 
 // P2-05 decision 9 adds the two custom-providers targets, which run on the default store set this INPUT plans; P2-09
-// decision 6 adds the two no-search targets (tests/e2e/fixtures/no-search), wired the same way.
+// decision 6 adds the two no-search targets (tests/e2e/fixtures/no-search), wired the same way; P2-18 answer 2 the two
+// project-elements targets (tests/e2e/fixtures/override-elements).
 const TARGETS = [
   'astro',
   'nextjs',
@@ -16,6 +17,8 @@ const TARGETS = [
   'nextjs-custom',
   'astro-nosearch',
   'nextjs-nosearch',
+  'astro-override',
+  'nextjs-override',
 ]
 const INPUT = { full: true, base: 'abc1234', changed: ['packages/sdk/src/client.ts'], mutated: [] }
 

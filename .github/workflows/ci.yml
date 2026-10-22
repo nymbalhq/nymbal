@@ -522,6 +522,60 @@ jobs:
       - name: Next.js with no search (@nosearch)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
 
+  # The project-elements fixture (tests/e2e/fixtures/override-elements) as each template's elements entry, which
+  # overrides nymbal-mini-cart on the server and in the browser; only the journeys tagged @override run there.
+  e2e-astro-override:
+    name: E2E — Astro with a project element override
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro with the override fixture (@override)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-override" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-override:
+    name: E2E — Next.js with a project element override
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js with the override fixture (@override)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-override" --no-build --base "$GATE_BASE"
+
   scaffold-smoke:
     name: Scaffold smoke test
     runs-on: ubuntu-24.04

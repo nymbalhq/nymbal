@@ -4,6 +4,7 @@ import type { Address, CartItem } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { renderField } from '../form-element.js'
 import { formatPrice } from '../format.js'
+import { shownCart } from '../cart-projection.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
 import { NymbalAddressForm } from './address-form.js'
 import type { NymbalPaymentElement } from './payment-element.js'
@@ -11,7 +12,8 @@ import type { NymbalPaymentElement } from './payment-element.js'
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-checkout',
   reactName: 'Checkout',
-  attributes: [],
+  // The cart a server read (cart-projection.ts), shown in the summary until the cart store settles.
+  attributes: [{ name: 'cart', prop: 'cart', type: 'json' }],
   events: [
     {
       name: 'nymbal:checkout:placed',
@@ -299,8 +301,14 @@ export class NymbalCheckout extends NymbalElement {
   private stepTurn = 0
   private heightRelease: ReturnType<typeof setTimeout> | undefined
 
+  declare cart: unknown
+
   protected override stores() {
     return [this.client.cart]
+  }
+
+  protected override storeSettled(): void {
+    this.cart = undefined
   }
 
   override connectedCallback(): void {
@@ -320,9 +328,12 @@ export class NymbalCheckout extends NymbalElement {
     return this.querySelector<NymbalPaymentElement>('nymbal-payment-element')
   }
 
-  /** Read at each render, so a status the child reached during its own upgrade, before this listened, still holds. */
+  /**
+   * Read at each render, so a status the child reached during its own upgrade, before this listened, still holds.
+   * Without a client (a server render) there is no light DOM to read, and no order to place.
+   */
   private paymentBlocked(): boolean {
-    return this.paymentElement()?.status === 'error'
+    return this.readsStores && this.paymentElement()?.status === 'error'
   }
 
   private addressForm(prefix: 'shipping' | 'billing'): NymbalAddressForm | null {
@@ -641,7 +652,7 @@ export class NymbalCheckout extends NymbalElement {
   }
 
   private renderSummary() {
-    const cart = this.client.cart.getState()
+    const cart = shownCart(this, this.cart, this.readsStores ? this.client : null)
     const currency = cart.currency || 'GBP'
     const subtotal = formatPrice(cart.subtotalMinor, currency)
     return html`

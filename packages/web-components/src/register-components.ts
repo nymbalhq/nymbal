@@ -1,3 +1,4 @@
+import './hydrate-support.js'
 import { define } from './define.js'
 import { NymbalAddToCart } from './components/add-to-cart.js'
 import { NymbalCartDrawer } from './components/cart-drawer.js'
@@ -19,7 +20,8 @@ import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
 import { NymbalCheckout } from './components/checkout.js'
 
-const ELEMENTS = [
+/** Every element the package defines. */
+export const ELEMENTS = [
   NymbalAddToCart,
   NymbalCartDrawer,
   NymbalMiniCart,

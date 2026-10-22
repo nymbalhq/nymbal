@@ -6,7 +6,7 @@ import { NymbalAddressBook } from '@nymbalhq/web-components/elements/nymbal-addr
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-address-book': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-address-book': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'addresses'> & { 'addresses'?: string | undefined }
     }
   }
 }
@@ -19,11 +19,14 @@ function useDefine(element: { define(): void }): void {
 }
 
 export interface AddressBookProps {
+  addresses?: unknown
   onChanged?: (event: CustomEvent<{ address: unknown }>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const AddressBook = /* @__PURE__ */ forwardRef<HTMLElement, AddressBookProps>(
@@ -31,7 +34,15 @@ export const AddressBook = /* @__PURE__ */ forwardRef<HTMLElement, AddressBookPr
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.addresses !== undefined) {
+      el.setAttribute('addresses', JSON.stringify(props.addresses))
+    } else {
+      el.removeAttribute('addresses')
+    }
+  }, [props.addresses])
 
   useEffect(() => {
     const el = ref.current
@@ -44,7 +55,11 @@ export const AddressBook = /* @__PURE__ */ forwardRef<HTMLElement, AddressBookPr
     useDefine(NymbalAddressBook)
 
     return (
-      <nymbal-address-book ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-address-book ref={ref as React.Ref<HTMLElement>} addresses={props.addresses === undefined ? undefined : JSON.stringify(props.addresses)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-address-book>
     )

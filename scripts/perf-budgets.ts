@@ -485,7 +485,7 @@ function updatedBudgets(current: Budgets, results: PageResult[]): Budgets {
     const bytes = r.measured.scriptBytes
     if (Number.isNaN(bytes))
       fail(`${r.template} / ${r.page} was not measured; the budgets are left as they were`)
-    // A stored limit above the absolute one is a recorded exception (nextjs / cart and / checkout LCP until P2-18): it stays.
+    // A stored limit above the absolute one is a recorded exception: it stays.
     const stored = current[r.template]?.[r.page]
     ;(next[r.template] ??= {})[r.page] = {
       lcpMs: Math.max(LIMITS.lcpMs, stored?.lcpMs ?? 0),

@@ -1,5 +1,6 @@
 ---
 import '../../styles/pages/account.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 ---
 
@@ -9,7 +10,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
       <h1 class="auth-card-title">Create Account</h1>
       <p class="auth-card-subtitle">Join us and start shopping.</p>
 
-      <nymbal-register-form></nymbal-register-form>
+      <NymbalElement tag="nymbal-register-form" />
 
       <p class="auth-footer">
         Already have an account? <a href="/account/login">Sign in</a>

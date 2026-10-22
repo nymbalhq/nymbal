@@ -195,7 +195,7 @@ describe('AC-1: stackBlock gives each slot a disjoint block of ports', () => {
     }
   })
 
-  it('AC-1: property: two distinct slots share no port; within a block all 17 ports are distinct and in 1024..65535', async () => {
+  it('AC-1: property: two distinct slots share no port; within a block all 20 ports (17, and P2-18’s three override ports) are distinct and in 1024..65535', async () => {
     const { stackBlock, MAX_SLOT } = await loadStack()
     const ports = (slot: number): number[] => PORT_FIELDS.map((f) => stackBlock(slot)[f])
     fc.assert(
@@ -214,7 +214,7 @@ describe('AC-1: stackBlock gives each slot a disjoint block of ports', () => {
       fc.property(fc.integer({ min: 0, max: MAX_SLOT }), (slot) => {
         const own = ports(slot)
         expect(new Set(own).size).toBe(PORT_FIELDS.length)
-        expect(PORT_FIELDS.length).toBe(17)
+        expect(PORT_FIELDS.length).toBe(20)
         expect(Math.min(...own)).toBeGreaterThanOrEqual(1024)
         expect(Math.max(...own)).toBeLessThanOrEqual(65535)
       }),

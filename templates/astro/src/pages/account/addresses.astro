@@ -1,12 +1,13 @@
 ---
 import '../../styles/pages/account.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import AccountLayout from '../../layouts/AccountLayout.astro'
 ---
 
 <AccountLayout title="Addresses">
   <h1 class="account-page-title">Addresses</h1>
 
-  <nymbal-address-book></nymbal-address-book>
+  <NymbalElement tag="nymbal-address-book" />
 </AccountLayout>
 
 <script>

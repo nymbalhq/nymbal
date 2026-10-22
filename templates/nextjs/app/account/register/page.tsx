@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { renderNymbal } from '@/lib/render'
 import { RegisterView } from './RegisterView'
 
 export const metadata: Metadata = {
@@ -6,5 +7,5 @@ export const metadata: Metadata = {
 }
 
 export default function RegisterPage() {
-  return <RegisterView />
+  return <RegisterView serverHtml={renderNymbal('nymbal-register-form').__html} />
 }

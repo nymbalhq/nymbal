@@ -6,7 +6,7 @@ import { NymbalCartDrawer } from '@nymbalhq/web-components/elements/nymbal-cart-
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-cart-drawer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-cart-drawer': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'open' | 'cart'> & { 'open'?: string | undefined; 'cart'?: string | undefined }
     }
   }
 }
@@ -20,11 +20,14 @@ function useDefine(element: { define(): void }): void {
 
 export interface CartDrawerProps {
   open?: boolean
+  cart?: unknown
   onCheckoutClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const CartDrawer = /* @__PURE__ */ forwardRef<HTMLElement, CartDrawerProps>(
@@ -44,6 +47,16 @@ export const CartDrawer = /* @__PURE__ */ forwardRef<HTMLElement, CartDrawerProp
 
   useEffect(() => {
     const el = ref.current
+    if (!el) return
+    if (props.cart !== undefined) {
+      el.setAttribute('cart', JSON.stringify(props.cart))
+    } else {
+      el.removeAttribute('cart')
+    }
+  }, [props.cart])
+
+  useEffect(() => {
+    const el = ref.current
     if (!el || !props.onCheckoutClick) return
     const handler = props.onCheckoutClick as EventListener
     el.addEventListener('nymbal:cart:checkout-clicked', handler)
@@ -53,7 +66,11 @@ export const CartDrawer = /* @__PURE__ */ forwardRef<HTMLElement, CartDrawerProp
     useDefine(NymbalCartDrawer)
 
     return (
-      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-cart-drawer ref={ref as React.Ref<HTMLElement>} open={props.open ? '' : undefined} cart={props.cart === undefined ? undefined : JSON.stringify(props.cart)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-cart-drawer>
     )

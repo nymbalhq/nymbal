@@ -23,15 +23,39 @@ function generatePropInterface(schema: ElementSchema): string {
   for (const evt of schema.events) {
     lines.push(`  ${evt.prop}?: (event: CustomEvent<${evt.detail}>) => void`)
   }
-  if (schema.children) {
-    lines.push(`  children?: React.ReactNode`)
-  }
   lines.push(`  className?: string`)
   lines.push(`  style?: React.CSSProperties`)
   // The named slot this element fills in its parent element (the checkout's payment slot).
   lines.push(`  slot?: string`)
   lines.push(`  'data-testid'?: string`)
-  return `export interface ${schema.reactName}Props {\n${lines.join('\n')}\n}`
+  if (!schema.children) {
+    lines.push(`  /** The element's server render, \`renderNymbal(tag, …).__html\` from \`@nymbalhq/react/server\`. */`)
+    lines.push(`  serverHtml?: string`)
+    return `export interface ${schema.reactName}Props {\n${lines.join('\n')}\n}`
+  }
+  // React refuses children beside the server HTML set on the same tag: light-DOM children go into renderNymbal's.
+  return `interface ${schema.reactName}OwnProps {\n${lines.join('\n')}\n}
+
+export type ${schema.reactName}Props = ${schema.reactName}OwnProps &
+  (
+    | { children?: React.ReactNode; serverHtml?: undefined }
+    /** The element's server render, \`renderNymbal(tag, …, children).__html\` from \`@nymbalhq/react/server\`. */
+    | { children?: undefined; serverHtml?: string }
+  )`
+}
+
+/**
+ * The attribute as the JSX renders it, so a wrapper rendered on the server ships it: a JSON value stringified, a
+ * boolean present (empty) or absent. The effects below keep it current after the element upgrades.
+ */
+function generateJsxAttribute(attr: AttributeDef): string {
+  const value =
+    attr.type === 'boolean'
+      ? `props.${attr.prop} ? '' : undefined`
+      : attr.type === 'json'
+        ? `props.${attr.prop} === undefined ? undefined : JSON.stringify(props.${attr.prop})`
+        : `props.${attr.prop}`
+  return `${attr.name}={${value}}`
 }
 
 function generateAttrEffect(attr: AttributeDef): string {
@@ -73,6 +97,7 @@ function generateComponent(schema: ElementSchema): string {
   const attrEffects = schema.attributes.map(generateAttrEffect).join('\n\n')
   const eventEffects = schema.events.map(generateEventEffect).join('\n\n')
   const childSlot = schema.children ? `{props.children}` : ''
+  const attributes = schema.attributes.map((a) => ` ${generateJsxAttribute(a)}`).join('')
 
   return `${generatePropInterface(schema)}
 
@@ -88,7 +113,11 @@ ${eventEffects}
     useDefine(${elementClass(schema)})
 
     return (
-      <${schema.tag} ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <${schema.tag} ref={ref as React.Ref<HTMLElement>}${attributes} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         ${childSlot}
       </${schema.tag}>
     )
@@ -96,13 +125,22 @@ ${eventEffects}
 )`
 }
 
+/**
+ * The tag's JSX props: React's for any element, with the element's own attributes as the JSX sets them (JSON as its
+ * text, a boolean as present or absent) in place of any React types under the same name (`results`).
+ */
+function intrinsicProps(schema: ElementSchema): string {
+  const html = 'React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>'
+  if (schema.attributes.length === 0) return html
+  const names = schema.attributes.map((a) => `'${a.name}'`).join(' | ')
+  const types = schema.attributes.map(
+    (a) => `'${a.name}'?: ${a.type === 'number' ? 'number' : 'string'} | undefined`,
+  )
+  return `Omit<${html}, ${names}> & { ${types.join('; ')} }`
+}
+
 function generateIntrinsicElements(schemas: ElementSchema[]): string {
-  const entries = schemas
-    .map(
-      (s) =>
-        `      '${s.tag}': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>`,
-    )
-    .join('\n')
+  const entries = schemas.map((s) => `      '${s.tag}': ${intrinsicProps(s)}`).join('\n')
   return `declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {

@@ -1,6 +1,13 @@
-import { css, LitElement, type PropertyDeclaration, type PropertyDeclarations } from 'lit'
+import './hydrate-support.js'
+import {
+  css,
+  LitElement,
+  type PropertyDeclaration,
+  type PropertyDeclarations,
+  type PropertyValues,
+} from 'lit'
 import type { NymbalClient } from '@nymbalhq/sdk'
-import { getClient } from './registry.js'
+import { getClient, hasClient, hasSettled } from './registry.js'
 import { define, type NymbalElementClass } from './define.js'
 
 /** How an attribute's value reads: the React wrapper types its prop from this, and JSON travels stringified. */
@@ -50,8 +57,21 @@ export const baseStyles = css`
   }
 `
 
-interface Subscribable {
+export interface Subscribable {
   subscribe(fn: () => void): () => void
+  getState(): unknown
+}
+
+/** A JSON property's value: parsed when it came from the attribute, undefined when unset or malformed (reported). */
+export function parsedJson<T>(element: Element, name: string, value: unknown): T | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value !== 'string') return value as T
+  try {
+    return JSON.parse(value) as T
+  } catch (err) {
+    console.error(`[${element.localName}] failed to parse the ${name} attribute`, err)
+    return undefined
+  }
 }
 
 export abstract class NymbalElement extends LitElement {
@@ -63,9 +83,25 @@ export abstract class NymbalElement extends LitElement {
   }
 
   private _unsubs: Array<() => void> = []
+  /** Set while the element's first render takes over a server's shadow root (see `readsStores`). */
+  private _serverRender = false
 
   protected get client(): NymbalClient {
     return getClient()
+  }
+
+  /** Whether a client is registered: never on a server. Without one the element subscribes to no store. */
+  protected get hasClient(): boolean {
+    return hasClient()
+  }
+
+  /**
+   * Whether this render reads the client's stores. Not on a server, and not in the first render of an element taking
+   * over a server's shadow root: hydration needs the server's render (a store still loading would change it), so that
+   * render is the server's, and the element renders again from its stores straight after.
+   */
+  protected get readsStores(): boolean {
+    return this.hasClient && !this._serverRender
   }
 
   /** The SDK stores the element renders from; it re-renders on each change while connected. */
@@ -73,11 +109,67 @@ export abstract class NymbalElement extends LitElement {
     return []
   }
 
+  /**
+   * A store `stores()` named has settled (an update that is not `loading`): the properties a server rendered this
+   * element from give way to it. An update while loading leaves them showing, so a count does not flip to 0 and back.
+   */
+  protected storeSettled(_store: Subscribable): void {}
+
   override connectedCallback(): void {
     super.connectedCallback()
+    if (!this.hasClient) return
     for (const store of this.stores()) {
-      this._unsubs.push(store.subscribe(() => this.requestUpdate()))
+      this._unsubs.push(
+        store.subscribe(() => {
+          if ((store.getState() as { loading?: unknown }).loading !== true) this.storeSettled(store)
+          this.requestUpdate()
+        }),
+      )
     }
+    // A hydrating element keeps the server's properties for its first render (see `update`).
+    if (!this._serverRender) this.takeSettledStores()
+  }
+
+  /**
+   * A store that settled before this element connected sends it no update, so the properties a server gave (a page
+   * restored from a router's cache after the cart changed elsewhere) give way to it here.
+   */
+  private takeSettledStores(): void {
+    for (const store of this.stores()) if (hasSettled(store)) this.storeSettled(store)
+  }
+
+  /**
+   * React inserts a soft navigation's server HTML with `innerHTML`, which leaves the declarative shadow root an unparsed
+   * template: it becomes this element's shadow root here, before Lit looks for one, so the element hydrates it rather
+   * than rendering a second. A parsed declarative shadow root (a full load) is already `shadowRoot`.
+   */
+  protected override createRenderRoot(): HTMLElement | DocumentFragment {
+    if (this.shadowRoot === null) {
+      const template = [...this.children].find(
+        (c): c is HTMLTemplateElement =>
+          c instanceof HTMLTemplateElement && c.getAttribute('shadowrootmode') === 'open',
+      )
+      if (template !== undefined) {
+        const root = this.attachShadow((this.constructor as typeof LitElement).shadowRootOptions)
+        const markup = template.innerHTML
+        if (typeof root.setHTMLUnsafe === 'function') root.setHTMLUnsafe(markup)
+        else root.innerHTML = markup
+        template.remove()
+      }
+    }
+    this._serverRender = this.shadowRoot !== null
+    return super.createRenderRoot()
+  }
+
+  protected override update(changed: PropertyValues): void {
+    super.update(changed)
+    if (!this._serverRender) return
+    // The render above hydrated the server's; this one, in the same update, is from the stores. A scheduled update
+    // here would be a second update per element, which Lit warns of.
+    this._serverRender = false
+    if (this.hasClient) this.takeSettledStores()
+    this.willUpdate(changed)
+    super.update(changed)
   }
 
   override disconnectedCallback(): void {

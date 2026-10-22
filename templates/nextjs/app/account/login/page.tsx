@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { renderNymbal } from '@/lib/render'
 import { LoginView } from './LoginView'
 
 export const metadata: Metadata = {
@@ -17,7 +18,7 @@ export default function LoginPage() {
         </div>
       }
     >
-      <LoginView />
+      <LoginView serverHtml={renderNymbal('nymbal-login-form').__html} />
     </Suspense>
   )
 }

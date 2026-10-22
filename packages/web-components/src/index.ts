@@ -1,3 +1,4 @@
+import './hydrate-support.js'
 export { registerClient, getClient } from './registry.js'
 export { NymbalElement } from './base-element.js'
 export type { ElementSchema, ElementAttributeType } from './base-element.js'

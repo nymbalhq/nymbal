@@ -1,17 +1,23 @@
 ---
 import '../styles/global.css'
+import '../lib/server-elements'
 import SkipNav from '../components/SkipNav.astro'
 import Header from '../components/Header.astro'
 import Footer from '../components/Footer.astro'
+import { fetchCart, type CartProjection } from '../lib/api'
 
 interface Props {
   title: string
   description?: string
   ogImage?: string
   jsonLd?: Record<string, unknown>
+  /** The shopper's cart, when the page has read it already (fetchCart); the layout reads it otherwise. */
+  cart?: CartProjection | null
 }
 
 const { title, description = 'Shop the Nymbal store', ogImage, jsonLd } = Astro.props
+const cart =
+  Astro.props.cart !== undefined ? Astro.props.cart : await fetchCart(Astro.request.headers.get('cookie'))
 const canonicalUrl = Astro.url.href
 ---
 <!doctype html>
@@ -37,7 +43,7 @@ const canonicalUrl = Astro.url.href
   </head>
   <body>
     <SkipNav />
-    <Header />
+    <Header cartCount={cart?.itemCount} />
     <main id="main">
       <slot />
     </main>
