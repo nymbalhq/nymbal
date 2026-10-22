@@ -12,6 +12,11 @@ export interface RouteSchema {
   params?: ZodTypeAny
   query?: ZodTypeAny
   body?: ZodTypeAny
+  /**
+   * Every route but a GET says what its audit entry names it: the command it runs when it changes the store's records,
+   * or null when it changes none an audit covers (a cart, a session, a ticket).
+   */
+  command?: string | null
 }
 
 const id = z.string().min(1)
@@ -79,6 +84,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Auth
   'POST /api/auth/register': {
     name: 'auth.register',
+    command: 'customer.register',
     description: 'Create a customer account and sign it in.',
     body: z.object({
       email: z.string().min(1),
@@ -90,16 +96,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/auth/login': {
     name: 'auth.login',
+    command: null,
     description: 'Sign a customer in with email and password.',
     body: z.object({ email: z.string().min(1), password: z.string().min(1) }),
   },
   'POST /api/auth/refresh': {
     name: 'auth.refresh',
+    command: null,
     description: 'Exchange a refresh token for a new access token.',
     body: optionalRefresh,
   },
   'POST /api/auth/logout': {
     name: 'auth.logout',
+    command: null,
     description: 'Revoke the refresh token and clear its cookie.',
     body: optionalRefresh,
   },
@@ -152,28 +161,33 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/cart/items': {
     name: 'cart.addItem',
+    command: null,
     description: 'Add a quantity of a variant to the cart.',
     body: z.object({ variantId: id, qty: z.number().int().positive().optional() }),
   },
   'PATCH /api/cart/items/:variantId': {
     name: 'cart.updateItem',
+    command: null,
     description: 'Set the quantity of a variant in the cart.',
     params: variantIdParams,
     body: z.object({ qty: z.number().int().nonnegative() }),
   },
   'DELETE /api/cart/items/:variantId': {
     name: 'cart.removeItem',
+    command: null,
     description: 'Remove a variant from the cart.',
     params: variantIdParams,
   },
   'DELETE /api/cart': {
     name: 'cart.clear',
+    command: null,
     description: 'Remove every item from the cart.',
   },
 
   // Checkout and orders
   'POST /api/checkout': {
     name: 'checkout.begin',
+    command: 'checkout.place',
     description: 'Place an order for the cart and start its payment.',
     body: z.object({
       email: z.string().min(1),
@@ -199,6 +213,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'PATCH /api/customers/me': {
     name: 'customers.updateMe',
+    command: 'customer.update',
     description: "Update the signed-in customer's name or phone.",
     body: z.object({
       firstName: z.string().optional(),
@@ -212,6 +227,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/customers/me/addresses': {
     name: 'customers.addAddress',
+    command: 'customer.addAddress',
     description: 'Save an address for the signed-in customer.',
     body: address.extend({
       isDefaultBilling: z.boolean().optional(),
@@ -220,6 +236,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'DELETE /api/customers/me/addresses/:id': {
     name: 'customers.removeAddress',
+    command: 'customer.removeAddress',
     description: "Delete one of the signed-in customer's saved addresses.",
     params: idParams,
   },
@@ -236,6 +253,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'PUT /api/admin/settings/:slot/:path': {
     name: 'admin.settings.put',
+    command: 'settings.put',
     description:
       'Save a value for a field the config and environment leave unset; it applies at the next start.',
     params: settingParams,
@@ -243,6 +261,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'DELETE /api/admin/settings/:slot/:path': {
     name: 'admin.settings.delete',
+    command: 'settings.delete',
     description: 'Clear the saved value of a field; it applies at the next start.',
     params: settingParams,
   },
@@ -276,23 +295,27 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/confirm': {
     name: 'admin.orders.confirm',
+    command: 'order.confirm',
     description:
       'Move a paid order to confirmed; an unpaid order is refused (record its payment instead).',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/process': {
     name: 'admin.orders.process',
+    command: 'order.process',
     description: 'Move a confirmed order to processing.',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/cancel': {
     name: 'admin.orders.cancel',
+    command: 'order.cancel',
     description: 'Cancel an order nothing was captured for, with an optional reason.',
     params: orderIdParams,
     body: z.object({ reason: z.string().optional() }).optional(),
   },
   'POST /api/admin/orders/:id/mark-paid': {
     name: 'admin.orders.markPaid',
+    command: 'order.markPaid',
     description:
       "Record a payment of the order's total taken outside the store, confirming the order.",
     params: orderIdParams,
@@ -300,17 +323,20 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/mark-delivered': {
     name: 'admin.orders.markDelivered',
+    command: 'order.markDelivered',
     description: 'Move a shipped order to delivered.',
     params: orderIdParams,
   },
   'POST /api/admin/orders/:id/ship': {
     name: 'admin.orders.ship',
+    command: 'order.ship',
     description: 'Mark an order shipped with its tracking number and carrier.',
     params: orderIdParams,
     body: z.object({ trackingNumber: z.string().min(1), carrier: z.string().min(1) }),
   },
   'POST /api/admin/orders/:id/refund': {
     name: 'admin.orders.refund',
+    command: 'order.refund',
     description:
       'Refund part or all of what an order captured, through the payments provider. A repeated requestId answers the refund it made and moves no money.',
     params: orderIdParams,
@@ -332,12 +358,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/notes': {
     name: 'admin.orders.addNote',
+    command: 'order.addNote',
     description: 'Add an internal note to an order.',
     params: orderIdParams,
     body: noteBody,
   },
   'POST /api/admin/orders/:id/resend-confirmation': {
     name: 'admin.orders.resendConfirmation',
+    command: null,
     description: "Resend an order's confirmation email.",
     params: orderIdParams,
   },
@@ -350,6 +378,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/products': {
     name: 'admin.products.create',
+    command: 'product.create',
     description: 'Create a product with its variants.',
     body: z.object({
       slug: z.string().min(1),
@@ -360,37 +389,44 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'PATCH /api/admin/products/:id': {
     name: 'admin.products.update',
+    command: 'product.update',
     description: "Update a product's fields.",
     params: idParams,
     body: z.object({ name: z.string().optional(), ...productFields }),
   },
   'DELETE /api/admin/products/:id': {
     name: 'admin.products.delete',
+    command: 'product.delete',
     description: 'Delete a product.',
     params: idParams,
   },
   'POST /api/admin/products/:id/publish': {
     name: 'admin.products.publish',
+    command: 'product.publish',
     description: 'Make a product visible in the store.',
     params: idParams,
   },
   'POST /api/admin/products/:id/unpublish': {
     name: 'admin.products.unpublish',
+    command: 'product.unpublish',
     description: 'Hide a product from the store.',
     params: idParams,
   },
   'POST /api/admin/products/:id/archive': {
     name: 'admin.products.archive',
+    command: 'product.archive',
     description: 'Archive a product.',
     params: idParams,
   },
   'POST /api/admin/products/:id/duplicate': {
     name: 'admin.products.duplicate',
+    command: 'product.duplicate',
     description: 'Copy a product as a draft.',
     params: idParams,
   },
   'POST /api/admin/products/:id/enhance': {
     name: 'admin.products.enhance',
+    command: null,
     description: 'Suggest copy for one product field with the AI adapter.',
     params: idParams,
     body: z.object({
@@ -407,6 +443,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/inventory/:variantId/adjust': {
     name: 'admin.inventory.adjust',
+    command: 'inventory.adjust',
     description: "Adjust a variant's stock by a delta, with a reason.",
     params: variantIdParams,
     body: z.object({
@@ -445,6 +482,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/customers/:id/notes': {
     name: 'admin.customers.addNote',
+    command: 'customer.addNote',
     description: 'Add an internal note to a customer.',
     params: idParams,
     body: noteBody,
@@ -457,6 +495,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/reviews/:id/moderate': {
     name: 'admin.reviews.moderate',
+    command: 'review.moderate',
     description: 'Approve or reject a review.',
     params: idParams,
     body: z.object({ status: z.enum(['approved', 'rejected']) }),
@@ -465,6 +504,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: live events
   'POST /api/admin/events/ticket': {
     name: 'admin.events.ticket',
+    command: null,
     description: 'Issue a one-time ticket for the admin event stream.',
   },
   'GET /api/admin/events': {
@@ -473,9 +513,32 @@ export const routeSchemas: Record<string, RouteSchema> = {
     query: z.object({ ticket: queryValue }),
   },
 
+  // Admin: activity (the audit trail)
+  'GET /api/admin/activity': {
+    name: 'admin.activity.list',
+    description: 'List audit entries newest first, filtered, a page at a time.',
+    query: z.object({
+      actor: queryValue,
+      command: queryValue,
+      subject: queryValue,
+      correlation: queryValue,
+      outcome: queryValue,
+      since: queryValue,
+      until: queryValue,
+      cursor: queryValue,
+      limit: queryValue,
+    }),
+  },
+  'GET /api/admin/activity/export': {
+    name: 'admin.activity.export',
+    description: 'Export audit entries oldest first as NDJSON.',
+    query: z.object({ since: queryValue, until: queryValue, correlation: queryValue }),
+  },
+
   // Webhooks
   'POST /api/webhooks/stripe': {
     name: 'webhooks.stripe',
+    command: 'payment.finalize',
     description: 'Receive a signed Stripe event.',
     // The signature covers the raw bytes, and a malformed event is answered by the handler itself.
     body: z.unknown(),

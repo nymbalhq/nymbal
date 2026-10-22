@@ -5,6 +5,7 @@ import {
   Package,
   Boxes,
   Users,
+  History,
   Settings,
   LogOut,
   Loader2,
@@ -22,6 +23,7 @@ const navItems = [
   { to: '/products', label: 'Products', icon: Package, end: false },
   { to: '/inventory', label: 'Inventory', icon: Boxes, end: false },
   { to: '/customers', label: 'Customers', icon: Users, end: false },
+  { to: '/activity', label: 'Activity', icon: History, end: false },
   { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ]
 

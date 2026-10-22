@@ -12,6 +12,7 @@ import {
   type StockAdjustmentReason,
   type StockStatus,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -94,6 +95,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
   ): Promise<ReserveStockResult | { available: number }> {
     if (qty <= 0) throw new ValidationError(`Reservation qty must be positive, got ${qty}`)
     return store.transaction(async (tx) => {
+      audit.note('inventory.reserve', [{ type: 'variant', id: variantId }])
       const variant = await repos.variant.findById(tx, variantId)
       if (!variant) throw new NotFoundError('variant', variantId)
       const now = new Date()
@@ -129,6 +131,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
   return {
     async adjustStock(variantId, delta, reason, actor) {
       return store.transaction(async (tx) => {
+        audit.note('inventory.adjust', [{ type: 'variant', id: variantId }])
         const variant = await repos.variant.findById(tx, variantId)
         if (!variant) throw new NotFoundError('variant', variantId)
         const now = new Date()
@@ -193,6 +196,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
           )
           return
         }
+        audit.note('inventory.release', [{ type: 'variant', id: reservation.variantId }])
         const now = new Date()
         const newQty = await repos.variant.incrementStock(
           tx,
@@ -232,6 +236,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
       await store.transaction(async (tx) => {
         const reservation = await repos.inventoryReservation.deleteById(tx, reservationId)
         if (!reservation) throw new NotFoundError('reservation', reservationId)
+        audit.note('inventory.commit', [{ type: 'variant', id: reservation.variantId }])
         const variant = await repos.variant.findById(tx, reservation.variantId)
         if (!variant) throw new NotFoundError('variant', reservation.variantId)
         await repos.stockAdjustment.append(tx, {

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { tid } from '@/lib/testid'
+import { useIntentKey } from '@/hooks/useIntentKey'
 import type { StockAdjustmentReason } from '@nymbalhq/types'
 import type { InventoryRow } from '@/types'
 
@@ -18,17 +19,20 @@ const REASONS: { value: StockAdjustmentReason; label: string }[] = [
 
 interface StockAdjustRowProps {
   row: InventoryRow
-  onAdjust: (delta: number, reason: StockAdjustmentReason) => void
+  /** `idempotencyKey` is this row action's: a second click before the re-render sends the same one. */
+  onAdjust: (delta: number, reason: StockAdjustmentReason, idempotencyKey: string) => void
 }
 
 export function StockAdjustRow({ row, onAdjust }: StockAdjustRowProps) {
   const [delta, setDelta] = useState(0)
   const [reason, setReason] = useState<StockAdjustmentReason>('manual')
   const [submitted, setSubmitted] = useState(false)
+  const [intentKey, renewIntentKey] = useIntentKey()
 
   const handleSubmit = () => {
     if (delta === 0) return
-    onAdjust(delta, reason)
+    onAdjust(delta, reason, intentKey)
+    renewIntentKey()
     setDelta(0)
     setSubmitted(true)
     setTimeout(() => setSubmitted(false), 1500)

@@ -16,6 +16,7 @@ import {
   type OrderLineItem,
   type OrderStatus,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -105,6 +106,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
   return {
     async createFromCheckout(input) {
       return store.transaction(async (tx) => {
+        audit.note('order.place', [{ type: 'order', id: input.orderId }])
         const sequence = await repos.orderSequence.nextSequence(tx, deps.orderNumberStart)
         const orderNumber = `${deps.orderNumberPrefix}-${sequence + 1}`
         const now = new Date()
@@ -159,12 +161,14 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     },
     async updateStatus(id, toStatus, actor, note = '') {
       return store.transaction(async (tx) => {
+        audit.note('order.updateStatus', [{ type: 'order', id }])
         const order = await requireOrder(tx, id)
         return doTransition(tx, order, toStatus, actor, note)
       })
     },
     async markShipped(id, trackingNumber, carrier, actor) {
       return store.transaction(async (tx) => {
+        audit.note('order.ship', [{ type: 'order', id }])
         const order = await requireOrder(tx, id)
         const fresh = await doTransition(
           tx,
@@ -183,6 +187,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     },
     async markDelivered(id, actor) {
       return store.transaction(async (tx) => {
+        audit.note('order.markDelivered', [{ type: 'order', id }])
         const order = await requireOrder(tx, id)
         const fresh = await doTransition(tx, order, 'delivered', actor, 'Delivered')
         await publisher.publish(EVT_ORDER_DELIVERED, { orderId: fresh.id })
@@ -191,6 +196,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     },
     async cancel(id, reason, actor) {
       return store.transaction(async (tx) => {
+        audit.note('order.cancel', [{ type: 'order', id }])
         // Under the row lock no confirm commits between the paid check and the write.
         const order = await repos.order.lock(tx, id)
         if (!order) throw new NotFoundError('order', id)
@@ -236,6 +242,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
         })
       }
       return store.transaction(async (tx) => {
+        audit.note('order.import', [{ type: 'order', id: input.orderId }])
         const sequence = await repos.orderSequence.nextSequence(tx, deps.orderNumberStart)
         await repos.order.insert(tx, {
           id: input.orderId,
