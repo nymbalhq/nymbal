@@ -19,6 +19,13 @@ const paymentClient = capabilities.payments.client
 </BaseLayout>
 
 <script>
+  import { NymbalCheckout } from '@nymbalhq/web-components/elements/nymbal-checkout'
+  import { NymbalPaymentElement } from '@nymbalhq/web-components/elements/nymbal-payment-element'
+
+  // The page's own elements; the layout defines the rest.
+  NymbalPaymentElement.define()
+  NymbalCheckout.define()
+
   // The element places the order; the page only goes to it.
   document.addEventListener('nymbal:checkout:placed', (event) => {
     const { orderNumber } = (event as CustomEvent<{ orderNumber: string }>).detail

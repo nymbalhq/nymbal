@@ -67,6 +67,44 @@ jobs:
       - name: Gate
         run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --no-build --base "$GATE_BASE"
 
+  perf-budgets:
+    name: Performance budgets — both templates, five pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      # The packages come from the build job. The templates are built again by the run: the store's own seed images
+      # go into each template's public directory first, and Astro copies them at build time.
+      # The suite runs `pnpm perf:budgets` twice: with a 300 KB script added to Astro's home page (it must fail),
+      # then as committed (it must pass, and writes the report the pull request quotes).
+      - name: perf:budgets (tests/perf)
+        run: pnpm exec vitest run --config tests/perf/vitest.config.ts
+      # AC-3 and AC-5: each page loads only its own elements, seen only in a production build (the dev-server E2E
+      # jobs cannot): both templates built for this slot's API, then the journeys in tests/e2e/prod.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Production E2E (tests/e2e/prod)
+        run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
+      - name: Upload the budget report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-budgets
+          path: reports/perf-budgets.json
+          if-no-files-found: warn
+
   integration:
     name: Integration — Postgres, Redis, contracts
     runs-on: ubuntu-24.04

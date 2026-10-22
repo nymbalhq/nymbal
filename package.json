@@ -27,7 +27,8 @@
     "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**' --exclude 'packages/doc-store-*/src/**' --exclude 'packages/event-bus-*/src/**' --exclude 'packages/platform/tests/primitives/**' --exclude 'tests/stores/**' --exclude 'packages/platform/tests/integration/search-performance.test.ts'\"",
     "gate": "tsx scripts/gate.ts",
     "gate:full": "tsx scripts/gate.ts --full",
-    "stack": "tsx scripts/stack.ts"
+    "stack": "tsx scripts/stack.ts",
+    "perf:budgets": "tsx scripts/perf-budgets.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
@@ -42,13 +43,16 @@
     "@typescript-eslint/parser": "^8.12.2",
     "@vitest/coverage-v8": "^3.0.0",
     "@vitest/eslint-plugin": "1.6.27",
+    "chrome-launcher": "1.2.2",
     "eslint": "^9.14.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-playwright": "2.12.1",
     "fast-check": "^4.10.2",
     "happy-dom": "^16.0.0",
     "jsdom": "^29.0.2",
+    "lighthouse": "12.6.1",
     "prettier": "^3.3.3",
+    "puppeteer-core": "24.43.1",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

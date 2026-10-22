@@ -1,6 +1,7 @@
 import { css, LitElement, type PropertyDeclaration, type PropertyDeclarations } from 'lit'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { getClient } from './registry.js'
+import { define, type NymbalElementClass } from './define.js'
 
 /** How an attribute's value reads: the React wrapper types its prop from this, and JSON travels stringified. */
 export type ElementAttributeType = 'string' | 'number' | 'boolean' | 'json'
@@ -55,6 +56,11 @@ interface Subscribable {
 
 export abstract class NymbalElement extends LitElement {
   declare static schema: ElementSchema
+
+  /** Defines this element, and those it renders, unless its tag is already defined (see `define`). */
+  static define(this: NymbalElementClass): void {
+    define(this)
+  }
 
   private _unsubs: Array<() => void> = []
 

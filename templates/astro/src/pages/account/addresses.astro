@@ -8,3 +8,10 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
 
   <nymbal-address-book></nymbal-address-book>
 </AccountLayout>
+
+<script>
+  import '../../lib/client.js'
+  import { NymbalAddressBook } from '@nymbalhq/web-components/elements/nymbal-address-book'
+
+  NymbalAddressBook.define()
+</script>

@@ -9,14 +9,10 @@ env:
   PNPM_VERSION: '9.12.3'
 
 jobs:
-  perf-astro:
-    name: Performance — Astro
+  perf-budgets:
+    name: Performance budgets — both templates, five pages
     runs-on: ubuntu-24.04
-    env:
-      CI: true
-      NYMBAL_TEMPLATE: astro
-      NYMBAL_API_URL: http://localhost:3001
-      PUBLIC_NYMBAL_API_URL: http://localhost:3001
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -28,67 +24,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm build:templates
-      - name: Migrate and seed the API database
-        run: |
-          node packages/cli/bin/nymbal.mjs migrate
-          node packages/cli/bin/nymbal.mjs seed
-      - name: Start the API
-        run: node packages/cli/bin/nymbal.mjs dev --api-only &
-      - name: Start the storefront (Astro)
-        run: pnpm --filter @nymbalhq/template-astro preview &
-      - name: Wait for the API and the storefront
-        run: npx wait-on http://localhost:3001/health http://localhost:4321 --timeout 90000
-      - name: Run Lighthouse CI (Astro)
-        run: pnpm lhci autorun
-      - name: Upload the Lighthouse report (Astro)
+      # Seeds an API with the store's own images, builds and serves both templates, and holds every page to
+      # perf-budgets.json, as the pull request job does.
+      - run: pnpm perf:budgets
+      - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-astro
-          path: .lighthouseci
-          include-hidden-files: true
-          if-no-files-found: warn
-
-  perf-nextjs:
-    name: Performance — Next.js
-    runs-on: ubuntu-24.04
-    env:
-      CI: true
-      NYMBAL_TEMPLATE: nextjs
-      NYMBAL_API_URL: http://localhost:3001
-      NEXT_PUBLIC_NYMBAL_API_URL: http://localhost:3001
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm build:templates
-      - name: Migrate and seed the API database
-        run: |
-          node packages/cli/bin/nymbal.mjs migrate
-          node packages/cli/bin/nymbal.mjs seed
-      - name: Start the API
-        run: node packages/cli/bin/nymbal.mjs dev --api-only &
-      - name: Start the storefront (Next.js)
-        run: pnpm --filter @nymbalhq/template-nextjs start &
-      - name: Wait for the API and the storefront
-        run: npx wait-on http://localhost:3001/health http://localhost:3000 --timeout 90000
-      - name: Run Lighthouse CI (Next.js)
-        run: pnpm lhci autorun
-      - name: Upload the Lighthouse report (Next.js)
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: lighthouse-nextjs
-          path: .lighthouseci
-          include-hidden-files: true
+          name: perf-budgets
+          path: reports/perf-budgets.json
           if-no-files-found: warn
 
   build:

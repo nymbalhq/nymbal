@@ -231,7 +231,7 @@ describe('P2-03 AC-1: recipe holders', () => {
     expect(offending).toEqual([])
     // The stripe recipe and @nymbalhq/adapter-stripe's three fields: the check above ran on something.
     expect(pairs).toBeGreaterThanOrEqual(3)
-  })
+  }, 30_000) // imports every holder's src entry: 1 s alone, 5.5 s beside a gate:full (2026-10-22)
 
   it('AC-1: on a generated recipe that writes env() at a declared key or secret, both checks see it, and a literal in its place is refused', async () => {
     const declared = await declaredSettings(RECIPE_HOLDERS['stripe']!)
@@ -277,5 +277,5 @@ describe('P2-03 AC-1: recipe holders', () => {
       ),
       { numRuns: 50 },
     )
-  })
+  }, 30_000) // imports the stripe holder's src entry: the same load as the case above when run alone
 })

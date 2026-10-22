@@ -1,6 +1,11 @@
 import type { ProductSortKey } from '@nymbalhq/types'
+import { NymbalProductFilter } from '@nymbalhq/web-components/elements/nymbal-product-filter'
+import { NymbalSortDropdown } from '@nymbalhq/web-components/elements/nymbal-sort-dropdown'
 import { client } from '../lib/client.js'
 import { escapeHtml, formatPrice } from '../lib/format.js'
+
+NymbalProductFilter.define()
+NymbalSortDropdown.define()
 
 const gridContainer = document.getElementById('product-grid')
 const sortDropdown = document.querySelector('nymbal-sort-dropdown')

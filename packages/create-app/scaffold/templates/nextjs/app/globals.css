@@ -169,7 +169,8 @@ a:focus-visible {
   border: 1px solid transparent;
   border-radius: var(--nymbal-radius-md);
   cursor: pointer;
-  transition: background-color var(--nymbal-transition-fast),
+  transition:
+    background-color var(--nymbal-transition-fast),
     color var(--nymbal-transition-fast),
     border-color var(--nymbal-transition-fast),
     box-shadow var(--nymbal-transition-fast);
@@ -243,7 +244,8 @@ select {
   background-color: var(--nymbal-color-surface);
   border: 1px solid var(--nymbal-color-border);
   border-radius: var(--nymbal-radius-md);
-  transition: border-color var(--nymbal-transition-fast),
+  transition:
+    border-color var(--nymbal-transition-fast),
     box-shadow var(--nymbal-transition-fast);
   appearance: none;
 }
@@ -470,4 +472,23 @@ label {
   align-items: center;
   justify-content: center;
   min-height: 12rem;
+}
+
+/* Before the cart page element is defined it holds the space its loading state does, so the footer stays put. */
+nymbal-cart-page:not(:defined) {
+  display: block;
+  min-height: 100vh;
+}
+
+/* Before the checkout element is defined it holds the space the contact step with one line takes (one column under
+   769px, the element's own breakpoint; the order summary beside it above), so the footer stays put when it upgrades. */
+nymbal-checkout:not(:defined) {
+  display: block;
+  min-height: 40.5rem;
+}
+
+@media (min-width: 769px) {
+  nymbal-checkout:not(:defined) {
+    min-height: 26.125rem;
+  }
 }

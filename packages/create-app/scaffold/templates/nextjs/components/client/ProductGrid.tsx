@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
 import type { Facet, ProductSortKey } from '@nymbalhq/types'
 import { ProductFilter, SortDropdown, useProductList } from '@nymbalhq/react'
-import { ProductCard } from '@/components/server/ProductCard'
+import { EAGER_CARDS, ProductCard } from '@/components/server/ProductCard'
 import styles from '@/styles/pages/plp.module.css'
 
 interface ProductGridProps {
@@ -98,9 +98,10 @@ export function ProductGrid({
 
         {displayProducts.length > 0 ? (
           <div className="product-grid">
-            {displayProducts.map((product) => (
+            {displayProducts.map((product, i) => (
               <ProductCard
                 key={product.id}
+                eager={i < EAGER_CARDS}
                 product={{
                   slug: product.slug,
                   name: product.name,

@@ -2,6 +2,7 @@ import { css, html, nothing } from 'lit'
 import type { CartItem } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { formatPrice } from '../format.js'
+import { NymbalQuantitySelector } from './quantity-selector.js'
 import { buttonStyles } from '../view-styles.js'
 
 const SCHEMA: ElementSchema = {
@@ -44,6 +45,7 @@ const SCHEMA: ElementSchema = {
 /** The cart as a page: its lines, quantities and removal, and a summary whose subtotal is the API's. */
 export class NymbalCartPage extends NymbalElement {
   static override schema = SCHEMA
+  static uses = [NymbalQuantitySelector]
   static override properties = propertiesOf(SCHEMA)
   static override styles = [
     baseStyles,
@@ -58,6 +60,11 @@ export class NymbalCartPage extends NymbalElement {
       [part~='empty'] {
         padding: 4rem var(--nymbal-spacing-md, 1rem);
         text-align: center;
+      }
+      /* Until the cart is known the page keeps what follows it below the fold, so a cart with lines does not push
+         the footer down as it arrives. */
+      [part~='loading'] {
+        min-height: 100vh;
       }
       [part~='empty-title'] {
         margin: 0 0 var(--nymbal-spacing-xs, 0.25rem);
@@ -217,7 +224,8 @@ export class NymbalCartPage extends NymbalElement {
     return [this.client.cart]
   }
 
-  private renderLine(item: CartItem, currency: string) {
+  /** The first line's image is at the top of the page and is often its LCP, so only the lines below it load lazily. */
+  private renderLine(item: CartItem, currency: string, index: number) {
     return html`
       <div part="item" data-testid="cart-item-${item.variantId}">
         ${item.imageUrl
@@ -227,7 +235,7 @@ export class NymbalCartPage extends NymbalElement {
               alt=${item.productName}
               width="100"
               height="100"
-              loading="lazy"
+              loading=${index === 0 ? 'eager' : 'lazy'}
             />`
           : html`<div part="item-image" aria-hidden="true"></div>`}
         <div part="item-info">
@@ -293,7 +301,7 @@ export class NymbalCartPage extends NymbalElement {
             </h1>
           </div>
           <div part="items" data-testid="cart-items">
-            ${items.map((item) => this.renderLine(item, currency))}
+            ${items.map((item, index) => this.renderLine(item, currency, index))}
           </div>
         </div>
         <div part="summary" data-testid="cart-summary">

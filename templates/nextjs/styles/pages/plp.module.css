@@ -45,6 +45,14 @@
   border-radius: var(--nymbal-radius-lg);
 }
 
+/* Below the sidebar's breakpoint the filters wait behind the toggle: open by default, they sat above the grid and
+   pushed it down when the filter element rendered its facets after hydration. */
+@media (max-width: 1023px) {
+  .filterSection {
+    display: none;
+  }
+}
+
 .filterTitle {
   font-size: var(--nymbal-font-size-sm);
   font-weight: var(--nymbal-font-weight-bold);

@@ -6,6 +6,7 @@ import type {
   DocumentStoreAdapter,
   EventBusAdapter,
   Logger,
+  MediaStorage,
   Role,
   SearchAdapter,
 } from '@nymbalhq/types'
@@ -17,7 +18,7 @@ import { createEventBuilder } from '../events/builder.js'
 import { EVT_CATEGORY_CREATED, EVT_PRODUCT_CREATED, EVT_CUSTOMER_CREATED } from '@nymbalhq/types'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
-import { seedCategories, seedProducts, type SeedProduct } from './data.js'
+import { seedCategories, seedImage, seedProducts, type SeedProduct } from './data.js'
 import { buildRepositories } from '../repositories/index.js'
 import { READ_MODEL_NAMES, rebuild } from '../read-models/index.js'
 
@@ -28,6 +29,11 @@ export interface SeedDeps {
   eventBus: EventBusAdapter
   logger: Logger
   version: string
+  /**
+   * When given, each product's image is generated and written here, and the product points at the stored copy
+   * instead of the third-party placeholder host: a store measured or run offline then serves its own images.
+   */
+  media?: MediaStorage
   /** The search index to rebuild with the document store; without it the next start's rebuild fills it. */
   search?: SearchAdapter
 }
@@ -252,6 +258,14 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   await categoryRepo.insertMany(categoryInserts)
   const categoryBySlug = new Map(categoryInserts.map((c) => [c.slug, c]))
 
+  const imageUrls = new Map<string, string>()
+  if (deps.media !== undefined) {
+    for (const p of seedProducts) {
+      const { url } = await deps.media.put(`seed/${p.slug}.svg`, seedImage(p), 'image/svg+xml')
+      imageUrls.set(p.slug, url)
+    }
+  }
+
   // Products
   const productInserts = seedProducts.map((p) => ({
     id: uuidv7(),
@@ -263,7 +277,7 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
     type: 'simple' as const,
     seoTitle: p.title,
     seoDescription: p.description.slice(0, 160),
-    media: [{ url: p.imageUrl, altText: p.title, position: 0 }],
+    media: [{ url: imageUrls.get(p.slug) ?? p.imageUrl, altText: p.title, position: 0 }],
     metadata: {},
     createdAt: now,
     updatedAt: now,

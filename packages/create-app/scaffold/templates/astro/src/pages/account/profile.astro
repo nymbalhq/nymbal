@@ -9,3 +9,10 @@ import AccountLayout from '../../layouts/AccountLayout.astro'
 
   <nymbal-profile-form class="account-form"></nymbal-profile-form>
 </AccountLayout>
+
+<script>
+  import '../../lib/client.js'
+  import { NymbalProfileForm } from '@nymbalhq/web-components/elements/nymbal-profile-form'
+
+  NymbalProfileForm.define()
+</script>

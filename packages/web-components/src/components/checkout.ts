@@ -5,7 +5,7 @@ import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../
 import { renderField } from '../form-element.js'
 import { formatPrice } from '../format.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
-import type { NymbalAddressForm } from './address-form.js'
+import { NymbalAddressForm } from './address-form.js'
 import type { NymbalPaymentElement } from './payment-element.js'
 
 const SCHEMA: ElementSchema = {
@@ -90,6 +90,7 @@ const NO_PAYMENT_STEP: PaymentConfirmation = { ok: true, confirmed: false }
  */
 export class NymbalCheckout extends NymbalElement {
   static override schema = SCHEMA
+  static uses = [NymbalAddressForm]
   static override properties = propertiesOf(SCHEMA)
   static override styles = [
     baseStyles,

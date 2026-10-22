@@ -1,5 +1,6 @@
 import {
   getPaymentDriver,
+  registerPaymentDriver,
   type PaymentConfirmContext,
   type PaymentConfirmation,
   type PaymentDriver,
@@ -7,6 +8,8 @@ import {
 import type { PaymentClient } from '@nymbalhq/types'
 import { css, nothing, type CSSResult } from 'lit'
 import { NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import { stripeDriver } from '../payment-drivers/stripe.js'
+import { testModeDriver } from '../payment-drivers/test-mode.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-payment-element',
@@ -49,6 +52,17 @@ function parseClient(value: string | null): PaymentClient | null | undefined {
  */
 export class NymbalPaymentElement extends NymbalElement {
   static override schema = SCHEMA
+
+  /** The built-in drivers, except a name the project registered first: the project's driver wins, as its tag does. */
+  static beforeDefine(): void {
+    const drivers: Array<[string, PaymentDriver]> = [
+      ['test-mode', testModeDriver],
+      ['stripe', stripeDriver],
+    ]
+    for (const [name, driver] of drivers) {
+      if (getPaymentDriver(name) === undefined) registerPaymentDriver(name, driver)
+    }
+  }
   static override properties = propertiesOf(SCHEMA)
 
   static override styles = css`

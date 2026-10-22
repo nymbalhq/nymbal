@@ -13,7 +13,12 @@ interface ProductCardProps {
     media?: unknown
     imageUrl?: string
   }
+  /** The card is in a listing's first row, so its image is the page's likely LCP: fetched at once, not lazily. */
+  eager?: boolean
 }
+
+/** A listing's first row on a wide screen: those cards' images load at once, since one of them is the page's LCP. */
+export const EAGER_CARDS = 4
 
 function getImageUrl(product: ProductCardProps['product']): string | null {
   if (product.imageUrl) return product.imageUrl
@@ -24,7 +29,7 @@ function getImageUrl(product: ProductCardProps['product']): string | null {
   return null
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, eager = false }: ProductCardProps) {
   const imageUrl = getImageUrl(product)
   // The "from" price, which the price sorts order by.
   const fromMinor = product.priceRange?.minMinor ?? product.priceMinor
@@ -43,6 +48,7 @@ export function ProductCard({ product }: ProductCardProps) {
             width={400}
             height={400}
             sizes="(max-width: 639px) 100vw, (max-width: 1023px) 50vw, 25vw"
+            preload={eager}
           />
         ) : (
           <span className="visually-hidden">No image available</span>
