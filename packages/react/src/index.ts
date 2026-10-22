@@ -38,6 +38,7 @@ export {
   ProfileForm,
   AddressForm,
   AddressBook,
+  Checkout,
 } from './generated/wrappers.js'
 
 export type {
@@ -59,4 +60,5 @@ export type {
   ProfileFormProps,
   AddressFormProps,
   AddressBookProps,
+  CheckoutProps,
 } from './generated/wrappers.js'

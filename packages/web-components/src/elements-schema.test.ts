@@ -13,6 +13,10 @@ import { setupMockClient } from './testing/index.js'
 // P2-15 AC-1 extends the same three checks to the eight views moved out of the templates (cart page, product card,
 // search results, the four account forms and the address book). Their states add what their render branches hang on:
 // the signed-in customer's addresses, and a form submitted once with its SDK call held, refused or answered.
+//
+// P2-16 AC-1 adds `nymbal-checkout`. Its states are its steps (contact, shipping, payment with billing the same or
+// not), a place-order held, refused and answered, a payment element in error, and a cart in its summary; each is
+// reached by walking the steps as a shopper does, with the payment element as its `payment`-slotted child.
 
 const PAYMENT = 'nymbal-payment-element'
 const TAGS = [
@@ -35,6 +39,8 @@ const TAGS = [
   'nymbal-profile-form',
   'nymbal-address-form',
   'nymbal-address-book',
+  // P2-16
+  'nymbal-checkout',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -52,6 +58,12 @@ interface State {
   addresses: unknown[] | 'fail'
   /** When set, the element's form is filled and submitted once after it renders. */
   phase: Phase | null
+  /** Children appended before the element connects (the checkout's payment element). */
+  children?: () => Node[]
+  /** Drives the element, once rendered, into the state under test (the checkout's steps). */
+  walk?: (el: HTMLElement) => Promise<void>
+  /** What the checkout store's `submitPayment()` does: never answers, refuses, or places an order. */
+  placeOrder?: Phase
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -118,6 +130,44 @@ function installAccount(client: Record<string, unknown>, s: State): void {
   }
 }
 
+/** The checkout SDK the checkout drives: its setters keep what they are given; `submitPayment()` answers as `phase` says. */
+function installCheckout(client: Record<string, unknown>, phase: Phase): void {
+  const checkout = client['checkout'] as Record<string, unknown> & {
+    setState(partial: Record<string, unknown>): void
+  }
+  const keep = (key: string) => (value: unknown) => checkout.setState({ [key]: value })
+  Object.assign(checkout, {
+    setEmail: keep('email'),
+    setShippingAddress: keep('shippingAddress'),
+    setBillingAddress: keep('billingAddress'),
+    setShippingMethod: keep('shippingMethod'),
+    markConfirmed: () => undefined,
+    reset: () => undefined,
+    submitPayment: () => {
+      if (phase === 'pending') return new Promise<never>(() => undefined)
+      if (phase === 'failed') {
+        checkout.setState({ error: 'Refused by the AC-1 fake.', placedOrderNumber: null })
+        return Promise.resolve(null)
+      }
+      return Promise.resolve({
+        orderId: 'ord-ac1',
+        orderNumber: 'NYM-AC1',
+        paymentIntent: {
+          id: 'pi_ac1',
+          clientSecret: 'pi_ac1_secret',
+          amountMinor: 1200,
+          currency: 'GBP',
+          status: 'succeeded',
+        },
+        currency: 'GBP',
+        totalMinor: 1200,
+        orderStatus: 'confirmed',
+        payment: { status: 'succeeded' },
+      })
+    },
+  })
+}
+
 /** Every element matching `selector` in `root` and in every open shadow root beneath it, outer roots first. */
 function deepAll(root: ParentNode, selector: string): Element[] {
   const found = [...root.querySelectorAll(selector)]
@@ -170,11 +220,13 @@ async function mount(tag: Tag, s: State): Promise<HTMLElement> {
     { setState(partial: Record<string, unknown>): void }
   >
   installAccount(client as unknown as Record<string, unknown>, s)
+  installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
   const el = document.createElement(tag)
   for (const [name, value] of Object.entries(s.attrs)) el.setAttribute(name, value)
+  for (const child of s.children?.() ?? []) el.appendChild(child)
   document.body.appendChild(el)
   await settled(el)
   for (const t of s.toasts) {
@@ -182,6 +234,7 @@ async function mount(tag: Tag, s: State): Promise<HTMLElement> {
   }
   await settled(el)
   if (s.phase !== null) await submitOnce(el)
+  if (s.walk !== undefined) await s.walk(el)
   return el
 }
 
@@ -341,6 +394,110 @@ function formStates(base: Partial<State> = {}): State[] {
 }
 
 const signedIn = { stores: { auth: { customer: CUSTOMER, isAuthenticated: true } } }
+
+// ─── The checkout's steps, walked as a shopper walks them ───────────────────
+
+/** Lit renders in microtasks, the address forms inside the checkout too; no animation frame passes here. */
+async function settledDeep(el: HTMLElement): Promise<void> {
+  for (let turn = 0; turn < 3; turn += 1) {
+    await settled(el)
+    const nested = el.shadowRoot === null ? [] : deepAll(el.shadowRoot, '*')
+    await Promise.all(nested.map((node) => settled(node as HTMLElement)))
+  }
+}
+
+const nextFrame = (): Promise<void> =>
+  new Promise((resolve) => requestAnimationFrame(() => resolve()))
+
+function field(el: HTMLElement, testId: string): HTMLInputElement {
+  const found = deepAll(el.shadowRoot ?? el, `[data-testid="${testId}"]`)[0]
+  if (found === undefined) throw new Error(`no [data-testid="${testId}"] in ${el.localName}`)
+  return found as HTMLInputElement
+}
+
+function typeInto(input: HTMLInputElement, value: string): void {
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true, composed: true }))
+}
+
+/** One press of a step's submit button, a frame after its step showed. */
+async function press(el: HTMLElement, testId: string): Promise<void> {
+  await nextFrame()
+  field(el, testId).dispatchEvent(
+    new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 1 }),
+  )
+  await settledDeep(el)
+}
+
+const WALK_ADDRESS: Record<string, string> = {
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  addressLine1: '1 Analytical Row',
+  addressLine2: '',
+  city: 'London',
+  region: 'Greater London',
+  postalCode: 'E1 6AN',
+  country: 'GB',
+}
+
+function fillAddress(el: HTMLElement, prefix: 'shipping' | 'billing'): void {
+  for (const [name, value] of Object.entries(WALK_ADDRESS)) {
+    typeInto(
+      field(el, `${prefix}-${name}`),
+      prefix === 'billing' && value !== '' ? `${value} B` : value,
+    )
+  }
+}
+
+type CheckoutStop = 'contact' | 'shipping' | 'payment' | 'place'
+
+/** Walks the checkout to `stop`; billing differs when asked; `place` presses place-order once. */
+function walkTo(stop: CheckoutStop, billingDiffers = false): (el: HTMLElement) => Promise<void> {
+  return async (el) => {
+    await settledDeep(el)
+    if (stop === 'contact') return
+    typeInto(field(el, 'contact-email'), 'ada@example.test')
+    await press(el, 'contact-continue')
+    if (stop === 'shipping') return
+    fillAddress(el, 'shipping')
+    await press(el, 'shipping-continue')
+    if (billingDiffers) {
+      field(el, 'billing-same').click()
+      await settledDeep(el)
+      fillAddress(el, 'billing')
+    }
+    if (stop === 'payment') return
+    await press(el, 'place-order')
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      await settledDeep(el)
+    }
+  }
+}
+
+/** The checkout's payment element, a `payment`-slotted child; `'null'` takes no payment, `'not json'` errors. */
+const paymentChild = (client: string) => (): Node[] => {
+  const pay = document.createElement(PAYMENT)
+  pay.setAttribute('slot', 'payment')
+  pay.setAttribute('client', client)
+  return [pay]
+}
+
+/** Every state of the checkout's render, over a given cart. */
+function checkoutStates(stores: State['stores'] = {}): State[] {
+  const at = (partial: Partial<State>) =>
+    state({ stores, children: paymentChild('null'), ...partial })
+  return [
+    at({}),
+    at({ walk: walkTo('shipping') }),
+    at({ walk: walkTo('payment') }),
+    at({ walk: walkTo('payment', true) }),
+    ...PHASES.map((placeOrder) => at({ walk: walkTo('place'), placeOrder })),
+    at({ walk: walkTo('place', true), placeOrder: 'failed' }),
+    at({ children: paymentChild('not json'), walk: walkTo('payment') }),
+  ]
+}
 
 // ─── States per element: the fixed branches, and an arbitrary over each ──────
 
@@ -530,6 +687,15 @@ const FIXED: Record<Tag, State[]> = {
     state({ ...signedIn, addresses: 'fail' }),
     ...PHASES.map((phase) => state({ ...signedIn, addresses: [ADDRESS], phase })),
   ],
+  'nymbal-checkout': [
+    ...checkoutStates(),
+    ...checkoutStates({
+      cart: cartOf([
+        { variantId: 'v1', productName: 'Mug', variantName: 'Blue', qty: 2, priceMinor: 1200 },
+        { variantId: 'v2', productName: 'Scarf', variantName: '', qty: 1, priceMinor: 2500 },
+      ]),
+    }).slice(0, 1),
+  ],
 }
 
 const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
@@ -639,6 +805,12 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       phase: fc.option(fc.constantFrom(...PHASES)),
     })
     .map(({ addresses, phase }) => state({ ...signedIn, addresses, phase })),
+  'nymbal-checkout': fc
+    .record({
+      items: fc.array(cartItem, { maxLength: 3 }),
+      at: fc.nat({ max: checkoutStates().length - 1 }),
+    })
+    .map(({ items, at }) => checkoutStates({ cart: cartOf(items) })[at]!),
 }
 
 describe('P2-06 AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
@@ -761,5 +933,82 @@ describe('P2-15 AC-1: the moved views carry the interface the templates call the
         `${want.tag}: attributes`,
       ).toEqual(want.attributes)
     }
+  })
+})
+
+// P2-16 AC-1: the checkout's own interface (its React wrapper `Checkout` takes `onPlaced` and passes `PaymentElement`
+// through as a child), its address blocks are P2-15's `nymbal-address-form` in its own shadow root, each in the form
+// its step submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its
+// summary is built as the cart page's is, with names as text. Kills: a checkout that copies the address fields, an
+// Enter that submits nothing, a product name rendered as markup, a summary that adds up the lines itself.
+describe('P2-16 AC-1: nymbal-checkout meets the foundation', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, no attributes, nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
+    const schema = schemaOf(customElements.get('nymbal-checkout'))
+    expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
+    expect(schema?.reactName).toBe('Checkout')
+    expect(schema?.attributes).toEqual([])
+    expect(schema?.events).toContainEqual({
+      name: 'nymbal:checkout:placed',
+      prop: 'onPlaced',
+      detail: '{ orderNumber: string }',
+    })
+    expect(schema?.slots).toContain('payment')
+    expect(schema?.children).toBe(true)
+  })
+
+  it('AC-1: its shipping and billing blocks are nymbal-address-form elements with id-prefix shipping and billing in its own shadow root, each inside the form whose submit button ends its step', async () => {
+    const el = await mount('nymbal-checkout', checkoutStates()[3]!)
+    const root = el.shadowRoot
+    expect(root, 'nymbal-checkout renders in an open shadow root').not.toBeNull()
+    const blocks = [...root!.querySelectorAll('nymbal-address-form')]
+    expect(blocks.map((b) => b.getAttribute('id-prefix')).sort()).toEqual(['billing', 'shipping'])
+    for (const block of blocks) {
+      const prefix = block.getAttribute('id-prefix')!
+      expect(
+        block.shadowRoot?.querySelector(`[data-testid="${prefix}-firstName"]`),
+        `${prefix}-firstName is the address form’s own field`,
+      ).not.toBeNull()
+      const submit = root!.querySelector(
+        `[data-testid="${prefix === 'shipping' ? 'shipping-continue' : 'place-order'}"]`,
+      )
+      expect(submit, `the ${prefix} step’s submit button`).not.toBeNull()
+      // happy-dom hands out a form as a proxy or as itself depending on the path, so the relation is containment.
+      expect(
+        block.closest('form')?.contains(submit) ?? false,
+        `the ${prefix} block sits in the form that holds its step’s submit button`,
+      ).toBe(true)
+    }
+  })
+
+  it('AC-1: property: the summary (checkout-summary) shows each cart line’s name as text, never as markup, and cart-subtotal shows the cart’s subtotalMinor', async () => {
+    const money = (minor: number) =>
+      new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(minor / 100)
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(cartItem, { minLength: 1, maxLength: 4, selector: (i) => i.variantId }),
+        fc.integer({ min: 0, max: 500_000 }),
+        async (lines, subtotalMinor) => {
+          document.body.innerHTML = ''
+          const items = lines.map((line) => ({
+            ...line,
+            productName: `<b>${line.productName}</b>`,
+          }))
+          const el = await mount(
+            'nymbal-checkout',
+            state({
+              children: paymentChild('null'),
+              stores: { cart: { ...cartOf(items), subtotalMinor } },
+            }),
+          )
+          const summary = deepAll(el.shadowRoot ?? el, '[data-testid="checkout-summary"]')[0]
+          expect(summary, 'checkout-summary inside nymbal-checkout').toBeDefined()
+          for (const item of items) expect(summary!.textContent).toContain(item.productName)
+          expect(summary!.querySelectorAll('b'), 'a name rendered as markup').toHaveLength(0)
+          const subtotal = deepAll(summary!, '[data-testid="cart-subtotal"]')[0]
+          expect(subtotal?.textContent ?? '').toContain(money(subtotalMinor))
+        },
+      ),
+      { numRuns: 25 },
+    )
   })
 })

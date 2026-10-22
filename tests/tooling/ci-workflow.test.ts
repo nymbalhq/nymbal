@@ -631,54 +631,24 @@ function gateCalls(workflow: Workflow, github: Ctx): GateCall[] {
 
 const sha = (c: string): string => c.repeat(40)
 
-const PR_OPENED = {
-  event_name: 'pull_request',
-  base_ref: 'dev',
-  head_ref: 'feat/P0-03-ci-rebuilt',
-  ref: 'refs/pull/4/merge',
-  ref_name: '4/merge',
-  sha: sha('1'),
+// Tasks merge into dev locally, so a push to dev is the event every CI job is judged on (P2-20).
+const DEV_PUSH = {
+  event_name: 'push',
+  base_ref: '',
+  head_ref: '',
+  ref: 'refs/heads/dev',
+  ref_name: 'dev',
+  sha: sha('a'),
   event: {
-    action: 'opened',
-    number: 4,
-    pull_request: { base: { ref: 'dev', sha: sha('2') }, head: { ref: 'feat/x', sha: sha('3') } },
+    before: sha('b'),
+    after: sha('a'),
+    ref: 'refs/heads/dev',
+    head_commit: { message: 'Merge feat/P2-20-local-merges (P2-20): Local merges to dev' },
   },
 }
 
 const CI_EVENTS: Array<{ label: string; github: Ctx; expected: string }> = [
-  { label: 'a pull request opened into dev', github: PR_OPENED, expected: 'origin/dev' },
-  {
-    // A synchronize payload carries `before` too: it must not win over the base branch.
-    label: 'a pull request into main, synchronized',
-    github: {
-      ...PR_OPENED,
-      base_ref: 'main',
-      event: {
-        action: 'synchronize',
-        number: 5,
-        before: sha('4'),
-        after: sha('5'),
-        pull_request: {
-          base: { ref: 'main', sha: sha('6') },
-          head: { ref: 'feat/x', sha: sha('5') },
-        },
-      },
-    },
-    expected: 'origin/main',
-  },
-  {
-    label: 'a push to dev',
-    github: {
-      event_name: 'push',
-      base_ref: '',
-      head_ref: '',
-      ref: 'refs/heads/dev',
-      ref_name: 'dev',
-      sha: sha('a'),
-      event: { before: sha('b'), after: sha('a'), ref: 'refs/heads/dev' },
-    },
-    expected: sha('b'),
-  },
+  { label: 'a push to dev', github: DEV_PUSH, expected: sha('b') },
   {
     label: 'a push to main',
     github: {
@@ -731,15 +701,15 @@ function shallowGateJobs(workflow: Workflow, calls: GateCall[]): string[] {
 
 describe('AC-7: CI passes the right base to every gate.ts call', () => {
   const ci = loadWorkflow(WORKFLOW)
-  const prJobs = new Set(gateCalls(ci, PR_OPENED).map((c) => c.job))
+  const devJobs = new Set(gateCalls(ci, DEV_PUSH).map((c) => c.job))
 
   it.each(CI_EVENTS)(
     'AC-7: on $label, every gate.ts call in ci.yml passes --base $expected',
     ({ github, expected }) => {
       const calls = gateCalls(ci, github)
       expect(calls.length, 'gate.ts calls that run').toBeGreaterThan(0)
-      const missing = [...prJobs].filter((id) => !calls.some((c) => c.job === id))
-      expect(missing, 'jobs that call gate.ts on a pull request but not on this event').toEqual([])
+      const missing = [...devJobs].filter((id) => !calls.some((c) => c.job === id))
+      expect(missing, 'jobs that call gate.ts on a push to dev but not on this event').toEqual([])
       const wrong = calls
         .filter((c) => c.base !== expected)
         .map((c) => `${c.job}: --base ${c.base ?? '(none)'}`)
@@ -763,6 +733,40 @@ describe('AC-7: CI passes the right base to every gate.ts call', () => {
   )
 })
 
+describe('P2-20: CI runs on pushes to main and dev only; the Changeset job judges task merges', () => {
+  it('P2-20: ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
+    const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as { on?: Record<string, { branches?: string[] }> }
+    expect({
+      events: Object.keys(doc.on ?? {}),
+      branches: [...(doc.on?.push?.branches ?? [])].sort(),
+    }).toEqual({ events: ['push'], branches: ['dev', 'main'] })
+  })
+
+  it("P2-20: the Changeset job runs on a task's merge into dev against the previous dev tip, never on the back-merge or main", () => {
+    const ci = loadWorkflow(WORKFLOW)
+    // The --base each changeset-needed.ts call in the Changeset job receives, shell variables expanded.
+    const changeset = (github: Ctx): string[] =>
+      execute(ci, github).flatMap((run) => {
+        const m = run.job === 'changeset' ? /changeset-needed\.ts([^\n;&|]*)/.exec(run.script) : null
+        if (m === null) return []
+        const args = words(m[1] ?? '').map((w) => expand(w, run, m.index))
+        return [flag(args, '--base') ?? '(none)']
+      })
+    const push = (ref: string, message: string): Ctx => ({
+      ...DEV_PUSH,
+      ref: `refs/heads/${ref}`,
+      ref_name: ref,
+      event: { ...DEV_PUSH.event, ref: `refs/heads/${ref}`, head_commit: { message } },
+    })
+    expect({
+      feat: changeset(DEV_PUSH),
+      fix: changeset(push('dev', 'Merge fix/admin-orders-total: Fix the admin orders total')),
+      backMerge: changeset(push('dev', 'Merge pull request #61 from nymbalhq/main')),
+      main: changeset(push('main', 'Merge pull request #62 from nymbalhq/dev')),
+    }).toEqual({ feat: [sha('b')], fix: [sha('b')], backMerge: [], main: [] })
+  })
+})
+
 describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call still runs its E2E step', () => {
   it('AC-11: no ci.yml e2e job has a Postgres service; each runs its e2e step with the env the job gives it', () => {
     const ci = loadWorkflow(WORKFLOW)
@@ -778,9 +782,9 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
         }
       }
     }
-    for (const call of gateCalls(ci, PR_OPENED).filter((c) => e2eJobs.includes(c.job))) {
+    for (const call of gateCalls(ci, DEV_PUSH).filter((c) => e2eJobs.includes(c.job))) {
       const only = flag(call.args, '--only')
-      const run = execute(ci, PR_OPENED).find((r) => r.job === call.job)
+      const run = execute(ci, DEV_PUSH).find((r) => r.job === call.job)
       const steps = plan({
         full: true,
         base: 'HEAD',
@@ -893,7 +897,7 @@ describe('AC-18 (P1-01): the CI integration job runs proof-kit-services with a M
     const ports = publishedPorts(mailpit)
 
     const kitRuns: Array<{ via: string; env: Record<string, string> }> = []
-    for (const run of execute(ci, PR_OPENED).filter((r) => r.job === 'integration')) {
+    for (const run of execute(ci, DEV_PUSH).filter((r) => r.job === 'integration')) {
       if (runsKitServices(run.script)) {
         kitRuns.push({ via: 'vitest', env: { ...run.env, ...assignedIn(run.script) } })
       }
@@ -956,8 +960,8 @@ describe('AC-18 (P1-01): tests-fail-on-base in CI has the Mailpit the kit tests 
     const ci = loadWorkflow(WORKFLOW)
     const problems: string[] = []
     let runsBase = 0
-    for (const call of gateCalls(ci, PR_OPENED)) {
-      const run = execute(ci, PR_OPENED).find((r) => r.job === call.job)!
+    for (const call of gateCalls(ci, DEV_PUSH)) {
+      const run = execute(ci, DEV_PUSH).find((r) => r.job === call.job)!
       const only = flag(call.args, '--only')
       const external = flag(call.args, '--services') === 'external'
       const input = {

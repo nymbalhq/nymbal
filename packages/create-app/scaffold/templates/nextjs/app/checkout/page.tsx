@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
-import { CheckoutForm } from '@/components/client/CheckoutForm'
 import { fetchCapabilities } from '@/lib/api'
+import { CheckoutView } from './CheckoutView'
 
 export const metadata: Metadata = {
   title: 'Checkout',
@@ -13,5 +13,9 @@ export default async function CheckoutRoute() {
       'The store did not answer GET /api/capabilities, so checkout cannot tell how to take a payment.',
     )
   }
-  return <CheckoutForm capabilities={capabilities} />
+  return (
+    <div className="container section">
+      <CheckoutView paymentClient={capabilities.payments.client} />
+    </div>
+  )
 }
