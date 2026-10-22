@@ -58,7 +58,7 @@ export const catalogue: ReadModel = {
       repos,
     }
     return [
-      ...categoryProjection({ documentStore, logger, storeId: config.store.name }),
+      ...categoryProjection({ documentStore, logger, storeId: config.store.name, repos }),
       ...productProjection(product),
       ...inventoryProjection(product),
     ]

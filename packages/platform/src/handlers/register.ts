@@ -29,6 +29,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     documentStore,
     logger: handlerLogger.child({ projection: 'category' }),
     storeId: config.store.name,
+    repos,
   })
   await registerProductProjection({
     eventBus,
