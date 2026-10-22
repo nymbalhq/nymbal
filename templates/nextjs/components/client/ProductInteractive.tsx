@@ -9,9 +9,11 @@ import styles from '@/styles/pages/pdp.module.css'
 
 interface ProductInteractiveProps {
   product: DenormalisedProduct
+  /** The server's render of each element, for the product's first variant (app/product/[slug]/page.tsx). */
+  serverHtml?: { variantSelector: string; quantity: string; addToCart: string }
 }
 
-export function ProductInteractive({ product }: ProductInteractiveProps) {
+export function ProductInteractive({ product, serverHtml }: ProductInteractiveProps) {
   const { selectedVariant } = useProduct(product.slug)
 
   const variant = selectedVariant ?? product.variants?.[0]
@@ -51,7 +53,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
 
       {hasVariantChoice && (
         <div className={styles.variantSection}>
-          <VariantSelector />
+          <VariantSelector product={product} serverHtml={serverHtml?.variantSelector} />
         </div>
       )}
 
@@ -62,6 +64,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
             value={1}
             min={1}
             max={99}
+            serverHtml={serverHtml?.quantity}
             onQuantityChange={(e) => {
               // A typed quantity changes on blur, and the press on Add is what blurs it: the wrapper's effect lands
               // after a fast click has already read `qty`, so the element gets it here, in the same event.
@@ -75,6 +78,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
           variantId={variant?.id ?? product.id}
           qty={qty}
           disabled={stock <= 0}
+          serverHtml={serverHtml?.addToCart}
         />
       </div>
     </div>

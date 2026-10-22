@@ -1,7 +1,13 @@
 import { css, html } from 'lit'
 import type { DenormalisedVariant, DenormalisedProduct } from '@nymbalhq/sdk'
 import type { VariantOption } from '@nymbalhq/types'
-import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import {
+  baseStyles,
+  NymbalElement,
+  parsedJson,
+  propertiesOf,
+  type ElementSchema,
+} from '../base-element.js'
 
 interface OptionGroup {
   name: string
@@ -34,7 +40,8 @@ function optionGroupsOf(product: DenormalisedProduct): OptionGroup[] {
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-variant-selector',
   reactName: 'VariantSelector',
-  attributes: [],
+  // The product a server read, whose options show until the product store settles.
+  attributes: [{ name: 'product', prop: 'product', type: 'json' }],
   events: [
     { name: 'nymbal:variant:selected', prop: 'onVariantSelected', detail: '{ variant: unknown }' },
   ],
@@ -97,12 +104,21 @@ export class NymbalVariantSelector extends NymbalElement {
     `,
   ]
 
+  declare product: unknown
+
   protected override stores() {
     return [this.client.product]
   }
 
+  protected override storeSettled(): void {
+    this.product = undefined
+  }
+
   protected override render() {
-    const { product, selectedVariant: selected } = this.client.product.getState()
+    const state = this.readsStores ? this.client.product.getState() : null
+    const product =
+      parsedJson<DenormalisedProduct>(this, 'product', this.product) ?? state?.product ?? null
+    const selected = state?.selectedVariant ?? null
     if (!product) return html``
 
     return optionGroupsOf(product).map(

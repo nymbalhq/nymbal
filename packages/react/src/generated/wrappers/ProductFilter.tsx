@@ -6,7 +6,7 @@ import { NymbalProductFilter } from '@nymbalhq/web-components/elements/nymbal-pr
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-product-filter': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-product-filter': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'facets' | 'source'> & { 'facets'?: string | undefined; 'source'?: string | undefined }
     }
   }
 }
@@ -26,6 +26,8 @@ export interface ProductFilterProps {
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const ProductFilter = /* @__PURE__ */ forwardRef<HTMLElement, ProductFilterProps>(
@@ -64,7 +66,11 @@ export const ProductFilter = /* @__PURE__ */ forwardRef<HTMLElement, ProductFilt
     useDefine(NymbalProductFilter)
 
     return (
-      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-product-filter ref={ref as React.Ref<HTMLElement>} facets={props.facets === undefined ? undefined : JSON.stringify(props.facets)} source={props.source} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-product-filter>
     )

@@ -999,6 +999,9 @@ const E2E_SERVES: Record<string, string[]> = {
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
   'astro-nosearch': [],
   'nextjs-nosearch': [],
+  // The native store with the project-elements fixture (tests/e2e/fixtures/override-elements) as each template's entry.
+  'astro-override': [],
+  'nextjs-override': [],
 }
 
 /**
@@ -1284,16 +1287,19 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     { name: 'e2e nextjs', command: e2e('nextjs'), needs: e2eNeeds },
     { name: 'e2e admin', command: e2e('admin'), needs: e2eNeeds },
   )
-  // The same journeys on the store whose search and payments are swapped for `custom` adapters, and the @nosearch
-  // journeys on the store whose search offers nothing. They prove the templates follow the adapters, which no store
-  // set changes, so they run on the default set only. Each target is its own invocation after the others:
-  // nextjs-custom and nextjs-nosearch serve the same templates/nextjs as nextjs.
+  // The same journeys on the store whose search and payments are swapped for `custom` adapters, the @nosearch journeys
+  // on the store whose search offers nothing, and the @override journeys on templates whose elements entry overrides
+  // a Nymbal element. They prove the templates follow the adapters and the project's entry, which no store set
+  // changes, so they run on the default set only. Each target is its own invocation after the others: nextjs-custom,
+  // nextjs-nosearch and nextjs-override serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
     steps.push(
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
+      { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
+      { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
   }
   return { steps: select(withHolds(steps), input), budgetMs: FULL_BUDGET_MS }

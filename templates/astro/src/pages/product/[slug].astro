@@ -8,6 +8,7 @@ import StockBadge from '../../components/StockBadge.astro'
 import ReviewList from '../../components/ReviewList.astro'
 import ReviewForm from '../../components/ReviewForm.astro'
 import RelatedProducts from '../../components/RelatedProducts.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchProduct, fetchReviews, fetchProducts } from '../../lib/api'
 import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
 
@@ -74,16 +75,19 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
 
         <div class="pdp-actions">
           {hasVariantChoice && (
-            <nymbal-variant-selector></nymbal-variant-selector>
+            <NymbalElement tag="nymbal-variant-selector" attributes={{ product: JSON.stringify(product) }} />
           )}
 
           <div class="pdp-add-row">
-            <nymbal-quantity-selector value="1" min="1" max="99"></nymbal-quantity-selector>
-            <nymbal-add-to-cart
-              variant-id={defaultVariant?.id ?? product.id}
-              qty="1"
-              disabled={stock <= 0}
-            ></nymbal-add-to-cart>
+            <NymbalElement tag="nymbal-quantity-selector" attributes={{ value: '1', min: '1', max: '99' }} />
+            <NymbalElement
+              tag="nymbal-add-to-cart"
+              attributes={{
+                'variant-id': defaultVariant?.id ?? product.id,
+                qty: '1',
+                ...(stock <= 0 && { disabled: '' }),
+              }}
+            />
           </div>
         </div>
 

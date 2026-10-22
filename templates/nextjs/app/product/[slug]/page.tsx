@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
+import { renderNymbal } from '@/lib/render'
 import { productJsonLd } from '@/lib/seo'
 import { Breadcrumb } from '@/components/server/Breadcrumb'
 import { ReviewList } from '@/components/server/ReviewList'
@@ -43,6 +44,19 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   const related = relatedProducts.filter((p) => p.id !== product.id).slice(0, 4)
 
+  // The product's elements as the server renders them for its first variant, which ProductInteractive shows first.
+  const variant = product.variants?.[0]
+  const serverHtml = {
+    variantSelector: renderNymbal('nymbal-variant-selector', { product: JSON.stringify(product) })
+      .__html,
+    quantity: renderNymbal('nymbal-quantity-selector', { value: '1', min: '1', max: '99' }).__html,
+    addToCart: renderNymbal('nymbal-add-to-cart', {
+      'variant-id': variant?.id ?? product.id,
+      qty: '1',
+      ...((variant?.stock ?? 0) <= 0 && { disabled: '' }),
+    }).__html,
+  }
+
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   const jsonLd = productJsonLd(product, baseUrl)
 
@@ -74,7 +88,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
           <ImageGallery images={images} />
 
           <div className={styles.info}>
-            <ProductInteractive product={product} />
+            <ProductInteractive product={product} serverHtml={serverHtml} />
 
             {product.description && (
               <div className={styles.description}>

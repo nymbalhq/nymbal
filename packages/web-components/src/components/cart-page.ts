@@ -2,13 +2,15 @@ import { css, html, nothing } from 'lit'
 import type { CartItem } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 import { formatPrice } from '../format.js'
+import { shownCart } from '../cart-projection.js'
 import { NymbalQuantitySelector } from './quantity-selector.js'
 import { buttonStyles } from '../view-styles.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-cart-page',
   reactName: 'CartPage',
-  attributes: [],
+  // The cart a server read (cart-projection.ts), shown until the cart store settles.
+  attributes: [{ name: 'cart', prop: 'cart', type: 'json' }],
   events: [],
   parts: [
     'loading',
@@ -220,8 +222,14 @@ export class NymbalCartPage extends NymbalElement {
     `,
   ]
 
+  declare cart: unknown
+
   protected override stores() {
     return [this.client.cart]
+  }
+
+  protected override storeSettled(): void {
+    this.cart = undefined
   }
 
   /** The first line's image is at the top of the page and is often its LCP, so only the lines below it load lazily. */
@@ -269,7 +277,7 @@ export class NymbalCartPage extends NymbalElement {
   }
 
   protected override render() {
-    const state = this.client.cart.getState()
+    const state = shownCart(this, this.cart, this.readsStores ? this.client : null)
     const { items } = state
     const currency = state.currency || 'GBP'
 

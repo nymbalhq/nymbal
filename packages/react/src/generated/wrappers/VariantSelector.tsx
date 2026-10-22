@@ -6,7 +6,7 @@ import { NymbalVariantSelector } from '@nymbalhq/web-components/elements/nymbal-
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-variant-selector': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-variant-selector': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'product'> & { 'product'?: string | undefined }
     }
   }
 }
@@ -19,11 +19,14 @@ function useDefine(element: { define(): void }): void {
 }
 
 export interface VariantSelectorProps {
+  product?: unknown
   onVariantSelected?: (event: CustomEvent<{ variant: unknown }>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSelectorProps>(
@@ -31,7 +34,15 @@ export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSe
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.product !== undefined) {
+      el.setAttribute('product', JSON.stringify(props.product))
+    } else {
+      el.removeAttribute('product')
+    }
+  }, [props.product])
 
   useEffect(() => {
     const el = ref.current
@@ -44,7 +55,11 @@ export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSe
     useDefine(NymbalVariantSelector)
 
     return (
-      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-variant-selector>
     )

@@ -6,7 +6,7 @@ import { NymbalProfileForm } from '@nymbalhq/web-components/elements/nymbal-prof
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-profile-form': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-profile-form': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'customer'> & { 'customer'?: string | undefined }
     }
   }
 }
@@ -19,11 +19,14 @@ function useDefine(element: { define(): void }): void {
 }
 
 export interface ProfileFormProps {
+  customer?: unknown
   onSaved?: (event: CustomEvent<{ customer: unknown }>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormProps>(
@@ -31,7 +34,15 @@ export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormPr
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.customer !== undefined) {
+      el.setAttribute('customer', JSON.stringify(props.customer))
+    } else {
+      el.removeAttribute('customer')
+    }
+  }, [props.customer])
 
   useEffect(() => {
     const el = ref.current
@@ -44,7 +55,11 @@ export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormPr
     useDefine(NymbalProfileForm)
 
     return (
-      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} customer={props.customer === undefined ? undefined : JSON.stringify(props.customer)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-profile-form>
     )

@@ -1,6 +1,13 @@
 ---
+import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchCapabilities } from '../lib/api'
 
+interface Props {
+  /** The shopper's cart count, from the request's cart cookie; a shared (cached) header renders without it. */
+  cartCount?: number | undefined
+}
+
+const { cartCount } = Astro.props
 const capabilities = await fetchCapabilities()
 const canSearch = capabilities?.search.capabilities.includes('search') ?? false
 ---
@@ -34,7 +41,10 @@ const canSearch = capabilities?.search.capabilities.includes('search') ?? false
             <circle cx="12" cy="7" r="4" />
           </svg>
         </a>
-        <nymbal-mini-cart></nymbal-mini-cart>
+        <NymbalElement
+          tag="nymbal-mini-cart"
+          attributes={cartCount === undefined ? {} : { count: String(cartCount) }}
+        />
       </div>
     </div>
   </div>

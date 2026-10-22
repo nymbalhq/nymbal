@@ -1,6 +1,6 @@
 import { css, html, nothing } from 'lit'
 import type { CustomerAddress } from '@nymbalhq/types'
-import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
+import { baseStyles, parsedJson, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement } from '../form-element.js'
 import { buttonStyles, fieldStyles } from '../view-styles.js'
 import { NymbalAddressForm } from './address-form.js'
@@ -8,7 +8,8 @@ import { NymbalAddressForm } from './address-form.js'
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-address-book',
   reactName: 'AddressBook',
-  attributes: [],
+  // The addresses a server read, listed until the element's own list call answers.
+  attributes: [{ name: 'addresses', prop: 'addresses', type: 'json' }],
   events: [
     {
       name: 'nymbal:address-book:changed',
@@ -97,22 +98,25 @@ export class NymbalAddressBook extends NymbalFormElement {
     `,
   ]
 
+  declare addresses: unknown
   /** null until the first list answers. */
-  private addresses: CustomerAddress[] | null = null
+  private listed: CustomerAddress[] | null = null
   private loadFailed = false
 
   override connectedCallback(): void {
     super.connectedCallback()
-    void this.load()
+    if (this.hasClient) void this.load()
   }
 
+  /** The list's answer settles the book: the addresses a server gave give way to it. */
   private async load(): Promise<void> {
     try {
-      this.addresses = await this.client.customer.addresses.list()
+      this.listed = await this.client.customer.addresses.list()
       this.loadFailed = false
     } catch {
       this.loadFailed = true
     }
+    this.addresses = undefined
     this.requestUpdate()
   }
 
@@ -159,8 +163,10 @@ export class NymbalAddressBook extends NymbalFormElement {
 
   private renderList() {
     if (this.loadFailed) return html`<p part="status">Unable to load addresses.</p>`
-    if (this.addresses === null) return html`<p part="status">Loading addresses...</p>`
-    if (this.addresses.length === 0) {
+    const addresses =
+      parsedJson<CustomerAddress[]>(this, 'addresses', this.addresses) ?? this.listed
+    if (addresses === null) return html`<p part="status">Loading addresses...</p>`
+    if (addresses.length === 0) {
       return html`
         <div part="empty">
           <h2 part="empty-title">No saved addresses</h2>
@@ -168,7 +174,7 @@ export class NymbalAddressBook extends NymbalFormElement {
         </div>
       `
     }
-    return this.addresses.map((a) => this.renderAddress(a))
+    return addresses.map((a) => this.renderAddress(a))
   }
 
   protected override render() {

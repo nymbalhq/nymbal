@@ -1,6 +1,13 @@
 import { css, html, nothing, type PropertyValues } from 'lit'
 import type { Facet } from '@nymbalhq/types'
-import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import {
+  baseStyles,
+  NymbalElement,
+  parsedJson,
+  propertiesOf,
+  type ElementSchema,
+  type Subscribable,
+} from '../base-element.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-product-filter',
@@ -70,21 +77,34 @@ export class NymbalProductFilter extends NymbalElement {
     `,
   ]
 
+  declare facets: unknown
+
   /** Both: a wrapper may set `source` after the element has connected. */
   protected override stores() {
     return [this.client.productList, this.client.search]
   }
 
+  /** With `source="search"` the `facets` a server read stand until the search settles; a listing's always show. */
+  protected override storeSettled(store: Subscribable): void {
+    if (store === this.client.search && this.getAttribute('source') === 'search') {
+      this.facets = undefined
+    }
+  }
+
   /** The facets this render shows, and whether each value is checked. */
   private shown(): { facets: Facet[]; checked: (field: string, value: string) => boolean } {
     if (this.getAttribute('source') === 'search') {
-      const { facets, category } = this.client.search.getState()
+      const given = parsedJson<Facet[]>(this, 'facets', this.facets)
+      const { facets, category } =
+        given === undefined && this.readsStores
+          ? this.client.search.getState()
+          : { facets: given ?? [], category: null }
       return {
         facets: facets.filter((f) => f.field === 'category'),
         checked: (_field, value) => value === category,
       }
     }
-    const { filters } = this.client.productList.getState()
+    const filters = this.readsStores ? this.client.productList.getState().filters : {}
     return {
       facets: this.facetsAttribute(),
       checked: (field, value) => {
@@ -169,13 +189,6 @@ export class NymbalProductFilter extends NymbalElement {
   }
 
   private facetsAttribute(): Facet[] {
-    const attr = this.getAttribute('facets')
-    if (!attr) return []
-    try {
-      return JSON.parse(attr) as Facet[]
-    } catch (err) {
-      console.error('[nymbal-product-filter] failed to parse facets attribute', err)
-      return []
-    }
+    return parsedJson<Facet[]>(this, 'facets', this.facets) ?? []
   }
 }

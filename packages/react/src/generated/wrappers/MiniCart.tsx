@@ -6,7 +6,7 @@ import { NymbalMiniCart } from '@nymbalhq/web-components/elements/nymbal-mini-ca
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-mini-cart': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-mini-cart': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'count'> & { 'count'?: number | undefined }
     }
   }
 }
@@ -19,11 +19,14 @@ function useDefine(element: { define(): void }): void {
 }
 
 export interface MiniCartProps {
+  count?: number
   onClick?: (event: CustomEvent<void>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
@@ -31,7 +34,15 @@ export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.count !== undefined) {
+      el.setAttribute('count', String(props.count))
+    } else {
+      el.removeAttribute('count')
+    }
+  }, [props.count])
 
   useEffect(() => {
     const el = ref.current
@@ -44,7 +55,11 @@ export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
     useDefine(NymbalMiniCart)
 
     return (
-      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} count={props.count} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-mini-cart>
     )

@@ -3,10 +3,11 @@
 import { useCallback } from 'react'
 import { MiniCart } from '@nymbalhq/react'
 
-export function MiniCartWrapper() {
+/** The header's mini-cart: `count` and `serverHtml` are the server's render of it (components/server/Header.tsx). */
+export function MiniCartWrapper({ count, serverHtml }: { count?: number; serverHtml?: string }) {
   const handleClick = useCallback(() => {
     window.dispatchEvent(new CustomEvent('nymbal:cart:open'))
   }, [])
 
-  return <MiniCart onClick={handleClick} />
+  return <MiniCart onClick={handleClick} count={count} serverHtml={serverHtml} />
 }

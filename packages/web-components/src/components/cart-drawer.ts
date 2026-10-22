@@ -1,10 +1,15 @@
 import { css, html, nothing } from 'lit'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import { shownCart } from '../cart-projection.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-cart-drawer',
   reactName: 'CartDrawer',
-  attributes: [{ name: 'open', prop: 'open', type: 'boolean' }],
+  attributes: [
+    { name: 'open', prop: 'open', type: 'boolean' },
+    // The cart a server read (cart-projection.ts), shown until the cart store settles.
+    { name: 'cart', prop: 'cart', type: 'json' },
+  ],
   events: [{ name: 'nymbal:cart:checkout-clicked', prop: 'onCheckoutClick', detail: 'void' }],
   parts: [
     'overlay',
@@ -173,8 +178,14 @@ export class NymbalCartDrawer extends NymbalElement {
     this.toggle()
   }
 
+  declare cart: unknown
+
   protected override stores() {
     return [this.client.cart]
+  }
+
+  protected override storeSettled(): void {
+    this.cart = undefined
   }
 
   override connectedCallback(): void {
@@ -209,7 +220,7 @@ export class NymbalCartDrawer extends NymbalElement {
   }
 
   protected override render() {
-    const state = this.client.cart.getState()
+    const state = shownCart(this, this.cart, this.readsStores ? this.client : null)
     const currency = state.currency
 
     const items =

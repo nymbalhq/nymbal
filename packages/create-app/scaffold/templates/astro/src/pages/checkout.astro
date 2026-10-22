@@ -1,20 +1,24 @@
 ---
+import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
-import { fetchCapabilities } from '../lib/api'
+import { fetchCapabilities, fetchCart } from '../lib/api'
 
-const capabilities = await fetchCapabilities()
+const [capabilities, cart] = await Promise.all([
+  fetchCapabilities(),
+  fetchCart(Astro.request.headers.get('cookie')),
+])
 if (capabilities === null) {
   throw new Error('The store did not answer GET /api/capabilities, so checkout cannot tell how to take a payment.')
 }
 const paymentClient = capabilities.payments.client
 ---
 
-<BaseLayout title="Checkout | Nymbal" description="Complete your purchase.">
+<BaseLayout title="Checkout | Nymbal" description="Complete your purchase." cart={cart}>
   <div class="container section">
-    <nymbal-checkout>
+    <NymbalElement tag="nymbal-checkout" attributes={cart === null ? {} : { cart: JSON.stringify(cart) }}>
       <!-- The payments adapter's client half; a driver the project registers in src/lib/client.ts renders it. -->
       <nymbal-payment-element slot="payment" data-testid="payment-element" client={JSON.stringify(paymentClient)}></nymbal-payment-element>
-    </nymbal-checkout>
+    </NymbalElement>
   </div>
 </BaseLayout>
 

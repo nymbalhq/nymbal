@@ -6,7 +6,7 @@ import { NymbalAddToCart } from '@nymbalhq/web-components/elements/nymbal-add-to
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-add-to-cart': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-add-to-cart': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'variant-id' | 'qty' | 'disabled'> & { 'variant-id'?: string | undefined; 'qty'?: number | undefined; 'disabled'?: string | undefined }
     }
   }
 }
@@ -18,17 +18,23 @@ function useDefine(element: { define(): void }): void {
   }, [element])
 }
 
-export interface AddToCartProps {
+interface AddToCartOwnProps {
   variantId?: string
   qty?: number
   disabled?: boolean
   onItemAdded?: (event: CustomEvent<{ variantId: string; qty: number }>) => void
-  children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
 }
+
+export type AddToCartProps = AddToCartOwnProps &
+  (
+    | { children?: React.ReactNode; serverHtml?: undefined }
+    /** The element's server render, `renderNymbal(tag, …, children).__html` from `@nymbalhq/react/server`. */
+    | { children?: undefined; serverHtml?: string }
+  )
 
 export const AddToCart = /* @__PURE__ */ forwardRef<HTMLElement, AddToCartProps>(
   function AddToCart(props, forwardedRef) {
@@ -76,7 +82,11 @@ export const AddToCart = /* @__PURE__ */ forwardRef<HTMLElement, AddToCartProps>
     useDefine(NymbalAddToCart)
 
     return (
-      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-add-to-cart ref={ref as React.Ref<HTMLElement>} variant-id={props.variantId} qty={props.qty} disabled={props.disabled ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         {props.children}
       </nymbal-add-to-cart>
     )

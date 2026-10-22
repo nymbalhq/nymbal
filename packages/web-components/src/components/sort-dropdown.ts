@@ -68,18 +68,39 @@ export class NymbalSortDropdown extends NymbalElement {
 
   private _wired: HTMLSelectElement | null = null
 
+  /** A slotted `<select>`; a server's element has no light DOM to read, so it renders its own. */
   private slottedSelect(): HTMLSelectElement | null {
-    return [...this.children].find((c): c is HTMLSelectElement => c instanceof HTMLSelectElement) ?? null
+    const children = this.children as HTMLCollection | undefined
+    if (children === undefined) return null
+    return [...children].find((c): c is HTMLSelectElement => c instanceof HTMLSelectElement) ?? null
   }
 
   private select(): HTMLSelectElement | null {
     return this.slottedSelect() ?? this.renderRoot?.querySelector('select[part~="select"]') ?? null
   }
 
+  /** The keys to offer, and the one shown: `value` when offered, else `default-sort`, else the first. */
+  private choice(): { keys: string[]; selected: string | undefined } {
+    const keys = parseKeys(this.getAttribute('sort-keys'))
+    const wanted = this.getAttribute('value') ?? ''
+    const fallback = this.getAttribute('default-sort') ?? DEFAULT_PRODUCT_SORT
+    const selected = keys.includes(wanted) ? wanted : keys.includes(fallback) ? fallback : keys[0]
+    return { keys, selected }
+  }
+
+  private label(key: string): string {
+    return PRODUCT_SORT_LABELS[key as ProductSortKey] ?? key
+  }
+
+  /** Its own select renders its options, so a server render offers them too. */
   protected override render() {
-    return this.slottedSelect() !== null
-      ? html`<slot></slot>`
-      : html`<select part="select" data-testid="sort-dropdown" aria-label="Sort products"></select>`
+    if (this.slottedSelect() !== null) return html`<slot></slot>`
+    const { keys, selected } = this.choice()
+    return html`<select part="select" data-testid="sort-dropdown" aria-label="Sort products">
+      ${keys.map(
+        (key) => html`<option value=${key} ?selected=${key === selected}>${this.label(key)}</option>`,
+      )}
+    </select>`
   }
 
   protected override updated(): void {
@@ -90,18 +111,17 @@ export class NymbalSortDropdown extends NymbalElement {
       this._wired = select
     }
 
-    const keys = parseKeys(this.getAttribute('sort-keys'))
-    const wanted = this.getAttribute('value') ?? ''
-    const fallback = this.getAttribute('default-sort') ?? DEFAULT_PRODUCT_SORT
-    const selected = keys.includes(wanted) ? wanted : keys.includes(fallback) ? fallback : keys[0]
-    select.replaceChildren(
-      ...keys.map((key) => {
-        const option = document.createElement('option')
-        option.value = key
-        option.textContent = PRODUCT_SORT_LABELS[key as ProductSortKey] ?? key
-        return option
-      }),
-    )
+    const { keys, selected } = this.choice()
+    if (select === this.slottedSelect()) {
+      select.replaceChildren(
+        ...keys.map((key) => {
+          const option = document.createElement('option')
+          option.value = key
+          option.textContent = this.label(key)
+          return option
+        }),
+      )
+    }
     if (selected !== undefined) select.value = selected
   }
 

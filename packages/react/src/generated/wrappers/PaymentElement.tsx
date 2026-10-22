@@ -6,7 +6,7 @@ import { NymbalPaymentElement } from '@nymbalhq/web-components/elements/nymbal-p
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-payment-element': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>
+      'nymbal-payment-element': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'client'> & { 'client'?: string | undefined }
     }
   }
 }
@@ -25,6 +25,8 @@ export interface PaymentElementProps {
   style?: React.CSSProperties
   slot?: string
   'data-testid'?: string
+  /** The element's server render, `renderNymbal(tag, …).__html` from `@nymbalhq/react/server`. */
+  serverHtml?: string
 }
 
 export const PaymentElement = /* @__PURE__ */ forwardRef<HTMLElement, PaymentElementProps>(
@@ -53,7 +55,11 @@ export const PaymentElement = /* @__PURE__ */ forwardRef<HTMLElement, PaymentEle
     useDefine(NymbalPaymentElement)
 
     return (
-      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}>
+      <nymbal-payment-element ref={ref as React.Ref<HTMLElement>} client={props.client === undefined ? undefined : JSON.stringify(props.client)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         
       </nymbal-payment-element>
     )
