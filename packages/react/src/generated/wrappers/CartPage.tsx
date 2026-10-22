@@ -12,9 +12,9 @@ declare module 'react' {
 }
 
 /** Defines the wrapped element, and those it renders, once the wrapper mounts. */
-function useDefine(element: { define(): void } | undefined): void {
+function useDefine(element: { define(): void }): void {
   useEffect(() => {
-    element?.define()
+    element.define()
   }, [element])
 }
 

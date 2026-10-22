@@ -36,31 +36,31 @@
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 178176
+      "scriptBytes": 177152
     },
     "listing": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 189440
+      "scriptBytes": 180224
     },
     "product": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 190464
+      "scriptBytes": 181248
     },
     "cart": {
-      "lcpMs": 2500,
+      "lcpMs": 3000,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 189440
+      "scriptBytes": 175104
     },
     "checkout": {
       "lcpMs": 2500,
       "cls": 0.1,
       "tbtMs": 200,
-      "scriptBytes": 190464
+      "scriptBytes": 176128
     }
   }
 }

@@ -119,9 +119,9 @@ function elementClass(schema: ElementSchema): string {
 // element out too. The element is defined after the wrapper's attribute effects, so it upgrades with its attributes
 // set, and a project that defined the tag first keeps its own element.
 const USE_DEFINE = `/** Defines the wrapped element, and those it renders, once the wrapper mounts. */
-function useDefine(element: { define(): void } | undefined): void {
+function useDefine(element: { define(): void }): void {
   useEffect(() => {
-    element?.define()
+    element.define()
   }, [element])
 }`
 

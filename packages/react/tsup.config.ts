@@ -1,9 +1,9 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  // Each generated wrapper is an entry of its own, so it stays a module of its own: a bundle that leaves a wrapper
-  // out leaves out the element it imports.
-  entry: ['src/index.ts', 'src/generated/wrappers/*.tsx'],
+  // Each wrapper, the context and each hook is an entry of its own, so the root only re-exports: a bundler keeps what a
+  // route imports and leaves out the rest, and a wrapper it leaves out takes its element with it.
+  entry: ['src/index.ts', 'src/context.tsx', 'src/hooks/*.ts', 'src/generated/wrappers/*.tsx'],
   format: ['esm'],
   splitting: true,
   dts: true,
