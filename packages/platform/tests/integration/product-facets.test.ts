@@ -44,7 +44,7 @@ describe('product facets integration: category → product → GET /api/products
   it('returns non-empty facet values after category and product are created', async () => {
     const env = await createTestEnv()
 
-    // Register projections (category before product so category doc exists when product event fires)
+    // Register projections; the product projection reads the product and category rows at handle time (P3-02)
     await registerCategoryProjection({
       eventBus: env.eventBus,
       documentStore: env.documentStore,
@@ -57,6 +57,7 @@ describe('product facets integration: category → product → GET /api/products
       logger,
       storeId: 'test',
       currency: 'GBP',
+      repos: env.repos,
     })
 
     // Create a category — EVT_CATEGORY_CREATED handled by category projection
@@ -110,7 +111,7 @@ describe('product facets integration: category → product → GET /api/products
     const env = await createTestEnv()
 
     await registerCategoryProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test' })
-    await registerProductProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test', currency: 'GBP' })
+    await registerProductProjection({ eventBus: env.eventBus, documentStore: env.documentStore, logger, storeId: 'test', currency: 'GBP', repos: env.repos })
 
     const fiction = await env.category.create({ slug: 'fiction', name: 'Fiction', description: '' })
     const science = await env.category.create({ slug: 'science', name: 'Science', description: '' })
