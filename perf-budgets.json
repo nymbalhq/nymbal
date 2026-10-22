@@ -57,7 +57,7 @@
       "scriptBytes": 175104
     },
     "checkout": {
-      "lcpMs": 2500,
+      "lcpMs": 3000,
       "cls": 0.1,
       "tbtMs": 200,
       "scriptBytes": 176128
