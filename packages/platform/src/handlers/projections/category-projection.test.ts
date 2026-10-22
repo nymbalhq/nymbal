@@ -11,6 +11,7 @@ import { runMigrations } from '../../db/migrate.js'
 import { InMemoryDocumentStore } from '../../document-store/in-memory.js'
 import { InProcessEventBus } from '../../event-bus/in-process.js'
 import { createLogger } from '../../logger.js'
+import { buildCategoryDoc } from '../../read-models/builders.js'
 import { buildRepositories } from '../../repositories/index.js'
 import type { CategoryInsert } from '../../repositories/category.js'
 import { registerCategoryProjection } from './category-projection.js'
@@ -44,7 +45,13 @@ async function setup() {
   const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
   const eventBus = new InProcessEventBus({ logger })
   const repos = buildRepositories(store, documentStore)
-  await registerCategoryProjection({ eventBus, documentStore, logger, storeId: 'test-store', repos })
+  await registerCategoryProjection({
+    eventBus,
+    documentStore,
+    logger,
+    storeId: 'test-store',
+    repos,
+  })
 
   async function readRow(id: string): Promise<Category | null> {
     return store.read((tx) => repos.category.findById(tx, id))
@@ -96,7 +103,10 @@ describe('category-projection', () => {
 
     await env.eventBus.publish(makeEvent(EVT_CATEGORY_CREATED, { category: child }))
 
-    const doc = await env.documentStore.get<{ parentId: string | null }>('categories', 'mens-apparel')
+    const doc = await env.documentStore.get<{ parentId: string | null }>(
+      'categories',
+      'mens-apparel',
+    )
     expect(doc!.parentId).toBe('cat-1')
     await env.store.close()
   })
@@ -161,9 +171,9 @@ describe('category-projection', () => {
 
     await env.eventBus.publish(makeEvent(EVT_CATEGORY_UPDATED, { category: original }))
 
-    const doc = await env.documentStore.get<{ name: string }>('categories', 'apparel')
+    const doc = await env.documentStore.get('categories', 'apparel')
     expect(current!.name).not.toBe(original.name)
-    expect(doc!.name).toBe(current!.name)
+    expect(doc).toEqual(buildCategoryDoc(current!, 'test-store'))
     await env.store.close()
   })
 })
