@@ -3,6 +3,7 @@
   "command": "pnpm mutation --force",
   "total": 55.7,
   "files": {
+    "packages/platform/src/repositories/audit-entry.ts": 30,
     "packages/platform/src/repositories/cart.ts": 45.24,
     "packages/platform/src/repositories/category.ts": 67.14,
     "packages/platform/src/repositories/customer.ts": 45.22,

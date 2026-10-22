@@ -58,6 +58,8 @@ export {
   newCorrelationId,
   runWithCorrelation,
 } from './events/correlation.js'
+export { actorOf, currentActor, runAsActor, type Actor } from './audit/actor.js'
+export { audit, auditedCommand } from './audit/audit.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'

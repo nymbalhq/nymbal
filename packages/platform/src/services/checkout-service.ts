@@ -24,6 +24,7 @@ import {
   type PaymentIntent,
   type PaymentStatus,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -254,6 +255,7 @@ export function createCheckoutService(
       reason,
     })
     if (order !== null) {
+      audit.note('payment.recordOutcome', [{ type: 'order', id: order.id }])
       await repos.orderHistory.append(tx, {
         id: uuidv7(),
         orderId: order.id,
@@ -356,6 +358,7 @@ export function createCheckoutService(
   ): Promise<void> {
     const refundId = uuidv5(`cancelled-capture:${paymentIntentId}`, CAPTURE_REFUND_NAMESPACE)
     const held = await store.transaction(async (tx) => {
+      audit.note('payment.refundCapture', [{ type: 'order', id: order.id }])
       const locked = await repos.order.lock(tx, order.id)
       // A concurrent delivery recorded this capture first.
       if (locked === null || locked.capturedMinor > 0) return false
@@ -466,6 +469,7 @@ export function createCheckoutService(
     const reservationIds = Array.isArray(metadata.reservationIds)
       ? (metadata.reservationIds as string[])
       : []
+    audit.note('order.confirm', [{ type: 'order', id: order.id }])
     // Committing makes the reservation's decrement permanent, with its stock-adjustment row.
     for (const [index, reservationId] of reservationIds.entries()) {
       const reservation = await reservationFor(tx, order, reservationId, index)
@@ -611,6 +615,7 @@ export function createCheckoutService(
       imageUrl: item.imageUrl,
     }))
     const orderId = uuidv7()
+    audit.note('checkout.place', [{ type: 'order', id: orderId }])
     const correlationId = currentCorrelationId()
     const reservationIds: string[] = []
     for (const item of cartDoc.items) {
@@ -819,6 +824,8 @@ export function createCheckoutService(
 
   return {
     async beginCheckout(input) {
+      // Named before the cart is checked, so a refused checkout is the command's; its entry is held once an order is.
+      audit.note('checkout.place')
       await loadValidCart(input.cartToken)
       // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with the
       // reason the pending order holding one is cancelled when the next pass finds it under the lock.
@@ -849,6 +856,7 @@ export function createCheckoutService(
     async markPaid(orderId, actor, note) {
       // The order's intent is closed with the provider before the payment is recorded, outside any transaction: left
       // open, the shopper could still pay it and be charged twice.
+      audit.note('order.markPaid', [{ type: 'order', id: orderId }])
       const found = await store.read((tx) => repos.order.findById(tx, orderId))
       if (!found) throw new NotFoundError('order', orderId)
       if (found.status !== 'pending') {

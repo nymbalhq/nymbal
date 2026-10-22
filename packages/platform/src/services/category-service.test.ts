@@ -15,6 +15,10 @@ import { createEventPublisher, createRelay } from '../index.js'
 import { wirePublisher } from '../tests/publisher.js'
 import { createCategoryService } from './category-service.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -157,6 +161,56 @@ describe('CategoryService', () => {
     await service.create({ slug: 'c2', name: 'C2' })
     const list = await service.list()
     expect(list).toHaveLength(2)
+    await commandStore.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('CategoryService: audit notes', () => {
+  it('AC-2: under an actor with no opener, create, update and delete each leave one applied entry naming the category', async () => {
+    const { service, commandStore } = await setup()
+    const cat = await runAsActor(importer, () =>
+      service.create({ slug: 'audited', name: 'Audited' }),
+    )
+    await runAsActor(importer, () => service.update(cat.id, { name: 'Renamed' }))
+    await runAsActor(importer, () => service.delete(cat.id))
+    const subjects = [{ type: 'category', id: cat.id }]
+    expect(await noted(commandStore)).toEqual([
+      { actor: importer, command: 'category.create', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'category.update', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'category.delete', subjects, outcome: 'applied', status: null },
+    ])
+    await commandStore.close()
+  })
+
+  it('AC-2: a create refused before its transaction is recorded as category.create refused; with no actor nothing is recorded', async () => {
+    const { service, commandStore } = await setup()
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(commandStore, undefined, () =>
+          service.create({ slug: '  ', name: 'Blank' }),
+        ),
+      ),
+    ).rejects.toThrow(ValidationError)
+    await service.create({ slug: 'unscoped', name: 'No actor' })
+    expect(await noted(commandStore)).toEqual([
+      { actor: admin, command: 'category.create', subjects: [], outcome: 'refused', status: 400 },
+    ])
     await commandStore.close()
   })
 })

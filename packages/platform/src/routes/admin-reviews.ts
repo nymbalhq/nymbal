@@ -1,6 +1,7 @@
 import type { HttpAdapter, ReviewsAdapter } from '@nymbalhq/types'
 import type { ReviewRepository } from '../repositories/review.js'
 import { ok, fail, renderError } from './envelope.js'
+import { audit } from '../audit/audit.js'
 import { requireRole } from './role-middleware.js'
 
 export interface RegisterAdminReviewsRoutesDeps {
@@ -41,9 +42,16 @@ export function registerAdminReviewsRoutes(
           return fail('reviews.invalid', 'status must be approved|rejected', 400)
         }
         const status = body.status
-        await reviewRepo.store.transaction((tx) =>
-          reviewRepo.setModerationStatus(tx, id, status, `admin:${ctx.auth!.userId}`, new Date()),
-        )
+        await reviewRepo.store.transaction((tx) => {
+          audit.note('review.moderate', [{ type: 'review', id }])
+          return reviewRepo.setModerationStatus(
+            tx,
+            id,
+            status,
+            `admin:${ctx.auth!.userId}`,
+            new Date(),
+          )
+        })
         return ok({ ok: true })
       } catch (err) {
         return renderError(err)

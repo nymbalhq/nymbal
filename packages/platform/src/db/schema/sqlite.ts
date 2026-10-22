@@ -398,6 +398,42 @@ export const settings = sqliteTable(
   }),
 )
 
+// --- Audit entries ---------------------------------------------------------
+
+/**
+ * One row per outermost command, appended in the command's transaction and never updated, deleted or pruned. A key
+ * applies once per actor and command: only `applied` rows hold the partial unique index, so `replayed` and `refused`
+ * rows may repeat one.
+ */
+export const auditEntries = sqliteTable(
+  'audit_entries',
+  {
+    id: text('id').primaryKey(),
+    at: text('at').notNull(),
+    actorKind: text('actor_kind').notNull(),
+    actorId: text('actor_id').notNull(),
+    command: text('command').notNull(),
+    subjects: text('subjects').notNull(),
+    correlationId: text('correlation_id'),
+    idempotencyKey: text('idempotency_key'),
+    requestHash: text('request_hash'),
+    outcome: text('outcome').notNull(),
+    responseStatus: integer('response_status'),
+    responseBody: text('response_body'),
+  },
+  (t) => ({
+    appliedKeyUnique: uniqueIndex('audit_entries_applied_key_unique')
+      .on(t.actorId, t.command, t.idempotencyKey)
+      .where(sql`${t.outcome} = 'applied' AND ${t.idempotencyKey} IS NOT NULL`),
+    atIdx: index('audit_entries_at_idx').on(t.at, t.id),
+    correlationIdx: index('audit_entries_correlation_idx').on(t.correlationId),
+    outcomeCheck: check(
+      'audit_entries_outcome',
+      sql`${t.outcome} IN ('applied', 'refused', 'replayed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -415,4 +451,5 @@ export const schema = {
   events,
   processedEvents,
   settings,
+  auditEntries,
 }

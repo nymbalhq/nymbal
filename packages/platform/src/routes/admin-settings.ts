@@ -16,6 +16,7 @@ import { listStoredSettings, type DeclaredSlot } from '../settings/load.js'
 import { getPath, sourceOf } from '../settings/resolve.js'
 import { addSecret } from '../settings/secret-set.js'
 import { fail, ok, renderError } from './envelope.js'
+import { audit } from '../audit/audit.js'
 import { requireRole } from './role-middleware.js'
 
 export interface RegisterAdminSettingsRoutesDeps {
@@ -156,6 +157,7 @@ export function registerAdminSettingsRoutes(
           row = { ...base, ciphertext: null, iv: null, tag: null, keyId: null, plain: value }
         }
         await store.transaction(async (tx) => {
+          audit.note('settings.put', [{ type: 'setting', id: `${owner.slot}.${decl.path}` }])
           await settings.put(tx, row)
           await publisher.publish(EVT_SETTINGS_CHANGED, {
             slot: owner.slot,
@@ -185,6 +187,7 @@ export function registerAdminSettingsRoutes(
         if (target.refused !== undefined) return target.refused
         const { owner, decl } = target
         await store.transaction(async (tx) => {
+          audit.note('settings.delete', [{ type: 'setting', id: `${owner.slot}.${decl.path}` }])
           await settings.delete(tx, owner.slot, decl.path)
           await publisher.publish(EVT_SETTINGS_CHANGED, {
             slot: owner.slot,

@@ -1,3 +1,4 @@
+import { IDEMPOTENCY_KEY_HEADER } from '@nymbalhq/types'
 import { getToken, refreshSession } from '@/lib/auth'
 
 export class ApiError extends Error {
@@ -89,18 +90,40 @@ async function renewedAfter401(sentToken: string | null): Promise<boolean> {
   return refreshSession()
 }
 
+/** A fresh key for one user intent: an admin write sent with it applies once, however often it is re-sent. */
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID()
+}
+
+/** One intent's key, for a write a double click can send twice: hold it while the intent lasts. */
+export interface WriteOptions {
+  idempotencyKey?: string
+}
+
+interface RequestOptions {
+  query?: UrlQuery
+  idempotencyKey?: string
+  /** The body as text, unparsed: an export. */
+  text?: boolean
+  /** The whole `{ data, meta }` envelope, for a paged list. */
+  envelope?: boolean
+  retried?: boolean
+}
+
 async function request<T>(
   method: string,
   path: string,
-  body?: unknown,
-  query?: UrlQuery,
-  retried = false,
+  body: unknown,
+  opts: RequestOptions = {},
 ): Promise<T> {
+  const { query, retried = false } = opts
   const token = getToken()
   const headers: Record<string, string> = {}
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
+  // The same key on every send of this request: the CSRF refetch's and the 401 refresh's re-sends included.
+  if (opts.idempotencyKey !== undefined) headers[IDEMPOTENCY_KEY_HEADER] = opts.idempotencyKey
 
   const url = buildUrl(path, query)
   const init: RequestInit = { method, headers }
@@ -120,12 +143,14 @@ async function request<T>(
       !path.startsWith('/api/auth/') &&
       (await renewedAfter401(token))
     ) {
-      return request<T>(method, path, body, query, true)
+      return request<T>(method, path, body, { ...opts, retried: true })
     }
     const errData = (await response.json().catch(() => ({}))) as Record<string, unknown>
     const errObj = (errData as { error?: { code?: string; message?: string } }).error
     throw new ApiError(errObj?.code ?? 'UNAUTHORIZED', errObj?.message ?? 'Unauthorized', 401)
   }
+
+  if (opts.text && response.ok) return (await response.text()) as T
 
   const data = (await response.json()) as Record<string, unknown>
 
@@ -141,6 +166,8 @@ async function request<T>(
     )
   }
 
+  if (opts.envelope) return data as T
+
   // Unwrap { data: T } envelope
   if ('data' in data) {
     return data['data'] as T
@@ -149,20 +176,35 @@ async function request<T>(
   return data as T
 }
 
+/** An admin write carries a key: the caller's intent key, else one for this call alone. */
+function write(opts: WriteOptions | undefined, path: string): RequestOptions {
+  const key =
+    opts?.idempotencyKey ?? (path.startsWith('/api/admin/') ? newIdempotencyKey() : undefined)
+  return key === undefined ? {} : { idempotencyKey: key }
+}
+
 export const api = {
   get<T>(path: string, query?: UrlQuery): Promise<T> {
-    return request<T>('GET', path, undefined, query)
+    return request<T>('GET', path, undefined, query === undefined ? {} : { query })
   },
-  post<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>('POST', path, body)
+  /** A GET of one page of a list: its entries and the `meta` (a cursor) that names the next page. */
+  getPage<T>(path: string, query?: UrlQuery): Promise<{ data: T; meta?: Record<string, unknown> }> {
+    return request('GET', path, undefined, { envelope: true, ...(query && { query }) })
   },
-  patch<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>('PATCH', path, body)
+  /** A GET whose answer is text, such as an NDJSON export. */
+  getText(path: string, query?: UrlQuery): Promise<string> {
+    return request<string>('GET', path, undefined, { text: true, ...(query && { query }) })
   },
-  put<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>('PUT', path, body)
+  post<T>(path: string, body?: unknown, opts?: WriteOptions): Promise<T> {
+    return request<T>('POST', path, body, write(opts, path))
   },
-  delete<T>(path: string): Promise<T> {
-    return request<T>('DELETE', path)
+  patch<T>(path: string, body?: unknown, opts?: WriteOptions): Promise<T> {
+    return request<T>('PATCH', path, body, write(opts, path))
+  },
+  put<T>(path: string, body?: unknown, opts?: WriteOptions): Promise<T> {
+    return request<T>('PUT', path, body, write(opts, path))
+  },
+  delete<T>(path: string, opts?: WriteOptions): Promise<T> {
+    return request<T>('DELETE', path, undefined, write(opts, path))
   },
 }

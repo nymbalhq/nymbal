@@ -10,6 +10,10 @@ import { createEventPublisher, createRelay } from '../index.js'
 import { wirePublisher } from '../tests/publisher.js'
 import { createAuthService } from './auth-service.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -421,5 +425,70 @@ describe('AuthService', () => {
       }),
     ).toThrow(ValidationError)
     await commandStore2.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('AuthService: audit notes', () => {
+  it('AC-2: under an actor with no opener, a registration and a new import each leave one applied entry naming the customer; an import of a known email leaves none', async () => {
+    const { auth, commandStore } = await setup()
+    const { customer } = await runAsActor(importer, () =>
+      auth.register({ email: 'registered@test.com', password: 'password123' }),
+    )
+    const imported = await runAsActor(importer, () =>
+      auth.importCustomer({ email: 'imported@test.com' }),
+    )
+    const again = await runAsActor(importer, () =>
+      auth.importCustomer({ email: 'imported@test.com' }),
+    )
+    expect(again.id).toBe(imported.id)
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: importer,
+        command: 'customer.register',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'applied',
+        status: null,
+      },
+      {
+        actor: importer,
+        command: 'customer.import',
+        subjects: [{ type: 'customer', id: imported.id }],
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+    await commandStore.close()
+  })
+
+  it('AC-2: a registration refused before its transaction is recorded as customer.register refused; with no actor nothing is recorded', async () => {
+    const { auth, commandStore } = await setup()
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(commandStore, undefined, () =>
+          auth.register({ email: 'not-an-email', password: 'password123' }),
+        ),
+      ),
+    ).rejects.toThrow(ValidationError)
+    await auth.register({ email: 'unscoped@test.com', password: 'password123' })
+    expect(await noted(commandStore)).toEqual([
+      { actor: admin, command: 'customer.register', subjects: [], outcome: 'refused', status: 400 },
+    ])
+    await commandStore.close()
   })
 })

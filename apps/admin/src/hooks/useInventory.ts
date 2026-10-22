@@ -20,10 +20,8 @@ export function useInventory(filters: InventoryFilters = {}) {
 export function useInventoryHistory(variantId: string) {
   return useQuery({
     queryKey: ['inventory', 'history', variantId],
-    queryFn: async () => {
-      const result = await api.get<{ history: StockAdjustment[] }>(`/api/admin/inventory/${variantId}/history`)
-      return result.history
-    },
+    // The route answers the adjustments themselves, newest first.
+    queryFn: () => api.get<StockAdjustment[]>(`/api/admin/inventory/${variantId}/history`),
     enabled: !!variantId,
   })
 }
@@ -31,8 +29,22 @@ export function useInventoryHistory(variantId: string) {
 export function useAdjustStock() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ variantId, delta, reason }: { variantId: string; delta: number; reason: StockAdjustmentReason }) =>
-      api.post<{ newQty: number; variantId: string }>(`/api/admin/inventory/${variantId}/adjust`, { delta, reason }),
+    mutationFn: ({
+      variantId,
+      delta,
+      reason,
+      idempotencyKey,
+    }: {
+      variantId: string
+      delta: number
+      reason: StockAdjustmentReason
+      idempotencyKey?: string
+    }) =>
+      api.post<{ newQty: number; variantId: string }>(
+        `/api/admin/inventory/${variantId}/adjust`,
+        { delta, reason },
+        idempotencyKey === undefined ? undefined : { idempotencyKey },
+      ),
     onMutate: async ({ variantId, delta }) => {
       await queryClient.cancelQueries({ queryKey: ['inventory', 'list'] })
       const previousData = queryClient.getQueryData<InventoryRow[]>(['inventory', 'list', {}])

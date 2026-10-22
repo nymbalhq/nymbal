@@ -13,6 +13,7 @@ import {
   type ProductSnapshot,
   type Logger,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { ProductInsert, ProductUpdate } from '../repositories/product.js'
@@ -85,6 +86,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
 
   return {
     async create(input) {
+      audit.note('product.create')
       if (!input.slug.trim()) throw new ValidationError('Product slug is required')
       if (!input.name.trim()) throw new ValidationError('Product name is required')
       const existing = await store.read((tx) => repos.product.findBySlug(tx, input.slug))
@@ -96,6 +98,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
       return store.transaction(async (tx) => {
         const now = new Date()
         const productId = uuidv7()
+        audit.note('product.create', [{ type: 'product', id: productId }])
         const insert: ProductInsert = {
           id: productId,
           slug: input.slug,
@@ -142,6 +145,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
 
     async update(id, input) {
       return store.transaction(async (tx) => {
+        audit.note('product.update', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
         const now = new Date()
         const updateInput: ProductUpdate = {
@@ -171,6 +175,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
 
     async delete(id) {
       await store.transaction(async (tx) => {
+        audit.note('product.delete', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
         await repos.productCategory.detachAllForProduct(tx, product.id)
         const variants = await repos.variant.findByProduct(tx, product.id)
@@ -185,6 +190,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
 
     async publish(id) {
       await store.transaction(async (tx) => {
+        audit.note('product.publish', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
         if (product.status === 'active') return
         await repos.product.setStatus(tx, product.id, 'active', new Date())
@@ -200,6 +206,7 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
 
     async unpublish(id) {
       await store.transaction(async (tx) => {
+        audit.note('product.unpublish', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
         if (product.status === 'draft') return
         await repos.product.setStatus(tx, product.id, 'draft', new Date())

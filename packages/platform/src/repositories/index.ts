@@ -26,6 +26,7 @@ import { createProcessedEventRepository, type ProcessedEventRepository } from '.
 import { createEventLogRepository, type EventLogRepository } from './event-log.js'
 import { createCartRepository, type CartRepository } from './cart.js'
 import { createSettingsRepository, type SettingsRepository } from './settings.js'
+import { createAuditEntryRepository, type AuditEntryRepository } from './audit-entry.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -44,6 +45,7 @@ export * from './processed-event.js'
 export * from './event-log.js'
 export * from './cart.js'
 export * from './settings.js'
+export * from './audit-entry.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -64,6 +66,7 @@ export interface Repositories {
   eventLog: EventLogRepository
   cart: CartRepository
   settings: SettingsRepository
+  auditEntry: AuditEntryRepository
 }
 
 export function buildRepositories(
@@ -89,5 +92,6 @@ export function buildRepositories(
     eventLog: createEventLogRepository(commandStore),
     cart: createCartRepository(commandStore),
     settings: createSettingsRepository(commandStore),
+    auditEntry: createAuditEntryRepository(commandStore),
   }
 }
