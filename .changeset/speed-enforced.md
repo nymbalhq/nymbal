@@ -2,7 +2,7 @@
 '@nymbalhq/web-components': minor
 '@nymbalhq/react': minor
 '@nymbalhq/platform': patch
-'@nymbalhq/cli': patch
+'nymbal': patch
 'create-nymbal-app': patch
 ---
 
