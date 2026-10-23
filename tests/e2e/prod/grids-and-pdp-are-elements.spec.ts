@@ -57,15 +57,20 @@ async function scriptOff(
   return page
 }
 
-/** The seeded category with the most products, and its first page as the API serves it with the default sort. */
+/**
+ * The seeded category with the most products, and its first page as the API serves it with the default sort. With
+ * `fixed`, the first category is passed over: `catalogProduct` adds its products there, so it grows while tests run.
+ */
 async function largestCategory(
   request: Parameters<typeof apiPage>[0],
   sort: string,
+  fixed = false,
 ): Promise<{ slug: string; size: number }> {
   const res = await request.get(`${API_URL}/api/categories`)
   expect(res.status(), 'GET /api/categories').toBe(200)
+  const all = ((await res.json()) as { data: Array<{ slug: string }> }).data
   let chosen = { slug: '', size: 0 }
-  for (const { slug } of ((await res.json()) as { data: Array<{ slug: string }> }).data) {
+  for (const { slug } of fixed ? all.slice(1) : all) {
     const size = (await apiPage(request, { category: slug, limit: String(PAGE_SIZE), sort })).items
       .length
     if (size > chosen.size) chosen = { slug, size }
@@ -298,10 +303,13 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
       request,
     }, testInfo) => {
       await blockExternalRequests(page)
+      // Other workers add products between the JS-off and the JS-on read. The listing starts over a page, so its
+      // nextCursor (and load-more) holds for both; the category is one no other test adds to.
+      if (name === 'listing') await ownProduct(request, await adminToken(request), 1)
       const { defaultSort } = (await storeCapabilities(request)).catalog
       const at =
         path === 'category'
-          ? `/category/${(await largestCategory(request, defaultSort)).slug}`
+          ? `/category/${(await largestCategory(request, defaultSort, true)).slug}`
           : path
       const elements =
         name === 'product'
