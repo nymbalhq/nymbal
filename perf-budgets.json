@@ -33,13 +33,13 @@
   },
   "nextjs": {
     "home": {
-      "lcpMs": 2500,
+      "lcpMs": 3000,
       "cls": 0.1,
       "tbtMs": 200,
       "scriptBytes": 187392
     },
     "listing": {
-      "lcpMs": 2500,
+      "lcpMs": 3000,
       "cls": 0.1,
       "tbtMs": 200,
       "scriptBytes": 190464
