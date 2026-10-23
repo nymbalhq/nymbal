@@ -631,9 +631,9 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
     ]) {
       expect(verdictsOf(out, file), out).toEqual(['not judged'])
       // The first error line, not pnpm's progress lines before it.
-      // pnpm 9 prints ` ERR_PNPM_X  msg`, later versions `[ERR_PNPM_X] msg`.
+      // pnpm 9 prints ` ERR_PNPM_X  msg`, 10 and 11 `[ERR_PNPM_X] msg`, 12 `Error: ERR_PNPM_X`.
       expect(linesFor(out, file).join('\n'), out).toMatch(
-        /base did not build: \[?ERR_PNPM_OUTDATED_LOCKFILE\b/,
+        /base did not build: (?:\[|Error: )?ERR_PNPM_OUTDATED_LOCKFILE\b/,
       )
     }
     expect(status, out).not.toBe(0)

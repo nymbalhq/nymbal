@@ -64,6 +64,9 @@ if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
 export default defineConfig({
   test: {
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
+    // Node 25+ defines a global `localStorage` that is undefined without --localstorage-file, and it shadows the one
+    // jsdom and happy-dom install; without Node's, the test environment's is the only one.
+    poolOptions: { forks: { execArgv: ['--no-experimental-webstorage'] } },
     projects: [
       {
         test: {
