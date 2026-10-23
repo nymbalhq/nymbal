@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test'
+import type { BrowserContext, Locator, Page } from '@playwright/test'
 import { seedProducts } from '../../../packages/platform/src/seed/data'
 import { storeCapabilities } from '../support/capabilities'
 import { adminToken, ownProduct } from '../support/checkout'
@@ -86,17 +86,73 @@ function pdpProduct(request: Parameters<typeof catalogProduct>[0]): Promise<Cata
   )
 }
 
-/** The `<img>` the gallery's `main` part shows: the part itself, or the image inside it. */
-async function mainImageSrc(page: Page): Promise<string | null> {
+/** The `<img>` the gallery's `main` part shows (the part itself, or the image inside it): its `src` and `fetchpriority`. */
+async function mainImage(page: Page): Promise<{ src: string | null; priority: string | null }> {
   return page.locator('nymbal-image-gallery').evaluate((gallery) => {
     const main = gallery.shadowRoot?.querySelector('[part~="main"]')
     const img = main?.localName === 'img' ? main : main?.querySelector('img')
-    return img?.getAttribute('src') ?? null
+    return {
+      src: img?.getAttribute('src') ?? null,
+      priority: img?.getAttribute('fetchpriority') ?? null,
+    }
+  })
+}
+
+async function mainImageSrc(page: Page): Promise<string | null> {
+  return (await mainImage(page)).src
+}
+
+/** Each card image of a grid, in card order: its `src`, `loading` and `fetchpriority`. */
+async function cardImages(
+  grid: Locator,
+): Promise<Array<{ src: string | null; loading: string | null; priority: string | null }>> {
+  return grid.locator('nymbal-product-card').evaluateAll((cards) =>
+    cards.map((card) => {
+      const img = card.shadowRoot?.querySelector('[part~="image"]')
+      return {
+        src: img?.getAttribute('src') ?? null,
+        loading: img?.getAttribute('loading') ?? null,
+        priority: img?.getAttribute('fetchpriority') ?? null,
+      }
+    }),
+  )
+}
+
+/** The `href` of every `<link rel="preload" as="image">` in the parsed head, in order. */
+async function headImagePreloads(page: Page): Promise<Array<string | null>> {
+  return page
+    .locator('head link[rel="preload"][as="image"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+}
+
+/**
+ * Every `<img fetchpriority="high">` on the page, light DOM and every open shadow root: its `src`, and whether it is the
+ * gallery's `main` image.
+ */
+async function highPriorityImages(
+  page: Page,
+): Promise<Array<{ src: string | null; main: boolean }>> {
+  return page.evaluate(() => {
+    const all: Element[] = []
+    const walk = (root: Document | ShadowRoot): void => {
+      for (const el of root.querySelectorAll('*')) {
+        all.push(el)
+        if (el.shadowRoot) walk(el.shadowRoot)
+      }
+    }
+    walk(document)
+    const part = all
+      .find((el) => el.localName === 'nymbal-image-gallery')
+      ?.shadowRoot?.querySelector('[part~="main"]')
+    const main = part?.localName === 'img' ? part : part?.querySelector('img')
+    return all
+      .filter((el) => el.localName === 'img' && el.getAttribute('fetchpriority') === 'high')
+      .map((img) => ({ src: img.getAttribute('src'), main: img === main }))
   })
 }
 
 test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)', () => {
-  test('AC-3: browse.grid-is-element: with JS off, / shows the featured grid’s nymbal-product-cards inside nymbal-product-grid, the first four images eager with high priority and the rest lazy', async ({
+  test('AC-3: browse.grid-is-element: with JS off, / shows the featured grid’s nymbal-product-cards inside nymbal-product-grid, the first four images eager with high priority and the rest lazy, and the head preloads the first card’s image', async ({
     browser,
     context,
     request,
@@ -110,21 +166,19 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
     expect(slugs.length).toBeGreaterThan(4)
     expect(new Set(slugs).size).toBe(slugs.length)
 
-    const images = await grids.locator('nymbal-product-card').evaluateAll((cards) =>
-      cards.map((card) => {
-        const img = card.shadowRoot?.querySelector('[part~="image"]')
-        return {
-          loading: img?.getAttribute('loading'),
-          high: img?.getAttribute('fetchpriority') === 'high',
-        }
-      }),
-    )
-    expect(images).toEqual(
+    const images = await cardImages(grids)
+    expect(images.map(({ loading, priority }) => ({ loading, high: priority === 'high' }))).toEqual(
       slugs.map((_, i) => ({ loading: i < 4 ? 'eager' : 'lazy', high: i < 4 })),
     )
+    // Decision 9: the preload scanner never reaches an image inside a declarative shadow root, so the head starts it.
+    expect(images[0]?.src, 'the first card has an image').toBeTruthy()
+    expect(
+      await headImagePreloads(page),
+      'head image preloads: the first card’s image only',
+    ).toEqual([images[0]!.src])
   })
 
-  test('AC-3: browse.grid-is-element: with JS off, /products and /category/<slug> show their grids in the API’s order, with load-more exactly when GET /api/products has a nextCursor', async ({
+  test('AC-3: browse.grid-is-element: with JS off, /products and /category/<slug> show their grids in the API’s order, with load-more exactly when GET /api/products has a nextCursor, the first four images eager and the rest lazy, and the head preloads the first card’s image', async ({
     browser,
     context,
     request,
@@ -139,9 +193,10 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
       [`/category/${category.slug}`, { limit: String(PAGE_SIZE), sort, category: category.slug }],
     ] as const) {
       // Other journeys add products while this runs: read the API and the page until both are of one moment.
+      let page: Page | undefined
       await expect(async () => {
         const api = await apiPage(request, query)
-        const page = await scriptOff(browser, testInfo, context, path)
+        page = await scriptOff(browser, testInfo, context, path)
         const grid = page.locator('nymbal-product-grid')
         await expect(grid, `${path}: one grid`).toHaveCount(1)
         expect(await cardSlugs(grid), `${path}: the API's order`).toEqual(
@@ -152,6 +207,23 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
           api.nextCursor === null ? 0 : 1,
         )
       }).toPass({ timeout: 30_000 })
+
+      // Read once the page is settled, outside the retry, so a missing preload fails at once.
+      const images = await cardImages(page!.locator('nymbal-product-grid'))
+      expect(images.length, `${path}: cards`).toBeGreaterThan(0)
+      expect
+        .soft(
+          images.map(({ loading, priority }) => ({ loading, high: priority === 'high' })),
+          `${path}: the first four images eager with high priority, the rest lazy`,
+        )
+        .toEqual(images.map((_, i) => ({ loading: i < 4 ? 'eager' : 'lazy', high: i < 4 })))
+      expect(images[0]?.src, `${path}: the first card has an image`).toBeTruthy()
+      expect
+        .soft(
+          await headImagePreloads(page!),
+          `${path}: head image preloads: the first card’s image only`,
+        )
+        .toEqual([images[0]!.src])
     }
     expect((await apiPage(request, { limit: String(PAGE_SIZE), sort })).nextCursor).not.toBeNull()
     expect(
@@ -161,7 +233,7 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
     ).toBeNull()
   })
 
-  test('AC-3: browse.grid-is-element: with JS off, the PDP shows nymbal-product-price and nymbal-stock-badge for the first variant, nymbal-breadcrumb with the product as aria-current, the gallery’s main image and a thumbnail per image, and the related nymbal-product-grid', async ({
+  test('AC-3: browse.grid-is-element: with JS off, the PDP shows nymbal-product-price and nymbal-stock-badge for the first variant, nymbal-breadcrumb with the product as aria-current, the gallery’s main image and a thumbnail per image, and the related nymbal-product-grid; the main image is the page’s only fetchpriority="high" image and the head’s only image preload, every related card image lazy', async ({
     browser,
     context,
     request,
@@ -191,6 +263,27 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
     expect(related.length, 'related cards').toBeGreaterThan(0)
     expect(related.length).toBeLessThanOrEqual(4)
     expect(related, 'the product is not its own relation').not.toContain(product.slug)
+
+    // Decision 9: the gallery's main image is the PDP's LCP; nothing below the fold outranks it.
+    const gallery = await mainImage(page)
+    expect.soft(gallery.priority, 'the gallery’s main image fetchpriority').toBe('high')
+    expect
+      .soft(
+        await highPriorityImages(page),
+        'the page’s fetchpriority="high" images: the gallery’s main one only',
+      )
+      .toEqual([{ src: gallery.src, main: true }])
+    const relatedImages = await cardImages(main.locator('nymbal-product-grid'))
+    expect(relatedImages.length, 'a related card image per related card').toBe(related.length)
+    expect
+      .soft(
+        relatedImages.map(({ loading, priority }) => ({ loading, priority })),
+        'every related card image lazy, with no fetchpriority',
+      )
+      .toEqual(relatedImages.map(() => ({ loading: 'lazy', priority: null })))
+    expect
+      .soft(await headImagePreloads(page), 'head image preloads: the gallery’s main image only')
+      .toEqual([gallery.src])
   })
 
   for (const [name, path] of [
