@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../..",
     "db:generate:sqlite": "drizzle-kit generate --config=drizzle.config.sqlite.ts",
     "db:generate:postgres": "drizzle-kit generate --config=drizzle.config.postgres.ts",
     "db:migrate:sqlite": "drizzle-kit migrate --config=drizzle.config.sqlite.ts",
@@ -48,7 +48,7 @@
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.3.0",
+    "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.36.0",
     "jose": "^5.9.6",
     "pg": "^8.13.1",
@@ -106,10 +106,11 @@
     "@types/better-sqlite3": "^7.6.11",
     "@types/pg": "^8.11.10",
     "@types/uuid": "^10.0.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "drizzle-kit": "^0.28.0",
     "stripe": "^17.4.0",
-    "tsup": "^8.3.5",
-    "typescript": "^5.6.3",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vitest": "^3.0.0"
   }
 }
