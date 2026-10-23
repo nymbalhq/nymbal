@@ -79,15 +79,18 @@ export class NymbalReviewForm extends NymbalFormElement {
   declare productId: string | undefined
 
   protected override async send(): Promise<void> {
-    const { review } = await this.client.adapter.reviews.submit({
-      productId: this.productId ?? '',
-      rating: Number(this.value('rating')),
-      title: this.value('title'),
-      body: this.value('body'),
-    })
+    const answer: { review?: { id: string } | null } | null | undefined =
+      await this.client.adapter.reviews.submit({
+        productId: this.productId ?? '',
+        rating: Number(this.value('rating')),
+        title: this.value('title'),
+        body: this.value('body'),
+      })
     this.renderRoot.querySelector('form')?.reset()
     this.notice = 'Thank you for your review!'
-    this.emit('nymbal:review:submitted', { reviewId: review.id })
+    // A 2xx answer is the store's acceptance; without a review in it there is no id to announce.
+    const reviewId = answer?.review?.id
+    if (reviewId !== undefined) this.emit('nymbal:review:submitted', { reviewId })
   }
 
   protected override failureText(): string {
