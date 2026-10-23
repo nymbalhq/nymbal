@@ -99,11 +99,52 @@ function attributesOf(
   return attrs.sort(([a], [b]) => a.localeCompare(b))
 }
 
-/** A wrapper's compiled render function as source: equal source, with the same React imports, renders the same. */
-function codeOf(wrapper: Wrapper | undefined, name: string): string {
-  const render = (wrapper as { render?: unknown } | undefined)?.render
-  if (typeof render !== 'function') throw new Error(`${name} is not a forwardRef component`)
-  return render.toString()
+function parse(source: string): ts.SourceFile {
+  return ts.createSourceFile(
+    'wrappers.tsx',
+    source,
+    ts.ScriptTarget.ES2022,
+    true,
+    ts.ScriptKind.TSX,
+  )
+}
+
+/**
+ * A generated module cut at what belongs to `schema`: its element import, its intrinsic element entry, its props
+ * types and its component. `rest` holds the text around those pieces, so `rest.length === own.length + 1`.
+ */
+function split(sf: ts.SourceFile, schema: ElementSchema): { own: string[]; rest: string[] } {
+  const source = sf.text
+  const names = new Set([
+    schema.reactName,
+    `${schema.reactName}Props`,
+    `${schema.reactName}OwnProps`,
+    schema.tag,
+  ])
+  const spans: Array<[number, number]> = []
+  const visit = (node: ts.Node): void => {
+    const name = (node as { name?: ts.Node }).name
+    const owned =
+      (ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        node.moduleSpecifier.text === `@nymbalhq/web-components/elements/${schema.tag}`) ||
+      (name !== undefined &&
+        (ts.isIdentifier(name) || ts.isStringLiteral(name)) &&
+        names.has(name.text))
+    if (owned) spans.push([node.getStart(sf), node.end])
+    else ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  const own: string[] = []
+  const rest: string[] = []
+  let at = 0
+  for (const [start, end] of spans) {
+    rest.push(source.slice(at, start))
+    own.push(source.slice(start, end))
+    at = end
+  }
+  rest.push(source.slice(at))
+  return { own, rest }
 }
 
 // ─── Generated schemas ──────────────────────────────────────────────────────
@@ -194,9 +235,12 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
   it('AC-2: property: adding an attribute to a copy of a real element’s schema adds exactly that one prop to its wrapper and changes no other wrapper', () => {
     expect(realSchemas.length, 'the package exports its element schemas').toBeGreaterThan(0)
     const before = load(realSchemas)
-    const beforeCode = new Map(
-      realSchemas.map((s) => [s.reactName, codeOf(before[s.reactName], s.reactName)]),
-    )
+    const beforeFile = parse(generateWrappers(realSchemas))
+    const around = new Map<number, string[]>()
+    const aroundOf = (index: number): string[] => {
+      if (!around.has(index)) around.set(index, split(beforeFile, realSchemas[index]!).rest)
+      return around.get(index)!
+    }
     fc.assert(
       fc.property(
         fc
@@ -216,18 +260,18 @@ describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
           const changed = realSchemas.map((s, i) =>
             i === index ? { ...s, attributes: [...s.attributes, added] } : s,
           )
-          const after = load(changed)
-          expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort())
-          // Every other wrapper compiles to the same render function, so it renders the same for every props, not
-          // only sampled ones; rendering all of them twice per run is what timed out under coverage.
-          realSchemas.forEach((s, i) => {
-            if (i === index) return
-            expect(codeOf(after[s.reactName], s.reactName), s.reactName).toBe(
-              beforeCode.get(s.reactName),
-            )
-          })
+          // The module is the one before with only the changed element's pieces replaced, by the pieces its own module
+          // has: every other wrapper's source, and so its code, is unchanged byte for byte. Only that one module is
+          // compiled, so a run costs the same however many elements the package has.
+          const target = changed[index]!
+          const rest = aroundOf(index)
+          const { own } = split(parse(generateWrappers([target])), target)
+          expect(own.length, `${target.reactName}'s pieces`).toBe(rest.length - 1)
+          expect(generateWrappers(changed)).toBe(
+            rest.map((text, i) => text + (own[i] ?? '')).join(''),
+          )
+          const after = load([target])
           // The changed one renders what it did, plus the one attribute the new prop sets.
-          const target = realSchemas[index]!
           const was = attributesOf(before[target.reactName], target.tag, values)
           const now = attributesOf(after[target.reactName], target.tag, {
             ...values,
