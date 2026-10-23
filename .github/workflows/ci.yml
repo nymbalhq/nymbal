@@ -7,7 +7,6 @@ on:
     branches: [main, dev]
 
 env:
-  PNPM_VERSION: '9.12.3'
   # The base every gate.ts call diffs against: the previous tip of the pushed branch, so one merge's own changes.
   GATE_BASE: ${{ github.event.before }}
 
@@ -19,8 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -54,8 +51,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -75,8 +70,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -154,8 +147,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -192,8 +183,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -255,8 +244,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -287,8 +274,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -347,8 +332,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -373,8 +356,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -399,8 +380,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -427,8 +406,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -453,8 +430,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -481,8 +456,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -507,8 +480,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -535,8 +506,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -561,8 +530,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -584,8 +551,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -670,8 +635,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -698,8 +661,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
