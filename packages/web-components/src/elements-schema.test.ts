@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import * as wc from './index.js'
@@ -17,6 +20,12 @@ import { setupMockClient } from './testing/index.js'
 // P2-16 AC-1 adds `nymbal-checkout`. Its states are its steps (contact, shipping, payment with billing the same or
 // not), a place-order held, refused and answered, a payment element in error, and a cart in its summary; each is
 // reached by walking the steps as a shopper does, with the payment element as its `payment`-slotted child.
+//
+// P2-17 AC-1 adds the eleven elements the templates' server-rendered components become (spec Decision 1): each is a
+// LitElement with a static schema, in an open shadow root, renders exactly its schema's parts across its states (an
+// empty and a filled grid with and without the product-list store, a gallery of none, one and several images, a review
+// form submitted once with its call held, refused and answered, an order with and without a discount), styles them on
+// `--nymbal-*` tokens, has its `src/elements/<tag>.ts` entry, and carries the interface the templates call it by.
 
 const PAYMENT = 'nymbal-payment-element'
 const TAGS = [
@@ -41,6 +50,18 @@ const TAGS = [
   'nymbal-address-book',
   // P2-16
   'nymbal-checkout',
+  // P2-17
+  'nymbal-product-grid',
+  'nymbal-product-price',
+  'nymbal-stock-badge',
+  'nymbal-breadcrumb',
+  'nymbal-image-gallery',
+  'nymbal-site-header',
+  'nymbal-site-footer',
+  'nymbal-category-nav',
+  'nymbal-review-list',
+  'nymbal-review-form',
+  'nymbal-order-summary',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -125,6 +146,31 @@ function installAccount(client: Record<string, unknown>, s: State): void {
       list: async () => ({ items: [], nextCursor: null }),
       get: async () => {
         throw new Error('No order')
+      },
+    },
+  }
+}
+
+/** The reviews SDK the review form submits through (`client.adapter.reviews`), answering as `s.phase` says. */
+function installReviews(client: Record<string, unknown>, s: State): void {
+  client['adapter'] = {
+    reviews: {
+      getForProduct: async () => ({ items: [], nextCursor: null }),
+      submit: async (review: Record<string, unknown>) => {
+        if (s.phase === 'pending') await new Promise<never>(() => undefined)
+        if (s.phase === 'failed') throw new Error('Refused by the AC-1 fake.')
+        return {
+          review: {
+            ...review,
+            id: 'rev-ac1',
+            customerId: null,
+            orderId: null,
+            moderationStatus: 'pending',
+            submittedAt: '2026-10-22T00:00:00.000Z',
+            moderatedAt: null,
+            moderatedBy: null,
+          },
+        }
       },
     },
   }
@@ -220,6 +266,7 @@ async function mount(tag: Tag, s: State): Promise<HTMLElement> {
     { setState(partial: Record<string, unknown>): void }
   >
   installAccount(client as unknown as Record<string, unknown>, s)
+  installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
@@ -696,6 +743,188 @@ const FIXED: Record<Tag, State[]> = {
       ]),
     }).slice(0, 1),
   ],
+  // P2-17
+  'nymbal-product-grid': [
+    state(),
+    state({ attrs: { products: JSON.stringify([]) } }),
+    state({
+      attrs: {
+        products: JSON.stringify([card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })]),
+        'has-more': '',
+      },
+    }),
+    state({
+      attrs: { source: 'product-list', products: JSON.stringify([card()]) },
+      stores: {
+        productList: {
+          products: [card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })],
+          pagination: { cursor: 'c2', hasMore: true },
+          loading: false,
+        },
+      },
+    }),
+    state({
+      attrs: { source: 'product-list' },
+      stores: { productList: { products: [], pagination: { cursor: null, hasMore: false } } },
+    }),
+  ],
+  'nymbal-product-price': [
+    state(),
+    state({ attrs: { 'price-minor': '1200', currency: 'GBP' } }),
+    state({ attrs: { 'price-minor': '1200', 'compare-at-minor': '1500', currency: 'GBP' } }),
+    state({
+      attrs: { 'product-id': 'p1', 'price-minor': '1200', currency: 'GBP' },
+      stores: {
+        product: { product: productOf([[]]), selectedVariant: productOf([[]]).variants[0] },
+      },
+    }),
+  ],
+  'nymbal-stock-badge': [
+    state(),
+    state({ attrs: { stock: '0' } }),
+    state({ attrs: { stock: '3' } }),
+    state({ attrs: { stock: '12' } }),
+    state({
+      attrs: { 'product-id': 'p1', stock: '0' },
+      stores: {
+        product: { product: productOf([[]]), selectedVariant: productOf([[]]).variants[0] },
+      },
+    }),
+  ],
+  'nymbal-breadcrumb': [
+    state(),
+    state({
+      attrs: {
+        items: JSON.stringify([
+          { label: 'Home', href: '/' },
+          { label: 'Products', href: '/products' },
+          { label: 'Mug' },
+        ]),
+      },
+    }),
+  ],
+  'nymbal-image-gallery': [
+    state(),
+    state({ attrs: { images: JSON.stringify([{ url: 'https://example.test/a.jpg', alt: 'A' }]) } }),
+    state({
+      attrs: {
+        images: JSON.stringify([
+          { url: 'https://example.test/a.jpg', alt: 'A' },
+          { url: 'https://example.test/b.jpg', alt: 'B' },
+          { url: 'https://example.test/c.jpg', alt: 'C' },
+        ]),
+      },
+    }),
+  ],
+  'nymbal-site-header': [
+    state(),
+    state({
+      attrs: {
+        links: JSON.stringify([
+          { label: 'Shop', href: '/products' },
+          { label: 'Apparel', href: '/category/apparel' },
+        ]),
+        logo: 'Nymbal',
+        'account-href': '/account',
+      },
+    }),
+  ],
+  'nymbal-site-footer': [
+    state(),
+    state({
+      attrs: {
+        columns: JSON.stringify([
+          { heading: 'Shop', links: [{ label: 'All Products', href: '/products' }] },
+          { heading: 'Account', links: [{ label: 'Login', href: '/account/login' }] },
+        ]),
+        year: '2026',
+      },
+    }),
+  ],
+  'nymbal-category-nav': [
+    state(),
+    state({
+      attrs: {
+        categories: JSON.stringify([
+          {
+            id: 'c1',
+            parentId: null,
+            name: 'Home',
+            slug: 'home',
+            description: 'For the home',
+            position: 0,
+            createdAt: '',
+          },
+          {
+            id: 'c2',
+            parentId: null,
+            name: 'Books',
+            slug: 'books',
+            description: '',
+            position: 1,
+            createdAt: '',
+          },
+        ]),
+      },
+    }),
+  ],
+  'nymbal-review-list': [
+    state(),
+    state({ attrs: { reviews: JSON.stringify([]) } }),
+    state({
+      attrs: {
+        reviews: JSON.stringify([
+          {
+            id: 'r1',
+            productId: 'p1',
+            rating: 4,
+            title: 'Good',
+            body: 'Solid mug.',
+            submittedAt: '2026-10-22T00:00:00.000Z',
+          },
+          {
+            id: 'r2',
+            productId: 'p1',
+            rating: 2,
+            title: 'Meh',
+            body: 'Chipped.',
+            submittedAt: '2026-10-21T00:00:00.000Z',
+          },
+        ]),
+      },
+    }),
+  ],
+  'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
+  'nymbal-order-summary': [
+    state(),
+    state({
+      attrs: {
+        items: JSON.stringify([
+          { name: 'Mug', qty: 2, unitPriceMinor: 1200, lineTotalMinor: 2400 },
+          { name: 'Scarf', qty: 1, unitPriceMinor: 2500, lineTotalMinor: 2500 },
+        ]),
+        'subtotal-minor': '4900',
+        'discount-minor': '0',
+        'shipping-minor': '500',
+        'tax-minor': '0',
+        'total-minor': '5400',
+        currency: 'GBP',
+      },
+    }),
+    state({
+      attrs: {
+        items: JSON.stringify([
+          { name: 'Mug', qty: 1, unitPriceMinor: 1200, lineTotalMinor: 1200 },
+        ]),
+        'subtotal-minor': '1200',
+        'discount-minor': '200',
+        'shipping-minor': '0',
+        'tax-minor': '100',
+        'total-minor': '1100',
+        currency: 'GBP',
+      },
+    }),
+  ],
 }
 
 const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
@@ -811,6 +1040,183 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       at: fc.nat({ max: checkoutStates().length - 1 }),
     })
     .map(({ items, at }) => checkoutStates({ cart: cartOf(items) })[at]!),
+  // P2-17
+  'nymbal-product-grid': fc
+    .record({
+      products: fc.uniqueArray(cardProduct, { maxLength: 6, selector: (p) => p.slug }),
+      hasMore: fc.boolean(),
+      source: fc.boolean(),
+      stored: fc.uniqueArray(cardProduct, { maxLength: 6, selector: (p) => p.slug }),
+      storeHasMore: fc.boolean(),
+      loading: fc.boolean(),
+    })
+    .map(({ products, hasMore, source, stored, storeHasMore, loading }) =>
+      state({
+        attrs: {
+          products: JSON.stringify(products),
+          ...(hasMore && { 'has-more': '' }),
+          ...(source && { source: 'product-list' }),
+        },
+        stores: {
+          productList: {
+            products: stored,
+            pagination: { cursor: storeHasMore ? 'c2' : null, hasMore: storeHasMore },
+            loading,
+          },
+        },
+      }),
+    ),
+  'nymbal-product-price': fc
+    .record({
+      price: fc.option(fc.integer({ min: 0, max: 100_000 })),
+      compareAt: fc.option(fc.integer({ min: 0, max: 100_000 })),
+      same: fc.boolean(),
+      variants: fc.array(fc.array(option, { maxLength: 2 }), { minLength: 1, maxLength: 3 }),
+      loading: fc.boolean(),
+    })
+    .map(({ price, compareAt, same, variants, loading }) => {
+      const product = productOf(variants)
+      return state({
+        attrs: {
+          'product-id': same ? product.id : 'other',
+          currency: 'GBP',
+          ...(price !== null && { 'price-minor': String(price) }),
+          ...(compareAt !== null && { 'compare-at-minor': String(compareAt) }),
+        },
+        stores: { product: { product, selectedVariant: product.variants[0], loading } },
+      })
+    }),
+  'nymbal-stock-badge': fc
+    .record({
+      stock: fc.option(fc.integer({ min: -20, max: 50 })),
+      same: fc.boolean(),
+      loading: fc.boolean(),
+    })
+    .map(({ stock, same, loading }) => {
+      const product = productOf([[]])
+      return state({
+        attrs: {
+          'product-id': same ? product.id : 'other',
+          ...(stock !== null && { stock: String(stock) }),
+        },
+        stores: { product: { product, selectedVariant: product.variants[0], loading } },
+      })
+    }),
+  'nymbal-breadcrumb': fc
+    .array(
+      fc.record({
+        label: word,
+        href: fc.option(
+          word.map((w) => `/${w}`),
+          { nil: undefined },
+        ),
+      }),
+      {
+        maxLength: 4,
+      },
+    )
+    .map((items) => state({ attrs: { items: JSON.stringify(items) } })),
+  'nymbal-image-gallery': fc
+    .uniqueArray(fc.record({ url: word.map((w) => `https://example.test/${w}.jpg`), alt: word }), {
+      maxLength: 4,
+      selector: (i) => i.url,
+    })
+    .map((images) => state({ attrs: { images: JSON.stringify(images) } })),
+  'nymbal-site-header': fc
+    .record({
+      links: fc.uniqueArray(fc.record({ label: word, href: word.map((w) => `/${w}`) }), {
+        maxLength: 5,
+        selector: (l) => l.href,
+      }),
+      logo: fc.option(word),
+      account: fc.option(fc.constant('/account')),
+    })
+    .map(({ links, logo, account }) =>
+      state({
+        attrs: {
+          links: JSON.stringify(links),
+          ...(logo !== null && { logo }),
+          ...(account !== null && { 'account-href': account }),
+        },
+      }),
+    ),
+  'nymbal-site-footer': fc
+    .record({
+      columns: fc.array(
+        fc.record({
+          heading: word,
+          links: fc.array(fc.record({ label: word, href: word.map((w) => `/${w}`) }), {
+            maxLength: 4,
+          }),
+        }),
+        { maxLength: 4 },
+      ),
+      year: fc.option(fc.integer({ min: 2000, max: 2100 })),
+    })
+    .map(({ columns, year }) =>
+      state({
+        attrs: { columns: JSON.stringify(columns), ...(year !== null && { year: String(year) }) },
+      }),
+    ),
+  'nymbal-category-nav': fc
+    .uniqueArray(
+      fc.record({
+        id: word,
+        parentId: fc.constant(null),
+        name: word,
+        slug: word,
+        description: fc.constantFrom('', 'A category'),
+        position: fc.nat({ max: 9 }),
+        createdAt: fc.constant(''),
+      }),
+      { maxLength: 5, selector: (c) => c.slug },
+    )
+    .map((categories) => state({ attrs: { categories: JSON.stringify(categories) } })),
+  'nymbal-review-list': fc
+    .uniqueArray(
+      fc.record({
+        id: word,
+        productId: fc.constant('p1'),
+        rating: fc.integer({ min: 1, max: 5 }),
+        title: word,
+        body: word,
+        submittedAt: fc.constant('2026-10-22T00:00:00.000Z'),
+      }),
+      { maxLength: 4, selector: (r) => r.id },
+    )
+    .map((reviews) => state({ attrs: { reviews: JSON.stringify(reviews) } })),
+  'nymbal-review-form': fc
+    .option(fc.constantFrom(...PHASES))
+    .map((phase) => state({ attrs: { 'product-id': 'p1' }, phase })),
+  'nymbal-order-summary': fc
+    .record({
+      lines: fc.array(
+        fc.record({
+          name: word,
+          qty: fc.integer({ min: 1, max: 9 }),
+          unitPriceMinor: fc.integer({ min: 0, max: 100_000 }),
+        }),
+        { maxLength: 4 },
+      ),
+      discount: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 5_000 })),
+      shipping: fc.integer({ min: 0, max: 2_000 }),
+      tax: fc.integer({ min: 0, max: 2_000 }),
+    })
+    .map(({ lines, discount, shipping, tax }) => {
+      const items = lines.map((l) => ({ ...l, lineTotalMinor: l.qty * l.unitPriceMinor }))
+      const subtotal = items.reduce((n, l) => n + l.lineTotalMinor, 0)
+      return state({
+        attrs: {
+          items: JSON.stringify(items),
+          'subtotal-minor': String(subtotal),
+          'discount-minor': String(discount),
+          'shipping-minor': String(shipping),
+          'tax-minor': String(tax),
+          'total-minor': String(subtotal - discount + shipping + tax),
+          currency: 'GBP',
+        },
+      })
+    }),
 }
 
 describe('P2-06 AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
@@ -880,14 +1286,19 @@ const INTERFACE: Array<{
   tag: Tag
   reactName: string
   events: Array<{ name: string; prop: string }>
-  attributes?: Array<{ name: string; type: string }>
+  /** Pinned attributes, in any order; a type left out is the element's own choice (the spec names none). */
+  attributes?: Array<{ name: string; type?: string }>
 }> = [
   { tag: 'nymbal-cart-page', reactName: 'CartPage', events: [] },
   {
     tag: 'nymbal-product-card',
     reactName: 'ProductCard',
     events: [],
-    attributes: [{ name: 'product', type: 'json' }],
+    // P2-17 Decision 1: the card gains `eager`.
+    attributes: [
+      { name: 'product', type: 'json' },
+      { name: 'eager', type: 'boolean' },
+    ],
   },
   { tag: 'nymbal-search-results', reactName: 'SearchResults', events: [] },
   {
@@ -913,7 +1324,101 @@ const INTERFACE: Array<{
     reactName: 'AddressBook',
     events: [{ name: 'nymbal:address-book:changed', prop: 'onChanged' }],
   },
+  // P2-17 (spec Decision 1 and Interface)
+  {
+    tag: 'nymbal-product-grid',
+    reactName: 'ProductGrid',
+    events: [],
+    attributes: [
+      { name: 'products', type: 'json' },
+      { name: 'source', type: 'string' },
+      { name: 'has-more', type: 'boolean' },
+      { name: 'lazy', type: 'boolean' },
+    ],
+  },
+  {
+    tag: 'nymbal-product-price',
+    reactName: 'ProductPrice',
+    events: [],
+    attributes: [
+      { name: 'product-id', type: 'string' },
+      { name: 'price-minor', type: 'number' },
+      { name: 'currency', type: 'string' },
+      { name: 'compare-at-minor', type: 'number' },
+    ],
+  },
+  {
+    tag: 'nymbal-stock-badge',
+    reactName: 'StockBadge',
+    events: [],
+    attributes: [
+      { name: 'product-id', type: 'string' },
+      { name: 'stock', type: 'number' },
+    ],
+  },
+  {
+    tag: 'nymbal-breadcrumb',
+    reactName: 'Breadcrumb',
+    events: [],
+    attributes: [{ name: 'items', type: 'json' }],
+  },
+  {
+    tag: 'nymbal-image-gallery',
+    reactName: 'ImageGallery',
+    events: [],
+    attributes: [{ name: 'images', type: 'json' }],
+  },
+  {
+    tag: 'nymbal-site-header',
+    reactName: 'SiteHeader',
+    events: [],
+    attributes: [
+      { name: 'links', type: 'json' },
+      { name: 'logo', type: 'string' },
+      { name: 'account-href', type: 'string' },
+    ],
+  },
+  {
+    tag: 'nymbal-site-footer',
+    reactName: 'SiteFooter',
+    events: [],
+    attributes: [{ name: 'columns', type: 'json' }, { name: 'year' }],
+  },
+  {
+    tag: 'nymbal-category-nav',
+    reactName: 'CategoryNav',
+    events: [],
+    attributes: [{ name: 'categories', type: 'json' }],
+  },
+  {
+    tag: 'nymbal-review-list',
+    reactName: 'ReviewList',
+    events: [],
+    attributes: [{ name: 'reviews', type: 'json' }],
+  },
+  {
+    tag: 'nymbal-review-form',
+    reactName: 'ReviewForm',
+    events: [{ name: 'nymbal:review:submitted', prop: 'onSubmitted' }],
+    attributes: [{ name: 'product-id', type: 'string' }],
+  },
+  {
+    tag: 'nymbal-order-summary',
+    reactName: 'OrderSummary',
+    events: [],
+    attributes: [
+      { name: 'items', type: 'json' },
+      { name: 'subtotal-minor', type: 'number' },
+      { name: 'discount-minor', type: 'number' },
+      { name: 'shipping-minor', type: 'number' },
+      { name: 'tax-minor', type: 'number' },
+      { name: 'total-minor', type: 'number' },
+      { name: 'currency', type: 'string' },
+    ],
+  },
 ]
+
+const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name)
 
 describe('P2-15 AC-1: the moved views carry the interface the templates call them by', () => {
   it('AC-1: each new element’s schema names its React wrapper, its events with their handler props, and its attributes', () => {
@@ -926,12 +1431,20 @@ describe('P2-15 AC-1: the moved views carry the interface the templates call the
           expect.objectContaining(event),
         )
       }
-      // Only the attributes the interface names are pinned; the rest are the element's own.
-      const declared = (schema?.attributes ?? []).map(({ name, type }) => ({ name, type }))
+      // Where the interface lists attributes they are all of them, in any order; a type it leaves out is not pinned.
+      const declared = (schema?.attributes ?? [])
+        .map(({ name, type }) => ({ name, type }))
+        .sort(byName)
+      const wanted = want.attributes
+        ?.map((a) => ({
+          name: a.name,
+          type: a.type ?? declared.find((d) => d.name === a.name)?.type,
+        }))
+        .sort(byName)
       expect(
         want.attributes === undefined ? undefined : declared,
         `${want.tag}: attributes`,
-      ).toEqual(want.attributes)
+      ).toEqual(wanted)
     }
   })
 })
@@ -1009,6 +1522,104 @@ describe('P2-16 AC-1: nymbal-checkout meets the foundation', () => {
         },
       ),
       { numRuns: 25 },
+    )
+  })
+})
+
+// P2-17 AC-1 (spec Decision 1): what the per-element conventions add for the eleven. Each styles its parts on the
+// `--nymbal-*` tokens (a project restyles it from its tokens file, as the elements before it); each has the
+// `src/elements/<tag>.ts` entry a page and a generated wrapper import (Decision 5's per-page defines), with the hydrate
+// support as its first import so it evaluates before lit; the review form fires `nymbal:review:submitted` with
+// `{ reviewId: string }`; the header places the page's search bar and mini-cart through its `search` and `cart` slots.
+// Kills: an element with hard-coded colours a tokens file cannot reach, a missing entry (the Next wrapper's import
+// fails the build), an entry that imports lit before the hydrate support, a header that drops its slotted children.
+const P2_17_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
+const HERE = dirname(fileURLToPath(import.meta.url))
+
+describe('P2-17 AC-1: the eleven elements meet the element conventions', () => {
+  it('AC-1: each of the eleven styles itself with var(--nymbal-*) tokens', () => {
+    expect(P2_17_TAGS).toHaveLength(11)
+    for (const tag of P2_17_TAGS) {
+      const ctor = customElements.get(tag) as
+        | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })
+        | undefined
+      expect(ctor, `${tag} is defined`).toBeDefined()
+      const css = (ctor?.elementStyles ?? []).map((s) => s.cssText ?? '').join('\n')
+      expect(
+        css.match(/var\(--nymbal-[a-z0-9-]+/g)?.length ?? 0,
+        `${tag}: var(--nymbal-*) uses`,
+      ).toBeGreaterThan(0)
+    }
+  })
+
+  it('AC-1: every element has src/elements/<tag>.ts, whose first import is the hydrate support and which exports the class defined under the tag', async () => {
+    for (const tag of TAGS) {
+      let source = ''
+      try {
+        // A path, not a URL: happy-dom's URL global is not the one node:fs accepts.
+        source = readFileSync(join(HERE, 'elements', `${tag}.ts`), 'utf8')
+      } catch {
+        source = ''
+      }
+      expect(source, `src/elements/${tag}.ts`).not.toBe('')
+      // The first statement, comments aside, is the side-effect import of the hydrate support.
+      const firstStatement = source
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => line !== '' && !line.startsWith('//'))
+      expect(firstStatement, `${tag}: its first statement`).toMatch(
+        /^import\s+['"]\.\.\/hydrate-support\.js['"]/,
+      )
+      const entry = (await import(/* @vite-ignore */ `./elements/${tag}.js`)) as Record<
+        string,
+        unknown
+      >
+      const exported = Object.values(entry).filter((v) => schemaOf(v)?.tag === tag)
+      expect(exported, `${tag}: the class its entry exports`).toEqual([customElements.get(tag)])
+    }
+  })
+
+  it('AC-1: nymbal-review-form fires nymbal:review:submitted as onSubmitted with { reviewId: string }; nymbal-site-header has the search and cart slots', () => {
+    const form = schemaOf(customElements.get('nymbal-review-form'))
+    expect(form, 'nymbal-review-form is defined with a static schema').toBeDefined()
+    expect(form?.events).toContainEqual({
+      name: 'nymbal:review:submitted',
+      prop: 'onSubmitted',
+      detail: '{ reviewId: string }',
+    })
+    const header = schemaOf(customElements.get('nymbal-site-header'))
+    expect(header, 'nymbal-site-header is defined with a static schema').toBeDefined()
+    expect([...(header?.slots ?? [])].sort()).toEqual(expect.arrayContaining(['cart', 'search']))
+  })
+
+  it('AC-1: property: nymbal-site-header places light-DOM children carrying slot="search" and slot="cart" in its search and cart slots', async () => {
+    expect(customElements.get('nymbal-site-header'), 'nymbal-site-header is defined').toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.record({ label: word, href: word.map((w) => `/${w}`) }), { maxLength: 4 }),
+        async (links) => {
+          document.body.innerHTML = ''
+          const search = document.createElement('span')
+          search.setAttribute('slot', 'search')
+          const cart = document.createElement('span')
+          cart.setAttribute('slot', 'cart')
+          const el = await mount(
+            'nymbal-site-header',
+            state({ attrs: { links: JSON.stringify(links) }, children: () => [search, cart] }),
+          )
+          // What each named slot holds (happy-dom has `assignedElements()`, not `assignedSlot`).
+          const holds = (name: string): Element[] =>
+            [...(el.shadowRoot?.querySelectorAll(`slot[name="${name}"]`) ?? [])].flatMap((s) =>
+              (s as HTMLSlotElement).assignedElements(),
+            )
+          expect({ search: holds('search'), cart: holds('cart') }).toEqual({
+            search: [search],
+            cart: [cart],
+          })
+        },
+      ),
+      { numRuns: 10 },
     )
   })
 })

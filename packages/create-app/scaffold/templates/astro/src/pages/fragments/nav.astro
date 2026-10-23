@@ -1,9 +1,9 @@
 ---
-import CategoryNav from '../../components/CategoryNav.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchCategories } from '../../lib/api'
 
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=300')
 
 const categories = await fetchCategories()
 ---
-<CategoryNav categories={categories} />
+<NymbalElement tag="nymbal-category-nav" attributes={{ categories: JSON.stringify(categories) }} />

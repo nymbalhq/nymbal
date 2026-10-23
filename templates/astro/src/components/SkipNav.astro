@@ -1,3 +1,5 @@
 ---
+// In a landmark of its own: the header's links are in its shadow root, where a checker cannot tell the skip link
+// comes before them, so it would count it as content outside every landmark.
 ---
-<a href="#main" class="skip-nav">Skip to main content</a>
+<nav aria-label="Skip link"><a href="#main" class="skip-nav">Skip to main content</a></nav>

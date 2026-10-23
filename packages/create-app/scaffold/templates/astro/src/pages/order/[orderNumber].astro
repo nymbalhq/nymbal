@@ -1,9 +1,8 @@
 ---
 import '../../styles/pages/confirmation.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import OrderSummary from '../../components/OrderSummary.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchOrder } from '../../lib/api'
-import { formatPrice } from '../../lib/format'
 import { isPaid, orderHeading } from '../../lib/order-status'
 
 const { orderNumber } = Astro.params
@@ -11,11 +10,22 @@ const order = await fetchOrder(orderNumber!)
 
 if (!order) return Astro.redirect('/404')
 
-const lineItems = (order.lineItems ?? []).map((item) => ({
-  name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
-  qty: item.qty,
-  priceMinor: item.unitPriceMinor,
-}))
+const summary = {
+  items: JSON.stringify(
+    (order.lineItems ?? []).map((item) => ({
+      name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
+      qty: item.qty,
+      unitPriceMinor: item.unitPriceMinor,
+      lineTotalMinor: item.lineTotalMinor,
+    })),
+  ),
+  'subtotal-minor': String(order.subtotalMinor),
+  'discount-minor': String(order.discountTotalMinor ?? 0),
+  'shipping-minor': String(order.shippingTotalMinor ?? 0),
+  'tax-minor': String(order.taxTotalMinor ?? 0),
+  'total-minor': String(order.totalMinor),
+  currency: order.currency,
+}
 
 const shippingAddress = order.shippingAddress
 const heading = orderHeading(order.status)
@@ -63,44 +73,9 @@ const paid = isPaid(order.status)
             <dd style="text-transform: capitalize;" data-testid="order-status">{order.status}</dd>
           </div>
         </dl>
-
-        <div class="confirmation-items">
-          {lineItems.map((item) => (
-            <div class="confirmation-item">
-              <span>
-                <span class="confirmation-item-name">{item.name}</span>
-                <span class="confirmation-item-qty"> x{item.qty}</span>
-              </span>
-              <span class="confirmation-item-price">
-                {formatPrice(item.priceMinor * item.qty, order.currency)}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div class="confirmation-totals">
-          <div class="confirmation-total-row">
-            <span>Subtotal</span>
-            <span>{formatPrice(order.subtotalMinor, order.currency)}</span>
-          </div>
-          {order.shippingTotalMinor != null && (
-            <div class="confirmation-total-row">
-              <span>Shipping</span>
-              <span>{order.shippingTotalMinor === 0 ? 'Free' : formatPrice(order.shippingTotalMinor, order.currency)}</span>
-            </div>
-          )}
-          {order.taxTotalMinor != null && (
-            <div class="confirmation-total-row">
-              <span>Tax</span>
-              <span>{formatPrice(order.taxTotalMinor, order.currency)}</span>
-            </div>
-          )}
-          <div class="confirmation-total-row grand-total">
-            <span>Total</span>
-            <span>{formatPrice(order.totalMinor, order.currency)}</span>
-          </div>
-        </div>
       </div>
+
+      <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
 
       {shippingAddress && (
         <div class="confirmation-card">
@@ -124,4 +99,7 @@ const paid = isPaid(order.status)
 
 <script>
   import '../../scripts/order-status.js'
+  import { NymbalOrderSummary } from '@nymbalhq/web-components/elements/nymbal-order-summary'
+
+  NymbalOrderSummary.define()
 </script>

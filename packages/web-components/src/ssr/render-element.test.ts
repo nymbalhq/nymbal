@@ -3,13 +3,22 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import * as wc from '../index.js'
 import type { ElementSchema } from '../index.js'
 import { getClient } from '../registry.js'
+import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
 import {
   addresses,
   cards,
   cart,
+  categories,
+  columns,
+  crumbs,
   customer,
   facets,
+  formatMoney,
+  images,
+  links,
+  reviews,
   SORT_KEYS,
+  summaryLines,
   variantProduct,
   word,
 } from '../__fixtures__/server-data.js'
@@ -24,6 +33,12 @@ import { renderElement } from './index.js'
 // reaches `this.client` (`NymbalClient not registered`) or that renders its empty state from a property it was given;
 // a server render that differs from the client's; the hydrate support evaluating after lit (tests/setup.ts imports
 // the package's index, whose first import it must be), so the client render appends to the server's nodes.
+//
+// P2-17 AC-1 (spec Decision 1): the eleven new elements (the product grid, price, stock badge, breadcrumb, image
+// gallery, site header and footer, category nav, review list and form, order summary) meet the same three cases, so
+// the 18 becomes 29. Each renders from its attributes alone: the data it is given is in its server render. Kills: a new
+// element that reads a store or the client in `render()`, renders its empty state from data it was given, or renders
+// different parts on the server and the client.
 
 const PAYMENT = 'nymbal-payment-element'
 
@@ -44,6 +59,15 @@ const JSON_VALUES: Record<string, fc.Arbitrary<unknown>> = {
   'nymbal-product-card product': cards('p-', 1).map((c) => c[0]),
   'nymbal-product-filter facets': facets('p-', fc.constantFrom('category', 'colour')),
   'nymbal-sort-dropdown sort-keys': fc.subarray(SORT_KEYS, { minLength: 1 }),
+  // P2-17
+  'nymbal-product-grid products': cards('p-'),
+  'nymbal-breadcrumb items': crumbs('p-'),
+  'nymbal-image-gallery images': images('p-'),
+  'nymbal-site-header links': links('p-'),
+  'nymbal-site-footer columns': columns('p-'),
+  'nymbal-category-nav categories': categories('p-'),
+  'nymbal-review-list reviews': reviews('p-'),
+  'nymbal-order-summary items': summaryLines('p-'),
 }
 
 /** String attributes whose value is one of a few words; any other string attribute takes a generated word. */
@@ -52,6 +76,11 @@ const STRING_VALUES: Record<string, fc.Arbitrary<string>> = {
   'nymbal-sort-dropdown value': fc.constantFrom(...SORT_KEYS),
   'nymbal-sort-dropdown default-sort': fc.constantFrom(...SORT_KEYS),
   'nymbal-toast position': fc.constantFrom('top-right', 'top-left', 'bottom-right', 'bottom-left'),
+  // P2-17
+  'nymbal-product-grid source': fc.constant('product-list'),
+  'nymbal-product-price currency': fc.constantFrom('GBP', 'EUR'),
+  'nymbal-order-summary currency': fc.constantFrom('GBP', 'EUR'),
+  'nymbal-site-header account-href': fc.constant('/account'),
 }
 
 /** One attribute's value as the HTML carries it, or undefined to leave it off. */
@@ -176,6 +205,62 @@ function shownFrom(
       const product = json('product') as { name: string } | undefined
       return { text: product === undefined ? [] : [product.name], cards: null }
     }
+    // P2-17
+    case 'nymbal-product-grid': {
+      const products = json('products') as unknown[] | undefined
+      return { text: [], cards: products === undefined ? null : products.length }
+    }
+    case 'nymbal-product-price': {
+      const minor = attributes['price-minor']
+      const currency = attributes['currency']
+      return {
+        text:
+          minor === undefined || currency === undefined
+            ? []
+            : [formatMoney(Number(minor), currency)],
+        cards: null,
+      }
+    }
+    case 'nymbal-stock-badge': {
+      const stock = attributes['stock']
+      return {
+        text: stock === undefined ? [] : [STOCK_LABELS[stockLevel(Number(stock))]],
+        cards: null,
+      }
+    }
+    case 'nymbal-breadcrumb': {
+      const items = json('items') as Array<{ label: string }> | undefined
+      return { text: items?.map((i) => i.label) ?? [], cards: null }
+    }
+    case 'nymbal-site-header': {
+      const list = json('links') as Array<{ label: string }> | undefined
+      const logo = attributes['logo']
+      return {
+        text: [...(list?.map((l) => l.label) ?? []), ...(logo === undefined ? [] : [logo])],
+        cards: null,
+      }
+    }
+    case 'nymbal-site-footer': {
+      const list = json('columns') as
+        | Array<{ heading: string; links: Array<{ label: string }> }>
+        | undefined
+      return {
+        text: list?.flatMap((c) => [c.heading, ...c.links.map((l) => l.label)]) ?? [],
+        cards: null,
+      }
+    }
+    case 'nymbal-category-nav': {
+      const list = json('categories') as Array<{ name: string }> | undefined
+      return { text: list?.map((c) => c.name) ?? [], cards: null }
+    }
+    case 'nymbal-review-list': {
+      const list = json('reviews') as Array<{ title: string }> | undefined
+      return { text: list?.map((r) => r.title) ?? [], cards: null }
+    }
+    case 'nymbal-order-summary': {
+      const list = json('items') as Array<{ name: string }> | undefined
+      return { text: list?.map((l) => l.name) ?? [], cards: null }
+    }
     case 'nymbal-product-filter': {
       const list = json('facets') as
         | Array<{ field: string; values: Array<{ label: string }> }>
@@ -216,10 +301,25 @@ beforeEach(() => {
   expect(() => getClient()).toThrow(/not registered/)
 })
 
+const P2_17 = [
+  'nymbal-product-grid',
+  'nymbal-product-price',
+  'nymbal-stock-badge',
+  'nymbal-breadcrumb',
+  'nymbal-image-gallery',
+  'nymbal-site-header',
+  'nymbal-site-footer',
+  'nymbal-category-nav',
+  'nymbal-review-list',
+  'nymbal-review-form',
+  'nymbal-order-summary',
+]
+
 describe('P2-18 AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 18 server-rendered elements, every one but the payment element', () => {
+  it('AC-1: the package has 29 server-rendered elements, every one but the payment element, the eleven of P2-17 among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
-    expect(SERVER_RENDERED.length).toBe(18)
+    expect(P2_17.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual([])
+    expect(SERVER_RENDERED.length).toBe(18 + P2_17.length)
   })
 
   for (const schema of SERVER_RENDERED) {

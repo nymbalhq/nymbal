@@ -1,18 +1,17 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { LoginForm } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
-/** `serverHtml` is the form as the server rendered it (page.tsx). */
-export function LoginView({ serverHtml }: { serverHtml: string }) {
+/** `serverHtml` is the form as the server rendered it, `redirect` where to go once signed in (page.tsx). */
+export function LoginView({ serverHtml, redirect }: { serverHtml: string; redirect?: string }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const onSignedIn = useCallback(() => {
-    router.push(searchParams.get('redirect') ?? '/account')
-  }, [router, searchParams])
+    router.push(redirect ?? '/account')
+  }, [router, redirect])
 
   return (
     <div className={styles.authPage}>

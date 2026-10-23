@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { fetchOrder } from '@/lib/api'
-import { OrderSummary } from '@/components/server/OrderSummary'
+import { OrderSummary } from '@/components/client/elements'
+import { renderNymbal } from '@/lib/render'
 import { OrderStatusRefresh } from '@/components/client/OrderStatusRefresh'
 import { isPaid, orderHeading } from '@/lib/order-status'
 import styles from '@/styles/pages/confirmation.module.css'
@@ -59,6 +60,21 @@ export default async function OrderPage({ params }: OrderPageProps) {
 
   if (!order) notFound()
   const paid = isPaid(order.status)
+  const items = order.lineItems.map((item) => ({
+    name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
+    qty: item.qty,
+    unitPriceMinor: item.unitPriceMinor,
+    lineTotalMinor: item.lineTotalMinor,
+  }))
+  const summary = {
+    items: JSON.stringify(items),
+    'subtotal-minor': String(order.subtotalMinor),
+    'discount-minor': String(order.discountTotalMinor ?? 0),
+    'shipping-minor': String(order.shippingTotalMinor ?? 0),
+    'tax-minor': String(order.taxTotalMinor ?? 0),
+    'total-minor': String(order.totalMinor),
+    currency: order.currency,
+  }
 
   return (
     <div className={`container ${styles.page}`}>
@@ -97,12 +113,15 @@ export default async function OrderPage({ params }: OrderPageProps) {
         </div>
 
         <OrderSummary
-          items={order.lineItems}
+          className={styles.summary}
+          items={items}
           subtotalMinor={order.subtotalMinor}
-          currency={order.currency}
-          shippingTotalMinor={order.shippingTotalMinor}
-          taxTotalMinor={order.taxTotalMinor}
+          discountMinor={order.discountTotalMinor ?? 0}
+          shippingMinor={order.shippingTotalMinor ?? 0}
+          taxMinor={order.taxTotalMinor ?? 0}
           totalMinor={order.totalMinor}
+          currency={order.currency}
+          serverHtml={renderNymbal('nymbal-order-summary', summary).__html}
         />
 
         <div className={styles.orderCard}>

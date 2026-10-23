@@ -1,9 +1,9 @@
 ---
 import '../styles/pages/home.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardProductOf } from '@nymbalhq/web-components/ssr'
 import BaseLayout from '../layouts/BaseLayout.astro'
 import HeroSection from '../components/HeroSection.astro'
-import CategoryNav from '../components/CategoryNav.astro'
-import ProductCard from '../components/ProductCard.astro'
 import NewsletterSignup from '../components/NewsletterSignup.astro'
 import { fetchProducts, fetchCategories } from '../lib/api'
 import { organizationJsonLd } from '../lib/seo'
@@ -13,7 +13,6 @@ const [productResult, categories] = await Promise.all([
   fetchCategories(),
 ])
 
-const products = productResult.items
 const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
 ---
 
@@ -30,7 +29,7 @@ const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
       Welcome to your store — this homepage is yours to customise.
     </p>
     <h2 class="section-title">Shop by Category</h2>
-    <CategoryNav categories={categories} />
+    <NymbalElement tag="nymbal-category-nav" attributes={{ categories: JSON.stringify(categories) }} />
   </section>
 
   <section class="featured-section section">
@@ -39,19 +38,18 @@ const jsonLd = organizationJsonLd('Nymbal', Astro.url.origin)
         <h2 class="section-title" style="margin-bottom: 0;">Our Featured Picks</h2>
         <a href="/products" class="featured-link">View all</a>
       </div>
-      {products.length > 0 ? (
-        <div class="product-grid">
-          {products.map((product) => (
-            <ProductCard product={product} />
-          ))}
-        </div>
-      ) : (
-        <p style="text-align: center; color: var(--nymbal-color-text-muted, #71717a);">
-          Products coming soon.
-        </p>
-      )}
+      <NymbalElement tag="nymbal-product-grid" attributes={{ products: JSON.stringify(productResult.items.map(cardProductOf)) }} />
     </div>
   </section>
 
   <NewsletterSignup />
 </BaseLayout>
+
+<script>
+  import '../lib/client.js'
+  import { NymbalCategoryNav } from '@nymbalhq/web-components/elements/nymbal-category-nav'
+  import { NymbalProductGrid } from '@nymbalhq/web-components/elements/nymbal-product-grid'
+
+  NymbalCategoryNav.define()
+  NymbalProductGrid.define()
+</script>

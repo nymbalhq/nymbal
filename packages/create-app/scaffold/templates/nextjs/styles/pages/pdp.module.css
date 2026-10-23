@@ -20,61 +20,9 @@
 /* ── Gallery ──────────────────────────────────────────────────────── */
 
 .gallery {
+  display: block;
   flex: 1;
   min-width: 0;
-}
-
-.mainImage {
-  aspect-ratio: 1;
-  background-color: #f4f4f5;
-  border-radius: var(--nymbal-radius-lg);
-  overflow: hidden;
-  margin-bottom: var(--nymbal-spacing-md);
-}
-
-.mainImage img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.thumbnails {
-  display: flex;
-  gap: var(--nymbal-spacing-sm);
-  overflow-x: auto;
-}
-
-.thumbnail {
-  width: 4rem;
-  height: 4rem;
-  flex-shrink: 0;
-  border-radius: var(--nymbal-radius-md);
-  overflow: hidden;
-  border: 2px solid transparent;
-  cursor: pointer;
-  background-color: #f4f4f5;
-  transition: border-color var(--nymbal-transition-fast);
-}
-
-.thumbnail:hover {
-  border-color: var(--nymbal-color-text-muted);
-}
-
-.thumbnailActive {
-  border-color: var(--nymbal-color-primary);
-}
-
-.thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-@media (min-width: 1024px) {
-  .thumbnail {
-    width: 5rem;
-    height: 5rem;
-  }
 }
 
 /* ── Product Info ─────────────────────────────────────────────────── */
@@ -93,80 +41,11 @@
   }
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: var(--nymbal-spacing-xs);
-  font-size: var(--nymbal-font-size-xs);
-  color: var(--nymbal-color-text-muted);
-  margin-bottom: var(--nymbal-spacing-md);
-  flex-wrap: wrap;
-}
-
-.breadcrumbLink {
-  color: var(--nymbal-color-text-muted);
-  text-decoration: none;
-}
-
-.breadcrumbLink:hover {
-  color: var(--nymbal-color-accent);
-  text-decoration: underline;
-}
-
-.breadcrumbSeparator {
-  color: var(--nymbal-color-border);
-}
-
 .productTitle {
   font-size: 1.75rem;
   font-weight: var(--nymbal-font-weight-bold);
   line-height: 1.2;
   margin-bottom: var(--nymbal-spacing-sm);
-}
-
-.price {
-  font-size: 1.5rem;
-  font-weight: var(--nymbal-font-weight-bold);
-  margin-bottom: var(--nymbal-spacing-md);
-}
-
-.priceRange {
-  font-size: var(--nymbal-font-size-sm);
-  color: var(--nymbal-color-text-muted);
-  font-weight: var(--nymbal-font-weight-normal);
-  margin-left: var(--nymbal-spacing-xs);
-}
-
-.stockBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--nymbal-spacing-xs);
-  padding: 0.125rem 0.5rem;
-  font-size: var(--nymbal-font-size-xs);
-  font-weight: var(--nymbal-font-weight-medium);
-  border-radius: var(--nymbal-radius-full);
-  margin-bottom: var(--nymbal-spacing-md);
-}
-
-.stockBadge[data-level='in'] {
-  background-color: #dcfce7;
-  color: var(--nymbal-color-success);
-}
-
-.stockBadge[data-level='low'] {
-  color: var(--nymbal-color-warning);
-}
-
-.stockBadge[data-level='out'] {
-  background-color: #fef2f2;
-  color: var(--nymbal-color-error);
-}
-
-.stockDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: currentColor;
 }
 
 .description {
@@ -259,65 +138,6 @@
   margin-bottom: var(--nymbal-spacing-lg);
 }
 
-.reviewsList {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nymbal-spacing-lg);
-}
-
-.reviewCard {
-  padding-bottom: var(--nymbal-spacing-lg);
-  border-bottom: 1px solid var(--nymbal-color-border);
-}
-
-.reviewCard:last-child {
-  border-bottom: none;
-}
-
-.reviewHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--nymbal-spacing-sm);
-  gap: var(--nymbal-spacing-sm);
-  flex-wrap: wrap;
-}
-
-.reviewStars {
-  display: flex;
-  gap: 2px;
-  color: #f59e0b;
-  font-size: var(--nymbal-font-size-sm);
-}
-
-.starFilled {
-  color: #f59e0b;
-}
-
-.starEmpty {
-  color: var(--nymbal-color-border);
-}
-
-.reviewDate {
-  font-size: var(--nymbal-font-size-xs);
-  color: var(--nymbal-color-text-muted);
-}
-
-.reviewTitle {
-  font-size: var(--nymbal-font-size-sm);
-  font-weight: var(--nymbal-font-weight-medium);
-  margin-bottom: var(--nymbal-spacing-xs);
-}
-
-.reviewBody {
-  font-size: var(--nymbal-font-size-sm);
-  color: var(--nymbal-color-text-muted);
-  line-height: 1.6;
-}
-
-.noReviews {
-  text-align: center;
-  padding: var(--nymbal-spacing-xl);
-  color: var(--nymbal-color-text-muted);
-  font-size: var(--nymbal-font-size-sm);
+.reviewForm {
+  margin-top: var(--nymbal-spacing-xl);
 }

@@ -353,14 +353,19 @@ test.describe('Browse: sort', () => {
     const held = new Promise<void>((resolve) => {
       firstHeld = resolve
     })
+    // The route lives as long as the page: one that expires (`times: 1`) makes Playwright disable request interception
+    // just as the sorted answer lands, and a request Chromium starts in that window (the sorted grid's eager first
+    // image) is never released, so the network never goes idle.
+    let holding = true
     await page.route(
       (url) => isListing(url.toString()),
       async (route) => {
+        if (!holding) return route.continue()
+        holding = false
         firstHeld()
         await Promise.race([sorted, new Promise((resolve) => setTimeout(resolve, 5_000))])
         await route.continue()
       },
-      { times: 1 },
     )
 
     await page.goto('/products', { waitUntil: 'domcontentloaded' })

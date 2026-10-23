@@ -6,7 +6,7 @@ import { NymbalProductCard } from '@nymbalhq/web-components/elements/nymbal-prod
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-product-card': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'product'> & { 'product'?: string | undefined }
+      'nymbal-product-card': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'product' | 'eager'> & { 'product'?: string | undefined; 'eager'?: string | undefined }
     }
   }
 }
@@ -20,6 +20,7 @@ function useDefine(element: { define(): void }): void {
 
 export interface ProductCardProps {
   product?: unknown
+  eager?: boolean
   className?: string
   style?: React.CSSProperties
   slot?: string
@@ -43,12 +44,22 @@ export const ProductCard = /* @__PURE__ */ forwardRef<HTMLElement, ProductCardPr
     }
   }, [props.product])
 
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (props.eager) {
+      el.setAttribute('eager', '')
+    } else {
+      el.removeAttribute('eager')
+    }
+  }, [props.eager])
+
 
 
     useDefine(NymbalProductCard)
 
     return (
-      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} eager={props.eager ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

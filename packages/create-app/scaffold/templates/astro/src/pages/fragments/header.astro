@@ -1,5 +1,11 @@
 ---
-import Header from '../../components/Header.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { HEADER, headerSlots } from '../../lib/chrome'
+import { fetchCapabilities } from '../../lib/api'
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300')
+const capabilities = await fetchCapabilities()
+const canSearch = capabilities?.search.capabilities.includes('search') ?? false
 ---
-<Header />
+<NymbalElement tag="nymbal-site-header" attributes={HEADER}>
+  <Fragment set:html={headerSlots(canSearch)} />
+</NymbalElement>

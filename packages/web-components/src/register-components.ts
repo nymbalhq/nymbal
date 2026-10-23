@@ -19,6 +19,17 @@ import { NymbalProfileForm } from './components/profile-form.js'
 import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
 import { NymbalCheckout } from './components/checkout.js'
+import { NymbalProductGrid } from './components/product-grid.js'
+import { NymbalProductPrice } from './components/product-price.js'
+import { NymbalStockBadge } from './components/stock-badge.js'
+import { NymbalBreadcrumb } from './components/breadcrumb.js'
+import { NymbalImageGallery } from './components/image-gallery.js'
+import { NymbalSiteHeader } from './components/site-header.js'
+import { NymbalSiteFooter } from './components/site-footer.js'
+import { NymbalCategoryNav } from './components/category-nav.js'
+import { NymbalReviewList } from './components/review-list.js'
+import { NymbalReviewForm } from './components/review-form.js'
+import { NymbalOrderSummary } from './components/order-summary.js'
 
 /** Every element the package defines. */
 export const ELEMENTS = [
@@ -41,6 +52,17 @@ export const ELEMENTS = [
   NymbalAddressForm,
   NymbalAddressBook,
   NymbalCheckout,
+  NymbalProductGrid,
+  NymbalProductPrice,
+  NymbalStockBadge,
+  NymbalBreadcrumb,
+  NymbalImageGallery,
+  NymbalSiteHeader,
+  NymbalSiteFooter,
+  NymbalCategoryNav,
+  NymbalReviewList,
+  NymbalReviewForm,
+  NymbalOrderSummary,
 ]
 
 /**

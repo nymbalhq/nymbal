@@ -100,7 +100,8 @@ export class NymbalSearchBar extends NymbalElement {
     const placeholder = this.getAttribute('placeholder') ?? 'Search products...'
 
     let results: unknown = nothing
-    if (state.query) {
+    // A page that shows the search itself (`nymbal-search-results`) is not covered by the same results as suggestions.
+    if (state.query && document.querySelector('nymbal-search-results') === null) {
       if (state.loading) {
         results = html`<div part="results" data-testid="search-results">
           <div part="loading"><slot name="loading">Searching...</slot></div>
@@ -139,7 +140,7 @@ export class NymbalSearchBar extends NymbalElement {
         .value=${state.query}
         autocomplete="off"
         role="combobox"
-        aria-expanded=${String(state.results.length > 0)}
+        aria-expanded=${String(results !== nothing && state.results.length > 0)}
         aria-haspopup="listbox"
         @input=${this.handleInput}
         @keydown=${this.handleKeydown}

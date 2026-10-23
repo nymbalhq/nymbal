@@ -1,5 +1,6 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -71,8 +72,18 @@ const RAN_SUMMARY = /^\s*Test Files\s+\d/m
 
 const ANSI = /\x1b\[[0-9;]*m/g
 
-/** Caches a run writes into: created fresh in the worktree so that HEAD's node_modules is never written. */
-const RUN_CACHES = new Set(['.cache', '.vite'])
+/**
+ * State a run writes into `node_modules`: created fresh in the worktree, so that HEAD's node_modules is never written.
+ * pnpm also refuses its task run state through a symlink (`ERR_PNPM_UNSAFE_TASK_RUN_STATE_PATH`).
+ */
+const RUN_CACHES = new Set(['.cache', '.vite', '.pnpm-task-run-state-v1'])
+
+/**
+ * pnpm 12 rewrites every importer's bin shims during the base's build and suite, naming its tree by absolute path: a
+ * linked `.bin` would point HEAD's shims into the scratch worktree. The worktree gets copies, whose relative targets
+ * resolve through its own links.
+ */
+const BIN_DIR = '.bin'
 
 function git(root: string, args: string[]): string {
   return execFileSync('git', ['-c', 'core.quotepath=false', ...args], {
@@ -125,7 +136,8 @@ function workspacePath(realRoot: string, real: string): string | undefined {
 /**
  * Fills the worktree's `target` node_modules from HEAD's `source`: a workspace package (a link into the repository's
  * sources) links to the same package in the worktree, so it resolves to the base's code; everything else links to
- * HEAD's installed copy. Scope folders are real directories, so that their workspace entries can differ.
+ * HEAD's installed copy. Scope folders are real directories, so that their workspace entries can differ, and `.bin`
+ * is a copy (BIN_DIR).
  */
 function mirrorNodeModules(
   source: string,
@@ -140,6 +152,10 @@ function mirrorNodeModules(
     const to = join(target, entry.name)
     if (entry.isDirectory() && entry.name.startsWith('@')) {
       mirrorNodeModules(from, to, realRoot, worktree)
+      continue
+    }
+    if (entry.isDirectory() && entry.name === BIN_DIR) {
+      cpSync(from, to, { recursive: true, dereference: true })
       continue
     }
     const inRepo =

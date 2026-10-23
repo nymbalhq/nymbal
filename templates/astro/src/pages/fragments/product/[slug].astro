@@ -1,5 +1,5 @@
 ---
-import ProductCard from '../../../components/ProductCard.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchProduct } from '../../../lib/api'
 
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60')
@@ -11,4 +11,4 @@ if (!product) {
   return new Response('Not found', { status: 404 })
 }
 ---
-<ProductCard product={product} />
+<NymbalElement tag="nymbal-product-card" attributes={{ product: JSON.stringify(product) }} />

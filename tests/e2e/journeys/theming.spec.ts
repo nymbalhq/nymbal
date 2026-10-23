@@ -14,6 +14,8 @@ import { expect, test } from '../support/fixtures'
 // - theming.tokens-apply: the add-to-cart button, a part in the element's shadow root, is painted with
 //   --nymbal-color-primary as the template's own tokens.css declares it and :root resolves it. Kills: tokens that do
 //   not cross the shadow boundary, and a template still on the package's tokens rather than its own file.
+// P2-17 (spec, Tests this task obsoletes): the header is `nymbal-site-header`, with the mini-cart as its light-DOM
+// child in its `cart` slot, so the mini-carts are found as `nymbal-site-header nymbal-mini-cart`.
 
 const PDP = 'ceramic-mug'
 /** What only the package's nymbal-mini-cart renders, in light DOM or shadow root. */
@@ -56,7 +58,7 @@ test.describe('Theming', () => {
     const page = await off.newPage()
     await page.goto('/')
 
-    const miniCarts = page.locator('header nymbal-mini-cart')
+    const miniCarts = page.locator('nymbal-site-header nymbal-mini-cart')
     const count = await miniCarts.count()
     expect(count, 'header mini-carts').toBeGreaterThan(0)
     await expect(miniCarts.getByTestId('project-mini-cart-marker')).toHaveCount(count)
@@ -78,7 +80,7 @@ test.describe('Theming', () => {
       timeout: 15_000,
     })
 
-    const miniCarts = page.locator('header nymbal-mini-cart')
+    const miniCarts = page.locator('nymbal-site-header nymbal-mini-cart')
     await expect(miniCarts.first()).toBeAttached({ timeout: 15_000 })
     await expect
       .poll(
