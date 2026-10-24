@@ -1,4 +1,4 @@
-import { css, html } from 'lit'
+import { css, html, nothing } from 'lit'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 
 const SCHEMA: ElementSchema = {
@@ -76,6 +76,9 @@ export class NymbalMiniCart extends NymbalElement {
 
   protected override render() {
     const itemCount = this.itemCount()
+    // An empty badge is `nothing`, not '': Lit's hydration records a server-rendered '' as a committed text node the
+    // server never wrote, so the first count after it (a header mounted once the cart has loaded) lands in the part's
+    // end marker and the badge stays empty.
     return html`<button
       type="button"
       part="button"
@@ -98,7 +101,7 @@ export class NymbalMiniCart extends NymbalElement {
           <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></svg
       ></slot>
       <span part="badge" class="nymbal-mini-cart-badge" data-testid="mini-cart-badge"
-        >${itemCount > 0 ? itemCount : ''}</span
+        >${itemCount > 0 ? itemCount : nothing}</span
       >
     </button>`
   }

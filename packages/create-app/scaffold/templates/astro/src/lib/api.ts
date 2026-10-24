@@ -32,13 +32,34 @@ export async function fetchProducts(params?: {
   }
 }
 
+/** The API failed: it did not answer, answered an error other than a 404, or answered with no data. */
+export class ApiUnavailableError extends Error {
+  override name = 'ApiUnavailableError'
+}
+
+/** `GET <path>`'s data; null on a 404; rejects with ApiUnavailableError (or fetch's own error) on any other failure. */
+async function apiData<T>(path: string): Promise<T | null> {
+  const res = await fetch(`${API_URL}${path}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new ApiUnavailableError(`GET ${path} answered ${res.status}`)
+  const envelope = (await res.json()) as { data?: T | null }
+  if (envelope.data === undefined || envelope.data === null) {
+    throw new ApiUnavailableError(`GET ${path} answered no data`)
+  }
+  return envelope.data
+}
+
+/** What the store can do, as the API sent it; rejects when the API fails. */
+export async function loadCapabilities(): Promise<StoreCapabilities> {
+  const capabilities = await apiData<StoreCapabilities>('/api/capabilities')
+  if (capabilities === null) throw new ApiUnavailableError('GET /api/capabilities answered 404')
+  return capabilities
+}
+
 /** What the store can do, which decides what the page renders; null when the API did not answer. */
 export async function fetchCapabilities(): Promise<StoreCapabilities | null> {
   try {
-    const res = await fetch(`${API_URL}/api/capabilities`)
-    if (!res.ok) return null
-    const envelope = (await res.json()) as { data: StoreCapabilities }
-    return envelope.data ?? null
+    return await loadCapabilities()
   } catch (err) {
     console.error('[api] fetchCapabilities failed', err)
     return null
@@ -52,34 +73,37 @@ export function sortFromUrl(url: URL, catalog?: StoreCapabilities['catalog']): P
   return keys.find((key) => key === sort) ?? catalog?.defaultSort ?? DEFAULT_PRODUCT_SORT
 }
 
+/** A product as the API sent it; null when the API has none (a 404); rejects when the API fails. */
+export async function loadProduct(slug: string): Promise<DenormalisedProduct | null> {
+  return apiData<DenormalisedProduct>(`/api/products/${encodeURIComponent(slug)}`)
+}
+
 export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {
   try {
-    const res = await fetch(`${API_URL}/api/products/${encodeURIComponent(slug)}`)
-    if (!res.ok) return null
-    const envelope = (await res.json()) as { data: DenormalisedProduct }
-    return envelope.data ?? null
+    return await loadProduct(slug)
   } catch (err) {
     console.error('[api] fetchProduct failed', err)
     return null
   }
 }
 
-const SEED_CATEGORIES: Category[] = [
-  { id: 'cat_apparel', parentId: null, name: 'Apparel', slug: 'apparel', description: 'Clothing and accessories', position: 0, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_home', parentId: null, name: 'Home', slug: 'home', description: 'Home goods and decor', position: 1, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_electronics', parentId: null, name: 'Electronics', slug: 'electronics', description: 'Gadgets and devices', position: 2, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_books', parentId: null, name: 'Books', slug: 'books', description: 'Books and reading', position: 3, createdAt: '2024-01-01T00:00:00Z' },
-]
+/** The store's categories as the API sent them; rejects when the API fails. */
+export async function loadCategories(): Promise<Category[]> {
+  const categories = await apiData<Category[]>('/api/categories')
+  if (categories === null) throw new ApiUnavailableError('GET /api/categories answered 404')
+  return categories
+}
 
+/**
+ * The store's categories, or none when the API failed: a page renders per request and no shared cache keeps it, so
+ * the next request shows the store's own; a list the API did not send would link to categories the store lacks.
+ */
 export async function fetchCategories(): Promise<Category[]> {
   try {
-    const res = await fetch(`${API_URL}/api/categories`)
-    if (!res.ok) return SEED_CATEGORIES
-    const envelope = (await res.json()) as { data: Category[] }
-    return envelope.data ?? SEED_CATEGORIES
+    return await loadCategories()
   } catch (err) {
     console.error('[api] fetchCategories failed', err)
-    return SEED_CATEGORIES
+    return []
   }
 }
 
