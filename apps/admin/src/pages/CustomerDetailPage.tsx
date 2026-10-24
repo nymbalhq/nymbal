@@ -4,6 +4,8 @@ import { ArrowLeft, Send } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { HistoryTab } from '@/components/history/HistoryTab'
 import { CustomerProfileCard } from '@/components/customers/CustomerProfileCard'
 import { CustomerOrdersTable } from '@/components/customers/CustomerOrdersTable'
 import { useCustomer, useCustomerOrders, useAddCustomerNote } from '@/hooks/useCustomers'
@@ -73,8 +75,12 @@ export function CustomerDetailPage() {
   }
 
   const { customer, stats } = customerData
-  const fullName = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
-  const notes = (customer as unknown as { notes?: typeof customer.metadata }).notes as NoteEntry[] | undefined ?? []
+  const fullName =
+    [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
+  const notes =
+    ((customer as unknown as { notes?: typeof customer.metadata }).notes as
+      | NoteEntry[]
+      | undefined) ?? []
 
   return (
     <div className="space-y-5" data-testid={tid('customer', 'detail')}>
@@ -91,46 +97,69 @@ export function CustomerDetailPage() {
         <span className="text-sm font-medium text-zinc-900">{fullName}</span>
       </div>
 
-      {/* Profile card */}
-      <div className="rounded-lg border border-zinc-200 bg-white p-5">
-        <CustomerProfileCard customer={customer} stats={stats} />
-      </div>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview" data-testid={tid('customer', 'tab', 'overview')}>
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="history" data-testid={tid('customer', 'tab', 'history')}>
+            History
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Orders */}
-      <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
-        <div className="border-b border-zinc-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-zinc-900">Order History</h2>
-        </div>
-        <div className="p-4">
-          <CustomerOrdersTable orders={orders} isLoading={ordersLoading} />
-        </div>
-      </div>
+        <TabsContent value="overview" className="space-y-5">
+          {/* Profile card */}
+          <div className="rounded-lg border border-zinc-200 bg-white p-5">
+            <CustomerProfileCard customer={customer} stats={stats} />
+          </div>
 
-      {/* Notes */}
-      <div className="rounded-lg border border-zinc-200 bg-white p-5 space-y-3" data-testid={tid('customer', 'notes')}>
-        <h2 className="text-sm font-semibold text-zinc-900">Notes</h2>
-        <NotesList notes={notes} />
-        <form
-          onSubmit={(e) => void handleAddNote(e)}
-          className="flex gap-2 pt-2"
-        >
-          <Textarea
-            placeholder="Add a note about this customer..."
-            value={noteBody}
-            onChange={(e) => setNoteBody(e.target.value)}
-            rows={2}
-            className="flex-1 text-sm"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!noteBody.trim() || addNote.isPending}
-            className="self-end h-9 w-9"
+          {/* Orders */}
+          <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
+            <div className="border-b border-zinc-100 px-4 py-3">
+              <h2 className="text-sm font-semibold text-zinc-900">Order History</h2>
+            </div>
+            <div className="p-4">
+              <CustomerOrdersTable orders={orders} isLoading={ordersLoading} />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div
+            className="rounded-lg border border-zinc-200 bg-white p-5 space-y-3"
+            data-testid={tid('customer', 'notes')}
           >
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
-      </div>
+            <h2 className="text-sm font-semibold text-zinc-900">Notes</h2>
+            <NotesList notes={notes} />
+            <form onSubmit={(e) => void handleAddNote(e)} className="flex gap-2 pt-2">
+              <Textarea
+                placeholder="Add a note about this customer..."
+                value={noteBody}
+                onChange={(e) => setNoteBody(e.target.value)}
+                rows={2}
+                className="flex-1 text-sm"
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={!noteBody.trim() || addNote.isPending}
+                className="self-end h-9 w-9"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </form>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <div className="rounded-lg border border-zinc-200 bg-white p-5">
+            <HistoryTab
+              collection="customers"
+              id={customer.id}
+              detailPath={`/api/admin/customers/${encodeURIComponent(customer.id)}`}
+            />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

@@ -1,17 +1,24 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Save, ArrowLeft, Loader2 } from 'lucide-react'
+import { Save, ArrowLeft, Loader2, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { VariantTable } from '@/components/products/VariantTable'
 import { MediaUploader } from '@/components/products/MediaUploader'
 import { SeoPreview } from '@/components/products/SeoPreview'
 import { AiEnrichButton } from '@/components/products/AiEnrichButton'
+import { HistoryTab } from '@/components/history/HistoryTab'
 import { useProduct, useCreateProduct, useUpdateProduct } from '@/hooks/useProducts'
 import { useIntentKey } from '@/hooks/useIntentKey'
 import { tid } from '@/lib/testid'
@@ -95,6 +102,19 @@ export function ProductEditPage() {
     )
   }
 
+  // An unknown or deleted product has nothing to edit: a blank form here would save nothing.
+  if (!isNew && !existingProduct) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <Package className="mb-3 h-8 w-8 text-zinc-300" />
+        <p className="text-sm text-zinc-500">Product not found</p>
+        <Link to="/products" className="mt-3 text-sm text-blue-600 hover:underline">
+          ← Back to products
+        </Link>
+      </div>
+    )
+  }
+
   const productId = existingProduct?.id ?? 'new'
   const currency = 'GBP' // From store settings in production
 
@@ -112,7 +132,7 @@ export function ProductEditPage() {
           </Link>
           <span className="text-zinc-300">/</span>
           <h1 className="text-base font-semibold text-zinc-900">
-            {isNew ? 'New Product' : (form.name || 'Edit Product')}
+            {isNew ? 'New Product' : form.name || 'Edit Product'}
           </h1>
           {isDirty && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
@@ -150,13 +170,20 @@ export function ProductEditPage() {
               <TabsTrigger value="variants">Variants</TabsTrigger>
               <TabsTrigger value="media">Media</TabsTrigger>
               <TabsTrigger value="seo">SEO</TabsTrigger>
+              {existingProduct && (
+                <TabsTrigger value="history" data-testid={tid('product', 'tab', 'history')}>
+                  History
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* General */}
             <TabsContent value="general" className="space-y-4">
               <div className="rounded-lg border border-zinc-200 bg-white p-5 space-y-4">
                 <div className="space-y-1.5">
-                  <Label>Product Name <span className="text-red-500">*</span></Label>
+                  <Label>
+                    Product Name <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     value={form.name ?? ''}
                     onChange={(e) => update('name', e.target.value)}
@@ -189,7 +216,10 @@ export function ProductEditPage() {
                       <AiEnrichButton
                         productId={productId}
                         field="description"
-                        context={{ ...(form.name ? { name: form.name } : {}), ...(form.description ? { current: form.description } : {}) }}
+                        context={{
+                          ...(form.name ? { name: form.name } : {}),
+                          ...(form.description ? { current: form.description } : {}),
+                        }}
                         onApply={(s) => update('description', s)}
                       />
                     )}
@@ -268,7 +298,10 @@ export function ProductEditPage() {
                       <AiEnrichButton
                         productId={productId}
                         field="seoDescription"
-                        context={{ ...(form.name ? { name: form.name } : {}), ...(form.seoDescription ? { current: form.seoDescription } : {}) }}
+                        context={{
+                          ...(form.name ? { name: form.name } : {}),
+                          ...(form.seoDescription ? { current: form.seoDescription } : {}),
+                        }}
                         onApply={(s) => update('seoDescription', s)}
                         className="scale-90 origin-right"
                       />
@@ -283,7 +316,9 @@ export function ProductEditPage() {
                 </div>
 
                 <div className="pt-2 border-t border-zinc-100">
-                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 mb-3">Preview</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 mb-3">
+                    Preview
+                  </p>
                   <SeoPreview
                     title={form.seoTitle || form.name || ''}
                     description={form.seoDescription || form.shortDescription || ''}
@@ -292,6 +327,18 @@ export function ProductEditPage() {
                 </div>
               </div>
             </TabsContent>
+
+            {existingProduct && (
+              <TabsContent value="history">
+                <div className="rounded-lg border border-zinc-200 bg-white p-5">
+                  <HistoryTab
+                    collection="products"
+                    id={existingProduct.id}
+                    detailPath={`/api/admin/products/${encodeURIComponent(existingProduct.id)}`}
+                  />
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
         </div>
 
@@ -322,7 +369,9 @@ export function ProductEditPage() {
 
           {/* Type */}
           <div className="rounded-lg border border-zinc-200 bg-white p-4 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Product Type</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Product Type
+            </h3>
             <Select
               value={form.type ?? 'simple'}
               onValueChange={(v) => update('type', v as 'simple' | 'variable')}

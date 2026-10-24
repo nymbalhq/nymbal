@@ -16,6 +16,7 @@ import { audit } from '../audit/audit.js'
 import type { Repositories } from '../repositories/index.js'
 import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { toCustomerSnapshot } from '../history/views.js'
 
 export interface AuthTokens {
   accessToken: string
@@ -183,7 +184,11 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         const inserted = await repos.customer.findById(tx, id)
         /* c8 ignore next -- defensive: customer was inserted in this transaction */
         if (!inserted) throw new Error('customer disappeared after insert')
-        await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
+        await publisher.publish(EVT_CUSTOMER_CREATED, {
+          customerId: id,
+          email,
+          customer: toCustomerSnapshot(inserted),
+        })
         return inserted
       })
       const tokens = await issueTokens(customer)
@@ -292,7 +297,11 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         const inserted = await repos.customer.findById(tx, id)
         /* c8 ignore next -- defensive: customer was inserted above */
         if (!inserted) throw new Error('customer disappeared after insert')
-        await publisher.publish(EVT_CUSTOMER_CREATED, { customerId: id, email })
+        await publisher.publish(EVT_CUSTOMER_CREATED, {
+          customerId: id,
+          email,
+          customer: toCustomerSnapshot(inserted),
+        })
         logger.info({ customerId: id }, 'customer imported')
         return inserted
       })

@@ -8,6 +8,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  lte,
   or,
   sql,
   type SQL,
@@ -23,6 +24,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import { subjectOf, type EventSubject } from '../history/subject.js'
 
 export interface LoggedEvent {
   seq: number
@@ -82,9 +84,18 @@ export interface EventLogRepository extends StoreRepository {
   listDeliveredBefore(tx: ReadTx, at: Date, limit: number): Promise<LoggedEvent[]>
   /** Deletes the delivered events with these `seq`s; returns how many. */
   deleteSeqs(tx: Tx, seqs: number[]): Promise<number>
+  /**
+   * The events whose subject is one of `subjects`, by `seq`: those appended at or before `until`, above `afterSeq`, at
+   * most `limit`.
+   */
+  listBySubjects(
+    tx: ReadTx,
+    subjects: EventSubject[],
+    page: { until?: Date; afterSeq?: number; limit: number },
+  ): Promise<LoggedEvent[]>
 }
 
-// SQLite's bound-parameter limit is per statement; eight columns a row keeps a chunk well under it.
+// SQLite's bound-parameter limit is per statement; seven columns a row keep a chunk well under it.
 const APPEND_CHUNK = 100
 const DELETE_CHUNK = 500
 /** The page `listForCatchUp` reads when it is given none. */
@@ -101,6 +112,14 @@ function sqliteGlob(glob: string): string {
  */
 function likePattern(glob: string): string {
   return glob.replace(/[\\%_]/g, (c) => `\\${c}`).replace(/\*/g, '%')
+}
+
+function subjectColumns(e: NymbalEvent<unknown>): {
+  subjectType: string | null
+  subjectId: string | null
+} {
+  const subject = subjectOf(e)
+  return { subjectType: subject?.type ?? null, subjectId: subject?.id ?? null }
 }
 
 function toDate(value: unknown): Date | null {
@@ -210,6 +229,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
                 type: e.type,
                 envelope: JSON.stringify(e),
                 correlationId: e.correlationId,
+                ...subjectColumns(e),
                 createdAt: now.toISOString(),
               })),
             )
@@ -223,6 +243,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
                 type: e.type,
                 envelope: e,
                 correlationId: e.correlationId,
+                ...subjectColumns(e),
                 createdAt: now,
               })),
             )
@@ -394,6 +415,26 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         }
       }
       return deleted
+    },
+    async listBySubjects(tx, subjects, page) {
+      if (subjects.length === 0) return []
+      const afterSeq = page.afterSeq ?? 0
+      return select(
+        tx,
+        {
+          sqlite: [
+            or(...subjects.map((x) => and(eq(s.subjectType, x.type), eq(s.subjectId, x.id))))!,
+            gt(s.seq, afterSeq),
+            ...(page.until === undefined ? [] : [lte(s.createdAt, page.until.toISOString())]),
+          ],
+          postgres: [
+            or(...subjects.map((x) => and(eq(p.subjectType, x.type), eq(p.subjectId, x.id))))!,
+            gt(p.seq, afterSeq),
+            ...(page.until === undefined ? [] : [lte(p.createdAt, page.until)]),
+          ],
+        },
+        page.limit,
+      )
     },
   }
 }

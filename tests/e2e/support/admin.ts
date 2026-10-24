@@ -30,11 +30,15 @@ export async function placeOrder(
   expect(productsRes.ok(), 'GET /api/products').toBe(true)
   const products = (
     (await productsRes.json()) as {
-      data: { items: Array<{ variants?: Array<{ id: string; stock?: number }> }> }
+      data: {
+        items: Array<{ status?: string; variants?: Array<{ id: string; stock?: number }> }>
+      }
     }
   ).data.items
   let added = false
   for (const product of products) {
+    // The storefront lists drafts too: a draft is a journey's own fixture, whose stock no other journey may move.
+    if (product.status === 'draft') continue
     const variant = product.variants?.find((v) => (v.stock ?? 1) > 0)
     if (!variant) continue
     const addRes = await request.post(`${API_URL}/api/cart/items`, {

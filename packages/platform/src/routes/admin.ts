@@ -14,6 +14,7 @@ import { registerAdminCustomersRoutes } from './admin-customers.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
 import { registerAdminSettingsRoutes } from './admin-settings.js'
+import { createHistoryReader } from '../history/read.js'
 
 export interface RegisterAdminRoutesDeps {
   config: NymbalConfig
@@ -26,6 +27,11 @@ export interface RegisterAdminRoutesDeps {
 
 export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRoutesDeps): void {
   const { config, services, repos, adapters } = deps
+  const history = createHistoryReader({
+    eventLog: repos.eventLog,
+    auditEntries: repos.auditEntry,
+    retentionDays: config.events.retentionDays,
+  })
 
   registerAdminMeRoute(adapter, { config })
   registerAdminDashboardRoute(adapter, { repos, config })
@@ -34,14 +40,19 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     checkout: services.checkout,
     refund: services.refund,
     repos,
+    history,
   })
-  registerAdminProductsRoutes(adapter, { product: services.product, ai: adapters.ai })
+  registerAdminProductsRoutes(adapter, {
+    product: services.product,
+    ai: adapters.ai,
+    history,
+  })
   registerAdminInventoryRoutes(adapter, {
     inventory: services.inventory,
     product: services.product,
     repos,
   })
-  registerAdminCustomersRoutes(adapter, { order: services.order, repos })
+  registerAdminCustomersRoutes(adapter, { order: services.order, repos, history })
   registerAdminSearchRoute(adapter, {
     order: services.order,
     product: services.product,

@@ -379,6 +379,13 @@ export function createCheckoutService(
         actor: 'system:checkout',
         createdAt: now,
       })
+      // The capture is the order's money, so the log carries it as every capture does; there is no order.paid.
+      await publisher.publish(EVT_PAYMENT_CAPTURED, {
+        paymentId: paymentIntentId,
+        orderId: order.id,
+        amountMinor: paid.amountMinor,
+        currency: order.currency,
+      })
       return true
     })
     if (!held) return

@@ -28,6 +28,9 @@ const id = z.string().min(1)
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
+/** A detail read as the event log folds it at `at`. */
+const asOfQuery = z.object({ at: queryValue })
+const historyQuery = z.object({ cursor: queryValue, limit: queryValue })
 
 const idParams = z.object({ id })
 const orderIdParams = idParams
@@ -295,8 +298,16 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/orders/:orderNumber': {
     name: 'admin.orders.get',
-    description: 'Get one order with its status history.',
+    description:
+      'Get one order with its status history; with `at`, the order as the event log folds it at that time.',
     params: orderNumberParams,
+    query: asOfQuery,
+  },
+  'GET /api/admin/orders/:id/history': {
+    name: 'admin.orders.history',
+    description: "List an order's changes from the event log, newest first.",
+    params: orderIdParams,
+    query: historyQuery,
   },
   'POST /api/admin/orders/:id/confirm': {
     name: 'admin.orders.confirm',
@@ -394,6 +405,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
       variants: z.array(productVariant).optional(),
     }),
   },
+  'GET /api/admin/products/:id': {
+    name: 'admin.products.get',
+    description:
+      'Get one product by id or slug; with `at`, the product as the event log folds it at that time.',
+    params: idParams,
+    query: asOfQuery,
+  },
+  'GET /api/admin/products/:id/history': {
+    name: 'admin.products.history',
+    description: "List a product's changes from the event log, newest first.",
+    params: idParams,
+    query: historyQuery,
+  },
   'PATCH /api/admin/products/:id': {
     name: 'admin.products.update',
     command: 'product.update',
@@ -479,8 +503,16 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/customers/:id': {
     name: 'admin.customers.get',
-    description: 'Get one customer with order statistics.',
+    description:
+      'Get one customer with order statistics; with `at`, the customer as the event log folds it at that time.',
     params: idParams,
+    query: asOfQuery,
+  },
+  'GET /api/admin/customers/:id/history': {
+    name: 'admin.customers.history',
+    description: "List a customer's changes from the event log, newest first.",
+    params: idParams,
+    query: historyQuery,
   },
   'GET /api/admin/customers/:id/orders': {
     name: 'admin.customers.orders',

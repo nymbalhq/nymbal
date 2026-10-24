@@ -4,6 +4,8 @@ import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
 import { audit } from '../audit/audit.js'
 import { requireRole } from './role-middleware.js'
+import { answerAsOf, answerHistory, atOf } from '../history/http.js'
+import type { HistoryReader, HistorySubject } from '../history/read.js'
 
 export interface NoteEntry {
   body: string
@@ -22,6 +24,7 @@ export interface CustomerStats {
 export interface RegisterAdminCustomersRoutesDeps {
   order: OrderService
   repos: Repositories
+  history: HistoryReader
 }
 
 function computeStats(orders: Order[]): CustomerStats {
@@ -60,8 +63,16 @@ export function registerAdminCustomersRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminCustomersRoutesDeps,
 ): void {
-  const { repos } = deps
+  const { repos, history } = deps
   const { store } = repos.customer
+
+  async function historySubject(id: string): Promise<HistorySubject> {
+    const found = await store.read((tx) => repos.customer.findById(tx, id))
+    return { kind: 'customer', id, live: found !== null }
+  }
+
+  const notFound = (id: string) => () =>
+    fail('customers.not_found', `Customer not found: ${id}`, 404)
 
   // GET /api/admin/customers
   adapter.registerRoute(
@@ -129,6 +140,8 @@ export function registerAdminCustomersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
+        const at = atOf(ctx)
+        if (at !== undefined) return answerAsOf(history, at, () => historySubject(id), notFound(id))
         const found = await store.read(async (tx) => {
           const raw = await repos.customer.findById(tx, id)
           return raw ? { raw, orders: await repos.order.listByCustomer(tx, id) } : null
@@ -141,6 +154,17 @@ export function registerAdminCustomersRoutes(
       } catch (err) {
         return renderError(err)
       }
+    }),
+  )
+
+  // GET /api/admin/customers/:id/history
+  adapter.registerRoute(
+    'GET',
+    '/api/admin/customers/:id/history',
+    requireRole('admin', async (ctx) => {
+      const id = ctx.params.id
+      if (!id) return fail('admin.invalid', 'id required', 400)
+      return answerHistory(history, ctx, () => historySubject(id), notFound(id))
     }),
   )
 

@@ -10,6 +10,7 @@ import {
   CheckCircle,
   XCircle,
   Truck,
+  History,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +27,7 @@ import { OrderStatusSelect } from '@/components/orders/OrderStatusSelect'
 import { OrderTimeline } from '@/components/orders/OrderTimeline'
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel'
 import { OrderRefundDialog } from '@/components/orders/OrderRefundDialog'
+import { HistoryTab } from '@/components/history/HistoryTab'
 import {
   useOrder,
   useOrderNotes,
@@ -410,6 +412,14 @@ export function OrderDetailPage() {
                     <Clock className="h-3.5 w-3.5" />
                     Timeline
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="history"
+                    className="gap-1.5 text-xs"
+                    data-testid={tid('order', 'tab', 'history')}
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    History
+                  </TabsTrigger>
                 </TabsList>
               </div>
               <TabsContent value="notes" className="p-4">
@@ -421,6 +431,13 @@ export function OrderDetailPage() {
                 ) : (
                   <p className="text-sm text-zinc-400 text-center py-4">No history yet.</p>
                 )}
+              </TabsContent>
+              <TabsContent value="history" className="p-4">
+                <HistoryTab
+                  collection="orders"
+                  id={order.id}
+                  detailPath={`/api/admin/orders/${encodeURIComponent(order.orderNumber)}`}
+                />
               </TabsContent>
             </Tabs>
           </div>

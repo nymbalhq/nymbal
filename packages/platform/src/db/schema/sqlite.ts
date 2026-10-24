@@ -346,6 +346,9 @@ export const events = sqliteTable(
     envelope: text('envelope').notNull(),
     correlationId: text('correlation_id').notNull(),
     createdAt: text('created_at').notNull(),
+    /** Whose event it is (`subjectOf`): what a record's history reads by. */
+    subjectType: text('subject_type'),
+    subjectId: text('subject_id'),
     deliveredAt: text('delivered_at'),
     attempts: integer('attempts').notNull().default(0),
     deadAt: text('dead_at'),
@@ -355,6 +358,7 @@ export const events = sqliteTable(
     undeliveredIdx: index('events_undelivered_idx').on(t.deliveredAt, t.seq),
     correlationIdx: index('events_correlation_idx').on(t.correlationId, t.seq),
     catchUpIdx: index('events_catch_up_idx').on(t.deadAt, t.deliveredAt, t.seq),
+    subjectIdx: index('events_subject_idx').on(t.subjectType, t.subjectId, t.seq),
   }),
 )
 

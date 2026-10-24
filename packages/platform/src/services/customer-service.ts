@@ -11,6 +11,7 @@ import { audit } from '../audit/audit.js'
 import type { ReadTx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { toCustomerSnapshot } from '../history/views.js'
 
 export interface ProfileUpdate {
   firstName?: string
@@ -45,6 +46,16 @@ export function createCustomerService(deps: {
     return c
   }
 
+  /** `customer.updated` with the row as the write left it. */
+  async function publishUpdated(tx: ReadTx, customerId: string): Promise<Customer> {
+    const fresh = stripPassword(await loadOrThrow(tx, customerId))
+    await publisher.publish(EVT_CUSTOMER_UPDATED, {
+      customerId,
+      customer: toCustomerSnapshot(fresh),
+    })
+    return fresh
+  }
+
   return {
     async getProfile(customerId) {
       return stripPassword(await store.read((tx) => loadOrThrow(tx, customerId)))
@@ -55,9 +66,7 @@ export function createCustomerService(deps: {
         await loadOrThrow(tx, customerId)
         const now = new Date()
         await repos.customer.update(tx, customerId, { ...patch, updatedAt: now })
-        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
-        const fresh = await loadOrThrow(tx, customerId)
-        return stripPassword(fresh)
+        return publishUpdated(tx, customerId)
       })
     },
     async listAddresses(customerId) {
@@ -79,7 +88,7 @@ export function createCustomerService(deps: {
         addresses.push(newAddr)
         const now = new Date()
         await repos.customer.update(tx, customerId, { addresses, updatedAt: now })
-        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+        await publishUpdated(tx, customerId)
         return newAddr
       })
     },
@@ -96,7 +105,7 @@ export function createCustomerService(deps: {
         }
         const now = new Date()
         await repos.customer.update(tx, customerId, { addresses, updatedAt: now })
-        await publisher.publish(EVT_CUSTOMER_UPDATED, { customerId })
+        await publishUpdated(tx, customerId)
       })
     },
   }

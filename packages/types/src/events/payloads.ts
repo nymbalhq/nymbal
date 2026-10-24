@@ -1,4 +1,5 @@
 import type { Category } from '../domain/category.js'
+import type { CustomerAddress } from '../domain/customer.js'
 import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
@@ -110,12 +111,26 @@ export interface InventoryOutOfStockV1Payload {
   variantId: string
 }
 
+/** A customer as the event log keeps it: never its password hash, roles, metadata or stats. */
+export interface CustomerSnapshot {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  phone: string
+  addresses: CustomerAddress[]
+  createdAt: string
+}
+
+// `customer` is the row after the write; events logged before it was added carry none.
 export interface CustomerCreatedV1Payload {
   customerId: string
   email: string
+  customer?: CustomerSnapshot
 }
 export interface CustomerUpdatedV1Payload {
   customerId: string
+  customer?: CustomerSnapshot
 }
 export interface CustomerDeletedV1Payload {
   customerId: string

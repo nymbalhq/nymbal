@@ -15,6 +15,8 @@ import { ok, fail, renderError } from './envelope.js'
 import { audit } from '../audit/audit.js'
 import { idempotencyKeyOf } from '../audit/idempotency.js'
 import { requireRole } from './role-middleware.js'
+import { answerAsOf, answerHistory, atOf } from '../history/http.js'
+import type { HistoryReader, HistorySubject } from '../history/read.js'
 
 export interface NoteEntry {
   body: string
@@ -27,6 +29,7 @@ export interface RegisterAdminOrdersRoutesDeps {
   checkout: ManualPayments
   refund: RefundService
   repos: Repositories
+  history: HistoryReader
 }
 
 /** An order as the admin reads it: with what was actually paid and refunded. */
@@ -48,7 +51,7 @@ export function registerAdminOrdersRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminOrdersRoutesDeps,
 ): void {
-  const { order, checkout, refund, repos } = deps
+  const { order, checkout, refund, repos, history } = deps
   const { store } = repos.order
 
   async function withPayments(tx: ReadTx, orders: Order[]): Promise<AdminOrder[]> {
@@ -72,6 +75,15 @@ export function registerAdminOrdersRoutes(
       (await repos.order.findByOrderNumber(tx, idOrNumber))
     )
   }
+
+  /** The order an id or a number names; an id with no row may still have events. */
+  async function historySubject(idOrNumber: string): Promise<HistorySubject> {
+    const found = await store.read((tx) => findOrder(tx, idOrNumber))
+    return { kind: 'order', id: found?.id ?? idOrNumber, live: found !== null }
+  }
+
+  const notFound = (idOrNumber: string) => () =>
+    fail('orders.not_found', `Order not found: ${idOrNumber}`, 404)
 
   // GET /api/admin/orders
   adapter.registerRoute(
@@ -138,6 +150,10 @@ export function registerAdminOrdersRoutes(
       try {
         const orderNumber = ctx.params.orderNumber
         if (!orderNumber) return fail('admin.invalid', 'orderNumber required', 400)
+        const at = atOf(ctx)
+        if (at !== undefined) {
+          return answerAsOf(history, at, () => historySubject(orderNumber), notFound(orderNumber))
+        }
         const detail = await store.read(async (tx) => {
           const found = await repos.order.findByOrderNumber(tx, orderNumber)
           if (!found) return null
@@ -292,6 +308,17 @@ export function registerAdminOrdersRoutes(
       } catch (err) {
         return renderError(err)
       }
+    }),
+  )
+
+  // GET /api/admin/orders/:id/history
+  adapter.registerRoute(
+    'GET',
+    '/api/admin/orders/:id/history',
+    requireRole('admin', async (ctx) => {
+      const id = ctx.params.id
+      if (!id) return fail('admin.invalid', 'id required', 400)
+      return answerHistory(history, ctx, () => historySubject(id), notFound(id))
     }),
   )
 

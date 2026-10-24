@@ -1,18 +1,50 @@
-import type { HttpAdapter, AiAdapter, ProductStatus } from '@nymbalhq/types'
+import {
+  NotFoundError,
+  type HttpAdapter,
+  type AiAdapter,
+  type ProductSnapshot,
+  type ProductStatus,
+} from '@nymbalhq/types'
 import type { ProductService } from '../services/product-service.js'
+import { answerAsOf, answerHistory, atOf } from '../history/http.js'
+import type { HistoryReader, HistorySubject } from '../history/read.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 
 export interface RegisterAdminProductsRoutesDeps {
   product: ProductService
   ai: AiAdapter | null
+  history: HistoryReader
+}
+
+async function orNull<T>(found: Promise<T>): Promise<T | null> {
+  try {
+    return await found
+  } catch (err) {
+    if (err instanceof NotFoundError) return null
+    throw err
+  }
 }
 
 export function registerAdminProductsRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminProductsRoutesDeps,
 ): void {
-  const { product } = deps
+  const { product, history } = deps
+
+  /** The live product by id, else by slug; null when neither names one. */
+  async function findProduct(idOrSlug: string): Promise<ProductSnapshot | null> {
+    return (await orNull(product.getById(idOrSlug))) ?? (await orNull(product.getBySlug(idOrSlug)))
+  }
+
+  /** A deleted product has no row: its history is read by its id. */
+  async function historySubject(idOrSlug: string): Promise<HistorySubject> {
+    const live = await findProduct(idOrSlug)
+    return { kind: 'product', id: live?.id ?? idOrSlug, live: live !== null }
+  }
+
+  const notFound = (idOrSlug: string) => () =>
+    fail('not_found', `product not found: ${idOrSlug}`, 404)
 
   // GET /api/admin/products
   adapter.registerRoute(
@@ -64,6 +96,37 @@ export function registerAdminProductsRoutes(
     }),
   )
 
+  // GET /api/admin/products/:id — by id or slug; `?at=` folds it from the event log
+  adapter.registerRoute(
+    'GET',
+    '/api/admin/products/:id',
+    requireRole('admin', async (ctx) => {
+      try {
+        const idOrSlug = ctx.params.id
+        if (!idOrSlug) return fail('admin.invalid', 'id required', 400)
+        const at = atOf(ctx)
+        if (at !== undefined) {
+          return answerAsOf(history, at, () => historySubject(idOrSlug), notFound(idOrSlug))
+        }
+        const found = await findProduct(idOrSlug)
+        return found === null ? notFound(idOrSlug)() : ok(found)
+      } catch (err) {
+        return renderError(err)
+      }
+    }),
+  )
+
+  // GET /api/admin/products/:id/history
+  adapter.registerRoute(
+    'GET',
+    '/api/admin/products/:id/history',
+    requireRole('admin', async (ctx) => {
+      const idOrSlug = ctx.params.id
+      if (!idOrSlug) return fail('admin.invalid', 'id required', 400)
+      return answerHistory(history, ctx, () => historySubject(idOrSlug), notFound(idOrSlug))
+    }),
+  )
+
   // PATCH /api/admin/products/:id
   adapter.registerRoute(
     'PATCH',
@@ -72,10 +135,7 @@ export function registerAdminProductsRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const snap = await product.update(
-          id,
-          ctx.body as Parameters<ProductService['update']>[1],
-        )
+        const snap = await product.update(id, ctx.body as Parameters<ProductService['update']>[1])
         return ok(snap)
       } catch (err) {
         return renderError(err)
@@ -198,10 +258,12 @@ export function registerAdminProductsRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        const body = ctx.body as {
-          field?: 'description' | 'alt' | 'title' | 'seoDescription'
-          context?: Record<string, string>
-        } | undefined
+        const body = ctx.body as
+          | {
+              field?: 'description' | 'alt' | 'title' | 'seoDescription'
+              context?: Record<string, string>
+            }
+          | undefined
         if (!body?.field) return fail('admin.invalid', 'field required', 400)
         const validFields = ['description', 'alt', 'title', 'seoDescription']
         if (!validFields.includes(body.field)) {
