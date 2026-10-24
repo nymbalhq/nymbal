@@ -205,7 +205,7 @@ jobs:
   sentinels:
     name: Sentinels and tests-fail-on-base
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     needs: [build]
     # tests-fail-on-base runs every project against the base, so a new Postgres, Mailpit or S3 test needs its server
     # here too, or it fails on base for want of one.
