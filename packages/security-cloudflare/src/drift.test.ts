@@ -87,7 +87,13 @@ describe('P2-04 AC-6: drift', () => {
 
   it('AC-6 (a): over every live Nymbal rule, an edited expression is exactly one difference at that rule; editing it back is no drift', async () => {
     const { zoneId, adapter, config } = await applied()
-    const phases: Phase[] = ['http_ratelimit', CUSTOM, 'http_request_firewall_managed']
+    // P2-19 AC-8: the fragment cache rule's phase is among them.
+    const phases: Phase[] = [
+      'http_ratelimit',
+      CUSTOM,
+      'http_request_firewall_managed',
+      'http_request_cache_settings',
+    ]
     const live = phases.flatMap((phase) =>
       (fake.rules(zoneId, phase) ?? []).filter(isNymbal).map((rule) => ({ phase, rule })),
     )

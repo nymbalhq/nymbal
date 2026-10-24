@@ -61,7 +61,14 @@ const templates = [
 // (A previous endsWith() filter excluded every *.astro file — see the filter
 // regression test in test/scaffold.test.ts.) `tests` holds a template's own jsdom tests, run by the monorepo's
 // Vitest; a scaffolded store does not get them.
-const EXCLUDED_BASENAMES = new Set(['node_modules', 'dist', '.astro', '.next', 'tests'])
+const EXCLUDED_BASENAMES = new Set([
+  'node_modules',
+  'dist',
+  '.astro',
+  '.next',
+  '.next-isr',
+  'tests',
+])
 
 /**
  * Predicate for fs.cp's filter option: returns true when the entry should be copied.

@@ -204,8 +204,19 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
         page = await scriptOff(browser, testInfo, context, path)
         const grid = page.locator('nymbal-product-grid')
         await expect(grid, `${path}: one grid`).toHaveCount(1)
-        expect(await cardSlugs(grid), `${path}: the API's order`).toEqual(
-          api.items.map((p) => p.slug),
+        // P2-19 (Decisions 1 and 3): Next's listing reads the catalog through the data cache, up to 300 s old, and
+        // products are only ever added, newest first: Next's grid is a page of the API's order from its first card.
+        // Astro renders per request, so its grid is the API's first page.
+        const cards = await cardSlugs(grid)
+        const all = (await apiPage(request, { ...query, limit: '100' })).items.map((p) => p.slug)
+        const start = all.indexOf(cards[0] ?? '')
+        if (testInfo.project.name === 'astro-prod') {
+          expect(start, `${path}: ${cards[0]} is the API's first product`).toBe(0)
+        } else {
+          expect(start, `${path}: ${cards[0]} among the API's products`).toBeGreaterThanOrEqual(0)
+        }
+        expect(cards, `${path}: the API's order`).toEqual(
+          all.slice(start, start + api.items.length),
         )
         const shown = await grid.locator('[part~="load-more"]').filter({ visible: true }).count()
         expect(shown, `${path}: load-more with nextCursor ${api.nextCursor}`).toBe(

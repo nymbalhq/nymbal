@@ -132,7 +132,10 @@ test.describe('P2-18 AC-4: the pages are rendered with JavaScript off', () => {
   })
 
   // P2-17 (spec, Tests this task obsoletes): the header is nymbal-site-header with the mini-cart as its light-DOM child.
-  test('AC-4: theming.server-rendered: the header’s nymbal-mini-cart shows the cart’s item count on /', async ({
+  // P2-19 (spec, Tests this task obsoletes; Decision 1): Next's / is cached for every shopper, so its header carries no
+  // count; the count with JS off moves to Next's /cart and /checkout (tests/e2e/prod/next-isr.spec.ts AC-5), and Next's
+  // / gets the no-count check (AC-4). Astro renders every page per request and keeps the count on /.
+  test('AC-4: theming.server-rendered: the header’s nymbal-mini-cart shows the cart’s item count on / (Astro) @astro', async ({
     browser,
   }, testInfo) => {
     const { off, cart } = await shopper(browser, testInfo)

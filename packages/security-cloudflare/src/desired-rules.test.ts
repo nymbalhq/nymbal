@@ -184,6 +184,8 @@ describe('P2-04 AC-3: desiredRules', () => {
     expect(managed.map((r) => r.action_parameters?.['id'])).toEqual([
       MANAGED_RULESET_IDS.cloudflare,
     ])
-    expect(refsOf(allRules(phases)).length).toBe(2)
+    // P2-19 AC-8: the cache phase always holds the fragment rule; the WAF phases hold only these two.
+    const { http_request_cache_settings: _cache, ...waf } = phases
+    expect(refsOf(allRules(waf)).length).toBe(2)
   })
 })

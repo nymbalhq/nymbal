@@ -13,7 +13,7 @@ export interface CloudflareConnection {
 
 export const CREDENTIALS_HINT =
   'check security.cloudflare.zoneId and apiToken (CLOUDFLARE_ZONE_ID, CLOUDFLARE_API_TOKEN): the token needs ' +
-  'Zone › Zone › Read and Zone › Zone WAF › Edit on the zone'
+  'Zone › Zone › Read, Zone › Zone WAF › Edit and Zone › Cache Rules › Edit on the zone'
 
 /** The token or zone was refused (401 or 403), or the config has none. */
 export class CloudflareCredentialsError extends AdapterError {

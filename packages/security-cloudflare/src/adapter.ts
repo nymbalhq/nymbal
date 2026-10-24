@@ -40,22 +40,37 @@ export const PLAN_LIMITS: Readonly<
       periods: readonly number[]
       customRules: number
       managedRulesets: boolean
+      cacheRules: number
     }
   >
 > = {
-  free: { rateLimitRules: 1, periods: [10], customRules: 5, managedRulesets: false },
-  pro: { rateLimitRules: 2, periods: [10, 60], customRules: 20, managedRulesets: true },
+  free: {
+    rateLimitRules: 1,
+    periods: [10],
+    customRules: 5,
+    managedRulesets: false,
+    cacheRules: 10,
+  },
+  pro: {
+    rateLimitRules: 2,
+    periods: [10, 60],
+    customRules: 20,
+    managedRulesets: true,
+    cacheRules: 25,
+  },
   business: {
     rateLimitRules: 5,
     periods: [10, 60, 120, 300, 600],
     customRules: 100,
     managedRulesets: true,
+    cacheRules: 50,
   },
   enterprise: {
     rateLimitRules: 100,
     periods: [10, 60, 120, 300, 600, 3600],
     customRules: 1000,
     managedRulesets: true,
+    cacheRules: 300,
   },
 }
 
@@ -252,6 +267,7 @@ export function createCloudflareSecurityAdapter(deps: {
     const counted: Array<[Phase, number, string]> = [
       ['http_ratelimit', limits.rateLimitRules, 'rate limiting rules'],
       ['http_request_firewall_custom', limits.customRules, 'custom rules'],
+      ['http_request_cache_settings', limits.cacheRules, 'cache rules'],
     ]
     for (const [phase, limit, what] of counted) {
       const own = live[phase].filter((r) => !isNymbalRule(r)).length

@@ -31,7 +31,7 @@ const DELETED: Record<'astro' | 'nextjs', string[]> = {
 /** The checkout pages each template keeps (Decision 6), as paths under the template. */
 const PAGES: Record<'astro' | 'nextjs', string> = {
   astro: 'src/pages/checkout.astro',
-  nextjs: 'app/checkout',
+  nextjs: 'app/(shopper)/checkout',
 }
 
 const TEST_IDS = ['place-order', 'contact-continue', 'shipping-continue', 'checkout-summary']
