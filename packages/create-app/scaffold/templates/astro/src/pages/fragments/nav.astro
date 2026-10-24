@@ -3,6 +3,8 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchCategories } from '../../lib/api'
 
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=300')
+// A fragment has no <meta charset>, so the charset is in the header.
+Astro.response.headers.set('Content-Type', 'text/html; charset=utf-8')
 
 const categories = await fetchCategories()
 ---

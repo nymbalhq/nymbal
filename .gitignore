@@ -3,6 +3,8 @@ dist/
 build/
 .astro/
 .next/
+# The ISR suite's Next build (tests/e2e/playwright.isr.config.ts, NYMBAL_NEXT_DIST_DIR).
+.next-isr/
 .turbo/
 coverage/
 *.log

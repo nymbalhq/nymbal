@@ -10,7 +10,7 @@ interface ErrorProps {
 
 export default function ErrorPage({ error: _error, reset }: ErrorProps) {
   return (
-    <div className={styles.page}>
+    <main id="main" className={styles.page}>
       <div className={styles.wrapper}>
         <div className={styles.icon}>
           <svg
@@ -35,15 +35,11 @@ export default function ErrorPage({ error: _error, reset }: ErrorProps) {
           <Link href="/" className={styles.homeLink}>
             Go Home
           </Link>
-          <button
-            type="button"
-            className={styles.retryButton}
-            onClick={reset}
-          >
+          <button type="button" className={styles.retryButton} onClick={reset}>
             Try Again
           </button>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

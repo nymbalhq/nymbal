@@ -11,6 +11,44 @@ import type { Cart, Category, Order, ProductSortKey, StoreCapabilities } from '@
 
 const API_URL = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
+/**
+ * Seconds a catalog read stays in Next's data cache: each is at least the TTL of the longest route that reads it, since
+ * a route's TTL is the smallest of its segment's and its fetches'. NYMBAL_CATALOG_REVALIDATE_S replaces every one.
+ */
+const CATALOG_REVALIDATE_S = {
+  capabilities: 3600,
+  categories: 21600,
+  product: 300,
+  products: 300,
+  reviews: 60,
+} as const
+
+function revalidateOf(read: keyof typeof CATALOG_REVALIDATE_S): number {
+  const override = Number(process.env.NYMBAL_CATALOG_REVALIDATE_S)
+  return Number.isInteger(override) && override > 0 ? override : CATALOG_REVALIDATE_S[read]
+}
+
+/**
+ * A catalog read through Next's data cache. It resolves a 200 or a 404 (an answer about the data, which the caller
+ * reads); a network error, a 5xx or any other refusal (a rate limit's 429) rejects, so a failed first render is an
+ * error Next does not cache and a failed regeneration keeps the last good page, where an empty value would be cached
+ * for every shopper. `next dev` caches no page but still keeps fetches, so there the read is fresh and a catalog edit
+ * shows at once.
+ */
+async function catalogFetch(
+  url: string,
+  read: keyof typeof CATALOG_REVALIDATE_S,
+): Promise<Response> {
+  const res = await fetch(
+    url,
+    process.env.NODE_ENV === 'development'
+      ? { cache: 'no-store' }
+      : { next: { revalidate: revalidateOf(read) } },
+  )
+  if (!res.ok && res.status !== 404) throw new Error(`[api] GET ${url} answered ${res.status}`)
+  return res
+}
+
 export async function fetchProducts(params?: {
   limit?: number
   cursor?: string
@@ -23,30 +61,18 @@ export async function fetchProducts(params?: {
   if (params?.category) url.searchParams.set('category', params.category)
   if (params?.sort) url.searchParams.set('sort', params.sort)
 
-  try {
-    const res = await fetch(url.toString(), { cache: 'no-store' })
-    if (!res.ok) return { items: [], nextCursor: null }
-    const envelope = (await res.json()) as { data: ProductListResult }
-    return envelope.data ?? { items: [], nextCursor: null }
-  } catch (err) {
-    console.error('[api] fetchProducts failed', err)
-    return { items: [], nextCursor: null }
-  }
+  const res = await catalogFetch(url.toString(), 'products')
+  if (!res.ok) return { items: [], nextCursor: null }
+  const envelope = (await res.json()) as { data: ProductListResult }
+  return envelope.data ?? { items: [], nextCursor: null }
 }
 
-/** What the store can do, which decides what the page renders; null when the API did not answer. */
+/** What the store can do, which decides what the page renders; null when the API has no capabilities to report. */
 export async function fetchCapabilities(): Promise<StoreCapabilities | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/capabilities`, { cache: 'no-store' })
-    if (!res.ok) return null
-    const envelope = (await res.json()) as { data: StoreCapabilities }
-    return envelope.data ?? null
-  } catch (err) {
-    // Next signals a request-time render by throwing from fetch at build; that must reach Next, not become null.
-    unstable_rethrow(err)
-    console.error('[api] fetchCapabilities failed', err)
-    return null
-  }
+  const res = await catalogFetch(`${API_URL}/api/capabilities`, 'capabilities')
+  if (!res.ok) return null
+  const envelope = (await res.json()) as { data: StoreCapabilities }
+  return envelope.data ?? null
 }
 
 /** The sort a listing URL asks for, among the store's keys; a missing or unknown `?sort=` is the store's default. */
@@ -59,59 +85,47 @@ export function sortFromSearchParams(
   return keys.find((key) => key === sort) ?? catalog?.defaultSort ?? DEFAULT_PRODUCT_SORT
 }
 
+/** The product, or null when the API has none by that slug (a 404, the only answer that is null). */
 export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/products/${encodeURIComponent(slug)}`, { cache: 'no-store' })
-    if (!res.ok) return null
-    const envelope = (await res.json()) as { data: DenormalisedProduct }
-    return envelope.data ?? null
-  } catch (err) {
-    console.error('[api] fetchProduct failed', err)
-    return null
-  }
+  const url = `${API_URL}/api/products/${encodeURIComponent(slug)}`
+  const res = await catalogFetch(url, 'product')
+  if (res.status === 404) return null
+  const envelope = (await res.json()) as { data: DenormalisedProduct }
+  return envelope.data ?? null
 }
 
-const SEED_CATEGORIES: Category[] = [
-  { id: 'cat_apparel', parentId: null, name: 'Apparel', slug: 'apparel', description: 'Clothing and accessories', position: 0, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_home', parentId: null, name: 'Home', slug: 'home', description: 'Home goods and decor', position: 1, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_electronics', parentId: null, name: 'Electronics', slug: 'electronics', description: 'Gadgets and devices', position: 2, createdAt: '2024-01-01T00:00:00Z' },
-  { id: 'cat_books', parentId: null, name: 'Books', slug: 'books', description: 'Books and reading', position: 3, createdAt: '2024-01-01T00:00:00Z' },
-]
-
+/** The store's categories as the API lists them; never a list of its own, which a cached page would then show. */
 export async function fetchCategories(): Promise<Category[]> {
-  try {
-    const res = await fetch(`${API_URL}/api/categories`, { cache: 'no-store' })
-    if (!res.ok) return SEED_CATEGORIES
-    const envelope = (await res.json()) as { data: Category[] }
-    return envelope.data ?? SEED_CATEGORIES
-  } catch (err) {
-    console.error('[api] fetchCategories failed', err)
-    return SEED_CATEGORIES
-  }
+  const url = `${API_URL}/api/categories`
+  const res = await catalogFetch(url, 'categories')
+  if (!res.ok) throw new Error(`[api] GET ${url} answered ${res.status}`)
+  const envelope = (await res.json()) as { data: Category[] }
+  return envelope.data
 }
 
 export async function fetchOrder(orderNumber: string): Promise<Order | null> {
   try {
-    const res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`, { cache: 'no-store' })
+    const res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`, {
+      cache: 'no-store',
+    })
     if (!res.ok) return null
     const envelope = (await res.json()) as { data: Order }
     return envelope.data ?? null
   } catch (err) {
+    unstable_rethrow(err)
     console.error('[api] fetchOrder failed', err)
     return null
   }
 }
 
 export async function fetchReviews(productId: string): Promise<ReviewsListResult> {
-  try {
-    const res = await fetch(`${API_URL}/api/products/${encodeURIComponent(productId)}/reviews`, { cache: 'no-store' })
-    if (!res.ok) return { items: [], nextCursor: null }
-    const envelope = (await res.json()) as { data: ReviewsListResult }
-    return envelope.data ?? { items: [], nextCursor: null }
-  } catch (err) {
-    console.error('[api] fetchReviews failed', err)
-    return { items: [], nextCursor: null }
-  }
+  const res = await catalogFetch(
+    `${API_URL}/api/products/${encodeURIComponent(productId)}/reviews`,
+    'reviews',
+  )
+  if (!res.ok) return { items: [], nextCursor: null }
+  const envelope = (await res.json()) as { data: ReviewsListResult }
+  return envelope.data ?? { items: [], nextCursor: null }
 }
 
 /** The cart the cart elements take as their `cart` attribute: its lines and sums, never the cart token. */

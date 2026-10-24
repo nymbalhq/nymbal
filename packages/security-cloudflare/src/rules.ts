@@ -3,6 +3,7 @@ export const PHASES = [
   'http_ratelimit',
   'http_request_firewall_custom',
   'http_request_firewall_managed',
+  'http_request_cache_settings',
 ] as const
 export type Phase = (typeof PHASES)[number]
 
@@ -114,6 +115,23 @@ function rateLimitRule(key: string, entry: RateLimitEntry): Rule | undefined {
 }
 
 /**
+ * The fragment routes' HTML is the same for every shopper and carries its own `s-maxage`, so the edge caches it for
+ * the origin's TTLs; Cloudflare caches no HTML without a rule.
+ */
+const fragmentCacheRule = (): Rule => ({
+  ref: `${NYMBAL_REF_PREFIX}cache:fragments`,
+  description: `${NYMBAL_REF_PREFIX} cache the fragment routes`,
+  expression: 'starts_with(http.request.uri.path, "/fragments/")',
+  action: 'set_cache_settings',
+  action_parameters: {
+    cache: true,
+    edge_ttl: { mode: 'respect_origin' },
+    browser_ttl: { mode: 'respect_origin' },
+  },
+  enabled: true,
+})
+
+/**
  * The rules the config puts on the zone, by phase, every one carrying a `nymbal:` ref. Rate limits follow their keys'
  * sorted order and custom rules their config order, so the same config always gives the same rules. A key that is not
  * a path, or a window with no Cloudflare period, gives no rule: `validate` reports both.
@@ -161,5 +179,6 @@ export function desiredRules(config: EdgeRulesConfig): Record<Phase, Rule[]> {
     http_ratelimit: rateLimits,
     http_request_firewall_custom: custom,
     http_request_firewall_managed: managed,
+    http_request_cache_settings: [fragmentCacheRule()],
   }
 }

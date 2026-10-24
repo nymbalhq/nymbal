@@ -9,9 +9,28 @@ const elementsAlias =
     ? {}
     : { '@/elements': `./${relative(fileURLToPath(new URL('.', import.meta.url)), elementsEntry)}` }
 
+// NYMBAL_NEXT_DIST_DIR builds beside the usual `.next`, so a second build cannot overwrite one being served.
+const distDir = process.env.NYMBAL_NEXT_DIST_DIR || '.next'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  distDir,
+  ...(distDir !== '.next' && { typescript: { tsconfigPath: 'tsconfig.dist.json' } }),
+  // Cached pages live in memory, bounded by cacheMaxMemorySize: on disk, every distinct product URL a crawler asks for
+  // would keep an entry.
+  experimental: { isrFlushToDisk: false },
+  // `/` and the header and nav fragments are dynamic segments with no params, so the build prerenders none of them
+  // (the API may be down then) and Next caches each on its first request.
+  async rewrites() {
+    return {
+      beforeFiles: [
+        { source: '/', destination: '/home/index' },
+        { source: '/fragments/header', destination: '/fragments/header/index' },
+        { source: '/fragments/nav', destination: '/fragments/nav/index' },
+      ],
+    }
+  },
   transpilePackages: ['@nymbalhq/sdk', '@nymbalhq/react', '@nymbalhq/web-components'],
   images: {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],

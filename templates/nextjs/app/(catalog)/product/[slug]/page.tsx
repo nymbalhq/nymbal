@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { preload } from 'react-dom'
 import { fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { productJsonLd } from '@/lib/seo'
@@ -12,6 +13,14 @@ import {
 } from '@/components/client/elements'
 import { ProductInteractive } from '@/components/client/ProductInteractive'
 import styles from '@/styles/pages/pdp.module.css'
+
+// Next caches each product page on its first request and regenerates it in the background every 60 s; the build
+// prerenders none, since the API may be down then.
+export const revalidate = 60
+
+export function generateStaticParams(): Array<{ slug: string }> {
+  return []
+}
 
 interface ProductPageProps {
   params: Promise<{ slug: string }>
@@ -86,11 +95,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
     { label: product.name },
   ]
 
+  // The gallery's main image is the page's LCP: a preload in the head starts it before the browser parses the body.
+  // React's preload(), not a <link> element: a cached render writes an element and its preload both.
+  preload(images[0]!.url, { as: 'image', fetchPriority: 'high' })
+
   return (
     <>
-      {/* The gallery's main image is the page's LCP: a preload link, which React hoists into the head, starts it
-          before the browser parses the body. */}
-      <link rel="preload" as="image" href={images[0]!.url} fetchPriority="high" />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

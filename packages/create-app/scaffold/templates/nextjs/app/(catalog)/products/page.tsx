@@ -10,6 +10,10 @@ export const metadata: Metadata = {
   description: 'Browse our full collection of products.',
 }
 
+// The page reads `?sort=`, so it renders per request; said here, the build does not render it with the API down. Its
+// catalog reads still go through Next's data cache.
+export const dynamic = 'force-dynamic'
+
 interface ProductsPageProps {
   searchParams: Promise<{ sort?: string | string[] }>
 }

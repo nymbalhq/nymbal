@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   description: 'Search our product catalog.',
 }
 
+// The page reads `?q=`, so it renders per request; said here, the build does not render it with the API down. The
+// header's catalog reads still go through Next's data cache.
+export const dynamic = 'force-dynamic'
+
 const first = (value: string | string[] | undefined): string | null =>
   (Array.isArray(value) ? value[0] : value) ?? null
 
