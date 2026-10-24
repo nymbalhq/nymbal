@@ -1,5 +1,159 @@
 # @nymbalhq/react
 
+## 1.2.0
+
+### Minor Changes
+
+- 757150c: Checkout is now a Nymbal element, `nymbal-checkout`, so a store can restyle or replace it like the cart page.
+  - **The element:** the contact, shipping and payment steps (billing sits in the payment step), the step indicator, the
+    error and the order summary, in an open shadow root. Its `parts` and `slots` are listed in its schema. The shipping
+    and billing addresses are `nymbal-address-form` elements.
+  - **Payment:** the page puts `<nymbal-payment-element slot="payment">` inside `nymbal-checkout`. The payment element
+    stays in the light DOM and mounts its driver once, whichever step the shopper is on. Place Order is disabled while
+    the payment element reports `error`.
+  - **Event:** `nymbal:checkout:placed` (`{ orderNumber }`) fires after the checkout store is reset. The page decides
+    where to go next. `@nymbalhq/react` has a generated `Checkout` wrapper with `onPlaced`, and it passes its children
+    through.
+  - **Behaviour, the same on both templates:**
+    - A billing address that differs from shipping reaches the order. On Astro it used to throw.
+    - A double click on Continue moves one step and submits nothing on the next step.
+    - Place Order sends one order request per press.
+  - **Templates:** the Astro and Next.js checkout pages now render the element. Billing test ids are `billing-*` on both
+    templates. Removed: Astro's `scripts/checkout.ts`, `AddressForm.astro`, `CheckoutSteps.astro` and
+    `styles/pages/checkout.css`, and Next's `CheckoutForm.tsx`, `CheckoutSteps.tsx` and `checkout.module.css`.
+  - **Fixes:**
+    - Every generated React wrapper takes a `slot` prop.
+    - `nymbal-payment-element` no longer throws when its `client` changes after its first render.
+
+- 68d2358: The cart page, the search results and the account forms are now Nymbal elements, so a store can restyle or replace
+  them like the other elements.
+  - **New elements:** `nymbal-cart-page`, `nymbal-product-card`, `nymbal-search-results`, `nymbal-login-form`,
+    `nymbal-register-form`, `nymbal-profile-form`, `nymbal-address-form` and `nymbal-address-book`. Each renders in an
+    open shadow root, reads the `--nymbal-*` tokens, and lists its `parts` and `slots` in its schema. `@nymbalhq/react`
+    has a generated wrapper for each one.
+  - **Events:**
+    - `nymbal:auth:signed-in`, from login and register. The page decides where to go next.
+    - `nymbal:profile:saved`.
+    - `nymbal:address-book:changed`.
+  - **Behaviour:**
+    - The cart page shows the cart's `subtotalMinor` from the API.
+    - Register asks for the password twice.
+    - Login and register keep the submit disabled after success, through the redirect.
+    - Pressing Enter in an address field saves the address.
+  - **Templates:** both render the elements in place of their own cart, search-results and account-form code, so a new
+    project carries about 1,700 fewer template lines.
+
+- 5b89c81: The storefronts' server-rendered components are now Nymbal elements, so a store themes them like every other
+  element and a project override replaces them.
+  - **Eleven new elements:** `nymbal-product-grid` (`products`, `source="product-list"`, `has-more`, `lazy`),
+    `nymbal-product-price` and `nymbal-stock-badge` (`product-id`, following the product store's selected variant
+    once it settles on that product), `nymbal-breadcrumb`, `nymbal-image-gallery`, `nymbal-site-header` (the search
+    bar and mini-cart as slotted children), `nymbal-site-footer`, `nymbal-category-nav`, `nymbal-review-list`,
+    `nymbal-review-form` (one submit per click; any non-2xx answer shows the error and re-enables submit) and
+    `nymbal-order-summary` (`subtotal`, `discount`, `shipping`, `tax` parts). All render on the server through the
+    `ssr` entry and hydrate without re-rendering.
+  - **`nymbal-product-card`** gains `eager` (the image is `loading="eager" fetchpriority="high"`: a grid's first four
+    cards) and renders the from-price when a product carries a price range. `cardProductOf` and `cardImageOf` are
+    exported for pages that ship cards.
+  - **Soft navigation on Next:** every element anchor dispatches a cancelable `nymbal:navigate` (`{ href }`); the
+    template's `NymbalSetup` routes it through the App Router.
+  - **React wrappers** for the eleven elements; `@nymbalhq/sdk`'s product-list store reports `loading: true` as its
+    first update, so a server-rendered grid keeps its cards until the store settles.
+  - **Templates:** the home, listing, category, product, order and layout views render the elements from the pages'
+    data; the old components, their CSS modules and the client re-renderers are gone (Astro −1,066 lines, Next −786).
+    The product page's gallery image is the page's one high-priority image, preloaded from the head, as is each grid
+    page's first card. The Astro template gzips its HTML in `src/middleware.ts` when the client accepts it.
+
+- a05b2e4: Nymbal elements are now rendered on the server, as declarative shadow DOM. With JavaScript off, the cart, checkout,
+  search results, header cart count, product options and account forms are on the page. With JavaScript on, each element
+  takes over the markup it was given instead of rendering it again.
+  - **`@nymbalhq/web-components/ssr`** (Node only): `renderElement(tag, { attributes, children })` returns the element
+    with its first render inside `<template shadowrootmode="open">`, then the light-DOM `children`.
+    `registerServerElements({ tag: Class })` makes the server render a store's own class under a Nymbal tag.
+    `nymbal-payment-element` stays client-mounted.
+  - **`@nymbalhq/web-components/astro`:** `<NymbalElement tag attributes>` renders an element in an Astro page. The slot
+    becomes its light DOM.
+  - **`@nymbalhq/react/server`:** `renderNymbal(tag, attributes, children)` returns `{ __html }`. A server component passes
+    it to the generated wrapper as `serverHtml`, and the wrapper renders it on its own tag. A wrapper takes either
+    `serverHtml` or `children`. `NymbalServer` renders one element in a page with no client view.
+  - **`@nymbalhq/web-components/hydrate-support`:** a store's own Lit element imports it before `lit`. Every Nymbal
+    module already imports it first.
+  - **Elements render from server data.** New attributes: `cart` on `nymbal-cart-page`, `nymbal-checkout` and
+    `nymbal-cart-drawer` (lines, subtotal, currency and item count; never the cart token), `count` on
+    `nymbal-mini-cart`, `results` and `query` on `nymbal-search-results`, `product` on `nymbal-variant-selector`,
+    `customer` on `nymbal-profile-form` and `addresses` on `nymbal-address-book`. `nymbal-product-filter` with
+    `source="search"` shows its `facets` attribute. A value given this way shows until the element's store first answers.
+    Without a registered client, an element renders from its attributes and calls nothing.
+  - **React wrappers** now put every attribute in their JSX, so a page rendered on the server ships the attributes.
+  - **Templates:** both read the shopper's cart with the request's `nymbal.cart` cookie, and only when the cookie is
+    there. `elements/index.ts` exports `serverElements`. Next's `NymbalSetup` starts loading the cart before it defines
+    the layout's elements. The `:not(:defined)` space reservations for the cart page and checkout are gone.
+
+- 2d5ee9c: A store can restyle and replace every Nymbal element without forking the package.
+  - **Lit, in a shadow root.** The ten elements are Lit 3 elements (`lit` is a new dependency). Each renders in an open
+    shadow root, except `nymbal-payment-element`, which stays in the light DOM so the payment driver's UI and the
+    checkout form share one tree. They read their look from the `--nymbal-*` custom properties, and each falls back to
+    the package's `tokens.css` value. Their pieces carry `part`s, so you can style them with `::part()`, for example
+    `nymbal-add-to-cart::part(button)`. Their labels and empty states are named `slot`s, with the current text as the
+    fallback. Each element's `parts` and `slots` are listed in its schema.
+  - **Breaking:**
+    - `injectStyles` is removed. Elements no longer put `<style>` tags into `document.head`.
+    - Selectors that reached inside an element (`nymbal-mini-cart button`, `.nymbal-cart-item`, and the like) no
+      longer match. Use `::part()` instead.
+    - `nymbal-cart-drawer`'s `open()` and `close()` methods are now `show()` and `hide()`. The `open` attribute and
+      property say whether the drawer is open, and `toggle()` is unchanged.
+    - `nymbal-sort-dropdown` loses its `value` getter. Its `value` property is the `value` attribute, and the change
+      event carries the chosen key.
+  - **Search layout:** `nymbal-product-filter` carries an `empty` attribute while it shows no facet. The Astro search
+    page lays out on `nymbal-product-filter[empty]`, because `:empty` always matches a shadow host.
+  - **The sort dropdown with a server-rendered `<select>`:** `nymbal-sort-dropdown` slots a `<select>` child, fills it
+    and wires it, so the sort works before JavaScript loads. With no such child, it renders its own `part="select"`.
+  - **Schemas:** each element class has a `static schema` (`ElementSchema`, exported), which lists its tag, attributes,
+    events, parts and slots. Its Lit properties come from the schema.
+  - **React wrappers:** `@nymbalhq/react` generates its wrappers from those schemas. `scripts/generate-wrappers.ts`
+    exports `generateWrappers(schemas)`, and `check:generated` now fails when `wrappers.tsx` differs from what the
+    schemas generate. A new attribute on an element reaches its wrapper with no manual edit.
+  - **New projects own their tokens and elements.** Each template has its own tokens file, which its global CSS
+    imports in place of the package's: `src/styles/tokens.css` in Astro, `app/tokens.css` in Next. Each template also
+    has an empty elements entry, imported before `registerComponents()`: `src/elements/index.ts` in Astro,
+    `elements/index.ts` in Next. An element you define there under a Nymbal tag replaces Nymbal's, because
+    `registerComponents()` skips any tag that is already defined.
+
+- 94fcffd: Every page loads only the elements it renders, and the templates carry performance budgets.
+  - **Per-element entry points:** `@nymbalhq/web-components/elements/<tag>` exports one element with a static
+    `define()`; the package has no import-time side effects (`sideEffects: ["*.css"]`), so a bundler drops what a page
+    does not import. `registerComponents()` still defines everything for a page that wants that. Payment drivers
+    register in the payment element's `beforeDefine`, not at import.
+  - **React:** `@nymbalhq/react`'s root is a facade of pure re-exports; each generated wrapper defines its own element
+    in an effect and imports its element's entry point, so Turbopack and webpack tree-shake per page. `NymbalSetup`
+    defines the layout's elements.
+  - **Templates:** each Astro page's module script and each Next route define exactly what they render; the checkout
+    page reserves `nymbal-checkout`'s box before it upgrades, so the footer stays put (CLS 0.68 → 0.01).
+  - **Budgets:** `pnpm perf:budgets` measures LCP, CLS, TBT and script bytes on the home, listing, product, cart and
+    checkout pages of both templates against `perf-budgets.json` (whole-KiB script budgets at the measured value + 5%;
+    the Next cart keeps a 3000 ms LCP exception until server rendering); it refuses ports something else listens on. CI
+    runs it, and the production E2E that proves per-page loading, in the `perf-budgets` job.
+  - **Fixes:** Astro listing images are no longer lazy above the fold (LCP); the Next filter panel is not rendered on
+    phones (CLS); the Next cart no longer shifts after hydration.
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [757150c]
+- Updated dependencies [68d2358]
+- Updated dependencies [b836370]
+- Updated dependencies [5b89c81]
+- Updated dependencies [a05b2e4]
+- Updated dependencies [2d5ee9c]
+- Updated dependencies [3591951]
+- Updated dependencies [eaa120c]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+- Updated dependencies [94fcffd]
+  - @nymbalhq/types@1.2.0
+  - @nymbalhq/web-components@1.2.0
+  - @nymbalhq/sdk@1.2.0
+
 ## 1.1.0
 
 ### Minor Changes

@@ -1,5 +1,201 @@
 # nymbal
 
+## 1.2.0
+
+### Minor Changes
+
+- 45b8128: Every change an admin, a shopper or the system makes to the store's records leaves an audit entry, and an admin write
+  sent with an `Idempotency-Key` applies once, however often it is retried.
+  - **Audit entries.** Migration `0011_audit_entries` adds an append-only `audit_entries` table (both dialects; its
+    triggers refuse updates and deletes, and the event-retention sweep never touches it). One entry per outermost
+    command, written in the command's transaction, so a rolled-back write leaves none. It names the actor (`admin:<id>`,
+    `customer:<id>`, `guest:anonymous`, `system:<sweeper>`, `system:stripe-webhook`, `import:woocommerce`), the command
+    (`inventory.adjust`, `order.cancel`, `checkout.place`, `product.create`, …), the records it touched by id, the
+    request's correlation id and the outcome: `applied`, `refused` (its service refused it) or `replayed`. Cart commands
+    and reads are not audited; a request its schema refuses leaves no entry.
+  - **Idempotency.** Admin writes (`POST`, `PATCH`, `PUT`, `DELETE` under `/api/admin`) accept `Idempotency-Key`, 1-128
+    characters of `[A-Za-z0-9._:-]`; any other value answers 400 naming the header. A retry with the same key and the
+    same request answers the first response exactly, with `Idempotent-Replayed: true`, and runs nothing; the same key
+    with a different body or path answers 409 `idempotency.key_reused`. Concurrent first attempts apply once. A refused
+    command is not stored for replay: its retry runs again. Without a key, a write behaves as before.
+  - **Activity.** `GET /api/admin/activity?actor&command&subject&correlation&outcome&since&until&cursor&limit` lists
+    entries newest first, a page at a time (`meta.nextCursor`), with each response's status but never its body.
+    `GET /api/admin/activity/export?since&until&correlation` streams them oldest first as NDJSON, ids only.
+  - **Admin.** A new Activity page (`/admin/activity`) filters the trail and downloads the export. Every admin write
+    sends a key per user intent: a double click within one action sends one key, and the client's own re-sends (after a
+    CSRF refusal or a 401 refresh) reuse it. The stock-history drawer now shows a variant's adjustments; it was always
+    empty.
+  - **CLI.** `nymbal audit export [--since <t>] [--until <t>] [--correlation <id>] [--out <file>]` prints the same NDJSON,
+    opening the store read-only; a bad time exits 2. `nymbal import` attributes its writes to `import:woocommerce`.
+  - **CORS.** `x-correlation-id` and `Idempotent-Replayed` are in `Access-Control-Expose-Headers`.
+  - **API.** `@nymbalhq/platform` exports `runAsActor`, `currentActor`, `actorOf`, `audit.note`, `auditedCommand` and
+    the `audit_entries` repository; `@nymbalhq/types` adds `AuditEntry`, `AuditActor`, `AuditOutcome`, `AuditSubject`,
+    `IDEMPOTENCY_KEY_HEADER`, `IDEMPOTENT_REPLAYED_HEADER` and `isValidIdempotencyKey`. Every non-GET entry in
+    `routeSchemas` declares its audit `command` (or `null`); a route without one stops startup.
+
+- b836370: A store can put its security rules on its Cloudflare zone: `security.adapter: 'cloudflare'`. The adapter is the new
+  `@nymbalhq/security-cloudflare` package (`nymbal add cloudflare`), which the kernel imports only when the config names
+  it: `npm install @nymbalhq/security-cloudflare`. It talks to the Cloudflare API with `fetch`, so there is no SDK to
+  install beside it.
+  - `security.cloudflare` takes `zoneId` and `apiToken` (both required with the `cloudflare` adapter, read with `env()`)
+    and an optional `apiBase`. New, all optional: `geo.block` (ISO 3166 alpha-2 codes), `customRules` (`name`,
+    `expression`, `action`; names unique) and `managedRulesets` (`'cloudflare'`, `'owasp'`). A `middleware` store parses
+    as before.
+  - The zone changes only by command, never at boot: `nymbal security:plan [--json]` shows what would change,
+    `security:apply` writes it, `security:drift [--json]` reports a dashboard edit (exit 1), and `security:inspect` lists
+    the live rules. Exit 2 is a config, credential or API error, and every command exits 2 on a store whose adapter is
+    not `cloudflare`. The token is never printed.
+  - Each `rateLimit` entry becomes a rate limiting rule (`eq` for an exact path, `wildcard` for `*` and `**`), the geo
+    block one custom rule, and each managed ruleset one execute rule. Every rule Nymbal writes has a `nymbal:` ref; the
+    zone's own rules are kept, unchanged and first. `validate` checks the zone's plan limits over every rule in a phase,
+    the zone's own included.
+  - In process, the adapter sets the same response headers as `middleware`.
+
+  **Breaking:** `security.adapter: 'aws-waf'` or `'akamai'` now fails `createApp` with a `ConfigError` naming the
+  adapters that exist (`middleware, cloudflare`); before, both silently ran `middleware`. `ProviderPackage.sdk` is
+  optional, and `Slot` includes `security`. `buildSecurityHeaders` is exported from `@nymbalhq/types` as well.
+
+- 1653d3f: A third party can certify their own adapter: `npm install --save-dev @nymbalhq/contract-tests vitest`, name the
+  package on its slot (`commerce.search: { provider: 'custom', package: '@acme/nymbal-search', config: {...} }`) and run
+  `nymbal test:contracts --package @acme/nymbal-search`. It builds the adapter with the package's
+  `createAdapter(<the slot's config>)` and runs the published suite for its kind with the project's own vitest. It
+  prints `certified <pkg> (<kind>): N cases passed` and exits 0 only when every case passed, else
+  `not certified <pkg> (<kind>): F of N cases failed` and exits 1.
+  - `@nymbalhq/contract-tests` publishes with the group. Every `run<Kind>Contract(name, build, options?)` runs the
+    same cases Nymbal's own adapters pass: the document store's reference-model property, the event bus's delivery
+    contract and search's pagination, ranking, facet and hostile-input properties are part of it now; reviews gain a
+    cursor-walk case and payments a refund idempotency case (and, with `signedWebhook`, a webhook parsed twice). Every
+    suite checks that `healthCheck()` resolves `healthy` or `degraded` within 6 s, which a primitive must implement to
+    certify. With `unreachable` (an adapter whose dependency is gone) it checks that `healthCheck()` reports `down` and
+    one representative operation rejects, each within 6 s. `runMediaStorageContract` takes `{ fetchUrl }` as options.
+    `contractSuites` maps each kind to its suite, and the search oracle (`searchTerms`, `matchesQuery`,
+    `toSearchDocument`) is exported.
+  - A package may export `contractOptions: { options?, unreachable?, kind? }`: the options when no slot names it, the
+    options of an unreachable adapter, and a primitive's kind (`documentStore`, `eventBus` or `media`). Both go to
+    `createAdapter` and then to `initialize` when the adapter has one, as the slot's config does. A slot config holding
+    a value JSON cannot carry (a function, a Date, a BigInt) is refused with one line. `--slot` picks the slot when
+    several name the package. `--adapter` runs the monorepo's own contract files, as before.
+  - Every commerce slot block takes an optional `package`, an npm package name. The kernel does not read it.
+  - Native reviews page by cursor: `getProductReviews(productId, { limit, cursor })` returns a `nextCursor` until the
+    last page, newest first. The native payments stub answers a refund repeated under one `idempotencyKey` with the
+    first refund and refunds once. adapter-smtp's `healthCheck` reports `down` when the server cannot be reached
+    (`degraded` stays for a server that refuses the login), within 5 s, and a send gives up after 4 s on a host that
+    does not connect, greet or answer, where nodemailer waited up to two minutes.
+  - The Redis document store's client and the Redis Streams bus's command client no longer queue a command until the
+    server returns: on a dead server it rejects within a few seconds, and the client keeps reconnecting, so commands
+    succeed again once the server is back.
+
+- 3591951: The event log is something an operator can read: one id follows an operation through every event it causes, the CLI
+  reads the log, and old events can be archived before they are deleted.
+  - **One correlation id per operation.** Every event an HTTP request publishes carries the request's correlation id,
+    and every response carries it as `x-correlation-id`, Fastify's own 404 and 400 included. An inbound
+    `x-correlation-id` is used only when it matches `^[A-Za-z0-9._:-]{1,128}$` (`isValidCorrelationId`); any other
+    value is replaced by the request's own id. A checkout keeps its id across the payment webhook, on its failure paths
+    too. Each sweeper run and each `nymbal import` run gets one id of its own, such as `sweep:cart-abandonment:<uuid>` or
+    `import:woocommerce:<uuid>`. Services take no new arguments: `runWithCorrelation(id, fn)` and
+    `currentCorrelationId()` carry the scope.
+  - **A queryable column.** Migration `0008` adds `events.correlation_id`, indexed with `seq`, and backfills it from each
+    stored envelope. Run `nymbal migrate`. The event log repository adds `queryByCorrelation`, `listAfter`, `maxSeq`,
+    `listDeliveredBefore` and `deleteSeqs`, and its rows carry `createdAt`.
+  - **`nymbal events`.** `nymbal events query --correlation <id>` prints one operation's events in `seq` order, and
+    `nymbal events tail` follows the log live. Both take `--type 'order.*'` and `--json`, and both open the store
+    read-only. Payloads are printed only with `--payload`.
+  - **Retention and archive.** `events.retentionDays` (default 30) sets how long delivered events stay. With
+    `events.archive: { adapter: 's3', bucket, … }`, each batch of expired events is first written as one gzip NDJSON
+    object, and deleted only once the write succeeds. The archive bucket must be private: config refuses the media
+    bucket. `@nymbalhq/media-s3` adds `createS3ObjectWriter` for private objects.
+
+- 7a4e472: Every derived read model can be rebuilt from the command store's tables, completely and without readers seeing it
+  half-built, and a fresh process serves exactly what a long-running one serves.
+  - **`nymbal replay --to <catalogue|orders|customers|search|all>`.** Rebuilds the read model from the tables, swaps it
+    in, then re-applies the events delivered while it was read. It prints each model with the documents in each
+    collection, and exits 2 when a rebuilder fails (nothing is swapped) or a catch-up event fails (the model is swapped,
+    and the event's seq is printed). `--dry-run` rebuilds into memory, prints what would be added, changed and removed,
+    writes nothing, and exits 1 if anything differs. On an `in-memory` document store the document models live in the
+    server's process, so only `--to search` runs: use `redis` or `postgres-jsonb` for a shared read model.
+  - **Boot rebuilds.** `createApp` rebuilds every read model before it serves, in place of the old warm-up, which
+    replayed only created and placed events (statuses, stock and updates were lost on a restart). `warmDocumentStore` is
+    removed; `rebuild`, `diffReadModel`, `READ_MODELS` and `openReadModels` are exported. Seed calls the same rebuild.
+  - **The live projections match a rebuild.** They build every document from the rows at handle time, through the same
+    builders a rebuild uses: a recategorised product leaves no stale `products-by-category` entry, a stock change and a
+    category rename or delete re-project the products concerned, a paid or refunded order updates its customer's
+    profile, and a pending order's document carries its payment intent.
+  - **Events.** `OrderService.updateStatus` publishes `order.status_changed.v1` (`orderId`, `from`, `to`), and a
+    checkout publishes `payment.intent_created.v1` (`paymentId`, `orderId`) when it stores the intent on the order.
+  - **Adapters.** `DocumentStoreAdapter` gains `replaceCollection(collection, entries)`: readers see the old contents
+    or the new, and a source that throws leaves the old. The Redis store stages a hash and `RENAME`s it with its expiry
+    index; Postgres JSONB replaces in one transaction. `SearchAdapter` gains an optional `replaceAll(documents)`, which
+    the native index implements. The document store contract suite in `@nymbalhq/contract-tests` has
+    `replaceCollection` cases, so a third-party store must implement it.
+  - **Migration `0010`** indexes `events (dead_at, delivered_at, seq)` for the catch-up read. Run `nymbal migrate`.
+
+- 0fe6563: A store owner can enter the provider keys the config leaves unset in the admin's Settings page, instead of editing
+  environment files. Each value is encrypted at rest, never shown again, and applied when the store next starts.
+  - **Precedence.** The config wins, then the environment, then Settings. A field the config or environment sets shows
+    as "Set by environment" and cannot be changed in the admin.
+  - **The key.** Values are encrypted with AES-256-GCM under `NYMBAL_SECRETS_KEY` (32 random bytes, base64), each bound
+    to its slot and path. `create-nymbal-app` writes a fresh key into the new project's `.env` (never `.env.example`).
+    Back it up with your deploy's secrets: a store holding a saved secret refuses to start without its key, with a
+    `ConfigError` naming the slot and path. A key that does not match, or a row that was changed, refuses the same way.
+  - **Adapters declare their settings.** A provider package may export
+    `settings: Array<{ path, label, secret, env?, optional? }>` (`AdapterSetting` in `@nymbalhq/types`). Stripe declares
+    `secretKey`, `webhookSecret` (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`) and `publishableKey`; Anthropic
+    `apiKey` (`ANTHROPIC_API_KEY`) and `baseUrl`; SMTP `smtp.user` and `smtp.pass`. The kernel honours a declared `env`
+    whether or not the package reads it.
+  - **A missing key no longer stops the store.** When a declared secret is set nowhere, the slot gets an adapter that
+    reports itself `down` (naming the field) and refuses every operation, so the store boots and the admin can take the
+    key. For payments, the storefront's Place Order stays disabled. Before, Stripe without a `secretKey` stopped boot.
+  - **`nymbal add stripe`** no longer writes `env('STRIPE_SECRET_KEY')` and `env('STRIPE_WEBHOOK_SECRET')` into the
+    config (an unset variable threw before Settings could fill it); the variables stay in `.env.example`, and the hint
+    says to set them in `.env` or in the admin's Settings.
+  - **Admin API.** `GET /api/admin/settings` lists each slot's declared fields with their state and source, and never a
+    secret's value; `PUT /api/admin/settings/:slot/:path` with `{ value }` saves one and `DELETE` clears it (409
+    `settings.set_by_environment`, 404 `settings.unknown_field`, 503 `settings.key_missing`). A write publishes
+    `settings.changed.v1` with `{ slot, path, source }` and answers `restartRequired: true`.
+  - **No value leaks.** `createApp` wraps whatever logger it is given so no saved secret reaches a log record, and error
+    responses are scrubbed the same way. `createLogger` takes a `destination`. `nymbal doctor` reads the saved values
+    to check each slot and prints none of them.
+  - **CLI.** `nymbal secrets rotate` re-encrypts every saved secret from `NYMBAL_SECRETS_KEY_OLD` to
+    `NYMBAL_SECRETS_KEY` in one transaction, or changes nothing and exits 2. `nymbal secrets clear [--slot] [--path]`
+    deletes saved values without a key, the recovery for a lost one.
+  - **Migration 0008** adds the `settings` table on SQLite and Postgres: run `nymbal migrate`. A store not yet migrated
+    boots with no settings.
+  - The Anthropic adapter takes `baseUrl` (passed to the SDK as `baseURL`).
+
+### Patch Changes
+
+- 94fcffd: Every page loads only the elements it renders, and the templates carry performance budgets.
+  - **Per-element entry points:** `@nymbalhq/web-components/elements/<tag>` exports one element with a static
+    `define()`; the package has no import-time side effects (`sideEffects: ["*.css"]`), so a bundler drops what a page
+    does not import. `registerComponents()` still defines everything for a page that wants that. Payment drivers
+    register in the payment element's `beforeDefine`, not at import.
+  - **React:** `@nymbalhq/react`'s root is a facade of pure re-exports; each generated wrapper defines its own element
+    in an effect and imports its element's entry point, so Turbopack and webpack tree-shake per page. `NymbalSetup`
+    defines the layout's elements.
+  - **Templates:** each Astro page's module script and each Next route define exactly what they render; the checkout
+    page reserves `nymbal-checkout`'s box before it upgrades, so the footer stays put (CLS 0.68 → 0.01).
+  - **Budgets:** `pnpm perf:budgets` measures LCP, CLS, TBT and script bytes on the home, listing, product, cart and
+    checkout pages of both templates against `perf-budgets.json` (whole-KiB script budgets at the measured value + 5%;
+    the Next cart keeps a 3000 ms LCP exception until server rendering); it refuses ports something else listens on. CI
+    runs it, and the production E2E that proves per-page loading, in the `perf-budgets` job.
+  - **Fixes:** Astro listing images are no longer lazy above the fold (LCP); the Next filter panel is not rendered on
+    phones (CLS); the Next cart no longer shifts after hydration.
+
+- Updated dependencies [45b8128]
+- Updated dependencies [b836370]
+- Updated dependencies [1653d3f]
+- Updated dependencies [3591951]
+- Updated dependencies [7d839a4]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+- Updated dependencies [94fcffd]
+  - @nymbalhq/platform@1.2.0
+  - @nymbalhq/types@1.2.0
+  - @nymbalhq/http@1.2.0
+  - @nymbalhq/admin@1.2.0
+  - @nymbalhq/config@1.2.0
+  - @nymbalhq/importers@0.3.1
+
 ## 1.1.0
 
 ### Minor Changes

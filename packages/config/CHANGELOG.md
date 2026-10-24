@@ -1,5 +1,90 @@
 # @nymbalhq/config
 
+## 1.2.0
+
+### Minor Changes
+
+- b836370: A store can put its security rules on its Cloudflare zone: `security.adapter: 'cloudflare'`. The adapter is the new
+  `@nymbalhq/security-cloudflare` package (`nymbal add cloudflare`), which the kernel imports only when the config names
+  it: `npm install @nymbalhq/security-cloudflare`. It talks to the Cloudflare API with `fetch`, so there is no SDK to
+  install beside it.
+  - `security.cloudflare` takes `zoneId` and `apiToken` (both required with the `cloudflare` adapter, read with `env()`)
+    and an optional `apiBase`. New, all optional: `geo.block` (ISO 3166 alpha-2 codes), `customRules` (`name`,
+    `expression`, `action`; names unique) and `managedRulesets` (`'cloudflare'`, `'owasp'`). A `middleware` store parses
+    as before.
+  - The zone changes only by command, never at boot: `nymbal security:plan [--json]` shows what would change,
+    `security:apply` writes it, `security:drift [--json]` reports a dashboard edit (exit 1), and `security:inspect` lists
+    the live rules. Exit 2 is a config, credential or API error, and every command exits 2 on a store whose adapter is
+    not `cloudflare`. The token is never printed.
+  - Each `rateLimit` entry becomes a rate limiting rule (`eq` for an exact path, `wildcard` for `*` and `**`), the geo
+    block one custom rule, and each managed ruleset one execute rule. Every rule Nymbal writes has a `nymbal:` ref; the
+    zone's own rules are kept, unchanged and first. `validate` checks the zone's plan limits over every rule in a phase,
+    the zone's own included.
+  - In process, the adapter sets the same response headers as `middleware`.
+
+  **Breaking:** `security.adapter: 'aws-waf'` or `'akamai'` now fails `createApp` with a `ConfigError` naming the
+  adapters that exist (`middleware, cloudflare`); before, both silently ran `middleware`. `ProviderPackage.sdk` is
+  optional, and `Slot` includes `security`. `buildSecurityHeaders` is exported from `@nymbalhq/types` as well.
+
+- 1653d3f: A third party can certify their own adapter: `npm install --save-dev @nymbalhq/contract-tests vitest`, name the
+  package on its slot (`commerce.search: { provider: 'custom', package: '@acme/nymbal-search', config: {...} }`) and run
+  `nymbal test:contracts --package @acme/nymbal-search`. It builds the adapter with the package's
+  `createAdapter(<the slot's config>)` and runs the published suite for its kind with the project's own vitest. It
+  prints `certified <pkg> (<kind>): N cases passed` and exits 0 only when every case passed, else
+  `not certified <pkg> (<kind>): F of N cases failed` and exits 1.
+  - `@nymbalhq/contract-tests` publishes with the group. Every `run<Kind>Contract(name, build, options?)` runs the
+    same cases Nymbal's own adapters pass: the document store's reference-model property, the event bus's delivery
+    contract and search's pagination, ranking, facet and hostile-input properties are part of it now; reviews gain a
+    cursor-walk case and payments a refund idempotency case (and, with `signedWebhook`, a webhook parsed twice). Every
+    suite checks that `healthCheck()` resolves `healthy` or `degraded` within 6 s, which a primitive must implement to
+    certify. With `unreachable` (an adapter whose dependency is gone) it checks that `healthCheck()` reports `down` and
+    one representative operation rejects, each within 6 s. `runMediaStorageContract` takes `{ fetchUrl }` as options.
+    `contractSuites` maps each kind to its suite, and the search oracle (`searchTerms`, `matchesQuery`,
+    `toSearchDocument`) is exported.
+  - A package may export `contractOptions: { options?, unreachable?, kind? }`: the options when no slot names it, the
+    options of an unreachable adapter, and a primitive's kind (`documentStore`, `eventBus` or `media`). Both go to
+    `createAdapter` and then to `initialize` when the adapter has one, as the slot's config does. A slot config holding
+    a value JSON cannot carry (a function, a Date, a BigInt) is refused with one line. `--slot` picks the slot when
+    several name the package. `--adapter` runs the monorepo's own contract files, as before.
+  - Every commerce slot block takes an optional `package`, an npm package name. The kernel does not read it.
+  - Native reviews page by cursor: `getProductReviews(productId, { limit, cursor })` returns a `nextCursor` until the
+    last page, newest first. The native payments stub answers a refund repeated under one `idempotencyKey` with the
+    first refund and refunds once. adapter-smtp's `healthCheck` reports `down` when the server cannot be reached
+    (`degraded` stays for a server that refuses the login), within 5 s, and a send gives up after 4 s on a host that
+    does not connect, greet or answer, where nodemailer waited up to two minutes.
+  - The Redis document store's client and the Redis Streams bus's command client no longer queue a command until the
+    server returns: on a dead server it rejects within a few seconds, and the client keeps reconnecting, so commands
+    succeed again once the server is back.
+
+- 3591951: The event log is something an operator can read: one id follows an operation through every event it causes, the CLI
+  reads the log, and old events can be archived before they are deleted.
+  - **One correlation id per operation.** Every event an HTTP request publishes carries the request's correlation id,
+    and every response carries it as `x-correlation-id`, Fastify's own 404 and 400 included. An inbound
+    `x-correlation-id` is used only when it matches `^[A-Za-z0-9._:-]{1,128}$` (`isValidCorrelationId`); any other
+    value is replaced by the request's own id. A checkout keeps its id across the payment webhook, on its failure paths
+    too. Each sweeper run and each `nymbal import` run gets one id of its own, such as `sweep:cart-abandonment:<uuid>` or
+    `import:woocommerce:<uuid>`. Services take no new arguments: `runWithCorrelation(id, fn)` and
+    `currentCorrelationId()` carry the scope.
+  - **A queryable column.** Migration `0008` adds `events.correlation_id`, indexed with `seq`, and backfills it from each
+    stored envelope. Run `nymbal migrate`. The event log repository adds `queryByCorrelation`, `listAfter`, `maxSeq`,
+    `listDeliveredBefore` and `deleteSeqs`, and its rows carry `createdAt`.
+  - **`nymbal events`.** `nymbal events query --correlation <id>` prints one operation's events in `seq` order, and
+    `nymbal events tail` follows the log live. Both take `--type 'order.*'` and `--json`, and both open the store
+    read-only. Payloads are printed only with `--payload`.
+  - **Retention and archive.** `events.retentionDays` (default 30) sets how long delivered events stay. With
+    `events.archive: { adapter: 's3', bucket, … }`, each batch of expired events is first written as one gzip NDJSON
+    object, and deleted only once the write succeeds. The archive bucket must be private: config refuses the media
+    bucket. `@nymbalhq/media-s3` adds `createS3ObjectWriter` for private objects.
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [b836370]
+- Updated dependencies [3591951]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+  - @nymbalhq/types@1.2.0
+
 ## 1.1.0
 
 ### Minor Changes

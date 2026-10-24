@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/adapter-smtp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "SMTP email for Nymbal: the `smtp` email provider (nodemailer)",
   "license": "MIT",
   "repository": {

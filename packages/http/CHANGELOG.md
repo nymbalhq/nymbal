@@ -1,5 +1,69 @@
 # @nymbalhq/http
 
+## 1.2.0
+
+### Minor Changes
+
+- 45b8128: Every change an admin, a shopper or the system makes to the store's records leaves an audit entry, and an admin write
+  sent with an `Idempotency-Key` applies once, however often it is retried.
+  - **Audit entries.** Migration `0011_audit_entries` adds an append-only `audit_entries` table (both dialects; its
+    triggers refuse updates and deletes, and the event-retention sweep never touches it). One entry per outermost
+    command, written in the command's transaction, so a rolled-back write leaves none. It names the actor (`admin:<id>`,
+    `customer:<id>`, `guest:anonymous`, `system:<sweeper>`, `system:stripe-webhook`, `import:woocommerce`), the command
+    (`inventory.adjust`, `order.cancel`, `checkout.place`, `product.create`, …), the records it touched by id, the
+    request's correlation id and the outcome: `applied`, `refused` (its service refused it) or `replayed`. Cart commands
+    and reads are not audited; a request its schema refuses leaves no entry.
+  - **Idempotency.** Admin writes (`POST`, `PATCH`, `PUT`, `DELETE` under `/api/admin`) accept `Idempotency-Key`, 1-128
+    characters of `[A-Za-z0-9._:-]`; any other value answers 400 naming the header. A retry with the same key and the
+    same request answers the first response exactly, with `Idempotent-Replayed: true`, and runs nothing; the same key
+    with a different body or path answers 409 `idempotency.key_reused`. Concurrent first attempts apply once. A refused
+    command is not stored for replay: its retry runs again. Without a key, a write behaves as before.
+  - **Activity.** `GET /api/admin/activity?actor&command&subject&correlation&outcome&since&until&cursor&limit` lists
+    entries newest first, a page at a time (`meta.nextCursor`), with each response's status but never its body.
+    `GET /api/admin/activity/export?since&until&correlation` streams them oldest first as NDJSON, ids only.
+  - **Admin.** A new Activity page (`/admin/activity`) filters the trail and downloads the export. Every admin write
+    sends a key per user intent: a double click within one action sends one key, and the client's own re-sends (after a
+    CSRF refusal or a 401 refresh) reuse it. The stock-history drawer now shows a variant's adjustments; it was always
+    empty.
+  - **CLI.** `nymbal audit export [--since <t>] [--until <t>] [--correlation <id>] [--out <file>]` prints the same NDJSON,
+    opening the store read-only; a bad time exits 2. `nymbal import` attributes its writes to `import:woocommerce`.
+  - **CORS.** `x-correlation-id` and `Idempotent-Replayed` are in `Access-Control-Expose-Headers`.
+  - **API.** `@nymbalhq/platform` exports `runAsActor`, `currentActor`, `actorOf`, `audit.note`, `auditedCommand` and
+    the `audit_entries` repository; `@nymbalhq/types` adds `AuditEntry`, `AuditActor`, `AuditOutcome`, `AuditSubject`,
+    `IDEMPOTENCY_KEY_HEADER`, `IDEMPOTENT_REPLAYED_HEADER` and `isValidIdempotencyKey`. Every non-GET entry in
+    `routeSchemas` declares its audit `command` (or `null`); a route without one stops startup.
+
+- 3591951: The event log is something an operator can read: one id follows an operation through every event it causes, the CLI
+  reads the log, and old events can be archived before they are deleted.
+  - **One correlation id per operation.** Every event an HTTP request publishes carries the request's correlation id,
+    and every response carries it as `x-correlation-id`, Fastify's own 404 and 400 included. An inbound
+    `x-correlation-id` is used only when it matches `^[A-Za-z0-9._:-]{1,128}$` (`isValidCorrelationId`); any other
+    value is replaced by the request's own id. A checkout keeps its id across the payment webhook, on its failure paths
+    too. Each sweeper run and each `nymbal import` run gets one id of its own, such as `sweep:cart-abandonment:<uuid>` or
+    `import:woocommerce:<uuid>`. Services take no new arguments: `runWithCorrelation(id, fn)` and
+    `currentCorrelationId()` carry the scope.
+  - **A queryable column.** Migration `0008` adds `events.correlation_id`, indexed with `seq`, and backfills it from each
+    stored envelope. Run `nymbal migrate`. The event log repository adds `queryByCorrelation`, `listAfter`, `maxSeq`,
+    `listDeliveredBefore` and `deleteSeqs`, and its rows carry `createdAt`.
+  - **`nymbal events`.** `nymbal events query --correlation <id>` prints one operation's events in `seq` order, and
+    `nymbal events tail` follows the log live. Both take `--type 'order.*'` and `--json`, and both open the store
+    read-only. Payloads are printed only with `--payload`.
+  - **Retention and archive.** `events.retentionDays` (default 30) sets how long delivered events stay. With
+    `events.archive: { adapter: 's3', bucket, … }`, each batch of expired events is first written as one gzip NDJSON
+    object, and deleted only once the write succeeds. The archive bucket must be private: config refuses the media
+    bucket. `@nymbalhq/media-s3` adds `createS3ObjectWriter` for private objects.
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [b836370]
+- Updated dependencies [1653d3f]
+- Updated dependencies [3591951]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+  - @nymbalhq/types@1.2.0
+  - @nymbalhq/config@1.2.0
+
 ## 1.1.0
 
 ### Minor Changes
