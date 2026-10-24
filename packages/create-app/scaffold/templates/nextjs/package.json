@@ -17,17 +17,17 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "nymbal": "1.0.0",
-    "@nymbalhq/config": "1.0.0",
-    "@nymbalhq/platform": "1.0.0",
-    "@nymbalhq/stack": "1.0.0",
+    "nymbal": "1.1.0",
+    "@nymbalhq/config": "1.1.0",
+    "@nymbalhq/platform": "1.1.0",
+    "@nymbalhq/stack": "1.1.0",
     "next": "^16.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "@nymbalhq/sdk": "1.0.0",
-    "@nymbalhq/react": "1.0.0",
-    "@nymbalhq/web-components": "1.0.0",
-    "@nymbalhq/types": "1.0.0"
+    "@nymbalhq/sdk": "1.1.0",
+    "@nymbalhq/react": "1.1.0",
+    "@nymbalhq/web-components": "1.1.0",
+    "@nymbalhq/types": "1.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -38,26 +38,26 @@
   },
   "pnpm": {
     "overrides": {
-      "nymbal": "1.0.0",
-      "@nymbalhq/config": "1.0.0",
-      "@nymbalhq/http": "1.0.0",
-      "@nymbalhq/platform": "1.0.0",
-      "@nymbalhq/react": "1.0.0",
-      "@nymbalhq/sdk": "1.0.0",
-      "@nymbalhq/stack": "1.0.0",
-      "@nymbalhq/types": "1.0.0",
-      "@nymbalhq/web-components": "1.0.0"
+      "nymbal": "1.1.0",
+      "@nymbalhq/config": "1.1.0",
+      "@nymbalhq/http": "1.1.0",
+      "@nymbalhq/platform": "1.1.0",
+      "@nymbalhq/react": "1.1.0",
+      "@nymbalhq/sdk": "1.1.0",
+      "@nymbalhq/stack": "1.1.0",
+      "@nymbalhq/types": "1.1.0",
+      "@nymbalhq/web-components": "1.1.0"
     }
   },
   "overrides": {
-    "nymbal": "1.0.0",
-    "@nymbalhq/config": "1.0.0",
-    "@nymbalhq/http": "1.0.0",
-    "@nymbalhq/platform": "1.0.0",
-    "@nymbalhq/react": "1.0.0",
-    "@nymbalhq/sdk": "1.0.0",
-    "@nymbalhq/stack": "1.0.0",
-    "@nymbalhq/types": "1.0.0",
-    "@nymbalhq/web-components": "1.0.0"
+    "nymbal": "1.1.0",
+    "@nymbalhq/config": "1.1.0",
+    "@nymbalhq/http": "1.1.0",
+    "@nymbalhq/platform": "1.1.0",
+    "@nymbalhq/react": "1.1.0",
+    "@nymbalhq/sdk": "1.1.0",
+    "@nymbalhq/stack": "1.1.0",
+    "@nymbalhq/types": "1.1.0",
+    "@nymbalhq/web-components": "1.1.0"
   }
 }

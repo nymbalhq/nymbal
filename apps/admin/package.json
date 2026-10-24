@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/admin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The Nymbal admin, a static single-page app that `nymbal dev` serves at /admin/",
   "license": "MIT",
   "repository": {
