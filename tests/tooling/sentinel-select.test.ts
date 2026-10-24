@@ -98,7 +98,7 @@ describe('AC-13: selectSentinels selects by patch target, killed-by file and clo
       ...new Set([
         ...REAL.flatMap((s) => [...touchedPaths(s.patch), ...killedByFiles(s)]),
         'templates/astro/src/pages/index.astro',
-        'templates/nextjs/app/page.tsx',
+        'templates/nextjs/app/(catalog)/home/[key]/page.tsx',
         'apps/admin/src/main.tsx',
         'docs/notes.md',
         'packages/sdk/src/client.ts',
