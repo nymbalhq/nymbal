@@ -1,5 +1,84 @@
 # @nymbalhq/sdk
 
+## 1.1.0
+
+### Minor Changes
+
+- f93dab3: The `native` search provider is full-text search in the store's own database: SQLite FTS5 on a SQLite store, a
+  GIN-indexed `tsvector` on Postgres. Every match is reachable through cursor pages with an exact total.
+  - Migration 0007 creates the search tables (`search_documents`, and on SQLite its FTS5 index). Run
+    `nymbal migrate`. A store that had products before 0007 indexes them on its next start, from the warm-up replay.
+  - `createNativeSearchAdapter({ sql, logger })` takes the command store's raw clients (`rawClients(store)`), not a
+    document store. `BuildAdaptersDeps` takes `sql` in place of `documentStore`. The `search-index` document-store
+    collection is no longer written.
+  - Results are ranked: products with every query term in the name come first, then products with every term in the
+    name, a SKU or a variant name, then the rest by the engine's score, then by id.
+  - `search` pages by `cursor`. `nextCursor` is null on the last page, and `total` counts every match. A malformed
+    cursor is an error, and a cursor past the last match is an empty last page. `encodeSearchCursor(offset)` is
+    exported. `filters.categoryIds` narrows to a category, with filters applied as well as the query.
+  - `FacetParams.query` is new: `facet('categoryIds', { query, filters })` counts the query's matches per category.
+  - `GET /api/products/search` takes `category=<slug>` and answers `{ items, nextCursor, total, facets }`. `facets` is
+    the category facet in the listing's shape (slug values, name labels) when search reports `facet` and the query
+    matches. An unknown category gives no items and a total of 0. A malformed cursor is a 400.
+  - The SDK's `products.search(query, { limit, cursor, category })` returns `total` and `facets`. The search store
+    gains `loadMore()` and `setCategory(slug | null)`, and `SearchState` gains `category`, `nextCursor` and `facets`.
+    Its `total` is now the API's total, not the number of results loaded. `useSearch` exposes the same.
+  - `<nymbal-product-filter source="search">` (React: `ProductFilter source="search"`) renders the search's facets and
+    narrows the search to the category chosen. Choosing the chosen category again clears it.
+  - Both templates' `/search` show the API's total (`search-total`), a Load more button (`search-load-more`) while
+    pages remain, and the category filter when the search has facets. The filter writes `?category=` beside `?q`.
+
+  **Behaviour change in matching.** A query is split into terms: runs of ASCII letters and digits, lowercased.
+  Everything else separates terms, and that includes non-ASCII letters. Each term must be a prefix of a word in the
+  product's name, SKU, variant name or description. The old match was a substring anywhere in the product. So
+  `ool` no longer finds "wool", `foo.bar` finds products with words starting `foo` and `bar`, a query with no terms
+  finds nothing, and a match in a field other than these four (a slug, a price) no longer counts.
+
+- ea74a39: The storefronts render from what the store's adapters can do, never from which vendor is configured.
+  - `GET /api/capabilities` (public) answers the store's report: `payments` (`capabilities`, `client`), `search`
+    (`capabilities`) and `catalog` (`sortKeys`, `defaultSort`). It names no provider and serves no secret.
+    `StoreCapabilities`, `PaymentClient` and `PRODUCT_SORT_LABELS` are new in `@nymbalhq/types`. The SDK reads the
+    report once per client with `client.capabilities.get()`.
+  - A payments adapter may describe its storefront half with `client(): { driver, options } | null`, where `options`
+    holds public values only. The native stub answers `{ driver: 'test-mode', options: {} }`. Stripe answers
+    `{ driver: 'stripe', options: { publishableKey } }`, from the new `publishableKey` in its config or
+    `STRIPE_PUBLISHABLE_KEY`; a key that starts `sk_` or `rk_` there fails at start.
+  - `<nymbal-payment-element client='<json>'>` (React: `PaymentElement`) renders that client half through a driver
+    from the SDK's registry (`registerPaymentDriver(name, driver)`, `getPaymentDriver(name)`), and its
+    `confirm(clientSecret, context?)` answers `{ ok: true, confirmed }` or `{ ok: false, error }`. `context`
+    (`PaymentConfirmContext`: `email`, `billing`) is the shopper's email and billing address, which both checkouts
+    pass and the `stripe` driver sends as `billing_details`. `registerComponents()`
+    registers the `test-mode` driver and a `stripe` driver that loads Stripe.js from js.stripe.com, so no project
+    installs a Stripe package. A project registers a driver of its own in its client bootstrap; one registered under a
+    built-in's name wins. A `null` client renders nothing; an unknown driver shows `payment-element-error`, and the
+    checkout keeps Place Order disabled.
+  - `<nymbal-sort-dropdown sort-keys value default-sort>` (React: `SortDropdown`) offers the store's sort keys in its
+    order and emits `nymbal:sort:changed` with `{ sort }`.
+  - Astro's listing script sorts on the dropdown's `nymbal:sort:changed`, so it sorts whichever select the element
+    renders. On Astro's checkout, the second click of a double click on shipping Continue, which lands on Place Order,
+    no longer places the order.
+  - `GET /api/products` leaves out `facets` when the search adapter does not report `facet`. Both templates render the
+    product filter only from the listing's facets, the header search bar only when search reports `search`, and the sort
+    options from `catalog.sortKeys`.
+  - `loadConfig()` returns the config module's named `adapters` export as `adapters`, and `nymbal dev` passes it to
+    `createApp`, so a `custom` slot runs under `nymbal dev`.
+
+  **Breaking for a Stripe store and for a scaffolded checkout.** The templates no longer import `@stripe/*`, read
+  `PUBLIC_STRIPE_PUBLISHABLE_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` or `*_NYMBAL_PAYMENTS_PROVIDER`, and
+  `nymbal dev` no longer sets the latter. Give the API the publishable key instead (`payments.config.publishableKey`
+  or `STRIPE_PUBLISHABLE_KEY`). The payment step's test id is `payment-element` (was `stripe-card-element` on Astro and
+  `card-element` on Next), and Next's `CheckoutForm` takes the report as its `capabilities` prop.
+
+### Patch Changes
+
+- Updated dependencies [3b028c0]
+- Updated dependencies [f93dab3]
+- Updated dependencies [421722f]
+- Updated dependencies [6f72118]
+- Updated dependencies [9136ecd]
+- Updated dependencies [ea74a39]
+  - @nymbalhq/types@1.1.0
+
 ## 1.0.0
 
 ### Patch Changes
