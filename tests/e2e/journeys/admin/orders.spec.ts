@@ -196,9 +196,7 @@ function watchRefundPosts(page: Page): { settled(): Promise<void> } {
   page.on('requestfailed', onAnswered)
   return {
     async settled() {
-      await expect
-        .poll(() => sent - answered, { message: 'refund POSTs still in flight' })
-        .toBe(0)
+      await expect.poll(() => sent - answered, { message: 'refund POSTs still in flight' }).toBe(0)
       page.off('request', onSent)
       page.off('requestfinished', onAnswered)
       page.off('requestfailed', onAnswered)
@@ -252,13 +250,23 @@ test.describe('Admin orders', () => {
     await signInAsAdmin(page)
     await openDetail(page, unpaid.orderNumber)
     await expectPaymentPanel(page, unpaidRead)
+    // Each absence is read from the open menu, and Escape waits for the menu to take pointer input: Radix's layer
+    // ignores Escape until its post-mount re-render, and a dropped Escape leaves the page under pointer-events: none.
     await page.getByTestId('admin-order-actions').click()
+    const actions = page.getByRole('menu', { name: 'Actions' })
+    await expect(actions.getByRole('menuitem', { name: 'Cancel order' })).toBeVisible()
+    await expect(actions).toHaveCSS('pointer-events', 'auto')
     await expect(page.getByTestId('admin-order-action-refund')).toHaveCount(0)
     await page.keyboard.press('Escape')
+    await expect(actions).toBeHidden()
     // A pending order is confirmed by recording a payment, never by the status select (M5).
     await page.getByTestId('admin-order-status-select').click()
+    const statuses = page.getByRole('listbox')
+    await expect(page.getByTestId('admin-order-status-option-record-payment')).toBeVisible()
+    await expect(statuses).toHaveCSS('pointer-events', 'auto')
     await expect(page.getByTestId('admin-order-status-option-confirmed')).toHaveCount(0)
     await page.keyboard.press('Escape')
+    await expect(statuses).toBeHidden()
 
     await openDetail(page, paid.orderNumber)
     await expectPaymentPanel(page, paidRead)
