@@ -211,6 +211,41 @@ describe('AC-6: tests-fail-on-base', () => {
   })
 })
 
+// CI passes the branch's previous tip as the base: after a force-push it is in no clone, on a first push it is zeros.
+describe('tests-fail-on-base: a base that names no commit', () => {
+  const GONE = '7781b5ffcf9e08d2e9a8f1fd6c0b8c1d3b0c6a00'
+  const ZEROS = '0'.repeat(40)
+
+  it.each([
+    { label: 'a commit a force-push removed', missing: GONE },
+    { label: 'forty zeros', missing: ZEROS },
+  ])('on $label, judges the added tests against HEAD’s parent', async ({ missing }) => {
+    const { root, base } = makeRepo()
+    addGoodHead(root)
+    write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
+    commitAll(root, 'head: multiply and a test that cannot fail on base')
+
+    const { status, out } = await runScript(root, missing)
+
+    expect(status, out).toBe(1)
+    expect(judged(out), out).toEqual(addedTests(root, base))
+    expect(lineFor(out, 'test/add-zero.test.js'), out).toContain('PASSES ON BASE')
+    expect(lineFor(out, 'test/multiply.test.js'), out).toContain('fails on base')
+    expect(lineFor(out, "HEAD's parent"), out).toContain(base.slice(0, 9))
+  })
+
+  it('on a root commit, judges nothing and says there is no base', async () => {
+    const { root } = makeRepo()
+    expect(git(root, 'rev-list', '--count', 'HEAD').trim()).toBe('1')
+
+    const { status, out } = await runScript(root, GONE)
+
+    expect(status, out).toBe(0)
+    expect(judged(out), out).toEqual([])
+    expect(out).toContain('root commit')
+  })
+})
+
 // ---------------------------------------------------------------------------------------------------------------
 // AC-13 to AC-15
 // ---------------------------------------------------------------------------------------------------------------

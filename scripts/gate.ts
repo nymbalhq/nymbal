@@ -503,10 +503,52 @@ function repoRoot(): string {
   return git('.', ['rev-parse', '--show-toplevel']).trim()
 }
 
-/** `--base`, else the merge base with origin/dev, else with origin/main. */
-export function resolveBase(root: string, requested: string | undefined): string {
+/** The empty tree: the base of a root commit, against which every file is new. */
+export function emptyTree(root: string): string {
+  return git(root, ['hash-object', '-t', 'tree', '/dev/null']).trim()
+}
+
+function commitOf(root: string, ref: string): string | undefined {
+  try {
+    return git(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * `--base`, else the merge base with origin/dev, else with origin/main. A `--base` in CI's shape that names no commit
+ * here (a full sha a force-push removed, or forty zeros on a branch's first push) falls back to HEAD's first parent,
+ * and on a root commit to the empty tree, which narrows nothing; `log` gets one line saying which. Anything else that
+ * does not resolve (a ref name, a short sha) is a mistake and refused: falling back would check less than was asked.
+ * The empty tree itself is taken as given: it is what the gate hands its own steps on a root commit.
+ */
+export function resolveBase(
+  root: string,
+  requested: string | undefined,
+  log: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
+): string {
   if (requested !== undefined) {
-    return git(root, ['rev-parse', '--verify', `${requested}^{commit}`]).trim()
+    const tree = emptyTree(root)
+    if (requested === tree) return tree
+    const zeros = /^0{40}$/.test(requested)
+    const found = zeros ? undefined : commitOf(root, requested)
+    if (found !== undefined) return found
+    if (!zeros && !/^[0-9a-f]{40}$/i.test(requested)) {
+      throw new Error(`--base ${requested} names no commit: pass a ref or sha that resolves here`)
+    }
+    const why = zeros
+      ? `--base ${requested.slice(0, 9)}… is all zeros (a branch's first push)`
+      : `--base ${requested} names no commit in this clone`
+    const parent = commitOf(root, 'HEAD^')
+    if (parent !== undefined) {
+      log(`base: ${why}; falling back to HEAD's parent ${parent.slice(0, 9)}`)
+      return parent
+    }
+    log(
+      `base: ${why} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+    )
+    return tree
   }
   for (const ref of ['origin/dev', 'origin/main']) {
     try {
@@ -643,6 +685,11 @@ function judgedTestFiles(root: string, base: string): string[] {
 }
 
 function censusTrendStep(root: string, base: string): number {
+  // Against the empty tree every test file would be new, and old debt in each would fail a change that made none.
+  if (base === emptyTree(root)) {
+    process.stdout.write('census trend: no base commit (a root commit): 0 test file(s) touched\n')
+    return 0
+  }
   const touched = judgedTestFiles(root, base)
   const { violations, delta } = censusTrend(baseCensus(root, base), headCensus(root), touched)
   for (const path of touched.filter((p) => p.startsWith('tests/e2e/journeys/'))) {
@@ -893,6 +940,8 @@ async function pruneIncremental(root: string, files: string[]): Promise<void> {
 export type PlanInput = {
   full: boolean
   base: string
+  /** HEAD is a root commit and `base` the empty tree: every test runs, and Stryker ignores its incremental cache. */
+  noBase?: boolean | undefined
   changed: string[]
   mutated: string[]
   /** Files in `mutated` whose cached mutants the stryker step drops first (`ratchetChanges`). None when not given. */
@@ -1090,7 +1139,9 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : `${SCRIPT} incremental-prune ${shellWord(remeasured.join(','))} && `
   const selection = full
     ? { mode: 'all' as const, reason: 'gate:full runs every test' }
-    : selectTests(changed)
+    : input.noBase === true
+      ? { mode: 'all' as const, reason: 'no base commit to diff against' }
+      : selectTests(changed)
   // Tests and typecheck read other packages through their `dist`: gate:full always builds first, the plain gate when
   // a package's build input changed (a warm build is about 7 s).
   const buildInputs = changed.filter(isBuildInput)
@@ -1272,7 +1323,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : {
           // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
           name: 'stryker',
-          command: `${prune}pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
+          command: `${prune}pnpm exec stryker run${input.noBase === true ? ' --force' : ''} --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
         },
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     sentinels,
@@ -1495,6 +1546,7 @@ async function main(argv: string[]): Promise<number> {
     throw new Error('--rerun-red runs what was red; it takes no --only')
   const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
+  const noBase = base === emptyTree(root)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
   const moved = values.full ? ratchetChangesSince(root, base) : []
@@ -1510,12 +1562,13 @@ async function main(argv: string[]): Promise<number> {
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
-    values.sentinels === 'all' || allSentinels.length === 0
+    values.sentinels === 'all' || noBase || allSentinels.length === 0
       ? ('all' as const)
       : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
   const planned = plan({
     full: values.full,
     base,
+    noBase,
     changed,
     mutated,
     remeasured,
@@ -1552,7 +1605,7 @@ async function main(argv: string[]): Promise<number> {
   if (steps.some((s) => s.name === 'sentinels' && s.skip === undefined)) {
     log(
       sentinels === 'all'
-        ? `sentinels: all (${values.sentinels === 'all' ? '--sentinels all' : 'no tests/sentinels/ to select from'})\n`
+        ? `sentinels: all (${values.sentinels === 'all' ? '--sentinels all' : noBase ? 'no base commit to select by' : 'no tests/sentinels/ to select from'})\n`
         : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
     )
   } else if (sentinels !== 'all' && steps.some((s) => s.name === 'sentinels')) {
