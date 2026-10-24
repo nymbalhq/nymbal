@@ -1,5 +1,17 @@
 # @nymbalhq/adapter-smtp
 
+## 1.1.0
+
+### Patch Changes
+
+- Updated dependencies [3b028c0]
+- Updated dependencies [f93dab3]
+- Updated dependencies [421722f]
+- Updated dependencies [6f72118]
+- Updated dependencies [9136ecd]
+- Updated dependencies [ea74a39]
+  - @nymbalhq/types@1.1.0
+
 ## 1.0.0
 
 ### Minor Changes

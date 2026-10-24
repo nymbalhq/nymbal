@@ -1,5 +1,118 @@
 # @nymbalhq/config
 
+## 1.1.0
+
+### Minor Changes
+
+- 9136ecd: A store picks its read model and its event bus from what is built. `infrastructure.documentStore` is `in-memory`,
+  `redis` or `postgres-jsonb`; `infrastructure.eventBus` is `in-process` or `redis-streams`. Each non-native choice is its
+  own package, which the kernel imports only when the config names it: `@nymbalhq/doc-store-redis` (with `ioredis`),
+  `@nymbalhq/doc-store-postgres-jsonb` (with `pg`) and `@nymbalhq/event-bus-redis-streams` (with `ioredis`). A missing
+  package fails `createApp` with `adapter.package_missing` and the install line, as the provider adapters do.
+  - The Redis store and bus share an optional `infrastructure.redis` block: `url` (default `REDIS_URL`), `prefix`
+    (default `NYMBAL_REDIS_PREFIX`, then `nymbal`; it namespaces every key and stream), and the bus's `ackTimeoutMs`
+    (15 000), `claimIdleMs` (5 000) and `streamMaxLen` (10 000). A Redis store or bus with no URL fails at `createApp`.
+  - `postgres-jsonb` needs `commandStore: 'postgres'` and uses its connection (`DATABASE_URL`). It creates and owns one
+    table, `nymbal_documents`, at start.
+  - `redis-streams` needs a shared document store (`redis` or `postgres-jsonb`): a named subscription is one consumer
+    group across instances, so an in-memory read model would miss the events another instance handled.
+  - On every bus, `publish` resolves only after every matching handler has finished, so a read straight after a command
+    sees its projection. Delivery is at least once, so handlers must be idempotent. A subscription with a `name` is
+    handled once per name across instances; one without is handled by every subscriber on every instance (the admin's
+    live stream now subscribes without a name, so every open tab gets every event).
+  - `infrastructure.media` is new, with one value, `local-fs` (the default). `app.platform.media` is the instance, and
+    `app.capabilities().media` reports its own `capabilities()`.
+
+  **Breaking: the infrastructure config lists only what is built.**
+  - `infrastructure.cloud` and `infrastructure.compute` are removed: they drove nothing. A config that still sets either
+    fails `loadConfig` saying the key was removed and should be deleted. Delete both lines.
+  - `documentStore: 'dynamodb' | 'firestore' | 'cosmosdb'` and `eventBus: 'eventbridge' | 'pubsub' | 'service-bus'`, which
+    only threw "planned for v1.0" at start, are removed. Any value a slot does not list, and any key `infrastructure` does
+    not know, now fails `loadConfig` naming the slot's values or the known keys (`KNOWN_INFRASTRUCTURE`, exported by
+    `@nymbalhq/config`).
+  - The refusal of `security.adapter: 'middleware'` on `cloud: aws | gcp | azure` went with `cloud`.
+
+  **Breaking for code that builds the platform itself.** `createPlatform(config, options)` takes the primitives as
+  instances: `{ documentStore, eventBus, media }` beside `sqlitePath`, `postgresUrl` and `logger`. `resolvePrimitives(config)`
+  builds them from the config, and `createApp` does both. `createDocumentStore` and `createEventBus` are gone.
+  `MediaStorage` now lives in `@nymbalhq/types` (`@nymbalhq/platform` still re-exports it). `@nymbalhq/types` adds
+  `compareDocumentValues`, `matchesSortKey` and `queryDocuments`, the order and filter every document store is held to:
+  values of different types rank by type (numbers, strings, other types, then null and missing), so `1` and `'1'` no
+  longer compare as equal both ways, and nulls sort last in either direction. A `query` cursor now seeks by position
+  without an `orderBy` too, so a document deleted between pages no longer restarts the walk. `AdapterContext.slot` is a
+  `Slot`: the commerce slots plus `documentStore`, `eventBus` and `media`.
+
+- 1b6da9e: A store can keep its media in an S3-compatible bucket: `infrastructure.media: 's3'`. Each stored object is
+  `<prefix>/<key>` in the bucket, and its URL is the bucket's public URL. The storage is the new `@nymbalhq/media-s3`
+  package, which the kernel imports only when the config names it: `npm install @nymbalhq/media-s3 @aws-sdk/client-s3`.
+  A missing package fails `createApp` with `adapter.package_missing` and that install line.
+  - An optional `infrastructure.s3` block takes `bucket`, `region`, `endpoint`, `prefix`, `publicUrl` and
+    `forcePathStyle`. Each falls back to the environment: `S3_BUCKET`, `AWS_REGION`, `S3_ENDPOINT`, `NYMBAL_S3_PREFIX`
+    and `S3_PUBLIC_URL`. The region defaults to `us-east-1`, there is no prefix by default, and requests are path-style
+    when an endpoint is set.
+  - With no bucket in the block or `S3_BUCKET`, `createApp` fails `config.s3_bucket_missing` before anything is loaded.
+  - Credentials are never config keys: the AWS SDK's default chain provides them (`AWS_ACCESS_KEY_ID` /
+    `AWS_SECRET_ACCESS_KEY`, a profile or a role). Any other key inside the block, and an `s3` block while `media` is
+    not `'s3'`, fail `loadConfig` naming the key.
+  - A URL is `publicUrl` when it is set, else `endpoint/bucket`, else `https://<bucket>.s3.<region>.amazonaws.com`.
+    The object key follows it, with each path segment percent-encoded. The storage never creates buckets or sets
+    policies: the bucket must already serve its objects publicly.
+
+  `nymbal import` now writes product images to the store's media storage. With `local-fs` (the default) that is the
+  same files under `public/imported-media` with the same `/imported-media/...` URLs as before. The import no longer
+  crashes at start on `p.bold is not a function`.
+
+  **Breaking for code that calls the importer (`@nymbalhq/importers`).** `WooCommerceImporterDeps` takes a required
+  `media: MediaStorage`, and `runWooCommerceImport` builds no storage of its own: pass `app.platform.media`.
+  `WooCommerceImportOptions.projectRoot` stays, but media no longer uses it. A `put` that rejects is now reported, not
+  dropped: the product is created with the images that did store, the report's `errors` gets
+  `{ phase: 'media', id: <WooCommerce product id>, error }`, and an `error` progress event matches it.
+
+- ea74a39: The storefronts render from what the store's adapters can do, never from which vendor is configured.
+  - `GET /api/capabilities` (public) answers the store's report: `payments` (`capabilities`, `client`), `search`
+    (`capabilities`) and `catalog` (`sortKeys`, `defaultSort`). It names no provider and serves no secret.
+    `StoreCapabilities`, `PaymentClient` and `PRODUCT_SORT_LABELS` are new in `@nymbalhq/types`. The SDK reads the
+    report once per client with `client.capabilities.get()`.
+  - A payments adapter may describe its storefront half with `client(): { driver, options } | null`, where `options`
+    holds public values only. The native stub answers `{ driver: 'test-mode', options: {} }`. Stripe answers
+    `{ driver: 'stripe', options: { publishableKey } }`, from the new `publishableKey` in its config or
+    `STRIPE_PUBLISHABLE_KEY`; a key that starts `sk_` or `rk_` there fails at start.
+  - `<nymbal-payment-element client='<json>'>` (React: `PaymentElement`) renders that client half through a driver
+    from the SDK's registry (`registerPaymentDriver(name, driver)`, `getPaymentDriver(name)`), and its
+    `confirm(clientSecret, context?)` answers `{ ok: true, confirmed }` or `{ ok: false, error }`. `context`
+    (`PaymentConfirmContext`: `email`, `billing`) is the shopper's email and billing address, which both checkouts
+    pass and the `stripe` driver sends as `billing_details`. `registerComponents()`
+    registers the `test-mode` driver and a `stripe` driver that loads Stripe.js from js.stripe.com, so no project
+    installs a Stripe package. A project registers a driver of its own in its client bootstrap; one registered under a
+    built-in's name wins. A `null` client renders nothing; an unknown driver shows `payment-element-error`, and the
+    checkout keeps Place Order disabled.
+  - `<nymbal-sort-dropdown sort-keys value default-sort>` (React: `SortDropdown`) offers the store's sort keys in its
+    order and emits `nymbal:sort:changed` with `{ sort }`.
+  - Astro's listing script sorts on the dropdown's `nymbal:sort:changed`, so it sorts whichever select the element
+    renders. On Astro's checkout, the second click of a double click on shipping Continue, which lands on Place Order,
+    no longer places the order.
+  - `GET /api/products` leaves out `facets` when the search adapter does not report `facet`. Both templates render the
+    product filter only from the listing's facets, the header search bar only when search reports `search`, and the sort
+    options from `catalog.sortKeys`.
+  - `loadConfig()` returns the config module's named `adapters` export as `adapters`, and `nymbal dev` passes it to
+    `createApp`, so a `custom` slot runs under `nymbal dev`.
+
+  **Breaking for a Stripe store and for a scaffolded checkout.** The templates no longer import `@stripe/*`, read
+  `PUBLIC_STRIPE_PUBLISHABLE_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` or `*_NYMBAL_PAYMENTS_PROVIDER`, and
+  `nymbal dev` no longer sets the latter. Give the API the publishable key instead (`payments.config.publishableKey`
+  or `STRIPE_PUBLISHABLE_KEY`). The payment step's test id is `payment-element` (was `stripe-card-element` on Astro and
+  `card-element` on Next), and Next's `CheckoutForm` takes the report as its `capabilities` prop.
+
+### Patch Changes
+
+- Updated dependencies [3b028c0]
+- Updated dependencies [f93dab3]
+- Updated dependencies [421722f]
+- Updated dependencies [6f72118]
+- Updated dependencies [9136ecd]
+- Updated dependencies [ea74a39]
+  - @nymbalhq/types@1.1.0
+
 ## 1.0.0
 
 ### Minor Changes
