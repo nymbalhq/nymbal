@@ -1,61 +1,39 @@
+import './hydrate-support.js'
 export { registerClient, getClient } from './registry.js'
 export { NymbalElement } from './base-element.js'
-export { injectStyles } from './styles.js'
-
-import { NymbalAddToCart } from './components/add-to-cart.js'
-import { NymbalCartDrawer } from './components/cart-drawer.js'
-import { NymbalMiniCart } from './components/mini-cart.js'
-import { NymbalVariantSelector } from './components/variant-selector.js'
-import { NymbalQuantitySelector } from './components/quantity-selector.js'
-import { NymbalSearchBar } from './components/search-bar.js'
-import { NymbalProductFilter } from './components/product-filter.js'
-import { NymbalToast } from './components/toast.js'
-import { NymbalPaymentElement } from './components/payment-element.js'
-import { NymbalSortDropdown } from './components/sort-dropdown.js'
-import { getPaymentDriver, registerPaymentDriver, type PaymentDriver } from '@nymbalhq/sdk'
-import { testModeDriver } from './payment-drivers/test-mode.js'
-import { stripeDriver } from './payment-drivers/stripe.js'
+export type { ElementSchema, ElementAttributeType } from './base-element.js'
+export { define, type NymbalElementClass } from './define.js'
 
 export type { PaymentElementStatus } from './components/payment-element.js'
+export { registerComponents } from './register-components.js'
 
-export {
-  NymbalAddToCart,
-  NymbalCartDrawer,
-  NymbalMiniCart,
-  NymbalVariantSelector,
-  NymbalQuantitySelector,
-  NymbalSearchBar,
-  NymbalProductFilter,
-  NymbalToast,
-  NymbalPaymentElement,
-  NymbalSortDropdown,
-}
-
-export function registerComponents(): void {
-  const components: Array<[string, CustomElementConstructor]> = [
-    ['nymbal-add-to-cart', NymbalAddToCart],
-    ['nymbal-cart-drawer', NymbalCartDrawer],
-    ['nymbal-mini-cart', NymbalMiniCart],
-    ['nymbal-variant-selector', NymbalVariantSelector],
-    ['nymbal-quantity-selector', NymbalQuantitySelector],
-    ['nymbal-search-bar', NymbalSearchBar],
-    ['nymbal-product-filter', NymbalProductFilter],
-    ['nymbal-toast', NymbalToast],
-    ['nymbal-payment-element', NymbalPaymentElement],
-    ['nymbal-sort-dropdown', NymbalSortDropdown],
-  ]
-  // A driver the project registered under a built-in's name wins, as a project-defined tag does.
-  const drivers: Array<[string, PaymentDriver]> = [
-    ['test-mode', testModeDriver],
-    ['stripe', stripeDriver],
-  ]
-
-  for (const [name, driver] of drivers) {
-    if (getPaymentDriver(name) === undefined) registerPaymentDriver(name, driver)
-  }
-  for (const [name, ctor] of components) {
-    if (!customElements.get(name)) {
-      customElements.define(name, ctor)
-    }
-  }
-}
+export { NymbalAddToCart } from './components/add-to-cart.js'
+export { NymbalCartDrawer } from './components/cart-drawer.js'
+export { NymbalMiniCart } from './components/mini-cart.js'
+export { NymbalVariantSelector } from './components/variant-selector.js'
+export { NymbalQuantitySelector } from './components/quantity-selector.js'
+export { NymbalSearchBar } from './components/search-bar.js'
+export { NymbalProductFilter } from './components/product-filter.js'
+export { NymbalToast } from './components/toast.js'
+export { NymbalPaymentElement } from './components/payment-element.js'
+export { NymbalSortDropdown } from './components/sort-dropdown.js'
+export { NymbalCartPage } from './components/cart-page.js'
+export { NymbalProductCard } from './components/product-card.js'
+export { NymbalSearchResults } from './components/search-results.js'
+export { NymbalLoginForm } from './components/login-form.js'
+export { NymbalRegisterForm } from './components/register-form.js'
+export { NymbalProfileForm } from './components/profile-form.js'
+export { NymbalAddressForm } from './components/address-form.js'
+export { NymbalAddressBook } from './components/address-book.js'
+export { NymbalCheckout } from './components/checkout.js'
+export { NymbalProductGrid } from './components/product-grid.js'
+export { NymbalProductPrice } from './components/product-price.js'
+export { NymbalStockBadge } from './components/stock-badge.js'
+export { NymbalBreadcrumb } from './components/breadcrumb.js'
+export { NymbalImageGallery } from './components/image-gallery.js'
+export { NymbalSiteHeader } from './components/site-header.js'
+export { NymbalSiteFooter } from './components/site-footer.js'
+export { NymbalCategoryNav } from './components/category-nav.js'
+export { NymbalReviewList } from './components/review-list.js'
+export { NymbalReviewForm } from './components/review-form.js'
+export { NymbalOrderSummary } from './components/order-summary.js'

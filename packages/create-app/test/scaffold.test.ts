@@ -407,7 +407,8 @@ describe('syncScaffold main() integration', () => {
 
   it('copies .astro layout and component files', () => {
     expect(existsSync(resolve(tmpDest, 'astro', 'src', 'layouts', 'BaseLayout.astro'))).toBe(true)
-    expect(existsSync(resolve(tmpDest, 'astro', 'src', 'components', 'ProductCard.astro'))).toBe(
+    // P2-17 deletes ProductCard.astro (its card is nymbal-product-card); HeroSection stays template content.
+    expect(existsSync(resolve(tmpDest, 'astro', 'src', 'components', 'HeroSection.astro'))).toBe(
       true,
     )
   })
@@ -496,12 +497,23 @@ describe('override resolution (project layer wins)', () => {
     }
   })
 
-  it('override homepage keeps the smoke-check and E2E markers intact', async () => {
+  // P2-17 AC-6: the project layer's homepage is a scaffold file like the template's, so it renders the featured grid
+  // and the category nav as the elements (`nymbal-product-grid`, whose cards keep the `product-card-` test id the
+  // smoke check greps for, and `nymbal-category-nav`) and imports no component Decision 4 deletes: an import of one
+  // fails the scaffolded project's build. Kills: the override homepage left on ProductCard.astro and CategoryNav.astro.
+  it('AC-6: override homepage keeps the smoke-check and E2E markers intact: the hero, the featured grid as nymbal-product-grid and the category nav as nymbal-category-nav, and every component it imports exists in the scaffolded project', async () => {
     const index = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
     // tools/scaffold-smoke-check.mjs greps served HTML for "hero-section" and
-    // "product-card-" — the override must keep rendering both components.
+    // "product-card-" — the override must keep rendering the hero and the grid's cards.
     expect(index).toContain('<HeroSection')
-    expect(index).toContain('<ProductCard')
+    expect(index).toContain('nymbal-product-grid')
+    expect(index).toContain('nymbal-category-nav')
+    const imported = [...index.matchAll(/from\s+['"](\.\.\/components\/[^'"]+)['"]/g)].map(
+      (m) => m[1]!,
+    )
+    expect(imported.length).toBeGreaterThan(0)
+    const missing = imported.filter((path) => !existsSync(resolve(outDir, 'src', 'pages', path)))
+    expect(missing, 'components the override homepage imports that the project lacks').toEqual([])
   })
 })
 

@@ -132,27 +132,6 @@
   margin-top: var(--nymbal-spacing-lg);
 }
 
-.saveButton {
-  padding: 0.625rem 1.5rem;
-  font-size: var(--nymbal-font-size-sm);
-  font-weight: var(--nymbal-font-weight-medium);
-  color: var(--nymbal-color-text-inverse);
-  background-color: var(--nymbal-color-primary);
-  border: none;
-  border-radius: var(--nymbal-radius-md);
-  cursor: pointer;
-  transition: background-color var(--nymbal-transition-fast);
-}
-
-.saveButton:hover {
-  background-color: var(--nymbal-color-primary-hover);
-}
-
-.saveButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .cancelButton {
   padding: 0.625rem 1.5rem;
   font-size: var(--nymbal-font-size-sm);
@@ -167,27 +146,6 @@
 
 .cancelButton:hover {
   border-color: var(--nymbal-color-primary);
-}
-
-/* ── Alert / Success Message ──────────────────────────────────────── */
-
-.alert {
-  padding: var(--nymbal-spacing-md);
-  border-radius: var(--nymbal-radius-md);
-  font-size: var(--nymbal-font-size-sm);
-  margin-bottom: var(--nymbal-spacing-md);
-}
-
-.alertSuccess {
-  background-color: #dcfce7;
-  color: var(--nymbal-color-success);
-  border: 1px solid #bbf7d0;
-}
-
-.alertError {
-  background-color: #fef2f2;
-  color: var(--nymbal-color-error);
-  border: 1px solid #fecaca;
 }
 
 /* ── Order List ───────────────────────────────────────────────────── */
@@ -329,34 +287,6 @@
   color: var(--nymbal-color-text-muted);
   text-align: center;
   margin-bottom: var(--nymbal-spacing-lg);
-}
-
-.authForm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--nymbal-spacing-md);
-}
-
-.authSubmit {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: var(--nymbal-font-size-sm);
-  font-weight: var(--nymbal-font-weight-medium);
-  color: var(--nymbal-color-text-inverse);
-  background-color: var(--nymbal-color-primary);
-  border: none;
-  border-radius: var(--nymbal-radius-md);
-  cursor: pointer;
-  transition: background-color var(--nymbal-transition-fast);
-}
-
-.authSubmit:hover {
-  background-color: var(--nymbal-color-primary-hover);
-}
-
-.authSubmit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .authFooter {

@@ -30,11 +30,6 @@
   margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
 }
 
-.plp-count {
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
-  color: var(--nymbal-color-text-muted, #71717a);
-}
-
 /* ---- Filter sidebar ---- */
 
 .plp-sidebar {
@@ -91,7 +86,7 @@
   margin-bottom: 0;
 }
 
-.filter-item input[type="checkbox"] {
+.filter-item input[type='checkbox'] {
   width: 16px;
   height: 16px;
   accent-color: var(--nymbal-color-accent, #2563eb);
@@ -108,11 +103,11 @@
 }
 
 .filter-link:hover,
-.filter-link[aria-current="page"] {
+.filter-link[aria-current='page'] {
   color: var(--nymbal-color-accent, #2563eb);
 }
 
-.filter-link[aria-current="page"] {
+.filter-link[aria-current='page'] {
   font-weight: var(--nymbal-font-weight-bold, 700);
 }
 
@@ -169,40 +164,6 @@
 
 .plp-grid-area {
   min-width: 0;
-}
-
-/* ---- Pagination ---- */
-
-.plp-pagination {
-  display: flex;
-  justify-content: center;
-  gap: var(--nymbal-spacing-sm, 0.5rem);
-  margin-top: var(--nymbal-spacing-xl, 2rem);
-  padding-top: var(--nymbal-spacing-lg, 1.5rem);
-  border-top: 1px solid var(--nymbal-color-border, #e4e4e7);
-}
-
-.plp-pagination .btn {
-  min-width: 100px;
-}
-
-/* ---- Empty state ---- */
-
-.plp-empty {
-  text-align: center;
-  padding: 4rem var(--nymbal-spacing-md, 1rem);
-  color: var(--nymbal-color-text-muted, #71717a);
-}
-
-.plp-empty-title {
-  font-size: var(--nymbal-font-size-lg, 1.125rem);
-  font-weight: var(--nymbal-font-weight-medium, 500);
-  color: var(--nymbal-color-text, #18181b);
-  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
-}
-
-.plp-empty-text {
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
 }
 
 /* ---- nymbal-product-filter integration ---- */

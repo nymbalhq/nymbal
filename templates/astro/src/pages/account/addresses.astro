@@ -1,110 +1,18 @@
 ---
 import '../../styles/pages/account.css'
-import '../../styles/pages/checkout.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import AccountLayout from '../../layouts/AccountLayout.astro'
-import AddressForm from '../../components/AddressForm.astro'
 ---
 
 <AccountLayout title="Addresses">
   <h1 class="account-page-title">Addresses</h1>
 
-  <div id="addresses-container" data-testid="addresses-list">
-    <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
-      Loading addresses...
-    </p>
-  </div>
-
-  <div style="margin-top: var(--nymbal-spacing-xl, 2rem);">
-    <h2 class="section-title">Add New Address</h2>
-    <form id="add-address-form" class="account-form" data-testid="add-address-form">
-      <AddressForm id="new-address" />
-      <div class="account-form-actions">
-        <button type="submit" class="btn btn-primary" data-testid="save-address">Save Address</button>
-      </div>
-    </form>
-    <p class="form-message" id="address-form-message" style="display:none; margin-top: var(--nymbal-spacing-md, 1rem); font-size: var(--nymbal-font-size-sm, 0.875rem);"></p>
-  </div>
+  <NymbalElement tag="nymbal-address-book" />
 </AccountLayout>
 
 <script>
-  import type { Address, CustomerAddress } from '@nymbalhq/types'
-  import { client } from '../../lib/client.js'
-  import { escapeHtml } from '../../lib/format.js'
-  import { submitOnce } from '../../lib/submit-once.js'
+  import '../../lib/client.js'
+  import { NymbalAddressBook } from '@nymbalhq/web-components/elements/nymbal-address-book'
 
-  const container = document.getElementById('addresses-container')
-  const form = document.getElementById('add-address-form') as HTMLFormElement | null
-  const messageEl = document.getElementById('address-form-message')
-
-  function renderAddress(addr: CustomerAddress): string {
-    const isDefault = addr.isDefaultShipping || addr.isDefaultBilling
-    return `
-      <div class="address-card ${isDefault ? 'default' : ''}" data-testid="address-${escapeHtml(addr.id)}">
-        ${isDefault ? '<span class="address-card-badge">Default</span>' : ''}
-        <div class="address-card-line">${escapeHtml(`${addr.firstName} ${addr.lastName}`)}</div>
-        <div class="address-card-line">${escapeHtml(addr.addressLine1)}</div>
-        ${addr.addressLine2 ? `<div class="address-card-line">${escapeHtml(addr.addressLine2)}</div>` : ''}
-        <div class="address-card-line">${escapeHtml(`${addr.city}, ${addr.region} ${addr.postalCode}`)}</div>
-        <div class="address-card-line">${escapeHtml(addr.country)}</div>
-      </div>
-    `
-  }
-
-  async function loadAddresses() {
-    if (!container) return
-
-    try {
-      const addresses = await client.customer.addresses.list()
-
-      if (addresses.length === 0) {
-        container.innerHTML = `
-          <div class="account-empty">
-            <h2 class="account-empty-title">No saved addresses</h2>
-            <p class="account-empty-text">Add an address below to get started.</p>
-          </div>
-        `
-        return
-      }
-
-      container.innerHTML = `<div class="address-list">${addresses.map(renderAddress).join('')}</div>`
-    } catch {
-      container.innerHTML = `
-        <div class="account-empty">
-          <p class="account-empty-text">Unable to load addresses.</p>
-        </div>
-      `
-    }
-  }
-
-  submitOnce(form, async () => {
-    if (!form || !messageEl) return
-
-    const formData = new FormData(form)
-    const field = (name: string) => String(formData.get(name) ?? '').trim()
-    const address: Address = {
-      firstName: field('firstName'),
-      lastName: field('lastName'),
-      addressLine1: field('addressLine1'),
-      city: field('city'),
-      region: field('region'),
-      postalCode: field('postalCode'),
-      country: field('country'),
-      ...(field('addressLine2') && { addressLine2: field('addressLine2') }),
-    }
-
-    try {
-      await client.customer.addresses.create(address)
-      messageEl.textContent = 'Address saved successfully.'
-      messageEl.style.color = 'var(--nymbal-color-success, #16a34a)'
-      messageEl.style.display = 'block'
-      form.reset()
-      await loadAddresses()
-    } catch {
-      messageEl.textContent = 'Failed to save address. Please try again.'
-      messageEl.style.color = 'var(--nymbal-color-error, #dc2626)'
-      messageEl.style.display = 'block'
-    }
-  })
-
-  loadAddresses()
+  NymbalAddressBook.define()
 </script>

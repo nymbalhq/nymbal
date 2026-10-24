@@ -22,6 +22,7 @@ async function registerShopper(page: Page): Promise<{ firstName: string }> {
   await form.getByTestId('register-lastName').fill('Once')
   await form.getByTestId('register-email').fill(`p1-15-${tag}@e2e.test`)
   await form.getByTestId('register-password').fill('TestPassword123!')
+  await form.getByTestId('register-confirmPassword').fill('TestPassword123!')
   await form.getByTestId('register-submit').click()
   await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
     timeout: 15_000,

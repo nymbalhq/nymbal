@@ -1,20 +1,47 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { runDocumentStoreContract } from '@nymbalhq/contract-tests'
-import type { DocumentStoreAdapter } from '@nymbalhq/types'
-import { documentStoreAcceptance } from '../../../tests/contracts/suites/document-store'
-import { adapterContext } from '../../../tests/contracts/suites/adapter-context'
-import { deleteUnder, keysUnder, redisServerUrl, uniquePrefix } from '../../../tests/support/redis'
-import { createAdapter } from './index.js'
+import {
+  adapterContext,
+  runDocumentStoreContract,
+  type DocumentStoreContractOptions,
+} from '@nymbalhq/contract-tests'
+import type { DocumentStoreAdapter, Logger } from '@nymbalhq/types'
+import {
+  deleteUnder,
+  keysUnder,
+  redis,
+  redisServerUrl,
+  uniquePrefix,
+} from '../../../tests/support/redis'
+import {
+  closeBounded,
+  settleWithin,
+  tcpProxy,
+  type TcpProxy,
+} from '../../../tests/support/tcp-proxy'
+import { createAdapter, createRedisDocumentStore } from './index.js'
 
-// P2-02 AC-2 on @nymbalhq/doc-store-redis (spec P2-02-primitives-are-protocols): the extended runDocumentStoreContract
-// and the reference-model property (tests/contracts/suites/document-store.ts), against the composed Redis. Each store
-// gets a prefix of its own under this run's, so stores never share documents and one delete cleans the run up. The
-// store is built as the kernel builds it: createAdapter with the slot's connection block (decision 2). Kills, beyond
-// the suites': a key written outside the prefix, which the E2E teardown (decision 7) would leave behind.
+// P2-02 AC-2 on @nymbalhq/doc-store-redis (spec P2-02-primitives-are-protocols), against the composed Redis, and
+// P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): runDocumentStoreContract from the published package runs the
+// old cases and the reference-model property, and, given `unreachable`, the downtime cases. Each store gets a prefix of
+// its own under this run's, so stores never share documents and one delete cleans the run up. The store is built as
+// the kernel builds it: createAdapter with the slot's connection block (P2-02 decision 2). `unreachable` is a store
+// built through a TCP proxy while Redis is up, whose proxy then closes (P2-13 decision 3): the client connected at
+// construction is left on a port that refuses. Kills, beyond the suite's: a key written outside the prefix (the E2E
+// teardown would leave it behind), a client that retries a dead host forever (decision 4, B1: an unbounded `hget` was
+// still pending at 15 s), and a bound that stops the client reconnecting when the host returns.
+// P3-02 AC-1 (spec P3-02-replay-engine, decision 2), the Redis half beyond the suite's replaceCollection cases: the
+// replace writes a staging hash and RENAMEs it, with the expiry index alongside, and a source that fails deletes the
+// staging keys. Kills: staging keys left behind by a failed rebuild, and an expiry index left holding the old set's
+// keys after the docs hash was swapped.
 
 const url = redisServerUrl()
 const run = uniquePrefix('doc-redis')
 let count = 0
+const proxies: TcpProxy[] = []
+
+/** Within this a command on a dead host has rejected (decision 4); past HUNG_AFTER_MS it has hung. */
+const DOWN_WITHIN_MS = 6000
+const HUNG_AFTER_MS = 12_000
 
 async function storeOn(prefix: string, on = url): Promise<DocumentStoreAdapter> {
   return (await createAdapter(
@@ -22,21 +49,32 @@ async function storeOn(prefix: string, on = url): Promise<DocumentStoreAdapter> 
   )) as DocumentStoreAdapter
 }
 
+/** A store connected through a proxy that is then closed: built while Redis is up, then left unreachable. */
+async function unreachable(): Promise<DocumentStoreAdapter> {
+  const proxy = await tcpProxy(new URL(url))
+  proxies.push(proxy)
+  const store = await storeOn(`${run}-down-${(count += 1)}`, proxy.url(url))
+  await store.get('p2-13-probe', 'connected')
+  await proxy.close()
+  return store
+}
+
 const make = () => storeOn(`${run}-${(count += 1)}`)
-const opts = {
+const opts: DocumentStoreContractOptions = {
   isolation: async (): Promise<[DocumentStoreAdapter, DocumentStoreAdapter]> => [
     await storeOn(`${run}-iso-a-${(count += 1)}`),
     await storeOn(`${run}-iso-b-${count}`),
   ],
+  unreachable,
 }
 
 afterAll(async () => {
+  for (const proxy of proxies.splice(0)) await proxy.close()
   await deleteUnder(url, run)
   await deleteUnder(onDb15(), run)
 })
 
 runDocumentStoreContract('redis', make, opts)
-documentStoreAcceptance('redis', make, opts)
 
 /** The same server, logical database 15, which only the P2-02 store suites' prefixes write to. */
 function onDb15(): string {
@@ -60,6 +98,131 @@ describe('P2-02 AC-2: the Redis document store keeps everything under its prefix
       const everything = await keysUnder(onDb15(), '')
       expect(ours.length).toBeGreaterThan(0)
       expect(everything.filter((key) => !key.startsWith('p2-02-'))).toEqual([])
+    } finally {
+      await store.close()
+    }
+  })
+})
+
+const silent: Logger = {
+  trace: () => undefined,
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+  child: () => silent,
+}
+
+describe('P2-13 AC-5 (decision 4, B1): the Redis document store’s client is bounded and still reconnects', () => {
+  it('AC-5: built through a proxy that then closes, a get rejects within 6 s instead of hanging; once the port answers again, the same store reads its document back', async () => {
+    const proxy = await tcpProxy(new URL(url))
+    proxies.push(proxy)
+    // Built from the adapter's own entry, so this case depends on the client and nothing in the suites package.
+    const store = (await createAdapter({
+      slot: 'documentStore',
+      config: { url: proxy.url(url), prefix: `${run}-bounded` },
+      logger: silent,
+      env: {},
+    })) as DocumentStoreAdapter
+    try {
+      await store.put('p2-13-bounded', 'k', { v: 1 })
+      await proxy.close()
+
+      const down = await settleWithin(store.get('p2-13-bounded', 'k'), HUNG_AFTER_MS)
+      expect(down.state).toBe('rejected')
+      expect(down.ms).toBeLessThan(DOWN_WITHIN_MS)
+
+      // Reconnecting is the client's retry loop, so the read is retried until a deadline rather than once.
+      await proxy.reopen()
+      const deadline = Date.now() + 20_000
+      let back = await settleWithin(store.get('p2-13-bounded', 'k'), DOWN_WITHIN_MS)
+      while (back.state !== 'resolved' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250))
+        back = await settleWithin(store.get('p2-13-bounded', 'k'), DOWN_WITHIN_MS)
+      }
+      expect([back.state, back.value]).toEqual(['resolved', { v: 1 }])
+    } finally {
+      await proxy.close()
+      await closeBounded(() => store.close())
+    }
+  }, 60_000)
+})
+
+/** Every key under `prefix` with its contents, as Redis holds them: what a replace may and may not leave behind. */
+async function keyspace(on: string, prefix: string): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const key of (await keysUnder(on, prefix)).sort()) {
+    const [type] = (await redis(on, [['TYPE', key]])) as [string]
+    const [value] =
+      type === 'hash'
+        ? await redis(on, [['HGETALL', key]])
+        : type === 'zset'
+          ? await redis(on, [['ZRANGE', key, '0', '-1', 'WITHSCORES']])
+          : type === 'set'
+            ? await redis(on, [['SMEMBERS', key]])
+            : await redis(on, [['GET', key]])
+    out[key] = { type, value: type === 'set' ? (value as string[]).sort() : value }
+  }
+  return out
+}
+
+describe('P3-02 AC-1: the Redis replace swaps the docs hash and its expiry index, and cleans its staging keys', () => {
+  it('AC-1: a replace whose source throws after two entries leaves every key under the prefix as it was (no staging key, the old set intact); a replace that succeeds leaves the new set exactly, an expiry index holding only keys of that set, and no key outside the store’s own', async () => {
+    let now = Date.UTC(2026, 9, 21)
+    const prefix = `${run}-replace`
+    const store = await createRedisDocumentStore({
+      url,
+      prefix,
+      sweepIntervalMs: 0,
+      now: () => now,
+    })
+    try {
+      await store.put('p3-02', 'old-ttl', { id: 'old-ttl', part: 'p' }, { ttl: 60 })
+      await store.put('p3-02', 'kept', { id: 'kept', part: 'p', v: 'old' })
+      await store.put('p3-02', 'gone', { id: 'gone', part: 'p' })
+      await store.put('p3-02-other', 'x', { id: 'x', part: 'p' }, { ttl: 60 })
+      const before = await keyspace(url, prefix)
+
+      async function* failing(): AsyncGenerator<[string, unknown]> {
+        yield ['kept', { id: 'kept', part: 'p', v: 'new' }]
+        yield ['new', { id: 'new', part: 'p' }]
+        throw new Error('p3-02: the source failed')
+      }
+      const failed = await store.replaceCollection('p3-02', failing()).then(
+        () => null,
+        (error: unknown) => error,
+      )
+      expect(String(failed)).toContain('p3-02: the source failed')
+      expect(await keyspace(url, prefix)).toEqual(before)
+
+      async function* good(): AsyncGenerator<[string, unknown]> {
+        yield ['kept', { id: 'kept', part: 'p', v: 'new' }]
+        yield ['new', { id: 'new', part: 'p' }]
+      }
+      await store.replaceCollection('p3-02', good())
+      const all = await store.query('p3-02', { partitionKey: { field: 'part', value: '*' } })
+      expect(all.items).toEqual([
+        { id: 'kept', part: 'p', v: 'new' },
+        { id: 'new', part: 'p' },
+      ])
+
+      const docs = `${prefix}:doc:p3-02`
+      const expiry = `${prefix}:exp:p3-02`
+      const [fields] = (await redis(url, [['HKEYS', docs]])) as [string[]]
+      const [expiring] = (await redis(url, [['ZRANGE', expiry, '0', '-1']])) as [string[]]
+      for (const key of expiring) expect(fields, `expiry index entry ${key}`).toContain(key)
+      const own = new Set([
+        docs,
+        expiry,
+        `${prefix}:doc:p3-02-other`,
+        `${prefix}:exp:p3-02-other`,
+        `${prefix}:expiring`,
+      ])
+      expect((await keysUnder(url, prefix)).filter((key) => !own.has(key))).toEqual([])
+      // The other collection's TTL document is untouched by the replace, and still expires.
+      expect(await store.get('p3-02-other', 'x')).toEqual({ id: 'x', part: 'p' })
+      now += 61_000
+      expect(await store.get('p3-02-other', 'x')).toBeNull()
     } finally {
       await store.close()
     }

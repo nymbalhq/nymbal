@@ -1,0 +1,5 @@
+{
+  // The tsconfig of a build into NYMBAL_NEXT_DIST_DIR (next.config.mjs). Next adds a build's dist directory to the
+  // tsconfig it type-checks with, unless that one extends another; so tsconfig.json keeps only `.next`.
+  "extends": "./tsconfig.json"
+}

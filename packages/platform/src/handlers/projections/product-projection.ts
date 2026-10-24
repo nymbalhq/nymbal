@@ -1,189 +1,132 @@
 import {
+  EVT_CATEGORY_CREATED,
+  EVT_CATEGORY_DELETED,
+  EVT_CATEGORY_UPDATED,
   EVT_PRODUCT_CREATED,
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_UPDATED,
+  type CategoryCreatedV1Payload,
+  type CategoryDeletedV1Payload,
+  type CategoryUpdatedV1Payload,
   type DocumentStoreAdapter,
   type EventBusAdapter,
   type EventHandler,
   type Logger,
-  type NymbalEvent,
-  type ProductDeletedV1Payload,
-  type ProductSnapshot,
   type ProductCreatedV1Payload,
+  type ProductDeletedV1Payload,
   type ProductUpdatedV1Payload,
-  type VariantOption,
 } from '@nymbalhq/types'
+import type { Repositories } from '../../repositories/index.js'
+import {
+  buildProductDoc,
+  productByCategoryKey,
+  productWrites,
+  PRODUCTS,
+  PRODUCTS_BY_CATEGORY,
+  type DenormalisedProduct,
+} from '../../read-models/builders.js'
+import { loadProduct } from '../../read-models/sources.js'
+import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
-const PRODUCTS = 'products'
-const PRODUCTS_BY_CATEGORY = 'products-by-category'
+export type { DenormalisedProduct } from '../../read-models/builders.js'
 
-export interface DenormalisedProduct {
-  id: string
-  storeId: string
-  slug: string
-  name: string
-  description: string
-  shortDescription: string
-  status: string
-  type: string
-  media: unknown
-  variantCount: number
-  inStock: boolean
-  priceRange: { minMinor: number; maxMinor: number } | null
-  currency: string | null
-  priceMinor: number | null
-  variants: Array<{
-    id: string
-    sku: string
-    name: string
-    priceMinor: number
-    stock: number
-    options: VariantOption[]
-  }>
-  categoryIds: string[]
-  categories: Array<{ id: string; name: string; slug: string }>
-  createdAt: string
-  updatedAt: string
-  partitionKey?: string
-  sortKey?: string
-}
-
-const isVariantOption = (o: unknown): o is VariantOption =>
-  typeof o === 'object' &&
-  o !== null &&
-  typeof (o as VariantOption).name === 'string' &&
-  typeof (o as VariantOption).value === 'string'
-
-/**
- * Older product events stored a variant's options as a JSON string; the read model always holds the array, so no
- * storefront parses them.
- */
-function variantOptions(raw: unknown, logger: Logger, sku: string): VariantOption[] {
-  let value = raw
-  if (typeof raw === 'string') {
-    try {
-      value = JSON.parse(raw)
-    } catch (err) {
-      logger.warn({ sku, err }, 'variant options are not JSON; projected as none')
-      return []
-    }
-  }
-  if (!Array.isArray(value)) return []
-  return value.filter(isVariantOption).map((o) => ({ name: o.name, value: o.value }))
-}
-
-function denormalise(
-  p: ProductSnapshot,
-  storeId: string,
-  storeCurrency: string,
-  categories: Array<{ id: string; name: string; slug: string }>,
-  logger: Logger,
-): DenormalisedProduct {
-  const prices = p.variants.map((v) => v.priceMinor)
-  const priceRange = prices.length
-    ? { minMinor: Math.min(...prices), maxMinor: Math.max(...prices) }
-    : null
-  const inStock = p.variants.some((v) => v.stock > 0)
-  return {
-    id: p.id,
-    storeId,
-    slug: p.slug,
-    name: p.name,
-    description: p.description,
-    shortDescription: p.shortDescription,
-    status: p.status,
-    type: p.type,
-    media: p.media,
-    variantCount: p.variants.length,
-    inStock,
-    priceRange,
-    currency: storeCurrency,
-    priceMinor: prices[0] ?? null,
-    variants: p.variants.map((v) => ({
-      id: v.id,
-      sku: v.sku,
-      name: v.name,
-      priceMinor: v.priceMinor,
-      stock: v.stock,
-      options: variantOptions(v.options, logger, v.sku),
-    })),
-    categoryIds: p.categoryIds,
-    categories,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
-  }
-}
-
-async function resolveCategories(
-  categoryIds: string[],
-  documentStore: DocumentStoreAdapter,
-  storeId: string,
-): Promise<Array<{ id: string; name: string; slug: string }>> {
-  if (categoryIds.length === 0) return []
-  const result = await documentStore.query<{ id: string; name: string; slug: string }>(
-    'categories',
-    { partitionKey: { field: 'storeId', value: storeId }, limit: 500 },
-  )
-  const byId = new Map(result.items.map((c) => [c.id, c]))
-  return categoryIds.flatMap((id) => {
-    const c = byId.get(id)
-    return c ? [{ id: c.id, name: c.name, slug: c.slug }] : []
-  })
-}
-
-export interface RegisterProductProjectionDeps {
-  eventBus: EventBusAdapter
+export interface ProductProjectionDeps {
   documentStore: DocumentStoreAdapter
   logger: Logger
   storeId: string
   currency: string
+  repos: Pick<Repositories, 'product' | 'variant' | 'category' | 'productCategory'>
+}
+
+export interface RegisterProductProjectionDeps extends ProductProjectionDeps {
+  eventBus: EventBusAdapter
+}
+
+export interface ProductReprojector {
+  /** Rebuilds the product's documents from its rows as they are now; a product that is gone is left to its delete. */
+  reproject(productId: string): Promise<void>
+  /** Removes the product's documents, by slug. */
+  remove(slug: string): Promise<void>
+}
+
+/**
+ * Writes `products` and `products-by-category` from the product's rows, read at handle time, so any event about a
+ * product, its stock or one of its categories leaves the documents a rebuild writes.
+ */
+export function productReprojector(deps: ProductProjectionDeps): ProductReprojector {
+  const { documentStore, logger, storeId, currency, repos } = deps
+
+  /** The category keys the stored document was filed under. */
+  async function filedUnder(slug: string): Promise<string[]> {
+    const existing = await documentStore.get<DenormalisedProduct>(PRODUCTS, slug)
+    return (existing?.categories ?? []).map((c) => productByCategoryKey(c.slug, slug))
+  }
+
+  return {
+    async reproject(productId) {
+      const loaded = await repos.product.store.read((tx) => loadProduct(tx, repos, productId))
+      if (!loaded) return
+      const doc = buildProductDoc(loaded.snapshot, loaded.categories, { storeId, currency, logger })
+      const writes = productWrites(doc)
+      const kept = new Set(writes.map((w) => w.key))
+      const stale = (await filedUnder(doc.slug)).filter((key) => !kept.has(key))
+      for (const w of writes) await documentStore.put(w.collection, w.key, w.doc)
+      for (const key of stale) await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
+      logger.debug({ slug: doc.slug }, 'product projected')
+    },
+    async remove(slug) {
+      for (const key of await filedUnder(slug)) {
+        await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
+      }
+      await documentStore.delete(PRODUCTS, slug)
+      logger.debug({ slug }, 'product projection deleted')
+    },
+  }
+}
+
+export function productProjection(deps: ProductProjectionDeps): DerivedHandler[] {
+  const products = productReprojector(deps)
+  const { repos } = deps
+
+  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = (event) =>
+    products.reproject(event.payload.product.id)
+
+  const onDelete: EventHandler<ProductDeletedV1Payload> = (event) =>
+    products.remove(event.payload.slug)
+
+  // A category's name and slug are in its products' documents, and its slug in their category keys.
+  const onCategory: EventHandler<
+    CategoryCreatedV1Payload | CategoryUpdatedV1Payload | CategoryDeletedV1Payload
+  > = async (event) => {
+    const payload = event.payload
+    const categoryId = 'category' in payload ? payload.category.id : payload.categoryId
+    const productIds = await repos.productCategory.store.read((tx) =>
+      repos.productCategory.listProductsForCategory(tx, categoryId),
+    )
+    for (const productId of productIds) await products.reproject(productId)
+  }
+
+  return [
+    {
+      name: 'product-projection-upsert',
+      types: [EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED],
+      handle: onUpsert as EventHandler,
+    },
+    {
+      name: 'product-projection-delete',
+      types: [EVT_PRODUCT_DELETED],
+      handle: onDelete as EventHandler,
+    },
+    {
+      name: 'product-projection-category',
+      types: [EVT_CATEGORY_CREATED, EVT_CATEGORY_UPDATED, EVT_CATEGORY_DELETED],
+      handle: onCategory as EventHandler,
+    },
+  ]
 }
 
 export async function registerProductProjection(
   deps: RegisterProductProjectionDeps,
 ): Promise<void> {
-  const { eventBus, documentStore, logger, storeId, currency } = deps
-
-  const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (
-    event,
-  ) => {
-    const { product } = event.payload
-    const categories = await resolveCategories(product.categoryIds, documentStore, storeId)
-    const doc = denormalise(product, storeId, currency, categories, logger)
-    await documentStore.put<DenormalisedProduct>(PRODUCTS, product.slug, doc)
-    for (const cat of categories) {
-      await documentStore.put(
-        PRODUCTS_BY_CATEGORY,
-        `category:${cat.slug}#product:${product.slug}`,
-        { ...doc, partitionKey: `category:${cat.slug}`, sortKey: `product:${product.slug}` },
-      )
-    }
-    logger.debug({ slug: product.slug, eventType: event.type }, 'product projected')
-  }
-
-  const onDelete: EventHandler<ProductDeletedV1Payload> = async (
-    event: NymbalEvent<ProductDeletedV1Payload>,
-  ) => {
-    const { productId, slug } = event.payload
-    const existing = await documentStore.get<DenormalisedProduct>(PRODUCTS, slug)
-    if (existing) {
-      const catKeys = existing.categories?.length
-        ? existing.categories.map((c) => c.slug)
-        : existing.categoryIds
-      for (const key of catKeys) {
-        await documentStore.delete(PRODUCTS_BY_CATEGORY, `category:${key}#product:${slug}`)
-      }
-    }
-    await documentStore.delete(PRODUCTS, slug)
-    logger.debug({ productId, slug }, 'product projection deleted')
-  }
-
-  await eventBus.subscribe([EVT_PRODUCT_CREATED, EVT_PRODUCT_UPDATED], onUpsert as EventHandler, {
-    name: 'product-projection-upsert',
-    derived: true,
-  })
-  await eventBus.subscribe(EVT_PRODUCT_DELETED, onDelete as EventHandler, {
-    name: 'product-projection-delete',
-    derived: true,
-  })
+  await subscribeDerived(deps.eventBus, productProjection(deps))
 }

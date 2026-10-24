@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { storeCapabilities } from '../support/capabilities'
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
@@ -6,7 +7,41 @@ interface ApiSearch {
   data: { items: Array<{ slug: string; name: string }> }
 }
 
+/** The product-card slugs rendered inside `nymbal-search-results`, through the cards' own shadow roots, in order. */
+function slugsInResults(page: Page): Promise<string[] | null> {
+  return page.evaluate(() => {
+    const host = document.querySelector('nymbal-search-results')
+    if (!host?.shadowRoot) return null
+    const ids: string[] = []
+    const walk = (root: ParentNode): void => {
+      for (const node of root.querySelectorAll('*')) {
+        const id = node.getAttribute('data-testid')
+        if (id?.startsWith('product-card-')) ids.push(id.slice('product-card-'.length))
+        if (node.shadowRoot) walk(node.shadowRoot)
+      }
+    }
+    walk(host.shadowRoot)
+    return ids
+  })
+}
+
 test.describe('Search', () => {
+  // P2-15 AC-5 (theming.views-are-elements): the results region is `nymbal-search-results` on both templates, its
+  // cards `nymbal-product-card`s in its shadow root, and they are the API's results for the term, in its order.
+  test('AC-5: theming.views-are-elements: /search?q=wool renders inside nymbal-search-results the slugs GET /api/products/search?q=wool returns, in order', async ({
+    page,
+  }) => {
+    const res = await page.request.get(`${API_URL}/api/products/search?q=wool`)
+    expect(res.status()).toBe(200)
+    const found = (await res.json()) as ApiSearch
+    expect(found.data.items.length, 'no seeded product matches "wool"').toBeGreaterThan(0)
+
+    await page.goto('/search?q=wool')
+    await expect
+      .poll(() => slugsInResults(page), { timeout: 15_000 })
+      .toEqual(found.data.items.map((p) => p.slug))
+  })
+
   test('AC-5: a term GET /api/products/search finds nothing for shows the no-results state and no card', async ({
     page,
   }) => {
@@ -110,6 +145,31 @@ test.describe('Search', () => {
     await expect(productCards).toHaveCount(0)
     await expect(searchInput).toHaveValue('')
     await expect(page).not.toHaveURL(/[?&]q=/)
+  })
+
+  // The URL owns the term: Next's search store is a client singleton that outlives a client-side navigation, so a Back
+  // to a bare /search must not show the term the shopper left.
+  test('a client-side Back from a popular search to a bare /search shows the no-term state, not the term left behind', async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== 'nextjs',
+      'Astro’s /search has no popular-search links, and its Back reloads the page with a fresh store',
+    )
+    const noTerm = page.getByRole('heading', { name: 'Search our store' })
+    const resultsFor = page.locator('nymbal-search-results').getByText('Results for')
+    await page.goto('/search')
+    await expect(noTerm).toBeVisible({ timeout: 15000 })
+
+    await page.locator('a[href="/search?q=Shirts"]').click()
+    await expect(page).toHaveURL(/\/search\?q=Shirts$/)
+    await expect(resultsFor).toBeVisible({ timeout: 15000 })
+
+    await page.goBack()
+    await expect(page).not.toHaveURL(/[?&]q=/)
+    await expect(noTerm).toBeVisible({ timeout: 10000 })
+    await expect(resultsFor).toHaveCount(0)
+    await expect(page.locator('[data-testid^="product-card-"]')).toHaveCount(0)
   })
 
   test('AC-9: a query containing markup is rendered as text, not elements', async ({ page }) => {

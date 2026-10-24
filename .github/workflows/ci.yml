@@ -1,29 +1,23 @@
 name: CI
 
+# Tasks merge into dev locally (scripts/merge-to-dev.sh, after a green gate:full at the merged sha), so CI runs on
+# the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first.
 on:
   push:
     branches: [main, dev]
-  pull_request:
-    branches: [main, dev]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
 
 env:
-  PNPM_VERSION: '9.12.3'
-  # The base every gate.ts call diffs against: the target branch on a pull request, the previous tip on a push.
-  GATE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+  # The base every gate.ts call diffs against: the previous tip of the pushed branch, so one merge's own changes.
+  GATE_BASE: ${{ github.event.before }}
 
 jobs:
   build:
     name: Build all packages, templates and admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -49,7 +43,7 @@ jobs:
 
   gate:
     name: Gate — lint, typecheck, tests, census trend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -57,8 +51,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -70,9 +62,47 @@ jobs:
       - name: Gate
         run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --no-build --base "$GATE_BASE"
 
+  perf-budgets:
+    name: Performance budgets — both templates, five pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      # The packages come from the build job. The templates are built again by the run: the store's own seed images
+      # go into each template's public directory first, and Astro copies them at build time.
+      # The suite runs `pnpm perf:budgets` twice: with a 300 KB script added to Astro's home page (it must fail),
+      # then as committed (it must pass, and writes the report the pull request quotes).
+      - name: perf:budgets (tests/perf)
+        run: pnpm exec vitest run --config tests/perf/vitest.config.ts
+      # AC-3 and AC-5: each page loads only its own elements, seen only in a production build (the dev-server E2E
+      # jobs cannot): both templates built for this slot's API, then the journeys in tests/e2e/prod.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Production E2E (tests/e2e/prod)
+        run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
+      - name: ISR E2E (tests/e2e/isr)
+        run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.isr.config.ts
+      - name: Upload the budget report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-budgets
+          path: reports/perf-budgets.json
+          if-no-files-found: warn
+
   integration:
     name: Integration — Postgres, Redis, contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     env:
@@ -119,8 +149,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -147,7 +175,7 @@ jobs:
 
   mutation:
     name: Mutation — Stryker (incremental)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A cold whole-set run (a fresh cache chain, or any platform test change on a miss) measured 1,491 s on this runner
     # (PR #24) and 1,472 s on dev, against 290 s on 12 local cores; the mutate set grows with each service.
     timeout-minutes: 45
@@ -157,8 +185,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -180,8 +206,8 @@ jobs:
 
   sentinels:
     name: Sentinels and tests-fail-on-base
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     needs: [build]
     # tests-fail-on-base runs every project against the base, so a new Postgres, Mailpit or S3 test needs its server
     # here too, or it fails on base for want of one.
@@ -220,8 +246,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -237,21 +261,21 @@ jobs:
             pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
             || { docker logs minio; exit 1; }
-      # A pull request runs the sentinels its change can affect; a push to main or dev, like the nightly and the
-      # release, runs every one.
+      # A push to main or dev, like the nightly and the release, runs every sentinel.
       - name: Sentinels
-        run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels ${{ github.event_name == 'pull_request' && 'impacted' || 'all' }} --no-build --services external --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels all --no-build --services external --base "$GATE_BASE"
 
   coverage:
     name: Coverage gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # Not a gate step: four of CI's reds since 2026-10-19 were this job alone (a timeout, a runner), each holding the
+    # next merge for a CI run. The job still goes red on a crash; the run does not.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -264,7 +288,11 @@ jobs:
       # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
       # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
+      # Instrumented code runs three to four times slower on the runner than in the gate, so every project's own
+      # timeouts scale here (vitest.config.ts): a test that only times out under coverage is not a failure.
       - name: Coverage (reported, not a gate)
+        env:
+          NYMBAL_TEST_TIMEOUT_SCALE: '4'
         run: |
           rm -rf coverage reports/coverage-tests.json
           status=0
@@ -301,7 +329,7 @@ jobs:
 
   e2e-astro:
     name: E2E — Astro
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -310,8 +338,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -327,7 +353,7 @@ jobs:
 
   e2e-nextjs:
     name: E2E — Next.js
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -336,8 +362,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -353,7 +377,7 @@ jobs:
 
   e2e-admin:
     name: E2E — Admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -362,8 +386,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -381,7 +403,7 @@ jobs:
   # jobs of their own so the native ones keep their time.
   e2e-astro-custom:
     name: E2E — Astro on custom providers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -390,8 +412,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -407,7 +427,7 @@ jobs:
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -416,8 +436,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -435,7 +453,7 @@ jobs:
   # journeys tagged @nosearch run there.
   e2e-astro-nosearch:
     name: E2E — Astro with no search
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -444,8 +462,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -461,7 +477,7 @@ jobs:
 
   e2e-nextjs-nosearch:
     name: E2E — Next.js with no search
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
@@ -470,8 +486,6 @@ jobs:
           fetch-depth: 0
           lfs: true
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -485,16 +499,64 @@ jobs:
       - name: Next.js with no search (@nosearch)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
 
+  # The project-elements fixture (tests/e2e/fixtures/override-elements) as each template's elements entry, which
+  # overrides nymbal-mini-cart on the server and in the browser; only the journeys tagged @override run there.
+  e2e-astro-override:
+    name: E2E — Astro with a project element override
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Astro with the override fixture (@override)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-override" --no-build --base "$GATE_BASE"
+
+  e2e-nextjs-override:
+    name: E2E — Next.js with a project element override
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Next.js with the override fixture (@override)
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-override" --no-build --base "$GATE_BASE"
+
   scaffold-smoke:
     name: Scaffold smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -570,7 +632,7 @@ jobs:
 
   scaffold-clean:
     name: Scaffold from a clean machine (${{ matrix.template }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -579,8 +641,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -598,20 +658,19 @@ jobs:
 
   changeset:
     name: Changeset
-    # The main -> dev back-merge carries no changes of its own.
-    if: github.event_name == 'pull_request' && github.head_ref != 'main'
-    runs-on: ubuntu-latest
+    # A task's merge into dev (merge-to-dev.sh writes `Merge feat/…` or `Merge fix/…`), never the main -> dev
+    # back-merge, which carries the release commit and no changes of its own.
+    if: github.ref == 'refs/heads/dev' && (startsWith(github.event.head_commit.message, 'Merge feat/') || startsWith(github.event.head_commit.message, 'Merge fix/'))
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       # A diff whose only package files are tests needs no changeset; any other defers to `changeset status`.
-      - run: pnpm exec tsx scripts/changeset-needed.ts --base origin/${{ github.base_ref }}
+      - run: pnpm exec tsx scripts/changeset-needed.ts --base "$GATE_BASE"

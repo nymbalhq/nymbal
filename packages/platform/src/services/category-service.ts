@@ -8,6 +8,7 @@ import {
   type Category,
   type Logger,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 
@@ -57,14 +58,17 @@ export function createCategoryService(deps: {
       return c
     },
     async create(input) {
+      audit.note('category.create')
       if (!input.slug.trim()) throw new ValidationError('Category slug is required')
       return store.transaction(async (tx) => {
         if (await repos.category.findBySlug(tx, input.slug)) {
           throw new ValidationError(`Category slug already exists: ${input.slug}`)
         }
         const now = new Date()
+        const id = uuidv7()
+        audit.note('category.create', [{ type: 'category', id }])
         const category: Category = {
-          id: uuidv7(),
+          id,
           parentId: input.parentId ?? null,
           slug: input.slug,
           name: input.name,
@@ -79,6 +83,7 @@ export function createCategoryService(deps: {
     },
     async update(id, input) {
       return store.transaction(async (tx) => {
+        audit.note('category.update', [{ type: 'category', id }])
         const existing = await repos.category.findById(tx, id)
         if (!existing) throw new NotFoundError('category', id)
         await repos.category.update(tx, id, input)
@@ -89,6 +94,7 @@ export function createCategoryService(deps: {
     },
     async delete(id) {
       await store.transaction(async (tx) => {
+        audit.note('category.delete', [{ type: 'category', id }])
         const existing = await repos.category.findById(tx, id)
         if (!existing) throw new NotFoundError('category', id)
         await repos.category.delete(tx, id)

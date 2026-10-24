@@ -1,38 +1,70 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
+import { stack } from '../../scripts/stack'
 
 const isCI = !!process.env.CI
 const target = process.env.NYMBAL_E2E_TARGET
 const isAdminE2E = process.env.NYMBAL_E2E_ADMIN === 'true' || target === 'admin'
+// Every port is the stack slot's of the checkout this file sits in (scripts/stack.ts), wherever Playwright is started:
+// slot 0, the main checkout and CI, is 3001, 4321 and the rest; a linked worktree's slot moves them all, so two
+// worktrees run the suite at once. The slot is pinned in the environment for the workers, which load this file again.
+const block = stack(fileURLToPath(new URL('.', import.meta.url)))
+process.env.NYMBAL_STACK_SLOT = String(block.slot)
+const local = (port: number): string => `http://localhost:${port}`
 
 // P2-05: the swap. `astro-custom` and `nextjs-custom` run the same journeys against the fixture store in
 // tests/e2e/fixtures/custom-providers (search and payments `custom`, injected through its `adapters` export), on an API
-// of its own on 3011 and a storefront of their own, so a custom run never reaches the native store on 3001. Each is
+// of its own (3011 in slot 0) and a storefront of their own, so a custom run never reaches the native store. Each is
 // its own invocation (NYMBAL_E2E_TARGET), as gate.ts runs one per target.
 const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
 const isCustom = target !== undefined && CUSTOM_TARGETS.includes(target)
-const CUSTOM_API = 'http://localhost:3011'
-const NATIVE_API = 'http://localhost:3001'
+const CUSTOM_API = local(block.customApi)
+const NATIVE_API = local(block.api)
 // P2-09 decision 6: the no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of
-// its own on 3021, with storefronts on 4341 (Astro) and 3020 (Next.js). `astro-nosearch` and `nextjs-nosearch` run only
-// the journeys tagged @nosearch, and every other project leaves them out.
+// its own, with storefronts of its own. `astro-nosearch` and `nextjs-nosearch` run only the journeys tagged @nosearch,
+// and every other project leaves them out.
 const NOSEARCH_TARGETS = ['astro-nosearch', 'nextjs-nosearch']
 const isNoSearch = target !== undefined && NOSEARCH_TARGETS.includes(target)
-const NOSEARCH_API = 'http://localhost:3021'
-// The journeys read API_URL from here (support/csrf.ts); a custom or no-search run must point them at its fixture API,
-// whatever the shell says, or its API assertions would read the native store.
-if (isCustom) process.env.NYMBAL_API_URL = CUSTOM_API
-if (isNoSearch) process.env.NYMBAL_API_URL = NOSEARCH_API
+const NOSEARCH_API = local(block.noSearchApi)
+// P2-18 AC-3: the project-elements fixture (tests/e2e/fixtures/override-elements/elements/index.js, a project entry
+// overriding nymbal-mini-cart) in place of each template's own elements entry, named by NYMBAL_ELEMENTS_ENTRY, on an
+// API and storefronts of their own (the stack slot's overrideApi, astroOverride and nextjsOverride). `astro-override`
+// and `nextjs-override` run only the journeys tagged @override, and every other project leaves them out.
+const OVERRIDE_TARGETS = ['astro-override', 'nextjs-override']
+const isOverride = target !== undefined && OVERRIDE_TARGETS.includes(target)
+const OVERRIDE_API = local(block.overrideApi)
+const OVERRIDE_ENTRY = fileURLToPath(
+  new URL('./fixtures/override-elements/elements/index.js', import.meta.url),
+)
+// The journeys read NYMBAL_API_URL (support/csrf.ts and others, falling back to slot 0's 3001), so every run, the
+// native one included, points them at its own API whatever the shell says, or their API assertions would read
+// another store or another slot's.
+process.env.NYMBAL_API_URL = isCustom
+  ? CUSTOM_API
+  : isNoSearch
+    ? NOSEARCH_API
+    : isOverride
+      ? OVERRIDE_API
+      : NATIVE_API
 
-const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4321'
-const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3000'
-const astroCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4331'
-const nextjsCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3010'
-const astroNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:4341'
-const nextjsNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? 'http://localhost:3020'
+const astroURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astro)
+const nextjsURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjs)
+const astroCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroCustom)
+const nextjsCustomURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsCustom)
+const astroNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroNoSearch)
+const nextjsNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsNoSearch)
+const astroOverrideURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroOverride)
+const nextjsOverrideURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsOverride)
 // The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api (P1-08).
-const adminURL = process.env.NYMBAL_ADMIN_URL ?? 'http://localhost:3001/admin/'
+const adminURL = process.env.NYMBAL_ADMIN_URL ?? `${NATIVE_API}/admin/`
+/**
+ * The origins an API accepts (its nymbal.config.ts reads NYMBAL_CORS_ORIGINS): the two storefronts that call it, one
+ * origin when NYMBAL_STOREFRONT_URL names both.
+ */
+const corsOrigins = (...urls: string[]): string =>
+  [...new Set(urls.map((url) => new URL(url).origin))].join(',')
 
 // Every run gets a database of its own, as CI's fresh checkout does: the repo-root nymbal.db keeps what earlier runs
 // created (products from `ownProduct`, orders), and a crashed run cleans nothing up. `dev` migrates and seeds an empty
@@ -49,50 +81,80 @@ const noSearchSqlitePath = (process.env.NYMBAL_E2E_NOSEARCH_SQLITE_PATH ??= join
   tmpdir(),
   `nymbal-e2e-nosearch-${Date.now()}-${process.pid}.db`,
 ))
+const overrideSqlitePath = (process.env.NYMBAL_E2E_OVERRIDE_SQLITE_PATH ??= join(
+  tmpdir(),
+  `nymbal-e2e-override-${Date.now()}-${process.pid}.db`,
+))
+
+// P3-02 AC-6: where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and
+// the key prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
+const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
+  tmpdir(),
+  `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
+))
 
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
-  command: 'node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only',
+  command: `node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only --port ${block.api}`,
   url: `${NATIVE_API}/health`,
   cwd: '../..',
   reuseExistingServer: false,
   timeout: 90000,
   env: {
     NYMBAL_SQLITE_PATH: sqlitePath,
+    NYMBAL_CORS_ORIGINS: corsOrigins(astroURL, nextjsURL),
+    NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
 /** The fixture store: `nymbal dev --api-only` from the fixture directory, so its nymbal.config.ts is the one loaded. */
 const customApiServer = {
-  command:
-    'node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only',
+  command: `node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only --port ${block.customApi}`,
   url: `${CUSTOM_API}/health`,
   cwd: './fixtures/custom-providers',
   reuseExistingServer: false,
   timeout: 90000,
   env: {
     NYMBAL_SQLITE_PATH: customSqlitePath,
+    NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL, nextjsCustomURL),
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
 /** The no-search store: `nymbal dev --api-only` from its fixture directory, as the custom store runs from its own. */
 const noSearchApiServer = {
-  command:
-    'node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only',
+  command: `node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only --port ${block.noSearchApi}`,
   url: `${NOSEARCH_API}/health`,
   cwd: './fixtures/no-search',
   reuseExistingServer: false,
   timeout: 90000,
   env: {
     NYMBAL_SQLITE_PATH: noSearchSqlitePath,
+    NYMBAL_CORS_ORIGINS: corsOrigins(astroNoSearchURL, nextjsNoSearchURL),
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
+/** The native store's config on an API of its own, for the override storefronts. */
+const overrideApiServer = {
+  command: `node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only --port ${block.overrideApi}`,
+  url: `${OVERRIDE_API}/health`,
+  cwd: '../..',
+  reuseExistingServer: false,
+  timeout: 90000,
+  env: {
+    NYMBAL_SQLITE_PATH: overrideSqlitePath,
+    NYMBAL_CORS_ORIGINS: corsOrigins(astroOverrideURL, nextjsOverrideURL),
+  },
+  gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
+}
+
+/** What a storefront takes beyond its API: the project elements entry it uses in place of its own. */
+const overrideEnv = { NYMBAL_ELEMENTS_ENTRY: OVERRIDE_ENTRY }
+
 // --ignore-lock: Astro 7 backgrounds `astro dev` under an AI agent, and Playwright would see the exit.
-function astroServer(url: string, api: string) {
+function astroServer(url: string, api: string, extraEnv: Record<string, string> = {}) {
   return {
     command: `pnpm --filter @nymbalhq/template-astro dev --ignore-lock --port ${new URL(url).port}`,
     url,
@@ -102,11 +164,12 @@ function astroServer(url: string, api: string) {
     env: {
       NYMBAL_API_URL: api,
       PUBLIC_NYMBAL_API_URL: api,
+      ...extraEnv,
     },
   }
 }
 
-function nextjsServer(url: string, api: string) {
+function nextjsServer(url: string, api: string, extraEnv: Record<string, string> = {}) {
   const port = new URL(url).port
   return {
     // The template's `dev` script pins 3000; another port runs the same `next dev` with its own -p.
@@ -121,6 +184,7 @@ function nextjsServer(url: string, api: string) {
     env: {
       NYMBAL_API_URL: api,
       NEXT_PUBLIC_NYMBAL_API_URL: api,
+      ...extraEnv,
     },
   }
 }
@@ -130,7 +194,14 @@ function nextjsServer(url: string, api: string) {
  * The admin needs the API alone, which serves the built admin (`pnpm --filter @nymbalhq/admin build` first).
  */
 function servers() {
-  const targets = ['astro', 'nextjs', 'admin', ...CUSTOM_TARGETS, ...NOSEARCH_TARGETS]
+  const targets = [
+    'astro',
+    'nextjs',
+    'admin',
+    ...CUSTOM_TARGETS,
+    ...NOSEARCH_TARGETS,
+    ...OVERRIDE_TARGETS,
+  ]
   if (target !== undefined && !targets.includes(target)) {
     throw new Error(`NYMBAL_E2E_TARGET must be one of ${targets.join(', ')}; got "${target}"`)
   }
@@ -145,6 +216,12 @@ function servers() {
   }
   if (target === 'nextjs-nosearch') {
     return [noSearchApiServer, nextjsServer(nextjsNoSearchURL, NOSEARCH_API)]
+  }
+  if (target === 'astro-override') {
+    return [overrideApiServer, astroServer(astroOverrideURL, OVERRIDE_API, overrideEnv)]
+  }
+  if (target === 'nextjs-override') {
+    return [overrideApiServer, nextjsServer(nextjsOverrideURL, OVERRIDE_API, overrideEnv)]
   }
   if (isAdminE2E) return [apiServer]
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
@@ -166,7 +243,7 @@ export default defineConfig({
     {
       name: 'astro',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch/,
+      grepInvert: /@nosearch|@override/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -175,18 +252,18 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch/,
+      grepInvert: /@nosearch|@override/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
       },
     },
     // The same journey files on the fixture store. Visual snapshots are keyed by project and shot on the native
-    // store, so the custom runs leave them out.
+    // store, so the custom runs leave them out, and the rebuild journey (@rebuild) replays the native store's own.
     {
       name: 'astro-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch/,
+      grepInvert: /@visual|@nosearch|@rebuild|@override/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
@@ -195,7 +272,7 @@ export default defineConfig({
     {
       name: 'nextjs-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch/,
+      grepInvert: /@visual|@nosearch|@rebuild|@override/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,
@@ -218,6 +295,25 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsNoSearchURL,
+      },
+    },
+    // The project-elements fixture: only the journeys tagged @override, which no other project runs.
+    {
+      name: 'astro-override',
+      testIgnore: ['**/journeys/admin/**'],
+      grep: /@override/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: astroOverrideURL,
+      },
+    },
+    {
+      name: 'nextjs-override',
+      testIgnore: ['**/journeys/admin/**'],
+      grep: /@override/,
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: nextjsOverrideURL,
       },
     },
     {

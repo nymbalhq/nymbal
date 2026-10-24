@@ -12,3 +12,26 @@ packages:
   - "smoke-astro"
   - "smoke-nextjs"
   - "launch-smoke-astro"
+
+# pnpm 11+ reads settings only from here (.npmrc is auth/registry only, package.json's `pnpm` field is ignored).
+engineStrict: true
+strictPeerDependencies: false
+autoInstallPeers: true
+linkWorkspacePackages: deep
+preferWorkspacePackages: true
+saveWorkspaceProtocol: rolling
+
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+
+packageExtensions:
+  next:
+    peerDependencies:
+      "@types/react": "*"
+      "@types/react-dom": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+      "@types/react-dom":
+        optional: true

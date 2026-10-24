@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process'
+import { type ExecFileException, execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   mkdirSync,
@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 
 // Acceptance tests for P0-02 AC-6 and AC-13 to AC-15: `scripts/tests-fail-on-base.ts <base> --root <repo>
@@ -118,10 +119,29 @@ function state(root: string) {
   }
 }
 
-function runScript(root: string, base: string, suite = SUITE) {
-  const result = spawnSync(TSX, [SCRIPT, base, '--root', root, '--suite', suite], {
+const execFileAsync = promisify(execFile)
+
+// Every run of a real program here is asynchronous: a synchronous one blocks the Vitest worker's event loop, and a
+// file of them (over 60 s under load) leaves the worker's pending RPCs unanswered past their 60 s timeout.
+async function run(
+  command: string,
+  args: string[],
+  options: { cwd: string; timeout?: number },
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, { ...options, encoding: 'utf8' })
+    return { status: 0, stdout, stderr }
+  } catch (e) {
+    const error = e as ExecFileException & { stdout?: string; stderr?: string }
+    // A string code is a failure to start (ENOENT, a full buffer), not an exit status.
+    if (typeof error.code === 'string') throw error
+    return { status: error.code ?? null, stdout: error.stdout ?? '', stderr: error.stderr ?? '' }
+  }
+}
+
+async function runScript(root: string, base: string, suite = SUITE) {
+  const result = await run(TSX, [SCRIPT, base, '--root', root, '--suite', suite], {
     cwd: REPO,
-    encoding: 'utf8',
     timeout: 50_000,
   })
   return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
@@ -149,21 +169,21 @@ function lineFor(out: string, file: string): string | undefined {
 }
 
 /** Guards the fixture: every head test is green at head, so failing on base is the base's doing. */
-function expectGreenAtHead(root: string): void {
-  const result = spawnSync('node', ['--test'], { cwd: root, encoding: 'utf8' })
+async function expectGreenAtHead(root: string): Promise<void> {
+  const result = await run('node', ['--test'], { cwd: root })
   expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0)
 }
 
 describe('AC-6: tests-fail-on-base', () => {
-  it('AC-6: a new test that fails on the base source is fine: exit 0, reported as "fails on base"', () => {
+  it('AC-6: a new test that fails on the base source is fine: exit 0, reported as "fails on base"', async () => {
     const { root, base } = makeRepo()
     addGoodHead(root)
     commitAll(root, 'head: multiply')
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     write(root, 'notes/untracked.txt', 'left alone\n')
     const before = state(root)
 
-    const { status, out } = runScript(root, base)
+    const { status, out } = await runScript(root, base)
 
     expect(status, out).toBe(0)
     expect(lineFor(out, 'test/multiply.test.js'), out).toContain('fails on base')
@@ -172,16 +192,16 @@ describe('AC-6: tests-fail-on-base', () => {
     expect(before).toEqual(state(root))
   })
 
-  it('AC-6: a new test that passes on the base source is a violation: exit 1, reported as "PASSES ON BASE"', () => {
+  it('AC-6: a new test that passes on the base source is a violation: exit 1, reported as "PASSES ON BASE"', async () => {
     const { root, base } = makeRepo()
     addGoodHead(root)
     write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
     commitAll(root, 'head: multiply and a test that cannot fail on base')
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     write(root, 'notes/untracked.txt', 'left alone\n')
     const before = state(root)
 
-    const { status, out } = runScript(root, base)
+    const { status, out } = await runScript(root, base)
 
     expect(status, out).toBe(1)
     expect(lineFor(out, 'test/add-zero.test.js'), out).toContain('PASSES ON BASE')
@@ -222,8 +242,8 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-function expectExit0(cwd: string, command: string, args: string[]): void {
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8' })
+async function expectExit0(cwd: string, command: string, args: string[]): Promise<void> {
+  const result = await run(command, args, { cwd })
   expect(result.status, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`).toBe(0)
 }
 
@@ -242,7 +262,7 @@ describe('AC-13: tests-fail-on-base resolves workspace packages from the base co
   }
 
   /** A pnpm workspace: `@tfob/app`'s tests import `@tfob/lib` through the link `pnpm install` makes. */
-  function makeWorkspace(): { root: string; base: string } {
+  async function makeWorkspace(): Promise<{ root: string; base: string }> {
     const root = emptyRepo()
     write(root, '.gitignore', 'node_modules/\n')
     write(root, 'package.json', json({ name: 'tfob-workspace', private: true, type: 'module' }))
@@ -264,13 +284,13 @@ describe('AC-13: tests-fail-on-base resolves workspace packages from the base co
       }),
     )
     write(root, 'packages/app/test/add.test.js', workspaceTest('add', 'assert.equal(add(2, 3), 5)'))
-    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     const base = commitAll(root, 'base')
     return { root, base }
   }
 
-  it('AC-13: a new test needing behaviour the change adds to another workspace package fails on base; one that does not, passes', () => {
-    const { root, base } = makeWorkspace()
+  it('AC-13: a new test needing behaviour the change adds to another workspace package fails on base; one that does not, passes', async () => {
+    const { root, base } = await makeWorkspace()
     write(root, 'packages/lib/src/index.js', HEAD_MATH)
     write(
       root,
@@ -283,10 +303,10 @@ describe('AC-13: tests-fail-on-base resolves workspace packages from the base co
       workspaceTest('add', 'assert.equal(add(0, 7), 7)'),
     )
     commitAll(root, 'head: lib gains multiply')
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     const before = state(root)
 
-    const { status, out } = runScript(root, base)
+    const { status, out } = await runScript(root, base)
 
     expect(verdictsOf(out, 'packages/app/test/multiply.test.js'), out).toEqual(['fails on base'])
     expect(verdictsOf(out, 'packages/app/test/add-zero.test.js'), out).toEqual(['PASSES ON BASE'])
@@ -353,31 +373,31 @@ describe('AC-14: a base run that executes no test is "not judged"', () => {
     )
   }
 
-  it('AC-14: a file the base configuration does not collect ("No test files found") is not judged and listed apart from the judged ones', () => {
+  it('AC-14: a file the base configuration does not collect ("No test files found") is not judged and listed apart from the judged ones', async () => {
     const { root, base } = makeVitestRepo()
     headWithSpecsProject(root)
     write(root, 'test/multiply.test.js', vitestTest('multiply', 'expect(multiply(2, 3)).toBe(6)'))
     commitAll(root, 'head: a specs project and two tests')
-    expectExit0(root, VITEST, ['run'])
+    await expectExit0(root, VITEST, ['run'])
 
-    const { out } = runScript(root, base, `${VITEST} run`)
+    const { out } = await runScript(root, base, `${VITEST} run`)
 
     expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
     expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
   })
 
-  it('AC-14: a suite naming a project that does not exist at base is not judged', () => {
+  it('AC-14: a suite naming a project that does not exist at base is not judged', async () => {
     const { root, base } = makeVitestRepo()
     headWithSpecsProject(root)
     commitAll(root, 'head: a specs project')
-    expectExit0(root, VITEST, ['run', '--project', 'specs', 'spec/multiply-spec.test.js'])
+    await expectExit0(root, VITEST, ['run', '--project', 'specs', 'spec/multiply-spec.test.js'])
 
-    const { out } = runScript(root, base, `${VITEST} run --project specs`)
+    const { out } = await runScript(root, base, `${VITEST} run --project specs`)
 
     expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
   })
 
-  it('AC-14: a base run that ends by a signal is not judged', () => {
+  it('AC-14: a base run that ends by a signal is not judged', async () => {
     const { root, base } = makeRepo()
     write(root, 'src/math.js', HEAD_MATH)
     // At base `multiply` is missing and the run is killed before any test executes.
@@ -399,10 +419,10 @@ describe('AC-14: a base run that executes no test is "not judged"', () => {
     )
     write(root, 'test/multiply.test.js', testFile('multiply', 'assert.equal(multiply(2, 3), 6)'))
     commitAll(root, 'head: multiply')
-    expectExit0(root, 'node', ['test/killed.test.js'])
-    expectExit0(root, 'node', ['test/multiply.test.js'])
+    await expectExit0(root, 'node', ['test/killed.test.js'])
+    await expectExit0(root, 'node', ['test/multiply.test.js'])
 
-    const { out } = runScript(root, base, 'node')
+    const { out } = await runScript(root, base, 'node')
 
     expect(verdictsOf(out, 'test/killed.test.js'), out).toEqual(['not judged'])
     expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
@@ -410,18 +430,18 @@ describe('AC-14: a base run that executes no test is "not judged"', () => {
 })
 
 describe('AC-15: added test files include uncommitted and untracked ones', () => {
-  it('AC-15: a staged new test and an untracked new test are both judged, on their working-tree contents', () => {
+  it('AC-15: a staged new test and an untracked new test are both judged, on their working-tree contents', async () => {
     const { root, base } = makeRepo()
     // Nothing is committed after base: the source change is unstaged, one test staged, one untracked.
     write(root, 'src/math.js', HEAD_MATH)
     write(root, 'test/multiply.test.js', testFile('multiply', 'assert.equal(multiply(2, 3), 6)'))
     git(root, 'add', 'test/multiply.test.js')
     write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     expect(git(root, 'rev-parse', 'HEAD').trim()).toBe(base)
     const before = state(root)
 
-    const { status, out } = runScript(root, base)
+    const { status, out } = await runScript(root, base)
 
     expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
     expect(verdictsOf(out, 'test/add-zero.test.js'), out).toEqual(['PASSES ON BASE'])
@@ -434,10 +454,9 @@ describe('AC-15: added test files include uncommitted and untracked ones', () =>
 // AC-22 and AC-23: a dependency change between base and HEAD, and a base that cannot install or build
 // ---------------------------------------------------------------------------------------------------------------
 
-function runWith(root: string, base: string, extra: string[]) {
-  const result = spawnSync(TSX, [SCRIPT, base, '--root', root, '--suite', SUITE, ...extra], {
+async function runWith(root: string, base: string, extra: string[]) {
+  const result = await run(TSX, [SCRIPT, base, '--root', root, '--suite', SUITE, ...extra], {
     cwd: REPO,
-    encoding: 'utf8',
     timeout: 50_000,
   })
   return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
@@ -496,10 +515,10 @@ function linesFor(out: string, file: string): string[] {
 }
 
 describe('AC-22: a dependency change installs the base dependencies in the base worktree', () => {
-  it('AC-22: HEAD renames a workspace dependency; the base builds by its own names and a new test fails on base for its own reason', () => {
+  it('AC-22: HEAD renames a workspace dependency; the base builds by its own names and a new test fails on base for its own reason', async () => {
     const root = emptyRepo()
     writeWorkspace(root, '@scope-a', BASE_MATH)
-    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     const base = commitAll(root, 'base: @scope-a')
 
     // HEAD renames the scope and adds multiply; HEAD's node_modules know only @scope-b.
@@ -510,16 +529,16 @@ describe('AC-22: a dependency change installs the base dependencies in the base 
       appTest('multiply', 'assert.equal(multiply(2, 3), 6)'),
     )
     write(root, 'packages/app/test/add-zero.test.js', appTest('add', 'assert.equal(add(0, 7), 7)'))
-    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     commitAll(root, 'head: @scope-b, lib gains multiply')
-    expectGreenAtHead(root)
-    expectExit0(root, 'node', ['packages/app/build.mjs'])
+    await expectGreenAtHead(root)
+    await expectExit0(root, 'node', ['packages/app/build.mjs'])
     // Guards: the dependency change is real, and mirroring HEAD's modules cannot resolve the base's name.
     expect(git(root, 'diff', '--name-only', base, 'HEAD')).toContain('pnpm-lock.yaml')
     expect(readdirSync(join(root, 'packages/app/node_modules'))).not.toContain('@scope-a')
     const before = state(root)
 
-    const { status, out } = runWith(root, base, ['--build', APP_BUILD])
+    const { status, out } = await runWith(root, base, ['--build', APP_BUILD])
 
     expect(verdictsOf(out, 'packages/app/test/multiply.test.js'), out).toEqual(['fails on base'])
     // Passing on base proves the base run resolved @scope-a/lib: the failure above is the missing multiply.
@@ -535,7 +554,7 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
   // The build's last line: it is no error shape, so it can reach the output only as part of the tail.
   const LAST_LINE = 'Found 1 error in src/index.ts:1 (tail line)'
 
-  it('AC-23 (revised): a failing base build exits non-zero with "base did not build: <first error line>" and the output tail; every added file is not judged with that reason', () => {
+  it('AC-23 (revised): a failing base build exits non-zero with "base did not build: <first error line>" and the output tail; every added file is not judged with that reason', async () => {
     const { root } = makeRepo()
     write(
       root,
@@ -554,12 +573,12 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
     addGoodHead(root)
     write(root, 'test/add-zero.test.js', testFile('add', 'assert.equal(add(0, 7), 7)'))
     commitAll(root, 'head: the build is fixed, multiply and two new tests')
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     const added = addedTests(root, base)
     expect(added.length).toBeGreaterThanOrEqual(2)
     const before = state(root)
 
-    const { status, out } = runWith(root, base, ['--build', 'node build.mjs'])
+    const { status, out } = await runWith(root, base, ['--build', 'node build.mjs'])
 
     for (const file of added) {
       expect(verdictsOf(out, file), out).toEqual(['not judged'])
@@ -570,10 +589,10 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
     expect(state(root)).toEqual(before)
   })
 
-  it('AC-23 (revised): a base whose dependencies cannot install (lockfile out of date) exits non-zero naming the pnpm error; every added file is not judged', () => {
+  it('AC-23 (revised): a base whose dependencies cannot install (lockfile out of date) exits non-zero naming the pnpm error; every added file is not judged', async () => {
     const root = emptyRepo()
     writeWorkspace(root, '@scope-a', BASE_MATH)
-    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     // The base commits a manifest change without the lockfile it needs: a frozen install of it fails.
     write(
       root,
@@ -598,13 +617,13 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
       appTest('multiply', 'assert.equal(multiply(2, 3), 6)'),
     )
     write(root, 'packages/app/test/add-zero.test.js', appTest('add', 'assert.equal(add(0, 7), 7)'))
-    expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
+    await expectExit0(root, 'pnpm', ['install', '--offline', '--no-frozen-lockfile'])
     commitAll(root, 'head: the lockfile is brought up to date')
-    expectGreenAtHead(root)
+    await expectGreenAtHead(root)
     expect(git(root, 'diff', '--name-only', base, 'HEAD')).toContain('pnpm-lock.yaml')
     const before = state(root)
 
-    const { status, out } = runWith(root, base, ['--build', ''])
+    const { status, out } = await runWith(root, base, ['--build', ''])
 
     for (const file of [
       'packages/app/test/multiply.test.js',
@@ -612,9 +631,9 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
     ]) {
       expect(verdictsOf(out, file), out).toEqual(['not judged'])
       // The first error line, not pnpm's progress lines before it.
-      // pnpm 9 prints ` ERR_PNPM_X  msg`, later versions `[ERR_PNPM_X] msg`.
+      // pnpm 9 prints ` ERR_PNPM_X  msg`, 10 and 11 `[ERR_PNPM_X] msg`, 12 `Error: ERR_PNPM_X`.
       expect(linesFor(out, file).join('\n'), out).toMatch(
-        /base did not build: \[?ERR_PNPM_OUTDATED_LOCKFILE\b/,
+        /base did not build: (?:\[|Error: )?ERR_PNPM_OUTDATED_LOCKFILE\b/,
       )
     }
     expect(status, out).not.toBe(0)

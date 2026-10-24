@@ -45,6 +45,7 @@ function rerunRepo(): Repo {
         scripts: {
           lint: 'node log.cjs lint',
           typecheck: 'node log.cjs typecheck',
+          'mutation:ratchet': 'true',
           test: 'vitest run',
         },
       }),
@@ -93,6 +94,8 @@ type LastRun = {
   diffHash?: string
   steps?: Record<string, string>
   vitest?: Array<{ file: string; name: string }>
+  stepsMs?: Record<string, number>
+  redStep?: string | null
 }
 
 async function redRun(repo: Repo): Promise<LastRun> {
@@ -117,6 +120,14 @@ describe('AC-16: --rerun-red re-runs only what was red, and is never a verdict',
     expect(last.steps).toMatchObject({ lint: 'ok', typecheck: 'red', tests: 'red' })
     expect((last.vitest ?? []).map((t) => t.name)).toEqual(['flips'])
     expect((last.vitest ?? [])[0]?.file ?? '').toMatch(/(^|\/)src\/a\.test\.ts$/)
+    // Audit 2026-10-22: the per-step milliseconds and the first red step, for gate-runs.tsv's steps_ms and red_step.
+    expect(Object.keys(last.stepsMs ?? {})).toEqual(Object.keys(last.steps ?? {}))
+    for (const [name, ms] of Object.entries(last.stepsMs ?? {})) {
+      expect(ms, name).toBeGreaterThanOrEqual(0)
+      expect(ms, name).toBeLessThan(120_000)
+    }
+    expect(last.stepsMs?.tests ?? 0).toBeGreaterThan(last.stepsMs?.lint ?? 0)
+    expect(last.redStep).toBe('typecheck')
 
     clearLogs(repo)
     const rerun = await gate(repo, ['--rerun-red'], {})

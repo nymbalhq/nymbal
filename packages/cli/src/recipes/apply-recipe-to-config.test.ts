@@ -113,6 +113,32 @@ const answersArb: fc.Arbitrary<Answers> = fc.record({
   seedDemo: fc.boolean(),
 })
 
+/** A recipe that writes one env() call, as no shipped recipe does since P3-07: what the `binds env` guard refuses. */
+const envWriterArb: fc.Arbitrary<Recipe> = fc
+  .record({
+    name: fc.stringMatching(/^generated-[a-z]{1,8}$/),
+    envName: fc.stringMatching(/^P3_07_[A-Z][A-Z0-9_]{0,10}$/),
+    fallback: fc.option(fc.stringMatching(/^[a-z][a-z0-9-]{0,11}$/), { nil: undefined }),
+    at: fc.constantFrom('infrastructure.redis', 'commerce.email', 'commerce.payments'),
+  })
+  .map(({ name, envName, fallback, at }) => {
+    const ref: RecipeValue = { env: envName, ...(fallback !== undefined && { default: fallback }) }
+    const value: RecipeValue =
+      at === 'infrastructure.redis'
+        ? { url: ref }
+        : at === 'commerce.email'
+          ? { provider: 'smtp', config: { smtp: { host: ref } } }
+          : { provider: 'stripe', config: { secretKey: ref } }
+    return {
+      name,
+      summary: 'A generated recipe that writes env()',
+      install: [],
+      set: [{ path: at, value }],
+      env: [{ name: envName, example: '', required: fallback === undefined, comment: '' }],
+      next: [],
+    }
+  })
+
 interface Variation {
   order: number[]
   comments: boolean[]
@@ -305,11 +331,7 @@ function foreignBreaks(original: string, edited: string): string[] {
     const around = [a[keptA[k]!], a[keptA[k + 1]!]].filter((l): l is string => l !== undefined)
     added.forEach((line, n) => {
       const into =
-        added.length === replaced.length
-          ? [replaced[n]!]
-          : replaced.length > 0
-            ? replaced
-            : around
+        added.length === replaced.length ? [replaced[n]!] : replaced.length > 0 ? replaced : around
       if (!into.some((l) => breakOf(l) === breakOf(line)))
         wrong.push(`${JSON.stringify(line)} went into ${JSON.stringify(into)}`)
     })
@@ -398,23 +420,30 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       fc.asyncProperty(fc.constantFrom(...targets), otherArb, async ({ recipe, entry }, other) => {
         const wanted = entry.value
         const wantedLeaf =
-          typeof wanted === 'object' && !isEnvRef(wanted)
+          typeof wanted === 'object' && !isEnvRef(wanted) && 'provider' in wanted
             ? (wanted as { provider?: unknown }).provider
             : wanted
         fc.pre(!SCAFFOLD_DEFAULTS.includes(other) && other !== wantedLeaf)
-        const key = entry.path.split('.').pop()!
-        const held =
+        const [parent, key] = entry.path.split('.') as [string, string]
+        expect(entry.path.split('.'), 'a set path is <property>.<key>').toHaveLength(2)
+        // The other value goes inside the entry's own parent object: at the key's line when the scaffold has one,
+        // else as a new first line of that object. Scoped to the parent, so `security.adapter` is not `http.adapter`.
+        const parentOpen = `\n  ${parent}: {\n`
+        const start = plain.indexOf(parentOpen)
+        expect(start, `the scaffold has a ${parent} object`).toBeGreaterThanOrEqual(0)
+        const bodyStart = start + parentOpen.length
+        const bodyEnd = plain.indexOf('\n  },', bodyStart)
+        const body = plain.slice(bodyStart, bodyEnd)
+        const heldBody =
           key === 'payments'
-            ? plain.replace(
+            ? body.replace(
                 /payments: \{ provider: 'native' \}/,
                 `payments: { provider: '${other}' }`,
               )
-            : new RegExp(`^ {4}${key}: '`, 'm').test(plain)
-              ? plain.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
-              : plain.replace(
-                  '  infrastructure: {\n',
-                  `  infrastructure: {\n    ${key}: '${other}',\n`,
-                )
+            : new RegExp(`^ {4}${key}: '`, 'm').test(body)
+              ? body.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
+              : `    ${key}: '${other}',\n${body}`
+        const held = plain.slice(0, bodyStart) + heldBody + plain.slice(bodyEnd)
         expect(held, 'the generator placed the other value').not.toBe(plain)
 
         const refused = applyRecipeToConfig(held, recipe, { force: false })
@@ -470,22 +499,30 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       plain.replace(head, `${head}import env from './env'\n`),
       plain.replace(head, `${head}const env = (name: string) => process.env[name] ?? ''\n`),
     ]
-    const writers = recipes.filter((r) => envNames(r).length > 0)
-    expect(writers.length, 'a recipe writes env()').toBeGreaterThan(0)
-    for (const source of foreign) {
-      for (const recipe of writers) {
-        let message = ''
-        try {
-          applyRecipeToConfig(source, recipe, { force: false })
-        } catch (error) {
-          message = (error as Error).message
+    // P3-07 Decision 1: no shipped recipe writes env() any more (Stripe's declared fields left `set`), so the guard is
+    // exercised by generated recipes that do, at slot and infrastructure paths the scaffold leaves at their defaults,
+    // with and without a default.
+    fc.assert(
+      fc.property(envWriterArb, (recipe) => {
+        expect(envNames(recipe).length).toBeGreaterThan(0)
+        for (const source of foreign) {
+          let message = ''
+          try {
+            applyRecipeToConfig(source, recipe, { force: false })
+          } catch (error) {
+            message = (error as Error).message
+          }
+          expect(message, `${recipe.name} on:\n${source.split('\n', 3).join('\n')}`).toMatch(
+            /edit by hand/i,
+          )
+          expect(message).toContain('binds `env`')
+          for (const { path } of recipe.set) expect(message).toContain(path)
         }
-        expect(message, `${recipe.name} on:\n${source.split('\n', 3).join('\n')}`).toMatch(
-          /edit by hand/i,
-        )
-        expect(message).toContain('binds `env`')
-        for (const { path } of recipe.set) expect(message).toContain(path)
-      }
+      }),
+      { numRuns: 50 },
+    )
+    const writers = recipes.filter((r) => envNames(r).length > 0)
+    for (const source of foreign) {
       for (const recipe of recipes.filter((r) => !writers.includes(r))) {
         const applied = sourceOf(applyRecipeToConfig(source, recipe, { force: false }), recipe.name)
         expect(applied.changed.length, recipe.name).toBeGreaterThan(0)

@@ -41,8 +41,9 @@ export interface SpecRecipe {
 
 export const REPO = fileURLToPath(new URL('../../../../../', import.meta.url))
 
-/** Decision 1: the four recipes and the package that ships each one. */
+/** Decision 1: the recipes and the package that ships each one; P2-04 AC-9 adds cloudflare, making five. */
 export const SPEC_HOLDERS: Readonly<Record<string, string>> = {
+  cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
   redis: '@nymbalhq/doc-store-redis',
   s3: '@nymbalhq/media-s3',
@@ -59,6 +60,7 @@ const NYMBAL_PACKAGES: Readonly<Record<string, string>> = {
   '@nymbalhq/event-bus-redis-streams': 'packages/event-bus-redis-streams',
   '@nymbalhq/media-s3': 'packages/media-s3',
   '@nymbalhq/adapter-stripe': 'packages/adapter-stripe',
+  '@nymbalhq/security-cloudflare': 'packages/security-cloudflare',
 }
 
 /** The SDKs the recipes install, and the workspace package whose node_modules already holds each. */

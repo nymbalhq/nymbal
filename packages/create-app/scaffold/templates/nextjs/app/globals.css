@@ -1,4 +1,4 @@
-@import '@nymbalhq/web-components/tokens.css';
+@import './tokens.css';
 
 /* ── CSS Reset ─────────────────────────────────────────────────────── */
 
@@ -169,7 +169,8 @@ a:focus-visible {
   border: 1px solid transparent;
   border-radius: var(--nymbal-radius-md);
   cursor: pointer;
-  transition: background-color var(--nymbal-transition-fast),
+  transition:
+    background-color var(--nymbal-transition-fast),
     color var(--nymbal-transition-fast),
     border-color var(--nymbal-transition-fast),
     box-shadow var(--nymbal-transition-fast);
@@ -243,7 +244,8 @@ select {
   background-color: var(--nymbal-color-surface);
   border: 1px solid var(--nymbal-color-border);
   border-radius: var(--nymbal-radius-md);
-  transition: border-color var(--nymbal-transition-fast),
+  transition:
+    border-color var(--nymbal-transition-fast),
     box-shadow var(--nymbal-transition-fast);
   appearance: none;
 }
@@ -279,26 +281,6 @@ label {
   font-size: var(--nymbal-font-size-xs);
   color: var(--nymbal-color-error);
   margin-top: var(--nymbal-spacing-xs);
-}
-
-/* ── Product Grid ──────────────────────────────────────────────────── */
-
-.product-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--nymbal-spacing-lg);
-}
-
-@media (min-width: 640px) {
-  .product-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .product-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
 }
 
 /* ── Link Styles ───────────────────────────────────────────────────── */

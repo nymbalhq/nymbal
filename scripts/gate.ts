@@ -9,11 +9,23 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { availableParallelism } from 'node:os'
 import { dirname, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { loadSentinels, type Sentinel, touchedPaths } from './sentinels'
+import {
+  acquireExclusive,
+  acquireShared,
+  composePorts,
+  type Hold,
+  liveHolders,
+  QUIET_MAX_WAIT_MS,
+  type StackBlock,
+  stack,
+  stackBlock,
+} from './stack'
 import {
   aggregate,
   classifySource,
@@ -40,6 +52,8 @@ export type StepSpec = {
   needs?: string[]
   /** The skip is because there is nothing for the step to do (not a precondition that failed). */
   idle?: boolean
+  /** The quiet lock it holds while it runs: `shared` for a CPU-heavy step, `exclusive` for a timing-bound one. */
+  hold?: 'shared' | 'exclusive'
 }
 
 export type RunOptions = {
@@ -48,16 +62,42 @@ export type RunOptions = {
   /** Progress and the output of red steps, as they happen. */
   log?: (text: string) => void
   env?: NodeJS.ProcessEnv
+  /** How a step takes its hold; the quiet lock of `cwd`'s repository when not given. */
+  acquire?: (mode: 'shared' | 'exclusive', label: string) => Promise<Hold>
+}
+
+/** The variable `vitest.config.ts` reads into `test.maxWorkers`; nested Vitest runs inherit it with the environment. */
+export const VITEST_WORKERS_ENV = 'NYMBAL_VITEST_MAX_WORKERS'
+
+/**
+ * The steps that run Vitest, themselves or nested (sentinels, tests-fail-on-base). Two gates' Vitest runs with a
+ * worker per core each starve each other's main process until a worker RPC times out, so each takes a share.
+ */
+const VITEST_STEPS = new Set([
+  'tests',
+  'integration-postgres',
+  'proof-kit-services',
+  'integration-stores',
+  'sentinels',
+  'tests-fail-on-base',
+])
+
+/** A Vitest step's workers when `holders` worktrees share `cpus`; none set when it is alone. */
+export function vitestWorkers(cpus: number, holders: number): number | undefined {
+  return holders <= 1 ? undefined : Math.max(1, Math.floor(cpus / holders))
 }
 
 export type RunResult = { exitCode: number; steps: Step[]; report: string }
 
 export const GATE_BUDGET_MS = 60_000
 export const FULL_BUDGET_MS = 600_000
-export const POSTGRES_URL = 'postgres://postgres:nymbal@localhost:54329/nymbal'
-/** The Mailpit API compose.yaml publishes; its SMTP port (11025) is the proof kit's default. */
-export const MAILPIT_URL = 'http://localhost:18025'
-export const REDIS_URL = 'redis://localhost:63799'
+const postgresUrl = (port: number): string => `postgres://postgres:nymbal@localhost:${port}/nymbal`
+const mailpitUrl = (port: number): string => `http://localhost:${port}`
+const redisUrl = (port: number): string => `redis://localhost:${port}`
+/** The services compose.yaml publishes in stack slot 0. */
+export const POSTGRES_URL = postgresUrl(stackBlock(0).postgres)
+export const MAILPIT_URL = mailpitUrl(stackBlock(0).mailpitUi)
+export const REDIS_URL = redisUrl(stackBlock(0).redis)
 /** The MinIO API compose.yaml publishes, on NYMBAL_MINIO_PORT when it is moved. */
 export const minioUrl = (port: string = '59000'): string => `http://localhost:${port}`
 
@@ -102,6 +142,18 @@ function isConfiguration(path: string): boolean {
 
 function isDocumentation(path: string): boolean {
   return path.endsWith('.md') || path.startsWith('docs/')
+}
+
+/**
+ * The harness's own Vitest projects: 63 files and most of the suite's file time (tooling 378 s of 512 s measured on
+ * 2026-10-22), moved only by the harness. The plain gate leaves them out unless the change touches the harness;
+ * gate:full and dev CI run them whatever changed.
+ */
+export const HARNESS_PROJECTS = ['tooling', 'architecture']
+
+/** A change to the harness: its scripts, or its own test projects. */
+export function isHarnessPath(path: string): boolean {
+  return /^(?:scripts|tests\/tooling|tests\/architecture)\//.test(path)
 }
 
 /** Which tests a change set needs: all when configuration moved, none for documentation only, else the changed ones. */
@@ -174,11 +226,13 @@ export function workspaceClosure(root: string, start: string): string[] {
 const NAMED_TEST_FILE =
   /\b(?:packages|tests|apps|templates)\/[\w./[\]-]+\.(?:test|spec)\.[cm]?[jt]sx?\b/g
 
-/** A change that can move every sentinel: configuration, the runner, or the sentinels themselves. */
+/**
+ * A change that can move every sentinel: the runner, or the sentinels themselves. A configuration change does not:
+ * dev CI runs every sentinel on every push, so a local gate:full selects by the changed files alone (P2-13 spent
+ * 246 s of 533 s on all of them for a package.json change).
+ */
 function selectsEverySentinel(path: string): boolean {
-  return (
-    isConfiguration(path) || path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
-  )
+  return path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
 }
 
 /**
@@ -353,10 +407,28 @@ function execute(
   })
 }
 
+/**
+ * What a step's row says about its hold: an exclusive one always (proof runs quote the wait), a shared one only when
+ * it waited past the bound and ran during another worktree's quiet. Its wait is not in the step's time.
+ */
+function holdNote(mode: 'shared' | 'exclusive', hold: Hold): string | undefined {
+  const waited = `${seconds(hold.waitedMs)} s`
+  if (mode === 'exclusive') {
+    return hold.quiet ? `quiet after a ${waited} wait` : `ran without quiet after a ${waited} wait`
+  }
+  return hold.quiet ? undefined : `ran during another worktree's quiet after a ${waited} wait`
+}
+
 /** Runs the steps in order, each as a shell command in `cwd`; a red step does not stop the later ones. */
 export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResult> {
   const results: Step[] = []
   const log = opts.log ?? ((): void => {})
+  const acquire =
+    opts.acquire ??
+    ((mode: 'shared' | 'exclusive', label: string): Promise<Hold> =>
+      mode === 'exclusive'
+        ? acquireExclusive(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS })
+        : acquireShared(opts.cwd, label, { maxWaitMs: QUIET_MAX_WAIT_MS }))
   for (const spec of steps) {
     const unmet = (spec.needs ?? []).flatMap((need) => {
       const earlier = results.find((s) => s.name === need)
@@ -371,14 +443,37 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
       log(`skipped ${spec.name}: ${reason}\n`)
       continue
     }
+    const mode = spec.hold
+    const hold = mode === undefined ? undefined : await acquire(mode, spec.name)
+    const quiet = mode === undefined || hold === undefined ? undefined : holdNote(mode, hold)
+    if (quiet !== undefined) log(`${spec.name}: ${quiet}\n`)
     log(`running ${spec.name}: ${spec.command}\n`)
     const started = performance.now()
-    const { code, output } = await execute(spec.command, opts.cwd, opts.env)
+    let code: number
+    let output: string
+    const workers = VITEST_STEPS.has(spec.name)
+      ? vitestWorkers(availableParallelism(), liveHolders(opts.cwd))
+      : undefined
+    if (workers !== undefined) log(`${spec.name}: ${workers} Vitest workers, the CPU shared\n`)
+    const env =
+      workers === undefined
+        ? opts.env
+        : { ...(opts.env ?? process.env), [VITEST_WORKERS_ENV]: String(workers) }
+    try {
+      ;({ code, output } = await execute(spec.command, opts.cwd, env))
+    } finally {
+      await hold?.()
+    }
     const ms = Math.round(performance.now() - started)
+    const details = [
+      ...(code === 0 ? [] : [`exit ${code}`]),
+      ...(quiet === undefined ? [] : [quiet]),
+    ]
+    const detail = details.length === 0 ? {} : { detail: details.join('; ') }
     if (code === 0) {
-      results.push({ name: spec.name, status: 'ok', ms })
+      results.push({ name: spec.name, status: 'ok', ms, ...detail })
     } else {
-      results.push({ name: spec.name, status: 'red', ms, detail: `exit ${code}` })
+      results.push({ name: spec.name, status: 'red', ms, ...detail })
       log(`${tail(output)}\n`)
     }
     log(`${spec.name}: ${results[results.length - 1]?.status} in ${seconds(ms)} s\n`)
@@ -814,6 +909,8 @@ export type PlanInput = {
   /** Where `external` services have an S3 API; with compose, the port compose.yaml publishes MinIO on. */
   s3Endpoint?: string | undefined
   minioPort?: string | undefined
+  /** The worktree's stack slot: its compose project and service ports. Slot 0 when not given. */
+  stack?: StackBlock
   /** The store set the E2E steps run on (`--stores`); `sqlite-memory`, today's plan, when not given. */
   stores?: StoreSet | undefined
   /** The build is not run here: its output is met by a downloaded artefact, if `artefactPresent`. */
@@ -821,6 +918,8 @@ export type PlanInput = {
   artefactPresent?: boolean | undefined
   /** `packages/<dir>` of the proof kit and what it imports (`workspaceClosure`); the kit alone when not given. */
   proofKitPackages?: string[] | undefined
+  /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
+  perfPackages?: string[] | undefined
   /** The sentinels gate:full runs: every one, or a selection (`selectSentinels`). Every one when not given. */
   sentinels?: 'all' | Set<string> | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
@@ -837,6 +936,9 @@ export type LastRun = {
   steps: Record<string, StepStatus>
   vitest: RedTest[]
   e2e: Record<string, boolean>
+  /** Each step's milliseconds, in plan order, and the first red step: what gate-runs.tsv keeps per run. */
+  stepsMs: Record<string, number>
+  redStep: string | null
 }
 
 const LAST_RUN = 'reports/last-run.json'
@@ -857,6 +959,30 @@ function rerunTestsCommand(red: RedTest[]): string {
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+/** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
+const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
+/** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
+const SHARED_HOLD_STEPS = new Set([
+  'tests',
+  'integration-postgres',
+  'proof-kit-services',
+  'integration-stores',
+  'stryker',
+  'sentinels',
+  'tests-fail-on-base',
+])
+const EXCLUSIVE_HOLD_STEPS = new Set(['perf', 'perf-postgres'])
+
+/** Marks each step with the hold it takes while it runs. */
+function withHolds(steps: StepSpec[]): StepSpec[] {
+  return steps.map((step) =>
+    EXCLUSIVE_HOLD_STEPS.has(step.name)
+      ? { ...step, hold: 'exclusive' }
+      : SHARED_HOLD_STEPS.has(step.name) || step.name.startsWith('e2e ')
+        ? { ...step, hold: 'shared' }
+        : step,
+  )
+}
 /** Where the tests step's Vitest JSON goes: test-quality reads it, and `--rerun-red` finds the red tests in it. */
 const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
@@ -873,6 +999,9 @@ const E2E_SERVES: Record<string, string[]> = {
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
   'astro-nosearch': [],
   'nextjs-nosearch': [],
+  // The native store with the project-elements fixture (tests/e2e/fixtures/override-elements) as each template's entry.
+  'astro-override': [],
+  'nextjs-override': [],
 }
 
 /**
@@ -984,6 +1113,29 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
   const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
   const red = input.rerun?.tests ?? []
+  // The timing-bound tests run in steps of their own. When `--only` leaves those steps out (CI's jobs name theirs), the
+  // tests and integration-postgres steps run them, as they did before the steps existed.
+  const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
+  const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  const harnessApart =
+    full || changed.some(isHarnessPath)
+      ? ''
+      : HARNESS_PROJECTS.map((name) => ` --project ${shellWord(`!${name}`)}`).join('')
+  const perfPackages = input.perfPackages ?? ['packages/platform']
+  const perfReached =
+    selection.mode === 'all' ||
+    (selection.mode === 'changed' &&
+      changed.some(
+        (path) => !isDocumentation(path) && perfPackages.some((dir) => path.startsWith(`${dir}/`)),
+      ))
+  const perf: StepSpec = perfReached
+    ? { name: 'perf', command: 'pnpm exec vitest run --project perf', ...buildNeeds }
+    : {
+        name: 'perf',
+        command: 'true',
+        skip: 'no change reaches the timing-bound tests',
+        idle: true,
+      }
   const tests: StepSpec =
     red.length > 0
       ? { name: 'tests', command: rerunTestsCommand(red), ...buildNeeds }
@@ -993,29 +1145,53 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           ? {
               name: 'tests',
               command:
-                `pnpm run test --changed ${base} --passWithNoTests ${VITEST_JSON}` +
+                `pnpm run test --changed ${base} --passWithNoTests${perfApart}${harnessApart} ${VITEST_JSON}` +
                 (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
               ...buildNeeds,
             }
-          : { name: 'tests', command: `pnpm run test ${VITEST_JSON}`, ...buildNeeds }
+          : {
+              name: 'tests',
+              command: `pnpm run test${perfApart}${harnessApart} ${VITEST_JSON}`,
+              ...buildNeeds,
+            }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
+    // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
+    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22).
+    { name: 'ratchet', command: 'pnpm --silent mutation:ratchet check --static' },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,
+    perf,
     { name: 'census trend', command: `${SCRIPT} census-trend ${base}` },
   ]
-  if (!full) return { steps: select(steps, input), budgetMs: GATE_BUDGET_MS }
+  if (!full) return { steps: select(withHolds(steps), input), budgetMs: GATE_BUDGET_MS }
 
   const external = input.services === 'external'
-  const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`
-  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? MAILPIT_URL) : MAILPIT_URL)}`
-  const redisUrl = external ? (input.redisUrl ?? REDIS_URL) : REDIS_URL
-  const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisUrl)}`
+  const block = input.stack ?? stackBlock(0)
+  const composedPostgres = postgresUrl(block.postgres)
+  const postgresAt = external ? (input.postgresUrl ?? composedPostgres) : composedPostgres
+  const composedMailpit = mailpitUrl(block.mailpitUi)
+  const postgres = `NYMBAL_TEST_POSTGRES_URL=${shellWord(postgresAt)}`
+  const mailpit = `NYMBAL_TEST_MAILPIT_URL=${shellWord(external ? (input.mailpitUrl ?? composedMailpit) : composedMailpit)} NYMBAL_TEST_MAILPIT_SMTP=localhost:${block.mailpitSmtp}`
+  const composedRedis = redisUrl(block.redis)
+  const redisAt = external ? (input.redisUrl ?? composedRedis) : composedRedis
+  const redis = `NYMBAL_TEST_REDIS_URL=${shellWord(redisAt)}`
+  // An explicit NYMBAL_MINIO_PORT moves MinIO off the block's port, for compose and the endpoint alike.
+  const minioPort = input.minioPort ?? String(block.minio)
   // External services bring their own credentials in the environment; compose's MinIO has its default root ones.
   const s3 = external
     ? `NYMBAL_TEST_S3_ENDPOINT=${shellWord(input.s3Endpoint ?? minioUrl())}`
-    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(input.minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+    : `NYMBAL_TEST_S3_ENDPOINT=${shellWord(minioUrl(minioPort))} NYMBAL_TEST_S3_ACCESS_KEY_ID=minioadmin NYMBAL_TEST_S3_SECRET_ACCESS_KEY=minioadmin`
+  // Slot 0 is compose.yaml's own project and default ports; another slot names both, so worktrees share no container.
+  const compose =
+    block.slot === 0
+      ? 'docker compose up -d --wait'
+      : `${Object.entries({ ...composePorts(block), NYMBAL_MINIO_PORT: minioPort })
+          .map(([name, value]) => `${name}=${shellWord(value)}`)
+          .join(' ')} docker compose -p ${block.project} up -d --wait`
+  // Playwright takes its servers' ports from the slot; slot 0 is what it resolves on its own in the main checkout.
+  const slotEnv = block.slot === 0 ? '' : `NYMBAL_STACK_SLOT=${block.slot} `
   // A set other than the default points the repo-root config at the composed services; the E2E server wrapper gives
   // the run a database and a key prefix of its own.
   const stores = storeSet(input.stores ?? 'sqlite-memory')
@@ -1027,8 +1203,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           `NYMBAL_COMMAND_STORE=${set.commandStore}`,
           `NYMBAL_DOCUMENT_STORE=${set.documentStore}`,
           `NYMBAL_EVENT_BUS=${set.eventBus}`,
-          `DATABASE_URL=${shellWord(external ? (input.postgresUrl ?? POSTGRES_URL) : POSTGRES_URL)}`,
-          ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisUrl)}`] : []),
+          `DATABASE_URL=${shellWord(postgresAt)}`,
+          ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisAt)}`] : []),
         ].join(' ') + ' '
   const e2eNeeds = stores === 'sqlite-memory' ? ['build'] : ['build', 'compose up']
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
@@ -1038,7 +1214,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
@@ -1063,10 +1239,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           skip: 'services are external (--services external)',
           idle: true,
         }
-      : { name: 'compose up', command: 'docker compose up -d --wait' },
+      : { name: 'compose up', command: compose },
     {
       name: 'integration-postgres',
-      command: `${postgres} pnpm exec vitest run --project integration-postgres`,
+      command: `${postgres} pnpm exec vitest run --project integration-postgres${picked('perf-postgres') ? '' : ' --project integration-postgres-perf'}`,
+      needs: ['compose up'],
+    },
+    {
+      name: 'perf-postgres',
+      command: `${postgres} pnpm exec vitest run --project integration-postgres-perf`,
       needs: ['compose up'],
     },
     {
@@ -1106,19 +1287,22 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     { name: 'e2e nextjs', command: e2e('nextjs'), needs: e2eNeeds },
     { name: 'e2e admin', command: e2e('admin'), needs: e2eNeeds },
   )
-  // The same journeys on the store whose search and payments are swapped for `custom` adapters, and the @nosearch
-  // journeys on the store whose search offers nothing. They prove the templates follow the adapters, which no store
-  // set changes, so they run on the default set only. Each target is its own invocation after the others:
-  // nextjs-custom and nextjs-nosearch serve the same templates/nextjs as nextjs.
+  // The same journeys on the store whose search and payments are swapped for `custom` adapters, the @nosearch journeys
+  // on the store whose search offers nothing, and the @override journeys on templates whose elements entry overrides
+  // a Nymbal element. They prove the templates follow the adapters and the project's entry, which no store set
+  // changes, so they run on the default set only. Each target is its own invocation after the others: nextjs-custom,
+  // nextjs-nosearch and nextjs-override serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
     steps.push(
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
+      { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
+      { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
   }
-  return { steps: select(steps, input), budgetMs: FULL_BUDGET_MS }
+  return { steps: select(withHolds(steps), input), budgetMs: FULL_BUDGET_MS }
 }
 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
@@ -1176,6 +1360,8 @@ function writeLastRun(root: string, steps: Step[], startedMs: number): void {
     sha: git(root, ['rev-parse', 'HEAD']).trim(),
     diffHash: diffHash(root),
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
+    stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
+    redStep: steps.find((s) => s.status === 'red')?.name ?? null,
     vitest:
       status('tests') === 'red'
         ? testsWith(
@@ -1319,6 +1505,8 @@ async function main(argv: string[]): Promise<number> {
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
   const s3Endpoint = process.env.NYMBAL_TEST_S3_ENDPOINT
   const minioPort = process.env.NYMBAL_MINIO_PORT
+  // Only gate:full starts services and servers; the plain gate needs no slot.
+  const block = values.full ? stack(root) : undefined
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
@@ -1339,9 +1527,11 @@ async function main(argv: string[]): Promise<number> {
     ...(s3Endpoint === undefined || s3Endpoint === '' ? {} : { s3Endpoint }),
     ...(minioPort === undefined || minioPort === '' ? {} : { minioPort }),
     ...(stores === undefined ? {} : { stores }),
+    ...(block === undefined ? {} : { stack: block }),
     noBuild: values['no-build'],
     artefactPresent: values['no-build'] && artefactPresent(root),
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
+    perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
     ...(last === undefined
       ? {}

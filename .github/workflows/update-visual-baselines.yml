@@ -3,24 +3,19 @@ name: Update visual baselines
 on:
   workflow_dispatch:
 
-env:
-  PNPM_VERSION: '9.12.3'
-
 permissions:
   contents: write
 
 jobs:
   update-baselines:
     name: Generate baselines (Linux / Chromium)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           lfs: true
 
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v7
         with:

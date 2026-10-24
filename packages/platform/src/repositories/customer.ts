@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { asc, eq, gt, sql } from 'drizzle-orm'
 import type { Customer, CustomerAddress, Role } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -10,6 +10,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
 
 export interface CustomerInsert {
@@ -68,6 +69,8 @@ export interface CustomerRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<CustomerWithHash | null>
   findByEmail(tx: ReadTx, email: string): Promise<CustomerWithHash | null>
   list(tx: ReadTx, opts?: { limit?: number; offset?: number }): Promise<CustomerWithHash[]>
+  /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
+  listPage(tx: ReadTx, page: KeysetPage): Promise<CustomerWithHash[]>
   insert(tx: Tx, c: CustomerInsert): Promise<void>
   update(tx: Tx, id: string, patch: CustomerUpdate): Promise<void>
   incrementStats(
@@ -113,6 +116,27 @@ export function createCustomerRepository(store: CommandStore): CustomerRepositor
         .from(postgresSchema.customers)
         .where(eq(postgresSchema.customers.email, normalized))
       return row ? rowToCustomer('postgres', row as Record<string, unknown>) : null
+    },
+    async listPage(tx, page) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.customers
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(page.after === undefined ? undefined : gt(t.id, page.after))
+          .orderBy(asc(t.id))
+          .limit(page.limit)
+          .all()
+        return rows.map((r) => rowToCustomer('sqlite', r as Record<string, unknown>))
+      }
+      const t = postgresSchema.customers
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(page.after === undefined ? undefined : gt(t.id, page.after))
+        .orderBy(asc(t.id))
+        .limit(page.limit)
+      return rows.map((r) => rowToCustomer('postgres', r as Record<string, unknown>))
     },
     async list(tx, opts = {}) {
       const limit = opts.limit ?? 1000

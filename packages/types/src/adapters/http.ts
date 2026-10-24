@@ -1,5 +1,18 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
+/** The request header a caller may name its own correlation id in, and the response header that echoes the one used. */
+export const CORRELATION_ID_HEADER = 'x-correlation-id'
+
+const CORRELATION_ID = /^[A-Za-z0-9._:-]{1,128}$/
+
+/**
+ * Whether `s` may be used as a correlation id: it reaches logs and the event log, so an inbound value that fails is
+ * replaced, never cleaned. The id is a label only; nothing reads it to decide access.
+ */
+export function isValidCorrelationId(s: string): boolean {
+  return CORRELATION_ID.test(s)
+}
+
 export interface RequestAuth {
   userId?: string
   roles?: string[]
@@ -27,6 +40,7 @@ export interface RequestContext<TBody = unknown, TQuery = Record<string, string 
   cookies: Record<string, string>
   auth?: RequestAuth
   requestId: string
+  /** The inbound `x-correlation-id` when `isValidCorrelationId` accepts it, else the request id. */
   correlationId: string
   logger: Logger
   ip: string

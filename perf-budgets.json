@@ -1,0 +1,66 @@
+{
+  "astro": {
+    "home": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 27648
+    },
+    "listing": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 30720
+    },
+    "product": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 34816
+    },
+    "cart": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 27648
+    },
+    "checkout": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 31744
+    }
+  },
+  "nextjs": {
+    "home": {
+      "lcpMs": 3000,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 187392
+    },
+    "listing": {
+      "lcpMs": 3000,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 190464
+    },
+    "product": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 191488
+    },
+    "cart": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 190464
+    },
+    "checkout": {
+      "lcpMs": 2500,
+      "cls": 0.1,
+      "tbtMs": 200,
+      "scriptBytes": 193536
+    }
+  }
+}

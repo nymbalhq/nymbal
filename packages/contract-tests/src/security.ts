@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { SecurityAdapter, SecurityConfigLike } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
 
 const testConfig: SecurityConfigLike = {
   rateLimit: {
@@ -14,27 +15,37 @@ const testConfig: SecurityConfigLike = {
   },
 }
 
-export function runSecurityContract(build: () => SecurityAdapter): void {
-  describe('SecurityAdapter contract', () => {
-    it('validate accepts a valid config', async () => {
-      const adapter = build()
-      const result = await adapter.validate(testConfig)
-      expect(typeof result.valid).toBe('boolean')
-      expect(Array.isArray(result.errors)).toBe(true)
-    })
+export function runSecurityContract(
+  name: string,
+  build: Build<SecurityAdapter>,
+  options: ContractOptions<SecurityAdapter> = {},
+): void {
+  describe(`SecurityAdapter contract: ${name}`, () => {
+    it(
+      'validate accepts a valid config',
+      async () => {
+        const adapter = await build()
+        const result = await adapter.validate(testConfig)
+        expect(typeof result.valid).toBe('boolean')
+        expect(Array.isArray(result.errors)).toBe(true)
+      },
+      CASE_MS,
+    )
 
-    it('validate of empty config reports errors', async () => {
-      const adapter = build()
-      const result = await adapter.validate({} as SecurityConfigLike)
-      if (!result.valid) {
-        expect(result.errors.length).toBeGreaterThan(0)
-      }
-    })
+    it(
+      'validate of empty config reports errors',
+      async () => {
+        const adapter = await build()
+        const result = await adapter.validate({} as SecurityConfigLike)
+        if (!result.valid) {
+          expect(result.errors.length).toBeGreaterThan(0)
+        }
+      },
+      CASE_MS,
+    )
 
-    it('healthCheck returns a valid report', async () => {
-      const adapter = build()
-      const report = await adapter.healthCheck()
-      expect(['healthy', 'degraded', 'down']).toContain(report.status)
-    })
+    healthAndDowntime(build, options.unreachable, 'validate()', async (adapter) =>
+      adapter.validate(testConfig),
+    )
   })
 }

@@ -3,10 +3,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './workspace-manifests'
 
-// Acceptance test for P0-05 AC-5: one Node for local and CI. `.node-version` names major 22, `.npmrc` makes the
-// `engines` field binding (`engine-strict=true`), and every `actions/setup-node` step reads `.node-version`
-// instead of its own version. The drift this stops: a better-sqlite3 built for one Node ABI loaded by another
-// (2026-10-17).
+// Acceptance test for P0-05 AC-5: one Node for local and CI. `.node-version` names major 26, `pnpm-workspace.yaml`
+// makes the `engines` field binding (`engineStrict: true`; pnpm 11+ reads no settings from `.npmrc`), and every
+// `actions/setup-node` step reads `.node-version` instead of its own version. The drift this stops: a
+// better-sqlite3 built for one Node ABI loaded by another (2026-10-17).
 
 const WORKFLOWS = join(REPO_ROOT, '.github/workflows')
 
@@ -37,20 +37,18 @@ function setupNodeSteps(file: string, source: string): SetupNodeStep[] {
 }
 
 describe('AC-5: a pinned Node, strict engines, and CI reading the pin', () => {
-  it('AC-5: .node-version exists and names major 22', () => {
+  it('AC-5: .node-version exists and names major 26', () => {
     const file = join(REPO_ROOT, '.node-version')
     expect(existsSync(file), '.node-version at the repository root').toBe(true)
     const first = readFileSync(file, 'utf8').split('\n')[0]!.trim()
-    expect(first).toMatch(/^v?22(?:\.\d+){0,2}$/)
+    expect(first).toMatch(/^v?26(?:\.\d+){0,2}$/)
   })
 
-  it('AC-5: .npmrc sets engine-strict=true', () => {
-    const settings = readFileSync(join(REPO_ROOT, '.npmrc'), 'utf8')
+  it('AC-5: pnpm-workspace.yaml sets engineStrict: true', () => {
+    const engineStrict = readFileSync(join(REPO_ROOT, 'pnpm-workspace.yaml'), 'utf8')
       .split('\n')
-      .map((l) => l.replace(/[#;].*$/, '').trim())
-      .filter((l) => l.length > 0)
-      .map((l) => l.split('=').map((s) => s.trim()))
-    const engineStrict = settings.filter(([key]) => key === 'engine-strict').map(([, v]) => v)
+      .map((l) => /^engineStrict:\s*([^#\s]*)/.exec(l)?.[1])
+      .filter((v) => v !== undefined)
     expect(engineStrict).toEqual(['true'])
   })
 

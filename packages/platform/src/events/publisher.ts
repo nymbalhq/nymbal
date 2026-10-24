@@ -2,6 +2,7 @@ import type { EventBusAdapter, NymbalEvent, NymbalEventMap, NymbalEventType } fr
 import { afterCommit, type CommandStore } from '../db/command-store.js'
 import type { EventLogRepository } from '../repositories/event-log.js'
 import { createEventBuilder, type EventBuilderContext, type MakeEventOptions } from './builder.js'
+import { currentCorrelationId } from './correlation.js'
 import type { Relay } from './relay.js'
 
 export interface PublishOptions extends MakeEventOptions {}
@@ -58,9 +59,11 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
     payload: NymbalEventMap[E],
     options: PublishOptions = {},
   ): NymbalEvent<NymbalEventMap[E]> {
+    // An explicit id, then a correlated() publisher's, then the scope's; with none, the event is its own id.
+    const correlationId = options.correlationId ?? opts.correlationId ?? currentCorrelationId()
     return makeEvent(type, payload, {
-      ...(opts.correlationId !== undefined && { correlationId: opts.correlationId }),
       ...options,
+      ...(correlationId !== undefined && { correlationId }),
     })
   }
 

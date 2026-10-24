@@ -19,6 +19,10 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createProductService } from './product-service.js'
 import { createInventoryService } from './inventory-service.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -239,6 +243,68 @@ describe('InventoryService', () => {
     const p = products.find((pr) => pr.variants.some((v) => v.id === variant.id))!
     await product.delete(p.id)
     await expect(inventory.commitReservation(reservationId, 'test')).rejects.toThrow(NotFoundError)
+    await commandStore.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('InventoryService: audit notes', () => {
+  it('AC-2: under an actor with no opener, adjust, reserve, release and commit each leave one applied entry naming the variant; a release of nothing leaves none', async () => {
+    const { commandStore, product, inventory } = await setup()
+    const variant = await createTestVariant(product, 10)
+    await runAsActor(importer, () => inventory.adjustStock(variant.id, 5, 'manual', 'admin'))
+    const first = await runAsActor(importer, () => inventory.reserveStock(variant.id, 2))
+    await runAsActor(importer, () => inventory.releaseReservation(first.reservationId, 'cancelled'))
+    const second = await runAsActor(importer, () => inventory.reserveStock(variant.id, 3))
+    await runAsActor(importer, () =>
+      inventory.commitReservation(second.reservationId, 'fulfillment'),
+    )
+    await runAsActor(importer, () => inventory.releaseReservation('ghost-id', 'abandoned'))
+    const subjects = [{ type: 'variant', id: variant.id }]
+    expect(await noted(commandStore)).toEqual([
+      { actor: importer, command: 'inventory.adjust', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'inventory.reserve', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'inventory.release', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'inventory.reserve', subjects, outcome: 'applied', status: null },
+      { actor: importer, command: 'inventory.commit', subjects, outcome: 'applied', status: null },
+    ])
+    await commandStore.close()
+  })
+
+  it('AC-2: an adjustment refused inside its transaction is recorded as inventory.adjust refused, naming the variant', async () => {
+    const { commandStore, product, inventory } = await setup()
+    const variant = await createTestVariant(product, 5)
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(commandStore, undefined, () =>
+          inventory.adjustStock(variant.id, -10, 'manual', 'admin'),
+        ),
+      ),
+    ).rejects.toThrow(ValidationError)
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: admin,
+        command: 'inventory.adjust',
+        subjects: [{ type: 'variant', id: variant.id }],
+        outcome: 'refused',
+        status: 400,
+      },
+    ])
     await commandStore.close()
   })
 })

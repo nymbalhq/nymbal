@@ -111,9 +111,10 @@ test.describe('Astro account at Pixel 7', () => {
         innerWidth: window.innerWidth,
       }))
       // Mobile Chrome zooms out to fit a page wider than its viewport, which raises innerWidth to the page's width, so
-      // scrollWidth ≤ innerWidth alone would pass on the defect: both are held to the device's 412.
+      // scrollWidth ≤ innerWidth alone would pass on the defect: both are held to the device's 412. CI's Chromium
+      // rounds a sub-pixel layout up to 413 on a page that fits (the defect measured 468), so one pixel is allowed.
       const measured = `${path}: scrollWidth ${scrollWidth}, innerWidth ${innerWidth}, Pixel 7 ${viewportWidth}`
-      expect.soft(scrollWidth, measured).toBeLessThanOrEqual(viewportWidth)
+      expect.soft(scrollWidth, measured).toBeLessThanOrEqual(viewportWidth + 1)
       expect.soft(innerWidth, measured).toBe(viewportWidth)
     }
   })

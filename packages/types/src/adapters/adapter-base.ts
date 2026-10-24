@@ -129,16 +129,45 @@ export type CommerceSlot =
   | 'tax'
   | 'ai'
 
-/** Every slot an adapter package can fill: the commerce slots and the infrastructure primitives. */
-export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media'
+/**
+ * Every slot an adapter package can fill: the commerce slots, the infrastructure primitives and `security`, whose
+ * choice is `security.adapter`.
+ */
+export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media' | 'security'
 
 /**
  * What the kernel hands an adapter package's `createAdapter`. A package that serves more than one slot switches on
- * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, or a primitive's connection block.
+ * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, a primitive's connection block, or for
+ * `security` the block named after the adapter (`security.cloudflare`).
  */
 export interface AdapterContext {
   slot: Slot
   config: Record<string, unknown>
   logger: Logger
   env: NodeJS.ProcessEnv
+}
+
+/**
+ * One field of a slot's config block that a store owner may fill from the admin's Settings, as a provider package
+ * declares it in its `settings` export. The config block wins, then `env`, then a saved value.
+ */
+export interface AdapterSetting {
+  /** A dot path inside the slot's config block: `secretKey`, `smtp.pass`. */
+  path: string
+  label: string
+  /** Stored encrypted and never shown again once saved. */
+  secret: boolean
+  /** The environment variable that sets the field when the config block does not. */
+  env?: string
+  /**
+   * The adapter works without it (SMTP without authentication), so a secret left unset does not leave the slot
+   * unconfigured.
+   */
+  optional?: boolean
+}
+
+/** What a provider package exports: `createAdapter`, and the fields it lets Settings fill. */
+export interface ProviderPackageModule {
+  createAdapter(ctx: AdapterContext): unknown
+  settings?: readonly AdapterSetting[]
 }

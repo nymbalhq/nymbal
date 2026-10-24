@@ -2,24 +2,37 @@
 
 import { useRef, useState } from 'react'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
-import { STOCK_LABELS, stockLevel } from '@nymbalhq/types'
-import { useProduct, VariantSelector, AddToCart, QuantitySelector } from '@nymbalhq/react'
-import { formatPrice } from '@/lib/format'
+import {
+  useProduct,
+  VariantSelector,
+  AddToCart,
+  ProductPrice,
+  QuantitySelector,
+  StockBadge,
+} from '@nymbalhq/react'
 import styles from '@/styles/pages/pdp.module.css'
 
 interface ProductInteractiveProps {
   product: DenormalisedProduct
+  /** The server's render of each element, for the product's first variant (app/product/[slug]/page.tsx). */
+  serverHtml?: {
+    price: string
+    stock: string
+    variantSelector: string
+    quantity: string
+    addToCart: string
+  }
 }
 
-export function ProductInteractive({ product }: ProductInteractiveProps) {
+export function ProductInteractive({ product, serverHtml }: ProductInteractiveProps) {
   const { selectedVariant } = useProduct(product.slug)
 
   const variant = selectedVariant ?? product.variants?.[0]
-  const price = variant?.priceMinor ?? product.priceMinor ?? 0
-  const currency = product.currency ?? 'GBP'
   // A product with no variants has nothing to sell, so it reads as out of stock.
   const stock = variant?.stock ?? 0
-  const level = stockLevel(stock)
+  // The price and the badge are the server's first variant until the store settles on this product; they follow it
+  // themselves, so a soft navigation from another product never shows that product's price here.
+  const first = product.variants?.[0]
 
   // The quantity belongs to the variant it was chosen for, so a variant change starts again at 1.
   const [chosen, setChosen] = useState<{ variantId: string | undefined; qty: number }>({
@@ -40,18 +53,18 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
         {product.name}
       </h1>
 
-      <div className={styles.price} data-testid="product-price">
-        {formatPrice(price, currency)}
-      </div>
+      <ProductPrice
+        productId={product.id}
+        priceMinor={first?.priceMinor ?? product.priceMinor ?? 0}
+        currency={product.currency ?? 'GBP'}
+        serverHtml={serverHtml?.price}
+      />
 
-      <div className={styles.stockBadge} data-testid="stock-badge" data-level={level}>
-        <span className={styles.stockDot} aria-hidden="true" />
-        {STOCK_LABELS[level]}
-      </div>
+      <StockBadge productId={product.id} stock={first?.stock ?? 0} serverHtml={serverHtml?.stock} />
 
       {hasVariantChoice && (
         <div className={styles.variantSection}>
-          <VariantSelector />
+          <VariantSelector product={product} serverHtml={serverHtml?.variantSelector} />
         </div>
       )}
 
@@ -62,6 +75,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
             value={1}
             min={1}
             max={99}
+            serverHtml={serverHtml?.quantity}
             onQuantityChange={(e) => {
               // A typed quantity changes on blur, and the press on Add is what blurs it: the wrapper's effect lands
               // after a fast click has already read `qty`, so the element gets it here, in the same event.
@@ -75,6 +89,7 @@ export function ProductInteractive({ product }: ProductInteractiveProps) {
           variantId={variant?.id ?? product.id}
           qty={qty}
           disabled={stock <= 0}
+          serverHtml={serverHtml?.addToCart}
         />
       </div>
     </div>

@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { runDocumentStoreContract } from '@nymbalhq/contract-tests'
+import {
+  adapterContext,
+  runDocumentStoreContract,
+  type DocumentStoreContractOptions,
+} from '@nymbalhq/contract-tests'
 import type { DocumentStoreAdapter } from '@nymbalhq/types'
 import {
   createDatabase,
@@ -7,15 +11,16 @@ import {
   queryOnce,
   type TestDatabase,
 } from '../../platform/tests/support/postgres'
-import { documentStoreAcceptance } from '../../../tests/contracts/suites/document-store'
-import { adapterContext } from '../../../tests/contracts/suites/adapter-context'
+import { closedPort } from '../../../tests/support/tcp-proxy'
 import { createAdapter } from './index.js'
 
-// P2-02 AC-2 on @nymbalhq/doc-store-postgres-jsonb (spec P2-02-primitives-are-protocols): the extended
-// runDocumentStoreContract and the reference-model property (tests/contracts/suites/document-store.ts), on a fresh
-// database on the composed Postgres; every store gets a prefix of its own. The store is built as the kernel builds it,
-// createAdapter with the connection (decision 1: the postgresUrl option, then DATABASE_URL) and initialize() (decision
-// 5). Kills, beyond the suites': replicas that start together failing a boot on the table's DDL (M3).
+// P2-02 AC-2 on @nymbalhq/doc-store-postgres-jsonb (spec P2-02-primitives-are-protocols), on a fresh database on the
+// composed Postgres, and P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): runDocumentStoreContract from the
+// published package runs the old cases and the reference-model property, and, given `unreachable`, the downtime cases;
+// every store gets a prefix of its own. The store is built as the kernel builds it, createAdapter with the connection
+// (P2-02 decision 1: the postgresUrl option, then DATABASE_URL) and initialize() (decision 5). `unreachable` is a store
+// on a closed port: pg connects per query, so nothing needs to be up first. Kills, beyond the suite's: replicas that
+// start together failing a boot on the table's DDL (M3).
 
 type JsonbStore = DocumentStoreAdapter & { initialize(): Promise<void> }
 
@@ -37,16 +42,28 @@ async function storeOn(url: string, prefix: string): Promise<JsonbStore> {
   return store
 }
 
+/** A store whose Postgres refuses: never initialized, since initialize() is what would reach it. */
+async function unreachable(): Promise<DocumentStoreAdapter> {
+  const url = `postgres://postgres:nymbal@127.0.0.1:${await closedPort()}/nymbal`
+  return (await createAdapter(
+    adapterContext(
+      'documentStore',
+      { postgresUrl: url, prefix: 'p2-13-down' },
+      { DATABASE_URL: url },
+    ),
+  )) as DocumentStoreAdapter
+}
+
 const make = () => storeOn(db.url, `p2-02-${(count += 1)}`)
-const opts = {
+const opts: DocumentStoreContractOptions = {
   isolation: async (): Promise<[DocumentStoreAdapter, DocumentStoreAdapter]> => [
     await storeOn(db.url, `p2-02-iso-a-${(count += 1)}`),
     await storeOn(db.url, `p2-02-iso-b-${count}`),
   ],
+  unreachable,
 }
 
 runDocumentStoreContract('postgres-jsonb', make, opts)
-documentStoreAcceptance('postgres-jsonb', make, opts)
 
 describe('P2-02 AC-2 (decision 5): Postgres JSONB owns its table', () => {
   it('AC-2: four replicas initialize() at once on a database without the table, every one succeeds, and nymbal_documents is keyed (prefix, collection, key)', async () => {

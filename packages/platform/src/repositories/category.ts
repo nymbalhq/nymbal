@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { asc, eq, gt } from 'drizzle-orm'
 import type { Category } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -10,6 +10,7 @@ import {
 } from '../db/command-store.js'
 import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
+import type { KeysetPage } from './page.js'
 import { fromTimestamp } from './json.js'
 
 export interface CategoryInsert {
@@ -45,6 +46,8 @@ export interface CategoryRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Category | null>
   findBySlug(tx: ReadTx, slug: string): Promise<Category | null>
   list(tx: ReadTx): Promise<Category[]>
+  /** Rows by id after `page.after`: a walk over the table that a concurrent write cannot make skip a row. */
+  listPage(tx: ReadTx, page: KeysetPage): Promise<Category[]>
   insert(tx: Tx, c: CategoryInsert): Promise<void>
   update(tx: Tx, id: string, patch: CategoryUpdate): Promise<void>
   delete(tx: Tx, id: string): Promise<void>
@@ -82,6 +85,27 @@ export function createCategoryRepository(store: CommandStore): CategoryRepositor
         .from(postgresSchema.categories)
         .where(eq(postgresSchema.categories.slug, slug))
       return row ? rowToCategory(row as Record<string, unknown>) : null
+    },
+    async listPage(tx, page) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.categories
+        const rows = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(page.after === undefined ? undefined : gt(t.id, page.after))
+          .orderBy(asc(t.id))
+          .limit(page.limit)
+          .all()
+        return rows.map((r) => rowToCategory(r as Record<string, unknown>))
+      }
+      const t = postgresSchema.categories
+      const rows = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(page.after === undefined ? undefined : gt(t.id, page.after))
+        .orderBy(asc(t.id))
+        .limit(page.limit)
+      return rows.map((r) => rowToCategory(r as Record<string, unknown>))
     },
     async list(tx) {
       if (tx.kind === 'sqlite') {

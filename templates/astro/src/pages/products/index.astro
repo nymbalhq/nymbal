@@ -1,10 +1,8 @@
 ---
 import '../../styles/pages/plp.css'
-import '../../styles/pages/home.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import Breadcrumb from '../../components/Breadcrumb.astro'
-import ProductCard from '../../components/ProductCard.astro'
-import Pagination from '../../components/Pagination.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardImageOf, cardProductOf } from '@nymbalhq/web-components/ssr'
 import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
 import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
 
@@ -17,17 +15,20 @@ const [productResult, categories] = await Promise.all([
   fetchCategories(),
 ])
 
-const products = productResult.items
+const products = productResult.items.map(cardProductOf)
+// The first card's image is the page's LCP, and the preload scanner never reaches it inside the grid's shadow root:
+// the head starts it.
+const firstImage = products[0] === undefined ? null : cardImageOf(products[0]).url
 const facets = productResult.facets ?? []
 ---
 
 <BaseLayout title="All Products | Nymbal" description="Browse our full product collection.">
+  {firstImage && <link slot="head" rel="preload" as="image" href={firstImage} fetchpriority="high" />}
   <div class="container section">
-    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Products' }]} />
+    <NymbalElement tag="nymbal-breadcrumb" attributes={{ items: JSON.stringify([{ label: 'Home', href: '/' }, { label: 'Products' }]) }} />
 
     <div class="plp-header">
       <h1 class="plp-title">All Products</h1>
-      <p class="plp-count" id="product-count">{products.length} products</p>
     </div>
 
     <div class="plp-layout">
@@ -57,20 +58,14 @@ const facets = productResult.facets ?? []
           </div>
         )}
 
-        <div class="product-grid" id="product-grid">
-          {products.map((product) => (
-            <ProductCard product={product} />
-          ))}
-        </div>
-
-        {products.length === 0 && (
-          <div class="plp-empty">
-            <h2 class="plp-empty-title">No products found</h2>
-            <p class="plp-empty-text">Try adjusting your filters.</p>
-          </div>
-        )}
-
-        <Pagination />
+        <NymbalElement
+          tag="nymbal-product-grid"
+          attributes={{
+            products: JSON.stringify(products),
+            source: 'product-list',
+            ...(productResult.nextCursor !== null && { 'has-more': '' }),
+          }}
+        />
       </div>
     </div>
   </div>

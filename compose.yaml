@@ -1,6 +1,9 @@
-# Services the integration tests and E2E runs depend on. `pnpm gate:full` runs `docker compose up -d --wait` and
-# leaves them running. Host ports are deliberately away from the defaults so they do not collide with other
-# projects' containers; each can be moved with the variable named in its mapping.
+# Services the integration tests and E2E runs depend on. `pnpm gate:full` brings them up and leaves them running.
+# Host ports are deliberately away from the defaults so they do not collide with other projects' containers; each can
+# be moved with the variable named in its mapping. The project and the ports come from the worktree's stack slot
+# (scripts/stack.ts): the main checkout is slot 0, this file's `nymbal` and defaults; a linked worktree's slot runs
+# `docker compose -p nymbal-s<k>` with every port moved, so worktrees share no container. A hand-run `docker compose`
+# gets both in a subshell, so the slot is not left pinned in the shell: `(eval "$(pnpm --silent stack env)"; docker compose up -d)`.
 name: nymbal
 
 services:

@@ -144,7 +144,21 @@ export const infrastructureSchema = z
     }
   })
 
-export const securitySchema = z.object({
+/** Where a `cloudflare` store's rules go: required when `security.adapter` is `cloudflare`, read with `env()`. */
+const cloudflareSchema = z.object({
+  zoneId: z.string().optional(),
+  apiToken: z.string().optional(),
+  /** The Cloudflare v4 API; the adapter defaults it to https://api.cloudflare.com/client/v4. */
+  apiBase: z.string().url().optional(),
+})
+
+const customRuleSchema = z.object({
+  name: z.string().min(1),
+  expression: z.string().min(1),
+  action: z.enum(['block', 'managed_challenge', 'js_challenge', 'log']),
+})
+
+const securityFields = z.object({
   adapter: z.enum(['middleware', 'cloudflare', 'aws-waf', 'akamai']),
   rateLimit: z
     .record(
@@ -184,7 +198,48 @@ export const securitySchema = z.object({
         .default('7d'),
     })
     .default({}),
+  cloudflare: cloudflareSchema.optional(),
+  geo: z
+    .object({
+      block: z
+        .array(z.string().regex(/^[A-Z]{2}$/, 'geo.block codes are ISO 3166 alpha-2, like "RU"'))
+        .default([]),
+    })
+    .default({ block: [] }),
+  customRules: z.array(customRuleSchema).default([]),
+  managedRulesets: z.array(z.enum(['cloudflare', 'owasp'])).default([]),
 })
+
+export const securitySchema = securityFields.superRefine((security, ctx) => {
+  if (security.adapter === 'cloudflare') {
+    for (const field of ['zoneId', 'apiToken'] as const) {
+      if (!security.cloudflare?.[field]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['cloudflare', field],
+          message: `security.adapter 'cloudflare' needs security.cloudflare.${field}`,
+        })
+      }
+    }
+  }
+  const seen = new Set<string>()
+  security.customRules.forEach((rule, i) => {
+    if (seen.has(rule.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customRules', i, 'name'],
+        message: `customRules has two rules named '${rule.name}'; names must be unique`,
+      })
+    }
+    seen.add(rule.name)
+  })
+})
+
+/**
+ * npm's rules for a new package name: lower case and URL-safe, optionally `@scope/`, never starting with `.` or `_`.
+ * The 214-character limit is checked beside it.
+ */
+const NPM_PACKAGE_NAME = /^(?:@[a-z0-9~-][a-z0-9._~-]*\/)?[a-z0-9~-][a-z0-9._~-]*$/
 
 /** A slot's block: its provider must be one the slot knows, and an unknown one is named with the slot's list. */
 function adapterBlock<const P extends readonly [string, ...string[]]>(
@@ -202,6 +257,12 @@ function adapterBlock<const P extends readonly [string, ...string[]]>(
           : { message: ctx.defaultError },
     }),
     config: z.record(z.string(), z.unknown()).optional(),
+    /** The npm package a `custom` slot's adapter comes from, for tooling (`nymbal test:contracts`); the kernel never reads it. */
+    package: z
+      .string()
+      .max(214, 'an npm package name is at most 214 characters')
+      .regex(NPM_PACKAGE_NAME, 'must be an npm package name, such as `@acme/nymbal-search`')
+      .optional(),
   })
 }
 
@@ -248,6 +309,34 @@ export const featuresSchema = z.object({
   autoUpdates: z.boolean().default(false),
 })
 
+/**
+ * The bucket delivered events past retention are archived to before they are deleted. Its objects hold customer
+ * data, so it must be private: never the media bucket, which serves its objects publicly. Credentials come from the
+ * AWS SDK's default chain, as `infrastructure.s3`'s do.
+ */
+export const eventArchiveSchema = z
+  .object({
+    adapter: z.literal('s3'),
+    bucket: z.string().min(1),
+    /** Where every archive key starts; none when not given. */
+    prefix: z.string().optional(),
+    /** `'us-east-1'` when not given. */
+    region: z.string().min(1).optional(),
+    /** An S3-compatible API (MinIO, R2). */
+    endpoint: z.string().min(1).optional(),
+    /** Path-style requests; true by default when an endpoint is set. */
+    forcePathStyle: z.boolean().optional(),
+  })
+  .strict()
+
+export const eventsSchema = z
+  .object({
+    /** Days a delivered event stays in the log. */
+    retentionDays: z.number().int().min(1).default(30),
+    archive: eventArchiveSchema.optional(),
+  })
+  .strict()
+
 export const nymbalConfigSchema = z
   .object({
     store: storeSchema,
@@ -262,8 +351,21 @@ export const nymbalConfigSchema = z
       heartbeat: false,
       autoUpdates: false,
     }),
+    events: eventsSchema.default({}),
   })
   .superRefine((cfg, ctx) => {
+    const archiveBucket = cfg.events.archive?.bucket
+    if (
+      archiveBucket !== undefined &&
+      cfg.infrastructure.media === 's3' &&
+      archiveBucket === cfg.infrastructure.s3?.bucket
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['events', 'archive', 'bucket'],
+        message: `events.archive.bucket is infrastructure.s3.bucket ('${archiveBucket}'), the media bucket, which serves its objects publicly; archive events to a private bucket of their own`,
+      })
+    }
     // SMTP left the kernel for @nymbalhq/adapter-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email
     if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {

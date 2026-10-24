@@ -1,36 +1,31 @@
 import {
   getPaymentDriver,
+  registerPaymentDriver,
   type PaymentConfirmContext,
   type PaymentConfirmation,
   type PaymentDriver,
 } from '@nymbalhq/sdk'
 import type { PaymentClient } from '@nymbalhq/types'
-import { HTMLElementBase } from '../base-element.js'
-import { injectStyles } from '../styles.js'
+import { css, nothing, type CSSResult } from 'lit'
+import { NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
+import { stripeDriver } from '../payment-drivers/stripe.js'
+import { testModeDriver } from '../payment-drivers/test-mode.js'
 
-const STYLES = `
-nymbal-payment-element {
-  display: block;
-  font-family: var(--nymbal-font-family);
+const SCHEMA: ElementSchema = {
+  tag: 'nymbal-payment-element',
+  reactName: 'PaymentElement',
+  attributes: [{ name: 'client', prop: 'client', type: 'json' }],
+  events: [
+    {
+      name: 'nymbal:payment:status',
+      prop: 'onStatusChange',
+      detail: "{ status: 'pending' | 'ready' | 'error' }",
+    },
+  ],
+  parts: ['error'],
+  slots: [],
+  children: false,
 }
-nymbal-payment-element .nymbal-payment-note {
-  margin: 0;
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
-  color: var(--nymbal-color-text-muted, #71717a);
-}
-nymbal-payment-element .nymbal-payment-card {
-  padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
-  border: 1px solid var(--nymbal-color-border, #e4e4e7);
-  border-radius: var(--nymbal-radius-md, 0.5rem);
-  background: var(--nymbal-color-surface, #fff);
-  min-height: 40px;
-}
-nymbal-payment-element .nymbal-payment-error {
-  margin: 0;
-  font-size: var(--nymbal-font-size-sm, 0.875rem);
-  color: var(--nymbal-color-error, #dc2626);
-}
-`
 
 /** `pending` while a driver mounts; `error` when no payment can be taken, which a checkout must not submit past. */
 export type PaymentElementStatus = 'pending' | 'ready' | 'error'
@@ -55,10 +50,44 @@ function parseClient(value: string | null): PaymentClient | null | undefined {
  * `payments.client`) through the driver the SDK registry holds under its `driver` name, and confirms a payment
  * through it. It emits `nymbal:payment:status` whenever `status` changes.
  */
-export class NymbalPaymentElement extends HTMLElementBase {
-  static get observedAttributes(): string[] {
-    return ['client']
+export class NymbalPaymentElement extends NymbalElement {
+  static override schema = SCHEMA
+
+  /** The built-in drivers, except a name the project registered first: the project's driver wins, as its tag does. */
+  static beforeDefine(): void {
+    const drivers: Array<[string, PaymentDriver]> = [
+      ['test-mode', testModeDriver],
+      ['stripe', stripeDriver],
+    ]
+    for (const [name, driver] of drivers) {
+      if (getPaymentDriver(name) === undefined) registerPaymentDriver(name, driver)
+    }
   }
+  static override properties = propertiesOf(SCHEMA)
+
+  static override styles = css`
+    nymbal-payment-element {
+      display: block;
+      font-family: var(--nymbal-font-family, system-ui, -apple-system, sans-serif);
+    }
+    nymbal-payment-element .nymbal-payment-note {
+      margin: 0;
+      font-size: var(--nymbal-font-size-sm, 0.875rem);
+      color: var(--nymbal-color-text-muted, #71717a);
+    }
+    nymbal-payment-element .nymbal-payment-card {
+      padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+      border: 1px solid var(--nymbal-color-border, #e4e4e7);
+      border-radius: var(--nymbal-radius-md, 0.375rem);
+      background: var(--nymbal-color-surface, #ffffff);
+      min-height: 40px;
+    }
+    nymbal-payment-element [part~='error'] {
+      margin: 0;
+      font-size: var(--nymbal-font-size-sm, 0.875rem);
+      color: var(--nymbal-color-error, #dc2626);
+    }
+  `
 
   private _status: PaymentElementStatus = 'pending'
   private _error = ''
@@ -71,13 +100,32 @@ export class NymbalPaymentElement extends HTMLElementBase {
     return this._status
   }
 
-  connectedCallback(): void {
-    injectStyles('nymbal-payment-element', STYLES)
-    this.render()
+  /**
+   * The light DOM, so the payment driver's UI (Stripe's iframe) and the checkout form share one tree. Its styles join
+   * the sheets of the tree it is in, where a shadow root would have held them.
+   */
+  protected override createRenderRoot(): HTMLElement {
+    const root = this.getRootNode() as Document | ShadowRoot
+    const sheet = (NymbalPaymentElement.styles as CSSResult).styleSheet
+    if (sheet !== undefined && 'adoptedStyleSheets' in root && !root.adoptedStyleSheets.includes(sheet)) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet]
+    }
+    return this
   }
 
-  attributeChangedCallback(): void {
-    if (this.isConnected) this.render()
+  override connectedCallback(): void {
+    super.connectedCallback()
+    this.mountClient()
+  }
+
+  override attributeChangedCallback(name: string, old: string | null, value: string | null): void {
+    super.attributeChangedCallback(name, old, value)
+    if (this.isConnected) this.mountClient()
+  }
+
+  /** The children are the driver's, mounted imperatively, so Lit renders none of its own. */
+  protected override render() {
+    return nothing
   }
 
   /**
@@ -92,7 +140,7 @@ export class NymbalPaymentElement extends HTMLElementBase {
     return driver.confirm(clientSecret, context)
   }
 
-  private render(): void {
+  private mountClient(): void {
     const attribute = this.getAttribute('client')
     // The same client half again (a reconnect, a framework re-setting the attribute) keeps what is mounted.
     if (attribute === this._rendered) return
@@ -100,7 +148,7 @@ export class NymbalPaymentElement extends HTMLElementBase {
     const generation = ++this._generation
     this._driver = null
     this._mounted = Promise.resolve(true)
-    this.replaceChildren()
+    this.clear()
 
     const client = parseClient(attribute)
     if (client === undefined)
@@ -132,12 +180,23 @@ export class NymbalPaymentElement extends HTMLElementBase {
   private fail(message: string): void {
     this._error = message
     const p = document.createElement('p')
-    p.className = 'nymbal-payment-error'
+    p.setAttribute('part', 'error')
     p.setAttribute('data-testid', 'payment-element-error')
     p.setAttribute('role', 'alert')
     p.textContent = message
-    this.replaceChildren(p)
+    this.clear(p)
     this.setStatus('error')
+  }
+
+  /**
+   * Replaces what a driver or an error rendered. Lit's marker comment stays: its next update (a new `client`) writes
+   * at it, and throws once it is gone.
+   */
+  private clear(...nodes: Node[]): void {
+    for (const child of [...this.childNodes]) {
+      if (child.nodeType !== Node.COMMENT_NODE) child.remove()
+    }
+    this.append(...nodes)
   }
 
   private setStatus(status: PaymentElementStatus): void {

@@ -24,9 +24,6 @@ permissions:
   pull-requests: write
   id-token: write
 
-env:
-  PNPM_VERSION: '9.12.3'
-
 jobs:
   detect:
     name: Detect changesets and tokens
@@ -80,8 +77,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
@@ -117,8 +112,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
       - uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version

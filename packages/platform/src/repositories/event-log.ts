@@ -1,4 +1,17 @@
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm'
 import type { NymbalEvent } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -17,6 +30,18 @@ export interface LoggedEvent {
   deliveredAt: Date | null
   attempts: number
   deadAt: Date | null
+  createdAt: Date
+}
+
+/** Filters for reading the log. A type glob's `*` matches any run of characters, dots included (`order.*`). */
+export interface EventLogFilter {
+  /** Type globs; an event matches when its type matches any of them. */
+  types?: string[]
+  /** Appended at or after. */
+  since?: Date
+  /** Appended before. */
+  until?: Date
+  limit: number
 }
 
 export interface EventLogRepository extends StoreRepository {
@@ -30,10 +55,53 @@ export interface EventLogRepository extends StoreRepository {
   /** Deletes delivered events delivered before `at`; returns how many. Undelivered and dead events are never deleted. */
   deleteDeliveredBefore(tx: Tx, at: Date): Promise<number>
   listAll(tx: ReadTx): Promise<LoggedEvent[]>
+  /** One correlation id's events, by `seq`. */
+  queryByCorrelation(
+    tx: ReadTx,
+    correlationId: string,
+    filter: EventLogFilter,
+  ): Promise<LoggedEvent[]>
+  /** Events above `seq`, by `seq`. */
+  listAfter(
+    tx: ReadTx,
+    seq: number,
+    filter: Pick<EventLogFilter, 'types' | 'limit'>,
+  ): Promise<LoggedEvent[]>
+  /** The highest `seq` in the log, or 0 when it is empty. */
+  maxSeq(tx: ReadTx): Promise<number>
+  /**
+   * What a read-model rebuild re-applies after its swap: every event that is not dead and was delivered at or after
+   * `since`, or not yet delivered, by `seq`. `afterSeq` and `limit` page through them.
+   */
+  listForCatchUp(
+    tx: ReadTx,
+    since: Date,
+    page?: { afterSeq?: number; limit?: number },
+  ): Promise<LoggedEvent[]>
+  /** Delivered events delivered before `at`, by `seq`: what retention may archive. Undelivered and dead events never are. */
+  listDeliveredBefore(tx: ReadTx, at: Date, limit: number): Promise<LoggedEvent[]>
+  /** Deletes the delivered events with these `seq`s; returns how many. */
+  deleteSeqs(tx: Tx, seqs: number[]): Promise<number>
 }
 
-// SQLite's bound-parameter limit is per statement; seven columns a row keeps a chunk well under it.
+// SQLite's bound-parameter limit is per statement; eight columns a row keeps a chunk well under it.
 const APPEND_CHUNK = 100
+const DELETE_CHUNK = 500
+/** The page `listForCatchUp` reads when it is given none. */
+const CATCH_UP_LIMIT = 10_000
+
+/** A type glob as a SQLite GLOB pattern: `*` stays the wildcard, and GLOB's other metacharacters match themselves. */
+function sqliteGlob(glob: string): string {
+  return glob.replace(/[[?]/g, (c) => `[${c}]`)
+}
+
+/**
+ * A type glob as a Postgres LIKE pattern with a backslash escape: `*` is `%`, and LIKE's own metacharacters match
+ * themselves. Case-sensitive, as SQLite's GLOB is.
+ */
+function likePattern(glob: string): string {
+  return glob.replace(/[\\%_]/g, (c) => `\\${c}`).replace(/\*/g, '%')
+}
 
 function toDate(value: unknown): Date | null {
   if (value === null || value === undefined) return null
@@ -46,6 +114,7 @@ function rowToLogged(row: {
   deliveredAt: unknown
   attempts: number
   deadAt: unknown
+  createdAt: unknown
 }): LoggedEvent {
   const envelope =
     typeof row.envelope === 'string'
@@ -57,12 +126,75 @@ function rowToLogged(row: {
     deliveredAt: toDate(row.deliveredAt),
     attempts: Number(row.attempts),
     deadAt: toDate(row.deadAt),
+    createdAt: toDate(row.createdAt)!,
   }
 }
 
 export function createEventLogRepository(store: CommandStore): EventLogRepository {
   const s = sqliteSchema.events
   const p = postgresSchema.events
+  // The columns `rowToLogged` reads.
+  const sqliteLogged = {
+    seq: s.seq,
+    envelope: s.envelope,
+    deliveredAt: s.deliveredAt,
+    attempts: s.attempts,
+    deadAt: s.deadAt,
+    createdAt: s.createdAt,
+  }
+  const postgresLogged = {
+    seq: p.seq,
+    envelope: p.envelope,
+    deliveredAt: p.deliveredAt,
+    attempts: p.attempts,
+    deadAt: p.deadAt,
+    createdAt: p.createdAt,
+  }
+
+  function sqliteWhere(filter: Partial<EventLogFilter>): SQL[] {
+    const where: SQL[] = []
+    if (filter.types !== undefined && filter.types.length > 0) {
+      where.push(or(...filter.types.map((t) => sql`${s.type} GLOB ${sqliteGlob(t)}`))!)
+    }
+    if (filter.since !== undefined) where.push(gte(s.createdAt, filter.since.toISOString()))
+    if (filter.until !== undefined) where.push(lt(s.createdAt, filter.until.toISOString()))
+    return where
+  }
+
+  function postgresWhere(filter: Partial<EventLogFilter>): SQL[] {
+    const where: SQL[] = []
+    if (filter.types !== undefined && filter.types.length > 0) {
+      where.push(or(...filter.types.map((t) => sql`${p.type} LIKE ${likePattern(t)} ESCAPE '\\'`))!)
+    }
+    if (filter.since !== undefined) where.push(gte(p.createdAt, filter.since))
+    if (filter.until !== undefined) where.push(lt(p.createdAt, filter.until))
+    return where
+  }
+
+  async function select(
+    tx: ReadTx,
+    where: { sqlite: SQL[]; postgres: SQL[] },
+    limit: number,
+  ): Promise<LoggedEvent[]> {
+    if (tx.kind === 'sqlite') {
+      return sqliteDb(tx)
+        .select()
+        .from(s)
+        .where(and(...where.sqlite))
+        .orderBy(asc(s.seq))
+        .limit(limit)
+        .all()
+        .map(rowToLogged)
+    }
+    const rows = await postgresDb(tx)
+      .select()
+      .from(p)
+      .where(and(...where.postgres))
+      .orderBy(asc(p.seq))
+      .limit(limit)
+    return rows.map(rowToLogged)
+  }
+
   return {
     store,
     async append(tx, events) {
@@ -77,6 +209,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
                 id: e.id,
                 type: e.type,
                 envelope: JSON.stringify(e),
+                correlationId: e.correlationId,
                 createdAt: now.toISOString(),
               })),
             )
@@ -84,7 +217,15 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         } else {
           await postgresDb(tx)
             .insert(p)
-            .values(chunk.map((e) => ({ id: e.id, type: e.type, envelope: e, createdAt: now })))
+            .values(
+              chunk.map((e) => ({
+                id: e.id,
+                type: e.type,
+                envelope: e,
+                correlationId: e.correlationId,
+                createdAt: now,
+              })),
+            )
         }
       }
     },
@@ -158,6 +299,101 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
       }
       const rows = await postgresDb(tx).select().from(p).orderBy(asc(p.seq))
       return rows.map(rowToLogged)
+    },
+    queryByCorrelation(tx, correlationId, filter) {
+      return select(
+        tx,
+        {
+          sqlite: [eq(s.correlationId, correlationId), ...sqliteWhere(filter)],
+          postgres: [eq(p.correlationId, correlationId), ...postgresWhere(filter)],
+        },
+        filter.limit,
+      )
+    },
+    listAfter(tx, seq, filter) {
+      return select(
+        tx,
+        {
+          sqlite: [gt(s.seq, seq), ...sqliteWhere(filter)],
+          postgres: [gt(p.seq, seq), ...postgresWhere(filter)],
+        },
+        filter.limit,
+      )
+    },
+    async maxSeq(tx) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ max: sql<number | null>`max(${s.seq})` })
+          .from(s)
+          .get()
+        return Number(row?.max ?? 0)
+      }
+      const [row] = await postgresDb(tx)
+        .select({ max: sql<string | null>`max(${p.seq})` })
+        .from(p)
+      return Number(row?.max ?? 0)
+    },
+    // Only the columns a LoggedEvent maps: a boot rebuild runs this on a store not yet migrated past 0007.
+    async listForCatchUp(tx, since, page = {}) {
+      const afterSeq = page.afterSeq ?? 0
+      const limit = page.limit ?? CATCH_UP_LIMIT
+      if (tx.kind === 'sqlite') {
+        return sqliteDb(tx)
+          .select(sqliteLogged)
+          .from(s)
+          .where(
+            and(
+              isNull(s.deadAt),
+              or(isNull(s.deliveredAt), gte(s.deliveredAt, since.toISOString())),
+              gt(s.seq, afterSeq),
+            ),
+          )
+          .orderBy(asc(s.seq))
+          .limit(limit)
+          .all()
+          .map(rowToLogged)
+      }
+      const rows = await postgresDb(tx)
+        .select(postgresLogged)
+        .from(p)
+        .where(
+          and(
+            isNull(p.deadAt),
+            or(isNull(p.deliveredAt), gte(p.deliveredAt, since)),
+            gt(p.seq, afterSeq),
+          ),
+        )
+        .orderBy(asc(p.seq))
+        .limit(limit)
+      return rows.map(rowToLogged)
+    },
+    listDeliveredBefore(tx, at, limit) {
+      return select(
+        tx,
+        {
+          sqlite: [isNull(s.deadAt), isNotNull(s.deliveredAt), lt(s.deliveredAt, at.toISOString())],
+          postgres: [isNull(p.deadAt), isNotNull(p.deliveredAt), lt(p.deliveredAt, at)],
+        },
+        limit,
+      )
+    },
+    async deleteSeqs(tx, seqs) {
+      let deleted = 0
+      for (let i = 0; i < seqs.length; i += DELETE_CHUNK) {
+        const chunk = seqs.slice(i, i + DELETE_CHUNK)
+        if (tx.kind === 'sqlite') {
+          deleted += sqliteDb(tx)
+            .delete(s)
+            .where(and(inArray(s.seq, chunk), isNotNull(s.deliveredAt), isNull(s.deadAt)))
+            .run().changes
+        } else {
+          const result = await postgresDb(tx)
+            .delete(p)
+            .where(and(inArray(p.seq, chunk), isNotNull(p.deliveredAt), isNull(p.deadAt)))
+          deleted += result.rowCount ?? 0
+        }
+      }
+      return deleted
     },
   }
 }

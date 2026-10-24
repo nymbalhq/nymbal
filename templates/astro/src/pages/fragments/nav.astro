@@ -1,9 +1,12 @@
 ---
-import CategoryNav from '../../components/CategoryNav.astro'
-import { fetchCategories } from '../../lib/api'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { navFragment } from '../../lib/fragments'
+
+const nav = await navFragment()
+if (nav instanceof Response) return nav
 
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=21600, stale-while-revalidate=300')
-
-const categories = await fetchCategories()
+// A fragment has no <meta charset>, so the charset is in the header.
+Astro.response.headers.set('Content-Type', 'text/html; charset=utf-8')
 ---
-<CategoryNav categories={categories} />
+<NymbalElement tag="nymbal-category-nav" attributes={{ categories: JSON.stringify(nav.categories) }} />

@@ -1,0 +1,19 @@
+---
+// One Nymbal element rendered on the server: the tag with its attributes, its declarative shadow root, then the slot's
+// content as its light DOM. The browser parses the template into the element's shadow root, and the element, once
+// defined, takes that markup over. A project's own class under the tag renders instead when its elements entry
+// registered it (registerServerElements).
+import { renderElement } from '../dist/ssr/index.js'
+
+interface Props {
+  tag: string
+  /** The host's attributes; a JSON attribute's value is its JSON text. */
+  attributes?: Record<string, string>
+}
+
+const { tag, attributes } = Astro.props
+const children = Astro.slots.has('default') ? await Astro.slots.render('default') : ''
+const html = renderElement(tag, { attributes, children })
+---
+
+<Fragment set:html={html} />

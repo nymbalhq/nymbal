@@ -1,16 +1,23 @@
 ---
-import '../styles/pages/cart.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
+import { fetchCart } from '../lib/api'
+
+const cart = await fetchCart(Astro.request.headers.get('cookie'))
 ---
 
-<BaseLayout title="Your Cart | Nymbal" description="Review the items in your cart.">
-  <div class="container section" id="cart-content" data-testid="cart-page">
-    <div class="cart-empty">
-      <h1 class="cart-empty-title">Loading your cart...</h1>
-    </div>
+<BaseLayout title="Your Cart | Nymbal" description="Review the items in your cart." cart={cart}>
+  <div class="container section" data-testid="cart-page">
+    <NymbalElement
+      tag="nymbal-cart-page"
+      attributes={cart === null ? {} : { cart: JSON.stringify(cart) }}
+    />
   </div>
 </BaseLayout>
 
 <script>
-  import '../scripts/cart-page.js'
+  import '../lib/client.js'
+  import { NymbalCartPage } from '@nymbalhq/web-components/elements/nymbal-cart-page'
+
+  NymbalCartPage.define()
 </script>

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { matchesQuery, type ContractProduct } from '../../../../tests/contracts/suites/search.js'
+import { matchesQuery, type ContractProduct } from '../../../contract-tests/src/index.js'
 import { FIXTURE_SEARCH_CAPABILITIES } from '../../../../tests/e2e/fixtures/custom-providers/adapters.js'
 
 // P2-05 AC-5 (integration) and decision 8: `nymbal dev --api-only`, run from the swap fixture's directory

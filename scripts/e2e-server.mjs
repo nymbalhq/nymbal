@@ -6,9 +6,11 @@
 // (tests/e2e/playwright.config.ts), or Playwright kills the process group before the file is written.
 // It also gives the run stores of its own, as Playwright gives it a fresh SQLite file: with NYMBAL_COMMAND_STORE=postgres
 // it creates nymbal_e2e_<stamp> beside the DATABASE_URL database and points DATABASE_URL at it; with a Redis document
-// store or bus it sets NYMBAL_REDIS_PREFIX=e2e-<stamp>. Both are removed when the server exits.
+// store or bus it sets NYMBAL_REDIS_PREFIX=e2e-<stamp>. Both are removed when the server exits. With
+// NYMBAL_E2E_STORE_ENV_FILE set it writes the store variables the server starts with there, as JSON, so a journey can
+// run the CLI against the same store (`nymbal replay`); the file is removed with the stores.
 import { spawn } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { constants } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -85,6 +87,25 @@ if (
       client.disconnect()
     }
   })
+}
+
+/** What selects the server's store: the variables the CLI reads to open the same one. */
+const STORE_VARIABLES = [
+  'NYMBAL_COMMAND_STORE',
+  'NYMBAL_DOCUMENT_STORE',
+  'NYMBAL_EVENT_BUS',
+  'NYMBAL_SQLITE_PATH',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'NYMBAL_REDIS_PREFIX',
+]
+const storeEnvFile = env.NYMBAL_E2E_STORE_ENV_FILE
+if (storeEnvFile) {
+  const recorded = Object.fromEntries(
+    STORE_VARIABLES.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]),
+  )
+  writeFileSync(storeEnvFile, `${JSON.stringify(recorded, null, 2)}\n`)
+  teardown.push(async () => rmSync(storeEnvFile, { force: true }))
 }
 
 /** Removes the run's stores; a failure is reported and does not hide the server's own exit status. */

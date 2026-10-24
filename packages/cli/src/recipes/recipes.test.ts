@@ -229,23 +229,27 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     ).toEqual(['S3_BUCKET'])
 
     expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/adapter-stripe', 'stripe'])
-    expect(applied({}, r('stripe'))).toEqual({
-      commerce: {
-        payments: {
-          provider: 'stripe',
-          config: {
-            secretKey: placeholder('STRIPE_SECRET_KEY'),
-            webhookSecret: placeholder('STRIPE_WEBHOOK_SECRET'),
-          },
-        },
-      },
-    })
+    // P3-07 Decision 1: the fields the Stripe package declares as settings leave `set` (an unset variable would throw at
+    // loadConfig before Settings could fill them), so the recipe sets the provider and writes no env() at all; the
+    // variables stay in `.env`, required, for a deploy that sets them there.
+    const stripe = applied({}, r('stripe'))
+    expect(getPath(stripe, 'commerce.payments.provider')).toBe('stripe')
+    expect(
+      ['secretKey', 'webhookSecret', 'publishableKey'].filter(
+        (field) => getPath(stripe, `commerce.payments.config.${field}`) !== undefined,
+      ),
+    ).toEqual([])
+    expect(leaves(r('stripe')).filter(([, value]) => isEnvRef(value))).toEqual([])
     expect(
       r('stripe')
         .env.map((e) => e.name)
         .sort(),
     ).toEqual(['STRIPE_PUBLISHABLE_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'])
-    expect(r('stripe').env.find((e) => e.name === 'STRIPE_SECRET_KEY')?.required).toBe(true)
+    expect(
+      r('stripe')
+        .env.filter((e) => e.name === 'STRIPE_SECRET_KEY' || e.name === 'STRIPE_WEBHOOK_SECRET')
+        .map((e) => e.required),
+    ).toEqual([true, true])
     expect(r('stripe').next.join('\n')).toContain('/api/webhooks/stripe')
   })
 
@@ -263,22 +267,25 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     let related = 0
     for (const recipe of await allRecipes()) {
       for (const [path, value] of leaves(recipe)) {
+        // P2-04 decision 1: `security` is a slot too, its choice `security.adapter`, and its package peers no SDK.
         const slot =
-          /^infrastructure\.(\w+)$/.exec(path)?.[1] ?? /^commerce\.(\w+)\.provider$/.exec(path)?.[1]
+          /^infrastructure\.(\w+)$/.exec(path)?.[1] ??
+          /^commerce\.(\w+)\.provider$/.exec(path)?.[1] ??
+          (path === 'security.adapter' ? 'security' : undefined)
         if (slot === undefined || typeof value !== 'string') continue
         const entry = (
-          PROVIDER_PACKAGES as Record<string, Record<string, { package: string; sdk: string }>>
+          PROVIDER_PACKAGES as Record<string, Record<string, { package: string; sdk?: string }>>
         )[slot]?.[value]
         if (entry === undefined) continue
         related += 1
-        const wanted = [entry.package, entry.sdk]
+        const wanted = [entry.package, ...(entry.sdk === undefined ? [] : [entry.sdk])]
         expect(
           recipe.install.filter((p) => wanted.includes(p)).length,
           `${recipe.name} ${path}=${value} installs ${wanted.join(' and ')}`,
         ).toBe(unique(wanted).length)
       }
     }
-    // redis sets two such slots, s3 and stripe one each: a relation over nothing proves nothing.
+    // redis sets two such slots, s3, stripe and cloudflare one each: a relation over nothing proves nothing.
     expect(related).toBeGreaterThanOrEqual(RECIPE_NAMES.length)
   })
 })

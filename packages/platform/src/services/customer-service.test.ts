@@ -10,6 +10,10 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createAuthService } from './auth-service.js'
 import { createCustomerService } from './customer-service.js'
 import { createLogger } from '../logger.js'
+import { runAsActor } from '../audit/actor.js'
+import { auditedCommand } from '../audit/audit.js'
+import { listAuditEntries } from '../repositories/audit-entry.js'
+import type { CommandStore } from '../db/command-store.js'
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -172,6 +176,83 @@ describe('CustomerService', () => {
     await expect(customerService.updateProfile('ghost', { firstName: 'x' })).rejects.toThrow(
       NotFoundError,
     )
+    await commandStore.close()
+  })
+})
+
+// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
+// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+const importer = { kind: 'import', id: 'woocommerce' } as const
+const admin = { kind: 'admin', id: 'admin-1' } as const
+
+const noted = async (commandStore: CommandStore) =>
+  (await commandStore.read((tx) => listAuditEntries(tx, { order: 'asc', limit: 100 }))).map(
+    (e) => ({
+      actor: e.actor,
+      command: e.command,
+      subjects: e.subjects,
+      outcome: e.outcome,
+      status: e.responseStatus,
+    }),
+  )
+
+describe('CustomerService: audit notes', () => {
+  it('AC-2: under an actor with no opener, a profile update, an address added and one removed each leave one applied entry naming the customer', async () => {
+    const { auth, customerService, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'audited@test.com', password: 'password123' })
+    await runAsActor(importer, () => customerService.updateProfile(customer.id, { firstName: 'A' }))
+    const kept = await runAsActor(importer, () => customerService.addAddress(customer.id, addr))
+    const removed = await runAsActor(importer, () => customerService.addAddress(customer.id, addr))
+    await runAsActor(importer, () => customerService.deleteAddress(customer.id, removed.id))
+    expect(await customerService.listAddresses(customer.id)).toHaveLength(1)
+    expect(kept.id).not.toBe(removed.id)
+    const subjects = [{ type: 'customer', id: customer.id }]
+    expect(await noted(commandStore)).toEqual([
+      { actor: importer, command: 'customer.update', subjects, outcome: 'applied', status: null },
+      {
+        actor: importer,
+        command: 'customer.addAddress',
+        subjects,
+        outcome: 'applied',
+        status: null,
+      },
+      {
+        actor: importer,
+        command: 'customer.addAddress',
+        subjects,
+        outcome: 'applied',
+        status: null,
+      },
+      {
+        actor: importer,
+        command: 'customer.removeAddress',
+        subjects,
+        outcome: 'applied',
+        status: null,
+      },
+    ])
+    await commandStore.close()
+  })
+
+  it('AC-2: a refused address removal is recorded as customer.removeAddress refused, naming the customer', async () => {
+    const { auth, customerService, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'refused@test.com', password: 'password123' })
+    await expect(
+      runAsActor(admin, () =>
+        auditedCommand(commandStore, undefined, () =>
+          customerService.deleteAddress(customer.id, 'no-such-address'),
+        ),
+      ),
+    ).rejects.toThrow(NotFoundError)
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: admin,
+        command: 'customer.removeAddress',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'refused',
+        status: 404,
+      },
+    ])
     await commandStore.close()
   })
 })

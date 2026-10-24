@@ -3,6 +3,8 @@ import type { NymbalConfig } from '@nymbalhq/config'
 import type { ServiceRegistry } from '../services/index.js'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
+import type { EventPublisher } from '../events/publisher.js'
+import type { DeclaredSlot } from '../settings/load.js'
 import { registerAdminMeRoute } from './admin-me.js'
 import { registerAdminDashboardRoute } from './admin-dashboard.js'
 import { registerAdminOrdersRoutes } from './admin-orders.js'
@@ -11,12 +13,15 @@ import { registerAdminInventoryRoutes } from './admin-inventory.js'
 import { registerAdminCustomersRoutes } from './admin-customers.js'
 import { registerAdminSearchRoute } from './admin-search.js'
 import { registerAdminReviewsRoutes } from './admin-reviews.js'
+import { registerAdminSettingsRoutes } from './admin-settings.js'
 
 export interface RegisterAdminRoutesDeps {
   config: NymbalConfig
   services: ServiceRegistry
   repos: Repositories
   adapters: AdapterRegistry
+  publisher: EventPublisher
+  settingsSlots: readonly DeclaredSlot[]
 }
 
 export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRoutesDeps): void {
@@ -45,5 +50,11 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
   registerAdminReviewsRoutes(adapter, {
     reviewsAdapter: adapters.reviews,
     reviewRepo: repos.review,
+  })
+  registerAdminSettingsRoutes(adapter, {
+    config,
+    slots: deps.settingsSlots,
+    settings: repos.settings,
+    publisher: deps.publisher,
   })
 }

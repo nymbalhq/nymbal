@@ -52,6 +52,14 @@ export {
   type CreatePublisherOptions,
 } from './events/publisher.js'
 export { createRelay, type Relay, type CreateRelayOptions } from './events/relay.js'
+export {
+  currentCorrelationId,
+  isValidCorrelationId,
+  newCorrelationId,
+  runWithCorrelation,
+} from './events/correlation.js'
+export { actorOf, currentActor, runAsActor, type Actor } from './audit/actor.js'
+export { audit, auditedCommand } from './audit/audit.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
@@ -71,6 +79,7 @@ export {
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
   type SweeperHandle,
+  type EventArchiveWriter,
   type EventRetentionSweeperDeps,
 } from './sweepers/index.js'
 export * from './services/index.js'
@@ -85,10 +94,38 @@ export {
 } from './diagnose.js'
 export { runSeed, type SeedDeps, type SeedResult } from './seed/run.js'
 export {
-  warmDocumentStore,
-  type WarmDocumentStoreDeps,
-  type WarmResult,
-} from './warm-document-store.js'
+  decrypt,
+  encrypt,
+  keyId,
+  keyProblem,
+  readSecretsKey,
+  settingAad,
+  SECRETS_KEY_ENV,
+  SECRETS_KEY_OLD_ENV,
+  type EncryptedValue,
+  type SecretsKey,
+  type StoredCipher,
+} from './settings/crypto.js'
+export { fillFromSettings, type SettingSource, type SettingValue } from './settings/resolve.js'
+export { scrub } from './settings/secret-set.js'
+export { isMissingSettingsTable } from './settings/load.js'
+export {
+  CATCH_UP_MARGIN_MS,
+  diffReadModel,
+  READ_MODEL_NAMES,
+  READ_MODELS,
+  rebuild,
+  RebuildError,
+  type CatchUpFailure,
+  type CollectionDiff,
+  type ReadModel,
+  type ReadModelDiff,
+  type ReadModelName,
+  type RebuildDeps,
+  type RebuildReport,
+  type RebuildReportEntry,
+} from './read-models/index.js'
+export { openReadModels, type OpenReadModelsOptions } from './read-models/open.js'
 export { seedCategories, seedProducts, type SeedCategory, type SeedProduct } from './seed/data.js'
 export {
   createLocalFsMediaStorage,

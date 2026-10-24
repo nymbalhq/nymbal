@@ -10,6 +10,7 @@
     "@nymbalhq/adapter-stripe": "workspace:*",
     "@nymbalhq/contract-tests": "workspace:*",
     "@nymbalhq/platform": "workspace:*",
+    "@nymbalhq/security-cloudflare": "workspace:*",
     "@nymbalhq/types": "workspace:*"
   },
   "devDependencies": {

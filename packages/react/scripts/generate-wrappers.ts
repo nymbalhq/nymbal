@@ -1,172 +1,15 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { ElementSchema } from '@nymbalhq/web-components'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
+type AttributeDef = ElementSchema['attributes'][number]
+type EventDef = ElementSchema['events'][number]
 
-interface AttributeDef {
-  name: string
-  reactProp: string
-  type: 'string' | 'boolean' | 'json' | 'number'
-}
-
-interface EventDef {
-  name: string
-  reactProp: string
-  detailType: string
-}
-
-interface ComponentDef {
-  tagName: string
-  reactName: string
-  attributes: AttributeDef[]
-  events: EventDef[]
-  hasChildren: boolean
-}
-
-const COMPONENTS: ComponentDef[] = [
-  {
-    tagName: 'nymbal-add-to-cart',
-    reactName: 'AddToCart',
-    attributes: [
-      { name: 'variant-id', reactProp: 'variantId', type: 'string' },
-      { name: 'qty', reactProp: 'qty', type: 'number' },
-      { name: 'disabled', reactProp: 'disabled', type: 'boolean' },
-    ],
-    events: [
-      {
-        name: 'nymbal:cart:item-added',
-        reactProp: 'onItemAdded',
-        detailType: '{ variantId: string; qty: number }',
-      },
-    ],
-    hasChildren: true,
-  },
-  {
-    tagName: 'nymbal-cart-drawer',
-    reactName: 'CartDrawer',
-    attributes: [{ name: 'open', reactProp: 'open', type: 'boolean' }],
-    events: [
-      { name: 'nymbal:cart:checkout-clicked', reactProp: 'onCheckoutClick', detailType: 'void' },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-mini-cart',
-    reactName: 'MiniCart',
-    attributes: [],
-    events: [{ name: 'nymbal:mini-cart:clicked', reactProp: 'onClick', detailType: 'void' }],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-variant-selector',
-    reactName: 'VariantSelector',
-    attributes: [],
-    events: [
-      {
-        name: 'nymbal:variant:selected',
-        reactProp: 'onVariantSelected',
-        detailType: '{ variant: unknown }',
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-quantity-selector',
-    reactName: 'QuantitySelector',
-    attributes: [
-      { name: 'value', reactProp: 'value', type: 'number' },
-      { name: 'min', reactProp: 'min', type: 'number' },
-      { name: 'max', reactProp: 'max', type: 'number' },
-    ],
-    events: [
-      {
-        name: 'nymbal:quantity:changed',
-        reactProp: 'onQuantityChange',
-        detailType: '{ value: number }',
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-search-bar',
-    reactName: 'SearchBar',
-    attributes: [
-      { name: 'placeholder', reactProp: 'placeholder', type: 'string' },
-      { name: 'debounce-ms', reactProp: 'debounceMs', type: 'number' },
-    ],
-    events: [
-      {
-        name: 'nymbal:search:selected',
-        reactProp: 'onSearchSelect',
-        detailType: '{ product: unknown }',
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-product-filter',
-    reactName: 'ProductFilter',
-    attributes: [
-      { name: 'facets', reactProp: 'facets', type: 'json' },
-      { name: 'source', reactProp: 'source', type: 'string' },
-    ],
-    events: [
-      {
-        name: 'nymbal:filter:changed',
-        reactProp: 'onFilterChange',
-        detailType: '{ name: string; value: string }',
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-payment-element',
-    reactName: 'PaymentElement',
-    attributes: [{ name: 'client', reactProp: 'client', type: 'json' }],
-    events: [
-      {
-        name: 'nymbal:payment:status',
-        reactProp: 'onStatusChange',
-        detailType: "{ status: 'pending' | 'ready' | 'error' }",
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-sort-dropdown',
-    reactName: 'SortDropdown',
-    attributes: [
-      { name: 'sort-keys', reactProp: 'sortKeys', type: 'json' },
-      { name: 'value', reactProp: 'value', type: 'string' },
-      { name: 'default-sort', reactProp: 'defaultSort', type: 'string' },
-    ],
-    events: [
-      {
-        name: 'nymbal:sort:changed',
-        reactProp: 'onSortChange',
-        detailType: '{ sort: string }',
-      },
-    ],
-    hasChildren: false,
-  },
-  {
-    tagName: 'nymbal-toast',
-    reactName: 'Toast',
-    attributes: [
-      { name: 'position', reactProp: 'position', type: 'string' },
-      { name: 'duration-ms', reactProp: 'durationMs', type: 'number' },
-    ],
-    events: [],
-    hasChildren: false,
-  },
-]
-
-function generatePropInterface(comp: ComponentDef): string {
+function generatePropInterface(schema: ElementSchema): string {
   const lines: string[] = []
-  for (const attr of comp.attributes) {
+  for (const attr of schema.attributes) {
     const tsType =
       attr.type === 'boolean'
         ? 'boolean'
@@ -175,18 +18,44 @@ function generatePropInterface(comp: ComponentDef): string {
           : attr.type === 'json'
             ? 'unknown'
             : 'string'
-    lines.push(`  ${attr.reactProp}?: ${tsType}`)
+    lines.push(`  ${attr.prop}?: ${tsType}`)
   }
-  for (const evt of comp.events) {
-    lines.push(`  ${evt.reactProp}?: (event: CustomEvent<${evt.detailType}>) => void`)
-  }
-  if (comp.hasChildren) {
-    lines.push(`  children?: React.ReactNode`)
+  for (const evt of schema.events) {
+    lines.push(`  ${evt.prop}?: (event: CustomEvent<${evt.detail}>) => void`)
   }
   lines.push(`  className?: string`)
   lines.push(`  style?: React.CSSProperties`)
+  // The named slot this element fills in its parent element (the checkout's payment slot).
+  lines.push(`  slot?: string`)
   lines.push(`  'data-testid'?: string`)
-  return `export interface ${comp.reactName}Props {\n${lines.join('\n')}\n}`
+  if (!schema.children) {
+    lines.push(`  /** The element's server render, \`renderNymbal(tag, …).__html\` from \`@nymbalhq/react/server\`. */`)
+    lines.push(`  serverHtml?: string`)
+    return `export interface ${schema.reactName}Props {\n${lines.join('\n')}\n}`
+  }
+  // React refuses children beside the server HTML set on the same tag: light-DOM children go into renderNymbal's.
+  return `interface ${schema.reactName}OwnProps {\n${lines.join('\n')}\n}
+
+export type ${schema.reactName}Props = ${schema.reactName}OwnProps &
+  (
+    | { children?: React.ReactNode; serverHtml?: undefined }
+    /** The element's server render, \`renderNymbal(tag, …, children).__html\` from \`@nymbalhq/react/server\`. */
+    | { children?: undefined; serverHtml?: string }
+  )`
+}
+
+/**
+ * The attribute as the JSX renders it, so a wrapper rendered on the server ships it: a JSON value stringified, a
+ * boolean present (empty) or absent. The effects below keep it current after the element upgrades.
+ */
+function generateJsxAttribute(attr: AttributeDef): string {
+  const value =
+    attr.type === 'boolean'
+      ? `props.${attr.prop} ? '' : undefined`
+      : attr.type === 'json'
+        ? `props.${attr.prop} === undefined ? undefined : JSON.stringify(props.${attr.prop})`
+        : `props.${attr.prop}`
+  return `${attr.name}={${value}}`
 }
 
 function generateAttrEffect(attr: AttributeDef): string {
@@ -194,54 +63,46 @@ function generateAttrEffect(attr: AttributeDef): string {
     return `  useEffect(() => {
     const el = ref.current
     if (!el) return
-    if (props.${attr.reactProp}) {
+    if (props.${attr.prop}) {
       el.setAttribute('${attr.name}', '')
     } else {
       el.removeAttribute('${attr.name}')
     }
-  }, [props.${attr.reactProp}])`
+  }, [props.${attr.prop}])`
   }
-  if (attr.type === 'json') {
-    return `  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.${attr.reactProp} !== undefined) {
-      el.setAttribute('${attr.name}', JSON.stringify(props.${attr.reactProp}))
-    } else {
-      el.removeAttribute('${attr.name}')
-    }
-  }, [props.${attr.reactProp}])`
-  }
+  const value =
+    attr.type === 'json' ? `JSON.stringify(props.${attr.prop})` : `String(props.${attr.prop})`
   return `  useEffect(() => {
     const el = ref.current
     if (!el) return
-    if (props.${attr.reactProp} !== undefined) {
-      el.setAttribute('${attr.name}', String(props.${attr.reactProp}))
+    if (props.${attr.prop} !== undefined) {
+      el.setAttribute('${attr.name}', ${value})
     } else {
       el.removeAttribute('${attr.name}')
     }
-  }, [props.${attr.reactProp}])`
+  }, [props.${attr.prop}])`
 }
 
 function generateEventEffect(evt: EventDef): string {
   return `  useEffect(() => {
     const el = ref.current
-    if (!el || !props.${evt.reactProp}) return
-    const handler = props.${evt.reactProp} as EventListener
+    if (!el || !props.${evt.prop}) return
+    const handler = props.${evt.prop} as EventListener
     el.addEventListener('${evt.name}', handler)
     return () => el.removeEventListener('${evt.name}', handler)
-  }, [props.${evt.reactProp}])`
+  }, [props.${evt.prop}])`
 }
 
-function generateComponent(comp: ComponentDef): string {
-  const attrEffects = comp.attributes.map(generateAttrEffect).join('\n\n')
-  const eventEffects = comp.events.map(generateEventEffect).join('\n\n')
-  const childSlot = comp.hasChildren ? `{props.children}` : ''
+function generateComponent(schema: ElementSchema): string {
+  const attrEffects = schema.attributes.map(generateAttrEffect).join('\n\n')
+  const eventEffects = schema.events.map(generateEventEffect).join('\n\n')
+  const childSlot = schema.children ? `{props.children}` : ''
+  const attributes = schema.attributes.map((a) => ` ${generateJsxAttribute(a)}`).join('')
 
-  return `${generatePropInterface(comp)}
+  return `${generatePropInterface(schema)}
 
-export const ${comp.reactName} = forwardRef<HTMLElement, ${comp.reactName}Props>(
-  function ${comp.reactName}(props, forwardedRef) {
+export const ${schema.reactName} = /* @__PURE__ */ forwardRef<HTMLElement, ${schema.reactName}Props>(
+  function ${schema.reactName}(props, forwardedRef) {
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
@@ -249,20 +110,37 @@ ${attrEffects}
 
 ${eventEffects}
 
+    useDefine(${elementClass(schema)})
+
     return (
-      <${comp.tagName} ref={ref as React.Ref<HTMLElement>} className={props.className} style={props.style} data-testid={props['data-testid']}>
+      <${schema.tag} ref={ref as React.Ref<HTMLElement>}${attributes} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+        // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
+        // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
+        dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
+        suppressHydrationWarning={props.serverHtml !== undefined}>
         ${childSlot}
-      </${comp.tagName}>
+      </${schema.tag}>
     )
   },
 )`
 }
 
-function generateIntrinsicElements(): string {
-  const entries = COMPONENTS.map(
-    (c) =>
-      `      '${c.tagName}': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>`,
-  ).join('\n')
+/**
+ * The tag's JSX props: React's for any element, with the element's own attributes as the JSX sets them (JSON as its
+ * text, a boolean as present or absent) in place of any React types under the same name (`results`).
+ */
+function intrinsicProps(schema: ElementSchema): string {
+  const html = 'React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>'
+  if (schema.attributes.length === 0) return html
+  const names = schema.attributes.map((a) => `'${a.name}'`).join(' | ')
+  const types = schema.attributes.map(
+    (a) => `'${a.name}'?: ${a.type === 'number' ? 'number' : 'string'} | undefined`,
+  )
+  return `Omit<${html}, ${names}> & { ${types.join('; ')} }`
+}
+
+function generateIntrinsicElements(schemas: ElementSchema[]): string {
+  const entries = schemas.map((s) => `      '${s.tag}': ${intrinsicProps(s)}`).join('\n')
   return `declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
@@ -272,69 +150,140 @@ ${entries}
 }`
 }
 
-function generateOutput(): string {
+/** The element's class, as its `elements/<tag>` entry exports it. */
+function elementClass(schema: ElementSchema): string {
+  return `Nymbal${schema.reactName}`
+}
+
+// The wrapper is what imports its element, and it is annotated pure, so a bundle that leaves a wrapper out leaves its
+// element out too. The element is defined after the wrapper's attribute effects, so it upgrades with its attributes
+// set, and a project that defined the tag first keeps its own element.
+const USE_DEFINE = `/** Defines the wrapped element, and those it renders, once the wrapper mounts. */
+function useDefine(element: { define(): void }): void {
+  useEffect(() => {
+    element.define()
+  }, [element])
+}`
+
+/** The React wrappers module for these element schemas: one typed component per element. Pure. */
+export function generateWrappers(schemas: ElementSchema[]): string {
   const imports = `import React, { forwardRef, useRef, useEffect } from 'react'`
+  const elementImports = schemas
+    .map((s) => `import { ${elementClass(s)} } from '@nymbalhq/web-components/elements/${s.tag}'`)
+    .join('\n')
+  const components = schemas.map(generateComponent).join('\n\n')
 
-  const components = COMPONENTS.map(generateComponent).join('\n\n')
-
-  return `// AUTO-GENERATED by scripts/generate-wrappers.ts — DO NOT EDIT
+  return `// AUTO-GENERATED by scripts/generate-wrappers.ts from the element schemas — DO NOT EDIT
 ${imports}
 
-import '@nymbalhq/web-components'
+${elementImports}
 
-${generateIntrinsicElements()}
+${generateIntrinsicElements(schemas)}
+
+${USE_DEFINE}
 
 ${components}
 `
+}
+
+/** Every element schema `@nymbalhq/web-components` exports, in export order. */
+async function exportedSchemas(): Promise<ElementSchema[]> {
+  const wc = (await import('@nymbalhq/web-components')) as Record<string, unknown>
+  return Object.values(wc)
+    .map((v) => (v as { schema?: ElementSchema } | null)?.schema)
+    .filter((s): s is ElementSchema => s !== undefined)
 }
 
 function computeHash(content: string): string {
   return createHash('sha256').update(content).digest('hex').slice(0, 16)
 }
 
-const isCheck = process.argv.includes('--check')
-const output = generateOutput()
-const sourceHash = computeHash(JSON.stringify(COMPONENTS))
-const outputPath = resolve(ROOT, 'src/generated/wrappers.tsx')
-const manifestPath = resolve(ROOT, 'src/generated/manifest.json')
-
-if (isCheck) {
-  if (!existsSync(manifestPath)) {
-    console.error('Generated wrappers not found. Run "pnpm generate" in packages/react.')
-    process.exit(1)
-  }
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { sourceHash: string }
-  if (manifest.sourceHash !== sourceHash) {
-    console.error('Generated wrappers are stale. Run "pnpm generate" in packages/react.')
-    process.exit(1)
-  }
-  console.log('Generated wrappers are up to date.')
-  process.exit(0)
+/** The barrel the package exports: every wrapper and its props type, each from the wrapper's own module. */
+function generateBarrel(schemas: ElementSchema[]): string {
+  const lines = schemas.map(
+    (s) =>
+      `export { ${s.reactName}, type ${s.reactName}Props } from './wrappers/${s.reactName}.js'`,
+  )
+  return `// AUTO-GENERATED by scripts/generate-wrappers.ts from the element schemas — DO NOT EDIT
+${lines.join('\n')}
+`
 }
 
-// A build runs this generator, so an unchanged source must leave the tracked files byte-identical: rewriting the
-// manifest would only move `generatedAt` and dirty the tree.
-const recordedHash = existsSync(manifestPath)
-  ? (JSON.parse(readFileSync(manifestPath, 'utf-8')) as { sourceHash?: string }).sourceHash
-  : undefined
-const wrappersCurrent = existsSync(outputPath) && readFileSync(outputPath, 'utf-8') === output
-if (recordedHash === sourceHash && wrappersCurrent) {
-  process.stdout.write(`${COMPONENTS.length} React wrappers are up to date.\n`)
-  process.exit(0)
+/**
+ * Every generated file under src/generated, by path: one module per wrapper, so a bundler that drops the modules
+ * nothing imports drops a wrapper's element with it, and wrappers.tsx re-exporting them.
+ */
+function generatedFiles(schemas: ElementSchema[]): Map<string, string> {
+  const files = new Map<string, string>()
+  for (const schema of schemas) {
+    files.set(`${WRAPPERS_DIR}/${schema.reactName}.tsx`, generateWrappers([schema]))
+  }
+  files.set('wrappers.tsx', generateBarrel(schemas))
+  return files
 }
 
-writeFileSync(outputPath, output, 'utf-8')
-writeFileSync(
-  manifestPath,
-  JSON.stringify(
-    {
-      generatedAt: new Date().toISOString(),
-      sourceHash,
-      components: COMPONENTS.map((c) => c.reactName),
-    },
-    null,
-    2,
-  ),
-  'utf-8',
-)
-console.log(`Generated ${COMPONENTS.length} React wrappers.`)
+const WRAPPERS_DIR = 'wrappers'
+
+async function main(): Promise<void> {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const generatedDir = resolve(root, 'src/generated')
+  const wrappersDir = resolve(generatedDir, WRAPPERS_DIR)
+  const manifestPath = resolve(generatedDir, 'manifest.json')
+
+  const schemas = await exportedSchemas()
+  const files = generatedFiles(schemas)
+  const sourceHash = computeHash(JSON.stringify(schemas))
+  const recordedHash = existsSync(manifestPath)
+    ? (JSON.parse(readFileSync(manifestPath, 'utf-8')) as { sourceHash?: string }).sourceHash
+    : undefined
+  // A wrapper module left behind by an element that no longer exists is stale too.
+  const strays = existsSync(wrappersDir)
+    ? readdirSync(wrappersDir)
+        .map((name) => `${WRAPPERS_DIR}/${name}`)
+        .filter((path) => !files.has(path))
+    : []
+  const wrappersCurrent =
+    strays.length === 0 &&
+    [...files].every(([path, content]) => {
+      const file = resolve(generatedDir, path)
+      return existsSync(file) && readFileSync(file, 'utf-8') === content
+    })
+
+  if (process.argv.includes('--check')) {
+    if (recordedHash !== sourceHash || !wrappersCurrent) {
+      console.error('Generated wrappers are stale. Run "pnpm generate" in packages/react.')
+      process.exit(1)
+    }
+    console.log('Generated wrappers are up to date.')
+    return
+  }
+
+  // A build runs this generator, so an unchanged source must leave the tracked files byte-identical: rewriting the
+  // manifest would only move `generatedAt` and dirty the tree.
+  if (recordedHash === sourceHash && wrappersCurrent) {
+    process.stdout.write(`${schemas.length} React wrappers are up to date.\n`)
+    return
+  }
+
+  mkdirSync(wrappersDir, { recursive: true })
+  for (const stray of strays) rmSync(resolve(generatedDir, stray))
+  for (const [path, content] of files) writeFileSync(resolve(generatedDir, path), content, 'utf-8')
+  writeFileSync(
+    manifestPath,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        sourceHash,
+        components: schemas.map((s) => s.reactName),
+      },
+      null,
+      2,
+    ),
+    'utf-8',
+  )
+  console.log(`Generated ${schemas.length} React wrappers.`)
+}
+
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main()
+}

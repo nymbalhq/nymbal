@@ -1,155 +1,193 @@
-import { NymbalElement } from '../base-element.js'
-import { injectStyles } from '../styles.js'
+import { css, html, nothing } from 'lit'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
+import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'
 
-const STYLES = `
-nymbal-search-bar {
-  display: block;
-  position: relative;
-  font-family: var(--nymbal-font-family);
+const SCHEMA: ElementSchema = {
+  tag: 'nymbal-search-bar',
+  reactName: 'SearchBar',
+  attributes: [
+    { name: 'placeholder', prop: 'placeholder', type: 'string' },
+    { name: 'debounce-ms', prop: 'debounceMs', type: 'number' },
+  ],
+  events: [
+    { name: 'nymbal:search:selected', prop: 'onSearchSelect', detail: '{ product: unknown }' },
+  ],
+  parts: ['input', 'results', 'loading', 'result', 'result-name', 'result-price'],
+  slots: ['loading'],
+  children: false,
 }
-nymbal-search-bar input {
-  font-family: var(--nymbal-font-family);
-  font-size: var(--nymbal-font-size-base);
-  width: 100%;
-  padding: var(--nymbal-spacing-sm) var(--nymbal-spacing-md);
-  border: 1px solid var(--nymbal-color-border);
-  border-radius: var(--nymbal-radius-md);
-  outline: none;
-  transition: border-color var(--nymbal-transition-fast);
-  box-sizing: border-box;
+
+/** What a search bar shows before any search, and on a server. */
+const NO_SEARCH = { query: '', loading: false, results: [] as DenormalisedProduct[] }
+
+function formatPrice(minor: number, currency: string): string {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100)
 }
-nymbal-search-bar input:focus {
-  border-color: var(--nymbal-color-accent);
-}
-nymbal-search-bar .nymbal-search-results {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--nymbal-color-surface);
-  border: 1px solid var(--nymbal-color-border);
-  border-top: none;
-  border-radius: 0 0 var(--nymbal-radius-md) var(--nymbal-radius-md);
-  box-shadow: var(--nymbal-shadow-md);
-  z-index: var(--nymbal-z-dropdown);
-  max-height: 300px;
-  overflow-y: auto;
-}
-nymbal-search-bar .nymbal-search-result-item {
-  padding: var(--nymbal-spacing-sm) var(--nymbal-spacing-md);
-  cursor: pointer;
-  transition: background var(--nymbal-transition-fast);
-}
-nymbal-search-bar .nymbal-search-result-item:hover,
-nymbal-search-bar .nymbal-search-result-item[aria-selected="true"] {
-  background: var(--nymbal-color-secondary, #f4f4f5);
-}
-nymbal-search-bar .nymbal-search-result-name {
-  font-weight: var(--nymbal-font-weight-medium);
-}
-nymbal-search-bar .nymbal-search-result-price {
-  font-size: var(--nymbal-font-size-sm);
-  color: var(--nymbal-color-text-muted);
-}
-nymbal-search-bar .nymbal-search-loading {
-  padding: var(--nymbal-spacing-md);
-  text-align: center;
-  color: var(--nymbal-color-text-muted);
-  font-size: var(--nymbal-font-size-sm);
-}
-`
 
 export class NymbalSearchBar extends NymbalElement {
-  static get observedAttributes(): string[] {
-    return ['placeholder', 'debounce-ms']
-  }
+  static override schema = SCHEMA
+  static override properties = propertiesOf(SCHEMA)
+
+  static override styles = [
+    baseStyles,
+    css`
+      :host {
+        display: block;
+        position: relative;
+        font-family: var(--nymbal-font-family, system-ui, -apple-system, sans-serif);
+      }
+      [part~='input'] {
+        font-family: var(--nymbal-font-family, system-ui, -apple-system, sans-serif);
+        font-size: var(--nymbal-font-size-base, 1rem);
+        width: 100%;
+        padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+        border: 1px solid var(--nymbal-color-border, #e4e4e7);
+        border-radius: var(--nymbal-radius-md, 0.375rem);
+        outline: none;
+        transition: border-color var(--nymbal-transition-fast, 150ms ease);
+      }
+      [part~='input']:focus {
+        border-color: var(--nymbal-color-accent, #2563eb);
+      }
+      [part~='results'] {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--nymbal-color-surface, #ffffff);
+        border: 1px solid var(--nymbal-color-border, #e4e4e7);
+        border-top: none;
+        border-radius: 0 0 var(--nymbal-radius-md, 0.375rem) var(--nymbal-radius-md, 0.375rem);
+        box-shadow: var(--nymbal-shadow-md, 0 4px 6px rgba(0, 0, 0, 0.1));
+        z-index: var(--nymbal-z-dropdown, 100);
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      [part~='result'] {
+        padding: var(--nymbal-spacing-sm, 0.5rem) var(--nymbal-spacing-md, 1rem);
+        cursor: pointer;
+        transition: background var(--nymbal-transition-fast, 150ms ease);
+      }
+      [part~='result']:hover,
+      [part~='result'][aria-selected='true'] {
+        background: var(--nymbal-color-secondary, #f4f4f5);
+      }
+      [part~='result-name'] {
+        font-weight: var(--nymbal-font-weight-medium, 500);
+      }
+      [part~='result-price'] {
+        font-size: var(--nymbal-font-size-sm, 0.875rem);
+        color: var(--nymbal-color-text-muted, #71717a);
+      }
+      [part~='loading'] {
+        padding: var(--nymbal-spacing-md, 1rem);
+        text-align: center;
+        color: var(--nymbal-color-text-muted, #71717a);
+        font-size: var(--nymbal-font-size-sm, 0.875rem);
+      }
+    `,
+  ]
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private selectedIndex = -1
 
-  protected setup(): void {
-    injectStyles('nymbal-search-bar', STYLES)
-    this.subscribeToStore(this.client.search)
+  protected override stores() {
+    return [this.client.search]
   }
 
-  protected render(): void {
-    const state = this.client.search.getState()
+  protected override render() {
+    const state = this.readsStores ? this.client.search.getState() : NO_SEARCH
     const placeholder = this.getAttribute('placeholder') ?? 'Search products...'
 
-    let resultsHtml = ''
-    if (state.query) {
+    let results: unknown = nothing
+    // A page that shows the search itself (`nymbal-search-results`) is not covered by the same results as suggestions.
+    if (state.query && document.querySelector('nymbal-search-results') === null) {
       if (state.loading) {
-        resultsHtml = `<div class="nymbal-search-results" data-testid="search-results"><div class="nymbal-search-loading">Searching...</div></div>`
+        results = html`<div part="results" data-testid="search-results">
+          <div part="loading"><slot name="loading">Searching...</slot></div>
+        </div>`
       } else if (state.results.length > 0) {
-        resultsHtml = `<div class="nymbal-search-results" data-testid="search-results">
-          ${state.results
-            .map(
-              (product, i) => `
-            <div class="nymbal-search-result-item" data-testid="search-result-${this.esc(product.slug)}" data-slug="${this.esc(product.slug)}" aria-selected="${i === this.selectedIndex}">
-              <div class="nymbal-search-result-name">${this.esc(product.name)}</div>
-              ${product.priceMinor !== null ? `<div class="nymbal-search-result-price">${this.formatPrice(product.priceMinor, product.currency ?? 'USD')}</div>` : ''}
-            </div>
-          `,
-            )
-            .join('')}
+        results = html`<div part="results" data-testid="search-results">
+          ${state.results.map(
+            (product, i) => html`
+              <div
+                part="result"
+                class="nymbal-search-result-item"
+                data-testid="search-result-${product.slug}"
+                data-slug=${product.slug}
+                aria-selected=${String(i === this.selectedIndex)}
+                @click=${() => this.select(product)}
+              >
+                <div part="result-name">${product.name}</div>
+                ${product.priceMinor !== null
+                  ? html`<div part="result-price">
+                      ${formatPrice(product.priceMinor, product.currency ?? 'USD')}
+                    </div>`
+                  : nothing}
+              </div>
+            `,
+          )}
         </div>`
       }
     }
 
-    this.innerHTML = `
-      <input data-testid="search-input" type="search" placeholder="${this.esc(placeholder)}" value="${this.esc(state.query)}" autocomplete="off" role="combobox" aria-expanded="${state.results.length > 0}" aria-haspopup="listbox">
-      ${resultsHtml}
+    return html`
+      <input
+        part="input"
+        data-testid="search-input"
+        type="search"
+        placeholder=${placeholder}
+        .value=${state.query}
+        autocomplete="off"
+        role="combobox"
+        aria-expanded=${String(results !== nothing && state.results.length > 0)}
+        aria-haspopup="listbox"
+        @input=${this.handleInput}
+        @keydown=${this.handleKeydown}
+      />
+      ${results}
     `
+  }
 
-    this.querySelectorAll<HTMLElement>('.nymbal-search-result-item').forEach((item, i) => {
-      item.addEventListener('click', () => {
-        const product = state.results[i]
-        if (product) this.select(product)
-      })
-    })
-
-    const input = this.querySelector('input')!
-    input.addEventListener('input', () => {
-      const query = input.value
-      const debounceMs = Number(this.getAttribute('debounce-ms')) || 300
-      if (this.debounceTimer !== null) clearTimeout(this.debounceTimer)
-      this.debounceTimer = setTimeout(() => {
-        this.selectedIndex = -1
-        if (query.trim()) {
-          this.client.search.search(query)
-        } else {
-          this.client.search.clearSearch()
-        }
-      }, debounceMs)
-    })
-
-    input.addEventListener('keydown', (e) => {
-      const results = state.results
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1)
-        this.render()
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        this.selectedIndex = Math.max(this.selectedIndex - 1, -1)
-        this.render()
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        const selected = this.selectedIndex >= 0 ? results[this.selectedIndex] : undefined
-        if (selected) {
-          this.select(selected)
-        } else {
-          const query = input.value.trim()
-          if (query) {
-            window.location.href = `/search?q=${encodeURIComponent(query)}`
-          }
-        }
-      } else if (e.key === 'Escape') {
+  private handleInput = (e: Event): void => {
+    const query = (e.target as HTMLInputElement).value
+    const debounceMs = Number(this.getAttribute('debounce-ms')) || 300
+    if (this.debounceTimer !== null) clearTimeout(this.debounceTimer)
+    this.debounceTimer = setTimeout(() => {
+      this.selectedIndex = -1
+      if (query.trim()) {
+        void this.client.search.search(query)
+      } else {
         this.client.search.clearSearch()
-        this.selectedIndex = -1
       }
-    })
+    }, debounceMs)
+  }
+
+  private handleKeydown = (e: KeyboardEvent): void => {
+    const { results } = this.client.search.getState()
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      this.selectedIndex = Math.min(this.selectedIndex + 1, results.length - 1)
+      this.requestUpdate()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      this.selectedIndex = Math.max(this.selectedIndex - 1, -1)
+      this.requestUpdate()
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const selected = this.selectedIndex >= 0 ? results[this.selectedIndex] : undefined
+      if (selected) {
+        this.select(selected)
+      } else {
+        const query = (e.target as HTMLInputElement).value.trim()
+        if (query) {
+          window.location.href = `/search?q=${encodeURIComponent(query)}`
+        }
+      }
+    } else if (e.key === 'Escape') {
+      this.client.search.clearSearch()
+      this.selectedIndex = -1
+    }
   }
 
   private select(product: DenormalisedProduct): void {
@@ -163,29 +201,11 @@ export class NymbalSearchBar extends NymbalElement {
     this.client.search.clearSearch()
   }
 
-  attributeChangedCallback(): void {
-    if (this.isConnected) this.requestRender()
-  }
-
   override disconnectedCallback(): void {
     super.disconnectedCallback()
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer)
       this.debounceTimer = null
     }
-  }
-
-  /** Escapes a value for both text and quoted-attribute contexts. */
-  private esc(str: string): string {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-  }
-
-  private formatPrice(minor: number, currency: string): string {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(minor / 100)
   }
 }

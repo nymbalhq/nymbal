@@ -44,12 +44,18 @@ function newAdminCredentials(): AdminCredentials {
   return { email: 'admin@nymbal.local', password: randomBytes(16).toString('base64url') }
 }
 
-/** `.env` holds the admin credentials the seed (and a first `nymbal dev`) creates the admin from. */
+/**
+ * `.env` holds the admin credentials the seed (and a first `nymbal dev`) creates the admin from, and the project's own
+ * key for the values the admin's Settings encrypt (32 random bytes, base64).
+ */
 async function writeAdminEnv(dir: string, admin: AdminCredentials): Promise<void> {
   const lines = [
     '# The admin account the seed creates. Keep this file out of version control (.gitignore lists it).',
     `NYMBAL_ADMIN_EMAIL=${admin.email}`,
     `NYMBAL_ADMIN_PASSWORD=${admin.password}`,
+    '',
+    "# Encrypts the keys saved in the admin's Settings. Losing it loses them: back it up with your deploy's secrets.",
+    `NYMBAL_SECRETS_KEY=${randomBytes(32).toString('base64')}`,
     '',
   ]
   await writeFile(resolve(dir, '.env'), lines.join('\n'), { encoding: 'utf8', mode: 0o600 })
@@ -453,10 +459,10 @@ export default defineConfig({
   security: {
     adapter: 'middleware',
     rateLimit: {
-      '/checkout': { requests: 10, window: '60s', action: 'block' },
-      '/auth/*': { requests: 5, window: '60s', action: 'challenge' },
-      '/api/*': { requests: 100, window: '60s', action: 'throttle' },
-      '/webhooks/*': { requests: 200, window: '60s', action: 'throttle' },
+      '/checkout': { requests: 10, window: '1m', action: 'block' },
+      '/auth/*': { requests: 5, window: '1m', action: 'challenge' },
+      '/api/*': { requests: 100, window: '1m', action: 'throttle' },
+      '/webhooks/*': { requests: 200, window: '1m', action: 'throttle' },
     },
     botProtection: { mode: 'managed', allowList: ['googlebot', 'bingbot', 'stripe-webhooks'] },
     headers: {

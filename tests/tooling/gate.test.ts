@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   censusTrend,
   formatReport,
+  HARNESS_PROJECTS,
+  isHarnessPath,
   newTestFiles,
   plan,
   run,
@@ -140,6 +142,78 @@ describe('AC-1: selectTests picks all, changed or none', () => {
         expect(selectTests([...docs, source]).mode).toBe('changed')
       }),
     )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Harness audit 2026-10-22 change 2: the plain gate inside 60 s
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('audit change 2: the harness projects run in the plain gate only when the harness changed; the ratchet is checked statically first', () => {
+  const planned = (changed: string[], full = false): StepSpec[] =>
+    plan({ full, base: 'abc1234', changed, mutated: [] }).steps
+  const testsStep = (changed: string[], full = false): StepSpec =>
+    planned(changed, full).find((s) => s.name === 'tests') as StepSpec
+  /** The projects a tests command negates (`--project '!name'`). */
+  const negated = (command: string): string[] =>
+    [...command.matchAll(/--project '!([\w-]+)'/g)].map((m) => m[1] as string).sort()
+  const HARNESS = [
+    'scripts/gate.ts',
+    'tests/tooling/gate.test.ts',
+    'tests/architecture/guard.test.ts',
+  ]
+  const PRODUCT = [
+    'packages/sdk/src/client.ts',
+    'apps/admin/src/main.tsx',
+    'templates/astro/src/pages/index.astro',
+  ]
+
+  it('isHarnessPath: scripts/, tests/tooling/ and tests/architecture/ are the harness; product paths are not', () => {
+    for (const path of HARNESS) expect(isHarnessPath(path), path).toBe(true)
+    for (const path of [...PRODUCT, 'scripts.ts', 'packages/cli/scripts/x.ts']) {
+      expect(isHarnessPath(path), path).toBe(false)
+    }
+  })
+
+  it('a product change, changed or all mode, negates every harness project; a harness change negates none', () => {
+    expect(negated(testsStep(PRODUCT).command)).toEqual([...HARNESS_PROJECTS].sort())
+    expect(negated(testsStep([...PRODUCT, 'package.json']).command)).toEqual(
+      [...HARNESS_PROJECTS].sort(),
+    )
+    for (const path of HARNESS) expect(negated(testsStep([...PRODUCT, path]).command)).toEqual([])
+  })
+
+  it('gate:full never negates them, whatever changed', () => {
+    expect(negated(testsStep(PRODUCT, true).command)).toEqual([])
+    expect(negated(testsStep([...PRODUCT, 'package.json'], true).command)).toEqual([])
+  })
+
+  it('property: the harness projects are negated iff the plain gate has no harness path in its change set', () => {
+    const path = fc.oneof(
+      fc.constantFrom(...PRODUCT, 'package.json', 'README.md'),
+      fc.constantFrom(...HARNESS),
+    )
+    fc.assert(
+      fc.property(fc.array(path, { minLength: 1, maxLength: 6 }), (changed) => {
+        const step = testsStep(changed)
+        if (step.skip !== undefined) return
+        const expected = changed.some(isHarnessPath) ? [] : [...HARNESS_PROJECTS].sort()
+        expect(negated(step.command)).toEqual(expected)
+      }),
+    )
+  })
+
+  it('the ratchet step runs the static check after lint and before the build and tests, in gate and gate:full', () => {
+    for (const full of [false, true]) {
+      const names = planned(PRODUCT, full).map((s) => s.name)
+      const at = (name: string): number => names.indexOf(name)
+      expect(at('ratchet'), names.join(', ')).toBeGreaterThan(at('lint'))
+      expect(at('ratchet')).toBeLessThan(at('build'))
+      expect(at('ratchet')).toBeLessThan(at('tests'))
+      const step = planned(PRODUCT, full).find((s) => s.name === 'ratchet') as StepSpec
+      expect(step.command).toMatch(/mutation:ratchet check --static\b/)
+      expect(step.skip).toBeUndefined()
+    }
   })
 })
 

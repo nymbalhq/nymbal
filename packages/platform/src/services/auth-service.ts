@@ -12,6 +12,7 @@ import {
   type Logger,
   type Role,
 } from '@nymbalhq/types'
+import { audit } from '../audit/audit.js'
 import type { Repositories } from '../repositories/index.js'
 import type { CustomerWithHash } from '../repositories/customer.js'
 import type { EventPublisher } from '../events/publisher.js'
@@ -156,6 +157,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
 
   return {
     async register(input) {
+      audit.note('customer.register')
       if (!input.email.includes('@')) throw new ValidationError('invalid email')
       if (input.password.length < 8) throw new ValidationError('password must be ≥ 8 characters')
       const email = input.email.toLowerCase()
@@ -167,6 +169,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       const passwordHash = await bcryptHash(input.password, 10)
       const now = new Date()
       const customer = await store.transaction(async (tx) => {
+        audit.note('customer.register', [{ type: 'customer', id }])
         await repos.customer.insert(tx, {
           id,
           email,
@@ -270,6 +273,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
         const existing = await repos.customer.findByEmail(tx, email)
         if (existing) return existing
         const id = uuidv7()
+        audit.note('customer.import', [{ type: 'customer', id }])
         const now = new Date()
         await repos.customer.insert(tx, {
           id,
