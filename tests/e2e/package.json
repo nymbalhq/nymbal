@@ -15,7 +15,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",
     "@nymbalhq/web-components": "workspace:*",
-    "@playwright/test": "^1.48.2",
+    "@playwright/test": "1.64.0",
     "lit": "^3.3.3"
   }
 }
