@@ -6,10 +6,9 @@ import type * as Clack from '@clack/prompts'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main } from '../src/index.js'
 
-// P1-08 AC-12 (decision 5): create-app writes `.env` with the admin email and a random password before it seeds,
-// passes both to the seed explicitly, and prints the admin URL, the email and the password. Kills: an outro without
-// credentials; a shared default password; a shell-exported NYMBAL_ADMIN_PASSWORD reaching the seed, so the printed
-// password would not sign in. The scaffold is read from scaffold/templates, so run `pnpm build` first.
+// AC-12: create-app writes `.env` with the admin email and a random password before it seeds, passes both to the seed
+// explicitly, and prints the admin URL, the email and the password. The scaffold is read from scaffold/templates, so
+// run `pnpm build` first.
 
 const printed = vi.hoisted(() => ({ text: [] as string[] }))
 
@@ -88,7 +87,7 @@ function dotEnvValue(source: string, key: string): string | undefined {
 
 /** Scaffolds `shop` with --yes in a fresh directory; returns what ran, the final `.env` and everything printed. */
 async function scaffoldOnce(): Promise<{ runs: Run[]; dotEnv: string; output: string }> {
-  const cwd = realpathSync(await mkdtemp(join(tmpdir(), 'p1-08-credentials-')))
+  const cwd = realpathSync(await mkdtemp(join(tmpdir(), 'admin-credentials-')))
   scratch.push(cwd)
   process.chdir(cwd)
   printed.text.length = 0
@@ -114,7 +113,7 @@ async function scaffoldOnce(): Promise<{ runs: Run[]; dotEnv: string; output: st
   return { runs, dotEnv: readFileSync(path, 'utf8'), output: printed.text.join('\n') }
 }
 
-describe('P1-08 AC-12: the admin credentials reach .env, the seed and the outro', () => {
+describe('AC-12: the admin credentials reach .env, the seed and the outro', () => {
   it('AC-12: .env holds the admin email and a random base64url password of at least 22 chars, written before the seed; the seed env and the outro carry the same password, not the shell value', async () => {
     const { runs, dotEnv, output } = await scaffoldOnce()
 

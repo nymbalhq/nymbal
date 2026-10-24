@@ -1,10 +1,9 @@
 import type { DocumentStoreAdapter } from '@nymbalhq/types'
 
-// P3-02 (spec P3-02-replay-engine): the read models and their document-store collections as decision 1 names them,
-// and a whole collection read through the adapter's own query (a full scan, in key order). Imports nothing of the
-// rebuild, so a suite that only spawns the CLI can use it.
+// The read models and their document-store collections, and a whole collection read through the adapter's own query
+// (a full scan, in key order). Imports nothing of the rebuild, so a suite that only spawns the CLI can use it.
 
-/** Decision 1: each document-store read model and the collections it owns. `search` owns none of the document store. */
+/** Each document-store read model and the collections it owns. `search` owns none of the document store. */
 export const DOCUMENT_MODELS = {
   catalogue: ['categories', 'products', 'products-by-category'],
   orders: ['orders', 'orders-by-customer'],

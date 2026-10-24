@@ -9,11 +9,8 @@ import {
   type WooCommerceServer,
 } from '../../../../tests/support/woocommerce-server.js'
 
-// Acceptance test for P3-04 AC-3, the import (spec P3-04-audit-trail, decision 1): a `nymbal import` run is attributed
-// to `import:woocommerce`. The built CLI is spawned against the WooCommerce fixture server on a fresh, migrated SQLite
-// project, and `audit_entries` is read from the file afterwards. Every entry the run wrote is by
-// `import:woocommerce`, and between them their subjects name every product the run created. Needs `pnpm build`.
-// Kills: imported writes left unaudited, or attributed to nobody (no scope opened by the command).
+// AC-3: a `nymbal import` run is audited as `import:woocommerce`, against the WooCommerce fixture server on a fresh
+// SQLite project. Needs `pnpm build`.
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (
@@ -37,10 +34,10 @@ afterAll(async () => {
 })
 
 function project(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-04-import-'))
+  const dir = mkdtempSync(join(tmpdir(), 'audit-import-'))
   dirs.push(dir)
   const config = {
-    store: { name: 'p3-04-import', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'audit-import', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { adapter: 'middleware' },
@@ -74,7 +71,7 @@ function read<T>(dbPath: string, sql: string): T[] {
   }
 }
 
-describe('P3-04 AC-3: an import run is attributed to import:woocommerce', () => {
+describe('AC-3: an import run is attributed to import:woocommerce', () => {
   it('AC-3: every audit entry a `nymbal import` run writes is by import:woocommerce, applied, and their subjects name every product it created', async () => {
     const dir = project()
     const dbPath = join(dir, 'nymbal.db')

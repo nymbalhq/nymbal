@@ -13,10 +13,9 @@ import {
   timeQueries,
 } from '../support/search-catalogue.js'
 
-// P2-07 AC-7 on Postgres: the SQLite run's catalogue, queries and budgets
-// (packages/platform/tests/integration/search-performance.test.ts) on a database of this file's own.
-// Kills: a search that scans in memory, a missing GIN index that makes a query a table scan, an upsert that is a full
-// scan, and a fast answer that is wrong (each total is checked against decision 3's oracle).
+// AC-7 on Postgres: the SQLite run's catalogue, queries and budgets
+// (packages/platform/tests/integration/search-performance.test.ts) on a database of this file's own, every total
+// checked against an in-memory oracle.
 
 // Three times the quiet-machine bound: measured 11.7 s and 16.6 s beside another worktree's gate:full (2026-10-22),
 // where a 10 s bound was red then green with no code change.
@@ -45,7 +44,7 @@ afterAll(async () => {
   await db?.drop()
 }, 60_000)
 
-describe('P2-07 AC-7: 10k products on Postgres', () => {
+describe('AC-7: 10k products on Postgres', () => {
   it('AC-7 (a): indexing the 10k catalogue through the adapter, one product per call, takes under 30 s', () => {
     expect(buildMs).toBeLessThan(BUILD_BUDGET_MS)
   })
@@ -56,7 +55,7 @@ describe('P2-07 AC-7: 10k products on Postgres', () => {
     const p50 = percentile(timings, 50)
     // eslint-disable-next-line no-console -- AC-7: the test prints the p95, the p50 and the build time
     console.log(
-      `[P2-07 AC-7 postgres] 10k build ${buildMs.toFixed(0)} ms; search+facet p95 ${p95.toFixed(2)} ms, p50 ${p50.toFixed(2)} ms over ${timings.length} queries`,
+      `[search performance postgres] 10k build ${buildMs.toFixed(0)} ms; search+facet p95 ${p95.toFixed(2)} ms, p50 ${p50.toFixed(2)} ms over ${timings.length} queries`,
     )
     for (const [i, t] of timings.entries()) {
       expect(t.total, `total for "${t.query}"`).toBe(t.expected)

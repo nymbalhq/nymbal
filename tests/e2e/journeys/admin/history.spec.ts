@@ -5,19 +5,15 @@ import { API_URL, csrf } from '../../support/csrf'
 import { ADMIN_EMAIL, placeOrder, signInAsAdmin } from '../../support/admin'
 import { adminToken } from '../../support/checkout'
 
-// AC-7 and AC-8 (decisions 5-7), journeys history.product-edit-loads,
-// history.lists-changes and history.as-of-matches. AC-7: a product the test creates through the API (a seeded one has
-// no base event) opens at /admin/products/<slug> with the name and short description its admin GET answers; the admin
-// edits both and double-clicks Save, which applies one `product.update`; the admin adjusts its stock on the inventory
-// page. Its History tab lists the stock change and the edit newest first, with the fields from → to, the admin and the
-// command, as `…/history` lists them; "view as of" on the base shows the record before the edit, as `?at=` answers it.
+// AC-7 and AC-8. AC-7: a product the test creates through the API (a seeded one has no base event) opens at
+// /admin/products/<slug> with the name and short description its admin GET answers; the admin edits both and
+// double-clicks Save, which applies one `product.update`; the admin adjusts its stock on the inventory page. Its
+// History tab lists the stock change and the edit newest first, with the fields from → to, the admin and the command,
+// as `…/history` lists them; "view as of" on the base shows the record before the edit, as `?at=` answers it.
 // AC-8: an order placed through the API, moved to processing, shipped and partially refunded by the admin, lists
 // those changes newest first, and "view as of" on the shipped entry shows status shipped and refunded 0, as the API
 // read right after the ship did; a customer registered and updated through the storefront API lists both entries, the
 // update naming the edited field.
-// Kills: the edit page blank (no admin product GET, today); Save submitting twice; a tab missing or misattributing its
-// actor; an as-of panel that renders the live record, or the refund before it happened; customer entries with no
-// field changes (no snapshot, today).
 
 interface Change {
   path: string

@@ -4,9 +4,8 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { sqliteInventory, stockRaceRuns, type Inventory } from './fixtures/inventory'
 
-// Acceptance tests for P1-01 AC-3 and AC-4: on a fresh SQLite file, 50 buyers race for 3 units, 10 consecutive
-// runs. The correct conditional decrement is reported clean every time; the broken read-then-write one is caught
-// every time (the roadmap proof that the kit sees a broken decrement).
+// AC-3 and AC-4: on a fresh SQLite file, 50 buyers race for 3 units, 10 consecutive runs. The correct conditional
+// decrement is reported clean every time; the broken read-then-write one is caught every time.
 
 const RACE = { runs: 10, contenders: 50, units: 3 }
 

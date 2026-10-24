@@ -13,11 +13,10 @@ import {
 } from '../../packages/importers/tests/integration/support/import-env.js'
 import { anonymousGet, createPublicBucket, type TestBucket } from '../support/s3'
 
-// Acceptance test for P2-11 AC-4, the MinIO case (spec P2-11-s3-media, decision 5): the WooCommerce fixture import
-// (fetch mock) with `deps.media` the S3 storage on this run's bucket leaves every product image in the bucket: each
-// media URL is under the bucket's URL, and an anonymous GET of it returns the bytes the mock served for that image,
-// with its content type. Requests the mock does not own (MinIO's) go to the real fetch.
-// Needs MinIO (NYMBAL_TEST_S3_ENDPOINT). Kills: an importer that writes anywhere but the storage it was given.
+// AC-4, the MinIO case: the WooCommerce fixture import (fetch mock) with `deps.media` the S3 storage on this run's
+// bucket leaves every product image in the bucket: each media URL is under the bucket's URL, and an anonymous GET of
+// it returns the bytes the mock served for that image, with its content type. Requests the mock does not own
+// (MinIO's) go to the real fetch. Needs MinIO (NYMBAL_TEST_S3_ENDPOINT).
 
 let bucket: TestBucket
 let tmpDir: string
@@ -27,7 +26,7 @@ const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex')
 
 beforeAll(async () => {
   bucket = await createPublicBucket('import')
-  tmpDir = await mkdtemp(join(tmpdir(), 'p2-11-import-s3-'))
+  tmpDir = await mkdtemp(join(tmpdir(), 's3-import-s3-'))
   vi.stubGlobal('fetch', wooFetch(catalogue, realFetch))
 })
 
@@ -37,7 +36,7 @@ afterAll(async () => {
   await bucket?.remove()
 })
 
-describe('P2-11 AC-4: an import into the S3 storage leaves every image in the bucket', () => {
+describe('AC-4: an import into the S3 storage leaves every image in the bucket', () => {
   it('AC-4: every product image URL is under the bucket’s URL, and an anonymous GET of each returns the bytes and content type its source served', async () => {
     const env = await buildImportEnv()
     try {

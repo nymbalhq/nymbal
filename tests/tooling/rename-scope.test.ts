@@ -6,9 +6,8 @@ import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P0-04 AC-6: `scripts/rename-scope.ts` run twice changes nothing the second time, and it
-// never touches pnpm-lock.yaml or archive/. Interface: `tsx scripts/rename-scope.ts --root <dir>`, rewriting the
-// git-tracked files of <dir>.
+// AC-6: `scripts/rename-scope.ts` run twice changes nothing the second time, and it never touches pnpm-lock.yaml or
+// archive/. Interface: `tsx scripts/rename-scope.ts --root <dir>`, rewriting the git-tracked files of <dir>.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 // Built so that this file never contains the old scope literally (AC-1 scans every tracked file).

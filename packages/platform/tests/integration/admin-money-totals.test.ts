@@ -6,11 +6,8 @@ import { address, cartWith, createKernel, seedVariant, type Kernel } from '../su
 import { adminClient, storedMoney, type AdminClient } from '../support/money.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
-// P1-13 AC-7 (decision 7) on SQLite, a kernel of this file's own: dashboard revenue and a customer's totalSpentMinor
-// are Σ (captured − refunded) over their orders. Generated runs seed paid (stub), manually paid (mark-paid) and unpaid
-// (`+stub-pending`) orders for a fresh customer, refund generated parts of the paid ones, and compare the dashboard's
-// change and the customer's spend with the money that actually moved. Kills: unpaid orders counted as revenue,
-// partially refunded and refunded orders counted at their total (or dropped whole), and refunds never reducing spend.
+// AC-7 on SQLite: dashboard revenue and a customer's totalSpentMinor are Σ (captured − refunded) over their orders,
+// over generated runs of paid, manually paid and unpaid orders with generated partial refunds.
 
 interface Dashboard {
   today: { orderCount: number; revenueMinor: number; itemsShipped: number }
@@ -23,7 +20,7 @@ const orderPlan = fc.record({
   refundPercents: fc.array(fc.integer({ min: 1, max: 100 }), { maxLength: 3 }),
 })
 
-describe('P1-13 AC-7: totals count money (sqlite)', () => {
+describe('AC-7: totals count money (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader
@@ -60,7 +57,7 @@ describe('P1-13 AC-7: totals count money (sqlite)', () => {
     await fc.assert(
       fc.asyncProperty(fc.array(orderPlan, { minLength: 1, maxLength: 4 }), async (plans) => {
         const { customer } = await k.services.auth.register({
-          email: `spender-${randomUUID()}@p1-13.test`,
+          email: `spender-${randomUUID()}@money.test`,
           password: 'correct-horse-battery',
         })
         const revenueBefore = await revenue()
@@ -74,8 +71,8 @@ describe('P1-13 AC-7: totals count money (sqlite)', () => {
             customerId: customer.id,
             email:
               plan.kind === 'paid'
-                ? `buyer-${tag}@p1-13.test`
-                : `buyer-${tag}+stub-pending@p1-13.test`,
+                ? `buyer-${tag}@money.test`
+                : `buyer-${tag}+stub-pending@money.test`,
             billingAddress: address,
             shippingAddress: address,
           })
@@ -119,7 +116,7 @@ describe('P1-13 AC-7: totals count money (sqlite)', () => {
       const started = await k.services.checkout.beginCheckout({
         cartToken: await cartWith(k, seeded, 2),
         email:
-          kind === 'unpaid' ? `buyer-${tag}+stub-pending@p1-13.test` : `buyer-${tag}@p1-13.test`,
+          kind === 'unpaid' ? `buyer-${tag}+stub-pending@money.test` : `buyer-${tag}@money.test`,
         billingAddress: address,
         shippingAddress: address,
       })

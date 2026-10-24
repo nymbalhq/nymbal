@@ -5,10 +5,9 @@ import { createMailSink } from '@nymbalhq/proof-kit/mail'
 import { createLogger } from '@nymbalhq/platform'
 import type { EmailAdapter } from '@nymbalhq/types'
 
-// Acceptance tests for P1-01 AC-10: the SMTP email adapter, configured with the sink's emailConfig(), really
-// delivers to Mailpit, and waitFor fails loudly (address and counts) instead of hanging or resolving short.
-// P2-01 AC-5 moved it to the `smtp` provider: nodemailer left the kernel for @nymbalhq/adapter-smtp, loaded through
-// the package's createAdapter as the kernel loads it.
+// AC-10: the `smtp` email adapter (@nymbalhq/adapter-smtp, loaded through its createAdapter as the kernel loads it),
+// configured with the sink's emailConfig(), really delivers to Mailpit, and waitFor fails loudly (address and counts)
+// instead of hanging or resolving short.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.
 
 const URL_VAR = 'NYMBAL_TEST_MAILPIT_URL'
@@ -23,10 +22,15 @@ if (mailpitUrl === undefined || mailpitUrl.trim() === '') {
 const logger = createLogger({ pretty: false, level: 'error' })
 
 function smtpAdapter(sink: ReturnType<typeof createMailSink>): EmailAdapter {
-  return createAdapter({ slot: 'email', config: sink.emailConfig(), logger, env: process.env }) as EmailAdapter
+  return createAdapter({
+    slot: 'email',
+    config: sink.emailConfig(),
+    logger,
+    env: process.env,
+  }) as EmailAdapter
 }
 
-describe('AC-10 (P2-01 AC-5): the mail sink receives what the smtp email adapter sends', () => {
+describe('AC-10: the mail sink receives what the smtp email adapter sends', () => {
   it('AC-10: one sendTransactional to a unique address yields exactly one message for it, with the sent subject', async () => {
     const sink = createMailSink()
     const email = smtpAdapter(sink)

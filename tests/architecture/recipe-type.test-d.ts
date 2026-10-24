@@ -4,10 +4,9 @@ import type {
   SpecRecipeValue,
 } from '../../packages/cli/src/recipes/fixtures/linked-project.js'
 
-// P2-03 AC-1 (type half; spec P2-03-nymbal-add-recipe, decision 1): @nymbalhq/types exports `Recipe` and `RecipeValue`
-// in the shape the spec gives, which the acceptance tests use as SpecRecipe and SpecRecipeValue. Each is assignable to
-// the other, both ways, so a field renamed, dropped, added as required or retyped fails the root typecheck
-// (`tsc -b` includes tests/**).
+// AC-1, the type half: @nymbalhq/types exports `Recipe` and `RecipeValue` in the documented shape, which the tests use
+// as SpecRecipe and SpecRecipeValue. Each is assignable to the other, both ways, so a field renamed, dropped, added as
+// required or retyped fails the root typecheck (`tsc -b` includes tests/**).
 
 declare const exported: Recipe
 declare const spec: SpecRecipe

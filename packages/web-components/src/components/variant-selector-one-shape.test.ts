@@ -5,10 +5,9 @@ import type { VariantOption } from '@nymbalhq/types'
 import { createMockClient, type createMockStore } from '../testing/index.js'
 import { registerClient } from '../registry.js'
 
-// P2-12 AC-5 (the selector): <nymbal-variant-selector> takes variant options as `VariantOption[]` only (decision 4).
-// Given variants whose options are strings (JSON or not), it renders no option and logs nothing, so no parse is
-// attempted; given a JSON-string `options` attribute, it does not read it: the options shown are exactly the
-// variants' own. Kills: the selector keeping its JSON-string paths, for variant options or for the attribute.
+// AC-5 (the selector): <nymbal-variant-selector> takes variant options as `VariantOption[]` only. Given variants whose
+// options are strings (JSON or not), it renders no option and logs nothing, so no parse is attempted; given a
+// JSON-string `options` attribute, it does not read it: the options shown are exactly the variants' own.
 
 const LOGS = ['log', 'info', 'debug', 'warn', 'error'] as const
 
@@ -24,7 +23,7 @@ afterEach(() => {
 
 function productWith(variantOptions: unknown[]): DenormalisedProduct {
   return {
-    id: 'prod-p2-12',
+    id: 'prod-variants',
     slug: 'one-shape',
     name: 'One Shape',
     description: '',
@@ -52,8 +51,8 @@ function productWith(variantOptions: unknown[]): DenormalisedProduct {
   } as unknown as DenormalisedProduct
 }
 
-// P2-06 decisions 1 and 2: the element is a Lit element that renders in an open shadow root, so its options are read
-// through `shadowRoot`, once its render has settled (`updateComplete`).
+// The element is a Lit element that renders in an open shadow root, so its options are read through `shadowRoot`,
+// once its render has settled (`updateComplete`).
 function shadow(el: Element): ShadowRoot {
   const root = el.shadowRoot
   if (root === null) throw new Error(`<${el.localName}> has no open shadow root`)
@@ -100,7 +99,7 @@ const arbOptionList: fc.Arbitrary<VariantOption[]> = fc.uniqueArray(
   { minLength: 1, maxLength: 3, selector: (o) => o.name },
 )
 
-describe('P2-12: the variant selector takes one option shape', () => {
+describe('the variant selector takes one option shape', () => {
   it('AC-5: variants whose options are strings, JSON or not, render no option and log nothing', async () => {
     const arbStringOptions = fc.oneof(
       arbOptionList.map((o) => JSON.stringify(o)),

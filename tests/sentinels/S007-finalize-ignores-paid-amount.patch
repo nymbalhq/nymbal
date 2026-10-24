@@ -2,7 +2,7 @@
 # kind: injected
 # defect: finalize skips the amount and currency check, so any captured amount in any currency confirms the order
 # where: packages/platform/src/services/checkout-service.ts:787-790
-# killed-by: P1-05 acceptance tests (packages/platform/tests/integration/underpayment.test.ts AC-3)
+# killed-by: packages/platform/tests/integration/underpayment.test.ts AC-3
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/underpayment.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts

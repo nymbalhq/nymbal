@@ -7,12 +7,10 @@ import { seedProducts } from '../../src/seed/data.js'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, type Kernel } from '../support/kernel.js'
 
-// P1-11 AC-1 to AC-4 over HTTP on a served kernel (SQLite): `GET /api/products?sort=<key>` orders by the key with ties
-// broken by slug and unpriced products last, paging under a key yields the whole sorted list, an unknown key or a cursor
-// from another key is refused, and no key means `newest`. The expected order is computed here from the read model
-// (the document store), never from the route under test. Kills: `sort` stripped by the schema or ignored by the handler,
-// ordering by `priceMinor` (first variant) instead of the "from" price, case- or accent-sensitive name compare, a
-// cursor that restarts or repeats under a non-key order, a stale cursor silently accepted, a slug-order default.
+// AC-1 to AC-4 over HTTP on a served kernel (SQLite): `GET /api/products?sort=<key>` orders by the key with ties broken
+// by slug and unpriced products last, paging under a key yields the whole sorted list, an unknown key or a cursor from
+// another key is refused, and no key means `newest`. The expected order is computed here from the read model (the
+// document store), never from the route under test.
 
 const KEYS: ProductSortKey[] = ['newest', 'price-asc', 'price-desc', 'name-asc', 'name-desc']
 
@@ -76,7 +74,7 @@ async function walk(
 const fromPrice = (p: DenormalisedProduct): number | null => p.priceRange?.minMinor ?? null
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })
 
-/** The spec's order for a key (Decision 1): the key, then slug ascending; a product with no price last in both price orders. */
+/** The order for a key: the key, then slug ascending; a product with no price last in both price orders. */
 function compareBy(key: ProductSortKey) {
   return (a: DenormalisedProduct, b: DenormalisedProduct): number => {
     let c = 0
@@ -104,7 +102,7 @@ function compareBy(key: ProductSortKey) {
   }
 }
 
-/** The read model's documents for these slugs, sorted by the spec's order for `key`. */
+/** The read model's documents for these slugs, sorted by the order for `key`. */
 async function expectedOrder(k: Kernel, slugs: string[], key: ProductSortKey): Promise<string[]> {
   const docs = await Promise.all(
     slugs.map(async (slug) => {
@@ -142,7 +140,7 @@ async function seedCatalogue(
   catalogue: GeneratedProduct[],
 ): Promise<{ category: string; slugs: string[] }> {
   const run = ++counter
-  const category = `p1-11-cat-${run}`
+  const category = `sort-cat-${run}`
   const cat = await k.services.category.create({
     slug: category,
     name: `Sort ${run}`,
@@ -240,7 +238,7 @@ describe('GET /api/products sort, on the seeded catalogue', () => {
     expect(crossed.status, described(crossed)).toBe(400)
     expect(crossed.body.error?.code).toBe('validation.failed')
 
-    // No sort is `newest` (Decision 2), so the price-asc cursor is from another key there too.
+    // No sort is `newest`, so the price-asc cursor is from another key there too.
     const defaulted = await getProducts(served, { limit: 3, cursor })
     expect(defaulted.status, described(defaulted)).toBe(400)
     expect(defaulted.body.error?.code).toBe('validation.failed')
@@ -298,7 +296,7 @@ describe('GET /api/products sort, on generated catalogues', () => {
 
   it('AC-4: no sort returns the newest order, the same as sort=newest, in a category and across the store', async () => {
     const run = ++counter
-    const category = `p1-11-newest-${run}`
+    const category = `sort-newest-${run}`
     const cat = await k.services.category.create({
       slug: category,
       name: 'Newest',

@@ -15,10 +15,10 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P1-05 AC-13 (decision 8): rule 8 counts a sentinel. A new test file that passes on the base
-// and is named in the `# suite:` of an injected sentinel under `tests/sentinels/` is run once more, alone, with that
-// sentinel's patch applied to the head source in the temporary worktree. Failing there is the verdict
-// `fails under sentinel <id>` and no violation; passing there, or being named by no sentinel, stays PASSES ON BASE.
+// AC-13: rule 8 counts a sentinel. A new test file that passes on the base and is named in the `# suite:` of an
+// injected sentinel under `tests/sentinels/` is run once more, alone, with that sentinel's patch applied to the head
+// source in the temporary worktree. Failing there is the verdict `fails under sentinel <id>` and no violation;
+// passing there, or being named by no sentinel, stays PASSES ON BASE.
 // Each test builds a throwaway git repo, as tests-fail-on-base.test.ts does.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -85,7 +85,7 @@ function sentinel(opts: { id: string; defect: string; suite: string; patch: stri
     '# kind: injected',
     `# defect: ${opts.defect}`,
     '# where: src/math.js',
-    '# killed-by: P1-05 AC-13 fixture',
+    '# killed-by: the sentinel fixture',
     `# suite: ${opts.suite}`,
     opts.patch,
   ].join('\n')
@@ -266,7 +266,7 @@ function violations(out: string, files: string[]): string[] {
   return files.filter((file) => verdictsOf(out, file).includes('PASSES ON BASE')).sort()
 }
 
-describe('P1-05 AC-13: rule 8 counts a sentinel', () => {
+describe('AC-13: rule 8 counts a sentinel', () => {
   it('AC-13: a new test that passes on base but fails under the injected sentinel naming it is "fails under sentinel <id>", and the step exits 0', () => {
     const { root, base, patches } = makeRepo([CAUGHT])
     expectFixture(root, base, patches, [CAUGHT])

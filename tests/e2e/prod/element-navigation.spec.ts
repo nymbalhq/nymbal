@@ -4,14 +4,12 @@ import { isNext, markWindow, windowMarked } from '../support/elements'
 import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { upgraded } from '../support/server-rendered'
 
-// P2-17 AC-7 (spec Decision 7), on production builds of both templates: the anchors of the card, the header, the
-// breadcrumb and the category nav are plain <a> in shadow roots, which Next does not route. A plain left click on one
-// dispatches a cancelable, composed `nymbal:navigate` with the anchor's href; on Next `NymbalSetup` routes it, so the
-// page is reached without a full load (a `window` marker survives); on Astro nobody cancels it and the anchor loads
-// the page (the marker is gone). A modifier click opens the page in a new tab and a right click opens nothing; neither
-// dispatches the event nor moves this page. The events are recorded in sessionStorage, which a full load in the same
-// tab keeps. Kills: the event missing or not cancelable, Next losing the page state on a card click (a full load),
-// a ctrl-click hijacked into this tab.
+// AC-7, on production builds of both templates: the anchors of the card, the header, the breadcrumb and the category
+// nav are plain <a> in shadow roots, which Next does not route. A plain left click on one dispatches a cancelable,
+// composed `nymbal:navigate` with the anchor's href; on Next `NymbalSetup` routes it, so the page is reached without a
+// full load (a `window` marker survives); on Astro nobody cancels it and the anchor loads the page (the marker is
+// gone). A modifier click opens the page in a new tab and a right click opens nothing; neither dispatches the event
+// nor moves this page. The events are recorded in sessionStorage, which a full load in the same tab keeps.
 
 const PRODUCT = seedProducts[0]!.slug
 
@@ -95,7 +93,7 @@ const ANCHORS: Anchor[] = [
   },
 ]
 
-test.describe('P2-17 AC-7: soft navigation on Next through element anchors (production build)', () => {
+test.describe('AC-7: soft navigation on Next through element anchors (production build)', () => {
   test.beforeEach(async ({ page }) => {
     await blockExternalRequests(page)
     await recordNavigates(page)

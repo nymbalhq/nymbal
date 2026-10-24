@@ -8,15 +8,13 @@ import {
 } from '@nymbalhq/types'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-05 AC-4 (unit) and decision 5: <nymbal-sort-dropdown sort-keys='[…]' value> offers one option per key the store
-// reports, in the report's order, labelled from PRODUCT_SORT_LABELS; a value the keys lack selects the default sort;
-// choosing an option emits nymbal:sort:changed naming the key. Kills: a hard-coded option list that survives (an
-// absent key offered, the report's order ignored), an unknown ?sort shown as selected, and a choice that never
-// reaches the template's handler.
+// AC-4: <nymbal-sort-dropdown sort-keys='[…]' value> offers one option per key the store reports, in the report's
+// order, labelled from PRODUCT_SORT_LABELS; a value the keys lack selects the default sort; choosing an option emits
+// nymbal:sort:changed naming the key.
 //
-// P2-06 decisions 1, 2 and 3a: the element is a Lit element with an open shadow root. A `<select>` slotted into its
-// default slot (the Astro template's server render, so the sort works before JS) is the one it fills and wires; with
-// none slotted it renders its own `<select part="select">` in the shadow root. Every AC-4 case runs in both shapes.
+// The element is a Lit element with an open shadow root. A `<select>` slotted into its default slot (the Astro
+// template's server render, so the sort works before JS) is the one it fills and wires; with none slotted it renders
+// its own `<select part="select">` in the shadow root. Every AC-4 case runs in both shapes.
 
 type Shape = 'slotted' | 'own'
 const SHAPES: Shape[] = ['slotted', 'own']

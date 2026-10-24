@@ -8,12 +8,11 @@ import { renderElement } from '@nymbalhq/web-components/ssr'
 import * as committed from './generated/wrappers.js'
 import { renderNymbal } from './server.js'
 
-// P2-18 AC-7, the server half on Next (spec Decision 4): a page computes `renderNymbal(tag, attributes, children)` on
-// the server and hands it to the element's generated wrapper as `serverHtml`; the wrapper renders it on its own tag,
-// with no wrapping element, so the server HTML is that one element: its attributes on the tag, and inside it the
-// same declarative shadow root and light-DOM children `renderElement` gives for the same tag and attributes. Runs in
-// Node, as a server component does. Kills: a wrapper that drops `serverHtml`, wraps it in a div (React's hydration
-// then misses the parsed template and re-renders it, the spike's mismatch), or nests a second copy of its tag.
+// AC-7, the server half on Next: a page computes `renderNymbal(tag, attributes, children)` on the server and hands it
+// to the element's generated wrapper as `serverHtml`; the wrapper renders it on its own tag, with no wrapping element,
+// so the server HTML is that one element: its attributes on the tag, and inside it the same declarative shadow root
+// and light-DOM children `renderElement` gives for the same tag and attributes. Runs in Node, as a server component
+// does. A wrapping div would make React's hydration miss the parsed template and re-render it.
 
 type Wrapper = React.ComponentType<Record<string, unknown>>
 
@@ -46,7 +45,7 @@ const LINE = {
 }
 const CART = { items: [LINE], subtotalMinor: 17800, currency: 'GBP', itemCount: 2 }
 
-describe('P2-18 AC-7: a wrapper given serverHtml renders it on its own tag', () => {
+describe('AC-7: a wrapper given serverHtml renders it on its own tag', () => {
   it('AC-7: for every server-rendered element, renderToString(<Wrapper serverHtml={renderNymbal(tag).__html} />) is one <tag> holding what renderElement(tag) holds', () => {
     expect(SCHEMAS.length).toBeGreaterThan(0)
     for (const s of SCHEMAS) {

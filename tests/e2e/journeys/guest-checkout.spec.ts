@@ -12,7 +12,7 @@ import { expect, test } from '../support/fixtures'
 
 // The guest purchase journey on both templates. It buys a product of its own (`ownProduct`): the first card on
 // /products is, under the newest default, whatever another journey created last, and buying that moves a stock
-// another journey asserts on (P1-11 review B1). The order is read back through the API.
+// another journey asserts on. The order is read back through the API.
 
 interface OrderLine {
   variantId: string

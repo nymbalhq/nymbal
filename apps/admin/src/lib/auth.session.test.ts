@@ -1,10 +1,8 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// P1-08 AC-6 (unit half) and AC-7: the admin's session client (decision 4). The access token stays in memory; the
-// httpOnly `nymbal.refresh` cookie restores it. AC-6 kills: a restore that trusts any refresh, so a customer's cookie
-// signs into the admin. AC-7 kills: no retry after a 401; a refresh per failing call (rotation then revokes the whole
-// chain, services/auth-service.ts); a refresh loop; a refresh triggered by an /api/auth/* 401.
+// AC-6 and AC-7: the admin's session client. The access token stays in memory; the httpOnly `nymbal.refresh` cookie
+// restores it, and a 401 is retried after one shared refresh.
 //
 // auth.ts and api.ts keep module state (the token, the CSRF token, the in-flight refresh), so each case loads them
 // afresh.
@@ -98,7 +96,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('P1-08 AC-6: a refresh cookie restores only an admin session', () => {
+describe('AC-6: a refresh cookie restores only an admin session', () => {
   it('AC-6: a valid refresh for a customer-role account restores nothing, and the only admin call is the role check', async () => {
     const fake = fakeApi({ roles: ['customer'] })
     const { restoreSession, isAuthenticated } = await load()
@@ -131,7 +129,7 @@ describe('P1-08 AC-6: a refresh cookie restores only an admin session', () => {
   })
 })
 
-describe('P1-08 AC-7: a 401 causes one shared refresh and one retry', () => {
+describe('AC-7: a 401 causes one shared refresh and one retry', () => {
   it('AC-7: N concurrent calls answered 401 cause exactly one POST /api/auth/refresh, then each is retried once with the new token and resolves (property)', async () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 1, max: 8 }), async (n) => {
@@ -216,7 +214,7 @@ describe('P1-08 AC-7: a 401 causes one shared refresh and one retry', () => {
 
 // AC-7b kills: a 401-triggered refresh that adopts whatever token the cookie yields (a customer's cookie on the same
 // host) without the role check boot restore makes; a refresh for a call that carried no token at all.
-describe('P1-08 AC-7b: every refresh is role-checked', () => {
+describe('AC-7b: every refresh is role-checked', () => {
   it('AC-7b: a 401-triggered refresh that yields a non-admin token signs out, fires onSessionLost once, and the call rejects 401 without a retry', async () => {
     const fake = fakeApi({ roles: ['customer'] })
     const { api, setToken, isAuthenticated, getToken, onSessionLost, ApiError } = await load()

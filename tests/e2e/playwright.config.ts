@@ -14,7 +14,7 @@ const block = stack(fileURLToPath(new URL('.', import.meta.url)))
 process.env.NYMBAL_STACK_SLOT = String(block.slot)
 const local = (port: number): string => `http://localhost:${port}`
 
-// P2-05: the swap. `astro-custom` and `nextjs-custom` run the same journeys against the fixture store in
+// The swap: `astro-custom` and `nextjs-custom` run the same journeys against the fixture store in
 // tests/e2e/fixtures/custom-providers (search and payments `custom`, injected through its `adapters` export), on an API
 // of its own (3011 in slot 0) and a storefront of their own, so a custom run never reaches the native store. Each is
 // its own invocation (NYMBAL_E2E_TARGET), as gate.ts runs one per target.
@@ -22,16 +22,16 @@ const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
 const isCustom = target !== undefined && CUSTOM_TARGETS.includes(target)
 const CUSTOM_API = local(block.customApi)
 const NATIVE_API = local(block.api)
-// P2-09 decision 6: the no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of
-// its own, with storefronts of its own. `astro-nosearch` and `nextjs-nosearch` run only the journeys tagged @nosearch,
-// and every other project leaves them out.
+// The no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of its own, with
+// storefronts of its own. `astro-nosearch` and `nextjs-nosearch` run only the journeys tagged @nosearch, and every
+// other project leaves them out.
 const NOSEARCH_TARGETS = ['astro-nosearch', 'nextjs-nosearch']
 const isNoSearch = target !== undefined && NOSEARCH_TARGETS.includes(target)
 const NOSEARCH_API = local(block.noSearchApi)
-// P2-18 AC-3: the project-elements fixture (tests/e2e/fixtures/override-elements/elements/index.js, a project entry
-// overriding nymbal-mini-cart) in place of each template's own elements entry, named by NYMBAL_ELEMENTS_ENTRY, on an
-// API and storefronts of their own (the stack slot's overrideApi, astroOverride and nextjsOverride). `astro-override`
-// and `nextjs-override` run only the journeys tagged @override, and every other project leaves them out.
+// The project-elements fixture (tests/e2e/fixtures/override-elements/elements/index.js, a project entry overriding
+// nymbal-mini-cart) in place of each template's own elements entry, named by NYMBAL_ELEMENTS_ENTRY, on an API and
+// storefronts of their own (the stack slot's overrideApi, astroOverride and nextjsOverride). `astro-override` and
+// `nextjs-override` run only the journeys tagged @override, and every other project leaves them out.
 const OVERRIDE_TARGETS = ['astro-override', 'nextjs-override']
 const isOverride = target !== undefined && OVERRIDE_TARGETS.includes(target)
 const OVERRIDE_API = local(block.overrideApi)
@@ -57,7 +57,7 @@ const astroNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroN
 const nextjsNoSearchURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsNoSearch)
 const astroOverrideURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.astroOverride)
 const nextjsOverrideURL = process.env.NYMBAL_STOREFRONT_URL ?? local(block.nextjsOverride)
-// The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api (P1-08).
+// The admin is served by the API (`nymbal dev --api-only`) at /admin/, one origin with /api.
 const adminURL = process.env.NYMBAL_ADMIN_URL ?? `${NATIVE_API}/admin/`
 /**
  * The origins an API accepts (its nymbal.config.ts reads NYMBAL_CORS_ORIGINS): the two storefronts that call it, one
@@ -86,8 +86,8 @@ const overrideSqlitePath = (process.env.NYMBAL_E2E_OVERRIDE_SQLITE_PATH ??= join
   `nymbal-e2e-override-${Date.now()}-${process.pid}.db`,
 ))
 
-// P3-02 AC-6: where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and
-// the key prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
+// Where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and the key
+// prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
 const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
   tmpdir(),
   `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,

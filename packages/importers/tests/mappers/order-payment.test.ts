@@ -4,10 +4,9 @@ import { paymentState, type Order } from '@nymbalhq/types'
 import { mapOrder } from '../../src/woocommerce/mappers/order.js'
 import type { WcOrder } from '../../src/woocommerce/client.js'
 
-// P1-13 AC-12 (decision 2): a WooCommerce order whose status implies payment (processing, completed, refunded) imports
-// with a capture of its total and capture method `import`; refunded imports a refund equal to that capture; every other
-// status imports with nothing captured. Kills: imported paid orders reading Unpaid (no capture mapped), a refunded
-// import reading Paid (no refund mapped), and an unpaid status (pending, on-hold, cancelled, failed) mapped as paid.
+// AC-12: a WooCommerce order whose status implies payment (processing, completed, refunded) imports with a capture of
+// its total and capture method `import`; refunded imports a refund equal to that capture; every other status imports
+// with nothing captured.
 
 const PAID = ['processing', 'completed', 'refunded'] as const
 const UNPAID = ['pending', 'on-hold', 'cancelled', 'failed'] as const

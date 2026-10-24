@@ -296,7 +296,7 @@ export class NymbalCheckout extends NymbalElement {
   private billingSame = true
   private placing = false
   private placed = false
-  /** True from a step change until the next animation frame (Decision 4's multi-click rule). */
+  /** True from a step change until the next animation frame, so a second click of a double click is ignored. */
   private stepChanging = false
   private stepTurn = 0
   private heightRelease: ReturnType<typeof setTimeout> | undefined
@@ -568,9 +568,17 @@ export class NymbalCheckout extends NymbalElement {
       <section part="section" data-testid="checkout-shipping" ?hidden=${this.step !== 'shipping'}>
         <form part="form" novalidate @submit=${this.onShipping}>
           <h2 part="section-title">Shipping Address</h2>
-          <nymbal-address-form id-prefix="shipping" data-testid="shipping-form"></nymbal-address-form>
+          <nymbal-address-form
+            id-prefix="shipping"
+            data-testid="shipping-form"
+          ></nymbal-address-form>
           <div part="actions">
-            <button type="button" part="back" class="btn btn-secondary" @click=${this.back('contact')}>
+            <button
+              type="button"
+              part="back"
+              class="btn btn-secondary"
+              @click=${this.back('contact')}
+            >
               Back
             </button>
             <button
@@ -689,7 +697,9 @@ export class NymbalCheckout extends NymbalElement {
         ? nothing
         : html`<div part="error" role="alert" data-testid="checkout-error">${this.error}</div>`}
       <div part="layout">
-        <div part="main">${this.renderContact()} ${this.renderShipping()} ${this.renderPayment()}</div>
+        <div part="main">
+          ${this.renderContact()} ${this.renderShipping()} ${this.renderPayment()}
+        </div>
         ${this.renderSummary()}
       </div>
     `

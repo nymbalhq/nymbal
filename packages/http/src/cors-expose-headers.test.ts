@@ -3,10 +3,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 
-// Acceptance test for P3-04 AC-7, the CORS half (spec P3-04-audit-trail, decision 9): a browser on an allowed origin
-// can read the request's `x-correlation-id` and a replay's `Idempotent-Replayed`, so both are in
-// Access-Control-Expose-Headers on every CORS response, a route's answer and an unmatched route's 404 alike.
-// Kills: no exposedHeaders (today), or one of the two missing.
+// AC-7, the CORS half: a browser on an allowed origin can read `x-correlation-id` and `Idempotent-Replayed`, so both
+// are in Access-Control-Expose-Headers on every CORS response, a route's answer and an unmatched route's 404 alike.
 
 const logger = {
   trace() {},
@@ -39,7 +37,7 @@ async function start(): Promise<number> {
   return adapter.boundPort
 }
 
-describe('P3-04 AC-7: CORS exposes the correlation and replay headers', () => {
+describe('AC-7: CORS exposes the correlation and replay headers', () => {
   it('AC-7: property: for each allowed origin and path, Access-Control-Expose-Headers lists x-correlation-id and Idempotent-Replayed', async () => {
     const port = await start()
     await fc.assert(

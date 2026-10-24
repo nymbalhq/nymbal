@@ -13,13 +13,11 @@ import {
 } from '@nymbalhq/platform'
 import { seedReviews, walkReviews } from '../support/reviews-pages'
 
-// P2-13 AC-3 (spec P2-13-contract-tests-public), SQLite half: the reviews runner nothing had before (no runner consumed
-// runReviewsContract, so there is no base count). The published suite, pagination case included, runs on the native
-// reviews adapter over a migrated SQLite command store; Postgres runs the same in integration-postgres
+// AC-3, SQLite half: the published reviews suite, pagination case included, runs on the native reviews adapter over a
+// migrated SQLite command store; Postgres runs the same in integration-postgres
 // (packages/platform/tests/postgres/reviews-contract.postgres.test.ts). The property below holds the native adapter to
-// decision 4's keyset pagination directly: seeds number more than `limit`, the walk from page 1 yields each seeded
-// review once, the union is the seed, no page exceeds `limit` and `nextCursor` is null exactly on the last page.
-// Kills: native-adapter.ts returning `nextCursor: null` after the first page, a cursor that repeats or skips a review.
+// keyset pagination directly: seeds number more than `limit`, the walk from page 1 yields each seeded review once, the
+// union is the seed, no page exceeds `limit` and `nextCursor` is null exactly on the last page.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 let store: CommandStore | undefined
@@ -51,7 +49,7 @@ function build(): ReviewsAdapter {
 
 runReviewsContract('native-sqlite', build)
 
-describe('P2-13 AC-3: native reviews page by cursor (SQLite)', () => {
+describe('AC-3: native reviews page by cursor (SQLite)', () => {
   it('AC-3: over generated page sizes and seeds larger than one page, the cursor walk yields each seeded review once, the union is the seed, no page exceeds limit, and nextCursor is null exactly on the last page', async () => {
     const native = adapter!
     await fc.assert(

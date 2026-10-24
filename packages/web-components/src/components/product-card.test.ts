@@ -56,12 +56,10 @@ describe('nymbal-product-card image', () => {
   })
 })
 
-// P2-17 AC-1 (spec Decision 1 and Invariants): the card gains `eager`, which renders its image
-// `loading="eager" fetchpriority="high"` (P2-08's Astro LCP fix, now the grid's first four cards), and without it the
-// image stays lazy; on the server as in the browser, since the server's image is the one the LCP measures. A card whose
-// product has a `priceRange` shows exactly one amount, the from-price `priceRange.minMinor`, whatever `priceMinor` is
-// (`buildProductDoc` sets it to the first variant's), else `priceMinor`. Kills: `eager` ignored or applied on the client
-// only; a range `min – max` or the first variant's price on a card.
+// AC-1: the card's `eager` renders its image `loading="eager" fetchpriority="high"` (the grid's first four cards), and
+// without it the image stays lazy, on the server as in the browser, since the server's image is the one the LCP
+// measures. A card whose product has a `priceRange` shows exactly one amount, the from-price `priceRange.minMinor`,
+// whatever `priceMinor` is (`buildProductDoc` sets it to the first variant's), else `priceMinor`.
 
 /** The card's shadow root as the server renders it, parsed inert. */
 function serverRoot(attributes: Record<string, string>): DocumentFragment {
@@ -87,7 +85,7 @@ const range = fc
   .tuple(money, money)
   .map(([a, b]) => ({ minMinor: Math.min(a, b), maxMinor: Math.max(a, b) }))
 
-describe('P2-17 AC-1: nymbal-product-card eager and from-price', () => {
+describe('AC-1: nymbal-product-card eager and from-price', () => {
   it('AC-1: property: with eager the image is loading="eager" fetchpriority="high", without it loading="lazy" and not high priority, in the server render and the client render alike', async () => {
     await fc.assert(
       fc.asyncProperty(slug, name, fc.boolean(), async (s, n, eager) => {

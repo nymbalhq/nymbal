@@ -1,6 +1,6 @@
 // A shopper over HTTP (the shape of packages/proof-kit/tests/fixtures/storefront-client.ts): keeps the cookies the
 // store sets (cart, CSRF) and echoes the CSRF cookie in the header the security middleware checks. A jar passed in is
-// shared, so two shoppers on two base URLs are one browser talking to two replicas (P1-04 AC-2).
+// shared, so two shoppers on two base URLs are one browser talking to two replicas.
 
 const CSRF_COOKIE = 'nymbal.csrf'
 const CSRF_HEADER = 'x-csrf-token'

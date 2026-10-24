@@ -17,7 +17,7 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createCartService } from './cart-service.js'
 import { createLogger } from '../logger.js'
 
-// Carts are command-store rows (P1-04) and their events go through the outbox on the same store.
+// Carts are command-store rows and their events go through the outbox on the same store.
 async function makeDeps() {
   const commandStore = createCommandStore(
     // @ts-expect-error minimal config

@@ -15,7 +15,7 @@ import { withInfrastructure } from '../support/primitive-graph.js'
 
 const server = redisServerUrl()
 const prefix = uniquePrefix('failed-start')
-const dir = mkdtempSync(join(tmpdir(), 'p2-02-failed-start-'))
+const dir = mkdtempSync(join(tmpdir(), 'primitives-failed-start-'))
 
 function onDb13(): string {
   const u = new URL(server)

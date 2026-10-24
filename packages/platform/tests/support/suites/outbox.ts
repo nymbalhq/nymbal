@@ -11,8 +11,8 @@ import { seedVariant, type Kernel } from '../kernel.js'
 import { eventRows, maxSeq, placeholders } from '../outbox.js'
 import { openRaw, type RawReader } from '../raw.js'
 
-// P1-03 AC-4 (atomic append) and AC-5 (no event lost under concurrency) on one dialect. The `events` table is read
-// through a second connection, so a row counts only once it is committed.
+// AC-4 (atomic append) and AC-5 (no event lost under concurrency) on one dialect. The `events` table is read through a
+// second connection, so a row counts only once it is committed.
 
 export function outboxSuite(
   dialect: Kernel['dialect'],

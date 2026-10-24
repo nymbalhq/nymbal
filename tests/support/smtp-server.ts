@@ -21,7 +21,7 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
     const reply = (line: string) => socket.write(`${line}\r\n`)
     let buffer = ''
     let data: string[] | null = null
-    reply('220 p2-13 fake smtp ready')
+    reply('220 contracts fake smtp ready')
     socket.on('data', (chunk: string) => {
       buffer += chunk
       for (let end = buffer.indexOf('\r\n'); end >= 0; end = buffer.indexOf('\r\n')) {
@@ -39,9 +39,9 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
         }
         const verb = line.slice(0, 4).toUpperCase()
         if (verb === 'EHLO') {
-          reply('250-p2-13 hello')
+          reply('250-contracts hello')
           reply('250 8BITMIME')
-        } else if (verb === 'HELO') reply('250 p2-13 hello')
+        } else if (verb === 'HELO') reply('250 contracts hello')
         else if (['MAIL', 'RCPT', 'RSET', 'NOOP'].includes(verb)) reply('250 2.0.0 ok')
         else if (verb === 'DATA') {
           data = []

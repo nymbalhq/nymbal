@@ -4,8 +4,8 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD } from './admin'
 import { API_URL, csrf } from './csrf'
 import { expect } from './fixtures'
 
-// P1-12 helpers for the checkout journeys on both templates: a product of the test's own (so parallel projects and
-// other journeys never move its stock), the shopper's walk to Place Order, and the API's view of what the walk did.
+// Helpers for the checkout journeys on both templates: a product of the test's own (so parallel projects and other
+// journeys never move its stock), the shopper's walk to Place Order, and the API's view of what the walk did.
 
 export interface OwnProduct {
   slug: string
@@ -33,7 +33,7 @@ export async function ownProduct(
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), authorization: `Bearer ${token}` },
     data: {
-      slug: `p1-12-${tag}`,
+      slug: `checkout-${tag}`,
       name,
       description: 'A product of one checkout journey.',
       status: 'active',
@@ -117,7 +117,7 @@ export function orderNumberOf(page: Page): string {
 /**
  * Flags, in `window`, any moment the page (its title, its body or any shadow root in it) says "Order confirmed", even
  * briefly. A document `MutationObserver` never sees a mutation inside a shadow tree, and the body's `textContent`
- * leaves shadow-root text out (P2-16 Decision 8), so every root `attachShadow` creates is observed and read too.
+ * leaves shadow-root text out, so every root `attachShadow` creates is observed and read too.
  */
 export async function watchConfirmedClaim(page: Page): Promise<void> {
   await page.addInitScript(() => {

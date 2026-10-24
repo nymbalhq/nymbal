@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { CheckoutError, NymbalError, ValidationError } from '@nymbalhq/types'
 import { renderError } from './envelope.js'
 
-// P1-06 AC-17: `renderError` maps the errors a shopper can fix to 4xx and keeps faults at 5xx. `finalize_failed`
-// stays 500 because the Stripe retry (P1-05) depends on a non-2xx. Kills: every `NymbalError` rendered as 500.
+// AC-17: `renderError` maps the errors a shopper can fix to 4xx and keeps faults at 5xx. `finalize_failed` stays 500
+// because the Stripe retry depends on a non-2xx.
 
 type CheckoutCode = ConstructorParameters<typeof CheckoutError>[0]
 

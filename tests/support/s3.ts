@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 
-// The S3-compatible server (MinIO) the P2-11 media tests use, and a minimal SigV4 client for what the tests do around
-// the storage under test: make a bucket of their own with a public-read policy, list it, and remove it. The repository
+// The S3-compatible server (MinIO) the media tests use, and a minimal SigV4 client for what the tests do around the
+// storage under test: make a bucket of their own with a public-read policy, list it, and remove it. The repository
 // carries no S3 SDK outside @nymbalhq/media-s3, which is the subject under test. A missing NYMBAL_TEST_S3_ENDPOINT
 // throws, so a suite that needs S3 fails instead of skipping (as tests/support/redis.ts does for Redis).
 

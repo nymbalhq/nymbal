@@ -16,15 +16,12 @@ import { TEST_BUILDER_CONTEXT } from '../../../src/tests/publisher.js'
 import { kernelConfig, MIGRATIONS_ROOT, type Dialect } from '../kernel.js'
 import { openRaw, type RawReader } from '../raw.js'
 
-// P3-01 AC-5, and the platform half of AC-6, on one dialect (spec P3-01-event-log-surface, decisions 6 and 7).
-// AC-5: a database at migration 0007 holding events written by the old code (rows of the 0002 shape, inserted by a
-// second connection) is migrated to the newest; `correlation_id` is backfilled from each envelope, falling back to the
-// row's id, and `queryByCorrelation` returns each id's rows in seq order. Property: for any appended envelopes,
-// `queryByCorrelation(c)` is exactly the envelopes whose correlationId is c, in seq order. AC-6: through the read-only
-// opener (`readOnly: true`, as diagnose opens the store) the log can be queried and `append` rejects, leaving the log
-// as it was. Repository methods take the transaction handle first, as every repository's do (tx-required.test-d.ts).
-// Kills: old rows unqueryable after the migration, a column that disagrees with the envelope, results not in seq order,
-// and a read path that can write.
+// AC-5, and the platform half of AC-6, on one dialect. AC-5: a database at migration 0007 holding events of the 0002
+// shape is migrated to the newest; `correlation_id` is backfilled from each envelope, falling back to the row's id,
+// and `queryByCorrelation(c)` is exactly the envelopes whose correlationId is c, in seq order. AC-6: through the
+// read-only opener (`readOnly: true`, as diagnose opens the store) the log can be queried and `append` rejects,
+// leaving the log as it was. Repository methods take the transaction handle first, as every repository's do
+// (tx-required.test-d.ts).
 
 const makeEvent = createEventBuilder(TEST_BUILDER_CONTEXT)
 
@@ -32,9 +29,9 @@ function storageFor(dialect: Dialect, target: string) {
   return dialect === 'sqlite' ? { sqlitePath: target } : { postgresUrl: target }
 }
 
-/** A copy of the migrations for `dialect` holding 0000-0007 only: the schema before this task. */
+/** A copy of the migrations for `dialect` holding 0000-0007 only: the schema before the migration under test. */
 function migrationsTo0007(dialect: Dialect): { root: string; drop(): void } {
-  const root = mkdtempSync(join(tmpdir(), 'p3-01-migrations-'))
+  const root = mkdtempSync(join(tmpdir(), 'events-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
   const to = join(root, dialect)
   mkdirSync(join(to, 'meta'), { recursive: true })
@@ -117,7 +114,7 @@ export function eventLogCorrelationSuite(
   /** A fresh, empty database: its target and how to drop it. */
   fresh: () => Promise<{ target: string; drop(): Promise<void> }>,
 ): void {
-  describe(`P3-01 AC-5 and AC-6: the correlation_id column (${dialect})`, () => {
+  describe(`AC-5 and AC-6: the correlation_id column (${dialect})`, () => {
     const cleanups: Array<() => Promise<void> | void> = []
 
     afterAll(async () => {

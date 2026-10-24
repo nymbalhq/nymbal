@@ -9,10 +9,10 @@ import {
   withInfrastructure,
 } from '../support/primitive-graph.js'
 
-// Acceptance test for P2-02 AC-5 (spec P2-02-primitives-are-protocols), the Redis-backed case: with the Redis document
-// store and the Redis Streams bus configured, createApp loads each from its package (decision 2) and app.capabilities()
-// reports each instance's own capabilities(). The child replaces the document store instance's answer after start, so
-// a report that is hard-coded, or read from anywhere but the instance, shows. Needs `pnpm build` and Redis.
+// AC-5, the Redis-backed case: with the Redis document store and the Redis Streams bus configured, createApp loads each
+// from its package and app.capabilities() reports each instance's own capabilities(). The child replaces the document
+// store instance's answer after start, so a report read from anywhere but the instance shows. Needs `pnpm build` and
+// Redis.
 
 const url = redisServerUrl()
 const prefix = uniquePrefix('graph')
@@ -22,7 +22,7 @@ afterAll(async () => {
   await deleteUnder(url, prefix)
 })
 
-describe('P2-02 AC-5: redis and redis-streams load from their packages', () => {
+describe('AC-5: redis and redis-streams load from their packages', () => {
   it('AC-5: createApp loads @nymbalhq/doc-store-redis and @nymbalhq/event-bus-redis-streams (and ioredis through them), and reports each instance’s own capabilities()', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
@@ -44,6 +44,6 @@ describe('P2-02 AC-5: redis and redis-streams load from their packages', () => {
     const { report, own, probed } = outcome.started!
     expect(report.documentStore).toEqual({ provider: 'redis', capabilities: own.documentStore })
     expect(report.eventBus).toEqual({ provider: 'redis-streams', capabilities: own.eventBus })
-    expect(probed).toEqual(['p2-02-probe'])
+    expect(probed).toEqual(['primitives-probe'])
   }, 90_000)
 })

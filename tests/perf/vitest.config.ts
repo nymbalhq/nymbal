@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
-// P2-08 AC-2 and AC-4: spawned runs of `pnpm perf:budgets` (production builds, a seeded API, Lighthouse, three runs a
-// page), minutes each. They need Chrome and belong to the `perf-budgets` CI job, so no project of the root
-// vitest.config.ts collects them and `pnpm test` and the gate never run them.
+// AC-2 and AC-4: spawned runs of `pnpm perf:budgets` (production builds, a seeded API, Lighthouse, three runs a page),
+// minutes each. They need Chrome and belong to the `perf-budgets` CI job, so no project of the root vitest.config.ts
+// collects them and `pnpm test` and the gate never run them.
 //
 // Run: pnpm exec vitest run --config tests/perf/vitest.config.ts
 

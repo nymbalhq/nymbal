@@ -2,9 +2,9 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { checkBudgets } from '../../scripts/perf-budgets-check'
 
-// P2-08 AC-1: the budget checker. A page passes iff every metric is at or under its budget (a NaN, which is what a
-// page that failed to load measures as, is not); a budgeted page with no result fails as "not measured"; a measured
-// page with no budget fails as "no budget"; and the failures name exactly the (page, metric) pairs that failed.
+// AC-1: the budget checker. A page passes iff every metric is at or under its budget (a NaN, which is what a page
+// that failed to load measures as, is not); a budgeted page with no result fails as "not measured"; a measured page
+// with no budget fails as "no budget"; and the failures name exactly the (page, metric) pairs that failed.
 
 const METRICS = ['lcpMs', 'cls', 'tbtMs', 'scriptBytes'] as const
 type Metric = (typeof METRICS)[number]
@@ -118,7 +118,7 @@ function expectedFailures(p: PageCase): string[] {
   return METRICS.filter((m) => !(measured[m] <= p.budget[m]))
 }
 
-describe('P2-08 AC-1: checkBudgets', () => {
+describe('AC-1: checkBudgets', () => {
   it('AC-1: a page passes iff every metric is at or under budget; unmeasured and unbudgeted pages fail; exactly the failing (page, metric) pairs are named', () => {
     fc.assert(
       fc.property(caseArb, (pages) => {

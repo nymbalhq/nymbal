@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { run, VITEST_WORKERS_ENV, vitestWorkers } from '../../scripts/gate'
 import { liveHolders } from '../../scripts/stack'
 
-// P2-14 review round 2, Finding F2 (Decision 14): two worktrees' gates running Vitest at once each started a worker
-// per core, and Vitest's main process starved. A Vitest step now takes a share of the CPUs by the number of worktrees
-// with a live shared hold. Each other holder is a child process in a linked worktree of a throwaway repository.
+// Two worktrees' gates running Vitest at once would each start a worker per core and starve Vitest's main process,
+// so a Vitest step takes a share of the CPUs by the number of worktrees with a live shared hold. Each other holder is
+// a child process in a linked worktree of a throwaway repository.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -119,7 +119,7 @@ async function workersSeenBy(cwd: string, name: string): Promise<string> {
   return readFileSync(out, 'utf8')
 }
 
-describe('P2-14 F2: Vitest steps share the CPUs between worktrees', () => {
+describe('Vitest steps share the CPUs between worktrees', () => {
   it('liveHolders counts each worktree with a live shared hold', async () => {
     const { one, two } = twoWorktrees()
     expect(liveHolders(one)).toBe(1)

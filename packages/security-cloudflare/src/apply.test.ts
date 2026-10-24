@@ -23,12 +23,10 @@ import {
   type SpecSecurityConfig,
 } from './tests/support.js'
 
-// Acceptance tests for P2-04 AC-5 (spec P2-04-cloudflare-waf, Decision 3, Invariants): on a zone whose custom phase
-// starts with two rules of the owner's, `apply` keeps them unchanged and first and puts Nymbal's rules after them; it is
-// idempotent (property: after any apply, `plan` is empty and a second `apply` writes nothing, also after moving from one
-// config to another); `inspect` lists exactly the refs `desiredRules` gives; removing one rate limit removes exactly
-// that rule; and a phase never written (404) is an empty phase for `plan`, `apply` and `inspect`. Kills: an apply that
-// replaces the phase whole and deletes the owner's rules, one that rewrites unchanged phases, and stale Nymbal rules.
+// AC-5: on a zone whose custom phase starts with two rules of the owner's, `apply` keeps them unchanged and first and
+// puts Nymbal's rules after them; it is idempotent (after any apply, `plan` is empty and a second `apply` writes
+// nothing, also after moving from one config to another); `inspect` lists exactly the refs `desiredRules` gives;
+// removing one rate limit removes exactly that rule; and a phase never written (404) is an empty phase.
 
 let fake: FakeCloudflare
 
@@ -72,7 +70,7 @@ function liveNymbalRefs(zoneId: string): string[] {
     'http_ratelimit',
     'http_request_firewall_custom',
     'http_request_firewall_managed',
-    // P2-19 AC-8: the fragment cache rule's phase.
+    // The fragment cache rule's phase.
     'http_request_cache_settings',
   ]
   return refsOf(phases.flatMap((p) => (fake.rules(zoneId, p) ?? []).filter(isNymbal)))
@@ -94,7 +92,7 @@ const FULL = {
   managedRulesets: ['cloudflare' as const],
 }
 
-describe('P2-04 AC-5: apply, plan and inspect', () => {
+describe('AC-5: apply, plan and inspect', () => {
   it("AC-5 (a): after apply, the owner's two custom rules are unchanged and first, and the Nymbal rules follow them", async () => {
     const z = ownerZone()
     const before = fake.rules(z.zoneId, 'http_request_firewall_custom')!

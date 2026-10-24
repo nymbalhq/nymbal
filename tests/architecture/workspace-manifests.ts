@@ -4,8 +4,8 @@ import { join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Shared by the P0-04 acceptance tests (AC-2, AC-8): the workspace members as pnpm sees them, read from the
- * tracked files only (git-ignored smoke-test projects never count).
+ * The workspace members as pnpm sees them, read from the tracked files only (git-ignored smoke-test projects never
+ * count).
  */
 
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))

@@ -17,25 +17,21 @@ import {
 } from '../support/doctor'
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 
-// Acceptance test for P2-03 AC-5, the roadmap proof as scoped (spec P2-03-nymbal-add-recipe): a fresh Astro scaffold,
-// made the scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with --no-install, then
-// `pnpm install`), runs on Redis after `nymbal add redis` alone. With REDIS_URL and a prefix of this run's own,
-// `nymbal migrate`, `nymbal seed` and `nymbal dev --api-only` start; config:validate reports the Redis document store
-// and Redis Streams bus; the seeded products and the order a cart and checkout over the API create are documents
-// under the prefix; the prefix is removed afterwards. The order stays `pending`: its receipt email asks the native
-// stub to hold the payment (`+stub-pending`, payments/native-stub.ts), and the payment hook is never called.
+// A fresh Astro scaffold, made the scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with
+// --no-install, then `pnpm install`), runs on Redis after `nymbal add redis` alone. With REDIS_URL and a prefix of
+// this run's own, `nymbal migrate`, `nymbal seed` and `nymbal dev --api-only` start; config:validate reports the Redis
+// document store and Redis Streams bus; the seeded products and the order a cart and checkout over the API create are
+// documents under the prefix; the prefix is removed afterwards. The order stays `pending`: its receipt email asks the
+// native stub to hold the payment (`+stub-pending`, payments/native-stub.ts), and the payment hook is never called.
 // The install `pnpm` runs here also rewrites the workspace lockfile and re-links its node_modules; the test puts the
 // lockfile back byte for byte and re-installs from it.
-// Needs `pnpm build` and Redis (NYMBAL_TEST_REDIS_URL). Kills: `nymbal add redis` leaving a project that does not run
-// on Redis.
+// Needs `pnpm build` and Redis (NYMBAL_TEST_REDIS_URL).
 //
-// P2-09 AC-7, the roadmap proof (spec P2-09-dev-stage), and AC-5 (a) on the same scaffold, the one place the Redis
-// packages are in a project's own node_modules: after `nymbal add redis`, `nymbal doctor` with REDIS_URL at a closed
-// port exits 1, its `primitive documentStore` line is down naming redis and the host:port, and every other check still
-// runs, with the names of the healthy run; with the composed Redis it exits 0. `nymbal dev --api-only` there prints the
-// summary naming the `redis` document store and no DEBUG line. (The recipe's variable is REDIS_URL, which the spec's
-// AC-7 calls NYMBAL_REDIS_URL.) Kills: a doctor that does not see the scaffold's real config, a dev that is noisy on a
-// scaffold.
+// AC-7 and AC-5 (a) on the same scaffold, the one place the Redis packages are in a project's own node_modules: after
+// `nymbal add redis`, `nymbal doctor` with REDIS_URL at a closed port exits 1, its `primitive documentStore` line is
+// down naming redis and the host:port, and every other check still runs, with the names of the healthy run; with the
+// composed Redis it exits 0. `nymbal dev --api-only` there prints the summary naming the `redis` document store and no
+// DEBUG line. The recipe's variable is REDIS_URL.
 
 const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -45,7 +41,7 @@ const LOCKFILE = join(REPO, 'pnpm-lock.yaml')
 const READY_WITHIN_MS = 60_000
 
 const redisUrl = redisServerUrl()
-const prefix = `p2-03-add-redis-${randomUUID().slice(0, 8)}`
+const prefix = `recipes-add-redis-${randomUUID().slice(0, 8)}`
 
 const address = {
   firstName: 'Add',
@@ -203,7 +199,7 @@ afterAll(async () => {
   }
 }, 360_000)
 
-describe('P2-03 AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => {
+describe('AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => {
   it('AC-5: `nymbal add redis` exits 0', async () => {
     const added = await nymbal('add', 'redis')
     expect(added.code, added.output.slice(-4000)).toBe(0)
@@ -305,7 +301,7 @@ describe('P2-03 AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', 
   }, 60_000)
 })
 
-describe('P2-09 AC-7: nymbal doctor and the dev summary on the scaffold after `nymbal add redis`', () => {
+describe('AC-7: nymbal doctor and the dev summary on the scaffold after `nymbal add redis`', () => {
   const bin = () => join(DIR, 'node_modules/nymbal/bin/nymbal.mjs')
   let closed: { code: number; output: string; port: number } | null = null
   let dev: DevRun | null = null

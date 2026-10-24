@@ -4,9 +4,9 @@ import { finaliseStubPayment } from '@nymbalhq/proof-kit/payments'
 import { startTestStore, type TestStore } from '@nymbalhq/proof-kit/store'
 import { EVT_ORDER_PAID } from '@nymbalhq/types'
 
-// Acceptance test for P1-01 AC-12: finaliseStubPayment goes through the real POST /api/webhooks/stripe route of a
-// store started by startTestStore(): the order is confirmed and its reservation committed, and the same eventId
-// again is deduped by the route, so order.paid.v1 is published once.
+// AC-12: finaliseStubPayment goes through the real POST /api/webhooks/stripe route of a store started by
+// startTestStore(): the order is confirmed and its reservation committed, and the same eventId again is deduped by
+// the route, so order.paid.v1 is published once.
 
 const address = {
   firstName: 'Ada',
@@ -61,7 +61,7 @@ describe('AC-12: finaliseStubPayment through the real webhook route', () => {
     })
     const started = await services.checkout.beginCheckout({
       cartToken: cart.token,
-      // `+stub-pending` (P1-12 decision 7): pending with its reservation until the hook below pays it.
+      // `+stub-pending`: pending with its reservation until the hook below pays it.
       email: `paid-${randomUUID()}+stub-pending@proof-kit.test`,
       billingAddress: address,
       shippingAddress: address,

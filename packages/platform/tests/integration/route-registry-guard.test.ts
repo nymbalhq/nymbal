@@ -6,11 +6,10 @@ import { createKernel, type Kernel } from '../support/kernel.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 
-// P1-06 AC-1 and AC-15 as properties over the schema registry, against a served kernel (SQLite). AC-1: every
+// AC-1 and AC-15 as properties over the schema registry, against a served kernel (SQLite). AC-1: every
 // state-changing route but the Stripe webhook refuses a request without a CSRF pair with 403, before auth (admin
 // routes answer 403, not 401) and before anything is written. AC-15: every route with a body schema answers a body
-// it rejects with 400 `validation.failed`, never 500. Kills: routes attached to an unguarded adapter, a guard that
-// runs after auth, handlers that cast `ctx.body`, validation after the service call.
+// it rejects with 400 `validation.failed`, never 500.
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 /** Registered with `csrf: false`; its body schema is `z.unknown()` and its own signature check answers bad input. */

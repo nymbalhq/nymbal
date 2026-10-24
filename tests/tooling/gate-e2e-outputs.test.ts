@@ -12,11 +12,10 @@ import {
   write,
 } from './scratch-gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-9 and the gate half of AC-10: an E2E step
-// checks, before Playwright starts, that the build output it serves exists, and it is red when the E2E server
-// wrapper left reports/e2e-shutdown.json behind. The real gate.ts runs `--full --only "e2e admin" --no-build` in a
-// scratch repository whose artefact `artefactPresent` accepts; Playwright and pnpm are stand-ins that log each call
-// (scratch-gate.ts), so "Playwright started" is read from that log.
+// AC-9 and the gate half of AC-10: an E2E step checks, before Playwright starts, that the build output it serves
+// exists, and it is red when the E2E server wrapper left reports/e2e-shutdown.json behind. The real gate.ts runs
+// `--full --only "e2e admin" --no-build` in a scratch repository whose artefact `artefactPresent` accepts; Playwright
+// and pnpm are stand-ins that log each call (scratch-gate.ts), so "Playwright started" is read from that log.
 
 afterEach(cleanupScratch)
 

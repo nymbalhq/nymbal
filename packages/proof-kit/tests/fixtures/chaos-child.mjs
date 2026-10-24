@@ -1,6 +1,6 @@
-// P1-01 chaos fixture (AC-6, AC-7, AC-8): a child process that writes rows to a SQLite file and publishes events
-// through its own bus, armed by armChaos from the environment (NYMBAL_CHAOS). A subscriber appends every delivered
-// event type to a marker file, so the parent can tell a kill before the publish from a kill after it.
+// Chaos fixture: a child process that writes rows to a SQLite file and publishes events through its own bus, armed by
+// armChaos from the environment (NYMBAL_CHAOS). A subscriber appends every delivered event type to a marker file, so
+// the parent can tell a kill before the publish from a kill after it.
 //
 //   node chaos-child.mjs <sqlite file> <marker file> '<plan JSON>'
 //

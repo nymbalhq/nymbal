@@ -2,10 +2,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { paymentState, refundableMinor, type Order, type OrderRefund } from '../index.js'
 
-// P1-13 AC-1 (decision 3): the payment state is a function of the stored amounts alone. Kills: a pending order (captured
-// 0) read as paid, an intent alone counting as paid, a boundary (refunded = captured, refunded = 0) put in the wrong
-// state, or two states both holding. AC-4 (decision 4): what is refundable counts pending refunds against the capture
-// and ignores failed ones, so an unknown provider outcome cannot be refunded a second time.
+// AC-1: the payment state is a function of the stored amounts alone. AC-4: what is refundable counts pending refunds
+// against the capture and ignores failed ones, so an unknown provider outcome cannot be refunded a second time.
 
 function orderWith(capturedMinor: number, refundedMinor: number, totalMinor: number): Order {
   return {
@@ -14,7 +12,7 @@ function orderWith(capturedMinor: number, refundedMinor: number, totalMinor: num
     sequence: 1000,
     customerId: null,
     status: capturedMinor > 0 ? 'confirmed' : 'pending',
-    email: 'buyer@p1-13.test',
+    email: 'buyer@money.test',
     billingAddress: {
       firstName: 'Ada',
       lastName: 'Buyer',
@@ -54,19 +52,17 @@ function orderWith(capturedMinor: number, refundedMinor: number, totalMinor: num
 }
 
 /** A captured amount and a refunded amount the invariant allows: 0 ≤ refunded ≤ captured ≤ total. */
-const amounts = fc
-  .integer({ min: 0, max: 5_000_000 })
-  .chain((captured) =>
-    fc.record({
-      captured: fc.constant(captured),
-      refunded: fc.oneof(
-        fc.constant(0),
-        fc.constant(captured),
-        fc.integer({ min: 0, max: captured }),
-      ),
-      extra: fc.integer({ min: 0, max: 10_000 }),
-    }),
-  )
+const amounts = fc.integer({ min: 0, max: 5_000_000 }).chain((captured) =>
+  fc.record({
+    captured: fc.constant(captured),
+    refunded: fc.oneof(
+      fc.constant(0),
+      fc.constant(captured),
+      fc.integer({ min: 0, max: captured }),
+    ),
+    extra: fc.integer({ min: 0, max: 10_000 }),
+  }),
+)
 
 describe('paymentState', () => {
   it('AC-1: over generated (captured, refunded) pairs exactly one of the four states holds, and paymentState returns it: unpaid when captured = 0, paid when refunded = 0 < captured, partially_refunded when 0 < refunded < captured, refunded when refunded = captured > 0', () => {

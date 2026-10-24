@@ -1,6 +1,6 @@
 import type { APIRequestContext } from '@playwright/test'
 
-// P1-06: the CSRF pair for a Playwright request context, the shape of packages/platform/tests/support/shopper.ts.
+// The CSRF pair for a Playwright request context, the shape of packages/platform/tests/support/shopper.ts.
 // `GET /api/csrf` sets the `nymbal.csrf` cookie in the context's jar (or returns the one it already holds) and answers
 // the same token, which every POST/PUT/PATCH/DELETE then sends as `x-csrf-token`.
 

@@ -1,6 +1,6 @@
-// The P2-02 AC-5 child process (primitive-graph tests): registers record.mjs, then runs createApp from the kernel's
-// built dist on a migrated SQLite store, with the config in argv[2] (parsed by @nymbalhq/config). It prints one line,
-// `P2-02-OUTCOME <json>`: what app.capabilities() reported for documentStore and eventBus, each instance's own
+// The child process of the primitive-graph tests: registers record.mjs, then runs createApp from the kernel's built
+// dist on a migrated SQLite store, with the config in argv[2] (parsed by @nymbalhq/config). It prints one line,
+// `PRIMITIVE-GRAPH-OUTCOME <json>`: what app.capabilities() reported for documentStore and eventBus, each instance's own
 // capabilities(), and the report again after the document store instance's answer was replaced (so a report that is
 // not read from the instance shows); or the error it threw.
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -10,13 +10,13 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 register(new URL('./record.mjs', import.meta.url), {
-  data: JSON.parse(process.env.P2_02_GRAPH ?? '{}'),
+  data: JSON.parse(process.env.PRIMITIVES_GRAPH ?? '{}'),
 })
 
 const platformRoot = fileURLToPath(new URL('../../../../', import.meta.url))
-const dir = mkdtempSync(join(tmpdir(), 'p2-02-graph-'))
+const dir = mkdtempSync(join(tmpdir(), 'primitives-graph-'))
 const sqlitePath = join(dir, 'store.sqlite')
-const PROBE = ['p2-02-probe']
+const PROBE = ['primitives-probe']
 let outcome
 try {
   const { nymbalConfigSchema } = await import('@nymbalhq/config')
@@ -57,4 +57,4 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }
-process.stdout.write(`P2-02-OUTCOME ${JSON.stringify(outcome)}\n`)
+process.stdout.write(`PRIMITIVE-GRAPH-OUTCOME ${JSON.stringify(outcome)}\n`)

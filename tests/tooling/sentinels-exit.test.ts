@@ -13,8 +13,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P1-10 (phase exit), AC-6: `scripts/sentinels.ts` exits 1 when an injected sentinel is missed
-// or the control is red, and 0 when every one is caught, printing the report either way.
+// AC-6: `scripts/sentinels.ts` exits 1 when an injected sentinel is missed or the control is red, and 0 when every one
+// is caught, printing the report either way.
 // Each case is a throwaway git repo built from tests/tooling/fixtures/sentinels-exit: a module, a `node --test` suite
 // that reads only `add`, I001 (breaks `add`: caught) and I002 (changes `untested`, which no test reads: missed).
 

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { NymbalToast } from './toast.js'
 
-// P2-06 decisions 1 and 2: the element is a Lit element that renders in an open shadow root, so its internals are
-// read through `shadowRoot`, once its render has settled (`updateComplete`).
+// The element is a Lit element that renders in an open shadow root, so its internals are read through `shadowRoot`,
+// once its render has settled (`updateComplete`).
 
 function shadow(el: Element): ShadowRoot {
   const root = el.shadowRoot

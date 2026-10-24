@@ -5,9 +5,8 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { scaffold } from '../src/index.js'
 
-// Acceptance tests for P0-04 AC-4: a fresh scaffold names @nymbalhq/* packages and the `nymbal` CLI, every one of
-// which is a published workspace package (resolution checked in-workspace). Reads the synced scaffold, so run
-// `pnpm build` first.
+// AC-4: a fresh scaffold names @nymbalhq/* packages and the `nymbal` CLI, every one of which is a published workspace
+// package (resolution checked in-workspace). Reads the synced scaffold, so run `pnpm build` first.
 
 const PKG_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const PACKAGES_DIR = resolve(PKG_ROOT, '..')

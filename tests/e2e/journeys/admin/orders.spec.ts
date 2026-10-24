@@ -54,7 +54,7 @@ async function createPendingOrder(
   const checkoutRes = await request.post(`${API_URL}/api/checkout`, {
     headers: await csrf(request, API_URL),
     data: {
-      // `+stub-pending` (P1-12 decision 7): the stub leaves the order pending for the admin to confirm.
+      // `+stub-pending`: the stub leaves the order pending for the admin to confirm.
       email: 'e2e-admin-orders+stub-pending@nymbal.dev',
       billingAddress: address,
       shippingAddress: address,
@@ -89,10 +89,9 @@ async function openOrderDetail(page: Page, orderNumber: string): Promise<void> {
   await expect(page.getByTestId('admin-order-detail')).toBeVisible({ timeout: 15000 })
 }
 
-// P1-13 AC-10 and AC-11: the admin shows what was actually paid and refunded, from the order's stored amounts, and the
+// AC-10 and AC-11: the admin shows what was actually paid and refunded, from the order's stored amounts, and the
 // admin API agrees at every step. Orders come from the storefront API (a `+stub-pending` order stays unpaid; any other
-// email is paid inline by the stub), each journey its own. They replace the journey that confirmed a never-paid order
-// and refunded it with no amount (decision 8).
+// email is paid inline by the stub), each journey its own.
 
 interface PaymentRead {
   state: 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
@@ -135,7 +134,7 @@ const LABEL: Record<PaymentRead['state'], RegExp> = {
 
 /** An email the stub pays inline (no `+stub-pending`), unique to one journey. */
 function paidEmail(kind: string): string {
-  return `e2e-p1-13-${kind}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@nymbal.dev`
+  return `e2e-money-${kind}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@nymbal.dev`
 }
 
 async function readOrder(
@@ -204,7 +203,7 @@ function watchRefundPosts(page: Page): { settled(): Promise<void> } {
   }
 }
 
-/** The refund dialog, by amount only (decision 8), entered in major units as the admin enters prices. */
+/** The refund dialog, by amount only, entered in major units as the admin enters prices. */
 async function refundThroughDialog(
   page: Page,
   amountMinor: number,
@@ -302,8 +301,8 @@ test.describe('Admin orders', () => {
     await openDetail(page, order.orderNumber)
     await expectPaymentPanel(page, start)
 
-    // The store walk at 6b529da (`standing.submit-once-admin`): a double click on "Refund" refunded twice. Kills: the
-    // dialog's pending guard losing to a fast double click, with no requestId to keep the repeat to one refund.
+    // A double click on "Refund" refunds once: the dialog's pending guard and its requestId keep the repeat to one
+    // refund.
     await refundThroughDialog(page, part, 'dblclick')
 
     const afterPart = await readOrder(request, token, order.orderNumber)
@@ -345,11 +344,10 @@ test.describe('Admin orders', () => {
     await expectPaymentPanel(page, await readOrder(request, token, order.orderNumber))
   })
 
-  // The store walk at 6b529da: a refund the server refuses showed its reason in minor units ("4000"), not money.
-  // The dialog goes stale the way the walk found it: the realtime stream is down, and the order is refunded elsewhere
-  // after the dialog opened, so the dialog still offers the whole capture and the server refuses it. Kills: the
-  // refusal's amounts shown as raw minor units.
-  test('Store walk: a refund the server refuses from a stale dialog (over refundable) shows its reason in the store’s currency, not minor units, and moves no money', async ({
+  // A refund the server refuses shows its reason as money, not minor units. The dialog goes stale: the realtime
+  // stream is down, and the order is refunded elsewhere after the dialog opened, so the dialog still offers the whole
+  // capture and the server refuses it.
+  test('a refund the server refuses from a stale dialog (over refundable) shows its reason in the store’s currency, not minor units, and moves no money', async ({
     page,
     request,
   }) => {

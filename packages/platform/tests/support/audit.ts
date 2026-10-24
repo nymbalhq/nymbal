@@ -1,8 +1,7 @@
 import type { RawReader } from './raw.js'
 
-// P3-04 support (spec P3-04-audit-trail): the `audit_entries` table as a second connection reads it (decision 4's
-// columns), and the HTTP half (audit-http.ts) re-exported. Nothing here knows how the audit scope, the idempotency
-// wrapper or the repository are implemented.
+// The `audit_entries` table as a second connection reads it, and the HTTP half (audit-http.ts) re-exported. Nothing
+// here knows how the audit scope, the idempotency wrapper or the repository are implemented.
 
 export * from './audit-http.js'
 

@@ -13,7 +13,7 @@ import {
   type Replica,
 } from '../replica.js'
 
-// P1-04 AC-5 to AC-9 on one dialect: the abandonment sweeper notifies each cart once per period of inactivity, across
+// AC-5 to AC-9 on one dialect: the abandonment sweeper notifies each cart once per period of inactivity, across
 // restarts and replicas, reaches every eligible cart whatever the batch size, and deletes expired carts before it
 // looks for abandoned ones. Replicas are command stores on one database (tests/support/replica.ts); time is the
 // replica's clock, so a cart's last write and the sweeper's `now` are what the test says they are.
@@ -140,7 +140,7 @@ export function cartAbandonmentSuite(
       const converted = await cartWithItems(r, seeded)
       const started = await r.services.checkout.beginCheckout({
         cartToken: converted.token,
-        email: `convert-${randomUUID()}@p1-04.test`,
+        email: `convert-${randomUUID()}@cart.test`,
         billingAddress: address,
         shippingAddress: address,
       })

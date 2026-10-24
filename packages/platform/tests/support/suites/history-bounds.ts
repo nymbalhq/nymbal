@@ -22,16 +22,14 @@ import {
   type HistoryKind,
 } from '../history.js'
 
-// AC-2 (decisions 4 and 5) on one dialect: the bounds of `?at=` and history.
+// AC-2 on one dialect: the bounds of `?at=` and history.
 // A seeded product (rows with no event) answers 409 `history.before_start` with `historyStartsAt: null`; t before a
 // record's first event answers 409 with that event's time, and t at it answers (inclusive); a product deleted at or
 // before t answers 410 `history.deleted {deletedAt}`, and before its deletion answers by id; an unparsable `at` is 400
-// `history.invalid_at`; an unknown id 404; a future t the live view; no `at` today's body; no admin session 401. Then
-// the retention sweep, run with a clock past the horizon, deletes the first part of the log: `historyStartsAt` moves to
-// the earliest retained base event, every recorded t from it still matches, an earlier t answers 409, and an order
-// whose base event went answers `historyStartsAt: null` rather than a fold of its later events.
-// Kills: a partial history folded as if complete; a deleted product answering 200 or 404; a seeded row answering 200
-// from nothing.
+// `history.invalid_at`; an unknown id 404; a future t the live view; no `at` the current body; no admin session 401.
+// Then the retention sweep, run with a clock past the horizon, deletes the first part of the log: `historyStartsAt`
+// moves to the earliest retained base event, every recorded t from it still matches, an earlier t answers 409, and an
+// order whose base event went answers `historyStartsAt: null` rather than a fold of its later events.
 
 type Json = Record<string, unknown>
 
@@ -51,7 +49,7 @@ function keyOf(s: Subjects, kind: HistoryKind): { key: string; id: string } {
   return { key: s.customer.customerId, id: s.customer.customerId }
 }
 
-/** Decision 1's table, as this test reads it. */
+/** The subject table, as this test reads it. */
 function subjectIs(row: LoggedEvent, kind: HistoryKind, id: string): boolean {
   const type = row.event.type
   const p = row.event.payload as Record<string, unknown>
@@ -129,7 +127,7 @@ export function historyBoundsSuite(dialect: string, start: () => Promise<Kernel>
       return kind === 'order' ? orderView(read) : customerView(read)
     }
 
-    /** The rows Decision 1 gives the subject `id` of `kind` (a product's own rows, not its variant's), by seq. */
+    /** The rows the subject table gives the subject `id` of `kind` (a product's own rows, not its variant's), by seq. */
     async function rowsOf(kind: HistoryKind, id: string): Promise<LoggedEvent[]> {
       const all = await k.store.read((tx) => k.repos.eventLog.listAll(tx))
       return all.filter((row) => subjectIs(row, kind, id))

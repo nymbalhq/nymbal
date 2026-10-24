@@ -17,14 +17,11 @@ import { TEST_BUILDER_CONTEXT } from '../../../src/tests/publisher.js'
 import { kernelConfig, MIGRATIONS_ROOT, type Dialect } from '../kernel.js'
 import { openRaw } from '../raw.js'
 
-// AC-4 (decision 1) on one dialect: the subject columns. `append` sets
-// `events.subject_type` and `events.subject_id` from `subjectOf(envelope)` for every row of Decision 1's table (and
-// null for anything else); migration 0012, run on a store at 0011 holding rows the old code wrote of every kind,
-// backfills the same values; and `listBySubjects` returns exactly the rows of the subjects it is given, in seq order,
-// paged by `afterSeq` and `limit`. The expected subject is this file's own reading of the table, and `subjectOf` must
-// agree with it.
-// Kills: the backfill and `append` disagreeing (`order.placed`'s `payload.order.id`, `payment.*`'s `orderId`); the
-// column unset on one dialect; `listBySubjects` returning another subject's rows or out of seq order.
+// AC-4 on one dialect: the subject columns. `append` sets `events.subject_type` and `events.subject_id` from
+// `subjectOf(envelope)` for every row of the subject table (and null for anything else); migration 0012, run on a
+// store at 0011 holding rows of every kind, backfills the same values; and `listBySubjects` returns exactly the rows
+// of the subjects it is given, in seq order, paged by `afterSeq` and `limit`. The expected subject is this file's own
+// reading of the table, and `subjectOf` must agree with it.
 
 const makeEvent = createEventBuilder(TEST_BUILDER_CONTEXT)
 
@@ -36,7 +33,7 @@ interface Sample {
   subject: Subject
 }
 
-/** One envelope of each shape Decision 1 names, about `id`, with the subject the table gives it. */
+/** One envelope of each shape the subject table names, about `id`, with the subject the table gives it. */
 function samplesFor(id: string): Sample[] {
   const product = { type: 'product', id }
   const order = { type: 'order', id }
@@ -93,7 +90,7 @@ function storageFor(dialect: Dialect, target: string) {
   return dialect === 'sqlite' ? { sqlitePath: target } : { postgresUrl: target }
 }
 
-/** A copy of the migrations for `dialect` holding 0000-0011 only: the schema before this task. */
+/** A copy of the migrations for `dialect` holding 0000-0011 only: the schema before the migration under test. */
 function migrationsTo0011(dialect: Dialect): { root: string; drop(): void } {
   const root = mkdtempSync(join(tmpdir(), 'history-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
@@ -217,7 +214,7 @@ export function eventSubjectSuite(
       }
     }
 
-    it('AC-4: migration 0012 on a store at 0011 holding rows of every kind backfills subject_type and subject_id as Decision 1 gives them, and listBySubjects returns one subject’s rows in seq order', async () => {
+    it('AC-4: migration 0012 on a store at 0011 holding rows of every kind backfills subject_type and subject_id as the subject table gives them, and listBySubjects returns one subject’s rows in seq order', async () => {
       const db = await fresh()
       cleanups.push(() => db.drop())
       const before = migrationsTo0011(dialect)
@@ -280,7 +277,7 @@ export function eventSubjectSuite(
         ;({ store, repos } = await open(target))
       }, 60_000)
 
-      it('AC-4: append sets subject_type and subject_id for every row of Decision 1’s table, null for anything else, and subjectOf agrees', async () => {
+      it('AC-4: append sets subject_type and subject_id for every row of the subject table, null for anything else, and subjectOf agrees', async () => {
         const id = randomUUID()
         const samples = samplesFor(id)
         const envelopes = samples.map(envelopeOf)

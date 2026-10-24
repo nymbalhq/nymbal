@@ -24,21 +24,18 @@ import {
 } from '../__fixtures__/server-data.js'
 import { renderElement } from './index.js'
 
-// P2-18 AC-1 (spec Decisions 1, 2 and 4): `renderElement` renders every element but the payment element to
+// AC-1: `renderElement` renders every element but the payment element to
 // `<tag …attrs><template shadowrootmode="open">…</template>…children</tag>`, and what the template holds is what the
 // same element renders in happy-dom (which parses no declarative shadow DOM) from the same attributes with no client
 // registered: the same parts, as many of each, and the same text. No element throws without a client, on the server
 // or on connecting. A host that already holds the server's shadow content keeps it: hydration takes the markup over,
-// so the part counts stay the server's rather than doubling. Kills: an element whose render, willUpdate or stores()
-// reaches `this.client` (`NymbalClient not registered`) or that renders its empty state from a property it was given;
-// a server render that differs from the client's; the hydrate support evaluating after lit (tests/setup.ts imports
-// the package's index, whose first import it must be), so the client render appends to the server's nodes.
+// so the part counts stay the server's rather than doubling. The hydrate support must evaluate before lit
+// (tests/setup.ts imports the package's index, whose first import it must be), or the client render appends to the
+// server's nodes.
 //
-// P2-17 AC-1 (spec Decision 1): the eleven new elements (the product grid, price, stock badge, breadcrumb, image
-// gallery, site header and footer, category nav, review list and form, order summary) meet the same three cases, so
-// the 18 becomes 29. Each renders from its attributes alone: the data it is given is in its server render. Kills: a new
-// element that reads a store or the client in `render()`, renders its empty state from data it was given, or renders
-// different parts on the server and the client.
+// The catalogue and page elements (the product grid, price, stock badge, breadcrumb, image gallery, site header and
+// footer, category nav, review list and form, order summary) meet the same three cases, 29 elements in all. Each
+// renders from its attributes alone: the data it is given is in its server render.
 
 const PAYMENT = 'nymbal-payment-element'
 
@@ -47,7 +44,7 @@ const SCHEMAS: ElementSchema[] = Object.values(wc as Record<string, unknown>)
   .filter((s): s is ElementSchema => s !== undefined)
 const SERVER_RENDERED = SCHEMAS.filter((s) => s.tag !== PAYMENT)
 
-/** The JSON a server passes each JSON attribute (Decision 2 names the new ones), keyed `<tag> <attribute>`. */
+/** The JSON a server passes each JSON attribute, keyed `<tag> <attribute>`. */
 const JSON_VALUES: Record<string, fc.Arbitrary<unknown>> = {
   'nymbal-cart-page cart': cart('p-'),
   'nymbal-checkout cart': cart('p-'),
@@ -59,7 +56,7 @@ const JSON_VALUES: Record<string, fc.Arbitrary<unknown>> = {
   'nymbal-product-card product': cards('p-', 1).map((c) => c[0]),
   'nymbal-product-filter facets': facets('p-', fc.constantFrom('category', 'colour')),
   'nymbal-sort-dropdown sort-keys': fc.subarray(SORT_KEYS, { minLength: 1 }),
-  // P2-17
+  // Catalogue and page elements
   'nymbal-product-grid products': cards('p-'),
   'nymbal-breadcrumb items': crumbs('p-'),
   'nymbal-image-gallery images': images('p-'),
@@ -76,7 +73,7 @@ const STRING_VALUES: Record<string, fc.Arbitrary<string>> = {
   'nymbal-sort-dropdown value': fc.constantFrom(...SORT_KEYS),
   'nymbal-sort-dropdown default-sort': fc.constantFrom(...SORT_KEYS),
   'nymbal-toast position': fc.constantFrom('top-right', 'top-left', 'bottom-right', 'bottom-left'),
-  // P2-17
+  // Catalogue and page elements
   'nymbal-product-grid source': fc.constant('product-list'),
   'nymbal-product-price currency': fc.constantFrom('GBP', 'EUR'),
   'nymbal-order-summary currency': fc.constantFrom('GBP', 'EUR'),
@@ -205,7 +202,7 @@ function shownFrom(
       const product = json('product') as { name: string } | undefined
       return { text: product === undefined ? [] : [product.name], cards: null }
     }
-    // P2-17
+    // Catalogue and page elements
     case 'nymbal-product-grid': {
       const products = json('products') as unknown[] | undefined
       return { text: [], cards: products === undefined ? null : products.length }
@@ -301,7 +298,7 @@ beforeEach(() => {
   expect(() => getClient()).toThrow(/not registered/)
 })
 
-const P2_17 = [
+const CATALOGUE_ELEMENTS = [
   'nymbal-product-grid',
   'nymbal-product-price',
   'nymbal-stock-badge',
@@ -315,11 +312,13 @@ const P2_17 = [
   'nymbal-order-summary',
 ]
 
-describe('P2-18 AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 29 server-rendered elements, every one but the payment element, the eleven of P2-17 among them', () => {
+describe('AC-1: renderElement renders every element', () => {
+  it('AC-1: the package has 29 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
-    expect(P2_17.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual([])
-    expect(SERVER_RENDERED.length).toBe(18 + P2_17.length)
+    expect(CATALOGUE_ELEMENTS.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual(
+      [],
+    )
+    expect(SERVER_RENDERED.length).toBe(18 + CATALOGUE_ELEMENTS.length)
   })
 
   for (const schema of SERVER_RENDERED) {

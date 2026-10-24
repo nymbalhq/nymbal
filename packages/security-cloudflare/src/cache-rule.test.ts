@@ -23,12 +23,10 @@ import {
   type SpecSecurityConfig,
 } from './tests/support.js'
 
-// Acceptance tests for P2-19 AC-8 (spec P2-19-fragments-and-isr, Interface `@nymbalhq/security-cloudflare`): whatever
-// the config, `desiredRules` puts one cache rule in `http_request_cache_settings`, the phase `plan`, `apply`, `drift`
-// and `inspect` now read and write beside the three WAF phases; `validate` counts it against the plan's cache-rule
-// limit with the zone's own cache rules; and `apply` keeps the owner's cache rules. Run against the fake, which refuses
-// a cache phase over the plan's limit. Kills: the phase missing from PHASES (never read or written), a rule whose
-// expression or action differs, an apply that deletes the zone owner's cache rules, and a limit that is not counted.
+// AC-8: whatever the config, `desiredRules` puts one cache rule in `http_request_cache_settings`, the phase `plan`,
+// `apply`, `drift` and `inspect` read and write beside the three WAF phases; `validate` counts it against the plan's
+// cache-rule limit with the zone's own cache rules; and `apply` keeps the owner's cache rules. Run against the fake,
+// which refuses a cache phase over the plan's limit.
 
 const CACHE: Phase = 'http_request_cache_settings'
 const WAF: Phase[] = [
@@ -95,9 +93,9 @@ function zone(plan: Plan, phases: Partial<Record<Phase, CfRule[]>> = {}) {
 type Phases = Partial<Record<string, CfRule[]>>
 const rulesOf = (config: unknown): Phases => desiredRules(config as SpecSecurityConfig) as Phases
 
-const CF = { zoneId: 'zone-p2-19', apiToken: 'unused', apiBase: 'http://127.0.0.1:9/client/v4' }
+const CF = { zoneId: 'zone-fragments', apiToken: 'unused', apiBase: 'http://127.0.0.1:9/client/v4' }
 
-describe('P2-19 AC-8: the fragment cache rule', () => {
+describe('AC-8: the fragment cache rule', () => {
   it('AC-8: desiredRules({}) puts exactly the Interface’s rule in http_request_cache_settings, and over generated configs the cache phase is that one rule and the WAF phases never hold it', () => {
     expect(rulesOf({})[CACHE]).toEqual([FRAGMENT_RULE])
 

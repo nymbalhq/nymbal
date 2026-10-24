@@ -2,7 +2,7 @@
 # kind: injected
 # defect: cart reads and writes are served from a process-local store, so a restart loses every cart and a second API replica answers with a different cart for the same cookie
 # where: packages/platform/src/routes/cart.ts:39
-# killed-by: P1-04 acceptance tests (packages/platform/tests/integration/persistent-cart.test.ts AC-1, AC-2)
+# killed-by: packages/platform/tests/integration/persistent-cart.test.ts AC-1, AC-2
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/persistent-cart.test.ts
 diff --git a/packages/platform/src/routes/cart.ts b/packages/platform/src/routes/cart.ts
 --- a/packages/platform/src/routes/cart.ts

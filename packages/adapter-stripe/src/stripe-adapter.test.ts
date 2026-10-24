@@ -3,8 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PaymentError, type Logger } from '@nymbalhq/types'
 import { createStripePaymentsAdapter, type StripePaymentsConfig } from './index.js'
 
-// Moved from the kernel with the adapter (P2-01 decision 3): the package depends on @nymbalhq/types and never on the
-// kernel, so the kernel's logger is replaced by a silent one.
+// The package depends on @nymbalhq/types and never on the kernel, so the kernel's logger is replaced by a silent one.
 
 const { constructorCalls, stripeStubs } = vi.hoisted(() => {
   return {
@@ -301,7 +300,6 @@ describe('createStripePaymentsAdapter — refunds', () => {
     expect(refund.status).toBe('pending')
     expect(stripeStubs.refundsCreate).toHaveBeenCalledWith({ payment_intent: 'pi_unit_1' })
   })
-
 })
 
 describe('createStripePaymentsAdapter — status and health', () => {

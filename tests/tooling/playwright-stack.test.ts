@@ -5,8 +5,8 @@ import { promisify } from 'node:util'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type ExpectedBlock, expectedBlock, PORT_FIELDS, type PortField } from './stack-table'
 
-// Acceptance tests for P2-14 AC-4: the Playwright config takes every port from the stack slot. The config is evaluated
-// in a child process with the environment a gate:full E2E step gives it (CI=1, a target, NYMBAL_STACK_SLOT), as
+// AC-4: the Playwright config takes every port from the stack slot. The config is evaluated in a child process with
+// the environment a gate:full E2E step gives it (CI=1, a target, NYMBAL_STACK_SLOT), as
 // tests/tooling/playwright-target.test.ts does, so the environment is read exactly as Playwright reads it.
 
 const exec = promisify(execFile)
@@ -61,7 +61,7 @@ const STORES = {
   native: { api: 'api', storefronts: ['astro', 'nextjs'] },
   custom: { api: 'customApi', storefronts: ['astroCustom', 'nextjsCustom'] },
   nosearch: { api: 'noSearchApi', storefronts: ['astroNoSearch', 'nextjsNoSearch'] },
-  // P2-18 (spec answer 2): the project-elements fixture.
+  // The project-elements fixture.
   override: { api: 'overrideApi', storefronts: ['astroOverride', 'nextjsOverride'] },
 } as const satisfies Record<string, { api: PortField; storefronts: PortField[] }>
 

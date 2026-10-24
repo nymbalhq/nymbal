@@ -7,16 +7,11 @@ import { seedProducts } from '../../../packages/platform/src/seed/data'
 import { cardSlugs } from '../support/elements'
 import { blockExternalRequests, expect, test } from '../support/fixtures'
 
-// P2-19 AC-6 (spec P2-19-fragments-and-isr, Decisions 5, 6 and 7, Interface "AC-6's harness"; playwright.isr.config.ts):
-// no empty page is baked in. A Next build made while NYMBAL_API_URL points at a port nothing listens on exits 0, and
-// its `GET /no-such-page` answers 404 with the site header. Its `next start` (window NYMBAL_CATALOG_REVALIDATE_S=2)
-// against a live API serves `/` with `GET /api/products?limit=8`'s eight cards on the first request, and
-// `/product/<seed slug>` with its product. With the API stopped and the window passed (Next no longer answers HIT),
-// both still answer 200 with the same cards and product, twice in a row.
-// Kills: a build that fails without an API (a static page, or the root layout with `/_not-found` under it, made a
-// catalog fetch at build); a build that prerendered `/` empty and serves it; a `fetchProduct` that turned the build-time
-// or down-API failure into a cached `notFound()`; a failed regeneration that replaced the good page with an empty grid
-// or the seed categories.
+// AC-6 (playwright.isr.config.ts): no empty page is baked in. A Next build made while NYMBAL_API_URL points at a port
+// nothing listens on exits 0, and its `GET /no-such-page` answers 404 with the site header. Its `next start` (window
+// NYMBAL_CATALOG_REVALIDATE_S=2) against a live API serves `/` with `GET /api/products?limit=8`'s eight cards on the
+// first request, and `/product/<seed slug>` with its product. With the API stopped and the window passed (Next no
+// longer answers HIT), both still answer 200 with the same cards and product, twice in a row.
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url))
 const NEXT_DIR = fileURLToPath(new URL('../../../templates/nextjs/', import.meta.url))
@@ -161,7 +156,7 @@ async function shown(context: BrowserContext) {
   return result
 }
 
-test.describe('P2-19 AC-6: no empty page is baked in (Next, built with no API)', () => {
+test.describe('AC-6: no empty page is baked in (Next, built with no API)', () => {
   test('AC-6: caching.next-isr: a build with no API exits 0 and its 404 has the site header; next start serves the API’s eight cards on / and the product on its page, and keeps both, twice, once the API is down and the window has passed', async ({
     browser,
     request,
@@ -203,7 +198,7 @@ test.describe('P2-19 AC-6: no empty page is baked in (Next, built with no API)',
       NEXT_TELEMETRY_DISABLED: '1',
     })
     await expect
-      .poll(() => statusOf(`${baseURL}/_next/static/p2-19-ready`), {
+      .poll(() => statusOf(`${baseURL}/_next/static/fragments-ready`), {
         timeout: 60_000,
         message: `next start:\n${tail(next)}`,
       })

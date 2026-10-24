@@ -7,8 +7,8 @@ import { eventRows, failPublishFor, type EventRow, type FailingBus } from '../su
 import { openRaw, type RawReader } from '../support/raw.js'
 import { lineFor } from '../support/replica.js'
 
-// P1-03 AC-9 on SQLite: an event the abandonment sweeper's tick publishes (cart.abandoned.v1) is appended to the log
-// and delivered from it; with the bus rejecting, the row stays for the relay.
+// AC-9 on SQLite: an event the abandonment sweeper's tick publishes (cart.abandoned.v1) is appended to the log and
+// delivered from it; with the bus rejecting, the row stays for the relay.
 // Each test gets its own kernel: the sweeper announces every stale cart on the database, so a cart left by an
 // earlier test would add rows (and relay retries) to the next one's assertions.
 

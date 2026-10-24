@@ -5,9 +5,8 @@ import * as wc from '@nymbalhq/web-components'
 import type { ElementSchema } from '@nymbalhq/web-components'
 import { generateWrappers } from '../../scripts/generate-wrappers.js'
 
-// P2-08 AC-5 (Decision 1): the generated wrappers import each element's own subpath, `@nymbalhq/web-components/
-// elements/<tag>`, and never the package root at runtime, so a route that renders one wrapper bundles one element.
-// Kills: the generator still emitting `import '@nymbalhq/web-components'`, or importing every element for every set.
+// AC-5: the generated wrappers import each element's own subpath, `@nymbalhq/web-components/elements/<tag>`, and
+// never the package root at runtime, so a route that renders one wrapper bundles one element.
 
 const SCHEMAS: ElementSchema[] = Object.values(wc as Record<string, unknown>)
   .map((v) => (v as { schema?: ElementSchema } | null)?.schema)
@@ -39,7 +38,7 @@ const fromElements = (specifiers: string[]): string[] =>
     .filter((s) => s === '@nymbalhq/web-components' || s.startsWith('@nymbalhq/web-components/'))
     .sort()
 
-describe('P2-08 AC-5: the wrappers import per-element subpaths', () => {
+describe('AC-5: the wrappers import per-element subpaths', () => {
   it('AC-5: for any set of element schemas, the wrappers import exactly those elements’ subpaths and never the package root', () => {
     expect(SCHEMAS.length).toBeGreaterThan(1)
     fc.assert(

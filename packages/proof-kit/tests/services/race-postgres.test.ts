@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { postgresInventory, stockRaceRuns, type Inventory } from '../fixtures/inventory'
 
-// Acceptance tests for P1-01 AC-5: AC-3 and AC-4 on Postgres, in a fresh database for this file, 10 runs each.
+// AC-5: AC-3 and AC-4 on Postgres, in a fresh database for this file, 10 runs each.
 // The file refuses to load without NYMBAL_TEST_POSTGRES_URL, so a missing server fails the proof-kit-services
 // project: it can never skip or pass.
 

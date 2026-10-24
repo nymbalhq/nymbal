@@ -10,12 +10,9 @@ import { runMigrations } from '../../../src/db/migrate.js'
 import { kernelConfig, MIGRATIONS_ROOT, type Kernel } from '../kernel.js'
 import { openRaw } from '../raw.js'
 
-// P1-13 AC-8 (decision 1, M7) on one dialect: the schema as it stands before migration 0006, one order per status with
-// and without a payment intent (distinct totals, distinct updated_at), then every migration up to the newest. Each row's
-// captured_minor, captured_at, refunded_minor and capture_method must be what decision 1's backfill states, and no
-// refund row is invented. Kills: 0006 missing or failing on this dialect, captured set for pending or cancelled orders,
-// captured_at not taken from updated_at, refunded orders left with nothing refunded, partially_refunded given an
-// amount nobody knows, and capture_method not split provider / import by the intent.
+// AC-8 on one dialect: the schema as it stands before migration 0006, one order per status with and without a payment
+// intent (distinct totals, distinct updated_at), then every migration up to the newest. Each row's captured_minor,
+// captured_at, refunded_minor and capture_method must be what the backfill states, and no refund row is invented.
 
 const STATUSES = [
   'pending',
@@ -39,9 +36,9 @@ const CAPTURED: ReadonlySet<Status> = new Set([
   'partially_refunded',
 ])
 
-/** A copy of the migrations folder for `dialect` holding every migration before 0006: the schema before this task. */
+/** A copy of the migrations folder for `dialect` holding every migration before 0006: the schema before the migration under test. */
 function migrationsBefore0006(dialect: Kernel['dialect']): { root: string; drop(): void } {
-  const root = mkdtempSync(join(tmpdir(), 'p1-13-migrations-'))
+  const root = mkdtempSync(join(tmpdir(), 'money-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
   const to = join(root, dialect)
   mkdirSync(join(to, 'meta'), { recursive: true })
@@ -120,7 +117,7 @@ async function insertLegacy(
           r.orderNumber,
           r.sequence,
           r.status,
-          `${r.orderNumber}@p1-13.test`,
+          `${r.orderNumber}@money.test`,
           addressJson,
           addressJson,
           r.totalMinor,
@@ -145,7 +142,7 @@ async function insertLegacy(
           r.orderNumber,
           r.sequence,
           r.status,
-          `${r.orderNumber}@p1-13.test`,
+          `${r.orderNumber}@money.test`,
           addressJson,
           r.totalMinor,
           r.paymentIntentId,

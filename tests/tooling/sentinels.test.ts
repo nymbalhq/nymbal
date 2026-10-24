@@ -19,8 +19,8 @@ import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseSentinel, run, touchedPaths } from '../../scripts/sentinels'
 
-// Acceptance tests for P0-01 (sentinel runner): AC-12 to AC-19, and AC-22 to AC-24 and AC-27 (review round 1).
-// P1-10 AC-8 re-anchors AC-19 by content (no line numbers asserted) and tests that check against a fixture.
+// The sentinel runner: AC-12 to AC-19, AC-22 to AC-24 and AC-27.
+// AC-19 is anchored by content (no line numbers asserted), and tests check against a fixture.
 // AC-13 to AC-18 build a throwaway git repo per test: a tiny module, a `node --test` suite that appends to a log
 // outside the repo every time it runs, and sentinel files committed under `sentinels/`.
 type Report = Awaited<ReturnType<typeof run>>
@@ -228,7 +228,7 @@ describe('AC-12: parseSentinel', () => {
       '# kind: present',
       '# defect: b is live',
       '# where: src/b.js:3-9',
-      '# killed-by: P1-02 acceptance tests',
+      '# killed-by: the transaction tests',
       '',
     ].join('\n')
     const parsed = parseSentinel(text, 'sentinels/S042-b.patch')
@@ -237,7 +237,7 @@ describe('AC-12: parseSentinel', () => {
       kind: 'present',
       defect: 'b is live',
       where: 'src/b.js:3-9',
-      killedBy: 'P1-02 acceptance tests',
+      killedBy: 'the transaction tests',
     })
     expect(parsed.suite).toBeUndefined()
     expect(parsed.patch.trim()).toBe('')
@@ -405,8 +405,8 @@ describe('AC-19: the real sentinel set', () => {
 
   /** Each sentinel's kind, the file its `where` must name, and the content that file must hold at HEAD. */
   const EXPECTED: Record<string, Anchor & { kind: 'present' | 'injected' }> = {
-    // S001-S004 became injected in P1-02: their marks name the fixed code the patch breaks.
-    // P1-04 moved BEGIN IMMEDIATE into beginImmediate(); S001 still empties begin, commit and rollback.
+    // S001-S004 are injected: their marks name the fixed code the patch breaks. BEGIN IMMEDIATE lives in
+    // beginImmediate(); S001 empties begin, commit and rollback.
     S001: {
       kind: 'injected',
       path: 'packages/platform/src/db/command-store.ts',
@@ -427,23 +427,21 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/services/checkout-service.ts',
       marks: /findByPaymentIntentId\(/,
     },
-    // S005 became injected in P1-03, and S009 is new: predicted against the spec's interface, then re-based on the
-    // outbox as it landed, as P1-02 did for S001-S004.
+    // S005 and S009 are injected against the outbox: their marks name the code the patch breaks.
     S005: {
       kind: 'injected',
       path: 'packages/platform/src/events/publisher.ts',
       marks: /append\(/,
     },
-    // S006 became injected in P1-04 and S010 is new: predicted against the spec's interface at lines the task does
-    // not change (the cart routes take a CartService; the sweeper is re-exported), re-based if the kernel moves them.
+    // S006 and S010 are injected at lines that hold still (the cart routes take a CartService; the sweeper is
+    // re-exported), re-based if the kernel moves them.
     S006: {
       kind: 'injected',
       path: 'packages/platform/src/routes/cart.ts',
       marks: /const \{ cart, productRepo, variantRepo \} = deps/,
     },
-    // S007 became injected in P1-05: predicted against the spec's decision 4 step 3 (the amount and currency check
-    // in finalize), re-based on the fix as it landed, as P1-02 did for S001-S004. S008 became injected in P1-05 too:
-    // the fix is createApp's production refusal, so the patch removes it and AC-8's suite must go red.
+    // S007 is injected against finalize's amount and currency check. S008 is injected against createApp's production
+    // refusal, so the patch removes it and AC-8's suite must go red.
     S007: {
       kind: 'injected',
       path: 'packages/platform/src/services/checkout-service.ts',
@@ -490,7 +488,7 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/services/auth-service.ts',
       marks: /revokedAt/,
     },
-    // I106-I109 are new in P1-06, written against the guard, roles column, login limiter and registry as they landed.
+    // I106-I109 are written against the guard, roles column, login limiter and registry.
     I106: {
       kind: 'injected',
       path: 'packages/http/src/fastify-adapter.ts',
@@ -647,7 +645,7 @@ describe('AC-8: sentinels are anchored by content, not by line', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// Review round 1
+// AC-22 to AC-24 and AC-27
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Commits `name` in the repo with `body`; the file is part of HEAD so the tree stays clean. */

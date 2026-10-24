@@ -5,7 +5,7 @@ import { expect, test } from '../support/fixtures'
 test.describe('Auth checkout flow', () => {
   test('registered user can see account link in nav', async ({ page }) => {
     await page.goto('/')
-    // P2-17 (spec, Tests this task obsoletes): the account link is nymbal-site-header's `account` part.
+    // The account link is nymbal-site-header's `account` part.
     const accountLink = page
       .locator('nymbal-site-header [part~="account"]')
       .filter({ visible: true })
@@ -17,7 +17,7 @@ test.describe('Auth checkout flow', () => {
   test('register flow redirects to account on success', async ({ page }) => {
     const uniqueEmail = `test-${Date.now()}@e2e.test`
     await page.goto('/account/register', { waitUntil: 'load' })
-    // nymbal-register-form asks for the password twice (P2-15); a mismatch registers nothing.
+    // nymbal-register-form asks for the password twice; a mismatch registers nothing.
     await page.getByTestId('register-email').fill(uniqueEmail)
     await page.getByTestId('register-password').fill('TestPassword123!')
     await page.getByTestId('register-confirmPassword').fill('TestPassword123!')

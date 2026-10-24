@@ -3,10 +3,8 @@ import type { Page, Response } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { API_URL } from '../support/csrf'
 
-// P1-15 AC-2: on Astro, a signed-in shopper who double-clicks Save on the add-address form makes one address. The add
-// handler (`src/pages/account/addresses.astro`) awaits the create with no in-flight guard, so both clicks submit and
-// two identical addresses are created (measured by both release QAs). Next already ignores a submit while saving
-// (`standing.submit-once-nextjs`), so this runs on the astro project only.
+// AC-2: on Astro, a signed-in shopper who double-clicks Save on the add-address form makes one address. Runs on the
+// astro project only.
 
 const ADDRESSES_ROUTE = '/api/customers/me/addresses'
 // The SDK's localStorage key for the access token (`packages/sdk/src/auth/token-manager.ts`).
@@ -20,7 +18,7 @@ async function registerShopper(page: Page): Promise<{ firstName: string }> {
   const form = page.getByTestId('register-form')
   await form.getByTestId('register-firstName').fill(firstName)
   await form.getByTestId('register-lastName').fill('Once')
-  await form.getByTestId('register-email').fill(`p1-15-${tag}@e2e.test`)
+  await form.getByTestId('register-email').fill(`submit-${tag}@e2e.test`)
   await form.getByTestId('register-password').fill('TestPassword123!')
   await form.getByTestId('register-confirmPassword').fill('TestPassword123!')
   await form.getByTestId('register-submit').click()

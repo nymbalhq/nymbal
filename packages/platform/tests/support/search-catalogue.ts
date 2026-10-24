@@ -2,9 +2,8 @@ import { performance } from 'node:perf_hooks'
 import type { SearchAdapter, SearchDocument } from '@nymbalhq/types'
 import { matchesQuery, type ContractProduct } from '../../../contract-tests/src/index.js'
 
-// P2-07 AC-7: a 10k-product catalogue with realistic names, descriptions, SKUs and 20 categories, the same on every
-// run (a seeded generator), and the 50 queries the benchmark times: one and two terms, prefixes, hits and misses.
-// P2-10's public search benchmark takes this fixture and its p95.
+// A 10k-product catalogue with realistic names, descriptions, SKUs and 20 categories, the same on every run (a seeded
+// generator), and the 50 queries the search benchmark times: one and two terms, prefixes, hits and misses.
 
 /** mulberry32: a small seeded generator, so the catalogue is the same on every run and dialect. */
 function seeded(seed: number): () => number {
@@ -268,7 +267,7 @@ export function searchCatalogue(size = 10_000): SearchCatalogue {
     const code =
       `${adjective.slice(0, 2)}${material.slice(0, 2)}${garment.slice(0, 2)}`.toUpperCase()
     products.push({
-      id: `p2-07-bench-${String(i).padStart(5, '0')}`,
+      id: `search-bench-${String(i).padStart(5, '0')}`,
       name: `${title(adjective)} ${title(material)} ${title(garment)}`,
       description: `${title(words.join(' '))}.`,
       variants: colours.map((colour, v) => {

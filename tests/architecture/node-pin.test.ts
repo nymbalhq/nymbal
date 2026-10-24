@@ -3,10 +3,9 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './workspace-manifests'
 
-// Acceptance test for P0-05 AC-5: one Node for local and CI. `.node-version` names major 26, `pnpm-workspace.yaml`
-// makes the `engines` field binding (`engineStrict: true`; pnpm 11+ reads no settings from `.npmrc`), and every
-// `actions/setup-node` step reads `.node-version` instead of its own version. The drift this stops: a
-// better-sqlite3 built for one Node ABI loaded by another (2026-10-17).
+// AC-5: one Node for local and CI. `.node-version` names major 26, `pnpm-workspace.yaml` makes the `engines` field
+// binding (`engineStrict: true`; pnpm 11+ reads no settings from `.npmrc`), and every `actions/setup-node` step reads
+// `.node-version` instead of its own version, so a better-sqlite3 built for one Node ABI is never loaded by another.
 
 const WORKFLOWS = join(REPO_ROOT, '.github/workflows')
 

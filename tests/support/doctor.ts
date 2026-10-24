@@ -7,9 +7,9 @@ import { PROVIDER_PACKAGES } from '../../packages/platform/src/adapters/loader.j
 import { createCommandStore } from '../../packages/platform/src/db/command-store.js'
 import { runMigrations } from '../../packages/platform/src/db/migrate.js'
 
-// P2-09 (spec P2-09-dev-stage): what the doctor and dev acceptance tests share. They spawn the built CLI (`pnpm build`
-// first) and read its output: doctor's one line per check (`<ok|warn|down>  <name>  <detail>`, Interface) and its
-// `--json` form, and dev's startup output. Nothing here knows how doctor or the summary is implemented.
+// What the doctor and dev tests share. They spawn the built CLI (`pnpm build` first) and read its output: doctor's one
+// line per check (`<ok|warn|down>  <name>  <detail>`) and its `--json` form, and dev's startup output. Nothing here
+// knows how doctor or the summary is implemented.
 
 const exec = promisify(execFile)
 
@@ -137,7 +137,7 @@ export function doctorJson(stdout: string): { checks: DoctorJsonCheck[] } {
   }
 }
 
-/** The text status a `--json` status prints as (decision 4: `degraded` is `warn`). */
+/** The text status a `--json` status prints as (`degraded` is `warn`). */
 export const TEXT_STATUS: Record<DoctorJsonCheck['status'], LineStatus> = {
   ok: 'ok',
   degraded: 'warn',
@@ -146,7 +146,7 @@ export const TEXT_STATUS: Record<DoctorJsonCheck['status'], LineStatus> = {
 
 export const PRIMITIVES = ['documentStore', 'eventBus', 'media'] as const
 
-/** Decision 4's order: config, packages, command store, migrations, slots, primitives. */
+/** The check order: config, packages, command store, migrations, slots, primitives. */
 export function categoryOf(name: string): number {
   if (name === 'config') return 0
   if (name.startsWith('package ')) return 1
@@ -164,10 +164,10 @@ export function commerceSlots(config: NymbalConfig): Array<{ slot: string; provi
 }
 
 /**
- * The check names decision 4 gives a config, as a sorted set: `config`, `package <slot>` for every slot or
- * primitive whose provider has a package (PROVIDER_PACKAGES), `command store`, `migrations`, `slot <name>` per
- * commerce slot, `slot security` (with `package security` when `security.adapter` has a package) and
- * `primitive <name>` per primitive.
+ * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
+ * provider has a package (PROVIDER_PACKAGES), `command store`, `migrations`, `slot <name>` per commerce slot,
+ * `slot security` (with `package security` when `security.adapter` has a package) and `primitive <name>` per
+ * primitive.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations']

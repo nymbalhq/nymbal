@@ -4,12 +4,10 @@ import { expect, test } from '../support/fixtures'
 import { API_URL, csrf } from '../support/csrf'
 import { adminToken, ownProduct } from '../support/checkout'
 
-// P1-16 AC-1: at Pixel 7 (412 px) a signed-in shopper's Astro account pages are no wider than the viewport. The
-// account grid's one `1fr` column takes the sidebar's min-content width, because `.account-sidebar` has no
-// `min-width: 0` and its nav is a row of `nowrap` links (`AccountLayout.astro`): 468 px at 412, measured by both
-// 2026-10-19 QA runs. Next is out of scope (`standing.phone-width-nextjs` holds), so this runs on the astro project.
-// The viewport is set here, not by the `@visual`-only astro-mobile project. `defaultBrowserType` cannot be set per
-// describe; the project's chromium is the same browser.
+// AC-1: at Pixel 7 (412 px) a signed-in shopper's Astro account pages are no wider than the viewport. The account
+// grid's one `1fr` column would take the sidebar's min-content width (its nav is a row of `nowrap` links) without
+// `min-width: 0` on `.account-sidebar`. Runs on the astro project. The viewport is set here, not by the `@visual`-only
+// astro-mobile project. `defaultBrowserType` cannot be set per describe; the project's chromium is the same browser.
 const { defaultBrowserType: _browser, ...pixel7 } = devices['Pixel 7']
 
 const PASSWORD = 'TestPassword123!'
@@ -20,7 +18,7 @@ async function shopperWithOrder(
 ): Promise<{ email: string; firstName: string; orderNumber: string }> {
   const product = await ownProduct(request, await adminToken(request), 5)
   const tag = randomUUID().slice(0, 8)
-  const email = `p1-16-${tag}@e2e.test`
+  const email = `phone-${tag}@e2e.test`
   const firstName = `Ada${tag}`
   const shopper = await playwrightRequest.newContext()
   try {

@@ -16,8 +16,8 @@ import { buildRepositories } from '../../repositories/index.js'
 import type { CategoryInsert } from '../../repositories/category.js'
 import { registerCategoryProjection } from './category-projection.js'
 
-// The category projection builds from the category row the command store holds at handle time (P3-02 decision 1),
-// never from the event payload, so each case inserts the row before it publishes the event.
+// The category projection builds from the category row the command store holds at handle time, never from the event
+// payload, so each case inserts the row before it publishes the event.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 

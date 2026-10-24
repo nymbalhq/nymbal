@@ -15,11 +15,10 @@ import {
   type CommandStore,
 } from '@nymbalhq/platform'
 
-// P2-07 AC-1 to AC-4 on the native search adapter's SQLite dialect (decision 1: FTS5 in the command store's own
-// database), on a temp file migrated with the platform's migrations (0007 creates the search tables). One database
-// for the file: the cases share the index, as decision 10 says they may. Postgres runs the same cases in
-// integration-postgres (packages/platform/tests/postgres/search-contract.postgres.test.ts). P2-13 decision 2: the
-// P2-07 cases moved into runSearchContract, under the same options.
+// runSearchContract on the native search adapter's SQLite dialect (FTS5 in the command store's own database), on a
+// temp file migrated with the platform's migrations (0007 creates the search tables). One database for the file: the
+// cases share the index. Postgres runs the same cases in integration-postgres
+// (packages/platform/tests/postgres/search-contract.postgres.test.ts).
 
 const MIGRATIONS = fileURLToPath(new URL('../../packages/platform/migrations', import.meta.url))
 const config = {
@@ -32,7 +31,7 @@ let dir: string | undefined
 let store: CommandStore | undefined
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'p2-07-search-'))
+  dir = mkdtempSync(join(tmpdir(), 'search-contract-'))
   store = createCommandStore(config, { sqlitePath: join(dir, 'search.sqlite') })
   await runMigrations(store, { migrationsRoot: MIGRATIONS })
 })

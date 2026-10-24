@@ -10,11 +10,9 @@ import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { adminClient } from '../support/money.js'
 
-// Acceptance tests for P2-01 AC-4: app.capabilities() reports the eight commerce slots, security, documentStore,
-// eventBus and media, each with the adapter's own capabilities() answer: Stripe's list when Stripe is configured, the
-// injected adapter's for `custom`, and for ai `none` no adapter at all, so the admin AI route answers 503
-// admin.unavailable. Kills: a slot with no capabilities, a report that is not the adapter's own answer, and "no AI"
-// being a stub. Needs the adapter packages built (the Stripe kernel loads @nymbalhq/adapter-stripe).
+// AC-4: app.capabilities() reports the eight commerce slots, security, documentStore, eventBus and media, each with the
+// adapter's own capabilities() answer, and for ai `none` no adapter at all (the admin AI route answers 503). Needs the
+// adapter packages built (the Stripe kernel loads @nymbalhq/adapter-stripe).
 
 const COMMERCE = [
   'payments',
@@ -32,7 +30,7 @@ type Report = Record<string, { provider: string; capabilities: readonly string[]
 
 const logger = createLogger({ pretty: false, level: 'error' })
 
-/** An adapter's own answer: decision 5 makes `capabilities` a method on every adapter, storage and bus. */
+/** An adapter's own answer: `capabilities` is a method on every adapter, storage and bus. */
 function own(adapter: object): readonly string[] {
   return (adapter as { capabilities(): readonly string[] }).capabilities()
 }
@@ -48,13 +46,13 @@ function withStripe(config: NymbalConfig): NymbalConfig {
       ...config.commerce,
       payments: {
         provider: 'stripe',
-        config: { secretKey: 'sk_test_p2_01_never_called', webhookSecret: 'whsec_p2_01' },
+        config: { secretKey: 'sk_test_adapters_never_called', webhookSecret: 'whsec_adapters' },
       },
     },
   }
 }
 
-describe('P2-01 AC-4: the app reports each adapter its own capabilities', () => {
+describe('AC-4: the app reports each adapter its own capabilities', () => {
   const kernels: Kernel[] = []
   const dirs: string[] = []
 
@@ -84,7 +82,7 @@ describe('P2-01 AC-4: the app reports each adapter its own capabilities', () => 
     expect(report['documentStore']!.capabilities).toEqual(own(k.documentStore))
     expect(report['eventBus']!.capabilities).toEqual(own(k.eventBus))
     // The kernel ships one MediaStorage, on the local filesystem; its answer does not depend on the root.
-    const root = mkdtempSync(join(tmpdir(), 'p2-01-media-'))
+    const root = mkdtempSync(join(tmpdir(), 'adapters-media-'))
     dirs.push(root)
     expect(report['media']!.capabilities).toEqual(own(createLocalFsMediaStorage({ root })))
     expect(report['ai']).toEqual({ provider: 'none', capabilities: [] })
@@ -105,8 +103,8 @@ describe('P2-01 AC-4: the app reports each adapter its own capabilities', () => 
   it('AC-4: with payments custom, payments reports the injected adapter’s own list', async () => {
     const injected = {
       ...createNativeStubPaymentsAdapter({ logger }),
-      providerName: 'p2-01-injected',
-      capabilities: () => ['intent', 'p2-01-injected-only'],
+      providerName: 'adapters-injected',
+      capabilities: () => ['intent', 'adapters-injected-only'],
     }
     const k = await kernel({
       dialect: 'sqlite',
@@ -121,7 +119,7 @@ describe('P2-01 AC-4: the app reports each adapter its own capabilities', () => 
   })
 })
 
-describe('P2-01 AC-4: ai none answers the admin AI route with 503 admin.unavailable', () => {
+describe('AC-4: ai none answers the admin AI route with 503 admin.unavailable', () => {
   let k: Kernel
   let served: ServedKernel
 

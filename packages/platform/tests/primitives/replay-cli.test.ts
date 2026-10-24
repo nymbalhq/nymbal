@@ -17,21 +17,16 @@ import { address, createKernel, kernelConfig } from '../support/kernel.js'
 import { withInfrastructure } from '../support/primitive-graph.js'
 import { ALL_MODELS, DOCUMENT_COLLECTIONS, collectionOf } from '../support/read-model-shapes.js'
 
-// Acceptance tests for P3-02 AC-5 (spec P3-02-replay-engine, decisions 5b and 6, Fable B2): `nymbal replay`, the built
-// CLI spawned against a SQLite command store whose read models are on the composed Redis (a prefix of this file's
-// own), filled by a kernel from `src/` that is then closed. Each case reads the outcome from the stores, never from
-// what the command says it did: the native index through an adapter on the file, the document store's whole keyspace
-// under the prefix. The in-memory case is a second project on the same file with `documentStore: 'in-memory'`.
-// Faults are real: a table the catalogue rebuilder reads is renamed away; a logged, undelivered order.placed.v1 has a
-// payload the order projection cannot read.
-// Kills: no `replay` command; a dry run that writes, or exits 0 on drift; a rebuilder failure that leaves a half-built
-// or emptied model, or exits 0; a catch-up failure that exits 0; an in-memory store "rebuilt" in the CLI's own process.
-// Needs `pnpm build` (the CLI and the store packages) and Redis (NYMBAL_TEST_REDIS_URL).
+// AC-5: `nymbal replay`, the built CLI against a SQLite command store whose read models are on the composed Redis (a
+// prefix of this file's own). Each case reads the outcome from the stores, never from what the command says it did.
+// The in-memory case is a second project on the same file with `documentStore: 'in-memory'`. Faults are real: a table
+// the catalogue rebuilder reads is renamed away; a logged, undelivered order.placed.v1 has a payload the order
+// projection cannot read. Needs `pnpm build` (the CLI and the store packages) and Redis (NYMBAL_TEST_REDIS_URL).
 
 const logger = createLogger({ pretty: false, level: 'silent' })
 const url = redisServerUrl()
-const prefix = `p3-02-replay-${randomUUID().slice(0, 8)}`
-const dir = mkdtempSync(join(tmpdir(), 'p3-02-replay-cli-'))
+const prefix = `replay-run-${randomUUID().slice(0, 8)}`
+const dir = mkdtempSync(join(tmpdir(), 'replay-run-cli-'))
 const dbPath = join(dir, 'store.sqlite')
 const WORDS = ['quartz', 'juniper', 'saffron', 'obsidian'] as const
 
@@ -149,7 +144,7 @@ beforeAll(async () => {
       products.push({ id: p.id, word })
     }
     const { customer } = await k.services.auth.register({
-      email: `replay-${tag}@p3-02.test`,
+      email: `replay-${tag}@replay.test`,
       password: 'correct-horse-battery',
     })
     const p0 = await k.services.product.getById(products[0]!.id)
@@ -166,7 +161,7 @@ beforeAll(async () => {
     await k.services.checkout.beginCheckout({
       cartToken: cart.token,
       customerId: customer.id,
-      email: `replay-${tag}+stub-pending@p3-02.test`,
+      email: `replay-${tag}+stub-pending@replay.test`,
       billingAddress: address,
       shippingAddress: address,
     })
@@ -193,7 +188,7 @@ async function driftCategory(slug: string, name: string): Promise<Record<string,
   return original!
 }
 
-describe('P3-02 AC-5: nymbal replay on a Redis document store', () => {
+describe('AC-5: nymbal replay on a Redis document store', () => {
   it('AC-5: --to search on a store whose native index was emptied exits 0, and the index then finds every product by its own word', async () => {
     emptyNativeIndex()
     for (const p of products) expect(await searchIds(p.word), `${p.word} before`).toEqual([])
@@ -238,12 +233,12 @@ describe('P3-02 AC-5: nymbal replay on a Redis document store', () => {
     const original = await driftCategory(categorySlugs[1]!, 'edited by hand (failure)')
     try {
       const before = await keyspace()
-      onFile('ALTER TABLE variants RENAME TO variants_p3_02_hidden')
+      onFile('ALTER TABLE variants RENAME TO variants_replay_hidden')
       let run: CliRun
       try {
         run = await replay(redisProject, '--to', 'catalogue')
       } finally {
-        onFile('ALTER TABLE variants_p3_02_hidden RENAME TO variants')
+        onFile('ALTER TABLE variants_replay_hidden RENAME TO variants')
       }
 
       expect(run.code, run.out).toBe(2)
@@ -273,7 +268,7 @@ describe('P3-02 AC-5: nymbal replay on a Redis document store', () => {
       storeId: config.store.name,
       environment: 'development',
       version: '0.0.0',
-      source: 'p3-02-poison',
+      source: 'replay-poison',
     })
     const poison = make(EVT_ORDER_PLACED, {})
     const seq = onFile(
@@ -293,7 +288,7 @@ describe('P3-02 AC-5: nymbal replay on a Redis document store', () => {
   })
 })
 
-describe('P3-02 AC-5: nymbal replay on an in-memory document store', () => {
+describe('AC-5: nymbal replay on an in-memory document store', () => {
   it('AC-5: --to catalogue exits 2 saying the read model lives in the server’s process, a restart rebuilds it, and redis or postgres-jsonb shares it; --to search still exits 0 and refills the native index', async () => {
     const refused = await replay(memoryProject, '--to', 'catalogue')
 

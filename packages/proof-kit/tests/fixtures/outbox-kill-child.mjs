@@ -1,8 +1,7 @@
-// P1-03 fixture for AC-1 and AC-2: a real store (startTestStore, built kit and kernel) in a child process, its bus
-// armed by armChaos from NYMBAL_CHAOS, runs one checkout (beginCheckout) for the buyer, which the stub pays inline
-// (P1-12 decision 1): no finalize call of its own. Armed at order.paid.v1 it SIGKILLs when the relay hands that event
-// to the bus: after the payment's transaction committed, before the email handler saw it. Unarmed, it completes and
-// exits 0.
+// A real store (startTestStore, built kit and kernel) in a child process, its bus armed by armChaos from NYMBAL_CHAOS,
+// runs one checkout (beginCheckout) for the buyer, which the stub pays inline: no finalize call of its own. Armed at
+// order.paid.v1 it SIGKILLs when the relay hands that event to the bus: after the payment's transaction committed,
+// before the email handler saw it. Unarmed, it completes and exits 0.
 //
 //   node outbox-kill-child.mjs <sqlite|postgres> <sqlite file | postgres url> <buyer email>
 import { armChaos } from '@nymbalhq/proof-kit/chaos'

@@ -17,18 +17,10 @@ import {
   type TestDatabase,
 } from '../support/postgres'
 
-// Acceptance test for P2-09 AC-6 (a), the Postgres and Redis half (spec P2-09-dev-stage, decision 4's construction
-// rule; Fable spec B1, recheck M2): doctor is read-only on a store holding the state a write would change. A migrated
-// Postgres command store holds an undelivered event row (an outbox drain marks it delivered) and an expired, unreleased
-// stock reservation (a sweeper releases it); the Redis document store's database holds WITNESS_KEYS keys under the
-// store prefix (a warm or a sweep writes there). After diagnose, in-process, over generated healthy and failing configs
-// (a Redis or postgres-jsonb document store, an in-process or Redis Streams bus, each service up or at a closed port),
-// and after one CLI `nymbal doctor`, all of it is unchanged: the event's delivered marker, the reservation row, the
-// `events`, `inventory_reservations` and `__drizzle_migrations` row counts, `to_regclass('nymbal_documents')` (the
-// postgres-jsonb runs must not create its table) and Redis' DBSIZE and key set. Each run is also checked to have reached
-// the stores, so a diagnose that touches nothing because it checks nothing fails.
-// The SQLite half (the main file's hash, `.env` and the config) is packages/cli/src/commands/doctor-read-only.test.ts.
-// Kills: a doctor that drains the outbox, warms the store, sweeps, migrates or initializes a primitive.
+// AC-6 (a), Postgres and Redis: doctor is read-only on a store holding the state a write would change (an undelivered
+// event, an expired reservation, document-store keys). After diagnose over generated healthy and failing configs, and
+// after one CLI `nymbal doctor`, every row, count and key is unchanged, and each run is checked to have reached the
+// stores. The SQLite half is packages/cli/src/commands/doctor-read-only.test.ts.
 // Needs `pnpm build` (the CLI and the stores' packages), Postgres and Redis (NYMBAL_TEST_POSTGRES_URL,
 // NYMBAL_TEST_REDIS_URL).
 
@@ -36,9 +28,9 @@ const WITNESS_KEYS = 7
 /** A Redis database no other suite uses, so DBSIZE is this file's alone. */
 const REDIS_DB = '11'
 const logger = createLogger({ pretty: false, level: 'silent' })
-const prefix = `p2-09-ro-${randomUUID().slice(0, 8)}`
-const EVENT_ID = `evt-p2-09-${randomUUID()}`
-const RESERVATION_ID = `res-p2-09-${randomUUID()}`
+const prefix = `doctor-ro-${randomUUID().slice(0, 8)}`
+const EVENT_ID = `evt-doctor-${randomUUID()}`
+const RESERVATION_ID = `res-doctor-${randomUUID()}`
 
 let db: TestDatabase
 let redisUrl = ''
@@ -95,7 +87,7 @@ beforeAll(async () => {
     Array.from({ length: WITNESS_KEYS }, (_, i) => ['SET', `${prefix}:witness:${i}`, `value-${i}`]),
   )
 
-  db = await createDatabase(postgresServerUrl(), 'p2_09_ro')
+  db = await createDatabase(postgresServerUrl(), 'doctor_ro')
   const store = createCommandStore(kernelConfig('postgres'), { postgresUrl: db.url })
   try {
     await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })
@@ -108,8 +100,8 @@ beforeAll(async () => {
     version: 1,
     timestamp: new Date().toISOString(),
     correlationId: EVENT_ID,
-    data: { productId: 'p2-09-witness' },
-    metadata: { storeId: 'P1-02', environment: 'test' },
+    data: { productId: 'doctor-witness' },
+    metadata: { storeId: 'test-store', environment: 'test' },
   }
   await queryOnce(
     db.url,
@@ -120,7 +112,7 @@ beforeAll(async () => {
   await queryOnce(
     db.url,
     `INSERT INTO inventory_reservations (reservation_id, variant_id, qty, order_ref, expires_at, created_at)
-     VALUES ($1, 'var-p2-09-witness', 2, NULL, now() - interval '1 hour', now() - interval '2 hours')`,
+     VALUES ($1, 'var-doctor-witness', 2, NULL, now() - interval '1 hour', now() - interval '2 hours')`,
     [RESERVATION_ID],
   )
 }, 60_000)
@@ -167,7 +159,7 @@ const shapeArb: fc.Arbitrary<Shape> = fc.record({
   redisUp: fc.boolean(),
 })
 
-describe('P2-09 AC-6 (a): doctor writes nothing to Postgres or Redis', () => {
+describe('AC-6 (a): doctor writes nothing to Postgres or Redis', () => {
   it('AC-6 (a): diagnose, in-process over generated healthy and failing configs (one on postgres-jsonb), leaves the event, the reservation, the row counts, nymbal_documents and the Redis keys as they were, and reaches the stores it names', async () => {
     const before = await witnessState()
     expect(before.event).toHaveLength(1)

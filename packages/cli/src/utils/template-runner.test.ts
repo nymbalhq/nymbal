@@ -98,9 +98,9 @@ describe('template-runner', () => {
     expect(plan.args.slice(0, 3)).toEqual(['--filter', '@nymbalhq/template-astro', 'dev'])
   })
 
-  // P1-09 AC-9: Astro 7 backgrounds `astro dev` when it detects an AI agent (CLAUDECODE=1 and the like), so the
-  // launcher sees its child exit while the server lives on detached. Every astro launch we own passes --ignore-lock;
-  // `next dev` rejects an option it does not know, so the Next launch must not carry it.
+  // Astro 7 backgrounds `astro dev` when it detects an AI agent (CLAUDECODE=1 and the like), so the launcher sees its
+  // child exit while the server lives on detached. Every astro launch we own passes --ignore-lock; `next dev` rejects
+  // an option it does not know, so the Next launch must not carry it.
   it('AC-9: every astro launch, flat or filtered, passes --ignore-lock; a next launch does not', () => {
     const flatAstro = makeProject({ configFile: 'astro.config.mjs', bins: ['astro'] })
     const filtered = makeProject({})

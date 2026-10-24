@@ -10,13 +10,11 @@ import {
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P2-05 AC-5 (the swap) and AC-2's journey half, on every storefront project: astro and nextjs against the native
-// store on 3001, astro-custom and nextjs-custom against the custom-providers fixture store on 3011. The same file on
-// both configs: what it expects of the payment step is read from GET /api/capabilities, never from the project.
-// Kills: a custom run that reaches the native store (API or storefront), a template that renders a vendor's payment
-// UI whatever the adapter says, and a checkout that cannot complete without a payment step.
+// AC-5 (the swap) and AC-2's journey half, on every storefront project: astro and nextjs against the native store on
+// 3001, astro-custom and nextjs-custom against the custom-providers fixture store on 3011. The same file on both
+// configs: what it expects of the payment step is read from GET /api/capabilities, never from the project.
 
-const email = (tag: string) => `e2e-p2-05-${tag}-${randomUUID().slice(0, 8)}@e2e.test`
+const email = (tag: string) => `e2e-caps-${tag}-${randomUUID().slice(0, 8)}@e2e.test`
 
 test.describe('The payment step follows the payments adapter', () => {
   test('AC-5: the run reaches the store its project names: the custom runs report search without facet and no payments client, the native runs facet and test-mode, and the storefront calls that same API', async ({

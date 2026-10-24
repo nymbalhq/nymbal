@@ -14,10 +14,9 @@ import {
   watchRealtime,
 } from '../../support/admin'
 
-// P1-14 AC-4 (standing.api-restart-admin): a merchant with the orders list open stops and restarts the API, and the
-// tab picks up where it was. Kills: an API that hangs on SIGTERM with the admin's stream open; a tab that does not
-// reconnect to the restarted API; a reconnected tab that misses the next order. The suite's own API cannot be
-// restarted from a test, so this journey runs one of its own on a free port and a database of its own (decision 5).
+// AC-4: a merchant with the orders list open stops and restarts the API, and the tab picks up where it was and sees
+// the next order. The suite's own API cannot be restarted from a test, so this journey runs one of its own on a free
+// port and a database of its own.
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const CLI_BIN = join(REPO_ROOT, 'packages', 'cli', 'bin', 'nymbal.mjs')
@@ -137,7 +136,7 @@ async function placeOrderOn(
   const checkoutRes = await request.post(`${base}/api/checkout`, {
     headers: await csrf(request, base),
     data: {
-      email: `e2e-p1-14-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
+      email: `e2e-shutdown-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
       billingAddress: SHIPPING_ADDRESS,
       shippingAddress: SHIPPING_ADDRESS,
     },
@@ -148,7 +147,7 @@ async function placeOrderOn(
   return { orderNumber: body.data.orderNumber }
 }
 
-test.describe('P1-14 the admin across an API restart', () => {
+test.describe('the admin across an API restart', () => {
   test('AC-4: SIGTERM ends the API within 3 s with the orders list open; restarted on the same port and database, the tab reconnects and shows the next order within 10 s, with no reload', async ({
     browser,
     request,
@@ -156,7 +155,7 @@ test.describe('P1-14 the admin across an API restart', () => {
     test.setTimeout(180_000)
     const port = await freePort()
     const base = `http://localhost:${port}`
-    const dir = mkdtempSync(join(tmpdir(), 'nymbal-e2e-p1-14-'))
+    const dir = mkdtempSync(join(tmpdir(), 'nymbal-e2e-shutdown-'))
     const sqlitePath = join(dir, 'nymbal.db')
     const apis: Api[] = []
     const context = await browser.newContext({ baseURL: `${base}/admin/` })

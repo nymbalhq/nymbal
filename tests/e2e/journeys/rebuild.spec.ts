@@ -8,15 +8,14 @@ import { adminToken, ownProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P3-02 AC-6 (spec P3-02-replay-engine): the journeys hold through a rebuild. Run mid-suite (the other journeys of the
-// run go on around it, fullyParallel), this journey makes a product and a pending order of its own, reads what the
-// storefront API serves for them, runs the built `nymbal replay` against the run's own store (the store variables
-// scripts/e2e-server.mjs gave the API, from NYMBAL_E2E_STORE_ENV_FILE), reads again, and walks the pages. On a shared
-// document store (redis, as the nightly postgres-redis set has it, or postgres-jsonb) it rebuilds every read model
-// (`--to all`); on the default in-memory store, where the read model lives in the API's process and replay refuses
-// all but search (decision 6), it rebuilds search. Every API read after equals the read before, and the product page
-// and the search page show what the API serves after. Kills: a rebuild that changes what a shopper sees (a document
-// rebuilt differently from the live one, an index that loses the product, an order read model that loses the order).
+// AC-6: the journeys hold through a rebuild. Run mid-suite (the other journeys of the run go on around it,
+// fullyParallel), this journey makes a product and a pending order of its own, reads what the storefront API serves
+// for them, runs the built `nymbal replay` against the run's own store (the store variables scripts/e2e-server.mjs
+// gave the API, from NYMBAL_E2E_STORE_ENV_FILE), reads again, and walks the pages. On a shared document store (redis,
+// as the nightly postgres-redis set has it, or postgres-jsonb) it rebuilds every read model (`--to all`); on the
+// default in-memory store, where the read model lives in the API's process and replay refuses all but search, it
+// rebuilds search. Every API read after equals the read before, and the product page and the search page show what
+// the API serves after.
 
 const REPO = fileURLToPath(new URL('../../../', import.meta.url))
 const CLI = join(REPO, 'packages', 'cli', 'bin', 'nymbal.mjs')
@@ -111,7 +110,7 @@ test.describe('Through a rebuild @rebuild', () => {
     const placed = await request.post(`${API_URL}/api/checkout`, {
       headers: await csrf(request),
       data: {
-        email: `p3-02-${Date.now()}+stub-pending@nymbal.dev`,
+        email: `replay-${Date.now()}+stub-pending@nymbal.dev`,
         billingAddress: ADDRESS,
         shippingAddress: ADDRESS,
       },

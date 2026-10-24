@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { settingsRefusalsSuite } from '../support/suites/settings-refusals.js'
 
-// P3-07 AC-6 on a SQLite file per test (spec P3-07-secrets-settings).
+// AC-6 on a SQLite file per test.
 
 settingsRefusalsSuite('sqlite', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-07-refusals-'))
+  const dir = mkdtempSync(join(tmpdir(), 'settings-refusals-'))
   return {
     target: join(dir, 'store.sqlite'),
     async drop() {

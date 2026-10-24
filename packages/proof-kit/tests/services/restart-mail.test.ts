@@ -8,11 +8,10 @@ import { startTestStore, type TestStore } from '@nymbalhq/proof-kit/store'
 import { createDatabase } from '../../../platform/tests/support/postgres.js'
 import { openRaw, type RawReader } from '../../../platform/tests/support/raw.js'
 
-// Acceptance tests for P1-03 AC-3: a restart sends nothing twice. A checkout and a customer registration, then two
-// restarts on the same database: the buyer has exactly one order-placed email and the customer exactly one welcome
-// email, the product, the order and the customer are served from the (rebuilt) document store after each restart,
-// and neither the log's delivered_at values nor the email handlers' processed_events rows change. Today warm-up
-// re-publishes order.placed and customer.created to the email handler on every boot (measured 1 -> 2 -> 3).
+// AC-3: a restart sends nothing twice. A checkout and a customer registration, then two restarts on the same
+// database: the buyer has exactly one order-placed email and the customer exactly one welcome email, the product, the
+// order and the customer are served from the (rebuilt) document store after each restart, and neither the log's
+// delivered_at values nor the email handlers' processed_events rows change.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_POSTGRES_URL.
 
 function required(name: string, example: string): string {
@@ -43,7 +42,7 @@ const cases: Array<{ dialect: Dialect; fresh: () => Promise<Database> }> = [
   {
     dialect: 'sqlite',
     async fresh() {
-      const dir = mkdtempSync(join(tmpdir(), 'p1-03-restart-mail-'))
+      const dir = mkdtempSync(join(tmpdir(), 'outbox-restart-mail-'))
       return {
         target: join(dir, 'store.sqlite'),
         async drop() {

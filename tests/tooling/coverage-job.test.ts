@@ -18,8 +18,8 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { parseYaml } from './workflow-yaml'
 
-// Acceptance test for P1-10 (phase exit), AC-7: in ci.yml the `coverage` job's coverage step cannot fail the job on
-// a threshold miss, writes the summary to $GITHUB_STEP_SUMMARY, and a run that crashes still fails the job.
+// AC-7: in ci.yml the `coverage` job's coverage step cannot fail the job on a threshold miss, writes the summary to
+// $GITHUB_STEP_SUMMARY, and a run that crashes still fails the job.
 // The job's own `run` steps (all but the install; the `uses` steps only fetch the checkout, toolchain and build) are
 // executed as Actions would (bash -eo pipefail, `if:` and `continue-on-error` honoured) in a scratch project that holds
 // the repo's Vitest config and package.json scripts, with one fixture service under the services threshold
@@ -171,7 +171,7 @@ describe('AC-7: coverage never blocks alone', () => {
     expect(miss.summary).toMatch(/\d+(?:\.\d+)?\s?%/)
 
     expect(crash.failed, `a run that crashes must still fail the job\n${crash.log}`).toBe(true)
-    // Harness audit 2026-10-22: the job's red never fails the run (four CI reds were this non-gate job alone).
+    // The job's red never fails the run: coverage is a report, not a gate.
     expect(truthy(job['continue-on-error']), 'the coverage job is continue-on-error').toBe(true)
   })
 })

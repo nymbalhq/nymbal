@@ -18,8 +18,8 @@ import {
   type OrderStatus,
 } from '@nymbalhq/types'
 
-// Acceptance tests for P1-01 AC-14 (money and carts), AC-15 (order paths and transitions) and AC-16 (event
-// sequences): the arbitraries every kernel property test will draw from, 500 runs each.
+// AC-14 (money and carts), AC-15 (order paths and transitions) and AC-16 (event sequences): the arbitraries every
+// kernel property test draws from, 500 runs each.
 
 const RUNS = 500
 const STATUSES = Object.keys(ORDER_STATUS_TRANSITIONS) as OrderStatus[]

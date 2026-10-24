@@ -8,8 +8,8 @@ import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from './index.js'
 import type { OrderRefundInsert } from './order-refund.js'
 
-// P1-13 (spec P1-13-admin-truth-about-money) decision 1: each refund is a row, settled once from `pending`
-// (decision 4 step 3), found by its request key per order (the store walk's double click), listed oldest first.
+// Each refund is a row, settled once from `pending`, found by its request key per order (a double click sends one
+// key), listed oldest first.
 
 async function setup() {
   const store = createCommandStore(
@@ -80,7 +80,7 @@ const listOf = (env: Env, orderId: string) =>
 describe('OrderRefundRepository', () => {
   // Defect: settle drops the pending condition (a late answer overwrites a settled row, so a failed refund turns
   // succeeded after the fact) or reports success when nothing was written.
-  it('decision 4 step 3: settle writes a pending row once and answers false for a settled or unknown row', async () => {
+  it('settle writes a pending row once and answers false for a settled or unknown row', async () => {
     const env = await setup()
     const orderId = await order(env)
     const r = row(orderId)
@@ -99,7 +99,7 @@ describe('OrderRefundRepository', () => {
 
   // Defect: the request key is matched across orders (one order's double click answers another's refund), or a row
   // without a key matches.
-  it('store walk: findByRequestId finds the refund its request made on that order only', async () => {
+  it('findByRequestId finds the refund its request made on that order only', async () => {
     const env = await setup()
     const [a, b] = [await order(env), await order(env)]
     const requestId = uuidv7()
@@ -123,7 +123,7 @@ describe('OrderRefundRepository', () => {
 
   // Defect: a column is dropped or mangled on the way back (the reason, the provider id, the timestamp), so the admin
   // shows a refund other than the one written.
-  it('decision 1: a row reads back as written', async () => {
+  it('a row reads back as written', async () => {
     const env = await setup()
     const orderId = await order(env)
     const written = row(orderId, {
@@ -152,7 +152,7 @@ describe('OrderRefundRepository', () => {
 
   // Defect: the order is lost (newest first, or by id alone), an order's list leaks another order's rows, or
   // listByOrders disagrees with listByOrder (the admin list and detail show different refunds).
-  it('decision 1: listByOrder is oldest first and per order, and listByOrders groups exactly the same rows', async () => {
+  it('listByOrder is oldest first and per order, and listByOrders groups exactly the same rows', async () => {
     const env = await setup()
     const orders = [await order(env), await order(env), await order(env)]
     const silent = await order(env)

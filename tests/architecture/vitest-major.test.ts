@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { workspaceMembers, type Manifest } from './workspace-manifests'
 
-// Acceptance test for P0-05 AC-4: one Vitest major (3) across every workspace manifest. Two majors mean two
-// runners with different semantics in one `pnpm test`. The `@vitest/*` runner packages (coverage, ui, browser)
-// must match the runner's major; `@vitest/eslint-plugin` versions on its own line and is not counted.
+// AC-4: one Vitest major (3) across every workspace manifest. Two majors mean two runners with different semantics in
+// one `pnpm test`. The `@vitest/*` runner packages (coverage, ui, browser) must match the runner's major;
+// `@vitest/eslint-plugin` versions on its own line and is not counted.
 
 const EXPECTED_MAJOR = 3
 const SECTIONS = [

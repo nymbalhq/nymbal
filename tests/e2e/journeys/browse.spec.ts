@@ -42,7 +42,7 @@ interface ListingFacet {
 /**
  * Opens the PLP and waits until the client's own product load has answered, so a filter clicked next is not
  * overtaken by that load's response (the product-list store keeps whichever response lands last). Returns the cards
- * and the facets that response carried (none when the store's search cannot facet, P2-05 decision 4).
+ * and the facets that response carried (none when the store's search cannot facet).
  */
 async function openListing(page: Page): Promise<{ cards: Locator; facets: ListingFacet[] }> {
   const listed = page.waitForResponse(
@@ -178,8 +178,8 @@ test.describe('Browse catalog', () => {
     expect(count).toBeGreaterThanOrEqual(4)
   })
 
-  // P2-05 AC-3: the filter tests take the branch the listing's facets name: with facets, the filter works; without
-  // (a search adapter with no `facet`), there is no filter to use.
+  // AC-3: the filter tests take the branch the listing's facets name: with facets, the filter works; without (a search
+  // adapter with no `facet`), there is no filter to use.
   test('product filters are clickable and do not crash', async ({ page }) => {
     const { cards, facets } = await openListing(page)
     if (facets.length === 0) return expectNoFilter(page)
@@ -244,9 +244,9 @@ test.describe('Browse catalog', () => {
     await expect(filterOptions).toHaveCount(countBefore)
   })
 
-  // P2-05 AC-3: the filter is present iff the listing response has facets, rendered from those facets only, and the
-  // listing has facets iff the store's search reports `facet`. Both templates are held to the same API answer, so on
-  // the native store Astro and Next show the same groups and options.
+  // AC-3: the filter is present iff the listing response has facets, rendered from those facets only, and the listing
+  // has facets iff the store's search reports `facet`. Both templates are held to the same API answer, so on the native
+  // store Astro and Next show the same groups and options.
   test('AC-3: /products shows exactly the listing facets as filter groups and options, and the listing has facets iff search reports facet', async ({
     page,
     request,

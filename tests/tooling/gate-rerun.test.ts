@@ -3,9 +3,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanupScratch, gateCli, git, scratchRepo, write } from './scratch-gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-16, the gate half (the Stop-hook half is in
-// nymbal-ops tests/gate-hooks.test.sh): every gate run writes reports/last-run.json, and `--rerun-red` runs only
-// the steps that were red and, inside `tests`, only the red tests. It always exits non-zero with
+// AC-16, the gate half: every gate run writes reports/last-run.json, and `--rerun-red` runs only the steps that were
+// red and, inside `tests`, only the red tests. It always exits non-zero with
 // `rerun: <n> green, <m> red, not a gate verdict`, and prints `flaky: <id>` for a test that goes green while the
 // diff is unchanged since the red run.
 // The real plain gate runs in a scratch repository with real pnpm and Vitest. Its lint and typecheck scripts log

@@ -38,16 +38,16 @@ import {
   paidFor,
 } from '../support/webhooks.js'
 
-// P1-13 AC-2, AC-3, AC-4, AC-6 and AC-13 on SQLite: a kernel from `src/` served over HTTP, the admin's own routes, the
-// stub payments adapter (wrapped where a test needs the provider to answer otherwise), and the committed rows read
-// through a second connection. The adapter is the kernel's own object (`k.app.adapters.payments`): a test that changes
-// what the provider answers replaces its `refund` (or `createPaymentIntent`) for the test's duration.
+// AC-2, AC-3, AC-4, AC-6 and AC-13 on SQLite: a kernel from `src/` served over HTTP, the admin's own routes, the stub
+// payments adapter (wrapped where a test needs the provider to answer otherwise), and the committed rows read through
+// a second connection. The adapter is the kernel's own object (`k.app.adapters.payments`): a test that changes what
+// the provider answers replaces its `refund` (or `createPaymentIntent`) for the test's duration.
 
 type RefundImpl = NonNullable<PaymentsAdapter['refund']>
 
 const PaymentErrorCode = (code: string) => code as ConstructorParameters<typeof PaymentError>[0]
 
-describe('P1-13: the admin tells the truth about money (sqlite)', () => {
+describe('the admin tells the truth about money (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader
@@ -96,7 +96,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
   /** A checkout the stub pays inline: a confirmed order whose capture is its total. */
   async function paidOrder(priceMinor = 2_500, qty = 2) {
     const seeded = await seedVariant(k, qty + 3, { priceMinor })
-    const started = await checkoutOf(k, seeded, qty, `paid-${randomUUID()}@p1-13.test`)
+    const started = await checkoutOf(k, seeded, qty, `paid-${randomUUID()}@money.test`)
     if (started.orderStatus !== 'confirmed') {
       throw new Error(`stub checkout did not confirm: ${JSON.stringify(started.payment)}`)
     }
@@ -228,7 +228,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
       expect(
         (await historyNotes(raw, order.orderId)).some((n) => /payment recorded manually/i.test(n)),
       ).toBe(true)
-      // The manual capture announces the payment once, for the order's total (decision 2).
+      // The manual capture announces the payment once, for the order's total.
       expect((await paidFor(raw, order.orderId)).map((p) => [p.amountMinor, p.currency])).toEqual([
         [order.totalMinor, order.currency],
       ])
@@ -256,7 +256,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
       const qty = 2
       const seeded = await seedVariant(k, qty, { priceMinor: 700 })
       const order = await expiredCheckout(k, seeded, qty)
-      const other = await checkoutOf(k, seeded, qty, `other-${randomUUID()}@p1-13.test`)
+      const other = await checkoutOf(k, seeded, qty, `other-${randomUUID()}@money.test`)
       expect(other.orderStatus).toBe('confirmed')
 
       const res = await markPaid(order.orderId)
@@ -342,7 +342,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
               const moved = await admin.call(
                 'POST',
                 `/api/admin/orders/${order.orderId}/${path}`,
-                step === 'shipped' ? { trackingNumber: 'TRK-P1-13', carrier: 'DHL' } : undefined,
+                step === 'shipped' ? { trackingNumber: 'TRK-1001', carrier: 'DHL' } : undefined,
               )
               expect(moved.status, `${path}: ${JSON.stringify(moved.body)}`).toBe(200)
             }
@@ -579,7 +579,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
         status: 'delivered',
         createdAt: new Date('2025-06-01T10:00:00Z'),
         customerId: null,
-        email: `imported-${randomUUID()}@p1-13.test`,
+        email: `imported-${randomUUID()}@money.test`,
         billingAddress: address,
         shippingAddress: address,
         lineItems: [],
@@ -768,7 +768,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
       try {
         result = await k.services.checkout.beginCheckout({
           cartToken: await cartWith(k, seeded, qty),
-          email: `ac13-inline-${randomUUID()}@p1-13.test`,
+          email: `ac13-inline-${randomUUID()}@money.test`,
           billingAddress: address,
           shippingAddress: address,
         })
@@ -797,7 +797,7 @@ describe('P1-13: the admin tells the truth about money (sqlite)', () => {
         [confirmed.orderId, 'confirm', undefined],
         [confirmed.orderId, 'mark-delivered', undefined],
         [pending.orderId, 'process', undefined],
-        [pending.orderId, 'ship', { trackingNumber: 'TRK-P1-13', carrier: 'DHL' }],
+        [pending.orderId, 'ship', { trackingNumber: 'TRK-1001', carrier: 'DHL' }],
       ]
       for (const [orderId, path, body] of attempts) {
         const before = await orderStatus(raw, orderId)

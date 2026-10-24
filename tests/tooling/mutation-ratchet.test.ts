@@ -7,10 +7,10 @@ import { promisify } from 'node:util'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P1-10 (phase exit), AC-1, AC-2, AC-3, AC-5 and AC-5b: the mutation ratchet.
-// The module is imported by URL so that its absence fails these tests at run time, not the typecheck; the signatures
-// below are the spec's Interface. Scores are percent with two decimals; every generated score is a whole number of
-// hundredths built as `cents / 100`, the value JSON gives back for that text, so nothing drifts through a file.
+// AC-1, AC-2, AC-3, AC-5 and AC-5b: the mutation ratchet.
+// The module is imported by URL so that its absence fails these tests at run time, not the typecheck. Scores are
+// percent with two decimals; every generated score is a whole number of hundredths built as `cents / 100`, the value
+// JSON gives back for that text, so nothing drifts through a file.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')

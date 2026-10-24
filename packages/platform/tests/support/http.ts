@@ -2,9 +2,9 @@ import { createServer } from 'node:net'
 import { createHttpServer } from '../../../http/src/index.js'
 import type { Kernel } from './kernel.js'
 
-// P1-04 support: a kernel built from `src/` (createKernel) served over HTTP by the http package's `src/` (the adapter
-// guard lives there), so a route-level test and the sentinel runner see the working tree without a build. The shape
-// of proof-kit's startTestStore, minus the dist kernel.
+// A kernel built from `src/` (createKernel) served over HTTP by the http package's `src/` (the adapter guard lives
+// there), so a route-level test and the sentinel runner see the working tree without a build. The shape of
+// proof-kit's startTestStore, minus the dist kernel.
 
 const HOST = '127.0.0.1'
 

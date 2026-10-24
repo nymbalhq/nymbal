@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { trackedFiles } from './workspace-manifests'
 
-// Acceptance test for P0-05 AC-1: no tracked compiled test file (`*.test.js`, `*.spec.js`, their `.d.ts` and
-// source maps) sits beside a tracked TypeScript source of the same stem. A stale emit runs, or is read, beside
-// the test it was compiled from. The 22 non-test `tsc` emits are out of scope until the human decides on them.
+// AC-1: no tracked compiled test file (`*.test.js`, `*.spec.js`, their `.d.ts` and source maps) sits beside a tracked
+// TypeScript source of the same stem. A stale emit runs, or is read, beside the test it was compiled from. Non-test
+// `tsc` emits are out of scope.
 
 /** `<dir>/<name>.test.js`, `.test.d.ts`, `.test.js.map`, `.test.d.ts.map` (and `.spec.*`); group 1 is the stem. */
 const COMPILED_TEST = /^(.*\.(?:test|spec))\.(?:[cm]?js|d\.[cm]?ts)(?:\.map)?$/

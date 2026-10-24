@@ -4,15 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CLI_BIN, cliEnv, stripAnsi } from './doctor.js'
 
-// P3-01 (spec P3-01-event-log-surface, decision 7): what the `nymbal events` acceptance tests share. A SQLite project
-// for the built CLI, the text line `<seq> <timestamp> <type> <correlationId> <id>`, and a spawned `events tail` read
-// line by line. Nothing here knows how the command is implemented.
+// What the `nymbal events` tests share. A SQLite project for the built CLI, the text line
+// `<seq> <timestamp> <type> <correlationId> <id>`, and a spawned `events tail` read line by line. Nothing here knows
+// how the command is implemented.
 
 /** A project whose command store is the SQLite file `dbPath` (through NYMBAL_SQLITE_PATH), and its CLI environment. */
 export function sqliteProject(dbPath: string): { dir: string; env: NodeJS.ProcessEnv } {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-01-events-'))
+  const dir = mkdtempSync(join(tmpdir(), 'events-cli-'))
   const config = {
-    store: { name: 'p3-01-events', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'events-cli', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { adapter: 'middleware' },
@@ -46,7 +46,7 @@ export interface EventLine {
 
 const LINE = /^(\d+) (\S+) (\S+) (\S+) (\S+)$/
 
-/** Decision 7's text line, or null for anything else. */
+/** The text line, or null for anything else. */
 export function parseLine(line: string): EventLine | null {
   const m = LINE.exec(stripAnsi(line).trim())
   if (m === null) return null

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { scaffold } from '../src/index.js'
 
-// P2-06 AC-7: a project made by `create-nymbal-app` (`scaffold()`, as scaffold.test.ts makes one) is byte-identical to
+// AC-7: a project made by `create-nymbal-app` (`scaffold()`, as scaffold.test.ts makes one) is byte-identical to
 // the synced template, except the paths the project layer (scaffold/project/<template>) lists. The rest of what
 // scaffold() itself writes is outside the comparison by design: package.json (its name is patched), nymbal.config.ts
 // (rendered from the answers), and the root `_dot.*` files, which arrive as `.*` with the same bytes. The template's
@@ -42,7 +42,7 @@ afterAll(() => {
 })
 
 for (const tmpl of ['astro', 'nextjs'] as const) {
-  describe(`P2-06 AC-7: the ${tmpl} scaffold is the synced template plus the project layer`, () => {
+  describe(`AC-7: the ${tmpl} scaffold is the synced template plus the project layer`, () => {
     let outDir: string
 
     beforeAll(async () => {
@@ -76,11 +76,7 @@ for (const tmpl of ['astro', 'nextjs'] as const) {
       ).toEqual([])
 
       // Nothing else arrives: the project is the compared files, the project layer and what scaffold() writes.
-      const expectedFiles = new Set([
-        ...compared.map(landing),
-        ...listed,
-        ...WRITTEN_BY_SCAFFOLD,
-      ])
+      const expectedFiles = new Set([...compared.map(landing), ...listed, ...WRITTEN_BY_SCAFFOLD])
       expect(filesUnder(outDir).filter((rel) => !expectedFiles.has(rel))).toEqual([])
 
       expect(

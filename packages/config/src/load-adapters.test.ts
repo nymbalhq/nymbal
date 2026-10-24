@@ -6,10 +6,8 @@ import fc from 'fast-check'
 import { afterAll, describe, expect, it } from 'vitest'
 import { loadConfig, type CommerceSlot } from './index.js'
 
-// P2-05 AC-5 (unit) and decision 8: loadConfig imports the config module once and returns its default export as the
-// config and its named `adapters` export (Partial<Record<CommerceSlot, Adapter>>) beside it, so `nymbal dev` can hand
-// them to createApp. Kills: a loader that keeps reading `{ default: true }` only (the `adapters` export is dropped and
-// a `custom` slot can never run),.
+// AC-5: loadConfig imports the config module once and returns its default export as the config and its named
+// `adapters` export beside it, so `nymbal dev` can hand them to createApp.
 
 const FIXTURE_DIR = fileURLToPath(
   new URL('../../../tests/e2e/fixtures/custom-providers/', import.meta.url),
@@ -50,7 +48,7 @@ function baseConfig(custom: readonly CommerceSlot[]) {
   }
   for (const slot of custom) commerce[slot] = { provider: 'custom' }
   return {
-    store: { name: 'P2-05', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { adapter: 'middleware' },
@@ -62,12 +60,12 @@ function baseConfig(custom: readonly CommerceSlot[]) {
 
 /** A project whose nymbal.config.ts default-exports the config and exports one adapter per slot in `adapters`. */
 function project(custom: readonly CommerceSlot[], adapters: readonly CommerceSlot[]): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-05-config-'))
+  const dir = mkdtempSync(join(tmpdir(), 'caps-config-'))
   dirs.push(dir)
   const exported = `export const adapters = {\n${adapters
     .map(
       (slot) =>
-        `  ${slot}: { kind: '${slot}', providerName: 'p2-05-${slot}', capabilities: () => ['p2-05-${slot}'] },`,
+        `  ${slot}: { kind: '${slot}', providerName: 'caps-${slot}', capabilities: () => ['caps-${slot}'] },`,
     )
     .join('\n')}\n}\n`
   writeFileSync(
@@ -95,8 +93,8 @@ describe('loadConfig returns the config module’s adapters export', () => {
 
         expect(Object.keys(loaded.adapters ?? {}).sort()).toEqual([...slots].sort())
         for (const slot of slots) {
-          expect(loaded.adapters?.[slot]?.providerName).toBe(`p2-05-${slot}`)
-          expect(loaded.adapters?.[slot]?.capabilities()).toEqual([`p2-05-${slot}`])
+          expect(loaded.adapters?.[slot]?.providerName).toBe(`caps-${slot}`)
+          expect(loaded.adapters?.[slot]?.capabilities()).toEqual([`caps-${slot}`])
         }
         // The config is still the default export, parsed as before.
         expect(SLOTS.filter((s) => loaded.config.commerce[s].provider === 'custom').sort()).toEqual(

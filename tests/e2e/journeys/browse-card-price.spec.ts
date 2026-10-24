@@ -4,10 +4,9 @@ import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P1-11 diff review M3 on both templates: a product card shows the product's "from" price, `priceRange.minMinor`, the
-// field the price sorts order by, in the server render and after the client re-renders the grid for a new sort. A card
-// showing the first variant's price puts a product shown at £20.00 ahead of a £15.00 one under price-asc.
-// Kills: the cards (Astro's ProductCard and plp.ts, Next's ProductCard) formatting `priceMinor`.
+// On both templates a product card shows the product's "from" price, `priceRange.minMinor`, the field the price sorts
+// order by, in the server render and after the client re-renders the grid for a new sort. A card showing the first
+// variant's price would put a product shown at £20.00 ahead of a £15.00 one under price-asc.
 //
 // The product goes in a seeded category whose seeded prices are all above its cheapest variant (not `apparel`, which
 // the listing screenshot needs to hold seeded products only), so it is on that category's first page in every order.
@@ -36,7 +35,7 @@ async function twoPriceProduct(request: APIRequestContext): Promise<string> {
 
   const token = await adminToken(request)
   const tag = randomUUID().slice(0, 8)
-  const slug = `p1-11-from-${tag}`
+  const slug = `sort-from-${tag}`
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), authorization: `Bearer ${token}` },
     data: {

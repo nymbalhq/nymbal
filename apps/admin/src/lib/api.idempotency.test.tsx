@@ -8,14 +8,9 @@ import { InventoryPage } from '@/pages/InventoryPage'
 import { ProductEditPage } from '@/pages/ProductEditPage'
 import { renderWithProviders } from '@/tests/render'
 
-// Acceptance tests for P3-04 AC-4 (spec P3-04-audit-trail, decision 5): the admin sends one Idempotency-Key per user
-// intent. A stock adjust, a status change and a product save each send a well-formed key; two clicks inside one intent
-// (a double click that lands before the re-render disables the button) send the same key; the next intent (the next
-// adjust of a row, the next status, the next save) a new one; and the admin's own re-sends of a request, after a CSRF
-// refusal and after a 401 refresh, reuse that request's key. The pages run against a fake API (fetch stubbed); nothing
-// here knows how the key is made or held.
-// Kills: no key sent (today); a fresh key per network attempt, which defeats idempotency; one key reused across intents,
-// which the API would answer as a replay or a 409.
+// The admin sends one Idempotency-Key per user intent: two clicks inside one intent send the same key, the next
+// intent a new one, and the admin's own re-sends (after a CSRF refusal or a 401 refresh) reuse the request's key.
+// The pages run against a fake API (fetch stubbed).
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
@@ -164,7 +159,7 @@ function expectWellFormed(keys: Array<string | null>, what: string): void {
   }
 }
 
-describe('P3-04 AC-4: the admin sends one Idempotency-Key per intent', () => {
+describe('AC-4: the admin sends one Idempotency-Key per intent', () => {
   it('AC-4: a stock adjust sends a well-formed key, and a double click on Apply within the one action sends that same key', async () => {
     const api = fakeApi()
     renderWithProviders(<InventoryPage />)

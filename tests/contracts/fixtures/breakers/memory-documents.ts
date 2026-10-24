@@ -2,9 +2,9 @@ import { InMemoryDocumentStore } from '@nymbalhq/platform'
 import type { DocumentStoreContractOptions } from '@nymbalhq/contract-tests'
 import type { DocumentStoreAdapter, PutOptions, QueryParams } from '@nymbalhq/types'
 
-// The in-memory document store for the replaceCollection breakers (P3-02 AC-1, spec P3-02-replay-engine decision 2):
-// the real store as the control, and the same store with replaceCollection swapped for a defective one. Each defect
-// gets the end state right on a good source where it can, so the suite's case about that defect is what fails:
+// The in-memory document store for the replaceCollection breakers: the real store as the control, and the same store
+// with replaceCollection swapped for a defective one. Each defect gets the end state right on a good source where it
+// can, so the suite's case about that defect is what fails:
 //   not-atomic:      reads the source in full, then deletes the old keys and puts the new ones a macrotask apart, so a
 //                    reader between them sees part of the old set or part of the new;
 //   merges:          puts the new entries over the old set and deletes nothing, so stale keys survive;

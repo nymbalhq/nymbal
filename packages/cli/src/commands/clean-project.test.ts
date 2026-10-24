@@ -8,9 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { seedCategories, seedProducts } from '@nymbalhq/platform'
 
-// Acceptance tests for P1-07 AC-7 to AC-10: the real `nymbal` bin, run in a project outside this repo, as a scaffold
-// leaves it once installed: a nymbal.config.ts like create-nymbal-app's, and @nymbalhq/config and @nymbalhq/platform
-// in node_modules (linked to the workspace packages, so run `pnpm build` first). The database is read back directly.
+// AC-7 to AC-10: the real `nymbal` bin, run in a project outside this repo as a scaffold leaves it once installed
+// (packages linked to the workspace, so run `pnpm build` first). The database is read back directly.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLI_BIN = resolve(HERE, '..', '..', 'bin', 'nymbal.mjs')
@@ -25,7 +24,7 @@ const Database = createRequire(join(PACKAGES, 'platform', 'package.json'))(
 const TABLES = ['categories', 'products', 'variants', 'customers'] as const
 type Counts = Record<(typeof TABLES)[number], number>
 
-// The config create-nymbal-app generates (decision 7: native payments; P2-01 decision 6: no ai), for either template.
+// The config create-nymbal-app generates (native payments, no ai), for either template.
 const config = (
   template: 'astro' | 'nextjs',
 ): string => `import { defineConfig } from '@nymbalhq/config'
@@ -60,7 +59,7 @@ afterAll(async () => {
 })
 
 async function project(template: 'astro' | 'nextjs' = 'astro'): Promise<string> {
-  const dir = realpathSync(await mkdtemp(join(tmpdir(), `p1-07-cli-${template}-`)))
+  const dir = realpathSync(await mkdtemp(join(tmpdir(), `scaffold-cli-${template}-`)))
   scratch.push(dir)
   await writeFile(join(dir, 'nymbal.config.ts'), config(template))
   await writeFile(

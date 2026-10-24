@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { POSTGRES_URL, plan } from '../../scripts/gate'
 
-// Acceptance tests for P1-01 AC-18 (gate and pnpm test; the CI half is in ci-workflow.test.ts): `gate:full` runs
-// the proof-kit-services project after `compose up` with both service URLs set, and `pnpm test` runs the proof-kit
-// project and leaves proof-kit-services out.
+// AC-18 (gate and pnpm test; the CI half is in ci-workflow.test.ts): `gate:full` runs the proof-kit-services project
+// after `compose up` with both service URLs set, and `pnpm test` runs the proof-kit project and leaves
+// proof-kit-services out.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const KIT_TESTS = join(REPO, 'packages/proof-kit/tests')

@@ -20,11 +20,10 @@ import type {
 } from '../../packages/cli/src/recipes/fixtures/linked-project.js'
 import { REPO_ROOT, workspaceMembers, type Manifest } from './workspace-manifests'
 
-// Acceptance tests for P2-03 AC-1, the architecture half (spec P2-03-nymbal-add-recipe, decision 1 and the
-// invariants): RECIPE_HOLDERS names only packages whose recipes/ holds that recipe, and every recipe a package ships is
-// in it; each holder lists recipes/ in `files` and exports `./recipes/*`; the packed tarball carries the same JSON
-// readRecipe reads; no recipe sets a credential or `prefix: ''`, and every key or secret it sets is an `env()` value.
-// Kills: a recipe kept in the CLI, one a holder does not publish or export, and a recipe that writes a secret.
+// AC-1, the architecture half: RECIPE_HOLDERS names only packages whose recipes/ holds that recipe, and every recipe a
+// package ships is in it; each holder lists recipes/ in `files` and exports `./recipes/*`; the packed tarball carries
+// the same JSON readRecipe reads; no recipe sets a credential or `prefix: ''`, and every key or secret it sets is an
+// `env()` value.
 
 interface HolderManifest extends Manifest {
   exports?: Record<string, unknown>
@@ -126,8 +125,8 @@ function declaredSet(
     .map(([path]) => path)
 }
 
-describe('P2-03 AC-1: recipe holders', () => {
-  it('AC-1 (and P2-04 AC-9): RECIPE_HOLDERS maps the five recipes to the packages decision 1 and P2-04 name', () => {
+describe('AC-1: recipe holders', () => {
+  it('AC-1: RECIPE_HOLDERS maps the five recipes to the packages that ship them', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
   })
 
@@ -208,10 +207,10 @@ describe('P2-03 AC-1: recipe holders', () => {
     expect(literalSecrets(all)).toEqual([])
   })
 
-  // P3-07 Decision 1: a field a provider package declares in `settings` is the admin's or `.env`'s to fill, so the
-  // recipe leaves it out of `set` (an env() there throws before Settings are read). Since then no shipped recipe sets a
-  // key or secret, so the check above runs on nothing shipped; the property below keeps it live.
-  it('AC-1 (P3-07 Decision 1): no shipped recipe sets a field its holder or an installed provider declares in settings', async () => {
+  // A field a provider package declares in `settings` is the admin's or `.env`'s to fill, so the recipe leaves it out
+  // of `set` (an env() there throws before Settings are read). No shipped recipe sets a key or secret, so the check
+  // above runs on nothing shipped; the property below keeps it live.
+  it('AC-1: no shipped recipe sets a field its holder or an installed provider declares in settings', async () => {
     let pairs = 0
     const offending: string[] = []
     for (const name of RECIPE_NAMES) {
@@ -242,7 +241,7 @@ describe('P2-03 AC-1: recipe holders', () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...secretPaths),
-        fc.stringMatching(/^P3_07_[A-Z][A-Z0-9_]{0,10}$/),
+        fc.stringMatching(/^SETTINGS_[A-Z][A-Z0-9_]{0,10}$/),
         fc.stringMatching(/^[a-z][a-z0-9_]{0,15}$/),
         fc.boolean(),
         (field, envName, literal, nested) => {

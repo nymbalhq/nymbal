@@ -1,8 +1,8 @@
 import { createDatabase, postgresServerUrl } from '../support/postgres.js'
 import { settingsRefusalsSuite } from '../support/suites/settings-refusals.js'
 
-// P3-07 AC-6 on Postgres, a fresh database per test (spec P3-07-secrets-settings); the "no relation" case is a
-// database migrated only to 0007. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
+// AC-6 on Postgres, a fresh database per test; the "no relation" case is a database migrated only to 0007. Refuses
+// to load without NYMBAL_TEST_POSTGRES_URL.
 
 const serverUrl = postgresServerUrl()
 

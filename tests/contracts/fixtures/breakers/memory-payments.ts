@@ -9,8 +9,8 @@ import {
 } from '@nymbalhq/types'
 
 // An in-memory payments adapter that refunds like a provider (a captured intent, never past what is left) and replays a
-// refund repeated under one idempotency key, and its defective twin (P2-13 AC-4): one that ignores the key, so a retry
-// mints a new refund and moves the money again, as native-stub.ts did before decision 4.
+// refund repeated under one idempotency key, and its defective twin: one that ignores the key, so a retry mints a new
+// refund and moves the money again.
 
 export interface PaymentsFlaws {
   ignoreIdempotencyKey?: boolean
@@ -36,7 +36,7 @@ export function memoryPayments(flaws: PaymentsFlaws = {}): PaymentsAdapter {
   })
   return {
     kind: 'payments',
-    providerName: 'p2-13-memory-payments',
+    providerName: 'contracts-memory-payments',
     capabilities: () => ['intent', 'capture', 'refund'],
     client: () => null,
     producesEvents: [],

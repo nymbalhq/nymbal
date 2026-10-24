@@ -8,13 +8,12 @@ import { address, createKernel, seedVariant, type Kernel } from '../support/kern
 import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 import { orderStatus, paidFor } from '../support/webhooks.js'
 
-// P1-05 AC-1 and AC-2: the Stripe webhook contract, byte for byte, through the real Fastify adapter on the Stripe
-// adapter with a test webhook secret. The pending order is created without calling Stripe: only the webhook path is
-// under test. Kills: a route that re-serialises the parsed body instead of verifying the bytes Stripe signed (AC-1), a
-// signature failure rendered 500 (AC-2), and a raw-body parser that drops Fastify's JSON semantics (AC-2).
+// AC-1 and AC-2: the Stripe webhook contract, byte for byte, through the real Fastify adapter on the Stripe adapter
+// with a test webhook secret. The pending order is created without calling Stripe: only the webhook path is under
+// test.
 
-const WEBHOOK_SECRET = 'whsec_p1_05_contract_secret'
-const signer = new Stripe('sk_test_p1_05_never_called')
+const WEBHOOK_SECRET = 'whsec_webhook_contract_secret'
+const signer = new Stripe('sk_test_webhook_never_called')
 
 function stripePayments(config: NymbalConfig): NymbalConfig {
   return {
@@ -23,7 +22,7 @@ function stripePayments(config: NymbalConfig): NymbalConfig {
       ...config.commerce,
       payments: {
         provider: 'stripe',
-        config: { secretKey: 'sk_test_p1_05_never_called', webhookSecret: WEBHOOK_SECRET },
+        config: { secretKey: 'sk_test_webhook_never_called', webhookSecret: WEBHOOK_SECRET },
       },
     },
   }
@@ -66,7 +65,7 @@ describe('Stripe webhook contract (HTTP, Stripe adapter)', () => {
       const created = await k.services.order.createFromCheckout({
         orderId,
         customerId: null,
-        email: `contract-${randomUUID()}@p1-05.test`,
+        email: `contract-${randomUUID()}@webhook.test`,
         billingAddress: address,
         shippingAddress: address,
         lineItems: [

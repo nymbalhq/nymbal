@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { changedFiles, selectTests } from '../../scripts/gate'
 
-// Acceptance tests for P0-02 AC-16 and AC-17, on throwaway git repos with no remote.
+// AC-16 and AC-17, on throwaway git repos with no remote.
 // AC-16: the changed-file collection (`changedFiles(root, base)`) lists deleted paths, committed or not, so that
 // `selectTests` sees a deletion as a change. AC-17: the `census-trend` and `test-quality` steps of `gate.ts` take
 // the base from their positional argument and work in a clone that has no `origin/*` refs.

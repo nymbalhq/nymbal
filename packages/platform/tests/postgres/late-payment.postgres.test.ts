@@ -3,7 +3,7 @@ import { createKernel } from '../support/kernel.js'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 import { latePaymentSuite } from '../support/suites/late-payment.js'
 
-// P1-05 AC-11 on Postgres, in a fresh database for this file. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
+// AC-11 on Postgres, in a fresh database for this file. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
 
 const serverUrl = postgresServerUrl()
 let db: TestDatabase | undefined

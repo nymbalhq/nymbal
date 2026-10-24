@@ -14,14 +14,10 @@ import {
   type SourceImage,
 } from './support/import-env.js'
 
-// Acceptance tests for P2-11 AC-4 (spec P2-11-s3-media, decision 5): the WooCommerce importer writes to the media
-// storage it is given in `deps.media`, and builds none of its own. With a recording fake, every image goes to its put,
-// each product's media URLs are exactly what put returned for its images, in order, and nothing is written under
-// <projectRoot>/public/imported-media. With a fake whose put rejects for one image, that product is still created
-// with its other images, and the failure is reported: one `{ phase: 'media', id }` in errors and a matching `error`
-// event. The fake's URLs carry a put counter, so a URL the importer computed itself cannot match.
-// The S3-on-MinIO case is tests/stores/woocommerce-import-s3.test.ts. Runs against the built dist (`pnpm build`).
-// Kills: an importer that ignores the store's media, and one that drops a storage failure silently.
+// AC-4: the WooCommerce importer writes to the media storage it is given in `deps.media` and builds none of its own;
+// a failed put for one image still creates the product and is reported in errors and as an `error` event. The fake's
+// URLs carry a put counter, so a URL the importer computed itself cannot match. The S3 case is
+// tests/stores/woocommerce-import-s3.test.ts. Runs against the built dist (`pnpm build`).
 
 interface Put {
   key: string
@@ -37,9 +33,9 @@ function recordingMedia(rejectFor?: (body: Uint8Array) => boolean) {
   const media: MediaStorage = {
     capabilities: () => ['put'],
     async put(key, body, contentType) {
-      if (rejectFor?.(body)) throw new Error('p2-11: the bucket refused this object')
+      if (rejectFor?.(body)) throw new Error('s3: the bucket refused this object')
       n++
-      const url = `https://fake-media.p2-11.test/${n}/${key}`
+      const url = `https://fake-media.s3.test/${n}/${key}`
       puts.push({ key, body: new Uint8Array(body), contentType, url })
       return { url }
     },
@@ -67,7 +63,7 @@ const catalogue = sourceCatalogue(3)
 const envs: Array<Awaited<ReturnType<typeof buildImportEnv>>> = []
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), 'p2-11-import-media-'))
+  tmpDir = await mkdtemp(join(tmpdir(), 's3-import-media-'))
   vi.stubGlobal('fetch', wooFetch(catalogue, realFetch))
 })
 
@@ -93,7 +89,7 @@ async function runImport(media: MediaStorage) {
   return { report, events, media: await importedMedia(env, opts.statePath) }
 }
 
-describe('P2-11 AC-4: the importer writes to the media it is given', () => {
+describe('AC-4: the importer writes to the media it is given', () => {
   it('AC-4: every image goes to deps.media, each product’s media URLs are what its puts returned, in order, and nothing is written under public/imported-media', async () => {
     const { media, puts } = recordingMedia()
 

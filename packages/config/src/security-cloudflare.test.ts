@@ -8,11 +8,8 @@ import {
   type Recording,
 } from './fixtures/middleware-security.js'
 
-// Acceptance tests for P2-04 AC-1 (spec P2-04-cloudflare-waf, Decision 4): the `security` block gains `cloudflare`
-// (zoneId and apiToken required when the adapter is `cloudflare`), `geo.block` (ISO 3166 alpha-2), `customRules`
-// (names unique) and `managedRulesets`, and a `middleware` store parses as it did at d872ee8: on every key the d872ee8
-// schema produced, the parse equals the recording made from that schema, and the new keys are absent or at their
-// defaults. Kills: no schema fields, and a `middleware` store whose existing keys change.
+// AC-1: the `security` block gains `cloudflare`, `geo.block`, `customRules` and `managedRulesets`, and a `middleware`
+// store parses as it did at d872ee8: on every key that schema produced, the parse equals the recording made from it.
 
 const recording = JSON.parse(
   readFileSync(new URL('./fixtures/middleware-security-d872ee8.json', import.meta.url), 'utf8'),
@@ -38,7 +35,7 @@ function onKeysOf(actual: unknown, shape: unknown): unknown {
   return actual
 }
 
-const CLOUDFLARE = { zoneId: 'zone-p2-04', apiToken: 'token-p2-04' }
+const CLOUDFLARE = { zoneId: 'zone-cf', apiToken: 'token-cf' }
 
 function cloudflareSecurity(over: Record<string, unknown> = {}) {
   return { adapter: 'cloudflare', cloudflare: { ...CLOUDFLARE }, ...over }
@@ -51,7 +48,7 @@ function issueNames(result: ReturnType<typeof parse>, field: string): boolean {
   )
 }
 
-describe('P2-04 AC-1: the security block for Cloudflare', () => {
+describe('AC-1: the security block for Cloudflare', () => {
   it('AC-1 (a): adapter cloudflare without cloudflare.zoneId or apiToken fails, naming the missing field; with both it parses and keeps them', () => {
     const outcomes = (['zoneId', 'apiToken'] as const).map((missing) => {
       const cloudflare: Record<string, string> = { ...CLOUDFLARE }

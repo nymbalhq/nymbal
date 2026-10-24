@@ -9,11 +9,8 @@ import {
   type WooCommerceServer,
 } from '../../../../tests/support/woocommerce-server.js'
 
-// Acceptance test for P3-01 AC-4, the import (spec P3-01-event-log-surface, decision 5): one `nymbal import` run
-// publishes every event it causes under one id, `import:woocommerce:<uuidv7>`. The built CLI is spawned against the
-// WooCommerce fixture server (tests/support/woocommerce-server.ts) on a fresh, migrated SQLite project, and the
-// database file is read afterwards: a second platform copy in this process would not share the CLI's scope. Needs
-// `pnpm build`. Kills: each imported event its own id (today).
+// AC-4: one `nymbal import` run publishes every event it causes under one id, `import:woocommerce:<uuidv7>`, read back
+// from the database file. Needs `pnpm build`.
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (
@@ -40,10 +37,10 @@ afterAll(async () => {
 })
 
 function project(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-01-import-'))
+  const dir = mkdtempSync(join(tmpdir(), 'events-import-'))
   dirs.push(dir)
   const config = {
-    store: { name: 'p3-01-import', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'events-import', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { adapter: 'middleware' },
@@ -68,7 +65,7 @@ function project(): string {
   return dir
 }
 
-describe('P3-01 AC-4: one id per import run', () => {
+describe('AC-4: one id per import run', () => {
   it('AC-4: a `nymbal import` run (the CLI spawned, the database read afterwards) publishes every event under one import:woocommerce:<uuidv7>', async () => {
     const dir = project()
     const dbPath = join(dir, 'nymbal.db')

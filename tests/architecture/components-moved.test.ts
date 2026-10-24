@@ -4,19 +4,17 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// P2-17 AC-6 (the views-in-elements pattern, P2-15 AC-6 and P2-16 AC-7): the templates' server-rendered components
-// moved into the eleven elements, not copied. The files Decision 4 deletes are gone from both templates and from the
-// scaffold `create-nymbal-app` copies; every moved test id is rendered under `packages/web-components/src` and by no
-// file under `templates/` or `packages/create-app/scaffold/`; the scaffold's copies of the template sources are the
-// templates' own byte for byte (the re-sync ran); and the template sources have fewer lines than at the base (d9b47e7:
-// `wc -l` 4395 over templates/astro/src, 3628 over templates/nextjs/{app,components,lib}). Files are what git tracks
-// plus what it would add (untracked, not ignored), so a build output never counts. Kills: a view duplicated in a
-// template beside its element, a test id living in two places, a scaffold that drifted, a task that moved nothing out.
+// AC-6: the templates' server-rendered components live in the elements, not in the templates. The old component
+// files are gone from both templates and from the scaffold `create-nymbal-app` copies; every moved test id is
+// rendered under `packages/web-components/src` and by no file under `templates/` or `packages/create-app/scaffold/`;
+// the scaffold's copies of the template sources are the templates' own byte for byte; and the template sources have
+// fewer lines than at d9b47e7 (`wc -l` 4395 over templates/astro/src, 3628 over templates/nextjs/{app,components,lib}).
+// Files are what git tracks plus what it would add (untracked, not ignored), so a build output never counts.
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCAFFOLD = 'packages/create-app/scaffold/templates'
 
-/** Decision 4's deletions, relative to a template root. */
+/** The old component files, relative to a template root. */
 const DELETED: Record<'astro' | 'nextjs', string[]> = {
   astro: [
     'src/components/ProductCard.astro',
@@ -50,7 +48,7 @@ const DELETED: Record<'astro' | 'nextjs', string[]> = {
   ],
 }
 
-/** The spec's MOVED ids. A trailing `-` is a prefix id (`product-card-<slug>`); the rest are whole ids. */
+/** The moved test ids. A trailing `-` is a prefix id (`product-card-<slug>`); the rest are whole ids. */
 const MOVED_IDS = [
   'product-card-',
   'product-price',
@@ -73,7 +71,7 @@ const SOURCES = {
   nextjs: ['templates/nextjs/app', 'templates/nextjs/components', 'templates/nextjs/lib'],
 } as const
 
-/** `wc -l` at the base (d9b47e7), measured in the spec's Context. */
+/** `wc -l` at the base (d9b47e7), measured before the move. */
 const BASE_LINES = { astro: 4395, nextjs: 3628 } as const
 
 /** Every file git tracks or would add under `dir`, relative to the repo root. */
@@ -108,8 +106,8 @@ function lines(dirs: readonly string[]): number {
     .reduce((n, path) => n + (readFileSync(join(ROOT, path), 'utf8').match(/\n/g)?.length ?? 0), 0)
 }
 
-describe('P2-17 AC-6: the components left the templates for the elements', () => {
-  it('AC-6: none of the files Decision 4 deletes exists in either template or in the scaffold, and the scaffold’s copies of the template sources are exactly the templates’, byte for byte', () => {
+describe('AC-6: the components left the templates for the elements', () => {
+  it('AC-6: none of the old component files exists in either template or in the scaffold, and the scaffold’s copies of the template sources are exactly the templates’, byte for byte', () => {
     let checked = 0
     const present = (['astro', 'nextjs'] as const).flatMap((template) =>
       [`templates/${template}`, `${SCAFFOLD}/${template}`].flatMap((base) => {

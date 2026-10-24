@@ -1,9 +1,9 @@
 import { env } from '@nymbalhq/config'
 import { createNoSearchAdapter } from './adapters'
 
-// P2-09 decision 6: the no-search store. The repository root's config with search `custom`, its adapter offering no
-// capability, injected through the `adapters` export; the API on 3021 and the storefronts on 4341 (Astro) and 3020
-// (Next.js), so it runs in one `gate:full` beside the native store (3001) and the custom-providers store (3011).
+// The no-search store: the repository root's config with search `custom`, its adapter offering no capability,
+// injected through the `adapters` export; the API on 3021 and the storefronts on 4341 (Astro) and 3020 (Next.js), so
+// it runs in one `gate:full` beside the native store (3001) and the custom-providers store (3011).
 // `nymbal dev --api-only` runs from this directory; the NYMBAL_E2E_TARGET values astro-nosearch and nextjs-nosearch
 // start it (tests/e2e/playwright.config.ts) and run only the journeys tagged @nosearch.
 

@@ -19,25 +19,15 @@ import {
   type DoctorLine,
 } from '../../../../tests/support/doctor.js'
 
-// Acceptance tests for P2-09 AC-5 (b) to (e) (spec P2-09-dev-stage, decision 4; Fable spec M3, M6): each failure
-// exits 1 and has a `down` line naming its cause, and the other checks still run, with the same names as the healthy
-// run of the same config; after a config failure only `config` appears.
-// (b) a configured provider's package is not installed: `package payments` carries the loader's install line. In the
-//     monorepo the kernel resolves @nymbalhq/adapter-stripe from packages/platform/node_modules whatever the cwd, so
-//     the child runs with a module.register() resolve hook (as P2-01 AC-7's adapter-graph fixture does) that resolves
-//     the adapter as if imported from an empty directory: Node raises its own not-installed error, for the doctor and
-//     for the kernel loader alike;
-// (c) a database with 2 migrations unapplied: `migrations` names the count and `nymbal migrate`. Rows go by rowid:
-//     Drizzle's SQLite journal declares `id SERIAL PRIMARY KEY`, not a rowid alias, so every `id` is NULL;
-// (d) a missing SQLite file: `command store` is down, `migrations` is `down … not checked: command store down`, and the
-//     file still does not exist afterwards;
-// (e) a slot-rule violation (documentStore 'postgres-jsonb' on a SQLite command store): only `config`, carrying the
-//     schema's own message.
-// (a) needs a Redis package in the project's own node_modules and the composed Redis for its healthy run, so it runs
-// on the scaffold in tests/stores/nymbal-add-redis.test.ts; (f) is in-process, in
-// packages/platform/tests/integration/diagnose-no-healthcheck.test.ts.
-// Kills: a failure that exits 0, the wrong check blamed, a dependent line dropped, a doctor that creates the database.
-// Spawns the built CLI (`pnpm build` first).
+// AC-5 (b) to (e): each failure exits 1 with a `down` line naming its cause, and the other checks still run.
+// (b) a provider's package is not installed: the child runs with a module.register() resolve hook that resolves the
+//     adapter as if imported from an empty directory, since in the monorepo it would resolve whatever the cwd;
+// (c) a database with 2 migrations unapplied. Rows go by rowid: Drizzle's SQLite journal declares
+//     `id SERIAL PRIMARY KEY`, not a rowid alias, so every `id` is NULL;
+// (d) a missing SQLite file, which still does not exist afterwards;
+// (e) a slot-rule violation: only `config`, carrying the schema's own message.
+// (a) runs on the scaffold in tests/stores/nymbal-add-redis.test.ts; (f) is in
+// packages/platform/tests/integration/diagnose-no-healthcheck.test.ts. Spawns the built CLI (`pnpm build` first).
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (path: string) => {
@@ -82,7 +72,7 @@ const names = (lines: DoctorLine[]) => lines.map((l) => l.name)
 const line = (run: CliRun, name: string) => doctorLines(run.out).find((l) => l.name === name)
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-doctor-fail-'))
+  dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-fail-'))
   const sqlitePath = join(dir, 'healthy.db')
   await migratedSqlite(sqlitePath)
   healthy = await runCli(['doctor'], {
@@ -95,7 +85,7 @@ afterAll(() => {
   if (dir !== '') rmSync(dir, { recursive: true, force: true })
 })
 
-describe('P2-09 AC-5: each failure exits 1 and names its cause', () => {
+describe('AC-5: each failure exits 1 and names its cause', () => {
   it('AC-5: the healthy baseline of the repository config exits 0 with every check listed', () => {
     expect(healthy.code, healthy.out.slice(-3000)).toBe(0)
     expect(names(doctorLines(healthy.out)).sort()).toEqual(expectedCheckNames(repo))

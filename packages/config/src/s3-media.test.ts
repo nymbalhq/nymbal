@@ -6,11 +6,9 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { infrastructureSchema, loadConfig } from './index.js'
 
-// Acceptance tests for P2-11 AC-1, the config half (spec P2-11-s3-media, decision 2): `media: 's3'` parses with and
-// without an `infrastructure.s3` block, and keeps every field it is given; any other key inside the block fails naming
-// it (credentials included: they are never config keys); an `s3` block while media is not 's3' fails naming `s3`.
-// The resolvePrimitives half (a missing bucket) is packages/platform/tests/integration/s3-media.test.ts.
-// Kills: S3 that cannot be named, a typo inside the block that is accepted, and a block that silently does nothing.
+// AC-1, the config half: `media: 's3'` parses with and without an `infrastructure.s3` block and keeps every field;
+// any other key in the block fails naming it (credentials are never config keys); an `s3` block without media 's3'
+// fails. The resolvePrimitives half is packages/platform/tests/integration/s3-media.test.ts.
 
 const S3_FIELDS = ['bucket', 'region', 'endpoint', 'prefix', 'publicUrl', 'forcePathStyle'] as const
 
@@ -23,7 +21,7 @@ const BASE = { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in
 
 function configWith(infrastructure: Record<string, unknown>): Record<string, unknown> {
   return {
-    store: { name: 'P2-11', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure,
     security: { adapter: 'middleware' },
@@ -43,7 +41,7 @@ function configWith(infrastructure: Record<string, unknown>): Record<string, unk
 }
 
 function project(config: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-11-config-'))
+  const dir = mkdtempSync(join(tmpdir(), 's3-config-'))
   dirs.push(dir)
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -76,7 +74,7 @@ const url = fc
   )
   .map(([scheme, host, path]) => `${scheme}://${host}${path}`)
 
-/** Any subset of decision 2's fields, each with a value of its type. */
+/** Any subset of the block's fields, each with a value of its type. */
 const s3Block = fc.record(
   {
     bucket: word,
@@ -107,7 +105,7 @@ const unknownS3Key = fc
   )
   .filter((k) => !(S3_FIELDS as readonly string[]).includes(k) && !(k in {}))
 
-describe("P2-11 AC-1: media 's3' and the infrastructure.s3 block", () => {
+describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
   it("AC-1: media 's3' loads with no s3 block, and with a full one whose every field is kept", async () => {
     const bare = await loadConfig(project(configWith({ ...BASE, media: 's3' })))
     expect(bare.config.infrastructure.media).toBe('s3')
@@ -161,7 +159,7 @@ describe("P2-11 AC-1: media 's3' and the infrastructure.s3 block", () => {
     const message = await rejectionOf({
       ...BASE,
       media: 's3',
-      s3: { bucket: 'b', accessKeyId: 'AKIA-P2-11', secretAccessKey: 'p2-11-secret' },
+      s3: { bucket: 'b', accessKeyId: 'AKIA-TEST', secretAccessKey: 's3-secret' },
     })
 
     expect(message, 'credentials were accepted as config keys').not.toBeNull()

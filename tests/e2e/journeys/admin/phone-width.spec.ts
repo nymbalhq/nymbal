@@ -10,11 +10,9 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD, signInAsAdmin } from '../../support/admin'
 import { API_URL, csrf } from '../../support/csrf'
 import { adminToken, ownProduct, type OwnProduct } from '../../support/checkout'
 
-// P1-16 AC-2, AC-3: at Pixel 7 (412 px) a merchant uses the admin without sideways scrolling, and the sidebar folds
-// behind a menu button below `md`. Today the sidebar is a fixed 240 px rail at every width (`Sidebar.tsx`), `main` is
-// always `ml-60` (`AdminLayout.tsx`), so the content column is 172 px and fixed grids push pages to 432-596 px.
-// The viewport is set here, not by the `@visual`-only admin-mobile project. `defaultBrowserType` cannot be set per
-// describe; the project's chromium is the same browser.
+// AC-2 and AC-3: at Pixel 7 (412 px) a merchant uses the admin without sideways scrolling, and the sidebar folds
+// behind a menu button below `md`. The viewport is set here, not by the `@visual`-only admin-mobile project.
+// `defaultBrowserType` cannot be set per describe; the project's chromium is the same browser.
 const { defaultBrowserType: _browser, ...pixel7 } = devices['Pixel 7']
 
 interface Fixture {
@@ -28,7 +26,7 @@ interface Fixture {
 async function seed(request: APIRequestContext): Promise<Fixture> {
   const product = await ownProduct(request, await adminToken(request), 5)
   const tag = randomUUID().slice(0, 8)
-  const customerEmail = `p1-16-${tag}@e2e.test`
+  const customerEmail = `phone-${tag}@e2e.test`
   const shopper = await playwrightRequest.newContext()
   try {
     const reg = await shopper.post(`${API_URL}/api/auth/register`, {

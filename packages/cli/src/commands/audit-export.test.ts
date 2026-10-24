@@ -14,13 +14,9 @@ import {
 import { serveKernel } from '../../../platform/tests/support/http.js'
 import { checkoutOf, createKernel, seedVariant } from '../../../platform/tests/support/kernel.js'
 
-// Acceptance tests for P3-04 AC-6 (spec P3-04-audit-trail, decision 8): `nymbal audit export`, the built CLI spawned
-// against a SQLite store whose entries were made over HTTP by a kernel from `src/` in two batches either side of a
-// time `t`. The expected entries are what `GET /api/admin/activity` listed before the kernel closed. The store is then
-// switched to a rollback journal, so an export that writes leaves a trace (a `-wal`/`-shm` file, or changed bytes).
-// Needs `pnpm build`.
-// Kills: the wrong window (entries before `t`, or some after it missing), the wrong order, lines that differ from the
-// API's entries, an export path that writes, and a bad `--since` that exits 0 or 1.
+// AC-6: `nymbal audit export`, the built CLI against a SQLite store whose entries were made over HTTP either side of
+// a time `t`, compared with what `GET /api/admin/activity` listed. The store is switched to a rollback journal so an
+// export that writes leaves a trace. Needs `pnpm build`.
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (path: string) => {
@@ -61,7 +57,7 @@ async function pastMs(ms: number): Promise<void> {
 }
 
 beforeAll(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-04-export-'))
+  const dir = mkdtempSync(join(tmpdir(), 'audit-export-'))
   dirs.push(dir)
   dbPath = join(dir, 'nymbal.db')
   const kernel = await createKernel({ dialect: 'sqlite', sqlitePath: dbPath })
@@ -129,7 +125,7 @@ function exportAudit(args: string[]) {
 
 const parsedLines = (stdout: string) => stdoutLines(stdout).map((l) => JSON.parse(l) as Entry)
 
-describe('P3-04 AC-6: nymbal audit export', () => {
+describe('AC-6: nymbal audit export', () => {
   it('AC-6: --since <t> prints, as NDJSON in `at` order, exactly the entries the activity API lists from t on, equal to them, and leaves the store untouched', async () => {
     const hashBefore = hashOf(dbPath)
     const run = await exportAudit(['--since', since])

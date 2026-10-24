@@ -1,7 +1,7 @@
-// P1-02 fixture for AC-7 and AC-8: a real store (startTestStore, built kit and kernel) in a child process runs one
-// beginCheckout of one unit from a variant at stock 3. In `kill` mode the process SIGKILLs itself from inside the
-// checkout transaction, after the order insert (the wrapped orderHistory.append runs the real append first, then
-// dies), before any commit. In `control` mode it completes and exits 0.
+// A real store (startTestStore, built kit and kernel) in a child process runs one beginCheckout of one unit from a
+// variant at stock 3. In `kill` mode the process SIGKILLs itself from inside the checkout transaction, after the order
+// insert (the wrapped orderHistory.append runs the real append first, then dies), before any commit. In `control`
+// mode it completes and exits 0.
 //
 //   node checkout-kill-child.mjs <sqlite|postgres> <sqlite file | postgres url> <kill|control>
 import { startTestStore } from '../../../../proof-kit/dist/store.js'
@@ -65,8 +65,8 @@ if (mode === 'kill') {
 
 await services.checkout.beginCheckout({
   cartToken: cart.token,
-  // `+stub-pending` (P1-12 decision 7): the control's footprint is the checkout's own, with no inline payment.
-  email: 'kill+stub-pending@p1-02.test',
+  // `+stub-pending`: the control's footprint is the checkout's own, with no inline payment.
+  email: 'kill+stub-pending@txn.test',
   billingAddress: address,
   shippingAddress: address,
 })

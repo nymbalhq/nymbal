@@ -16,20 +16,18 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { noScript, upgraded } from '../support/server-rendered'
 import { formatPrice } from '../support/variants'
 
-// P2-17 AC-4, store end state theming.chrome-is-elements, on production builds of both templates
-// (playwright.prod.config.ts); the override clause is tests/e2e/journeys/footer-override.spec.ts on the `*-override`
-// targets. With JavaScript off: `/` shows `nymbal-site-header` with its nav links, its account link and the page's
-// `nymbal-search-bar` and `nymbal-mini-cart` as light-DOM children assigned to its `search` and `cart` slots, each
-// rendered by the server; `nymbal-site-footer`'s columns; `nymbal-category-nav`'s cards, one per category of
-// `GET /api/categories`; a product page shows `nymbal-review-list` (its reviews, or its empty state when the API has
-// none) and `nymbal-review-form`; `/order/<n>`, for an order placed through the checkout with JS on in the same
-// context and read JS off from its storage state, shows `nymbal-order-summary`'s lines, subtotal, discount (when
-// non-zero), shipping, tax and total equal to `GET /api/orders/:n`, which sum per the invariant. With JavaScript on the
-// same pages reuse the markup (per-part counts equal, no template left, no console error); the header's search
-// suggestion opens the product and its mini-cart opens the drawer; the footer's `link` part is painted with a
-// `--nymbal-color-*` token, the colour the template's own tokens file gives it. Kills: a chrome piece still rendered
-// as template markup; the Next header that lost the search and cart listeners its wrappers carried; summary rows that
-// do not sum or are not the order's; a footer colour hard-coded where a tokens file cannot reach it.
+// AC-4, on production builds of both templates (playwright.prod.config.ts); the override clause is
+// tests/e2e/journeys/footer-override.spec.ts on the `*-override` targets. With JavaScript off: `/` shows
+// `nymbal-site-header` with its nav links, its account link and the page's `nymbal-search-bar` and `nymbal-mini-cart`
+// as light-DOM children assigned to its `search` and `cart` slots, each rendered by the server; `nymbal-site-footer`'s
+// columns; `nymbal-category-nav`'s cards, one per category of `GET /api/categories`; a product page shows
+// `nymbal-review-list` (its reviews, or its empty state when the API has none) and `nymbal-review-form`;
+// `/order/<n>`, for an order placed through the checkout with JS on in the same context and read JS off from its
+// storage state, shows `nymbal-order-summary`'s lines, subtotal, discount (when non-zero), shipping, tax and total
+// equal to `GET /api/orders/:n`, which sum per the invariant. With JavaScript on the same pages reuse the markup
+// (per-part counts equal, no template left, no console error); the header's search suggestion opens the product and
+// its mini-cart opens the drawer; the footer's `link` part is painted with a `--nymbal-color-*` token, the colour the
+// template's own tokens file gives it.
 
 const PRODUCT = seedProducts[0]!.slug
 const REPO = new URL('../../../', import.meta.url)
@@ -85,7 +83,7 @@ function partTexts(page: Page, host: string, part: string): Promise<string[]> {
     )
 }
 
-test.describe('P2-17 AC-4: the chrome is elements (production build)', () => {
+test.describe('AC-4: the chrome is elements (production build)', () => {
   test('AC-4: theming.chrome-is-elements: with JS off, / shows nymbal-site-header with nav links, the account link and the search bar and mini-cart in its search and cart slots, nymbal-site-footer’s columns and nymbal-category-nav’s card per category; with JS on the markup is reused', async ({
     browser,
     context,
@@ -198,7 +196,7 @@ test.describe('P2-17 AC-4: the chrome is elements (production build)', () => {
     await blockExternalRequests(page)
     const product = await ownProduct(request, await adminToken(request), 5)
     await openCheckout(page, product)
-    await walkToPayment(page, `e2e-p2-17-${randomUUID().slice(0, 8)}@e2e.test`)
+    await walkToPayment(page, `e2e-elements-${randomUUID().slice(0, 8)}@e2e.test`)
     await page.getByTestId('place-order').click()
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)

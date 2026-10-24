@@ -3,11 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-15 AC-2: `nymbal-cart-page` is the cart view both templates render, and it agrees with the cart store: one
+// AC-2: `nymbal-cart-page` is the cart view both templates render, and it agrees with the cart store: one
 // `cart-item-<variantId>` per line in store order, each with its name (as text), its price each and its quantity; the
-// summary shows the state's `subtotalMinor` (decision 2: the API's, not a sum the element computes, which Astro's
-// `cart-page.ts:23` does today); zero lines is the empty state; remove and a quantity step reach the store once.
-// Kills: lines drifting from the store, a client-side subtotal, markup injected from a product name.
+// summary shows the state's `subtotalMinor` (the API's, never a sum the element computes); zero lines is the empty
+// state; remove and a quantity step reach the store once.
 
 const TAG = 'nymbal-cart-page'
 

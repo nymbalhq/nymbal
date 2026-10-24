@@ -3,15 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-15 AC-4 (decision 4, submit once is the element's): each moved account form makes exactly one SDK call per
-// submission. The shopper clicks the submit control, then the form is submitted k - 1 more times (`requestSubmit()`,
-// which fires `submit` even while the control is disabled) while that first call is pending. The call carries the
-// form's fields; while it is pending the submit control is disabled; once it succeeds the form's event fires once and
-// the control re-enables, except on login and register, whose page navigates away on success: their control stays
-// disabled through the redirect (the human's ruling, 2026-10-21); once it fails the error text shows, the control
-// re-enables and no event fires. Register also asks for the password twice and a mismatch makes no call.
-// Kills: a double click double-submitting, a failure leaving the form stuck, success firing twice or not at all, a
-// sign-in form that re-arms while the page leaves, a mistyped password registered.
+// AC-4: each account form makes exactly one SDK call per submission. The shopper clicks submit, then the form is
+// submitted k - 1 more times (`requestSubmit()`, which fires `submit` even while the control is disabled) while that
+// first call is pending. The call carries the form's fields; while it is pending the control is disabled; once it
+// succeeds the form's event fires once and the control re-enables, except on login and register, whose page navigates
+// away: their control stays disabled through the redirect; once it fails the error text shows, the control re-enables
+// and no event fires. Register also asks for the password twice and a mismatch makes no call.
 
 interface Deferred {
   promise: Promise<void>

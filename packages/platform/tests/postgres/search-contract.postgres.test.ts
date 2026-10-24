@@ -10,11 +10,10 @@ import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 
-// P2-07 AC-1 to AC-4 on the native search adapter's Postgres dialect (decision 1: a tsvector column with a GIN index,
-// language 'simple'), on a database of this file's own migrated with the platform's migrations (0007 creates the
-// search table). The cases share the index across cases and runs, as decision 10 says they may; the SQLite dialect
-// and the `custom` fixture run the same cases in contracts-native (tests/contracts). P2-13 decision 2: the P2-07 cases
-// moved into runSearchContract in the package, under the same options.
+// runSearchContract on the native search adapter's Postgres dialect (a tsvector column with a GIN index, language
+// 'simple'), on a database of this file's own migrated with the platform's migrations (0007 creates the search
+// table). The cases share the index across cases and runs; the SQLite dialect and the `custom` fixture run the same
+// cases in contracts-native (tests/contracts).
 
 const serverUrl = postgresServerUrl()
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url))

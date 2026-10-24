@@ -22,8 +22,8 @@ import {
   type Stub,
 } from '../settings.js'
 
-// P3-07 AC-3 on one dialect (spec P3-07-secrets-settings, rulings 1 and 3, Decisions 1 and 4): a key saved through the
-// admin's Settings reaches its adapter only after the store starts again, through the slot's declared settings.
+// AC-3 on one dialect: a key saved through the admin's Settings reaches its adapter only after the store starts again,
+// through the slot's declared settings.
 // - Stripe, with no `secretKey` in config or env and a stub Stripe API (the adapter's host/port/protocol seam): the
 //   store boots, a PUT answers `restartRequired: true`, the running adapter is the same object and still unconfigured,
 //   and after createApp again the stub's first call carries the saved key.
@@ -34,9 +34,6 @@ import {
 // - `nymbal add stripe` with the variables unset: the recipe's `set`, resolved as loadConfig resolves it (`env()` throws
 //   on an unset variable), boots; the admin serves, the listing reports `secretKey` unset, payments health is down
 //   naming `payments.secretKey`; Settings fills it, and after a restart the stub sees the key.
-// Kills: Settings never reaching resolveSlot; payments resolved before settings are read; a declared env not honoured;
-// the recipe's env() throwing before Settings are read; the Stripe adapter's construction-time not_configured stopping
-// boot before the admin can take the key.
 
 export interface SuiteTarget {
   target: string
@@ -85,7 +82,7 @@ export function settingsRestartSuite(
   dialect: Dialect,
   makeTarget: () => Promise<SuiteTarget>,
 ): void {
-  describe(`P3-07 AC-3: a saved key reaches the adapter after a restart (${dialect})`, () => {
+  describe(`AC-3: a saved key reaches the adapter after a restart (${dialect})`, () => {
     const scope = cleanups()
     afterEach(() => scope.run())
 
@@ -106,8 +103,8 @@ export function settingsRestartSuite(
 
     it('AC-3: Stripe with no secretKey boots; a PUT says restartRequired and leaves the running adapter as it was; after createApp again the stub’s first call carries the saved key', async () => {
       const { stub, target } = await begin('stripe')
-      const commerce = { payments: stripeBlock(stub, { webhookSecret: 'whsec_p3_07_config' }) }
-      const key = `sk_test_p3_07_${randomUUID()}`
+      const commerce = { payments: stripeBlock(stub, { webhookSecret: 'whsec_settings_config' }) }
+      const key = `sk_test_settings_${randomUUID()}`
 
       const first = await boot(target, commerce)
       const running = first.app.adapters.payments
@@ -131,7 +128,7 @@ export function settingsRestartSuite(
     it('AC-3: Anthropic apiKey saved in Settings reaches the stub at the declared baseUrl through product enhance, only after a restart', async () => {
       const { stub, target } = await begin('anthropic')
       const commerce = { ai: anthropicBlock(stub) }
-      const key = `sk-ant-p3-07-${randomUUID()}`
+      const key = `sk-ant-settings-${randomUUID()}`
       const enhance = (client: ApiClient) =>
         client.call<{ suggestion: string }>('POST', `/api/admin/products/${randomUUID()}/enhance`, {
           field: 'description',
@@ -158,9 +155,9 @@ export function settingsRestartSuite(
 
     it('AC-3: env over Settings: with a row saved and STRIPE_SECRET_KEY then exported, the stub sees the env value and the listing says env', async () => {
       const { stub, target } = await begin('stripe')
-      const commerce = { payments: stripeBlock(stub, { webhookSecret: 'whsec_p3_07_config' }) }
-      const saved = `sk_test_p3_07_row_${randomUUID()}`
-      const exported = `sk_test_p3_07_env_${randomUUID()}`
+      const commerce = { payments: stripeBlock(stub, { webhookSecret: 'whsec_settings_config' }) }
+      const saved = `sk_test_settings_row_${randomUUID()}`
+      const exported = `sk_test_settings_env_${randomUUID()}`
 
       const first = await boot(target, commerce)
       await saveSetting(await first.admin(), 'payments', 'secretKey', saved)
@@ -189,7 +186,7 @@ export function settingsRestartSuite(
         },
       }
       const commerce = { payments: block }
-      const key = `sk_test_p3_07_add_${randomUUID()}`
+      const key = `sk_test_settings_add_${randomUUID()}`
 
       const first = await boot(target, commerce)
       const admin = await first.admin()
@@ -201,7 +198,7 @@ export function settingsRestartSuite(
       expect(health.detail ?? '').toContain('payments.secretKey')
 
       await saveSetting(admin, 'payments', 'secretKey', key)
-      await saveSetting(admin, 'payments', 'webhookSecret', `whsec_p3_07_${randomUUID()}`)
+      await saveSetting(admin, 'payments', 'webhookSecret', `whsec_settings_${randomUUID()}`)
       await first.stop()
 
       stub.reset()

@@ -21,16 +21,12 @@ import {
   type Store,
 } from '../support/settings.js'
 
-// P3-07 AC-5 (spec P3-07-secrets-settings, ruling 3, Decision 6), on SQLite. A store whose AI slot (Anthropic) takes
-// `apiKey` from ANTHROPIC_API_KEY (its declared env) and `baseUrl` from the config, and whose email slot (SMTP) has
-// `smtp.pass` in the config and `smtp.user` set nowhere. The listing gives `source: 'env'` and `'config'` for those,
-// state set, no `value` for a secret (and neither secret anywhere in the body), the value for the non-secret baseUrl;
-// a PUT to any of them answers 409 `settings.set_by_environment` and writes no row, while a PUT to `smtp.user` writes
-// one. A token without the admin role gets 403 from GET, PUT and DELETE and changes no row.
-// Kills: the admin overriding a deploy's env or config; a customer writing keys.
+// AC-5 on SQLite: a field set by the environment or the config is listed with that source and no secret value, and a
+// PUT to it answers 409 `settings.set_by_environment` and writes no row, while a field set nowhere takes a PUT. A
+// token without the admin role gets 403 from GET, PUT and DELETE and changes no row.
 
-const ENV_API_KEY = `sk-ant-p3-07-from-env-${randomUUID()}`
-const CONFIG_SMTP_PASS = `smtp-pass-p3-07-from-config-${randomUUID()}`
+const ENV_API_KEY = `sk-ant-settings-from-env-${randomUUID()}`
+const CONFIG_SMTP_PASS = `smtp-pass-settings-from-config-${randomUUID()}`
 
 const scope = cleanups()
 let store: Store
@@ -43,7 +39,7 @@ beforeAll(async () => {
   const stub = await startStub('anthropic')
   scope.add(() => stub.close())
   baseUrl = stub.url
-  const dir = mkdtempSync(join(tmpdir(), 'p3-07-env-wins-'))
+  const dir = mkdtempSync(join(tmpdir(), 'settings-env-wins-'))
   scope.add(() => rmSync(dir, { recursive: true, force: true }))
   const target = join(dir, 'store.sqlite')
   store = await openStore({
@@ -67,7 +63,7 @@ afterAll(() => scope.run())
 
 const rowCount = async (): Promise<number> => (await storedSettings(raw)).length
 
-describe('P3-07 AC-5: the environment wins in the API', () => {
+describe('AC-5: the environment wins in the API', () => {
   it("AC-5: fields set by env and config list source 'env' and 'config', state set; a secret carries no value and appears nowhere in the body", async () => {
     const listing = await admin.call('GET', '/api/admin/settings')
     expect(listing.status, JSON.stringify(listing.body)).toBe(200)
@@ -96,7 +92,7 @@ describe('P3-07 AC-5: the environment wins in the API', () => {
     'AC-5: a PUT to %s.%s (set by %s) answers 409 settings.set_by_environment and writes no row',
     async (slot, path) => {
       const before = await rowCount()
-      const res = await putSetting(admin, slot, path, `p3-07-override-${randomUUID()}`)
+      const res = await putSetting(admin, slot, path, `settings-override-${randomUUID()}`)
       expect(res.status, JSON.stringify(res.body)).toBe(409)
       expect(res.body.error?.code).toBe('settings.set_by_environment')
       expect(before).toBe(await rowCount())
@@ -128,9 +124,9 @@ describe('P3-07 AC-5: the environment wins in the API', () => {
     ['email', 'smtp.host'],
     ['no-such-slot', 'apiKey'],
   ])(
-    'AC-5 (Decision 6): a PUT to undeclared %s.%s answers 404 settings.unknown_field and writes no row',
+    'AC-5: a PUT to undeclared %s.%s answers 404 settings.unknown_field and writes no row',
     async (slot, path) => {
-      const res = await putSetting(admin, slot, path, `p3-07-undeclared-${randomUUID()}`)
+      const res = await putSetting(admin, slot, path, `settings-undeclared-${randomUUID()}`)
       expect(res.status, JSON.stringify(res.body)).toBe(404)
       expect(res.body.error?.code).toBe('settings.unknown_field')
       const rows = await storedSettings(raw)
@@ -138,11 +134,11 @@ describe('P3-07 AC-5: the environment wins in the API', () => {
     },
   )
 
-  it('AC-5 (Decision 6): with NYMBAL_SECRETS_KEY unset, a PUT of a secret answers 503 settings.key_missing and writes no row', async () => {
+  it('AC-5: with NYMBAL_SECRETS_KEY unset, a PUT of a secret answers 503 settings.key_missing and writes no row', async () => {
     const local = cleanups()
     try {
       local.add(setEnv({ [SECRETS_KEY]: undefined }))
-      const dir = mkdtempSync(join(tmpdir(), 'p3-07-key-missing-'))
+      const dir = mkdtempSync(join(tmpdir(), 'settings-key-missing-'))
       local.add(() => rmSync(dir, { recursive: true, force: true }))
       const target = join(dir, 'store.sqlite')
       const keyless = await openStore({
@@ -153,7 +149,7 @@ describe('P3-07 AC-5: the environment wins in the API', () => {
         }),
       })
       local.add(() => keyless.stop())
-      const value = `smtp-pass-p3-07-${randomUUID()}`
+      const value = `smtp-pass-settings-${randomUUID()}`
       const res = await putSetting(await keyless.admin(), 'email', 'smtp.pass', value)
       expect(res.status, JSON.stringify(res.body)).toBe(503)
       expect(res.body.error?.code).toBe('settings.key_missing')

@@ -410,7 +410,7 @@ function mentions(node: ts.Node, names: Set<string>, isApiRead: ApiRead): boolea
   )
 }
 
-/** A body the journey rule reads: the spec file itself, or a support helper a test calls. */
+/** A body the journey rule reads: the test file itself, or a support helper a test calls. */
 type Unit = { node: ts.Node; isApiRead: ApiRead }
 
 const SUPPORT = 'tests/e2e/support/'

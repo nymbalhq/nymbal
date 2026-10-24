@@ -16,11 +16,9 @@ import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 import { failedFor, orderStatus, paidFor, reservationsFor } from '../support/webhooks.js'
 
-// P1-12 AC-1 and AC-4 on SQLite, a kernel from `src/` served over HTTP. AC-1: with the stub, POST /api/checkout pays
-// inline: the response says succeeded and confirmed, the read side says confirmed, the cart is empty and the stock fell
-// by exactly what was bought, over generated carts. AC-4: `+stub-decline` cancels the order, gives its stock back,
-// records payment.failed and leaves the cart for a fresh attempt; and a captured intent whose stock another order took
-// in the meantime is `failed` with stock_unavailable, never a confirmed order.
+// AC-1 and AC-4 on SQLite, a kernel from `src/` served over HTTP. With the stub, POST /api/checkout pays inline and
+// the order, cart and stock agree, over generated carts; `+stub-decline` cancels the order and gives its stock back;
+// a captured intent whose stock another order took is `failed` with stock_unavailable, never a confirmed order.
 
 interface CheckoutAnswer {
   orderId: string
@@ -41,7 +39,7 @@ const arbLines = fc.array(
   { minLength: 1, maxLength: 3 },
 )
 
-describe('P1-12: a checkout that completes (sqlite)', () => {
+describe('a checkout that completes (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader
@@ -90,7 +88,7 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
         const atSubmit = (await shop.call<Cart>('GET', '/api/cart')).body.data!
         const before = await Promise.all(seeded.map((s) => stockOf(raw, s.variantId)))
 
-        const res = await submit(shop, `ac1-${randomUUID()}@p1-12.test`)
+        const res = await submit(shop, `ac1-${randomUUID()}@checkout.test`)
 
         expect(res.status, JSON.stringify(res.body)).toBe(200)
         const answer = res.body.data!
@@ -126,7 +124,7 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
     const shop = await shopperWith([{ variantId: seeded.variantId, qty }])
     const before = await stockOf(raw, seeded.variantId)
 
-    const declined = await submit(shop, `ac4-${randomUUID()}+stub-decline@p1-12.test`)
+    const declined = await submit(shop, `ac4-${randomUUID()}+stub-decline@checkout.test`)
 
     expect(declined.status, JSON.stringify(declined.body)).toBe(200)
     const failed = declined.body.data!
@@ -140,7 +138,7 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
     const cart = await shop.call<Cart>('GET', '/api/cart')
     expect(cart.body.data?.items.map((i) => i.qty)).toEqual([qty])
 
-    const retried = await submit(shop, `ac4-retry-${randomUUID()}@p1-12.test`)
+    const retried = await submit(shop, `ac4-retry-${randomUUID()}@checkout.test`)
 
     expect(retried.status, JSON.stringify(retried.body)).toBe(200)
     expect(retried.body.data!.orderId).not.toBe(failed.orderId)
@@ -207,7 +205,7 @@ describe('P1-12: a checkout that completes (sqlite)', () => {
 
     const result = await checkout.beginCheckout({
       cartToken,
-      email: `ac4-unit-${randomUUID()}@p1-12.test`,
+      email: `ac4-unit-${randomUUID()}@checkout.test`,
       billingAddress: address,
       shippingAddress: address,
     })

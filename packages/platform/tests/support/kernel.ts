@@ -10,9 +10,9 @@ import { createCommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
 
-// P1-02 acceptance support: a kernel built from `src/` through createApp (repositories, services, projections and
-// the in-process bus, no HTTP), on a SQLite file in a temp dir or on a Postgres database the caller created.
-// `target` is what a second connection opens to read committed state independently of the kernel.
+// A kernel built from `src/` through createApp (repositories, services, projections and the in-process bus, no HTTP),
+// on a SQLite file in a temp dir or on a Postgres database the caller created. `target` is what a second connection
+// opens to read committed state independently of the kernel.
 
 export type Dialect = 'sqlite' | 'postgres'
 
@@ -36,7 +36,7 @@ export const MIGRATIONS_ROOT = fileURLToPath(new URL('../../migrations', import.
 
 export function kernelConfig(dialect: Dialect): NymbalConfig {
   return nymbalConfigSchema.parse({
-    store: { name: 'P1-02', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
       commandStore: dialect,
@@ -46,8 +46,8 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
     security: {
       adapter: 'middleware',
       botProtection: { mode: 'off' },
-      // P1-06 decision 4: the harness overrides the built-in login and register limits, so suites that log in many
-      // times from 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`).
+      // The harness overrides the built-in login and register limits, so suites that log in many times from
+      // 127.0.0.1 are not refused. Tests of the defaults remove these keys (`withoutAuthRateRules`).
       rateLimit: {
         '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
         '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
@@ -68,7 +68,7 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
   })
 }
 
-/** The kernel config with no user rule for login or register, so the built-in defaults apply (P1-06 AC-5, AC-6). */
+/** The kernel config with no user rule for login or register, so the built-in defaults apply. */
 export function withoutAuthRateRules(config: NymbalConfig): NymbalConfig {
   const rateLimit = { ...config.security.rateLimit }
   delete rateLimit['/api/auth/login']
@@ -78,16 +78,16 @@ export function withoutAuthRateRules(config: NymbalConfig): NymbalConfig {
 
 /**
  * `sqlitePath` reopens (or creates) a file the caller owns, so a test can stop one kernel and start another on the
- * same database (P1-03's restart ACs); without it the kernel owns a temp dir and removes it on close.
+ * same database; without it the kernel owns a temp dir and removes it on close.
  */
 export async function createKernel(
   opts: (
     | { dialect: 'sqlite'; sqlitePath?: string }
     | { dialect: 'postgres'; postgresUrl: string }
   ) & {
-    /** Reshapes the kernel config before anything opens: P1-05 serves a kernel on the Stripe adapter. */
+    /** Reshapes the kernel config before anything opens, e.g. to serve a kernel on the Stripe adapter. */
     configure?: (config: NymbalConfig) => NymbalConfig
-    /** More createApp options, beside the storage and logger the harness passes: P2-01 injects adapters. */
+    /** More createApp options, beside the storage and logger the harness passes, e.g. injected adapters. */
     appOptions?: Omit<CreateAppOptions, 'sqlitePath' | 'postgresUrl' | 'logger'>
   },
 ): Promise<Kernel> {
@@ -97,7 +97,7 @@ export async function createKernel(
   const ownedPath = opts.dialect === 'sqlite' ? opts.sqlitePath : undefined
   const dir =
     opts.dialect === 'sqlite' && ownedPath === undefined
-      ? mkdtempSync(join(tmpdir(), 'p1-02-kernel-'))
+      ? mkdtempSync(join(tmpdir(), 'txn-kernel-'))
       : undefined
   const target =
     opts.dialect === 'sqlite' ? (ownedPath ?? join(dir!, 'store.sqlite')) : opts.postgresUrl
@@ -157,7 +157,7 @@ export async function seedVariant(
   const tag = randomUUID()
   const priceMinor = opts.priceMinor ?? 1000
   const product = await kernel.services.product.create({
-    slug: `p1-02-${tag}`,
+    slug: `txn-${tag}`,
     name: 'Transactional Widget',
     description: '',
     status: 'active',
@@ -201,14 +201,14 @@ export async function cartWith(
 
 /**
  * beginCheckout for a fresh cart of `qty`, through the services. The default buyer's `+stub-pending` address keeps the
- * order pending with its intent set, as a Stripe order is until its webhook (P1-12 decision 7): the suites built on this
- * helper drive the capture themselves. Pass an address without the trigger for a checkout the stub pays inline.
+ * order pending with its intent set, as a Stripe order is until its webhook: the suites built on this helper drive
+ * the capture themselves. Pass an address without the trigger for a checkout the stub pays inline.
  */
 export async function checkoutOf(
   kernel: Pick<Kernel, 'services'>,
   seeded: Seeded,
   qty: number,
-  email = `buyer-${randomUUID()}+stub-pending@p1-02.test`,
+  email = `buyer-${randomUUID()}+stub-pending@txn.test`,
 ) {
   const cartToken = await cartWith(kernel, seeded, qty)
   const started = await kernel.services.checkout.beginCheckout({

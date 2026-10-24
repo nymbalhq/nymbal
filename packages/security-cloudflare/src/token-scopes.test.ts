@@ -2,11 +2,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { CREDENTIALS_HINT } from './client.js'
 
-// Acceptance test for P2-19 AC-9 (spec P2-19-fragments-and-isr, Interface: "`CREDENTIALS_HINT` and the recipe's scopes
-// add Zone › Cache Rules › Edit"): the token scopes a store's owner is told, wherever they are told them (the refused
-// credentials hint, the recipe's CLOUDFLARE_API_TOKEN comment and its next steps), are the same three: Zone › Zone ›
-// Read, Zone › Zone WAF › Edit and Zone › Cache Rules › Edit. Kills: a token that cannot write the cache phase, and
-// nothing telling the owner why. `nymbal add cloudflare`'s printed next steps are packages/cli's add.test.ts AC-9.
+// AC-9: the token scopes a store's owner is told, wherever they are told them (the refused credentials hint, the
+// recipe's CLOUDFLARE_API_TOKEN comment and its next steps), are the same three: Zone › Zone › Read, Zone › Zone WAF ›
+// Edit and Zone › Cache Rules › Edit. `nymbal add cloudflare`'s printed next steps are packages/cli's add.test.ts AC-9.
 
 interface Recipe {
   env: Array<{ name: string; comment?: string }>
@@ -27,7 +25,7 @@ function scopes(text: string): string[] {
 
 const WANTED = ['Zone › Cache Rules › Edit', 'Zone › Zone WAF › Edit', 'Zone › Zone › Read']
 
-describe('P2-19 AC-9: the token scopes name Cache Rules Edit', () => {
+describe('AC-9: the token scopes name Cache Rules Edit', () => {
   it('AC-9: CREDENTIALS_HINT, the recipe’s CLOUDFLARE_API_TOKEN comment and its next steps each name Zone › Cache Rules › Edit beside Zone › Zone › Read and Zone › Zone WAF › Edit, and the same scopes', () => {
     const comment = recipe.env.find((e) => e.name === 'CLOUDFLARE_API_TOKEN')?.comment ?? ''
     const next = recipe.next.join('\n')

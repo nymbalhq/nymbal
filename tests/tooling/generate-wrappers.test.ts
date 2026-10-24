@@ -13,10 +13,10 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance test for P0-02 AC-12: the React wrapper generator (`packages/react/scripts/generate-wrappers.ts`, what
-// `pnpm build` runs in packages/react) leaves `src/generated/manifest.json` byte-identical when the source hash is
-// unchanged. The generator writes beside its own script, so it runs on a copy of the package in a temporary
-// directory (its node_modules linked, not copied): the checkout's tracked manifest is never written.
+// AC-12: the React wrapper generator (`packages/react/scripts/generate-wrappers.ts`, what `pnpm build` runs in
+// packages/react) leaves `src/generated/manifest.json` byte-identical when the source hash is unchanged. The
+// generator writes beside its own script, so it runs on a copy of the package in a temporary directory (its
+// node_modules linked, not copied): the checkout's tracked manifest is never written.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')

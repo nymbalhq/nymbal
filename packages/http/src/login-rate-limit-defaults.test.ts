@@ -2,10 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { securitySchema, type NymbalConfig } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 
-// P1-06 AC-7: the adapter's guard merges the built-in login rule (10 per 15m, block) under the user's
-// `security.rateLimit`, and a user rule for the same pattern replaces it. Failures count; the handler here always
-// answers 401, so every request is a failure. Kills: defaults that override the config, defaults dropped once any rule
-// is configured, a limiter that runs after the handler.
+// AC-7: the adapter's guard merges the built-in login rule (10 per 15m, block) under the user's `security.rateLimit`,
+// and a user rule for the same pattern replaces it. Failures count; the handler here always answers 401, so every
+// request is a failure.
 
 const logger = {
   trace() {},
@@ -51,7 +50,7 @@ async function attempts(port: number, n: number): Promise<number[]> {
     const res = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'same@p1-06.test', password: 'wrong' }),
+      body: JSON.stringify({ email: 'same@security.test', password: 'wrong' }),
     })
     await res.arrayBuffer()
     statuses.push(res.status)

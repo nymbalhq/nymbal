@@ -5,9 +5,9 @@ import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P2-07 AC-8 (decision 8) on every storefront target: astro, nextjs, and the fixture store's astro-custom and
-// nextjs-custom. The file creates products of its own sharing a unique token term, across two seeded categories, so
-// the expectation is the API read at the moment of the assertion, over products no other journey touches.
+// AC-8 on every storefront target: astro, nextjs, and the fixture store's astro-custom and nextjs-custom. The file
+// creates products of its own sharing a unique token term, across two seeded categories, so the expectation is the API
+// read at the moment of the assertion, over products no other journey touches.
 // The admin API cannot create a category, so the two are seeded ones that no other journey needs to hold seeded
 // products only: not `apparel` (the listing screenshot refuses a product created after the seed) and not `books`
 // (the card price journey needs its product on that category's first page).
@@ -16,8 +16,6 @@ import { expect, test } from '../support/fixtures'
 // - When GET /api/capabilities reports `facet` for search: choosing `filter-option-<slug>` shows exactly the API's
 //   `category=<slug>` walk and total, writes `?category=` beside `?q`, and a reload of that URL shows the same.
 // - When it does not: the page renders no `filter-group-*`, and the API answers `facets: []` for the same match.
-// Kills: a template that counts the cards it rendered, has no load more, builds facets itself, or renders a filter
-// its search cannot serve.
 
 const PRODUCTS = 26
 const CATEGORY_SLUGS = ['home', 'electronics'] as const
@@ -56,7 +54,7 @@ test.beforeAll(async ({ playwright }) => {
     for (let i = 0; i < PRODUCTS; i++) {
       // Most in one category or the other, a few in both.
       const categoryIds = i < 13 ? [a.id] : i < 23 ? [b.id] : [a.id, b.id]
-      const slug = `p2-07-${token}-${i}`
+      const slug = `search-${token}-${i}`
       const res = await request.post(`${API_URL}/api/admin/products`, {
         headers: { ...(await csrf(request)), authorization: `Bearer ${auth}` },
         data: {
@@ -196,11 +194,10 @@ test.describe('Search pages: total, load more and the category facet', () => {
     expect(await showAll(page, api.total, api.slugs.length)).toEqual(api.slugs)
   })
 
-  // P2-06 AC-6: under shadow DOM the filter's light DOM is always empty, so the search layout reads the host's `empty`
+  // AC-6: under shadow DOM the filter's light DOM is always empty, so the search layout reads the host's `empty`
   // attribute, not `:empty`. A term with no match has no facets; the seeded token has the category facet when search
-  // reports `facet`. Kills: `:empty` matching always (the sidebar collapses with facets), or no `empty` reflected (an
-  // empty sidebar column shows without them).
-  test('AC-6 (P2-06): nymbal-product-filter reflects its facets as the empty host attribute: with none every filter has [empty] and is hidden, with facets none has [empty] and the filter shows', async ({
+  // reports `facet`.
+  test('AC-6: nymbal-product-filter reflects its facets as the empty host attribute: with none every filter has [empty] and is hidden, with facets none has [empty] and the filter shows', async ({
     page,
     request,
   }) => {

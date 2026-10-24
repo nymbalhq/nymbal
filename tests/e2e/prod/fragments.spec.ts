@@ -5,18 +5,15 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { addOneLine, noScript, PRODUCT } from '../support/server-rendered'
 import { formatPrice } from '../support/variants'
 
-// P2-19 AC-1, AC-2 and AC-3 (spec P2-19-fragments-and-isr, Decisions 3 and 4; store end state caching.fragments-cached),
-// on production builds of both templates (playwright.prod.config.ts). AC-1: `/fragments/header`, `/footer`, `/nav` and
-// `/product/<seed slug>`, each requested with and without a `nymbal.cart` cookie holding one line, answer 200
-// `text/html` holding the one element in a declarative shadow root (read from the parsed DOM with JavaScript off): the
-// header with `/`'s nav links, the footer with `/`'s columns, the category nav with a card per `GET /api/categories`
-// item in order, the product card with `GET /api/products/<slug>`'s name and price; `Cache-Control` carries `s-maxage`
-// 3600 / 86400 / 21600 / 300 and neither `private` nor `no-store`; no `Set-Cookie`; the header fragment's mini-cart has
-// no `count` and an empty badge, cookie or not. AC-2: an unknown product fragment is a 404 a CDN never stores
-// (`no-store`). AC-3 (Next): the second request for a fragment is `x-nextjs-cache: HIT` with the first one's body.
-// Kills: no fragment routes on Next; a fragment that renders another element or stale props; a fragment that reads the
-// cart cookie (one shopper's count cached for all); a fragment that is private, no-store or has no s-maxage; a
-// Set-Cookie that makes a CDN refuse it; an unknown product's 404 a CDN caches; a fragment route Next renders every time.
+// AC-1, AC-2 and AC-3 on production builds of both templates (playwright.prod.config.ts). AC-1: `/fragments/header`,
+// `/footer`, `/nav` and `/product/<seed slug>`, each requested with and without a `nymbal.cart` cookie holding one
+// line, answer 200 `text/html` holding the one element in a declarative shadow root (read from the parsed DOM with
+// JavaScript off): the header with `/`'s nav links, the footer with `/`'s columns, the category nav with a card per
+// `GET /api/categories` item in order, the product card with `GET /api/products/<slug>`'s name and price;
+// `Cache-Control` carries `s-maxage` 3600 / 86400 / 21600 / 300 and neither `private` nor `no-store`; no
+// `Set-Cookie`; the header fragment's mini-cart has no `count` and an empty badge, cookie or not. AC-2: an unknown
+// product fragment is a 404 a CDN never stores (`no-store`). AC-3 (Next): the second request for a fragment is
+// `x-nextjs-cache: HIT` with the first one's body.
 
 interface Fragment {
   path: string
@@ -105,7 +102,7 @@ const hrefs = (page: Page, selector: string): Promise<string[]> =>
 const texts = async (page: Page, selector: string): Promise<string[]> =>
   (await page.locator(selector).allTextContents()).map((t) => t.replace(/\s+/g, ' ').trim())
 
-test.describe('P2-19 AC-1: the fragment routes (production build)', () => {
+test.describe('AC-1: the fragment routes (production build)', () => {
   test('AC-1: caching.fragments-cached: /fragments/header, with and without a cart cookie, is nymbal-site-header with /’s nav links, a mini-cart with no count and an empty badge, s-maxage=3600, shareable, no Set-Cookie', async ({
     browser,
   }, testInfo) => {
@@ -204,7 +201,7 @@ test.describe('P2-19 AC-1: the fragment routes (production build)', () => {
   })
 })
 
-test.describe('P2-19 AC-2: an unknown product fragment (production build)', () => {
+test.describe('AC-2: an unknown product fragment (production build)', () => {
   test('AC-2: GET /fragments/product/no-such-slug answers 404 with Cache-Control no-store, so a CDN never stores it', async ({
     request,
   }) => {
@@ -215,7 +212,7 @@ test.describe('P2-19 AC-2: an unknown product fragment (production build)', () =
   })
 })
 
-test.describe('P2-19 AC-3: Next serves a fragment from its cache (production build)', () => {
+test.describe('AC-3: Next serves a fragment from its cache (production build)', () => {
   test('AC-3: caching.fragments-cached: the second GET /fragments/nav and /fragments/product/<slug> answer 200 with x-nextjs-cache: HIT and the first one’s body @nextjs', async ({
     request,
   }) => {

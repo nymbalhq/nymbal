@@ -3,8 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { type PlanInput, plan } from '../../scripts/gate'
 
-// Acceptance tests for P0-03 part 2, AC-4: every pull-request job except `build` downloads the one artefact `build`
-// uploads, and none of them runs `pnpm build` (directly, or through a gate.ts plan that would).
+// AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
+// (directly, or through a gate.ts plan that would).
 // No YAML library is a dependency of the repo, so the workflow is read by the small block-YAML reader below. It
 // throws on anything outside the subset GitHub workflows here use, and the job list it returns is checked against
 // the job keys found textually, so a misread fails loudly instead of passing quietly.
@@ -223,7 +223,7 @@ const BUILD =
 const RUNS_TESTS =
   /scripts\/gate\.ts|\bgate:full\b|\bvitest\b|\bplaywright\s+test\b|\bstryker\b|\bpnpm\s+(?:run\s+)?(?:test|mutation|sentinels)\b|create-nymbal-app/
 
-/** The pull-request jobs the spec names (besides build and the P0-04 changeset job). */
+/** The CI jobs that must use the build artefact (besides build itself). */
 const SPEC_JOBS = [
   'gate',
   'integration',
@@ -382,8 +382,8 @@ describe('AC-4: one artefact, built once, downloaded by every other job', () => 
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// Round 1 (review of PR #4): AC-7 (the base every gate.ts call gets), AC-11 (no Postgres in the E2E jobs),
-// AC-12 (nightly E2E runs only the mobile projects).
+// AC-7 (the base every gate.ts call gets), AC-11 (no Postgres in the E2E jobs), AC-12 (nightly E2E runs only the
+// mobile projects).
 // A workflow is "run" for one event: `${{ }}` expressions are evaluated against a github (and matrix) context, step
 // and job `if:` conditions are honoured, env is layered workflow < job < step on top of GitHub's default GITHUB_*
 // variables, and `$VAR` / `${VAR}` in an argument is expanded from that env or from a plain `VAR=value` line earlier
@@ -631,7 +631,7 @@ function gateCalls(workflow: Workflow, github: Ctx): GateCall[] {
 
 const sha = (c: string): string => c.repeat(40)
 
-// Tasks merge into dev locally, so a push to dev is the event every CI job is judged on (P2-20).
+// Work merges into dev locally, so a push to dev is the event every CI job is judged on.
 const DEV_PUSH = {
   event_name: 'push',
   base_ref: '',
@@ -643,7 +643,7 @@ const DEV_PUSH = {
     before: sha('b'),
     after: sha('a'),
     ref: 'refs/heads/dev',
-    head_commit: { message: 'Merge feat/P2-20-local-merges (P2-20): Local merges to dev' },
+    head_commit: { message: 'Merge feat/local-merges: Local merges to dev' },
   },
 }
 
@@ -733,37 +733,15 @@ describe('AC-7: CI passes the right base to every gate.ts call', () => {
   )
 })
 
-describe('P2-20: CI runs on pushes to main and dev only; the Changeset job judges task merges', () => {
-  it('P2-20: ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
-    const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as { on?: Record<string, { branches?: string[] }> }
+describe('CI runs on pushes to main and dev only', () => {
+  it('ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
+    const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as {
+      on?: Record<string, { branches?: string[] }>
+    }
     expect({
       events: Object.keys(doc.on ?? {}),
       branches: [...(doc.on?.push?.branches ?? [])].sort(),
     }).toEqual({ events: ['push'], branches: ['dev', 'main'] })
-  })
-
-  it("P2-20: the Changeset job runs on a task's merge into dev against the previous dev tip, never on the back-merge or main", () => {
-    const ci = loadWorkflow(WORKFLOW)
-    // The --base each changeset-needed.ts call in the Changeset job receives, shell variables expanded.
-    const changeset = (github: Ctx): string[] =>
-      execute(ci, github).flatMap((run) => {
-        const m = run.job === 'changeset' ? /changeset-needed\.ts([^\n;&|]*)/.exec(run.script) : null
-        if (m === null) return []
-        const args = words(m[1] ?? '').map((w) => expand(w, run, m.index))
-        return [flag(args, '--base') ?? '(none)']
-      })
-    const push = (ref: string, message: string): Ctx => ({
-      ...DEV_PUSH,
-      ref: `refs/heads/${ref}`,
-      ref_name: ref,
-      event: { ...DEV_PUSH.event, ref: `refs/heads/${ref}`, head_commit: { message } },
-    })
-    expect({
-      feat: changeset(DEV_PUSH),
-      fix: changeset(push('dev', 'Merge fix/admin-orders-total: Fix the admin orders total')),
-      backMerge: changeset(push('dev', 'Merge pull request #61 from nymbalhq/main')),
-      main: changeset(push('main', 'Merge pull request #62 from nymbalhq/dev')),
-    }).toEqual({ feat: [sha('b')], fix: [sha('b')], backMerge: [], main: [] })
   })
 })
 
@@ -849,9 +827,9 @@ describe('AC-12: nightly e2e-full runs only the -mobile projects', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// P1-01 AC-18, the CI half (the gate:full and `pnpm test` halves are in proof-kit-wiring.test.ts): the integration
-// job runs the proof-kit-services Vitest project, directly or through a gate.ts step, with a Mailpit service whose
-// published ports are the ones the URLs the command sees point at.
+// AC-18, the CI half (the gate:full and `pnpm test` halves are in proof-kit-wiring.test.ts): the integration job runs
+// the proof-kit-services Vitest project, directly or through a gate.ts step, with a Mailpit service whose published
+// ports are the ones the URLs the command sees point at.
 // ---------------------------------------------------------------------------------------------------------------
 
 const KIT_SERVICES = 'proof-kit-services'
@@ -885,7 +863,7 @@ function publishedPorts(service: unknown): Map<string, string> {
 const portOf = (address: string): string =>
   new URL(address.includes('://') ? address : `smtp://${address}`).port
 
-describe('AC-18 (P1-01): the CI integration job runs proof-kit-services with a Mailpit service', () => {
+describe('AC-18: the CI integration job runs proof-kit-services with a Mailpit service', () => {
   it('AC-18: the integration job runs proof-kit-services with both URLs set, and its Mailpit service publishes the ports they name', () => {
     const ci = loadWorkflow(WORKFLOW)
     const job = ci.jobs.integration
@@ -955,7 +933,7 @@ describe('AC-18 (P1-01): the CI integration job runs proof-kit-services with a M
   })
 })
 
-describe('AC-18 (P1-01): tests-fail-on-base in CI has the Mailpit the kit tests need', () => {
+describe('AC-18: tests-fail-on-base in CI has the Mailpit the kit tests need', () => {
   it('AC-18: every CI job whose gate.ts call runs tests-fail-on-base has a Mailpit service, and the step sees NYMBAL_TEST_MAILPIT_URL at its published 8025', () => {
     const ci = loadWorkflow(WORKFLOW)
     const problems: string[] = []

@@ -2,13 +2,12 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { formatMoney, summaryLines } from '../__fixtures__/server-data.js'
 
-// P2-17 AC-4, the unit half (spec Decision 1 and Invariants): `nymbal-order-summary` renders from its attributes alone,
-// so the order page's server render is the summary. Over generated orders that hold the money invariant
-// (Σ lineTotalMinor = subtotal; subtotal − discount + shipping + tax = total), each `line` shows its name, its
-// quantity and its line total; `totals` shows the subtotal, the shipping (free at 0) and the tax; the `discount` part is
-// there exactly when the discount is non-zero (imported `INT-` orders carry one, a checkout order never does, so the
-// E2E cannot reach that branch) and shows it; `total` shows the total. Kills: a summary that drops the discount, shows
-// it at zero, adds the lines up itself, or puts one amount in another's place.
+// AC-4, the unit half: `nymbal-order-summary` renders from its attributes alone, so the order page's server render is
+// the summary. Over generated orders that hold the money invariant (Σ lineTotalMinor = subtotal; subtotal − discount
+// + shipping + tax = total), each `line` shows its name, its quantity and its line total; `totals` shows the
+// subtotal, the shipping (free at 0) and the tax; the `discount` part is there exactly when the discount is non-zero
+// (imported `INT-` orders carry one, a checkout order never does, so the E2E cannot reach that branch) and shows it;
+// `total` shows the total.
 
 const TAG = 'nymbal-order-summary'
 
@@ -29,7 +28,7 @@ function partTexts(el: Element, part: string): string[] {
     .map((n) => (n.textContent ?? '').replace(/\s+/g, ' ').trim())
 }
 
-describe('P2-17 AC-4: nymbal-order-summary shows the order’s money', () => {
+describe('AC-4: nymbal-order-summary shows the order’s money', () => {
   it('AC-4: property: one line part per item with its name, qty and line total; totals with subtotal, shipping and tax; a discount part exactly when the discount is non-zero; total equal to subtotal − discount + shipping + tax', async () => {
     await fc.assert(
       fc.asyncProperty(

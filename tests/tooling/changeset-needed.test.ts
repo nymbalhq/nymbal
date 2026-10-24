@@ -13,17 +13,15 @@ import {
   TSX,
   write,
 } from './scratch-gate'
-import { parseYaml } from './workflow-yaml'
 
-// Acceptance tests for P1-20 (spec P1-20-loop-waits-less), AC-5: the Changeset job passes a test-only diff.
-// `changeset status --since` fails any diff that changes a file under a package without a changeset, test files
-// included (PR #27, #32). scripts/changeset-needed.ts exports `needsChangeset(changed, publishedPackageDirs)`: true
-// when a file under a published package changed that is not a test path (lib.sh's `is_test_path`: *.test.*,
-// *.spec.*, *.test-d.ts, or under tests/, test/, __tests__/, __fixtures__/, fixtures/, journeys/, sentinels/).
-// `tsx scripts/changeset-needed.ts --base <ref>` exits 0 with `changeset: not needed (tests only)` when none is
-// needed, and otherwise runs `changeset status --since=<ref>` and takes its verdict. The CLI runs in a scratch
-// repository of its working directory, where `changeset` (through pnpm, npx or node_modules/.bin) is a stand-in
-// that logs its call and exits FAKE_CHANGESET_EXIT.
+// AC-5: a test-only diff needs no changeset. `changeset status --since` fails any diff that changes a file under a
+// package without a changeset, test files included. scripts/changeset-needed.ts exports
+// `needsChangeset(changed, publishedPackageDirs)`: true when a file under a published package changed that is not a
+// test path (*.test.*, *.spec.*, *.test-d.ts, or under tests/, test/, __tests__/, __fixtures__/, fixtures/,
+// journeys/, sentinels/). `tsx scripts/changeset-needed.ts --base <ref>` exits 0 with
+// `changeset: not needed (tests only)` when none is needed, and otherwise runs `changeset status --since=<ref>` and
+// takes its verdict. The CLI runs in a scratch repository of its working directory, where `changeset` (through pnpm,
+// npx or node_modules/.bin) is a stand-in that logs its call and exits FAKE_CHANGESET_EXIT.
 
 afterEach(cleanupScratch)
 
@@ -222,22 +220,5 @@ describe('AC-5: scripts/changeset-needed.ts', () => {
     expect(run.output).not.toMatch(/not needed/)
     expect(statusCalls(repo).length, run.output).toBe(1)
     expect(run.code, run.output).toBe(1)
-  })
-
-  it("AC-5: ci.yml's Changeset job runs the script against the pull request's base, not changeset status itself", () => {
-    type Step = { run?: string }
-    const wf = parseYaml(readFileSync(join(REPO, '.github/workflows/ci.yml'), 'utf8')) as {
-      jobs?: Record<string, { steps?: Step[] }>
-    }
-    const runs = (wf.jobs?.changeset?.steps ?? []).flatMap((s) =>
-      s.run === undefined ? [] : [s.run],
-    )
-    const script = runs.filter((r) =>
-      /scripts\/changeset-needed\.ts\s+--base[= ]["']?(?:origin\/\$\{\{ *github\.base_ref *\}\}|\$\{?GATE_BASE\b)/.test(
-        r,
-      ),
-    )
-    const bare = runs.filter((r) => /\bchangeset status\b/.test(r))
-    expect({ script: script.length, bare: bare.length }).toEqual({ script: 1, bare: 0 })
   })
 })

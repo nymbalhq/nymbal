@@ -8,14 +8,8 @@ import repoConfig from '../../../../nymbal.config.js'
 import { formatDoctorReport } from './doctor-report.js'
 import { cliEnv, closedPort, doctorLines, runCli } from '../../../../tests/support/doctor.js'
 
-// Acceptance tests for P2-09 AC-6 (b) (spec P2-09-dev-stage, decision 5): no secret is ever printed.
-// Unit property: a generated DiagnosisReport whose details carry secrets (a password and a query in a Postgres URL, a
-// Redis password, a Stripe key, an SMTP password, an S3 secret), with the same secrets in the config and the
-// environment it was made from: neither the text nor the `--json` formatting prints any of them, while each still
-// prints every check by name and each URL's host and port (decision 5: `scheme://host:port/db`).
-// CLI sample: a project whose `.env` holds a real-looking DATABASE_URL, REDIS_URL and Stripe key, both pointing at
-// closed ports: `nymbal doctor` and `nymbal doctor --json` print none of them and still report the command store down.
-// Kills: a detail, a URL or a config value printed as it came, in either format.
+// AC-6 (b): no secret is ever printed, by the text or the `--json` formatting, while every check is named and each
+// URL shows as `scheme://host:port/db`.
 
 const secretArb = fc.stringMatching(/^[A-Za-z0-9]{16,28}$/)
 const statusArb = fc.constantFrom(
@@ -107,7 +101,7 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
 })
 
-describe('P2-09 AC-6 (b): doctor prints no secret', () => {
+describe('AC-6 (b): doctor prints no secret', () => {
   it('AC-6 (b): over generated reports whose details, config and environment carry secrets, the text and --json formats print none of them, and still print every check and each host:port', () => {
     fc.assert(
       fc.property(caseArb, (c) => {
@@ -133,7 +127,7 @@ describe('P2-09 AC-6 (b): doctor prints no secret', () => {
   })
 
   it('AC-6 (b): a CLI sample with real secrets in .env: doctor and doctor --json print none of them and report the command store down', async () => {
-    const project = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-secrets-'))
+    const project = mkdtempSync(join(tmpdir(), 'nymbal-doctor-secrets-'))
     dirs.push(project)
     const pgPassword = `pw${Date.now().toString(36)}Xq81LmZr`
     const pgQuery = `q${Date.now().toString(36)}Hy2Bv`

@@ -27,17 +27,16 @@ import {
 } from '../settings.js'
 import type { SuiteTarget } from './settings-restart.js'
 
-// P3-07 AC-6 on one dialect (spec P3-07-secrets-settings, Decisions 4 and 5): boot refuses, with a ConfigError naming
-// the slot and path and never the value, before any adapter request, when a settings row the fill would use cannot be
-// read: a secret row with NYMBAL_SECRETS_KEY unset, a malformed key (not 32 bytes of base64), a key whose key_id
-// differs, a tampered row. The refused boot changes no row. The row is the AI slot's `apiKey` (Anthropic, its stub at
-// the declared baseUrl), a store that boots today without it, so each case is red on the refusal itself.
+// AC-6 on one dialect: boot refuses, with a ConfigError naming the slot and path and never the value, before any
+// adapter request, when a settings row the fill would use cannot be read: a secret row with NYMBAL_SECRETS_KEY unset,
+// a malformed key (not 32 bytes of base64), a key whose key_id differs, a tampered row. The refused boot changes no
+// row. The row is the AI slot's `apiKey` (Anthropic, its stub at the declared baseUrl), a store that boots without
+// it, so each case is red on the refusal itself.
 // Boots that need no key: a store with no rows, a store from before migration 0008 (no settings relation), and
 // (SQLite) a Stripe store from `nymbal add stripe` whose database file does not exist yet (`nymbal import` on a fresh
 // scaffold), which gets past the settings read to open its store. A row that env (ANTHROPIC_API_KEY, the declared env)
 // shadows is not decrypted: boot without the key succeeds and logs a warning naming slot and path.
 // `nymbal secrets clear` is spawned in packages/cli/src/commands/secrets-clear.test.ts.
-// Kills: a wrong key silently yielding garbage credentials; a boot that needs a key no one set.
 
 const PROVIDER_ENV = {
   ANTHROPIC_API_KEY: undefined,
@@ -53,7 +52,7 @@ export function settingsRefusalsSuite(
   dialect: Dialect,
   makeTarget: () => Promise<SuiteTarget>,
 ): void {
-  describe(`P3-07 AC-6: boot refusals (${dialect})`, () => {
+  describe(`AC-6: boot refusals (${dialect})`, () => {
     const scope = cleanups()
     afterEach(() => scope.run())
 
@@ -73,7 +72,7 @@ export function settingsRefusalsSuite(
 
     /** A store holding one secret row, `ai.apiKey`, saved through the admin API under the current key. */
     async function withSecretRow(stub: Stub, target: string): Promise<string> {
-      const value = `sk-ant-p3-07-${randomUUID()}`
+      const value = `sk-ant-settings-${randomUUID()}`
       await saveSettings({ dialect, target, config: configFor(stub) }, [['ai', 'apiKey', value]])
       stub.reset()
       return value
@@ -167,7 +166,7 @@ export function settingsRefusalsSuite(
       it('AC-6: a Stripe store with no database file yet (`nymbal import` on a fresh scaffold) and no key gets past the settings read and opens its store', async () => {
         const { stub } = await begin('stripe')
         scope.add(setEnv({ [SECRETS_KEY]: undefined }))
-        const dir = mkdtempSync(join(tmpdir(), 'p3-07-no-file-'))
+        const dir = mkdtempSync(join(tmpdir(), 'settings-no-file-'))
         scope.add(() => rmSync(dir, { recursive: true, force: true }))
         const target = join(dir, 'nymbal.db')
         expect(existsSync(target)).toBe(false)
@@ -193,7 +192,10 @@ export function settingsRefusalsSuite(
       const { stub, target } = await begin()
       await withSecretRow(stub, target)
       scope.add(
-        setEnv({ [SECRETS_KEY]: undefined, ANTHROPIC_API_KEY: `sk-ant-p3-07-env-${randomUUID()}` }),
+        setEnv({
+          [SECRETS_KEY]: undefined,
+          ANTHROPIC_API_KEY: `sk-ant-settings-env-${randomUUID()}`,
+        }),
       )
       const logs = captureLogs()
       const store = await openStore({

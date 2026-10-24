@@ -4,8 +4,8 @@ import { startInventoryReservationSweeper } from '../../src/sweepers/inventory-r
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 
-// P1-02 AC-12: the reservation sweeper returns the stock of an expired reservation on tick(), deletes the row and
-// publishes one inventory.released.v1 with reason `expired`; a second tick changes nothing.
+// AC-12: the reservation sweeper returns the stock of an expired reservation on tick(), deletes the row and publishes
+// one inventory.released.v1 with reason `expired`; a second tick changes nothing.
 
 type Released = NymbalEvent<{ reservationId: string; reason: string }>
 

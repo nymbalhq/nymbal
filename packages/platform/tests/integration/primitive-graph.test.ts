@@ -10,16 +10,14 @@ import {
   withInfrastructure,
 } from '../support/primitive-graph.js'
 
-// Acceptance tests for P2-02 AC-5 (spec P2-02-primitives-are-protocols), the cases that need no Redis: P2-01's loader
-// takes the infrastructure slots (decision 2), so with in-memory and in-process the child-process module graph holds no
-// Redis SDK, no primitive package and no `pg` beyond the command store's own import; and with
-// @nymbalhq/doc-store-redis hidden, createApp fails adapter.package_missing with the install line. The Redis-backed
-// load is tests/primitives/primitive-graph.test.ts. Kills: the kernel importing a primitive SDK or package it was not
-// asked for, a wrong slot-to-package map, and a missing package with no install line. Needs `pnpm build`.
+// AC-5, the cases that need no Redis: with in-memory and in-process the child-process module graph holds no Redis SDK,
+// no primitive package and no `pg` beyond the command store's own import; with @nymbalhq/doc-store-redis hidden,
+// createApp fails adapter.package_missing with the install line. The Redis-backed load is
+// tests/primitives/primitive-graph.test.ts. Needs `pnpm build`.
 
 afterAll(cleanupGraphDirs)
 
-describe('P2-02 AC-5: the loader knows the infrastructure packages', () => {
+describe('AC-5: the loader knows the infrastructure packages', () => {
   it('AC-5: PROVIDER_PACKAGES maps documentStore redis and postgres-jsonb, and eventBus redis-streams, to their packages and SDKs', () => {
     const packages = PROVIDER_PACKAGES as Record<
       string,
@@ -43,7 +41,7 @@ describe('P2-02 AC-5: the loader knows the infrastructure packages', () => {
   })
 })
 
-describe('P2-02 AC-5: with in-memory and in-process, no primitive SDK or package is resolved', () => {
+describe('AC-5: with in-memory and in-process, no primitive SDK or package is resolved', () => {
   it('AC-5: createApp starts on SQLite, in-memory and in-process; no URL is under ioredis or a primitive package, and every import of pg is the command store’s', async () => {
     const { resolutions, outcome } = await runGraphChild(kernelConfig('sqlite'))
 
@@ -76,14 +74,14 @@ describe('P2-02 AC-5: with in-memory and in-process, no primitive SDK or package
   }, 90_000)
 })
 
-describe('P2-02 AC-5: a missing primitive package fails with the install line', () => {
+describe('AC-5: a missing primitive package fails with the install line', () => {
   it('AC-5: documentStore redis with @nymbalhq/doc-store-redis not installed fails createApp adapter.package_missing, naming the slot and "npm install @nymbalhq/doc-store-redis ioredis"', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
       documentStore: 'redis',
       eventBus: 'in-process',
       // Never connected to: the package is missing before any connection is made.
-      redis: { url: 'redis://127.0.0.1:1', prefix: 'p2-02-hidden' },
+      redis: { url: 'redis://127.0.0.1:1', prefix: 'primitives-hidden' },
     })
 
     const { resolutions, outcome } = await runGraphChild(config, {

@@ -17,17 +17,10 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-// P2-13 AC-6 (spec P2-13-contract-tests-public, decision 5): `nymbal test:contracts --package <pkg>` run by the built
-// CLI (`pnpm build` first) in a scratch project outside the monorepo. The project links vitest and
-// @nymbalhq/contract-tests from the workspace and the third-party fixture tests/fixtures/third-party-search as its
-// `file:` dependency would; its config names the fixture on the search slot (`provider: 'custom', package`) with the
-// slot's `config` record as the adapter's options. The well-behaved fixture is certified with exit 0; the same package
-// configured to ignore the cursor exits 1, not certified, and names the failing pagination case; the counts relate
-// (the same suite has as many cases either way). Missing vitest, a package with no createAdapter and an absent
-// package each exit 1 with one line. Nothing in the project changes but `.nymbal/contracts/`. Kills: a command that
-// shells out to the monorepo (`pnpm vitest --project contracts-native`), resolves vitest or the suites from the CLI's
-// own location, takes the options from anywhere but the slot's config, certifies a broken adapter, crashes on a bad
-// package, or writes outside `.nymbal/contracts/` (a vitest cache in node_modules, a project config it edits).
+// AC-6: `nymbal test:contracts --package <pkg>` in a scratch project outside the monorepo, on the third-party fixture
+// tests/fixtures/third-party-search: the well-behaved fixture is certified, the same package configured to ignore the
+// cursor is not, and a bad setup exits 1 with one line. Nothing in the project changes but `.nymbal/contracts/`.
+// Spawns the built CLI (`pnpm build` first).
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLI_BIN = resolve(HERE, '..', '..', 'bin', 'nymbal.mjs')
@@ -67,7 +60,7 @@ const CONFIG_SOURCE = '<slot config source>'
 
 /** A store project in a fresh temp directory, far from the workspace's node_modules. */
 function scratchProject(s: Scratch): string {
-  const project = mkdtempSync(join(tmpdir(), 'p2-13-certify-'))
+  const project = mkdtempSync(join(tmpdir(), 'contracts-certify-'))
   scratches.push(project)
   const dependencies: Record<string, string> = {}
   for (const [name, target] of Object.entries(s.links)) {
@@ -79,7 +72,7 @@ function scratchProject(s: Scratch): string {
   }
   writeFileSync(
     join(project, 'package.json'),
-    `${JSON.stringify({ name: 'p2-13-scratch-store', private: true, type: 'module', dependencies }, null, 2)}\n`,
+    `${JSON.stringify({ name: 'contracts-scratch-store', private: true, type: 'module', dependencies }, null, 2)}\n`,
   )
   const search = {
     provider: 'custom',
@@ -91,7 +84,7 @@ function scratchProject(s: Scratch): string {
     join(project, 'nymbal.config.ts'),
     `export default ${JSON.stringify(
       {
-        store: { name: 'P2-13', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+        store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
         template: 'astro',
         infrastructure: {
           commandStore: 'sqlite',
@@ -184,7 +177,7 @@ function changedOutsideContracts(
 const CERTIFIED = /^certified (\S+) \((\w+)\): (\d+) cases passed$/m
 const NOT_CERTIFIED = /^not certified (\S+) \((\w+)\): (\d+) of (\d+) cases failed$/m
 
-describe('P2-13 AC-6: nymbal test:contracts --package certifies a third-party adapter outside the monorepo', () => {
+describe('AC-6: nymbal test:contracts --package certifies a third-party adapter outside the monorepo', () => {
   it(
     'AC-6: the well-behaved fixture is certified (exit 0, `certified … (search): N cases passed`); the same package with ignoreCursor in its slot config exits 1, `not certified … (search): F of N cases failed`, names the failing pagination case; neither run changes the project outside .nymbal/contracts/',
     () => {

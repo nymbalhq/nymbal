@@ -5,11 +5,9 @@ import { join, relative } from 'node:path'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main } from '../src/index.js'
 
-// P3-07 AC-9 (spec P3-07-secrets-settings, Decision 3): `create-nymbal-app` writes a fresh NYMBAL_SECRETS_KEY into the
-// new project's `.env` (32 bytes, canonical base64) and leaves it out of `.env.example`. Two scaffolds with the same
-// answers hold different keys, and differ nowhere else but `.env`'s generated lines (the key and the admin password):
-// every other file is byte-identical between them. The scaffold is read from scaffold/templates (`pnpm build` first).
-// Kills: no key; one key shared across projects; the key leaking into a file that is committed.
+// AC-9: `create-nymbal-app` writes a fresh NYMBAL_SECRETS_KEY (32 bytes, canonical base64) into `.env` and never into
+// `.env.example`; two scaffolds of the same answers differ only in `.env`'s generated lines. The scaffold is read from
+// scaffold/templates (`pnpm build` first).
 
 const argv = (...args: string[]): string[] => ['node', 'create-nymbal-app', ...args]
 const GENERATED = new Set(['NYMBAL_SECRETS_KEY', 'NYMBAL_ADMIN_PASSWORD'])
@@ -61,14 +59,14 @@ function filesUnder(root: string): string[] {
 
 /** Scaffolds `shop` with --yes (nothing installed or run) in a fresh directory; returns the project directory. */
 async function scaffoldOnce(): Promise<string> {
-  const cwd = realpathSync(await mkdtemp(join(tmpdir(), 'p3-07-scaffold-key-')))
+  const cwd = realpathSync(await mkdtemp(join(tmpdir(), 'settings-scaffold-key-')))
   scratch.push(cwd)
   process.chdir(cwd)
   await main(argv('shop', '--yes'), { run: async () => undefined })
   return join(cwd, 'shop')
 }
 
-describe('P3-07 AC-9: every scaffold gets its own secrets key', () => {
+describe('AC-9: every scaffold gets its own secrets key', () => {
   it("AC-9: .env holds NYMBAL_SECRETS_KEY as 32 bytes of base64, two scaffolds' keys differ, .env.example does not name it, and nothing else differs but .env's generated lines", async () => {
     const a = await scaffoldOnce()
     const b = await scaffoldOnce()

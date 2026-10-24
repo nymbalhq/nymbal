@@ -8,13 +8,10 @@ import { afterAll, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { kernelConfig } from '../support/kernel.js'
 
-// Acceptance tests for P2-01 AC-2 and the kernel half of AC-7, in a child process (fixtures/adapter-graph): createApp
-// from the built dist, with a module.register() resolve hook recording every URL the process resolves. AC-2: the
-// providers the config names load from their adapter packages, and no SDK the config does not name is ever resolved.
-// AC-7: a missing adapter package or SDK fails createApp with adapter.package_missing and the install line for the
-// package manager the process runs under; a broken SDK is rethrown as itself. Kills: a wrong provider-to-package map,
-// a kernel that still imports an SDK it was not asked for, a missing package with no install line or the wrong
-// package manager's, and a broken SDK reported as missing. Needs `pnpm build` (the kernel and the adapter packages).
+// AC-2 and the kernel half of AC-7, in a child process (fixtures/adapter-graph): createApp from the built dist, with a
+// module.register() resolve hook recording every URL the process resolves. The configured providers load from their
+// adapter packages and no other SDK is resolved; a missing package or SDK fails with adapter.package_missing and the
+// install line for the running package manager; a broken SDK is rethrown as itself. Needs `pnpm build`.
 
 const exec = promisify(execFile)
 const CHILD = fileURLToPath(new URL('./fixtures/adapter-graph/child.mjs', import.meta.url))
@@ -36,7 +33,7 @@ afterAll(() => {
 })
 
 function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-01-graph-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'adapters-graph-test-'))
   dirs.push(dir)
   return dir
 }
@@ -61,16 +58,16 @@ async function run(
     env: {
       ...baseEnv(),
       ...opts.env,
-      P2_01_GRAPH: JSON.stringify({ out, hide: opts.hide, poison: opts.poison }),
+      ADAPTERS_GRAPH: JSON.stringify({ out, hide: opts.hide, poison: opts.poison }),
     },
     timeout: 60_000,
     maxBuffer: 16 * 1024 * 1024,
   })
-  const line = stdout.split('\n').find((l) => l.startsWith('P2-01-OUTCOME '))
+  const line = stdout.split('\n').find((l) => l.startsWith('ADAPTER-GRAPH-OUTCOME '))
   if (line === undefined) throw new Error(`the child printed no outcome:\n${stdout}`)
   return {
     urls: readFileSync(out, 'utf8').split('\n').filter(Boolean),
-    outcome: JSON.parse(line.slice('P2-01-OUTCOME '.length)) as Outcome,
+    outcome: JSON.parse(line.slice('ADAPTER-GRAPH-OUTCOME '.length)) as Outcome,
   }
 }
 
@@ -81,7 +78,7 @@ function withStripe(config: NymbalConfig): NymbalConfig {
       ...config.commerce,
       payments: {
         provider: 'stripe',
-        config: { secretKey: 'sk_test_p2_01_never_called', webhookSecret: 'whsec_p2_01' },
+        config: { secretKey: 'sk_test_adapters_never_called', webhookSecret: 'whsec_adapters' },
       },
     },
   }
@@ -96,7 +93,7 @@ function withAnthropic(config: NymbalConfig): NymbalConfig {
 
 const INSTALL_STRIPE = '@nymbalhq/adapter-stripe stripe'
 
-describe('P2-01 AC-2: the config names a provider, and only then does its package load', () => {
+describe('AC-2: the config names a provider, and only then does its package load', () => {
   it('AC-2: with native everywhere and ai none, createApp starts and no resolved URL is under stripe, @anthropic-ai/sdk or nodemailer', async () => {
     const { urls, outcome } = await run(kernelConfig('sqlite'))
 
@@ -115,7 +112,7 @@ describe('P2-01 AC-2: the config names a provider, and only then does its packag
   }, 90_000)
 })
 
-describe('P2-01 AC-7 (kernel half): a missing adapter package fails with the install line', () => {
+describe('AC-7 (kernel half): a missing adapter package fails with the install line', () => {
   const AGENTS = [
     { agent: 'npm/10.9.2 node/v22.23.3 darwin arm64 workspaces/false', verb: 'npm install' },
     { agent: 'pnpm/9.15.4 npm/? node/v22.23.3 darwin arm64', verb: 'pnpm add' },
@@ -179,13 +176,14 @@ describe('P2-01 AC-7 (kernel half): a missing adapter package fails with the ins
         const { outcome } = await run(config, { cwd, hide })
         return { label, why: missing(outcome, verb) }
       }),
-      // Decision 2: only a missing package or SDK becomes package_missing; any other load error is rethrown unchanged.
+      // Only a missing package or SDK becomes package_missing; any other load error is rethrown unchanged.
       run(config, { poison: ['stripe'] }).then(({ outcome }) => {
         const e = outcome.error
         const why =
           e === undefined
             ? `started: ${JSON.stringify(outcome.started)}`
-            : e.code === 'adapter.package_missing' || !e.message.includes('p2-01 poisoned stripe')
+            : e.code === 'adapter.package_missing' ||
+                !e.message.includes('adapters poisoned stripe')
               ? `not rethrown as itself: ${e.code}: ${e.message}`
               : null
         return { label: 'sdk throws while loading', why }

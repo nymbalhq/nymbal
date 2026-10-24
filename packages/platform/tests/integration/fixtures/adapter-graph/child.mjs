@@ -1,6 +1,6 @@
-// The P2-01 AC-2 and AC-7 child process (adapter-graph.test.ts): registers record-resolve.mjs, then runs createApp
-// from the kernel's built dist on a migrated SQLite store, with the config in argv[2] (parsed by @nymbalhq/config).
-// It prints one line, `P2-01-OUTCOME <json>`: the payments and ai providerName it started with, or the error it threw.
+// The child process of adapter-graph.test.ts: registers record-resolve.mjs, then runs createApp from the kernel's built
+// dist on a migrated SQLite store, with the config in argv[2] (parsed by @nymbalhq/config).
+// It prints one line, `ADAPTER-GRAPH-OUTCOME <json>`: the payments and ai providerName it started with, or the error it threw.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { register } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -8,14 +8,14 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 register(new URL('./record-resolve.mjs', import.meta.url), {
-  data: JSON.parse(process.env.P2_01_GRAPH ?? '{}'),
+  data: JSON.parse(process.env.ADAPTERS_GRAPH ?? '{}'),
 })
 
 const platformRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const { nymbalConfigSchema } = await import('@nymbalhq/config')
 
 const config = nymbalConfigSchema.parse(JSON.parse(process.argv[2] ?? '{}'))
-const dir = mkdtempSync(join(tmpdir(), 'p2-01-graph-'))
+const dir = mkdtempSync(join(tmpdir(), 'adapters-graph-'))
 const sqlitePath = join(dir, 'store.sqlite')
 let outcome
 try {
@@ -45,4 +45,4 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }
-process.stdout.write(`P2-01-OUTCOME ${JSON.stringify(outcome)}\n`)
+process.stdout.write(`ADAPTER-GRAPH-OUTCOME ${JSON.stringify(outcome)}\n`)

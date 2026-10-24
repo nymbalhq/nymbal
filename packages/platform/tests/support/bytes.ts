@@ -1,5 +1,5 @@
-// P3-07 support: the bytes of a stored binary column (a buffer, hex or base64 text), and one of them flipped in the
-// representation it came in, for the AC-1 and AC-6 tamper cases. Nothing here knows which representation the store picks.
+// The bytes of a stored binary column (a buffer, hex or base64 text), and one of them flipped in the representation
+// it came in, for the tamper cases. Nothing here knows which representation the store picks.
 
 const HEX = /^(?:[0-9a-f]{2})+$/i
 

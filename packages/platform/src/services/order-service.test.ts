@@ -383,10 +383,10 @@ describe('OrderService', () => {
     await commandStore.close()
   })
 
-  // P1-12 decision 6. Defect: createFromCheckout drops the cart token (a resubmit then never finds its pending order and
-  // makes a second one), the pending lookup returns a settled order, or the converted lookup returns a pending or
-  // cancelled order, or an older one, so an emptied cart's 409 names the wrong order.
-  it("decision 6: a cart's pending order is found by its token, and its last converted order excludes pending and cancelled ones", async () => {
+  // Defect: createFromCheckout drops the cart token (a resubmit then never finds its pending order and makes a second
+  // one), the pending lookup returns a settled order, or the converted lookup returns a pending or cancelled order, or
+  // an older one, so an emptied cart's 409 names the wrong order.
+  it("a cart's pending order is found by its token, and its last converted order excludes pending and cancelled ones", async () => {
     const { commandStore, orderService, repos } = await setup()
     const token = uuidv7()
     const other = uuidv7()
@@ -435,10 +435,10 @@ describe('OrderService', () => {
   })
 })
 
-// P1-13 (spec P1-13-admin-truth-about-money): decision 4's "a captured order cannot be cancelled" with the diff
-// review's B2 (the paid check and the write under the row lock, the write conditional), and decision 2's imported
-// capture. The integration suites pin these through the routes; these pin them where Stryker mutates the service.
-describe('OrderService: P1-13 cancel of a paid order and imported captures', () => {
+// A captured order cannot be cancelled (the paid check and the write under the row lock, the write conditional), and
+// an imported capture is recorded. The integration suites pin these through the routes; these pin them where Stryker
+// mutates the service.
+describe('OrderService: cancel of a paid order and imported captures', () => {
   type Env = Awaited<ReturnType<typeof setup>>
 
   async function importWith(
@@ -578,7 +578,7 @@ describe('OrderService: P1-13 cancel of a paid order and imported captures', () 
 
   // Defect: any bound of 0 <= refunded <= captured <= total is dropped or flipped, or a capture is accepted without a
   // method (or a method without a capture), so an import writes amounts the payment state cannot read.
-  it('decision 2: importOrder accepts the amounts exactly when 0 <= refunded <= captured <= total and a method names a capture', async () => {
+  it('importOrder accepts the amounts exactly when 0 <= refunded <= captured <= total and a method names a capture', async () => {
     const env = await setup()
     await fc.assert(
       fc.asyncProperty(
@@ -630,7 +630,7 @@ describe('OrderService: P1-13 cancel of a paid order and imported captures', () 
 
   // Defect: the capture is dropped, stamped now instead of when the order was placed, or the optional fields default
   // to something other than nothing (notes, intent, no capture).
-  it("decision 2: an imported capture is recorded at the order's placing, and an import without one records nothing", async () => {
+  it("an imported capture is recorded at the order's placing, and an import without one records nothing", async () => {
     const env = await setup()
     const paid = await importWith(
       env,

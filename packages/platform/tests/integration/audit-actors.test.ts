@@ -9,13 +9,10 @@ import { cartWith, checkoutOf, createKernel, seedVariant, type Kernel } from '..
 import { openRaw, type RawReader } from '../support/raw.js'
 import { captureFor } from '../support/webhooks.js'
 
-// Acceptance tests for P3-04 AC-3 (spec P3-04-audit-trail, decision 1) on SQLite: work that starts outside HTTP is
-// attributed to the system. A cart-abandonment sweep, a reservation-expiry sweep and a payment webhook each leave
-// `applied` entries whose actor is `system:cart-abandonment`, `system:reservations` and `system:stripe-webhook` (the
-// webhook's scope overriding the route's guest one). The sweepers are built from the kernel's own services and
-// repositories as app.ts builds them, with a clock past the inactivity window and a long interval, and ticked once.
+// AC-3 on SQLite: work that starts outside HTTP is attributed to the system. A cart-abandonment sweep, a
+// reservation-expiry sweep and a payment webhook leave `applied` entries by `system:cart-abandonment`,
+// `system:reservations` and `system:stripe-webhook`. The sweepers are built as app.ts builds them and ticked once.
 // The import half is packages/cli/src/commands/import-audit.test.ts.
-// Kills: a sweep or webhook left unaudited, or attributed to nobody or to a guest.
 
 const HOUR_MS = 60 * 60_000
 
@@ -42,7 +39,7 @@ async function appendedSince(before: AuditRow[]): Promise<AuditRow[]> {
   return (await auditRows(raw)).filter((r) => !seen.has(r.id))
 }
 
-describe('P3-04 AC-3: actors outside HTTP', () => {
+describe('AC-3: actors outside HTTP', () => {
   it('AC-3: a cart-abandonment sweep over 2 idle carts leaves applied entries by system:cart-abandonment, and only those', async () => {
     const seeded = await seedVariant(k, 100)
     const tokens = [await cartWith(k, seeded, 1), await cartWith(k, seeded, 1)]

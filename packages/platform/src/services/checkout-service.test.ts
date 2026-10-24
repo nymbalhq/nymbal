@@ -510,7 +510,7 @@ describe('CheckoutService', () => {
     })
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      // Pending, so the order holds no capture and may be cancelled (P1-13 decision 4).
+      // Pending, so the order holds no capture and may be cancelled.
       email: 'cancel+stub-pending@example.com',
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
@@ -643,9 +643,9 @@ describe('CheckoutService', () => {
   })
 })
 
-// P1-05 decision 4: finalize's check order, one test per branch. Stryker runs only src tests, so these are what
-// kill its mutants in finalize (the integration suites prove the same outcomes on both dialects).
-describe('CheckoutService.finalize: decision 4 check order and recorded outcomes', () => {
+// finalize's check order, one test per branch. Stryker runs only src tests, so these are what kill its mutants in
+// finalize (the integration suites prove the same outcomes on both dialects).
+describe('CheckoutService.finalize: check order and recorded outcomes', () => {
   type Env = Awaited<ReturnType<typeof setup>>
   type Line = { priceMinor: number; stock: number; qty: number }
 
@@ -679,7 +679,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
       ...(customerId !== undefined && { customerId }),
-      // `+stub-pending` (P1-12 decision 7): every finalize below meets a pending order, as a webhook would.
+      // `+stub-pending`: every finalize below meets a pending order, as a webhook would.
       email: `${tag}+stub-pending@example.com`,
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
@@ -800,7 +800,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
 
   // Defect: the status check (step 2) runs after the amount check, or is dropped and left to step 5's conditional
   // write: a captured payment for a non-pending order is then reported as amount_mismatch or stock_unavailable.
-  it('decision 4 check order: status is decided before amount, so a non-pending order never reports amount_mismatch', async () => {
+  it('status is decided before amount, so a non-pending order never reports amount_mismatch', async () => {
     const env = await setup()
     const confirmed = await placeOrder(env, [{ priceMinor: 540, stock: 3, qty: 1 }])
     await env.checkout.finalize(confirmed.started.paymentIntent.id, confirmed.paid)
@@ -863,7 +863,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 
   // Defect: the status check is skipped, so a captured payment confirms a cancelled order and takes its stock.
-  // P1-12 AC-12 (decision 11): the capture is refunded and recorded as order_cancelled_refunded.
+  // AC-12: the capture is refunded and recorded as order_cancelled_refunded.
   it('AC-6b: a captured payment for a cancelled order is order_cancelled_refunded, recorded, the order untouched', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
@@ -1055,7 +1055,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
 
   // Defect: the re-take's catch swallows every error as stock_unavailable, so a store fault is recorded as a
   // refused payment (payment.failed, a history note) instead of failing the delivery for Stripe to retry.
-  it('decision 5: a re-take that fails with anything but NotFoundError rejects with that error and records nothing', async () => {
+  it('a re-take that fails with anything but NotFoundError rejects with that error and records nothing', async () => {
     const env = await setup()
     const { started, variants, paid } = await placeOrder(env, [
       { priceMinor: 400, stock: 5, qty: 2 },
@@ -1083,7 +1083,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
 
   // Defect: a reservation id with no order line reads `undefined.variantId` (a TypeError) or is recorded as an
   // outcome; it is a data fault, so it throws finalize_failed and records nothing.
-  it('decision 5: a released reservation with no matching order line throws finalize_failed and records nothing', async () => {
+  it('a released reservation with no matching order line throws finalize_failed and records nothing', async () => {
     const env = await setup()
     const intent = `pi_orphan_${uuidv7().slice(-8)}`
     const order = await env.order.createFromCheckout({
@@ -1219,7 +1219,7 @@ describe('CheckoutService.finalize: decision 4 check order and recorded outcomes
   })
 })
 
-describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review B1, M2, M3', () => {
+describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed carts and failed intents', () => {
   type Env = Awaited<ReturnType<typeof setup>>
   type Line = { priceMinor: number; stock: number; qty: number }
   const logger = createLogger({ pretty: false, level: 'error' })
@@ -1352,7 +1352,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
 
   // Defect: a status mapped to the wrong outcome (a cancelled intent left pending, a `processing` one confirmed), the
   // answer's orderStatus taken from the T1 snapshot instead of the store, or a failed intent's stock kept.
-  it('decision 2: every intent status at creation maps to its payment outcome, and the answer is the stored order', async () => {
+  it('every intent status at creation maps to its payment outcome, and the answer is the stored order', async () => {
     const line = { priceMinor: 700, stock: 5, qty: 2 }
     for (const status of STATUSES) {
       const env = await setup()
@@ -1388,7 +1388,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
 
   // Defect: the intent params lose the total, the receipt email the stub's triggers read, or the customer id (or send
   // `customerId: null` to the provider for a guest).
-  it('decision 7: the intent is for the order total and receipt email, with a customer id only for a customer', async () => {
+  it('the intent is for the order total and receipt email, with a customer id only for a customer', async () => {
     const env = await setup()
     const { payments, calls } = provider()
     const checkout = checkoutWith(env, payments)
@@ -1409,7 +1409,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
   })
 
   // Defect: a resubmit makes a second intent or order, reserves the lines again, or answers without the intent.
-  it('decision 6: a resubmit of the same cart answers its pending order and intent, and reserves, creates and publishes nothing', async () => {
+  it('a resubmit of the same cart answers its pending order and intent, and reserves, creates and publishes nothing', async () => {
     const env = await setup()
     const { payments, calls } = provider()
     const checkout = checkoutWith(env, payments)
@@ -1556,7 +1556,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
   // Defect: sameLines ignores one of variant, quantity, unit price, line count or total, so a changed cart is answered
   // with the old order and intent; or the old intent is not cancelled first (money stranded on a cancelled order).
   for (const e of edits) {
-    it(`decision 11: a changed cart (${e.name}) cancels the old intent, then the old order, and places one for the new lines`, async () => {
+    it(`a changed cart (${e.name}) cancels the old intent, then the old order, and places one for the new lines`, async () => {
       const env = await setup()
       const { payments, calls } = provider()
       const checkout = checkoutWith(env, payments)
@@ -1593,7 +1593,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
 
   // Defect: a refused cancel is ignored and the old order cancelled anyway (its capture then lands on a cancelled
   // order), or any provider error is reported as payment_in_progress.
-  it('decision 11: a provider that refuses the cancel answers payment_in_progress naming the old order, and nothing changes', async () => {
+  it('a provider that refuses the cancel answers payment_in_progress naming the old order, and nothing changes', async () => {
     const env = await setup()
     const { payments, calls } = provider(() => ({
       async cancelPaymentIntent(id) {
@@ -1616,7 +1616,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
     await env.commandStore.close()
   })
 
-  it('decision 11: any other provider error on the cancel is rethrown as it is, and nothing changes', async () => {
+  it('any other provider error on the cancel is rethrown as it is, and nothing changes', async () => {
     const env = await setup()
     const { payments } = provider(() => ({
       async cancelPaymentIntent() {
@@ -1636,7 +1636,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
   })
 
   // Defect: a checkout that meets a newer changed order after every cancel loops for good, or gives up before trying.
-  it('decision 11: a checkout that keeps meeting a newer changed order gives up with in_progress after a bounded number of cancels', async () => {
+  it('a checkout that keeps meeting a newer changed order gives up with in_progress after a bounded number of cancels', async () => {
     const env = await setup()
     const { payments, calls } = provider()
     const { token } = await cartWith(env, [{ priceMinor: 400, stock: 5, qty: 1 }])
@@ -1710,7 +1710,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
 
   // Defect: an intent the provider failed to make leaves a pending order with no intent behind (the cart then answers
   // in_progress), or its stock held.
-  it('decision 10: an intent the provider fails to create cancels the draft and releases its stock, so the cart can check out again', async () => {
+  it('an intent the provider fails to create cancels the draft and releases its stock, so the cart can check out again', async () => {
     const env = await setup()
     let fail = true
     const { payments, calls } = provider((stub) => ({
@@ -1766,7 +1766,7 @@ describe('CheckoutService.beginCheckout: P1-12 decisions 2, 6, 10, 11 and review
 
   // Defect: an emptied cart's 409 names no order (the template cannot go to it), or names a later cancelled order
   // instead of the one the cart became.
-  it("decision 6: an emptied cart's cart_empty names the order it became, never a later cancelled one", async () => {
+  it("an emptied cart's cart_empty names the order it became, never a later cancelled one", async () => {
     const env = await setup()
     const { payments } = provider()
     const checkout = checkoutWith(env, payments)
@@ -1814,12 +1814,11 @@ function makeAddr() {
   }
 }
 
-// P1-13 (spec P1-13-admin-truth-about-money): decision 2's mark-paid as a manual capture through `confirm` (B4) that
-// first closes the order's intent (diff review B1), the backstop that refunds a provider capture of an order already
-// paid outside the provider, the cancelled-capture refund recorded before the provider is asked (diff review M3), and
-// `refundCapture`'s mapping of the provider's outcome. The integration suites pin these through the routes; Stryker
-// mutates this file against the unit project only.
-describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and the cancelled-capture refund', () => {
+// Mark-paid as a manual capture through `confirm` that first closes the order's intent, the backstop that refunds a
+// provider capture of an order already paid outside the provider, the cancelled-capture refund recorded before the
+// provider is asked, and `refundCapture`'s mapping of the provider's outcome. The integration suites pin these through
+// the routes; Stryker mutates this file against the unit project only.
+describe('CheckoutService: mark-paid, the duplicate-capture backstop and the cancelled-capture refund', () => {
   type Env = Awaited<ReturnType<typeof setup>>
   type Line = { priceMinor: number; stock: number; qty: number }
   const logger = createLogger({ pretty: false, level: 'silent' })
@@ -1941,8 +1940,8 @@ describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and t
   }
   const refusal = (p: Promise<unknown>) => p.then(() => null).catch((e: unknown) => e)
 
-  // Defect (diff review B1): the intent is left open, or cancelled after the payment is recorded; (B4) mark-paid
-  // confirms without committing the reservations, records no manual capture, or names a provider payment in its events.
+  // Defect: the intent is left open, or cancelled after the payment is recorded; mark-paid confirms without committing
+  // the reservations, records no manual capture, or names a provider payment in its events.
   it('AC-2: mark-paid closes the intent first, then confirms through confirm as a manual capture of the total', async () => {
     const env = await setup()
     const p = withProvider(env)
@@ -2011,8 +2010,8 @@ describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and t
     await env.commandStore.close()
   })
 
-  // Defect (diff review B1): a refused cancel is ignored and the order is confirmed while the shopper's payment goes
-  // through (charged twice), or any other provider error is swallowed or dressed as payment_in_progress.
+  // Defect: a refused cancel is ignored and the order is confirmed while the shopper's payment goes through (charged
+  // twice), or any other provider error is swallowed or dressed as payment_in_progress.
   it('diff B1: a cancel the provider refuses answers order.payment_in_progress and changes nothing; any other error is rethrown', async () => {
     const env = await setup()
     const p = withProvider(env)
@@ -2103,9 +2102,9 @@ describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and t
     await env.commandStore.close()
   })
 
-  // Defect (diff review B1 backstop): a provider capture of an order the merchant already holds money for is taken as
-  // done (kept twice), refunded more than once per intent, refunded in the capture's lower-case currency, or recorded
-  // in the order's captured and refunded amounts.
+  // Defect: a provider capture of an order the merchant already holds money for is taken as done (kept twice),
+  // refunded more than once per intent, refunded in the capture's lower-case currency, or recorded in the order's
+  // captured and refunded amounts.
   it('diff B1: a provider capture of a manual or import order is refunded once per intent and recorded as duplicate_capture_refunded', async () => {
     const env = await setup()
     const p = withProvider(env)
@@ -2239,9 +2238,8 @@ describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and t
     await env.commandStore.close()
   })
 
-  // Defect (diff review M3, decision 4 "a cancelled order nets to zero"): the capture or its refund row is not written,
-  // the key is not the row's id (or is the same for every intent), a second delivery refunds again, or the refund is
-  // published without succeeding.
+  // Defect (a cancelled order nets to zero): the capture or its refund row is not written, the key is not the row's id
+  // (or is the same for every intent), a second delivery refunds again, or the refund is published without succeeding.
   it('AC-13: a capture for a cancelled order is recorded with a refund row keyed by its id, refunded once, and nets to zero', async () => {
     const env = await setup()
     const p = withProvider(env)
@@ -2332,7 +2330,7 @@ describe('CheckoutService: P1-13 mark-paid, the duplicate-capture backstop and t
 
   // Defect: settled treats every non-pending, non-confirmed order as cancelled (refunding a shipped order's capture)
   // or loses the status from the recorded reason.
-  it('decision 4 check order: a delivery for a processing order records order_not_pending with its status and refunds nothing', async () => {
+  it('a delivery for a processing order records order_not_pending with its status and refunds nothing', async () => {
     const env = await setup()
     const p = withProvider(env)
     const o = await pendingOrder(env, p)

@@ -2,7 +2,7 @@
 # kind: injected
 # defect: the cart abandonment sweeper dedupes notices in an in-process Set with no durable claim, so a restart or a second replica notifies every abandoned cart again
 # where: packages/platform/src/sweepers/index.ts:6-9
-# killed-by: P1-04 acceptance tests (packages/platform/tests/integration/cart-abandonment.test.ts AC-5, AC-6)
+# killed-by: packages/platform/tests/integration/cart-abandonment.test.ts AC-5, AC-6
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/cart-abandonment.test.ts
 diff --git a/packages/platform/src/sweepers/index.ts b/packages/platform/src/sweepers/index.ts
 --- a/packages/platform/src/sweepers/index.ts

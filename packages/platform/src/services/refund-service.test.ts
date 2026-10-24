@@ -33,10 +33,10 @@ import { formatMoney } from '../money.js'
 import { createOrderService } from './order-service.js'
 import { createRefundService, settlementOf, PROVIDER_REFUND_REASON } from './refund-service.js'
 
-// Unit tests for P1-13 (spec P1-13-admin-truth-about-money) decision 4, "a refund moves money": the hold under the
-// lock (requestId reuse, not_captured, exceeds_captured), the provider call (key = row id, outcome mapping, manual and
-// import captures move nothing) and the settlement (only on a matching answer, Σ recomputed, a status that no longer
-// allows the move kept). The integration suites pin the same through the route; Stryker sees only these.
+// A refund moves money: the hold under the lock (requestId reuse, not_captured, exceeds_captured), the provider call
+// (key = row id, outcome mapping, manual and import captures move nothing) and the settlement (only on a matching
+// answer, Σ recomputed, a status that no longer allows the move kept). The integration suites pin the same through the
+// route; Stryker sees only these.
 
 const addr: Address = {
   firstName: 'Jane',
@@ -162,7 +162,7 @@ const refusal = (p: Promise<unknown>) => p.then(() => null).catch((e: unknown) =
 describe('settlementOf: a provider answer settles a row only for its amount and currency', () => {
   // Defect: the amount or currency comparison is dropped or made case-sensitive, so a provider that refunded another
   // amount settles the row as succeeded; or a failed answer is read as a mismatch and left pending.
-  it('decision 4 step 3: succeeded or pending only on a matching answer, failed always failed, mismatch otherwise pending', () => {
+  it('succeeded or pending only on a matching answer, failed always failed, mismatch otherwise pending', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 1000 }),
@@ -199,7 +199,7 @@ describe('settlementOf: a provider answer settles a row only for its amount and 
   })
 })
 
-describe('RefundService: P1-13 decision 4', () => {
+describe('RefundService: a refund moves money', () => {
   // Defect: the amount guard accepts zero, a negative or a fraction, and a refund of nothing reaches the provider.
   it('AC-3: an amount that is not a positive whole number is a ValidationError, with no row and no provider call', async () => {
     const env = await setup()
@@ -414,7 +414,7 @@ describe('RefundService: P1-13 decision 4', () => {
 
   // Defect: a repeated request (the double click) moves money twice, a reused key with another amount refunds anyway,
   // or the key is matched across orders so one order's request answers another's.
-  it('store walk: a repeated requestId answers the first refund and moves no money; another amount is refund.request_reused', async () => {
+  it('a repeated requestId answers the first refund and moves no money; another amount is refund.request_reused', async () => {
     const env = await setup()
     const order = await paidOrder(env, { totalMinor: 6000 })
     const requestId = uuidv7()
@@ -477,7 +477,7 @@ describe('RefundService: P1-13 decision 4', () => {
   })
 
   // Defect: the status check is dropped, so an order whose status allows no refund (cancelled) gets one.
-  it('decision 4 statuses: an order whose status cannot move to refunded refuses with StatusTransitionError and writes nothing', async () => {
+  it('an order whose status cannot move to refunded refuses with StatusTransitionError and writes nothing', async () => {
     const env = await setup()
     const order = await paidOrder(env, { method: 'manual', status: 'cancelled' })
     const err = await refusal(env.refunds.refund({ orderId: order.id, amountMinor: 1, actor: 'a' }))
@@ -564,8 +564,8 @@ describe('RefundService: P1-13 decision 4', () => {
   })
 })
 
-// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
-// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+// A service notes the command it runs and the records it touches into the open command, and writes no row itself.
+// Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
 const importer = { kind: 'import', id: 'woocommerce' } as const
 const admin = { kind: 'admin', id: 'admin-1' } as const
 

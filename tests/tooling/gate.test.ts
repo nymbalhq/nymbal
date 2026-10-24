@@ -16,7 +16,7 @@ import {
 } from '../../scripts/gate'
 import { aggregate, type Counts, type FileCensus, type Totals } from '../../scripts/test-census'
 
-// Acceptance tests for P0-02 (gate): AC-1 to AC-5, AC-7 and AC-18.
+// The gate: AC-1 to AC-5, AC-7 and AC-18.
 // AC-7 drives the exported runner with fake steps that are real shell commands, so the verdict under test comes
 // from real exit codes; running `pnpm gate` itself from here would recurse into this suite.
 
@@ -146,10 +146,10 @@ describe('AC-1: selectTests picks all, changed or none', () => {
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// Harness audit 2026-10-22 change 2: the plain gate inside 60 s
+// The plain gate inside 60 s
 // ---------------------------------------------------------------------------------------------------------------
 
-describe('audit change 2: the harness projects run in the plain gate only when the harness changed; the ratchet is checked statically first', () => {
+describe('the tooling projects run in the plain gate only when the tooling changed; the ratchet is checked statically first', () => {
   const planned = (changed: string[], full = false): StepSpec[] =>
     plan({ full, base: 'abc1234', changed, mutated: [] }).steps
   const testsStep = (changed: string[], full = false): StepSpec =>
@@ -726,7 +726,7 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
     )
   })
 
-  // P0-03 part 2 round 1 AC-11 supersedes the compose-up half: the E2E journeys run on SQLite and need only the build.
+  // The E2E journeys run on SQLite and need only the build, so compose does not gate them.
   describe('AC-18: in the gate:full plan the E2E steps need build', () => {
     const fullPlan = plan({
       full: true,

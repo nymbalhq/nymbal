@@ -15,12 +15,11 @@ import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { REPO, TSX } from './scratch-gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), the wrapper half of AC-10 and AC-20.
-// scripts/e2e-server.mjs -- <command…> runs the E2E API: it forwards SIGTERM and SIGINT to the child and, when the
-// child outlives NYMBAL_E2E_SHUTDOWN_MS, writes reports/e2e-shutdown.json ({ command, pid, waitedMs }) and SIGKILLs
-// it. The wrapper is copied into a scratch root (scripts/ and reports/ side by side, the cwd), so the file lands
-// there whether the wrapper resolves reports/ from its own path or from the cwd. Children report readiness and the
-// signal they saw through files, polled; nothing sleeps for a fixed time.
+// The wrapper half of AC-10 and AC-20. scripts/e2e-server.mjs -- <command…> runs the E2E API: it forwards SIGTERM and
+// SIGINT to the child and, when the child outlives NYMBAL_E2E_SHUTDOWN_MS, writes reports/e2e-shutdown.json
+// ({ command, pid, waitedMs }) and SIGKILLs it. The wrapper is copied into a scratch root (scripts/ and reports/ side
+// by side, the cwd), so the file lands there whether the wrapper resolves reports/ from its own path or from the cwd.
+// Children report readiness and the signal they saw through files, polled; nothing sleeps for a fixed time.
 
 const exec = promisify(execFile)
 const WRAPPER = join(REPO, 'scripts/e2e-server.mjs')

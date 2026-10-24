@@ -10,9 +10,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { loadConfig } from '../../config/src/index.js'
 import { main, parseCliFlags, scaffold } from '../src/index.js'
 
-// Acceptance tests for P1-07 (scaffold from a clean machine), AC-1 to AC-6. AC-1's type half lives in
-// tests/scaffold/scaffold-answers.test-d.ts (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the
-// cli project. The scaffold is read from scaffold/templates, so run `pnpm build` first.
+// Scaffold from a clean machine, AC-1 to AC-6. AC-1's type half lives in tests/scaffold/scaffold-answers.test-d.ts
+// (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the cli project. The scaffold is read from
+// scaffold/templates, so run `pnpm build` first.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG_ROOT = resolve(HERE, '..')
@@ -22,7 +22,7 @@ const PACKAGES = resolve(REPO_ROOT, 'packages')
 const TEMPLATES = ['astro', 'nextjs'] as const
 type Template = (typeof TEMPLATES)[number]
 
-// Decision 1: the public runtime packages @nymbalhq/stack pins, and the directory each lives in.
+// The public runtime packages @nymbalhq/stack pins, and the directory each lives in.
 const PUBLIC_RUNTIME: Record<string, string> = {
   nymbal: 'cli',
   '@nymbalhq/config': 'config',
@@ -91,7 +91,7 @@ vi.mock('@clack/prompts', async (importOriginal) => {
 
 const scratch: string[] = []
 async function tempDir(prefix: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), `p1-07-${prefix}-`))
+  const dir = await mkdtemp(join(tmpdir(), `scaffold-${prefix}-`))
   scratch.push(dir)
   return realpathSync(dir)
 }
@@ -322,11 +322,9 @@ describe('scaffold() output', () => {
     })
   }
 
-  // P2-01 AC-7 (the config half, at the cheapest layer that sees it) and decision 6: a fresh project runs no AI provider
-  // and lists no provider SDK or adapter package, so its install holds none. Kills the Anthropic default with a
-  // placeholder key, which made every scaffold load the Anthropic SDK.
+  // A fresh project runs no AI provider and lists no provider SDK or adapter package, so its install holds none.
   for (const template of TEMPLATES) {
-    it(`AC-7 (P2-01): ${template}'s generated config has ai { provider: 'none' } and its package.json lists no provider SDK or adapter package`, async () => {
+    it(`AC-7: ${template}'s generated config has ai { provider: 'none' } and its package.json lists no provider SDK or adapter package`, async () => {
       const dir = out[template]
       await mkdir(join(dir, 'node_modules', '@nymbalhq'), { recursive: true })
       if (!existsSync(join(dir, 'node_modules', '@nymbalhq', 'config'))) {
@@ -338,7 +336,10 @@ describe('scaffold() output', () => {
       }
       const { config } = await loadConfig(dir)
       const pkg = await readJson<Manifest>(join(dir, 'package.json'))
-      const listed = [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.devDependencies ?? {})]
+      const listed = [
+        ...Object.keys(pkg.dependencies ?? {}),
+        ...Object.keys(pkg.devDependencies ?? {}),
+      ]
 
       expect(config.commerce.ai).toEqual({ provider: 'none' })
       expect(

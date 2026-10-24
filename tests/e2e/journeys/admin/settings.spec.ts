@@ -11,16 +11,14 @@ import { expect, test } from '../../support/fixtures'
 import { csrf } from '../../support/csrf'
 import { ADMIN_EMAIL, ADMIN_PASSWORD, signInAsAdmin } from '../../support/admin'
 
-// P3-07 AC-8 (spec P3-07-secrets-settings, Decisions 6 and 8): the admin's Settings page, on an API of the journey's own
-// started from tests/e2e/fixtures/settings (ai on Anthropic, its declared baseUrl a stub provider this file starts,
-// NYMBAL_SECRETS_KEY set), on a free port and a database of its own, as admin/api-restart.spec.ts runs one.
-// - settings.write-only: `admin-nav-settings` shows the AI slot's apiKey `Not set`; saving a value reads `Set`, shows
-//   the restart note and empties the input, and neither the page's HTML nor any network response body ever carries the
+// AC-8: the admin's Settings page, on an API of the journey's own started from tests/e2e/fixtures/settings (ai on
+// Anthropic, its declared baseUrl a stub provider this file starts, NYMBAL_SECRETS_KEY set), on a free port and a
+// database of its own, as admin/api-restart.spec.ts runs one.
+// - write-only: `admin-nav-settings` shows the AI slot's apiKey `Not set`; saving a value reads `Set`, shows the
+//   restart note and empties the input, and neither the page's HTML nor any network response body ever carries the
 //   value; the config-set baseUrl reads "Set by environment" and offers no input.
-// - settings.applies-after-restart: after the API restarts on the same database, GET /api/admin/settings reports the
-//   apiKey's source as `settings`, and product enhance reaches the stub provider carrying that key.
-// Kills: the value echoed in the page or the network; the page offering to edit an env-set field; the key not applied
-// after a restart.
+// - applies after restart: after the API restarts on the same database, GET /api/admin/settings reports the apiKey's
+//   source as `settings`, and product enhance reaches the stub provider carrying that key.
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const CLI_BIN = join(REPO_ROOT, 'packages', 'cli', 'bin', 'nymbal.mjs')
@@ -29,7 +27,7 @@ const FIXTURE_DIR = fileURLToPath(new URL('../../fixtures/settings', import.meta
 
 const READY_WITHIN_MS = 30_000
 const EXIT_WITHIN_MS = 10_000
-const STUB_TEXT = 'A stub suggestion from the P3-07 E2E provider'
+const STUB_TEXT = 'A stub suggestion from the E2E provider'
 
 function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
@@ -189,7 +187,7 @@ interface Store {
 async function startStore(): Promise<Store> {
   const stub = await startAiStub()
   const port = await freePort()
-  const dir = mkdtempSync(join(tmpdir(), 'nymbal-e2e-p3-07-'))
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-e2e-settings-'))
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NYMBAL_SQLITE_PATH: join(dir, 'nymbal.db'),
@@ -227,7 +225,7 @@ async function saveApiKeyInPage(page: Page, value: string): Promise<number> {
   return (await saved).status()
 }
 
-test.describe('P3-07 the admin Settings page', () => {
+test.describe('the admin Settings page', () => {
   let store: Store | undefined
   let context: BrowserContext | undefined
 
@@ -242,7 +240,7 @@ test.describe('P3-07 the admin Settings page', () => {
     browser,
   }) => {
     test.setTimeout(120_000)
-    const value = `sk-ant-p3-07-${randomBytes(24).toString('base64url')}`
+    const value = `sk-ant-settings-${randomBytes(24).toString('base64url')}`
     store = await startStore()
     context = await browser.newContext({ baseURL: `${store.base}/admin/` })
     const page: Page = await context.newPage()
@@ -295,7 +293,7 @@ test.describe('P3-07 the admin Settings page', () => {
     request,
   }) => {
     test.setTimeout(150_000)
-    const value = `sk-ant-p3-07-${randomBytes(24).toString('base64url')}`
+    const value = `sk-ant-settings-${randomBytes(24).toString('base64url')}`
     store = await startStore()
     context = await browser.newContext({ baseURL: `${store.base}/admin/` })
     expect(await saveApiKeyInPage(await context.newPage(), value)).toBe(200)

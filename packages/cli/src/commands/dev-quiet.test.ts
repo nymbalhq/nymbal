@@ -14,14 +14,10 @@ import {
   type DevRun,
 } from '../../../../tests/support/doctor.js'
 
-// Acceptance test for P2-09 AC-2 (spec P2-09-dev-stage, decisions 1 and 2): `nymbal dev --api-only`, the built CLI on
-// the repository's config (SQLite, a fresh file, a free port). Its output from start until 2 s after a GET
-// /api/products holds the summary exactly once (one line per commerce slot naming its provider, and the one `--verbose`
-// hint) and no DEBUG or level-20 line. With `--verbose`, or with LOG_LEVEL=debug and no flag, the same run still prints
-// the summary and at least one DEBUG line. Kills: dev still logging at debug, a missing or doubled summary, a
-// `--verbose` that does nothing, a LOG_LEVEL that is ignored. Needs `pnpm build`.
+// AC-2: `nymbal dev --api-only` prints its summary once and no debug lines until `--verbose` or LOG_LEVEL=debug asks
+// for them. Needs `pnpm build`.
 
-/** The spec's window: the projections a first GET sets off log within it. */
+/** The window: the projections a first GET sets off log within it. */
 const AFTER_REQUEST_MS = 2000
 
 const SLOTS = commerceSlots(onDefaultStores(repoConfig))
@@ -36,7 +32,7 @@ afterEach(async () => {
 
 /** dev's output from its start until AFTER_REQUEST_MS after a GET /api/products answered. */
 async function devOutput(args: string[], extraEnv: Record<string, string> = {}): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-dev-'))
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-dev-'))
   dirs.push(dir)
   const run = await startDev(args, {
     cwd: REPO_ROOT,
@@ -51,7 +47,7 @@ async function devOutput(args: string[], extraEnv: Record<string, string> = {}):
 
 const debugLines = (out: string) => out.split('\n').filter((l) => DEBUG_LINE.test(l))
 
-describe('P2-09 AC-2: nymbal dev starts quietly with one summary', () => {
+describe('AC-2: nymbal dev starts quietly with one summary', () => {
   it('AC-2: with no flag and no LOG_LEVEL, the output holds the summary exactly once and no DEBUG or level-20 line', async () => {
     const out = await devOutput([])
 

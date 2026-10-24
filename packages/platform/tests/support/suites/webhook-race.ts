@@ -16,12 +16,11 @@ import {
   type WebhookAnswer,
 } from '../webhooks.js'
 
-// P1-05 AC-12 on one dialect: two deliveries of one captured payment at the same instant, against a pending order
-// whose reservation the sweeper already released, so the reservation's DELETE … RETURNING is not what keeps the
-// second finalize out. Kills: an unconditional `pending → confirmed` write (two order.paid, stock taken twice,
-// customer stats bumped twice). The last-unit cases seed exactly the order's qty, so the losing delivery's re-take finds
-// stock 0 after the winner confirmed. Kills: recording stock_unavailable against the loser's stale pending snapshot
-// (one captured payment ending in order.paid and payment.failed together).
+// AC-12 on one dialect: two deliveries of one captured payment at the same instant, against a pending order whose
+// reservation the sweeper already released, so the reservation's DELETE … RETURNING is not what keeps the second
+// finalize out: one order.paid, stock taken once. The last-unit cases seed exactly the order's qty, so the losing
+// delivery's re-take finds stock 0 after the winner confirmed, and must not record stock_unavailable against its
+// stale pending snapshot.
 
 interface Stats {
   orderCount: number
@@ -58,7 +57,7 @@ export function webhookRaceSuite(dialect: Kernel['dialect'], start: () => Promis
       await k.store.transaction((tx) =>
         k.repos.customer.insert(tx, {
           id,
-          email: `race-${randomUUID()}@p1-05.test`,
+          email: `race-${randomUUID()}@webhook.test`,
           passwordHash: 'x',
           createdAt: new Date(),
           updatedAt: new Date(),

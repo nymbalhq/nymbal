@@ -11,7 +11,7 @@ import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { eventRows, failPublishFor, maxSeq, type FailingBus } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
-// P1-03 AC-6 on SQLite: a bus publish that rejects keeps the event in the log and does not fail the committed command.
+// AC-6 on SQLite: a bus publish that rejects keeps the event in the log and does not fail the committed command.
 // A later drain delivers it once; after five failed attempts it is dead and no drain hands it to the bus again.
 // The wrapper replaces `publish` on the bus instance, which the relay looks up at call time.
 

@@ -10,8 +10,8 @@ import {
 import { seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 
-// P1-02 AC-3, AC-13 and AC-16 on one dialect: the conditional decrement under concurrency, adjustStock's floor and
-// its concurrency, and the release/commit race on one reservation. State is read through a second connection.
+// AC-3, AC-13 and AC-16 on one dialect: the conditional decrement under concurrency, adjustStock's floor and its
+// concurrency, and the release/commit race on one reservation. State is read through a second connection.
 
 export function inventoryConcurrencySuite(
   dialect: Kernel['dialect'],

@@ -16,16 +16,13 @@ import {
 } from '../support/s3'
 import { closedPort } from '../support/tcp-proxy'
 
-// Acceptance tests for P2-11 AC-3, the MinIO half (spec P2-11-s3-media, decision 4): runMediaStorageContract passes on
-// the S3 storage with `fetchUrl` an anonymous HTTP GET of the returned URL, so each URL really serves its bytes to
-// anyone; a HEAD of each object answers the content type it was put with; and with a prefix, the object is stored at
-// `<prefix>/<key>` (the prefix's edge slashes trimmed) and its URL is s3ObjectUrl's. The bucket is this run's own,
-// made public-read here and removed afterwards. Needs MinIO (NYMBAL_TEST_S3_ENDPOINT).
-// Kills: URLs that do not serve the object (wrong host, path or style), a lost content type, and a prefix that is
-// not where the object lands.
-// P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): the suite comes from the package's index, and `unreachable` is
-// the storage on an endpoint nobody listens on, so the downtime cases run here too. The recording wrapper forwards
-// healthCheck, which the suite now requires of every primitive.
+// AC-3, the MinIO half: runMediaStorageContract from the package's index passes on the S3 storage with `fetchUrl` an
+// anonymous HTTP GET of the returned URL, so each URL really serves its bytes to anyone; a HEAD of each object answers
+// the content type it was put with; and with a prefix, the object is stored at `<prefix>/<key>` (the prefix's edge
+// slashes trimmed) and its URL is s3ObjectUrl's. `unreachable` is the storage on an endpoint nobody listens on, so
+// the downtime cases run here too; the recording wrapper forwards healthCheck, which the suite requires of every
+// primitive. The bucket is this run's own, made public-read here and removed afterwards. Needs MinIO
+// (NYMBAL_TEST_S3_ENDPOINT).
 
 const endpoint = s3Endpoint()
 const name = uniqueBucketName('contract')
@@ -80,13 +77,13 @@ async function headContentType(url: string): Promise<string | null> {
   return res.headers.get('content-type')
 }
 
-describe('P2-11 AC-3: the S3 storage keeps the content type and the prefix', () => {
+describe('AC-3: the S3 storage keeps the content type and the prefix', () => {
   it('AC-3: a HEAD of each object answers the content type it was put with, for the contract’s puts and for one per type', async () => {
     const storage = createS3MediaStorage(options())
     const types = ['image/png', 'image/webp', 'image/gif', 'application/pdf', 'image/svg+xml']
     const puts = new Map<string, string>()
     for (const [i, type] of types.entries()) {
-      const { url } = await storage.put(`types/p2-11-${i}`, Uint8Array.from([i, 1, 2]), type)
+      const { url } = await storage.put(`types/s3-${i}`, Uint8Array.from([i, 1, 2]), type)
       puts.set(url, type)
     }
     expect(puts.size).toBe(types.length)
@@ -97,14 +94,14 @@ describe('P2-11 AC-3: the S3 storage keeps the content type and the prefix', () 
   })
 
   it('AC-3: with a prefix that has stray slashes, the object is at <prefix>/<key> in the bucket, its URL is s3ObjectUrl’s, and it serves the bytes', async () => {
-    const prefix = '//p2-11/store-a/'
+    const prefix = '//s3/store-a/'
     const storage = createS3MediaStorage(options({ prefix }))
     const key = 'products/tee/front image.png'
-    const body = new TextEncoder().encode('prefixed bytes, p2-11')
+    const body = new TextEncoder().encode('prefixed bytes, s3')
 
     const { url } = await storage.put(key, body, 'image/png')
 
-    expect(await bucket.keys()).toContain(`p2-11/store-a/${key}`)
+    expect(await bucket.keys()).toContain(`s3/store-a/${key}`)
     expect(url).toBe(s3ObjectUrl(options({ prefix }), key))
     expect([...(await fetchUrl(url))]).toEqual([...body])
   })

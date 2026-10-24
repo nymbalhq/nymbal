@@ -20,13 +20,8 @@ import {
   type CliRun,
 } from '../../../../tests/support/doctor.js'
 
-// Acceptance test for P2-09 AC-4 (spec P2-09-dev-stage, decision 4; Fable spec B2): `nymbal doctor` on a healthy,
-// migrated project exits 0, in two runs of the same spawn harness. Run 1 is the repository's config on SQLite; run 2
-// is tests/e2e/fixtures/custom-providers, SQLite and migrated, whose search and payments are `custom` from its
-// `adapters` export. Each prints one line per check (config, a package line per package-backed provider, command store,
-// migrations, every commerce slot, the three primitives), all `ok` or `warn`, in decision 4's order; `--json` gives the
-// same names and statuses. Run 2's `slot search` and `slot payments` lines are ok and name `custom`. Kills: a missing
-// check, a wrong order or exit code, and a doctor that ignores the `adapters` export (`adapter.custom_mismatch`).
+// AC-4: `nymbal doctor` on a healthy, migrated project exits 0 with one `ok` or `warn` line per check in a fixed
+// order, on the repository's config and on tests/e2e/fixtures/custom-providers (`custom` search and payments).
 // Spawns the built CLI (`pnpm build` first), each run on a fresh migrated SQLite file of its own.
 
 interface Project {
@@ -48,7 +43,7 @@ const runs = new Map<string, { text: CliRun; json: CliRun }>()
 let dir = ''
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-doctor-'))
+  dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-'))
   for (const [i, project] of PROJECTS.entries()) {
     const sqlitePath = join(dir, `run-${i + 1}.db`)
     await migratedSqlite(sqlitePath)
@@ -63,7 +58,7 @@ afterAll(() => {
   if (dir !== '') rmSync(dir, { recursive: true, force: true })
 })
 
-describe.each(PROJECTS)('P2-09 AC-4: nymbal doctor on a healthy project ($label)', (project) => {
+describe.each(PROJECTS)('AC-4: nymbal doctor on a healthy project ($label)', (project) => {
   it('AC-4: exits 0 with one ok or warn line per check: config, every package-backed provider, command store, migrations, every commerce slot, the three primitives', () => {
     const { text } = runs.get(project.label)!
     const lines = doctorLines(text.out)
@@ -95,7 +90,7 @@ describe.each(PROJECTS)('P2-09 AC-4: nymbal doctor on a healthy project ($label)
   })
 })
 
-describe('P2-09 AC-4: doctor builds custom slots from the adapters export', () => {
+describe('AC-4: doctor builds custom slots from the adapters export', () => {
   it('AC-4: run 2 reports `slot search` and `slot payments` ok, each naming the provider custom', () => {
     const { text } = runs.get(PROJECTS[1]!.label)!
     const lines = doctorLines(text.out)

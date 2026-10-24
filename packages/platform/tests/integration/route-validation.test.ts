@@ -6,10 +6,9 @@ import { address, createKernel, seedVariant, type Kernel } from '../support/kern
 import { openRaw, type RawReader } from '../support/raw.js'
 import { login, primedShopper, rolesColumn, tokenRoles } from '../support/security.js'
 
-// P1-06 AC-15 (the cart case), AC-16 and AC-17 over HTTP on a served kernel (SQLite): a negative quantity is refused
-// at the boundary with the cart untouched, an undeclared key never reaches the repository, and a checkout the
-// shopper can fix answers 409. Kills: validation after the service call, unknown keys passed through, every
-// `NymbalError` rendered as 500.
+// AC-15 (the cart case), AC-16 and AC-17 over HTTP on a served kernel (SQLite): a negative quantity is refused at the
+// boundary with the cart untouched, an undeclared key never reaches the repository, and a checkout the shopper can fix
+// answers 409.
 
 interface Issue {
   path: unknown
@@ -66,7 +65,7 @@ describe('route input and error mapping over HTTP', () => {
   })
 
   it("AC-16: PATCH /api/customers/me with { firstName: 'A', roles: ['admin'] } answers 200, the first name is A, and the next login's token roles equal the roles column, ['customer']", async () => {
-    const email = `ac16-${randomUUID()}@p1-06.test`
+    const email = `ac16-${randomUUID()}@security.test`
     const password = 'correct-horse-battery'
     await k.services.auth.register({ email, password, firstName: 'Before' })
     const shop = await primedShopper(served.baseUrl)
@@ -101,7 +100,7 @@ describe('route input and error mapping over HTTP', () => {
     const ordersBefore = await raw.count('orders')
 
     const res = await shop.call('POST', '/api/checkout', {
-      email: `ac17-${randomUUID()}@p1-06.test`,
+      email: `ac17-${randomUUID()}@security.test`,
       billingAddress: address,
       shippingAddress: address,
     })

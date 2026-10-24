@@ -10,13 +10,9 @@ import { maxSeq } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { clockAt, lineFor, migrateTarget, openReplica, type Replica } from '../support/replica.js'
 
-// Acceptance tests for P3-01 AC-4, the sweepers (spec P3-01-event-log-surface, decision 5) on SQLite: work that starts
-// outside HTTP gets one id per run, `<origin>:<uuidv7>`. One cart-abandonment sweep over 3 abandoned carts publishes 3
-// cart.abandoned under one `sweep:cart-abandonment:<uuid>`, and a second sweep has an id of its own; a reservation-expiry
-// sweep likewise, `sweep:reservations:<uuid>`. The sweepers run on a replica (tests/support/replica.ts): a command
-// store, its repositories and an outbox publisher on the test's clock, with no interval of their own due. The import
-// half of AC-4 is packages/cli/src/commands/import-correlation.test.ts.
-// Kills: each event its own id (today), and one id shared by every run of a sweeper.
+// AC-4, the sweepers, on SQLite: each run gets one id, `<origin>:<uuidv7>` (`sweep:cart-abandonment:…`,
+// `sweep:reservations:…`), and the next run another. The sweepers run on a replica (tests/support/replica.ts) on the
+// test's clock. The import half is packages/cli/src/commands/import-correlation.test.ts.
 
 const HOUR_MS = 60 * 60_000
 const ABANDONMENT = originId('sweep:cart-abandonment')
@@ -29,7 +25,7 @@ let replica: Replica
 const clock = clockAt()
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'p3-01-sweeps-'))
+  dir = mkdtempSync(join(tmpdir(), 'events-sweeps-'))
   target = join(dir, 'store.sqlite')
   await migrateTarget('sqlite', target)
   replica = await openReplica('sqlite', target, { clock })
@@ -42,7 +38,7 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('P3-01 AC-4: one id per sweeper run', () => {
+describe('AC-4: one id per sweeper run', () => {
   it('AC-4: one cart-abandonment sweep over 3 abandoned carts publishes 3 cart.abandoned under one sweep:cart-abandonment:<uuidv7>; a second sweep publishes under another', async () => {
     const seeded = await seedVariant(replica, 100)
     const carts = async (n: number) => {

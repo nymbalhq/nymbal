@@ -2,9 +2,9 @@ import Database from 'better-sqlite3'
 import pg from 'pg'
 import type { Dialect } from './kernel.js'
 
-// P3-01 support (spec P3-01-event-log-surface, AC-8): the `events` rows a sweep must judge, through a connection of its
-// own: set a row's created_at (the log's `append` stamps every row with the time of the append), read every row's, and
-// say which of some ids are still in the log. Typed for the root typecheck, which reaches it from tests/stores.
+// The `events` rows a sweep must judge, through a connection of its own: set a row's created_at (the log's `append`
+// stamps every row with the time of the append), read every row's, and say which of some ids are still in the log.
+// Typed for the root typecheck, which reaches it from tests/stores.
 
 type Row = Record<string, unknown>
 

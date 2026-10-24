@@ -8,7 +8,7 @@ import * as wc from '@nymbalhq/web-components'
 import type { ElementSchema } from '@nymbalhq/web-components'
 import { generateWrappers } from '../../scripts/generate-wrappers.js'
 
-// P2-06 AC-2: the React wrappers come from the schema each element declares. `generateWrappers` is run over generated
+// AC-2: the React wrappers come from the schema each element declares. `generateWrappers` is run over generated
 // schemas and its output is compiled and rendered: every attribute is a prop that sets that attribute, every event an
 // `on…` prop that receives it. Adding an attribute to a copy of a real element's schema adds exactly that one prop to
 // that wrapper and leaves every other wrapper rendering the same attributes. (The real schemas against the committed
@@ -35,8 +35,8 @@ function load(schemas: ElementSchema[]): Record<string, Wrapper> {
     // The elements themselves are not under test here: the wrapper's tag stays a plain element.
     '@nymbalhq/web-components': {},
   }
-  // P2-08: each wrapper imports its element's class from the element's own subpath. The element is not under test
-  // here, so its class is a stub whose define() does nothing and the tag stays a plain element.
+  // Each wrapper imports its element's class from the element's own subpath. The element is not under test here, so
+  // its class is a stub whose define() does nothing and the tag stays a plain element.
   const subpath = '@nymbalhq/web-components/elements/'
   const elements = new Map(
     schemas.map((s) => [`${subpath}${s.tag}`, { [`Nymbal${s.reactName}`]: { define() {} } }]),
@@ -191,7 +191,7 @@ const realSchemas: ElementSchema[] = Object.values(wc)
   .map((v) => (v as { schema?: ElementSchema }).schema)
   .filter((s): s is ElementSchema => s !== undefined)
 
-describe('P2-06 AC-2: wrappers are generated from the element schemas', () => {
+describe('AC-2: wrappers are generated from the element schemas', () => {
   it('AC-2: property: every attribute of a generated schema is a prop that sets that attribute, and every event an on… prop that receives it', () => {
     fc.assert(
       fc.property(

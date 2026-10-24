@@ -247,8 +247,8 @@ describe('InventoryService', () => {
   })
 })
 
-// P3-04 Decision 2: a service notes the command it runs and the records it touches into the open command, and writes
-// no row itself. Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
+// A service notes the command it runs and the records it touches into the open command, and writes no row itself.
+// Under an actor with no opener (an import), each transaction a service notes in is a command of its own.
 const importer = { kind: 'import', id: 'woocommerce' } as const
 const admin = { kind: 'admin', id: 'admin-1' } as const
 

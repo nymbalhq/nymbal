@@ -13,11 +13,11 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// P2-06 AC-2, the real-schema half: `check:generated` (`generate-wrappers.ts --check`) passes only while
-// `generateWrappers` over the real element schemas equals the committed wrappers.tsx, so wrappers cannot drift from the
-// elements: a hand edit to wrappers.tsx fails the check, and generating puts the committed bytes back. The generator
-// writes beside its own script, so it runs on a copy of the package (its node_modules linked), as
-// tests/tooling/generate-wrappers.test.ts does; the checkout's tracked files are never written.
+// AC-2, the real-schema half: `check:generated` (`generate-wrappers.ts --check`) passes only while `generateWrappers`
+// over the real element schemas equals the committed wrappers.tsx, so wrappers cannot drift from the elements: a hand
+// edit to wrappers.tsx fails the check, and generating puts the committed bytes back. The generator writes beside its
+// own script, so it runs on a copy of the package (its node_modules linked), as tests/tooling/generate-wrappers.test.ts
+// does; the checkout's tracked files are never written.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -53,7 +53,7 @@ function generate(cwd: string, ...args: string[]): { status: number | null; out:
   return { status: result.status, out: `${result.stdout}\n${result.stderr}` }
 }
 
-describe('P2-06 AC-2: check:generated holds the committed wrappers to the element schemas', () => {
+describe('AC-2: check:generated holds the committed wrappers to the element schemas', () => {
   it('AC-2: --check passes on the committed wrappers.tsx, fails once it is hand-edited, and generating restores the committed bytes', () => {
     const copy = copyPackage()
     const committed = join(PACKAGE, WRAPPERS)

@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { assertionTouched } from '../../scripts/gate'
 
-// Acceptance tests for AC-21: the census trend judges a touched test file only when it is new or the change adds or
-// edits an assertion line in it. A diff that touches only imports, comments or names is not judged, so a mechanical
-// codemod over old weak files does not have to fix their debt first.
+// AC-21: the census trend judges a touched test file only when it is new or the change adds or edits an assertion
+// line in it. A diff that touches only imports, comments or names is not judged, so a mechanical codemod over old
+// weak files does not have to fix their debt first.
 //
 // `assertionTouched(diff, path)` reads a unified `git diff` (several files) and says whether `path` is judged. The
 // diffs here are real `git diff -M <base>` output from throwaway repositories, so hunk headers, context lines and
@@ -100,7 +100,10 @@ const WEAK = 'packages/sdk/src/weak.test.ts'
 
 describe('AC-21: assertionTouched judges a file only when it is new or the change writes an assertion line', () => {
   it('AC-21: a diff that changes only an import path is not judged, though its hunk shows assertion lines as context', () => {
-    const diff = diffOf({ [WEAK]: weakTest() }, { [WEAK]: weakTest({ from: '@acme-renamed/types' }) })
+    const diff = diffOf(
+      { [WEAK]: weakTest() },
+      { [WEAK]: weakTest({ from: '@acme-renamed/types' }) },
+    )
     // Guard: git's context lines around the import carry `expect(`, so only changed lines may decide.
     expect(diff.split('\n').some((l) => l.startsWith(' ') && l.includes('expect('))).toBe(true)
 
@@ -295,10 +298,7 @@ describe('AC-21: the census-trend step judges only new files and files whose ass
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A Vitest file from its own lines: the imports, then one test whose body is `body`. */
-function testOf(
-  body: string[],
-  imports: string[] = ["import { add } from '@acme/types'"],
-): string {
+function testOf(body: string[], imports: string[] = ["import { add } from '@acme/types'"]): string {
   return [
     "import { expect, it } from 'vitest'",
     ...imports,
@@ -366,7 +366,10 @@ describe('AC-24: assertionTouched counts removed lines and every assertion or ma
       '  .toBeGreaterThan(add(0, 2)))',
       '',
     ].join('\n')
-    const context = diffOf({ [WEAK]: before }, { [WEAK]: before.replace('@acme/', '@acme-renamed/') })
+    const context = diffOf(
+      { [WEAK]: before },
+      { [WEAK]: before.replace('@acme/', '@acme-renamed/') },
+    )
     // Guard: the matcher line is in the hunk, as context.
     expect(context.split('\n')).toContain('   .toBeGreaterThan(add(0, 2)))')
 

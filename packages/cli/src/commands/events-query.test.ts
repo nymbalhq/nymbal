@@ -11,13 +11,8 @@ import { address, createKernel, seedVariant } from '../../../platform/tests/supp
 import { stubPaymentWebhook } from '../../../platform/tests/support/proof-kit.js'
 import { shopper } from '../../../platform/tests/support/shopper.js'
 
-// Acceptance tests for P3-01 AC-6 (spec P3-01-event-log-surface, decision 7): `nymbal events query`, the built CLI
-// spawned against a SQLite store holding one completed checkout plus noise (a second, unpaid checkout and a cart add,
-// each under an id of its own). The store is made by a kernel from `src/` served over HTTP, then closed and switched to
-// a rollback journal, so a command that writes leaves a trace (a `-wal`/`-shm` file, or changed bytes). The expected
-// rows are read from the file by a second connection. Needs `pnpm build`. The platform half of AC-6 (append through
-// the read-only opener rejects) is packages/platform/tests/support/suites/event-log-correlation.ts.
-// Kills: the wrong order or filter, a payload printed by default, a command that writes, and an error that exits 0.
+// AC-6: `nymbal events query`, the built CLI against a SQLite store holding one completed checkout plus noise. The
+// store is switched to a rollback journal so a command that writes leaves a trace. Needs `pnpm build`.
 
 const require = createRequire(join(REPO_ROOT, 'packages', 'platform', 'package.json'))
 const BetterSqlite3 = require('better-sqlite3') as new (
@@ -71,7 +66,7 @@ function storedRows(): StoredRow[] {
 }
 
 beforeAll(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-01-query-'))
+  const dir = mkdtempSync(join(tmpdir(), 'events-query-'))
   dirs.push(dir)
   dbPath = join(dir, 'nymbal.db')
   const kernel = await createKernel({ dialect: 'sqlite', sqlitePath: dbPath })
@@ -98,7 +93,7 @@ beforeAll(async () => {
         'POST',
         '/api/checkout',
         {
-          email: `ac6-${randomUUID()}+stub-pending@p3-01.test`,
+          email: `ac6-${randomUUID()}+stub-pending@events.test`,
           billingAddress: address,
           shippingAddress: address,
         },
@@ -154,7 +149,7 @@ function query(args: string[]) {
 }
 
 // The built CLI opens the store afresh per run: 5 s was hit under load (2026-10-22).
-describe('P3-01 AC-6: nymbal events query', { timeout: 30_000 }, () => {
+describe('AC-6: nymbal events query', { timeout: 30_000 }, () => {
   it('AC-6: --correlation <the checkout’s id> prints exactly that checkout’s events, one line each, in seq order, and exits 0', async () => {
     const run = await query(['--correlation', checkoutId])
     expect(run.code, run.out.slice(-3000)).toBe(0)
@@ -222,7 +217,7 @@ describe('P3-01 AC-6: nymbal events query', { timeout: 30_000 }, () => {
   })
 
   it('AC-6: a missing store exits 2 with a message, and creates no file', async () => {
-    const missing = join(mkdtempSync(join(tmpdir(), 'p3-01-missing-')), 'absent.db')
+    const missing = join(mkdtempSync(join(tmpdir(), 'events-missing-')), 'absent.db')
     dirs.push(join(missing, '..'))
     const elsewhere = sqliteProject(missing)
     dirs.push(elsewhere.dir)

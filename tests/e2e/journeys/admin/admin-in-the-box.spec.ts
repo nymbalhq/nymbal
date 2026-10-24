@@ -11,16 +11,13 @@ import {
   watchRealtime,
 } from '../../support/admin'
 
-// P1-08 acceptance journeys: the admin as `nymbal dev --api-only` serves it at <api>/admin/ (baseURL), one origin with
-// /api, so the httpOnly `nymbal.refresh` cookie and the admin's relative URLs work without a proxy.
-// AC-1 kills: the client listening on the wrong event names or reading `data`; a handler reading `order.orderNumber`
-// off `{ order }`. AC-5 kills: the token only in memory. AC-6 kills: a restore that trusts any refresh. AC-8 kills: a
-// logout that clears memory only, so restore signs back in. AC-15 kills: the admin's own Address (line1/state).
+// The admin as `nymbal dev --api-only` serves it at <api>/admin/ (baseURL), one origin with /api, so the httpOnly
+// `nymbal.refresh` cookie and the admin's relative URLs work without a proxy.
 
 const REFRESH_COOKIE = 'nymbal.refresh'
 const path = (url: string): string => new URL(url).pathname
 
-test.describe('P1-08 admin in the box', () => {
+test.describe('admin in the box', () => {
   test('AC-1: an order placed through the API appears on the open orders list within 15 s, with no reload or navigation, and the New Order notification names it', async ({
     page,
     request,
@@ -99,7 +96,7 @@ test.describe('P1-08 admin in the box', () => {
   }) => {
     test.setTimeout(60_000)
     await watchAdminShell(page)
-    const email = `e2e-p1-08-customer-${Date.now()}@nymbal.dev`
+    const email = `e2e-admin-customer-${Date.now()}@nymbal.dev`
     const registered = await page.request.post(`${API_URL}/api/auth/register`, {
       headers: await csrf(page.request),
       data: { email, password: 'customer-password-123' },

@@ -2,13 +2,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { renderDevSummary, type DevSummaryInfo } from './dev-summary.js'
 
-// Acceptance test for P2-09 AC-1 (spec P2-09-dev-stage, decision 2): renderDevSummary over generated DevSummaryInfo,
-// 1-12 slots with 0-20 capabilities each, long names, api-only or not, admin built or not, sqlite or a postgres URL
-// with credentials and a query. The block names every slot with its provider and every primitive with its provider,
-// prints the API, storefront and admin URLs verbatim, prints a postgres URL's host, port and database but never its
-// username, password or query, has at most 30 lines of at most 100 columns, and a capability list cut with `…` ends
-// `(+n)` where n is the count left out. Kills: a missing slot or primitive, an overflowing block, a leaked credential,
-// a wrong count.
+// AC-1: renderDevSummary over generated DevSummaryInfo names every slot and primitive with its provider, prints the
+// URLs (a postgres URL without its credentials or query), and fits 30 lines of 100 columns.
 // Names are drawn from disjoint alphabets (`s-…` slots, `p-…` providers, `c<i>-…` capabilities) so a line can be matched
 // to its slot by whole words without knowing the layout.
 
@@ -108,7 +103,7 @@ function hasWord(line: string, token: string): boolean {
   return new RegExp(`(^|[\\s:,()\\[\\]|=])${escaped}($|[\\s:,()\\[\\]|=…])`).test(line)
 }
 
-describe('P2-09 AC-1: renderDevSummary', () => {
+describe('AC-1: renderDevSummary', () => {
   it('AC-1: names every slot with its provider and every primitive, keeps the URLs verbatim, never prints a postgres credential or query, stays within 30 lines of 100 columns, and a cut capability list ends (+n) with the count left out', () => {
     fc.assert(
       fc.property(infoArb, ({ info, pg }) => {

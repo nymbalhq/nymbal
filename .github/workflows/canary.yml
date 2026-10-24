@@ -1,7 +1,7 @@
 name: Canary
 
 # A merge to dev with pending changesets publishes a snapshot of the changed packages to the npm `canary` tag
-# (`npm exec nymbal@canary`) and a GitHub prerelease. It never commits or pushes to dev and never moves `latest`.
+# (`npm exec nymbal@canary`). It never commits, tags or pushes, and never moves `latest`.
 # Needs the NPM_TOKEN repository secret (npm granular token with publish rights on @nymbalhq/*, nymbal and
 # create-nymbal-app); without it the publish is skipped with a notice. A canary also waits until every public package
 # it would publish already exists on npm (scripts/canary-ready.ts), which is true once the first release from main
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
 
 jobs:
@@ -68,17 +68,8 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - name: Collect the changeset summaries and current versions
-        run: |
-          set -euo pipefail
-          : > "$RUNNER_TEMP/summaries.md"
-          for file in .changeset/*.md; do
-            [ "$(basename "$file")" = README.md ] && continue
-            # Drop the frontmatter, keep the prose.
-            awk 'BEGIN { fm = 0 } /^---$/ && fm < 2 { fm++; next } fm >= 2' "$file" >> "$RUNNER_TEMP/summaries.md"
-            echo >> "$RUNNER_TEMP/summaries.md"
-          done
-          pnpm -r list --json --depth -1 > "$RUNNER_TEMP/before.json"
+      - name: Record the current versions
+        run: pnpm -r list --json --depth -1 > "$RUNNER_TEMP/before.json"
       - name: Version the snapshot
         run: |
           set -euo pipefail
@@ -99,24 +90,3 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
-      - name: Create the GitHub prerelease
-        if: steps.ready.outputs.ready == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          short=$(git rev-parse --short=7 "$GITHUB_SHA")
-          {
-            echo "## Packages"
-            echo
-            jq -r --slurpfile before "$RUNNER_TEMP/before.json" '
-              ($before[0] | map({ key: .name, value: .version }) | from_entries) as $was
-              | .[] | select(.private != true and $was[.name] != .version) | "- `\(.name)@\(.version)`"
-            ' "$RUNNER_TEMP/after.json"
-            echo
-            echo "## Changes"
-            echo
-            cat "$RUNNER_TEMP/summaries.md"
-          } > "$RUNNER_TEMP/notes.md"
-          gh release create "canary-$short" --prerelease --target "$GITHUB_SHA" \
-            --title "canary-$short" --notes-file "$RUNNER_TEMP/notes.md"

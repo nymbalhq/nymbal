@@ -5,9 +5,9 @@ import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
-// Acceptance check for P1-07 AC-11, run by scripts/scaffold-clean.sh (and the CI job scaffold-clean) after it has
-// scaffolded `shop` with `npx create-nymbal-app shop --template <t> --yes` against a local registry, outside the
-// checkout, and started `npx nymbal dev` there. It is the vitest project `scaffold-clean`, left out of `pnpm test`.
+// AC-11, run by scripts/scaffold-clean.sh (and the CI job scaffold-clean) after it has scaffolded `shop` with
+// `npx create-nymbal-app shop --template <t> --yes` against a local registry, outside the checkout, and started
+// `npx nymbal dev` there. It is the vitest project `scaffold-clean`, left out of `pnpm test`.
 //
 //   NYMBAL_SCAFFOLD_DIR  the scaffolded project directory
 //   NYMBAL_STORE_URL     the storefront `nymbal dev` serves
@@ -17,7 +17,7 @@ const SCAFFOLD_DIR = process.env['NYMBAL_SCAFFOLD_DIR']
 const STORE_URL = process.env['NYMBAL_STORE_URL']
 if (!SCAFFOLD_DIR || !STORE_URL) {
   throw new Error(
-    'P1-07 AC-11 needs NYMBAL_SCAFFOLD_DIR (the scaffolded project) and NYMBAL_STORE_URL (its running storefront). ' +
+    'AC-11 needs NYMBAL_SCAFFOLD_DIR (the scaffolded project) and NYMBAL_STORE_URL (its running storefront). ' +
       'Run it through scripts/scaffold-clean.sh <astro|nextjs>, which scaffolds, starts `nymbal dev` and sets both.',
   )
 }
@@ -168,7 +168,7 @@ describe('AC-11: a clean-machine scaffold', () => {
     expect(shown.length, `none of ${names.length} seeded names in GET /`).toBeGreaterThan(0)
   })
 
-  // P1-12 AC-11: the stub pays inline, so the checkout alone confirms; no webhook call (P1-12 decision 8).
+  // The stub pays inline, so the checkout alone confirms; no webhook call.
   it('AC-11: cart and checkout over the API, with no webhook call, leave the order confirmed and stock down by the quantity', async () => {
     const api = apiClient()
     const qty = 2
@@ -212,16 +212,15 @@ describe('AC-11: a clean-machine scaffold', () => {
   }, 45_000)
 })
 
-// P1-08 AC-13: the published admin, served by the scaffolded project's `nymbal dev` at <api>/admin/, and the admin
-// account the seed created from the credentials create-app wrote to the project's `.env` (decision 5). Kills: the
-// admin not published, not a dependency of `nymbal`, its dist not packed, or `.env` not read by the seed.
+// AC-13: the published admin, served by the scaffolded project's `nymbal dev` at <api>/admin/, and the admin account
+// the seed created from the credentials create-app wrote to the project's `.env`.
 
 function dotEnvValue(source: string, key: string): string | undefined {
   const match = new RegExp(`^\\s*${key}\\s*=\\s*(.*?)\\s*$`, 'm').exec(source)
   return match?.[1]?.replace(/^(['"])(.*)\1$/, '$2')
 }
 
-describe('P1-08 AC-13: the clean-machine admin', () => {
+describe('AC-13: the clean-machine admin', () => {
   it('AC-13: GET <api>/admin/ is HTML that loads a script under /admin/assets/, and that script answers 200 text/javascript', async () => {
     const page = await fetch(new URL('/admin/', API_URL))
     expect(page.status).toBe(200)
@@ -262,11 +261,10 @@ describe('P1-08 AC-13: the clean-machine admin', () => {
   })
 })
 
-// P2-01 AC-7: the clean-machine store installs no provider SDK, and naming a provider whose adapter package is not
-// installed stops `nymbal dev` with the install line for the project's package manager (npm here: the scaffold ran
-// through npx). The config half (ai `none`) is checked where it is cheapest, in packages/create-app/test. Kills: a
-// fresh store still installing a provider SDK, a missing adapter package crashing with no install line, and a line
-// naming a package manager the project does not use. Last in the file: it edits nymbal.config.ts, restored in finally.
+// The clean-machine store installs no provider SDK, and naming a provider whose adapter package is not installed
+// stops `nymbal dev` with the install line for the project's package manager (npm here: the scaffold ran through
+// npx). The config half (ai `none`) is checked where it is cheapest, in packages/create-app/test. Last in the file: it
+// edits nymbal.config.ts, restored in finally.
 
 const PROVIDER_SDKS = ['stripe', '@anthropic-ai/sdk', 'nodemailer']
 
@@ -332,12 +330,21 @@ function runInProject(
   const env = { ...process.env }
   // The suite runs under pnpm; npx sets the user agent of the package manager the project uses.
   for (const key of Object.keys(env)) {
-    if (key === 'npm_config_user_agent' || key === 'npm_execpath' || key.startsWith('npm_lifecycle_')) {
+    if (
+      key === 'npm_config_user_agent' ||
+      key === 'npm_execpath' ||
+      key.startsWith('npm_lifecycle_')
+    ) {
       delete env[key]
     }
   }
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: DIR, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, {
+      cwd: DIR,
+      env,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     let output = ''
     child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()))
     child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()))
@@ -357,25 +364,29 @@ function runInProject(
   })
 }
 
-describe('P2-01 AC-7: a clean machine installs no provider SDK', () => {
+describe('AC-7: a clean machine installs no provider SDK', () => {
   it('AC-7: no package directory under node_modules, .pnpm entries included, is stripe, @anthropic-ai/sdk or nodemailer', () => {
     const installed = installedPackageNames(DIR)
     expect(installed.size).toBeGreaterThan(0)
     expect(PROVIDER_SDKS.filter((sdk) => installed.has(sdk))).toEqual([])
   })
 
-  it("AC-7: with payments.provider changed to stripe, `npx nymbal dev --api-only` on a free port exits non-zero printing `npm install @nymbalhq/adapter-stripe stripe`", async () => {
+  it('AC-7: with payments.provider changed to stripe, `npx nymbal dev --api-only` on a free port exits non-zero printing `npm install @nymbalhq/adapter-stripe stripe`', async () => {
     const path = join(DIR, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
     const edited = original.replace(
       /payments:\s*\{\s*provider:\s*'native'\s*\}/,
-      "payments: { provider: 'stripe', config: { secretKey: 'sk_test_p2_01', webhookSecret: 'whsec_p2_01' } }",
+      "payments: { provider: 'stripe', config: { secretKey: 'sk_test_adapters', webhookSecret: 'whsec_adapters' } }",
     )
     expect(edited, 'the scaffold config names native payments').not.toBe(original)
     try {
       writeFileSync(path, edited)
       const port = await freePort()
-      const run = await runInProject('npx', ['nymbal', 'dev', '--api-only', '--port', String(port)], 60_000)
+      const run = await runInProject(
+        'npx',
+        ['nymbal', 'dev', '--api-only', '--port', String(port)],
+        60_000,
+      )
 
       expect(run.timedOut, `still serving after 60 s:\n${run.output.slice(-2000)}`).toBe(false)
       expect(run.code).not.toBe(0)

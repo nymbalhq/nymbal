@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// P1-14 AC-3: shutdown is bounded and shared. `runShutdown` runs the steps in order and exits 0; a step that never
+// AC-3: shutdown is bounded and shared. `runShutdown` runs the steps in order and exits 0; a step that never
 // resolves is named in the log and the process exits 1 at the bound; a repeat signal exits 1 at once; and the CLI's
 // bound fires before the E2E wrapper's SIGKILL.
 
@@ -73,7 +73,7 @@ beforeEach(() => {
   vi.resetModules()
 })
 
-describe('P1-14 runShutdown', () => {
+describe('runShutdown', () => {
   it('AC-3: a step that never resolves is named in the log and exit(1) is called within boundMs + 500 ms', async () => {
     const { runShutdown } = await load()
     const rec = recorder()

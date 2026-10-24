@@ -3,22 +3,19 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, type Manifest } from './workspace-manifests'
 
-// Acceptance tests for P2-02 AC-6 (spec P2-02-primitives-are-protocols): the kernel's manifest holds no Redis SDK and
-// peers the three primitive packages as optional (`workspace:^`); each package peers its own SDK, depends on
-// @nymbalhq/types and never on the kernel, starts at the fixed group's version, versions with that group and is left
-// out of the scaffold's dependencies. No kernel source file imports ioredis. PUBLISHED_DIRS (workspace-names.test.ts)
-// and GUARDED_PACKAGES (architecture-guard.test.ts) list the three as well. Kills: a primitive SDK entering the
-// kernel's install, a package depending on the kernel (a cycle), and a package outside the release group.
-// P2-11 AC-2 (spec P2-11-s3-media, decision 1) adds @nymbalhq/media-s3, which peers @aws-sdk/client-s3: the same rules
-// hold for it, and the kernel's dependencies and source name no @aws-sdk/* package. Kills: the kernel bundling the
-// SDK, and the new package drifting from the group's version (PR #44's defect).
+// AC-6: the kernel's manifest holds no Redis SDK and peers the primitive packages as optional (`workspace:^`); each
+// package peers its own SDK, depends on @nymbalhq/types and never on the kernel, starts at the fixed group's version,
+// versions with that group and is left out of the scaffold's dependencies. No kernel source file imports ioredis.
+// PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list them as well.
+// @nymbalhq/media-s3 peers @aws-sdk/client-s3: the same rules hold for it, and the kernel's dependencies and source
+// name no @aws-sdk/* package.
 
 interface PackageManifest extends Manifest {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
   optionalDependencies?: Record<string, string>
 }
 
-/** Decision 8: each package, its directory and the SDK it peers (decision 2). */
+/** Each package, its directory and the SDK it peers. */
 const PRIMITIVES = [
   { dir: 'packages/doc-store-redis', name: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },
   {
@@ -80,7 +77,7 @@ function specifiers(source: string): string[] {
 const isRedisSdk = (spec: string): boolean => spec === 'ioredis' || spec.startsWith('ioredis/')
 const isAwsSdk = (spec: string): boolean => spec.startsWith('@aws-sdk/')
 
-describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in the kernel', () => {
+describe('AC-6: primitive SDKs live in the primitive packages, never in the kernel', () => {
   it("AC-6: the kernel's dependencies hold no ioredis, and it peers the primitive packages, each optional, at workspace:^", () => {
     const platform = read('packages/platform')
     const optional = Object.entries(platform.peerDependenciesMeta ?? {})
@@ -105,7 +102,7 @@ describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in th
       expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
       // The SDK is the project's to install: a regular dependency would put it in every tree that has the package.
       expect(listed(m, ['dependencies', 'optionalDependencies'])).not.toContain(primitive.sdk)
-      // Decision 8: it starts at the group's current version, so the kernel's workspace:^ peer on it is in range.
+      // It starts at the group's current version, so the kernel's workspace:^ peer on it is in range.
       expect(m.version).toBe(read('packages/platform').version)
     })
   }
@@ -124,7 +121,7 @@ describe('P2-02 AC-6: primitive SDKs live in the primitive packages, never in th
     expect(NAMES.filter((n) => NON_SCAFFOLD_PACKAGES.has(n)).length).toBe(NAMES.length)
   })
 
-  it("P2-11 AC-2: the kernel's dependencies name no @aws-sdk/* package, and no file under packages/platform/src imports one", () => {
+  it("AC-2: the kernel's dependencies name no @aws-sdk/* package, and no file under packages/platform/src imports one", () => {
     const platform = read('packages/platform')
     expect(listed(platform, ['dependencies', 'optionalDependencies']).filter(isAwsSdk)).toEqual([])
 

@@ -5,8 +5,8 @@ import { finaliseStubPayment } from '@nymbalhq/proof-kit/payments'
 import { startTestStore, type TestStore } from '@nymbalhq/proof-kit/store'
 import { storefrontClient } from '../fixtures/storefront-client'
 
-// P1-12 AC-2 on the kit store over HTTP, mail read from Mailpit: exactly one order-placed email per paid order and none
-// for an unpaid one. The stub's default pays inline (one email); `+stub-pending` sends none until a captured payment
+// AC-2 on the kit store over HTTP, mail read from Mailpit: exactly one order-placed email per paid order and none for
+// an unpaid one. The stub's default pays inline (one email); `+stub-pending` sends none until a captured payment
 // arrives, then one; `+stub-decline` sends none. "None" and "exactly one" are read after a barrier: a registration
 // whose welcome email has arrived, which the outbox delivers after every event the checkout published.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.

@@ -4,10 +4,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance test for P1-09 AC-9 (the Playwright half): Astro 7 backgrounds `astro dev` when it detects an AI agent,
-// so Playwright's webServer sees its child exit. The astro webServer command passes --ignore-lock to astro, and the
-// Next one does not (next dev rejects an unknown option). The config is evaluated in a child process with the
-// environment the gate's E2E step gives it (CI=1, NYMBAL_E2E_TARGET), as playwright-target.test.ts does.
+// AC-9 (the Playwright half): Astro 7 backgrounds `astro dev` when it detects an AI agent, so Playwright's webServer
+// sees its child exit. The astro webServer command passes --ignore-lock to astro, and the Next one does not (next dev
+// rejects an unknown option). The config is evaluated in a child process with the environment the gate's E2E step
+// gives it (CI=1, NYMBAL_E2E_TARGET), as playwright-target.test.ts does.
 
 const exec = promisify(execFile)
 

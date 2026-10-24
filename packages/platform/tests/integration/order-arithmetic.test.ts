@@ -5,9 +5,8 @@ import type { OrderLineItem } from '@nymbalhq/types'
 import { address, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { lineFor } from '../support/replica.js'
 
-// P1-05 AC-9: the arithmetic of an order placed through checkout, as relations between its own fields, over carts of
-// several lines. Sentinel I103 (a line total one minor unit high) runs this file. Kills: any line or order total that
-// is not the sum of what it is made of.
+// AC-9: the arithmetic of an order placed through checkout, as relations between its own fields, over carts of
+// several lines. Sentinel I103 (a line total one minor unit high) runs this file.
 
 const arbLines = fc.array(
   fc.record({
@@ -38,7 +37,7 @@ describe('order arithmetic', () => {
         }
         const started = await k.services.checkout.beginCheckout({
           cartToken: cart.token,
-          email: `arith-${randomUUID()}@p1-05.test`,
+          email: `arith-${randomUUID()}@webhook.test`,
           billingAddress: address,
           shippingAddress: address,
         })

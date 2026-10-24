@@ -6,8 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 
-// P2-02 AC-5 support: runs fixtures/primitive-graph/child.mjs (createApp from the built dist, every resolution
-// recorded with its importer) and reads back what it resolved and what it reported. Needs `pnpm build`.
+// Runs fixtures/primitive-graph/child.mjs (createApp from the built dist, every resolution recorded with its
+// importer) and reads back what it resolved and what it reported. Needs `pnpm build`.
 
 const exec = promisify(execFile)
 const CHILD = fileURLToPath(
@@ -52,7 +52,7 @@ export function cleanupGraphDirs(): void {
 }
 
 function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-02-graph-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'primitives-graph-test-'))
   dirs.push(dir)
   return dir
 }
@@ -75,7 +75,7 @@ export async function runGraphChild(
   writeFileSync(out, '')
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    P2_02_GRAPH: JSON.stringify({ out, hide: opts.hide }),
+    PRIMITIVES_GRAPH: JSON.stringify({ out, hide: opts.hide }),
   }
   delete env['npm_config_user_agent']
   for (const [name, value] of Object.entries(opts.env ?? {})) {
@@ -88,13 +88,13 @@ export async function runGraphChild(
     timeout: 60_000,
     maxBuffer: 16 * 1024 * 1024,
   })
-  const line = stdout.split('\n').find((l) => l.startsWith('P2-02-OUTCOME '))
+  const line = stdout.split('\n').find((l) => l.startsWith('PRIMITIVE-GRAPH-OUTCOME '))
   if (line === undefined) throw new Error(`the child printed no outcome:\n${stdout}`)
   return {
     resolutions: readFileSync(out, 'utf8')
       .split('\n')
       .filter(Boolean)
       .map((l) => JSON.parse(l) as Resolution),
-    outcome: JSON.parse(line.slice('P2-02-OUTCOME '.length)) as GraphOutcome,
+    outcome: JSON.parse(line.slice('PRIMITIVE-GRAPH-OUTCOME '.length)) as GraphOutcome,
   }
 }

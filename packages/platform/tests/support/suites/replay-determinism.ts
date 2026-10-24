@@ -12,17 +12,14 @@ import {
   rebuildFresh,
 } from '../read-models.js'
 
-// P3-02 AC-2 on one dialect (spec P3-02-replay-engine, decisions 1 and 4): determinism. Over generated command
-// sequences through the services, on a fresh kernel each run, `rebuild(all)` into a fresh document store and a fresh
-// search index equals the live read models collection by collection, document by document, in key order, and the live
-// native index document by document. Every run starts with a fixed tour that walks each of the four live defects the
-// spec names (a recategorised product, a renamed category with products, stock to zero on a product in a category, a
-// customer's paid order), then a generated tail of the same commands and the rest (category deletes, product deletes,
-// stock moves, pay, process, ship, deliver, cancel, refund, customer updates). A command the store refuses (a domain error) is
-// a no-op; the tour must never be refused, so a harness that refuses everything cannot pass vacuously.
-// Kills: orphan `products-by-category` keys after a recategorisation, inventory not patching `products-by-category`, a
-// category rename not re-projecting its products, `onOrderPaid` looking the customer up by order id, and any builder
-// the projections and the rebuilders do not share.
+// AC-2 on one dialect: determinism. Over generated command sequences through the services, on a fresh kernel each run,
+// `rebuild(all)` into a fresh document store and a fresh search index equals the live read models collection by
+// collection, document by document, in key order, and the live native index document by document. Every run starts
+// with a fixed tour (a recategorised product, a renamed category with products, stock to zero on a product in a
+// category, a customer's paid order), then a generated tail of the same commands and the rest (category deletes,
+// product deletes, stock moves, pay, process, ship, deliver, cancel, refund, customer updates). A command the store
+// refuses (a domain error) is a no-op; the tour must never be refused, so a harness that refuses everything cannot
+// pass vacuously.
 
 const WORDS = ['wool', 'linen', 'cedar', 'amber', 'slate', 'fern', 'cobalt', 'ivory'] as const
 
@@ -243,7 +240,7 @@ async function apply(k: Kernel, world: World, o: Op): Promise<boolean> {
       case 'stock.adjust': {
         const v = at(at(world.products, o.pick)?.variants ?? [], o.variant)
         if (v === undefined || o.delta === 0) return false
-        await s.inventory.adjustStock(v.id, o.delta, 'manual', 'p3-02')
+        await s.inventory.adjustStock(v.id, o.delta, 'manual', 'replay')
         return true
       }
       case 'checkout': {
@@ -264,7 +261,7 @@ async function apply(k: Kernel, world: World, o: Op): Promise<boolean> {
         const started = await s.checkout.beginCheckout({
           cartToken: cart.token,
           customerId,
-          email: `buyer-${tag}${o.pending ? '+stub-pending' : ''}@p3-02.test`,
+          email: `buyer-${tag}${o.pending ? '+stub-pending' : ''}@replay.test`,
           billingAddress: address,
           shippingAddress: address,
         })
@@ -274,31 +271,31 @@ async function apply(k: Kernel, world: World, o: Op): Promise<boolean> {
       case 'order.pay': {
         const order = at(world.orders, o.pick)
         if (order === undefined) return false
-        await s.checkout.markPaid(order.id, 'p3-02')
+        await s.checkout.markPaid(order.id, 'replay')
         return true
       }
       case 'order.process': {
         const order = at(world.orders, o.pick)
         if (order === undefined) return false
-        await s.order.updateStatus(order.id, 'processing', 'p3-02')
+        await s.order.updateStatus(order.id, 'processing', 'replay')
         return true
       }
       case 'order.ship': {
         const order = at(world.orders, o.pick)
         if (order === undefined) return false
-        await s.order.markShipped(order.id, `TRK-${tag}`, 'royal-mail', 'p3-02')
+        await s.order.markShipped(order.id, `TRK-${tag}`, 'royal-mail', 'replay')
         return true
       }
       case 'order.deliver': {
         const order = at(world.orders, o.pick)
         if (order === undefined) return false
-        await s.order.markDelivered(order.id, 'p3-02')
+        await s.order.markDelivered(order.id, 'replay')
         return true
       }
       case 'order.cancel': {
         const order = at(world.orders, o.pick)
         if (order === undefined) return false
-        await s.order.cancel(order.id, 'changed mind', 'p3-02')
+        await s.order.cancel(order.id, 'changed mind', 'replay')
         return true
       }
       case 'order.refund': {
@@ -307,12 +304,12 @@ async function apply(k: Kernel, world: World, o: Op): Promise<boolean> {
         const amountMinor = o.half
           ? Math.max(1, Math.floor(order.totalMinor / 2))
           : order.totalMinor
-        await s.refund.refund({ orderId: order.id, amountMinor, actor: 'p3-02' })
+        await s.refund.refund({ orderId: order.id, amountMinor, actor: 'replay' })
         return true
       }
       case 'customer.register': {
         const { customer } = await s.auth.register({
-          email: `${o.word}-${tag}@p3-02.test`,
+          email: `${o.word}-${tag}@replay.test`,
           password: 'correct-horse-battery',
           firstName: o.word,
         })
@@ -340,8 +337,8 @@ export interface DeterminismOptions {
 }
 
 export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: DeterminismOptions): void {
-  describe(`P3-02 AC-2: a rebuild equals the live read models (${dialect})`, () => {
-    it('AC-2: READ_MODELS names catalogue, orders, customers and search, and the three document models own exactly the collections decision 1 lists', () => {
+  describe(`AC-2: a rebuild equals the live read models (${dialect})`, () => {
+    it('AC-2: READ_MODELS names catalogue, orders, customers and search, and the three document models own exactly their collections', () => {
       const byName = new Map(READ_MODELS.map((m) => [m.name, [...m.collections].sort()]))
       expect([...byName.keys()].sort()).toEqual(['catalogue', 'customers', 'orders', 'search'])
       for (const [name, collections] of Object.entries(DOCUMENT_MODELS)) {

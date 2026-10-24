@@ -6,8 +6,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { aggregate, classifySource, layerOf, packageOf } from '../../scripts/test-census'
 
-// Acceptance tests for P0-01 (census): AC-1 to AC-11, and AC-25 and AC-26 (review round 1).
-// Types come from the functions the spec names, so the tests do not depend on which types the script exports.
+// The test census: AC-1 to AC-11, AC-25 and AC-26.
+// Types come from the functions the tests call, so the tests do not depend on which types the script exports.
 type FileCensus = ReturnType<typeof classifySource>
 type Counts = FileCensus['assertions']
 type Aggregate = ReturnType<typeof aggregate>

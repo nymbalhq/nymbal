@@ -13,16 +13,14 @@ import {
 } from '../support/server-rendered'
 import { optionProduct } from '../support/variants'
 
-// P2-18 AC-5, on production builds of both templates: with JavaScript on, each element the server rendered takes
-// over the markup it was given. On every page of AC-4 the part counts inside each server-rendered element's shadow
-// root (nested shadow roots included, per part name: `summary-row` repeats by design) equal those the same page shows
-// with JavaScript off, no `template[shadowrootmode]` is left in the light DOM or a shadow root, and the console logs
-// no error (the DSD "not being parsed" and React hydration-mismatch messages the spike saw included). With
-// `GET /api/cart` held, `/cart` and `/checkout` still show the line once their elements are defined: the property the
-// server rendered from stands until the store settles. On Next, a soft navigation `/` → `/cart` → `/` → `/cart` →
-// `/checkout` holds the same, a revisit of an already-defined element included, and logs no NotSupportedError.
-// Kills: a DSD template left unparsed and a second shadow root rendered; the hydrate support evaluating after lit (the
-// client render appends to the server's nodes); a revisit attaching a shadow root twice; React logging a mismatch.
+// AC-5, on production builds of both templates: with JavaScript on, each element the server rendered takes over the
+// markup it was given. On every page of AC-4 the part counts inside each server-rendered element's shadow root (nested
+// shadow roots included, per part name: `summary-row` repeats by design) equal those the same page shows with
+// JavaScript off, no `template[shadowrootmode]` is left in the light DOM or a shadow root, and the console logs no
+// error (the DSD "not being parsed" and React hydration-mismatch messages included). With `GET /api/cart` held,
+// `/cart` and `/checkout` still show the line once their elements are defined: the property the server rendered from
+// stands until the store settles. On Next, a soft navigation `/` → `/cart` → `/` → `/cart` → `/checkout` holds the
+// same, a revisit of an already-defined element included, and logs no NotSupportedError.
 
 interface Visit {
   name: string
@@ -80,7 +78,7 @@ async function sameHosts(
 
 const tagsOf = (keys: string[]): string[] => [...new Set(keys.map(tagOf))]
 
-test.describe('P2-18 AC-5: hydration reuses the server markup', () => {
+test.describe('AC-5: hydration reuses the server markup', () => {
   test.beforeEach(async ({ page }) => {
     await blockExternalRequests(page)
   })

@@ -5,9 +5,9 @@ import { address } from '../kernel.js'
 import { stockOf, type RawReader } from '../raw.js'
 import { shopper } from '../shopper.js'
 
-// P1-02 AC-1 (SQLite) and AC-2 (Postgres): fifty buyers race over HTTP for the last three units of one variant,
-// each from their own cart, qty 1, five consecutive runs. Exactly three checkouts succeed, the other 47 get an error
-// response, checkStock reports nothing, stock ends at 0, three order rows exist and the reservation rows sum to 3.
+// AC-1 (SQLite) and AC-2 (Postgres): fifty buyers race over HTTP for the last three units of one variant, each from
+// their own cart, qty 1, five consecutive runs. Exactly three checkouts succeed, the other 47 get an error response,
+// checkStock reports nothing, stock ends at 0, three order rows exist and the reservation rows sum to 3.
 
 const CONTENDERS = 50
 const UNITS = 3
@@ -76,9 +76,9 @@ export function checkoutRaceSuite(
         const outcome = await race(
           async (i) => {
             const res = await shoppers[i]!.call<{ orderId: string }>('POST', '/api/checkout', {
-              // `+stub-pending` (P1-12 decision 7): the race is for the reservation; the orders stay pending so their
-              // reservation rows are what the run counts.
-              email: `buyer-${run}-${i}-${tag}+stub-pending@p1-02.test`,
+              // `+stub-pending`: the race is for the reservation; the orders stay pending so their reservation rows
+              // are what the run counts.
+              email: `buyer-${run}-${i}-${tag}+stub-pending@txn.test`,
               billingAddress: address,
               shippingAddress: address,
             })
@@ -135,10 +135,10 @@ export function checkoutRaceSuite(
       )
     }, 90_000)
 
-    // Over HTTP on SQLite, today's kernel serialises by accident: a request handler's microtask chain runs to
-    // completion before the next request's macrotask. The same fifty buyers started in-process interleave at every
-    // await, which is where P1-01 measured 50 of 50 (stock 2). The contract is the same; this is the race the
-    // services themselves must survive.
+    // Over HTTP on SQLite the kernel serialises by accident: a request handler's microtask chain runs to completion
+    // before the next request's macrotask. The same fifty buyers started in-process interleave at every await, where
+    // a read-then-write reservation oversells. The contract is the same; this is the race the services themselves
+    // must survive.
     it(`${ac}: the same race in-process (50 concurrent beginCheckout through the services, own carts, qty 1): exactly 3 succeed, 47 reject with CheckoutError, checkStock is [], stock 0, in each of ${RUNS} consecutive runs`, async () => {
       const { services } = store.app
       const summaries: Array<{
@@ -179,7 +179,7 @@ export function checkoutRaceSuite(
           (i) =>
             services.checkout.beginCheckout({
               cartToken: carts[i]!,
-              email: `inproc-${run}-${i}-${tag}+stub-pending@p1-02.test`,
+              email: `inproc-${run}-${i}-${tag}+stub-pending@txn.test`,
               billingAddress: address,
               shippingAddress: address,
             }),

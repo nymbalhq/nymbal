@@ -16,11 +16,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Step } from '../../scripts/gate'
 
-// Scratch repositories the real scripts/gate.ts runs in, for the P1-17 acceptance tests. `pnpm` on the PATH and
-// `node_modules/.bin/playwright` are stand-ins that log their arguments, one call per line, to `<scratch>/calls.log`
-// and exit 0; a Playwright stand-in writes `reports/e2e-shutdown.json` when FAKE_SHUTDOWN_COMMAND is set, as the E2E
-// wrapper does when a server outlives its shutdown. `scripts/` links to this checkout's scripts, and
-// `node_modules/.bin/tsx` runs this checkout's tsx, so a step that calls either works as it does here.
+// Scratch repositories the real scripts/gate.ts runs in. `pnpm` on the PATH and `node_modules/.bin/playwright` are
+// stand-ins that log their arguments, one call per line, to `<scratch>/calls.log` and exit 0; a Playwright stand-in
+// writes `reports/e2e-shutdown.json` when FAKE_SHUTDOWN_COMMAND is set, as the E2E wrapper does when a server
+// outlives its shutdown. `scripts/` links to this checkout's scripts, and `node_modules/.bin/tsx` runs this
+// checkout's tsx, so a step that calls either works as it does here.
 
 export const REPO = fileURLToPath(new URL('../../', import.meta.url))
 export const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -76,7 +76,7 @@ export function scratchRepo(
   files: Record<string, string>,
   opts: { realModules?: boolean } = {},
 ): Scratch {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-p1-17-')))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-')))
   created.push(root)
   for (const [path, text] of Object.entries(files)) write(root, path, text)
   symlinkSync(join(REPO, 'scripts'), join(root, 'scripts'))

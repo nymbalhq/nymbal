@@ -3,15 +3,14 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// P2-15 AC-6: the cart, search-results and account views left the templates for the package's elements (decision 7).
-// The template files that rendered them are gone from both templates and from the scaffold copies create-nymbal-app
-// ships, and the test ids those views render are rendered by `packages/web-components/src` and by no file under
-// `templates/` or `packages/create-app/scaffold/`. Kills: a view duplicated rather than moved, so template lines do
-// not drop and the store has two copies of one view to keep in step.
+// AC-6: the cart, search-results and account views live in the package's elements. The template files that rendered
+// them are gone from both templates and from the scaffold copies create-nymbal-app ships, and the test ids those
+// views render are rendered by `packages/web-components/src` and by no file under `templates/` or
+// `packages/create-app/scaffold/`.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 
-/** Decision 7's deletions, relative to a template root. */
+/** The old view files, relative to a template root. */
 const DELETED = {
   astro: ['src/scripts/cart-page.ts', 'src/scripts/auth-forms.ts', 'src/scripts/profile-form.ts'],
   nextjs: [
@@ -81,7 +80,7 @@ function usesOf(files: string[]): Map<string, string[]> {
 }
 
 describe('the moved views live in the elements, not the templates', () => {
-  it('AC-6: the template files decision 7 deletes exist in neither template nor its scaffold copy', () => {
+  it('AC-6: the old view files exist in neither template nor its scaffold copy', () => {
     const present: string[] = []
     let checked = 0
     for (const template of ['astro', 'nextjs'] as const) {

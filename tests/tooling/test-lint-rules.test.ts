@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance tests for P0-05 AC-2: the repository's own eslint config (eslint.config.js) reports, as errors,
-// `vitest/expect-expect` and `vitest/no-conditional-expect` (from @vitest/eslint-plugin) on Vitest test files, and
+// AC-2: the repository's own eslint config (eslint.config.js) reports, as errors, `vitest/expect-expect` and
+// `vitest/no-conditional-expect` (from @vitest/eslint-plugin) on Vitest test files, and
 // `playwright/no-wait-for-timeout` and `playwright/prefer-web-first-assertions` (from eslint-plugin-playwright) on
 // the E2E journeys, and none of the four on non-test source.
 // Each fixture is linted as if it lived at a path the config must cover (ESLint's lintText with a virtual

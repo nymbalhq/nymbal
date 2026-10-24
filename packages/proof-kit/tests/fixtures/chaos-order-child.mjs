@@ -1,5 +1,5 @@
-// P1-01 chaos fixture (AC-9): a real store in a child process, its kernel bus armed by armChaos from the
-// environment (NYMBAL_CHAOS), places one order. A subscriber appends every delivered event type to a marker file.
+// Chaos fixture: a real store in a child process, its kernel bus armed by armChaos from the environment
+// (NYMBAL_CHAOS), places one order. A subscriber appends every delivered event type to a marker file.
 //
 //   node chaos-order-child.mjs <sqlite file> <marker file> <buyer email>
 import { appendFileSync } from 'node:fs'

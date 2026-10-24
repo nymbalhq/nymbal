@@ -5,14 +5,13 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { astroWithHeavyHome, heavyScriptGzipBytes } from './fixtures/heavy-home'
 
-// P2-08 AC-2 and AC-4: `pnpm perf:budgets` itself, spawned as CI's perf-budgets job runs it. Two runs, made once in
+// AC-2 and AC-4: `pnpm perf:budgets` itself, spawned as CI's perf-budgets job runs it. Two runs, made once in
 // beforeAll: the fixture run (the Astro template with a 300 KB script on `/`, `--template astro --dir <copy>`), then
 // the real run (both templates, as committed), which is the last to write reports/perf-budgets.json, so the report
-// the pull request quotes is the real one.
-// - AC-2 kills: a run that never fails (the fixture run exits 0) or fails for everything (other pages, or the
-//   template without the fixture, fail too), and a scriptBytes that is not the gzip sum of the page's scripts.
-// - AC-4 kills: today's failures left in place (Astro LCP 3158 ms, Next CLS 0.133), a page left out of the run, and
-//   per-page loading that saves nothing on Astro `/` against 606e5aa (tests/perf/fixtures/astro-home-606e5aa.json).
+// is the real one.
+// - AC-2: the fixture run fails on its page alone, and scriptBytes is the gzip sum of the page's scripts.
+// - AC-4: every page is in the run and within budget, and per-page loading saves bytes on Astro `/` against 606e5aa
+//   (tests/perf/fixtures/astro-home-606e5aa.json).
 // Without Chrome the tests skip and say so (Lighthouse cannot run), except under CI, where they fail.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -26,9 +25,9 @@ const baseline = JSON.parse(
 ) as { commit: string; scriptBytes: number }
 
 const LIMITS = { lcpMs: 2500, cls: 0.1, tbtMs: 200 } as const
-// P2-17 (spec Decision 9, the human's ruling of 2026-10-23): the Next home and listing, whose RSC flight payload
-// repeats every server-rendered element's styles, are held to 3000 ms until those styles are sent once, as the budget
-// file records (tests/tooling/perf-budgets-file.test.ts keeps that list to these two). Every other page has no exception.
+// The Next home and listing, whose RSC flight payload repeats every server-rendered element's styles, are held to
+// 3000 ms until those styles are sent once, as the budget file records (tests/tooling/perf-budgets-file.test.ts keeps
+// that list to these two). Every other page has no exception.
 const LCP_EXCEPTIONS_MS: Record<string, number> = {
   'nextjs / home': 3000,
   'nextjs / listing': 3000,
@@ -130,7 +129,7 @@ afterAll(() => {
   if (copy !== undefined) rmSync(copy, { recursive: true, force: true })
 })
 
-describe('P2-08 AC-2: the run fails a slow page', () => {
+describe('AC-2: the run fails a slow page', () => {
   it('AC-2: with a 300 KB script on Astro /, perf:budgets exits 1 naming astro / home / scriptBytes, and no other page fails', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     expect(fixture.status, tail(fixture.output)).toBe(1)
@@ -157,8 +156,8 @@ describe('P2-08 AC-2: the run fails a slow page', () => {
   })
 })
 
-describe('P2-08 AC-4: the budgets hold', () => {
-  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (P2-17 Decision 9: nextjs home and listing at 3000), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
+describe('AC-4: the budgets hold', () => {
+  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (nextjs home and listing at 3000), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     expect(real.status, tail(real.output)).toBe(0)
     expect(real.report, 'reports/perf-budgets.json after the real run').toBeDefined()

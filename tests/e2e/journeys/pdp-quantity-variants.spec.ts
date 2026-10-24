@@ -10,22 +10,17 @@ import {
   type ServedVariant,
 } from '../support/variants'
 
-// P2-12 on both templates: the shopper picks a quantity and a variant on the product page and gets exactly that in
-// the cart, and the cart page's steppers change the line in the API.
+// On both templates the shopper picks a quantity and a variant on the product page and gets exactly that in the cart,
+// and the cart page's steppers change the line in the API.
 //
-// AC-2 (`cart.quantity`): the PDP's quantity selector sets what add-to-cart adds, stepped or typed (a typed fraction
-// shows and adds its whole part); /cart's selector on the line moves the API quantity up and down, cannot go below 1,
-// and the line's remove button empties it. Kills: a decorative stepper (Astro's PDP adds 1 whatever it shows), a PDP
-// without one (Next), a selector that shows one quantity and emits another, a PDP that adds the quantity from before
-// the click committed the typing, and a cart page whose steppers or remove button differ between the templates
-// (Astro's hand-rolled buttons, which remove at 1; Next's untested remove).
+// AC-2: the PDP's quantity selector sets what add-to-cart adds, stepped or typed (a typed fraction shows and adds its
+// whole part); /cart's selector on the line moves the API quantity up and down, cannot go below 1, and the line's
+// remove button empties it, the same on both templates.
 //
-// AC-3 (`browse.variant-shape`): a product of two options of two values each, one combination at stock 0 and one at
-// stock 2. Both PDPs render exactly the options the API serves; selecting each combination shows its price, a
-// `stock-badge` whose `data-level` is the spec's stock level and add-to-cart for its id, disabled exactly at stock 0;
-// adding puts that id in the API cart; the quantity resets to 1 on every change. The server render (no script) shows
-// variants[0]. Kills: templates that render different options, or a selection the price, badge or add-to-cart does not
-// follow.
+// AC-3: a product of two options of two values each, one combination at stock 0 and one at stock 2. Both PDPs render
+// exactly the options the API serves; selecting each combination shows its price, a `stock-badge` whose `data-level`
+// is the stock level and add-to-cart for its id, disabled exactly at stock 0; adding puts that id in the API cart;
+// the quantity resets to 1 on every change. The server render (no script) shows variants[0].
 
 /** variants[0], what the server renders, is the stock-2 one, so its level is neither in nor out. */
 const COMBINATIONS: OptionCombination[] = [
@@ -63,7 +58,7 @@ const COMBINATIONS: OptionCombination[] = [
   },
 ]
 
-test.describe('P2-12: PDP quantity and variants', () => {
+test.describe('PDP quantity and variants', () => {
   test('AC-2: the PDP adds the quantity its selector shows (3 by steps, then a typed 5.7 shown and added as 5 on an immediate click), the badge reads it, /cart steps the API line up one and back, stops at 1, and cart-remove empties it', async ({
     page,
     request,
@@ -85,9 +80,7 @@ test.describe('P2-12: PDP quantity and variants', () => {
     expect(stepped).toBe(1 + increments)
 
     await pdp.getByTestId('add-to-cart').click()
-    await expect
-      .poll(() => cartQty(page, product.variantId), { timeout: 10_000 })
-      .toBe(stepped)
+    await expect.poll(() => cartQty(page, product.variantId), { timeout: 10_000 }).toBe(stepped)
     await page.getByTestId('cart-drawer-close').click()
     await expect(page.getByTestId('cart-drawer')).not.toBeInViewport()
 
@@ -173,7 +166,9 @@ test.describe('P2-12: PDP quantity and variants', () => {
     // The options the PDP renders are the API's, one per distinct name and value.
     const apiOptions = [
       ...new Set(
-        product.variants.flatMap((v) => v.options.map((o) => `variant-option-${o.name}-${o.value}`)),
+        product.variants.flatMap((v) =>
+          v.options.map((o) => `variant-option-${o.name}-${o.value}`),
+        ),
       ),
     ].sort()
     const rendered = pdp.locator('[data-testid^="variant-option-"]')
@@ -246,7 +241,10 @@ test.describe('P2-12: PDP quantity and variants', () => {
 
     // The cart holds exactly the in-stock combinations, by the ids the API serves for them.
     expect((await cartLines(page)).map((l) => l.variantId).sort()).toEqual(
-      product.variants.filter((v) => v.stock > 0).map((v) => v.id).sort(),
+      product.variants
+        .filter((v) => v.stock > 0)
+        .map((v) => v.id)
+        .sort(),
     )
   })
 })

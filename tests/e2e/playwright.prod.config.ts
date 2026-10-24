@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 import { stack } from '../../scripts/stack'
 
-// P2-08 AC-3 and AC-5: the journeys in ./prod run against production builds of the templates (Astro `build` then
-// `preview`, Next `build` then `start`), not the dev servers of playwright.config.ts: a dev server loads modules one by
-// one, so what a page ships is only seen in a build. Ports are the stack slot's (scripts/stack.ts), as in
-// playwright.config.ts: in a linked worktree on slot 6 the API is 3601, Astro 4921 and Next 3600.
+// The journeys in ./prod run against production builds of the templates (Astro `build` then `preview`, Next `build`
+// then `start`), not the dev servers of playwright.config.ts: a dev server loads modules one by one, so what a page
+// ships is only seen in a build. Ports are the stack slot's (scripts/stack.ts), as in playwright.config.ts: in a
+// linked worktree on slot 6 the API is 3601, Astro 4921 and Next 3600.
 //
 //   NYMBAL_E2E_TARGET=astro|nextjs  one template (both when unset)
 //   NYMBAL_E2E_PREBUILT=1           serve the build already on disk (CI's build-job artefacts, built for slot 0's API)
@@ -79,7 +79,7 @@ const projects = [
     grepInvert: /@nextjs/,
     use: { ...devices['Desktop Chrome'], baseURL: astroURL },
   },
-  // `@astro`: a journey of Astro's alone (P2-19: Astro's / renders per request, Next's is cached).
+  // `@astro`: a journey of Astro's alone (Astro's / renders per request, Next's is cached).
   {
     name: 'nextjs-prod',
     grepInvert: /@astro\b/,

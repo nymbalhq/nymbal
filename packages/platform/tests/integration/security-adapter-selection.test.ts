@@ -15,17 +15,14 @@ import {
   type FakeCloudflare,
 } from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
 
-// Acceptance tests for P2-04 AC-2 (spec P2-04-cloudflare-waf, Decisions 1, 2 and 6): `createApp` honours
-// `security.adapter`. With `cloudflare` (its apiBase on the fake) it builds the Cloudflare adapter, so the capability
-// report lists `edge-rules`, it sets the same response headers on GET /health as a `middleware` store, and it makes no
-// request to Cloudflare at boot. With `aws-waf` or `akamai` it refuses with a ConfigError naming the adapters that
-// exist. Without the package installed it fails with the loader's install line (the P2-01 child process, from the
-// built dist: `pnpm build` first). Kills: a registry that ignores `security.adapter`, a boot that writes to the zone,
-// and `aws-waf` silently running middleware.
+// AC-2: `createApp` honours `security.adapter`. With `cloudflare` (its apiBase on the fake) it builds the Cloudflare
+// adapter, reports `edge-rules`, sets the same response headers as a `middleware` store and makes no request at boot;
+// `aws-waf` or `akamai` is refused naming the adapters that exist; a missing package fails with the install line (in
+// the adapter-graph child process, from the built dist: `pnpm build` first).
 
 const exec = promisify(execFile)
 const CHILD = fileURLToPath(new URL('./fixtures/adapter-graph/child.mjs', import.meta.url))
-const TOKEN = 'cf-p2-04-boot-token'
+const TOKEN = 'cf-boot-token'
 
 let fake: FakeCloudflare
 let zoneId = ''
@@ -53,7 +50,7 @@ const withCloudflare = (apiBase: () => string) =>
 
 type Report = Record<string, { provider: string; capabilities: readonly string[] }>
 
-describe('P2-04 AC-2: createApp builds the adapter security.adapter names', () => {
+describe('AC-2: createApp builds the adapter security.adapter names', () => {
   it('AC-2 (a)(b)(c): with cloudflare, the capability report lists edge-rules, GET /health carries the same security headers as a middleware store, and the fake saw no request during boot', async () => {
     const requestsBefore = fake.requests.length
     const cloudflare = await serveKernel(
@@ -102,7 +99,7 @@ describe('P2-04 AC-2: createApp builds the adapter security.adapter names', () =
   )
 
   it('AC-2: with @nymbalhq/security-cloudflare not installed, createApp fails adapter.package_missing with the install line and no SDK in it', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'p2-04-missing-'))
+    const dir = mkdtempSync(join(tmpdir(), 'cf-missing-'))
     dirs.push(dir)
     const out = join(dir, 'resolved.txt')
     writeFileSync(out, '')
@@ -113,13 +110,13 @@ describe('P2-04 AC-2: createApp builds the adapter security.adapter names', () =
       cwd: dir,
       env: {
         ...env,
-        P2_01_GRAPH: JSON.stringify({ out, hide: ['@nymbalhq/security-cloudflare'] }),
+        ADAPTERS_GRAPH: JSON.stringify({ out, hide: ['@nymbalhq/security-cloudflare'] }),
       },
       timeout: 60_000,
       maxBuffer: 16 * 1024 * 1024,
     })
-    const line = stdout.split('\n').find((l) => l.startsWith('P2-01-OUTCOME '))
-    const outcome = JSON.parse(line!.slice('P2-01-OUTCOME '.length)) as {
+    const line = stdout.split('\n').find((l) => l.startsWith('ADAPTER-GRAPH-OUTCOME '))
+    const outcome = JSON.parse(line!.slice('ADAPTER-GRAPH-OUTCOME '.length)) as {
       started?: unknown
       error?: { code?: string; message: string }
     }

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 
-// P1-01 chaos fixtures: paths to the child scripts, a temp SQLite file and marker per case, and readers for both.
+// Chaos fixtures: paths to the child scripts, a temp SQLite file and marker per case, and readers for both.
 
 export const CHAOS_CHILD = fileURLToPath(new URL('./chaos-child.mjs', import.meta.url))
 export const CHAOS_ORDER_CHILD = fileURLToPath(new URL('./chaos-order-child.mjs', import.meta.url))

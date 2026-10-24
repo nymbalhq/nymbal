@@ -112,7 +112,7 @@ async function buildTestEnv() {
   const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
-  // P2-07 decision 1: the native search adapter is SQL over the command store's own database.
+  // The native search adapter is SQL over the command store's own database.
   const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
 
   const product = createProductService({ store: commandStore, repos, publisher, logger })
@@ -161,7 +161,7 @@ describe('WooCommerce importer integration', () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  // The store's local-fs media, as `nymbal import` passes it (P2-11 decision 5): the importer builds none of its own.
+  // The store's local-fs media, as `nymbal import` passes it: the importer builds none of its own.
   function localMedia() {
     return createLocalFsMediaStorage({
       root: join(tmpDir, 'public', 'imported-media'),

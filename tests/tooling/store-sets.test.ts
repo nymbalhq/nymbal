@@ -16,15 +16,13 @@ import {
 } from './scratch-gate'
 import { parseYaml, type Yaml } from './workflow-yaml'
 
-// Acceptance tests for P2-02 AC-7 (spec P2-02-primitives-are-protocols, decision 7), the parts that prove the matrix
-// without running it: the repo-root nymbal.config.ts takes its stores from NYMBAL_COMMAND_STORE, NYMBAL_DOCUMENT_STORE,
-// NYMBAL_EVENT_BUS and NYMBAL_REDIS_PREFIX, defaulting to today's; `gate.ts --full --stores <set>` runs the three E2E
-// steps on that set, with the services it needs, and sqlite-memory is today's plan; nightly.yml runs postgres-redis
-// and postgres-jsonb × astro, nextjs and admin with Postgres and Redis. The per-run database and prefix are
-// tests/stores/e2e-harness.test.ts (it needs the services). Also the wiring AC-2, AC-3 and AC-5 rely on: every
-// service-backed store suite is collected by a Vitest project that the PR's integration job and gate:full run, with
-// NYMBAL_TEST_REDIS_URL. Kills: an E2E run that silently stays on SQLite and in-memory, a nightly that varies nothing,
-// and contract suites on Redis and Postgres JSONB that no job ever runs.
+// AC-7, the parts that prove the matrix without running it: the repo-root nymbal.config.ts takes its stores from
+// NYMBAL_COMMAND_STORE, NYMBAL_DOCUMENT_STORE, NYMBAL_EVENT_BUS and NYMBAL_REDIS_PREFIX, defaulting to SQLite and
+// in-memory; `gate.ts --full --stores <set>` runs the three E2E steps on that set, with the services it needs, and
+// sqlite-memory is the default plan; nightly.yml runs postgres-redis and postgres-jsonb × astro, nextjs and admin with
+// Postgres and Redis. The per-run database and prefix are tests/stores/e2e-harness.test.ts (it needs the services).
+// Also: every service-backed store suite is collected by a Vitest project that CI's integration job and gate:full
+// run, with NYMBAL_TEST_REDIS_URL.
 
 const exec = promisify(execFile)
 
@@ -44,12 +42,12 @@ type SetName = keyof typeof SETS
 const REDIS_COMPOSE = 'localhost:63799'
 const POSTGRES_COMPOSE = new URL(POSTGRES_URL).host
 
-const LOAD = `import(process.env.P2_02_CONFIG_URL).then(async (m) => {
-  const { config } = await m.loadConfig(process.env.P2_02_REPO)
+const LOAD = `import(process.env.PRIMITIVES_CONFIG_URL).then(async (m) => {
+  const { config } = await m.loadConfig(process.env.PRIMITIVES_REPO)
   process.stdout.write('\\n' + JSON.stringify(config.infrastructure) + '\\n')
 })`
 
-/** The repo-root config as loadConfig reads it in a fresh process under `env` (the variables P2-02 adds unset first). */
+/** The repo-root config as loadConfig reads it in a fresh process under `env` (the store variables unset first). */
 async function rootInfrastructure(env: Record<string, string>): Promise<Record<string, unknown>> {
   const base: NodeJS.ProcessEnv = { ...process.env }
   for (const key of [
@@ -65,14 +63,14 @@ async function rootInfrastructure(env: Record<string, string>): Promise<Record<s
     env: {
       ...base,
       ...env,
-      P2_02_REPO: REPO,
-      P2_02_CONFIG_URL: pathToFileURL(join(REPO, 'packages/config/dist/index.js')).href,
+      PRIMITIVES_REPO: REPO,
+      PRIMITIVES_CONFIG_URL: pathToFileURL(join(REPO, 'packages/config/dist/index.js')).href,
     },
   })
   return JSON.parse(stdout.trimEnd().split('\n').pop() ?? '{}') as Record<string, unknown>
 }
 
-describe('P2-02 AC-7: the repo-root config takes its stores from the environment', () => {
+describe('AC-7: the repo-root config takes its stores from the environment', () => {
   it('AC-7: with no store variables the root config is SQLite, in-memory and in-process, as today', async () => {
     const infra = await rootInfrastructure({})
     expect(infra).toMatchObject(SETS['sqlite-memory'])
@@ -82,7 +80,7 @@ describe('P2-02 AC-7: the repo-root config takes its stores from the environment
     'AC-7: NYMBAL_COMMAND_STORE, NYMBAL_DOCUMENT_STORE and NYMBAL_EVENT_BUS give the %s set, and NYMBAL_REDIS_PREFIX the Redis prefix',
     async (set) => {
       const wanted = SETS[set]
-      const prefix = `e2e-p2-02-${set}`
+      const prefix = `e2e-primitives-${set}`
       const infra = await rootInfrastructure({
         NYMBAL_COMMAND_STORE: wanted.commandStore,
         NYMBAL_DOCUMENT_STORE: wanted.documentStore,
@@ -105,7 +103,7 @@ const assigns = (command: string, name: string, value: string): boolean =>
     command,
   )
 
-describe('P2-02 AC-7: gate.ts --full --stores <set> runs the E2E steps on that set', () => {
+describe('AC-7: gate.ts --full --stores <set> runs the E2E steps on that set', () => {
   it.each(['postgres-redis', 'postgres-jsonb'] as const)(
     'AC-7: --stores %s puts the astro, nextjs and admin steps on that set, with the composed services they need, after compose up',
     (set: SetName) => {
@@ -183,7 +181,7 @@ const sorted = (v: Yaml | undefined): string[] =>
 const stepText = (job: Job): string =>
   JSON.stringify([job.env ?? {}, ...(job.steps ?? []).map((s) => [s.run, s.env, s.with])])
 
-describe('P2-02 AC-7: nightly.yml runs the E2E suite on each new store set', () => {
+describe('AC-7: nightly.yml runs the E2E suite on each new store set', () => {
   it('AC-7: a nightly job’s matrix is postgres-redis and postgres-jsonb × astro, nextjs and admin, its steps use both matrix values, and it has Postgres and Redis services', () => {
     const found = Object.entries(workflow('nightly.yml')).flatMap(([id, job]) => {
       const matrix = job.strategy?.matrix ?? {}
@@ -209,7 +207,7 @@ describe('P2-02 AC-7: nightly.yml runs the E2E suite on each new store set', () 
   })
 })
 
-/** The service-backed store suites P2-02 adds (Redis, Postgres JSONB, the E2E harness). */
+/** The service-backed store suites (Redis, Postgres JSONB, the E2E harness). */
 const SERVICE_SUITES = [
   'packages/doc-store-redis/src/contract.test.ts',
   'packages/doc-store-postgres-jsonb/src/contract.test.ts',
@@ -243,7 +241,7 @@ async function collectingProjects(): Promise<Map<string, string[]>> {
 const projectsIn = (command: string): string[] =>
   [...command.matchAll(/--project[ =]['"]?([\w:-]+)/g)].map((m) => m[1]!)
 
-describe('P2-02 AC-2, AC-3, AC-5: the store suites on Redis and Postgres JSONB run in the PR integration job and in gate:full', () => {
+describe('AC-2, AC-3, AC-5: the store suites on Redis and Postgres JSONB run in the PR integration job and in gate:full', () => {
   it('AC-2, AC-3: the integration job sets NYMBAL_TEST_REDIS_URL and NYMBAL_TEST_POSTGRES_URL and runs a project that collects every service-backed suite', async () => {
     const job = workflow('ci.yml')['integration']!
     const env = {

@@ -4,8 +4,8 @@ import { createMailSink, type MailSink } from '@nymbalhq/proof-kit/mail'
 import { startTestStore, type TestStore } from '@nymbalhq/proof-kit/store'
 import { storefrontClient } from '../fixtures/storefront-client'
 
-// Acceptance test for P1-01 AC-11: a store started with startTestStore({ email: sink }) sends the order-placed
-// email for a checkout made over HTTP (cart, item, begin checkout) to the sink, exactly once, for the buyer.
+// AC-11: a store started with startTestStore({ email: sink }) sends the order-placed email for a checkout made over
+// HTTP (cart, item, begin checkout) to the sink, exactly once, for the buyer.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.
 
 const URL_VAR = 'NYMBAL_TEST_MAILPIT_URL'

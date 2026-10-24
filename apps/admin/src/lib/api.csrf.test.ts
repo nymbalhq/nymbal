@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 
-// P1-06 AC-9: the admin's `request()` sends `x-csrf-token`, taken from `GET /api/csrf`, on unsafe methods and on no
-// GET. Kills: the admin left without the header, so every admin write would answer 403.
+// AC-9: the admin's `request()` sends `x-csrf-token`, taken from `GET /api/csrf`, on unsafe methods and on no GET.
 
 interface Call {
   method: string

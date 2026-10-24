@@ -3,8 +3,7 @@ import { createKernel } from '../support/kernel.js'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 import { webhookRaceSuite } from '../support/suites/webhook-race.js'
 
-// P1-05 AC-12 on Postgres (required), in a fresh database for this file. Refuses to load without
-// NYMBAL_TEST_POSTGRES_URL.
+// AC-12 on Postgres (required), in a fresh database for this file. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
 
 const serverUrl = postgresServerUrl()
 let db: TestDatabase | undefined

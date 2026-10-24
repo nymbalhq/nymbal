@@ -12,11 +12,9 @@ import {
   securityConfig,
 } from '../../packages/security-cloudflare/src/tests/support.js'
 
-// Acceptance tests for P2-04 AC-8 (spec P2-04-cloudflare-waf, Decision 4): the published SecurityAdapter contract passes
-// for `cloudflare` against the fake Cloudflare API, the downtime cases included: with the fake stopped, `validate()`
-// rejects within the case time and `healthCheck()` reports down. Beside it, Decision 4's request rules: `initialize`
-// makes no request, and a refused connection is an AdapterError rather than a hang. Kills: an adapter that does not
-// meet the published suite, and a refused connection that hangs or resolves.
+// AC-8: the published SecurityAdapter contract passes for `cloudflare` against the fake Cloudflare API, the downtime
+// cases included: with the fake stopped, `validate()` rejects within the case time and `healthCheck()` reports down.
+// Beside it: `initialize` makes no request, and a refused connection is an AdapterError rather than a hang.
 
 let live: FakeCloudflare
 let zoneId = ''
@@ -44,7 +42,7 @@ runSecurityContract('cloudflare', () => build(live.url), {
   unreachable: () => build(deadBase),
 })
 
-describe('P2-04 AC-8: requests the contract does not see', () => {
+describe('AC-8: requests the contract does not see', () => {
   it('AC-8: createAdapter and initialize make no request to the API', async () => {
     const before = live.requests.length
     await build(live.url)

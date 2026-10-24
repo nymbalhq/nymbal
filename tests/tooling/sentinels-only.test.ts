@@ -14,10 +14,10 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { REPO, TSX } from './scratch-gate'
 
-// Acceptance test for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-15: `scripts/sentinels.ts --only` takes a
-// comma-separated list and runs exactly those sentinels; an unknown id exits 1 before anything runs. The repository
-// is the sentinels-exit fixture (a module, a `node --test` suite) with three copies of its caught sentinel, renamed
-// I101, S001 and I102. The suite appends to a log outside the tree each time it runs, so "ran" is read from there.
+// AC-15: `scripts/sentinels.ts --only` takes a comma-separated list and runs exactly those sentinels; an unknown id
+// exits 1 before anything runs. The repository is the sentinels-exit fixture (a module, a `node --test` suite) with
+// three copies of its caught sentinel, renamed I101, S001 and I102. The suite appends to a log outside the tree each
+// time it runs, so "ran" is read from there.
 
 const FIXTURES = join(REPO, 'tests/tooling/fixtures/sentinels-exit')
 const created: string[] = []

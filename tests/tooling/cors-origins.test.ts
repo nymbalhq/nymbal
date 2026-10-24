@@ -4,9 +4,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P2-14 AC-5: the three E2E store configs read their CORS origins from NYMBAL_CORS_ORIGINS, so an
-// API whose storefronts moved to another stack slot accepts them. Each config is loaded in a child process (it reads
-// the environment when imported) and parsed by @nymbalhq/config's schema, as `nymbal dev` would see it.
+// AC-5: the three E2E store configs read their CORS origins from NYMBAL_CORS_ORIGINS, so an API whose storefronts
+// moved to another stack slot accepts them. Each config is loaded in a child process (it reads the environment when
+// imported) and parsed by @nymbalhq/config's schema, as `nymbal dev` would see it.
 
 const exec = promisify(execFile)
 

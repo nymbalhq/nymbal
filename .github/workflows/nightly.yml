@@ -85,8 +85,8 @@ jobs:
           if-no-files-found: warn
 
   quarantine:
-    # The tests the gate skill quarantined (vitest.config.ts, NIGHTLY): red then green with no code change in a gate
-    # or CI. Each has an owner row on the board and runs here, apart from every gate, until that row closes.
+    # The tests the gate quarantined (vitest.config.ts, NIGHTLY): red then green with no code change in a gate or CI.
+    # Each runs here, apart from every gate, until it is fixed.
     name: Quarantined tests
     runs-on: ubuntu-24.04
     needs: [build]

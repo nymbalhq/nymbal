@@ -8,13 +8,8 @@ import type { OrderStatus } from '@nymbalhq/types'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { address, createKernel, type Kernel } from '../support/kernel.js'
 
-// Acceptance test for P3-02 AC-4 (spec P3-02-replay-engine, decision 5): boot warm is complete. A store with orders in
-// every status, products updated, recategorised and out of stock, and a category renamed is served by one kernel; its
-// answers are read; the kernel stops; the native index is emptied, and a second kernel on the same file starts with
-// a fresh in-memory document store (the read models wiped, as a new process has them). Its answers to the same reads
-// equal the first kernel's: the catalogue, each product page, each category listing, each order as its owner reads
-// it, and search. Kills: a warm-up that rebuilds less than the tables hold (statuses, stock, categories or the index
-// lost on a restart), and a live read model that a rebuild does not reproduce.
+// AC-4: boot warm is complete. A second kernel on the same file, with the native index emptied and a fresh in-memory
+// document store, answers the catalogue, product pages, category listings, orders and search exactly as the first did.
 
 const STATUSES: OrderStatus[] = [
   'pending',
@@ -28,7 +23,7 @@ const STATUSES: OrderStatus[] = [
 ]
 const WORDS = ['aurora', 'basalt', 'cinder'] as const
 
-const dir = mkdtempSync(join(tmpdir(), 'p3-02-boot-warm-'))
+const dir = mkdtempSync(join(tmpdir(), 'replay-boot-warm-'))
 const sqlitePath = join(dir, 'store.sqlite')
 const tag = randomUUID().slice(0, 8)
 
@@ -99,10 +94,10 @@ async function buildStore(k: Kernel): Promise<void> {
   await s.product.update(moved.id, { categoryIds: [c2.id], name: `${WORDS[0]} moved ${tag}` })
   await s.product.update(stocked.id, { description: `a ${WORDS[1]} piece, revised` })
   await s.category.update(c1.id, { name: `warm a renamed ${tag}` })
-  await s.inventory.adjustStock(emptied.variants[0]!.id, -3, 'manual', 'p3-02')
+  await s.inventory.adjustStock(emptied.variants[0]!.id, -3, 'manual', 'replay')
 
   const { customer, tokens } = await s.auth.register({
-    email: `owner-${tag}@p3-02.test`,
+    email: `owner-${tag}@replay.test`,
     password: 'correct-horse-battery',
   })
   token = tokens.accessToken
@@ -120,7 +115,7 @@ async function buildStore(k: Kernel): Promise<void> {
     const started = await s.checkout.beginCheckout({
       cartToken: cart.token,
       customerId: customer.id,
-      email: `owner-${tag}${pending ? '+stub-pending' : ''}@p3-02.test`,
+      email: `owner-${tag}${pending ? '+stub-pending' : ''}@replay.test`,
       billingAddress: address,
       shippingAddress: address,
     })
@@ -129,18 +124,18 @@ async function buildStore(k: Kernel): Promise<void> {
   }
   for (const status of STATUSES) {
     const order = await checkout(status === 'pending' || status === 'cancelled')
-    if (status === 'cancelled') await s.order.cancel(order.orderId, 'changed mind', 'p3-02')
+    if (status === 'cancelled') await s.order.cancel(order.orderId, 'changed mind', 'replay')
     if (['processing', 'shipped', 'delivered'].includes(status)) {
-      await s.order.updateStatus(order.orderId, 'processing', 'p3-02')
+      await s.order.updateStatus(order.orderId, 'processing', 'replay')
     }
     if (['shipped', 'delivered'].includes(status)) {
-      await s.order.markShipped(order.orderId, `TRK-${tag}`, 'royal-mail', 'p3-02')
+      await s.order.markShipped(order.orderId, `TRK-${tag}`, 'royal-mail', 'replay')
     }
-    if (status === 'delivered') await s.order.markDelivered(order.orderId, 'p3-02')
+    if (status === 'delivered') await s.order.markDelivered(order.orderId, 'replay')
     if (status === 'refunded' || status === 'partially_refunded') {
       const amountMinor =
         status === 'refunded' ? order.totalMinor : Math.floor(order.totalMinor / 2)
-      await s.refund.refund({ orderId: order.orderId, amountMinor, actor: 'p3-02' })
+      await s.refund.refund({ orderId: order.orderId, amountMinor, actor: 'replay' })
     }
     expect((await s.order.getById(order.orderId)).status, `the ${status} order`).toBe(status)
   }
@@ -182,7 +177,7 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('P3-02 AC-4: a fresh process serves what the long-running one served', () => {
+describe('AC-4: a fresh process serves what the long-running one served', () => {
   it('AC-4: after a restart on a wiped document store and index, /api/products, each /api/products/:slug, each /api/products?category=, each /api/orders/:n as its owner and /api/products/search?q= answer exactly what they answered before', () => {
     const listed = (v: unknown) => (v as { items?: unknown[] }).items?.length
     expect(listed(before.get('/api/products?limit=100')), 'the catalogue before').toBe(productRows)

@@ -9,16 +9,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { anonymousGet, createPublicBucket, type TestBucket } from '../support/s3'
 import { startWooCommerceServer, type WooCommerceServer } from '../support/woocommerce-server'
 
-// Acceptance test for P2-11 AC-5, the roadmap proof (spec P2-11-s3-media): through the built CLI, a WooCommerce import
-// into a store whose config sets only `media: 's3'` serves every product image from the bucket. The bucket, endpoint
-// and public URL reach the store through S3_BUCKET, S3_ENDPOINT and S3_PUBLIC_URL only, and the credentials through
-// AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (the SDK's chain), so every fallback is exercised. The public URL names the
-// same MinIO under its other loopback name, so a URL built from the endpoint instead of S3_PUBLIC_URL shows. The source
-// is tests/support/woocommerce-server.ts, which serves distinct bytes and a distinct content type for each image. The
-// same run with the default local-fs keeps /imported-media/... URLs and files under public/imported-media (an
-// invariant: it holds before this change too).
-// Needs `pnpm build` and MinIO (NYMBAL_TEST_S3_ENDPOINT). Kills: `nymbal import` not passing the configured media, an
-// env fallback that is ignored, and a local-fs import that changes.
+// AC-5: through the built CLI, a WooCommerce import into a store whose config sets only `media: 's3'` serves every
+// product image from the bucket. The bucket, endpoint and public URL reach the store through S3_BUCKET, S3_ENDPOINT
+// and S3_PUBLIC_URL only, and the credentials through AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (the SDK's chain), so
+// every fallback is exercised. The public URL names the same MinIO under its other loopback name, so a URL built from
+// the endpoint instead of S3_PUBLIC_URL shows. The source is tests/support/woocommerce-server.ts, which serves
+// distinct bytes and a distinct content type for each image. The same run with the default local-fs keeps
+// /imported-media/... URLs and files under public/imported-media.
+// Needs `pnpm build` and MinIO (NYMBAL_TEST_S3_ENDPOINT).
 
 const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -53,10 +51,10 @@ afterAll(async () => {
 
 /** A project with only `infrastructure` set beyond the required blocks; its migrations are the kernel's. */
 function project(infrastructure: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-11-cli-'))
+  const dir = mkdtempSync(join(tmpdir(), 's3-cli-'))
   dirs.push(dir)
   const config = {
-    store: { name: 'p2-11-cli', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 's3-cli', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure,
     security: { adapter: 'middleware' },
@@ -192,10 +190,10 @@ function otherLoopback(endpoint: string): string {
 }
 
 // Quarantined to the nightly project (vitest.config.ts): the built CLI against MinIO times out under a parallel
-// gate:full, red then green with no code change; the board row owns it. Gated here, not by a project exclude: one
-// on integration-stores would replace the sentinels control run's --exclude list.
+// gate:full, red then green with no code change. Gated here, not by a project exclude: one on integration-stores
+// would replace the sentinels control run's --exclude list.
 describe.runIf(process.env['NYMBAL_NIGHTLY'])(
-  "P2-11 AC-5: nymbal import into a store with media 's3' serves every image from the bucket",
+  "AC-5: nymbal import into a store with media 's3' serves every image from the bucket",
   () => {
     it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
       const dir = project({

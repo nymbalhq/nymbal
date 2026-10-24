@@ -15,15 +15,14 @@ import { createKernel, kernelConfig, MIGRATIONS_ROOT, type Kernel } from '../ker
 import { openRaw } from '../raw.js'
 import { login, metadataColumn, primedShopper, rolesColumn, tokenRoles } from '../security.js'
 
-// P1-06 AC-11 and AC-12 on one dialect. AC-11: migration 0004 backfills `customers.roles` from `metadata.roles`,
-// keeping only known roles, falling back to ['customer'], and removes the `roles` key from `metadata`. AC-12: after
-// it, a `roles` key written into `metadata` by any path grants nothing; the seeded admin's token carries `admin`, and
-// every token's roles equal the column. Kills: no migration, an unknown role kept, `[]` when nothing survives, a
-// shadow copy left in metadata, `mintAccess` reading `metadata.roles`, seed not writing the column.
+// AC-11 and AC-12 on one dialect. AC-11: migration 0004 backfills `customers.roles` from `metadata.roles`, keeping only
+// known roles, falling back to ['customer'], and removes the `roles` key from `metadata`. AC-12: after it, a `roles`
+// key written into `metadata` by any path grants nothing; the seeded admin's token carries `admin`, and every token's
+// roles equal the column.
 
 const KNOWN = ['admin', 'customer', 'guest']
 
-/** The backfill the spec states, as a reference: known roles survive, otherwise ['customer']. */
+/** The backfill, written out as a reference: known roles survive, otherwise ['customer']. */
 function expectedRoles(value: unknown): string[] {
   const kept = Array.isArray(value) ? value.filter((r) => KNOWN.includes(r as string)) : []
   return kept.length > 0 ? (kept as string[]) : ['customer']
@@ -31,9 +30,9 @@ function expectedRoles(value: unknown): string[] {
 
 const sorted = (roles: string[]): string[] => [...roles].sort()
 
-/** A copy of the migrations folder for `dialect` holding only 0000-0003: the schema before this task. */
+/** A copy of the migrations folder for `dialect` holding only 0000-0003: the schema before the migration under test. */
 function migrationsBefore0004(dialect: Kernel['dialect']): { root: string; drop(): void } {
-  const root = mkdtempSync(join(tmpdir(), 'p1-06-migrations-'))
+  const root = mkdtempSync(join(tmpdir(), 'security-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
   const to = join(root, dialect)
   mkdirSync(join(to, 'meta'), { recursive: true })
@@ -98,7 +97,7 @@ async function migrate(dialect: Kernel['dialect'], target: string, root: string)
   }
 }
 
-/** `metadata.roles` values beyond the five the spec names: arrays of known and unknown roles, and non-arrays. */
+/** `metadata.roles` values beyond the five known roles: arrays of known and unknown roles, and non-arrays. */
 const rolesValue = fc.oneof(
   fc.uniqueArray(fc.constantFrom('admin', 'customer', 'guest', 'root', 'staff', ''), {
     maxLength: 4,
@@ -135,7 +134,7 @@ export function rolesColumnSuite(
           ...c,
           row: {
             id: randomUUID(),
-            email: `legacy-${i}@p1-06.test`,
+            email: `legacy-${i}@security.test`,
             metadata: {
               source: `case-${i}`,
               ...(c.roles !== undefined && { roles: c.roles }),
@@ -219,12 +218,12 @@ export function rolesColumnSuite(
         expect(await adminMe(adminToken)).toBe(200)
 
         // The repository's metadata patch.
-        const patchedEmail = `patched-${randomUUID()}@p1-06.test`
+        const patchedEmail = `patched-${randomUUID()}@security.test`
         const patched = await k.services.auth.register({ email: patchedEmail, password })
         await addRolesToMetadata(patched.customer.id)
 
         // The importer: a new row, then given a password so it can log in.
-        const importedEmail = `imported-${randomUUID()}@p1-06.test`
+        const importedEmail = `imported-${randomUUID()}@security.test`
         const imported = await k.services.auth.importCustomer({
           email: importedEmail,
           metadata: { roles: ['admin'] },
@@ -239,7 +238,7 @@ export function rolesColumnSuite(
         )
 
         // An admin note write, which rewrites metadata wholesale with the roles key in it.
-        const notedEmail = `noted-${randomUUID()}@p1-06.test`
+        const notedEmail = `noted-${randomUUID()}@security.test`
         const noted = await k.services.auth.register({ email: notedEmail, password })
         await addRolesToMetadata(noted.customer.id)
         const note = await shop.call(

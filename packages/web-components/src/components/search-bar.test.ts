@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-06 decisions 1 and 2: the element is a Lit element that renders in an open shadow root, so its internals are
-// read through `shadowRoot`, once its render has settled (`updateComplete`).
+// The element is a Lit element that renders in an open shadow root, so its internals are read through `shadowRoot`,
+// once its render has settled (`updateComplete`).
 
 beforeEach(() => {
   setupMockClient()
@@ -80,7 +80,7 @@ describe('nymbal-search-bar', () => {
     })
   })
 
-  // P1-09 decision 5: a result is chosen by click or by ArrowDown+Enter, and the event names the chosen one
+  // A result is chosen by click or by ArrowDown+Enter, and the event names the chosen one
   async function renderResults(slugs: string[]): Promise<HTMLElement> {
     const client = setupMockClient()
     const el = await createElement()
@@ -107,7 +107,7 @@ describe('nymbal-search-bar', () => {
     return seen
   }
 
-  it('P1-09 decision 5: clicking the second result selects that result, not the first', async () => {
+  it('clicking the second result selects that result, not the first', async () => {
     const el = await renderResults(['first-widget', 'second-widget', 'third-widget'])
     const items = shadow(el).querySelectorAll<HTMLElement>('.nymbal-search-result-item')
     const seen = captureSelected(el)
@@ -118,7 +118,7 @@ describe('nymbal-search-bar', () => {
     expect(seen[0]).not.toBe(items[0]!.dataset.slug)
   })
 
-  it('P1-09 decision 5: ArrowDown twice then Enter selects the second result', async () => {
+  it('ArrowDown twice then Enter selects the second result', async () => {
     const el = await renderResults(['first-widget', 'second-widget', 'third-widget'])
     const seen = captureSelected(el)
     for (let n = 0; n < 2; n++) {

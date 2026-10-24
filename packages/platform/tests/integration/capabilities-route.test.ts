@@ -8,13 +8,10 @@ import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel } from '../support/kernel.js'
 import { createFixtureSearchAdapter } from '../../../../tests/e2e/fixtures/custom-providers/adapters.js'
 
-// Acceptance tests for P2-05 AC-1 and AC-3's integration half, over HTTP against a kernel built from `src/`.
-// AC-1: GET /api/capabilities is public and reports, for the storefront, what the configured adapters can do:
-// payments' capabilities and client half, search's capabilities, and the catalogue's sort keys; never a provider name
-// or a secret. AC-3: GET /api/products sends no `facets` when the search adapter lacks `facet`.
-// Kills: a route that does not exist (the templates cannot learn capabilities), a report that is not the adapters'
-// own answer, a leaked secret key, webhook secret or provider name, and a listing that offers a filter the search
-// adapter cannot serve. Needs the adapter packages built (the Stripe kernel loads @nymbalhq/adapter-stripe).
+// AC-1 and AC-3's integration half, over HTTP against a kernel built from `src/`. GET /api/capabilities is public and
+// reports what the configured adapters can do, never a provider name or a secret; GET /api/products sends no `facets`
+// when the search adapter lacks `facet`. Needs the adapter packages built (the Stripe kernel loads
+// @nymbalhq/adapter-stripe).
 
 interface Report {
   payments: {
@@ -96,16 +93,16 @@ const arbClient: fc.Arbitrary<ClientShape> = fc.oneof(
   }),
 )
 
-const arbSearchCaps = fc.subarray(['index', 'search', 'facet', 'p2-05-extra'])
-const arbPaymentCaps = fc.subarray(['intent', 'capture', 'refund', 'webhook', 'p2-05-extra'])
+const arbSearchCaps = fc.subarray(['index', 'search', 'facet', 'caps-extra'])
+const arbPaymentCaps = fc.subarray(['intent', 'capture', 'refund', 'webhook', 'caps-extra'])
 
 /** A payments adapter of the project's own: the stub's behaviour, with the generated client half and capabilities. */
 function injectedPayments(tag: string, caps: string[], client: ClientShape) {
-  // The stub's own client() reports test-mode (decision 2); an adapter without a client half must not inherit it.
+  // The stub's own client() reports test-mode; an adapter without a client half must not inherit it.
   const { client: _stubClient, ...stub } = createNativeStubPaymentsAdapter({ logger })
   return {
     ...stub,
-    providerName: `p2-05-payments-${tag}`,
+    providerName: `caps-payments-${tag}`,
     capabilities: () => caps,
     ...(client === 'absent' ? {} : { client: () => (client === 'null' ? null : client) }),
   }
@@ -114,12 +111,12 @@ function injectedPayments(tag: string, caps: string[], client: ClientShape) {
 function injectedSearch(tag: string, caps: string[]) {
   return {
     ...createFixtureSearchAdapter(),
-    providerName: `p2-05-search-${tag}`,
+    providerName: `caps-search-${tag}`,
     capabilities: () => caps,
   }
 }
 
-describe('P2-05 AC-1: GET /api/capabilities on the native config', () => {
+describe('AC-1: GET /api/capabilities on the native config', () => {
   let served: ServedKernel
 
   beforeAll(async () => {
@@ -156,7 +153,7 @@ describe('P2-05 AC-1: GET /api/capabilities on the native config', () => {
   })
 })
 
-describe('P2-05 AC-1: the report is what the injected adapters return', () => {
+describe('AC-1: the report is what the injected adapters return', () => {
   const opened: ServedKernel[] = []
 
   afterEach(async () => {
@@ -207,7 +204,7 @@ describe('P2-05 AC-1: the report is what the injected adapters return', () => {
   }, 180_000)
 })
 
-describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
+describe('AC-1: a Stripe store leaks no secret', () => {
   const opened: ServedKernel[] = []
 
   afterEach(async () => {
@@ -215,8 +212,8 @@ describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
     for (const s of opened.splice(0)) await s.stop()
   })
 
-  const SECRET = 'sk_test_p2_05_never_served'
-  const WEBHOOK = 'whsec_p2_05_never_served'
+  const SECRET = 'sk_test_caps_never_served'
+  const WEBHOOK = 'whsec_caps_never_served'
 
   it('AC-1: with Stripe configured with fake secrets, the body has the publishable key as the stripe client and no provider, providerName, secretKey or webhookSecret key, and no sk_ or whsec_ value', async () => {
     const served = await serveKernel(
@@ -225,7 +222,7 @@ describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
         configure: withStripe({
           secretKey: SECRET,
           webhookSecret: WEBHOOK,
-          publishableKey: 'pk_test_p2_05_config',
+          publishableKey: 'pk_test_caps_config',
         }),
       }),
     )
@@ -239,7 +236,7 @@ describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
 
     expect(report.payments.client).toEqual({
       driver: 'stripe',
-      options: { publishableKey: 'pk_test_p2_05_config' },
+      options: { publishableKey: 'pk_test_caps_config' },
     })
     expect(report.payments.capabilities).toEqual([
       ...served.kernel.app.adapters.payments.capabilities(),
@@ -250,7 +247,7 @@ describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
   }, 60_000)
 
   it('AC-1: with no publishableKey in the Stripe config, the stripe client takes STRIPE_PUBLISHABLE_KEY from the environment', async () => {
-    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test_p2_05_env')
+    vi.stubEnv('STRIPE_PUBLISHABLE_KEY', 'pk_test_caps_env')
     const served = await serveKernel(
       await createKernel({
         dialect: 'sqlite',
@@ -263,12 +260,12 @@ describe('P2-05 AC-1: a Stripe store leaks no secret', () => {
 
     expect(report.payments.client).toEqual({
       driver: 'stripe',
-      options: { publishableKey: 'pk_test_p2_05_env' },
+      options: { publishableKey: 'pk_test_caps_env' },
     })
   }, 60_000)
 })
 
-describe('P2-05 AC-3: GET /api/products sends facets only when search can facet', () => {
+describe('AC-3: GET /api/products sends facets only when search can facet', () => {
   const opened: ServedKernel[] = []
 
   afterEach(async () => {

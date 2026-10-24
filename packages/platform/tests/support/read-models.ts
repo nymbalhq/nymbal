@@ -13,9 +13,9 @@ export {
   documentModelsOf,
 } from './read-model-shapes.js'
 
-// P3-02 (spec P3-02-replay-engine) support: what the replay acceptance suites share. The read models and their
-// collections (read-model-shapes.ts), a search index that records what it is given, the native index's rows as a second connection
-// reads them, and the rebuild deps of a kernel. Nothing here knows how the rebuilders are implemented.
+// What the replay suites share: the read models and their collections (read-model-shapes.ts), a search index that
+// records what it is given, the native index's rows as a second connection reads them, and the rebuild deps of a
+// kernel. Nothing here knows how the rebuilders are implemented.
 
 export interface RecordingSearch extends SearchAdapter {
   /** What the index holds now, by id. */
@@ -34,7 +34,7 @@ export function recordingSearch(): RecordingSearch {
   let held = new Map<string, SearchDocument>()
   return {
     kind: 'search',
-    providerName: 'p3-02-recording',
+    providerName: 'replay-recording',
     capabilities: () => ['index'],
     producesEvents: [],
     consumesEvents: [],

@@ -17,17 +17,11 @@ import { checkoutOf, seedVariant, type Kernel } from '../kernel.js'
 import { maxSeq } from '../outbox.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 
-// P3-04 AC-1 (spec P3-04-audit-trail, decisions 4 and 5) on either dialect: a kernel from `src/` served over HTTP, an
-// admin of its own, and the committed rows read through a second connection. n identical keyed adjusts, one after
-// another or all at once, apply once: one stock move, one stock_adjustments row, one inventory.changed, one `applied`
-// and n-1 `replayed` entries, and every answer equal to the applied one. A keyed create replays its 201. A key reused
-// with another body (or another variant) is refused with 409 and changes nothing. A refused command is never replayed.
-// Without a key every request applies, as today, each leaving its own `applied` entry. A keyed refund over a provider
-// capture commits its pending row before the provider moves money, and a same-key retry sent while the provider is
-// answering moves none.
-// Kills: a retry that double-applies (today); a concurrent retry that races past the lookup; a reused key accepted
-// with a new body; a request hash without the path params; a refused answer replayed; a keyed refund run inside the
-// key's transaction (its pending row uncommitted while money moves, the connection held across the provider call).
+// AC-1 on either dialect: a kernel from `src/` served over HTTP, an admin of its own, and the committed rows read
+// through a second connection. n identical keyed adjusts, one after another or all at once, apply once and the other
+// n-1 replay the same answer. A keyed create replays its 201. A key reused with another body is refused with 409 and
+// changes nothing. A refused command is never replayed. Without a key every request applies. A keyed refund over a
+// provider capture commits its pending row before the provider moves money, and a same-key retry moves none.
 
 const adjustPath = (variantId: string) => `/api/admin/inventory/${variantId}/adjust`
 
@@ -47,7 +41,7 @@ export function idempotencySuite(
   start: () => Promise<Kernel>,
   opts: { runs: number },
 ): void {
-  describe(`P3-04 AC-1: a retried admin write applies once (${dialect})`, () => {
+  describe(`AC-1: a retried admin write applies once (${dialect})`, () => {
     let k: Kernel
     let served: ServedKernel
     let raw: RawReader
@@ -122,7 +116,7 @@ export function idempotencySuite(
 
     it('AC-1: a keyed product create, sent twice, answers 201 both times with the same body; the second says Idempotent-Replayed and one product exists', async () => {
       const tag = randomUUID()
-      const slug = `p3-04-${tag}`
+      const slug = `audit-${tag}`
       const body = {
         slug,
         name: 'Audited Widget',
@@ -159,9 +153,9 @@ export function idempotencySuite(
       ])
     })
 
-    it('AC-1 (decision 5): a keyed refund over a provider capture commits its pending row before the provider is called, and the same-key retry sent while the provider answers calls it no more: one refund row, one applied and one replayed entry, equal answers', async () => {
+    it('AC-1: a keyed refund over a provider capture commits its pending row before the provider is called, and the same-key retry sent while the provider answers calls it no more: one refund row, one applied and one replayed entry, equal answers', async () => {
       const seeded = await seedVariant(k, 3, { priceMinor: 4_000 })
-      const order = await checkoutOf(k, seeded, 2, `ac1-refund-${randomUUID()}@p3-04.test`)
+      const order = await checkoutOf(k, seeded, 2, `ac1-refund-${randomUUID()}@audit.test`)
       expect(order.orderStatus).toBe('confirmed')
       const key = `ac1.refund.${randomUUID()}`
       const body = { amountMinor: 1_000 }
@@ -194,9 +188,15 @@ export function idempotencySuite(
       const answers = [first, ...retries]
       const context = JSON.stringify(answers.map((a) => [a.status, a.replayed, a.body]))
 
-      expect(pendingAtProvider, `committed pending rows seen at each provider call (${context})`).toEqual([1])
+      expect(
+        pendingAtProvider,
+        `committed pending rows seen at each provider call (${context})`,
+      ).toEqual([1])
       expect(retries.length, context).toBe(1)
-      expect(answers.map((a) => a.status), context).toEqual([200, 200])
+      expect(
+        answers.map((a) => a.status),
+        context,
+      ).toEqual([200, 200])
       expect(appliedAnswers(answers).length, context).toBe(1)
       expect(answers[1]!.body, context).toEqual(answers[0]!.body)
       expect(await raw.count('order_refunds', 'order_id = ?', [order.orderId])).toBe(1)
@@ -242,7 +242,7 @@ export function idempotencySuite(
       ])
     })
 
-    it('AC-1 (decision 5): a keyed command its service refused is not replayed: the retry executes again and applies once the stock allows it', async () => {
+    it('AC-1: a keyed command its service refused is not replayed: the retry executes again and applies once the stock allows it', async () => {
       const seeded = await seedVariant(k, 10)
       const key = `ac1.refused.${randomUUID()}`
 

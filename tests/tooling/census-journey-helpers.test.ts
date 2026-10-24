@@ -3,12 +3,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanupScratch, gateCli, git, REPO, scratchRepo, write } from './scratch-gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-12, review round finding 4: the journey rule
-// sees through helpers. When a test body calls a function imported from tests/e2e/support/**, that function's body
-// counts as part of the test (its API reads and its matchers), and a `request.newContext()` or `playwright.request`
-// context counts as a reader. A helper is not a blanket pass: a presence-only helper and a decorative read in a helper
-// are still violations. The step is the real `gate.ts census-trend <base>` on a scratch repo, as in
-// census-journey.test.ts.
+// AC-12: the journey rule sees through helpers. When a test body calls a function imported from tests/e2e/support/**,
+// that function's body counts as part of the test (its API reads and its matchers), and a `request.newContext()` or
+// `playwright.request` context counts as a reader. A helper is not a blanket pass: a presence-only helper and a
+// decorative read in a helper are still violations. The step is the real `gate.ts census-trend <base>` on a scratch
+// repo, as in census-journey.test.ts.
 
 afterEach(cleanupScratch)
 

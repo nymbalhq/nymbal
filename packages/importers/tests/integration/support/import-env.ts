@@ -24,10 +24,10 @@ import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
 import type { Logger } from '@nymbalhq/types'
 import { wirePublisher } from '../../../../platform/src/tests/publisher.js'
 
-// P2-11 AC-4 support: the kernel the WooCommerce importer writes through (the platform's dist, as
-// woocommerce-import.test.ts builds it), and a fetch mock of the WooCommerce API over the fixtures in which every product
-// has several images, each with bytes and a content type of its own, so a test can tell which source image a put or a
-// stored object came from. Requests to any other host go to the real fetch (an S3 server, for one).
+// The kernel the WooCommerce importer writes through (the platform's dist, as woocommerce-import.test.ts builds it),
+// and a fetch mock of the WooCommerce API over the fixtures in which every product has several images, each with bytes
+// and a content type of its own, so a test can tell which source image a put or a stored object came from. Requests
+// to any other host go to the real fetch (an S3 server, for one).
 
 const MIGRATIONS_ROOT = fileURLToPath(new URL('../../../../platform/migrations', import.meta.url))
 const FIXTURE_DIR = fileURLToPath(new URL('../fixtures', import.meta.url))
@@ -73,9 +73,7 @@ export function sourceCatalogue(perProduct = 3): {
     for (let i = 0; i < perProduct; i++) {
       const type = IMAGE_TYPES[n % IMAGE_TYPES.length]!
       const src = `${WC_URL}/img/${id}-${i + 1}.${type.ext}`
-      const bytes = new TextEncoder().encode(
-        `p2-11 source image ${src} #${n}\n`.repeat(1 + (n % 3)),
-      )
+      const bytes = new TextEncoder().encode(`s3 source image ${src} #${n}\n`.repeat(1 + (n % 3)))
       const image = { src, bytes, contentType: type.contentType }
       images.set(src, image)
       own.push(image)
@@ -155,7 +153,7 @@ export async function buildImportEnv() {
   ).publisher
   const reviews = createNativeReviewsAdapter({ repos, logger })
   const ai = createNativeAiAdapter(logger)
-  // P2-07 decision 1: the native search adapter is SQL over the command store's own database.
+  // The native search adapter is SQL over the command store's own database.
   const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
   const product = createProductService({ store: commandStore, repos, publisher, logger })
   const category = createCategoryService({ repos, publisher, logger })

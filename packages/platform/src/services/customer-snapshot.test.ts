@@ -12,13 +12,10 @@ import { createAuthService } from './auth-service.js'
 import { createCustomerService } from './customer-service.js'
 import { createLogger } from '../logger.js'
 
-// AC-5 (decision 2): `customer.created` (register and import) and
-// `customer.updated` (profile, add address, delete address) carry `customer`, equal to the customer row after the
-// write read as a CustomerSnapshot: exactly {id, email, firstName, lastName, phone, addresses, createdAt}, so no
-// passwordHash, roles, metadata, requiresPasswordReset or stats. The V1 fields stay: `customerId`, and `email` on
-// created. Events are read from the event log the command wrote, the row from the repository after it.
-// Kills: the snapshot taken before the write; a snapshot that leaks the hash, the roles or the metadata; the V1 fields
-// replaced by the snapshot.
+// AC-5: `customer.created` (register and import) and `customer.updated` (profile, add address, delete address) carry
+// `customer`, the row after the write read as a CustomerSnapshot: exactly {id, email, firstName, lastName, phone,
+// addresses, createdAt}, nothing secret. `customerId`, and `email` on created, stay. Events are read from the event
+// log the command wrote, the row from the repository after it.
 
 const SNAPSHOT_KEYS = ['addresses', 'createdAt', 'email', 'firstName', 'id', 'lastName', 'phone']
 
@@ -81,7 +78,7 @@ const addr = (line: string, defaults = false): Omit<CustomerAddress, 'id'> => ({
 })
 
 describe('AC-5: customer events carry a snapshot with no secrets', () => {
-  it('AC-5: register’s customer.created carries customer equal to the row’s snapshot, its keys exactly Decision 2’s, beside customerId and email', async () => {
+  it('AC-5: register’s customer.created carries customer equal to the row’s snapshot, its keys exactly the snapshot’s, beside customerId and email', async () => {
     const { auth, commandStore, snapshotOfRow, payloads } = await setup()
     const { customer } = await auth.register({
       email: 'snap@test.com',

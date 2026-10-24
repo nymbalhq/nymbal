@@ -1,15 +1,14 @@
-// P2-13 AC-6 and AC-7 (spec P2-13-contract-tests-public): a search adapter as a third party ships one, plain
-// JavaScript with no dependency, so it installs from a tarball anywhere and loads in Node without a build. It is the
-// in-memory search of the P2-05 swap fixture (tests/e2e/fixtures/custom-providers/adapters.ts): P2-07 decision 3's
-// matching over name, SKU, variant name and description, a category filter, an offset cursor it validates, an exact
-// total, no `facet` and no ranking promised.
+// A search adapter as a third party ships one, plain JavaScript with no dependency, so it installs from a tarball
+// anywhere and loads in Node without a build. It is the in-memory search of the swap fixture
+// (tests/e2e/fixtures/custom-providers/adapters.ts): matching over name, SKU, variant name and description, a category
+// filter, an offset cursor it validates, an exact total, no `facet` and no ranking promised.
 //
 // `createAdapter(options)` takes the `config` record of the store's slot that names this package. With
 // `ignoreCursor: true` its search reads page 1 whatever cursor it is given: the variant the published search suite
 // must refuse to certify. Like adapter-smtp it reads its connection settings again in `initialize(config)`: there
 // `dead: true` points it at an index it cannot reach, so its health is `down` and its search rejects.
 
-/** Decision 3's terms of a text: maximal runs of ASCII letters and digits, lowercased. */
+/** The search terms of a text: maximal runs of ASCII letters and digits, lowercased. */
 function termsOf(text) {
   return typeof text === 'string' ? (text.toLowerCase().match(/[a-z0-9]+/g) ?? []) : []
 }

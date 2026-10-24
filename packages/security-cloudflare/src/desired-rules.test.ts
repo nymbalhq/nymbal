@@ -15,14 +15,12 @@ import {
   type SpecSecurityConfig,
 } from './tests/support.js'
 
-// Acceptance tests for P2-04 AC-3 (spec P2-04-cloudflare-waf, Decisions 3 and 5): `desiredRules(config)` is pure and
-// gives Nymbal-owned rules (every ref `nymbal:`-prefixed, unique, the same under any key order), bodies Cloudflare
-// accepts (`cf.colo.id` in characteristics, `mitigation_timeout` by action), paths matched as the in-process limiter
-// matches them (`eq` without `*`, `wildcard` with `*` or `**`, `**` written as `*`), and nothing for a key that does not
-// start with `/`. Kills: refs that collide or follow object order (so every apply rewrites), an edge that limits paths
-// the origin does not (`starts_with`), and a rule body Cloudflare refuses.
+// AC-3: `desiredRules(config)` is pure and gives Nymbal-owned rules (every ref `nymbal:`-prefixed, unique, the same
+// under any key order), bodies Cloudflare accepts (`cf.colo.id` in characteristics, `mitigation_timeout` by action),
+// paths matched as the in-process limiter matches them (`eq` without `*`, `wildcard` with `*` or `**`, `**` written
+// as `*`), and nothing for a key that does not start with `/`.
 
-const CF = { zoneId: 'zone-p2-04', apiToken: 'unused', apiBase: 'http://127.0.0.1:9/client/v4' }
+const CF = { zoneId: 'zone-cf', apiToken: 'unused', apiBase: 'http://127.0.0.1:9/client/v4' }
 
 type Phases = Partial<Record<string, CfRule[]>>
 const rulesOf = (config: SpecSecurityConfig): Phases => desiredRules(config) as Phases
@@ -52,7 +50,7 @@ const anyPart = rulesPartArb({
   keys: fc.oneof(pathKeyArb, fc.constantFrom('api', 'api/v1', 'login')),
 })
 
-describe('P2-04 AC-3: desiredRules', () => {
+describe('AC-3: desiredRules', () => {
   it('AC-3: over generated configs, every ref is nymbal:-prefixed and unique, every description starts nymbal:, and the rules are the same under any key order of rateLimit and customRules', () => {
     fc.assert(
       fc.property(anyPart, fc.integer({ min: 0, max: 1_000_000 }), (part, seed) => {
@@ -184,7 +182,7 @@ describe('P2-04 AC-3: desiredRules', () => {
     expect(managed.map((r) => r.action_parameters?.['id'])).toEqual([
       MANAGED_RULESET_IDS.cloudflare,
     ])
-    // P2-19 AC-8: the cache phase always holds the fragment rule; the WAF phases hold only these two.
+    // The cache phase always holds the fragment rule; the WAF phases hold only these two.
     const { http_request_cache_settings: _cache, ...waf } = phases
     expect(refsOf(allRules(waf)).length).toBe(2)
   })

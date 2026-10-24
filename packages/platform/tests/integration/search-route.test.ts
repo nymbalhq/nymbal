@@ -6,14 +6,10 @@ import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel } from '../support/kernel.js'
 import { createFixtureSearchAdapter } from '../../../../tests/e2e/fixtures/custom-providers/adapters.js'
 
-// P2-07 AC-5, and AC-4's route half, over HTTP against a kernel built from `src/` (decision 6):
-// GET /api/products/search?q&limit&cursor&category returns {items, nextCursor, total, facets}. Walking `cursor` at
-// `limit=n` reproduces the adapter's own walk; `category=<slug>` narrows items and total to the category; for a
-// query with a match `facets` is [the category facet] iff search reports `facet`, in the listing's shape (field
-// `category`, slug values, name labels), counting the full walk's products per category; a miss gives `facets: []`.
-// A malformed cursor is a 400; a cursor at or past total is an empty last page.
-// Kills: a route that drops `total`, hard-codes `facets: []`, ignores `category`, emits category ids where the
-// listing emits slugs, reads a malformed cursor as page 1, or errors on a stale one.
+// AC-5, and AC-4's route half, over HTTP against a kernel built from `src/`: GET /api/products/search?q&limit&cursor&
+// category returns {items, nextCursor, total, facets}. Walking `cursor` reproduces the adapter's own walk;
+// `category=<slug>` narrows items and total; `facets` is the category facet in the listing's shape iff search reports
+// `facet`; a malformed cursor is a 400 and a cursor at or past total an empty last page.
 
 interface Category {
   id: string
@@ -115,7 +111,7 @@ async function seedCatalogue(served: ServedKernel, token: string) {
   const cats: Category[] = []
   for (const name of ['Alpha', 'Beta', 'Gamma']) {
     const c = await services.category.create({
-      slug: `p2-07-${name.toLowerCase()}-${token}`,
+      slug: `search-${name.toLowerCase()}-${token}`,
       name: `${name} ${token}`,
       description: '',
     })
@@ -126,7 +122,7 @@ async function seedCatalogue(served: ServedKernel, token: string) {
   for (let i = 0; i < 34; i++) {
     const inCats = i >= 30 ? [] : i % 3 === 0 ? [alpha] : i % 3 === 1 ? [beta] : [alpha, beta]
     const nameHit = i < 28
-    const slug = `p2-07-route-${token}-${i}`
+    const slug = `search-route-${token}-${i}`
     await services.product.create({
       slug,
       name: nameHit ? `Route ${token} item${i}` : `Elsewhere item${i}`,
@@ -144,7 +140,7 @@ async function seedCatalogue(served: ServedKernel, token: string) {
 
 const token = () => `rt${randomUUID().replace(/-/g, '').slice(0, 12)}`
 
-describe('P2-07 AC-5: GET /api/products/search on the native store (search reports facet)', () => {
+describe('AC-5: GET /api/products/search on the native store (search reports facet)', () => {
   let served: ServedKernel
   let tok: string
   let seeded: Awaited<ReturnType<typeof seedCatalogue>>
@@ -237,7 +233,7 @@ describe('P2-07 AC-5: GET /api/products/search on the native store (search repor
   })
 })
 
-describe('P2-07 AC-5: GET /api/products/search on a store with more categories than one document-store page', () => {
+describe('AC-5: GET /api/products/search on a store with more categories than one document-store page', () => {
   let served: ServedKernel
   let tok: string
   let seeded: Awaited<ReturnType<typeof seedCatalogue>>
@@ -249,7 +245,7 @@ describe('P2-07 AC-5: GET /api/products/search on a store with more categories t
     const { documentStore, config } = served.kernel
     const fillers = new Map<string, Category & { storeId: string }>()
     for (let i = 0; i < 500; i++) {
-      const slug = `p2-07-0-${tok}-${String(i).padStart(3, '0')}`
+      const slug = `search-0-${tok}-${String(i).padStart(3, '0')}`
       fillers.set(slug, { id: `filler-${tok}-${i}`, slug, name: slug, storeId: config.store.name })
     }
     await documentStore.batchPut('categories', fillers)
@@ -294,7 +290,7 @@ describe('P2-07 AC-5: GET /api/products/search on a store with more categories t
   })
 })
 
-describe('P2-07 AC-5: GET /api/products/search on a store whose search does not report facet', () => {
+describe('AC-5: GET /api/products/search on a store whose search does not report facet', () => {
   let served: ServedKernel
   let tok: string
   let seeded: Awaited<ReturnType<typeof seedCatalogue>>

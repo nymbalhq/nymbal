@@ -13,8 +13,8 @@ import {
   watchErrors,
 } from './server-rendered'
 
-// P2-17 (AC-3, AC-4, AC-7): what the journeys over the new elements share. Every reading is of the parsed DOM:
-// Playwright's CSS pierces open shadow roots, the declarative ones Chrome attaches with JavaScript off included.
+// What the journeys over the store elements share. Every reading is of the parsed DOM: Playwright's CSS pierces open
+// shadow roots, the declarative ones Chrome attaches with JavaScript off included.
 
 /** The Next projects (`nextjs-prod`, `nextjs`): the template whose router the element anchors must reach. */
 export const isNext = (testInfo: TestInfo): boolean => testInfo.project.name.startsWith('nextjs')
@@ -101,17 +101,17 @@ export async function catalogProduct(
   const category = ((await categories.json()) as { data: Array<{ id: string }> }).data[0]
   expect(category, 'a seeded category').toBeDefined()
   const tag = randomUUID().slice(0, 8)
-  const slug = `p2-17-${tag}`
+  const slug = `elements-${tag}`
   const images = Array.from(
     { length: imageCount },
-    (_, i) => `https://images.example.test/p2-17/${tag}-${i}.jpg`,
+    (_, i) => `https://images.example.test/elements/${tag}-${i}.jpg`,
   )
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), authorization: `Bearer ${token}` },
     data: {
       slug,
       name: `Elements Journey ${tag}`,
-      description: 'A product of one P2-17 journey.',
+      description: 'A product of one element journey.',
       status: 'active',
       type: 'variable',
       categoryIds: [category!.id],
@@ -155,7 +155,7 @@ export async function hostsWithScriptOff(
 }
 
 /**
- * P2-18 AC-5's reuse on `path` with JavaScript on: every element the JS-off page rendered keeps its per-part counts once
+ * AC-5's reuse on `path` with JavaScript on: every element the JS-off page rendered keeps its per-part counts once
  * upgraded, no `template[shadowrootmode]` is left and the console logs no error. `elements` are the tags the page must
  * have rendered on the server, so the comparison is never vacuous.
  */

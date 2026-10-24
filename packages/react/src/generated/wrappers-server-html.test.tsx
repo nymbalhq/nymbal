@@ -9,12 +9,10 @@ import type { ElementSchema } from '@nymbalhq/web-components'
 import { generateWrappers } from '../../scripts/generate-wrappers.js'
 import * as committed from './wrappers.js'
 
-// P2-18 AC-7 (spec Decision 7): a wrapper rendered on the server carries every schema attribute on its tag, so a page
-// rendered on the server (a 'use client' view included) ships the attributes its element renders from, before any
-// effect runs. `renderToString` runs no effect: an attribute set only in a `useEffect` (the generator before this
-// task) is missing from its output. Proved on generated schemas through the generator, and on every committed
-// wrapper with its element's real schema. The P2-06 AC-2 property (attribute changes reach the element through the
-// effect, generate-wrappers.test.ts) and P2-08 AC-5 (wrappers-per-element.test.ts) are unchanged and still hold.
+// AC-7: a wrapper rendered on the server carries every schema attribute on its tag, so a page rendered on the server
+// (a 'use client' view included) ships the attributes its element renders from, before any effect runs.
+// `renderToString` runs no effect, so an attribute set only in a `useEffect` is missing from its output. Proved on
+// generated schemas through the generator, and on every committed wrapper with its element's real schema.
 
 type Attribute = ElementSchema['attributes'][number]
 type AttrType = Attribute['type']
@@ -143,7 +141,7 @@ const REAL: ElementSchema[] = Object.values(wc as Record<string, unknown>)
   .filter((s): s is ElementSchema => s !== undefined)
   .filter((s) => s.attributes.length > 0)
 
-describe('P2-18 AC-7: wrappers carry attributes in server HTML', () => {
+describe('AC-7: wrappers carry attributes in server HTML', () => {
   it('AC-7: property: renderToString of a wrapper generated from any schema puts every attribute on its tag, read back as the prop that set it', () => {
     fc.assert(
       fc.property(

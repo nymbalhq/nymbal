@@ -14,12 +14,8 @@ import { buildRepositories, type Repositories } from '../../../platform/src/repo
 import { TEST_BUILDER_CONTEXT } from '../../../platform/src/tests/publisher.js'
 import { kernelConfig, MIGRATIONS_ROOT } from '../../../platform/tests/support/kernel.js'
 
-// Acceptance tests for P3-01 AC-7 (spec P3-01-event-log-surface, decision 7): `nymbal events tail`, the built CLI
-// spawned on a running SQLite store (WAL, as `nymbal migrate` leaves it) that this process writes to through the
-// event log repository. Every append is awaited, and the next is made only once the tail has printed the last, so the
-// appends land in different polls; a final append the tail must print bounds the wait for a late duplicate without a
-// fixed sleep. Needs `pnpm build`. Kills: duplicates or gaps across polls, history replayed by default, a `--from` or
-// `--type` that is ignored, and a SIGINT that exits non-zero.
+// AC-7: `nymbal events tail` on a running SQLite store this process appends to, one append per poll, with no
+// duplicates or gaps and a clean exit on SIGINT. Needs `pnpm build`.
 
 const makeEvent = createEventBuilder(TEST_BUILDER_CONTEXT)
 
@@ -31,7 +27,7 @@ let project: { dir: string; env: NodeJS.ProcessEnv }
 const tails: Tail[] = []
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'p3-01-tail-'))
+  dir = mkdtempSync(join(tmpdir(), 'events-tail-'))
   dbPath = join(dir, 'nymbal.db')
   store = createCommandStore(kernelConfig('sqlite'), { sqlitePath: dbPath })
   await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })
@@ -77,7 +73,7 @@ async function tail(args: string[] = []): Promise<Tail> {
   return t
 }
 
-describe('P3-01 AC-7: nymbal events tail', () => {
+describe('AC-7: nymbal events tail', () => {
   it('AC-7: started on a running store, it reports the current maximum seq in its ready line, prints none at or below it, and then, property over appends awaited one after another, prints exactly the appended seqs, each once, strictly increasing; SIGINT exits 0', async () => {
     const max = await currentMax()
     const t = await tail()

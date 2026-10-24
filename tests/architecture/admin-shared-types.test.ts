@@ -4,11 +4,10 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './workspace-manifests'
 
-// P1-08 AC-14: every type the admin shares with the kernel comes from @nymbalhq/types. No type, interface, enum,
-// class or const declared at the top level of a module under apps/admin/src takes the name of an export of
-// @nymbalhq/types; the export list is read from packages/types/src with the TypeScript checker (types and values),
-// so a new shared export is covered without editing this test. Kills: the 18 redeclarations in apps/admin/src/types.ts
-// (Address with line1/state while the shared one has addressLine1/region, so every real address rendered undefined).
+// AC-14: every type the admin shares with the kernel comes from @nymbalhq/types. No type, interface, enum, class or
+// const declared at the top level of a module under apps/admin/src takes the name of an export of @nymbalhq/types;
+// the export list is read from packages/types/src with the TypeScript checker (types and values), so a new shared
+// export is covered without editing this test.
 
 const TYPES_INDEX = join(REPO_ROOT, 'packages/types/src/index.ts')
 const ADMIN_SRC = join(REPO_ROOT, 'apps/admin/src')
@@ -96,7 +95,7 @@ function importsSharedTypes(file: string): boolean {
   )
 }
 
-describe('P1-08 AC-14: the admin declares no shared type of its own', () => {
+describe('AC-14: the admin declares no shared type of its own', () => {
   const shared = sharedExports()
   const files = sourceFiles(ADMIN_SRC)
   const declared = files.flatMap(declarations)

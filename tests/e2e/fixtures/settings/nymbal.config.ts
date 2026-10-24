@@ -1,9 +1,9 @@
 import { env } from '@nymbalhq/config'
 
-// P3-07 AC-8 (spec P3-07-secrets-settings, Decision 1, Fable M4): the settings store. The repository root's config with
-// `ai` on Anthropic, whose declared `baseUrl` is the stub provider the journey starts (NYMBAL_E2E_AI_BASE_URL) and whose
-// `apiKey` nothing sets, so the admin's Settings page is where it comes from. `nymbal dev --api-only` runs from this
-// directory on a port and database of the journey's own (tests/e2e/journeys/admin/settings.spec.ts), never 3001.
+// The settings store: the repository root's config with `ai` on Anthropic, whose declared `baseUrl` is the stub
+// provider the journey starts (NYMBAL_E2E_AI_BASE_URL) and whose `apiKey` nothing sets, so the admin's Settings page
+// is where it comes from. `nymbal dev --api-only` runs from this directory on a port and database of the journey's
+// own (tests/e2e/journeys/admin/settings.spec.ts), never 3001.
 
 export default {
   store: {

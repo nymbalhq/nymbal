@@ -76,7 +76,7 @@ const checkoutResult = {
   },
   currency: 'GBP',
   totalMinor: 2000,
-  // P1-12 decision 2: the payment outcome travels with the result.
+  // The payment outcome travels with the result.
   orderStatus: 'pending' as const,
   payment: { status: 'requires_action' as const },
 }

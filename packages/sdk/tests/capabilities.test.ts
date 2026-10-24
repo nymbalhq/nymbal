@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNymbalClient } from '../src/index.js'
 
-// P2-05 decision 1 (AC-1's client side): `client.capabilities.get()` answers the store's GET /api/capabilities
-// report, read once per client and cached for the process. Kills: a client that cannot read the report, one that
-// reshapes it, and one that asks the API again on every page component that needs it.
+// AC-1's client side: `client.capabilities.get()` answers the store's GET /api/capabilities report as it is, read
+// once per client and cached for the process.
 
 const API = 'http://api.test'
 

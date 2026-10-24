@@ -14,13 +14,12 @@ import {
   type FakeStripe,
 } from '../../../../tests/support/fake-stripe.js'
 
-// P2-05 AC-2 (the element): <nymbal-payment-element client='<json>'> renders the payments adapter's client half
-// through the SDK's driver registry, and its confirm(clientSecret) is the driver's. The built-in drivers come from
+// AC-2 (the element): <nymbal-payment-element client='<json>'> renders the payments adapter's client half through the
+// SDK's driver registry, and its confirm(clientSecret) is the driver's. The built-in drivers come from
 // registerComponents() (tests/setup.ts calls it): `test-mode` shows "Test mode — payment skipped" and confirms
 // nothing; `stripe` loads Stripe.js once from js.stripe.com (a fake window.Stripe here, no network), mounts a card and
 // confirms with confirmCardPayment. A null client renders nothing and confirms nothing; an unknown driver shows
-// payment-element-error. Kills: a driver that is not called, an answer the element reshapes (a decline reported as
-// paid), and a Stripe.js loaded once per element.
+// payment-element-error.
 
 type Confirmation = Awaited<ReturnType<PaymentDriver['confirm']>>
 
@@ -42,7 +41,7 @@ interface PaymentElement extends HTMLElement {
 
 /** What a checkout holds when it confirms: the shopper's email and the billing address it set. */
 const CONTEXT: PaymentConfirmContext = {
-  email: 'ada@p2-05.test',
+  email: 'ada@caps.test',
   billing: {
     firstName: 'Ada',
     lastName: 'Buyer',
@@ -57,7 +56,7 @@ const CONTEXT: PaymentConfirmContext = {
 
 /** The same context as Stripe's `billing_details`. */
 const BILLING_DETAILS = {
-  email: 'ada@p2-05.test',
+  email: 'ada@caps.test',
   name: 'Ada Buyer',
   address: {
     line1: '1 Main St',
@@ -85,7 +84,7 @@ function recordingDriver(answer: (secret: string) => Promise<Confirmation>) {
   const driver: PaymentDriver = {
     mount(el: HTMLElement, options: Record<string, string>) {
       mounts.push({ el, options })
-      el.insertAdjacentHTML('beforeend', '<p data-p2-05-driver>own driver</p>')
+      el.insertAdjacentHTML('beforeend', '<p data-caps-driver>own driver</p>')
     },
     confirm(clientSecret: string, context?: PaymentConfirmContext) {
       confirms.push(clientSecret)
@@ -137,7 +136,7 @@ describe('nymbal-payment-element', () => {
   })
 
   it('AC-2: an unknown driver shows payment-element-error and mounts nothing', async () => {
-    const el = mount({ driver: 'p2-05-no-such-driver', options: {} })
+    const el = mount({ driver: 'caps-no-such-driver', options: {} })
 
     await vi.waitFor(() =>
       expect(el.querySelector('[data-testid="payment-element-error"]')).not.toBeNull(),
@@ -148,16 +147,16 @@ describe('nymbal-payment-element', () => {
   it('AC-2: a driver registered with registerPaymentDriver is mounted inside the element with the client options, and over generated answers confirm passes the secret in and the driver’s answer out unchanged', async () => {
     let next: Confirmation = { ok: true, confirmed: true }
     const own = recordingDriver(async () => next)
-    registerPaymentDriver('p2-05-own', own.driver)
-    expect(getPaymentDriver('p2-05-own')).toBe(own.driver)
-    const options = { accountHint: 'acct_p2_05', locale: 'en-GB' }
+    registerPaymentDriver('caps-own', own.driver)
+    expect(getPaymentDriver('caps-own')).toBe(own.driver)
+    const options = { accountHint: 'acct_caps', locale: 'en-GB' }
 
-    const el = mount({ driver: 'p2-05-own', options })
+    const el = mount({ driver: 'caps-own', options })
     await vi.waitFor(() => expect(own.mounts.length).toBeGreaterThan(0))
     expect(own.mounts).toHaveLength(1)
     expect(own.mounts[0]!.options).toEqual(options)
     expect(el.contains(own.mounts[0]!.el)).toBe(true)
-    expect(el.querySelector('[data-p2-05-driver]')).not.toBeNull()
+    expect(el.querySelector('[data-caps-driver]')).not.toBeNull()
 
     await fc.assert(
       fc.asyncProperty(arbSecret, arbConfirmation, async (secret, answer) => {
@@ -178,14 +177,14 @@ describe('nymbal-payment-element', () => {
     const network = vi.fn(async () => new Response('', { status: 599 }))
     vi.stubGlobal('fetch', network)
 
-    const first = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_a' } })
+    const first = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_caps_a' } })
     await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
-    const second = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_a' } })
+    const second = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_caps_a' } })
     await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(1))
 
     expect(stripe.scripts()).toHaveLength(1)
     expect(stripe.scripts()[0]!.getAttribute('src')!.startsWith(STRIPE_JS)).toBe(true)
-    expect(new Set(stripe.keys)).toEqual(new Set(['pk_test_p2_05_a']))
+    expect(new Set(stripe.keys)).toEqual(new Set(['pk_test_caps_a']))
     expect(stripe.cards.map((c) => c.type)).toEqual(['card', 'card'])
     expect(first.contains(stripe.cards[0]!.mountedOn)).toBe(true)
     expect(second.contains(stripe.cards[1]!.mountedOn)).toBe(true)
@@ -194,19 +193,19 @@ describe('nymbal-payment-element', () => {
 
   it('AC-2: stripe confirm sends the client secret to confirmCardPayment with the mounted card: success is confirmed, a Stripe error is ok: false with its message', async () => {
     stripe = installFakeStripe()
-    const el = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_b' } })
+    const el = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_caps_b' } })
     await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
 
     stripe.answer = async () => ({ paymentIntent: { status: 'succeeded' } })
-    const paid = await el.confirm('pi_p2_05_ok_secret_1')
-    stripe.answer = async () => ({ error: { message: 'Your card was declined (p2-05).' } })
-    const declined = await el.confirm('pi_p2_05_decline_secret_2')
+    const paid = await el.confirm('pi_caps_ok_secret_1')
+    stripe.answer = async () => ({ error: { message: 'Your card was declined (caps).' } })
+    const declined = await el.confirm('pi_caps_decline_secret_2')
 
     expect(paid).toEqual({ ok: true, confirmed: true })
-    expect(declined).toEqual({ ok: false, error: 'Your card was declined (p2-05).' })
+    expect(declined).toEqual({ ok: false, error: 'Your card was declined (caps).' })
     expect(stripe.confirmCalls.map((c) => c.clientSecret)).toEqual([
-      'pi_p2_05_ok_secret_1',
-      'pi_p2_05_decline_secret_2',
+      'pi_caps_ok_secret_1',
+      'pi_caps_decline_secret_2',
     ])
     // The card the shopper typed into is the one confirmed: the element's own mounted card.
     const confirmedWith = stripe.confirmCalls.map(
@@ -217,29 +216,29 @@ describe('nymbal-payment-element', () => {
 
   it('AC-2: confirm hands the driver the checkout’s email and billing address as given', async () => {
     const own = recordingDriver(async () => ({ ok: true, confirmed: true }))
-    registerPaymentDriver('p2-05-own-context', own.driver)
-    const el = mount({ driver: 'p2-05-own-context', options: {} })
+    registerPaymentDriver('caps-own-context', own.driver)
+    const el = mount({ driver: 'caps-own-context', options: {} })
     await vi.waitFor(() => expect(own.mounts.length).toBeGreaterThan(0))
 
-    await el.confirm('pi_p2_05_ctx_secret_1', CONTEXT)
+    await el.confirm('pi_caps_ctx_secret_1', CONTEXT)
 
-    expect(own.confirms).toEqual(['pi_p2_05_ctx_secret_1'])
+    expect(own.confirms).toEqual(['pi_caps_ctx_secret_1'])
     expect(own.contexts).toEqual([CONTEXT])
   })
 
   it('AC-2: stripe confirm sends the checkout’s email, name and billing address to confirmCardPayment as billing_details, beside the mounted card', async () => {
     stripe = installFakeStripe()
-    const el = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_p2_05_c' } })
+    const el = mount({ driver: 'stripe', options: { publishableKey: 'pk_test_caps_c' } })
     await vi.waitFor(() => expect(stripe!.cards.length).toBeGreaterThan(0))
 
-    expect(await el.confirm('pi_p2_05_billing_secret_1', CONTEXT)).toEqual({
+    expect(await el.confirm('pi_caps_billing_secret_1', CONTEXT)).toEqual({
       ok: true,
       confirmed: true,
     })
 
     expect(stripe.confirmCalls).toEqual([
       {
-        clientSecret: 'pi_p2_05_billing_secret_1',
+        clientSecret: 'pi_caps_billing_secret_1',
         data: {
           payment_method: { card: stripe.cards[0]!.handle, billing_details: BILLING_DETAILS },
         },

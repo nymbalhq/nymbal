@@ -1,5 +1,5 @@
-// P1-01 fixture: a shopper over HTTP. Keeps the cookies the store sets (cart, CSRF) and echoes the CSRF cookie in
-// the header the security middleware checks, as the storefront SDK does.
+// A shopper over HTTP. Keeps the cookies the store sets (cart, CSRF) and echoes the CSRF cookie in the header the
+// security middleware checks, as the storefront SDK does.
 
 const CSRF_COOKIE = 'nymbal.csrf'
 const CSRF_HEADER = 'x-csrf-token'

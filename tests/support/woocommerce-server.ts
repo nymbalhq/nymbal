@@ -5,10 +5,10 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// An HTTP WooCommerce REST API (wp-json/wc/v3) over the importer's fixtures, for imports run through the CLI
-// (P2-11 AC-5), where a fetch mock cannot reach. Every product's images are rewritten to images this server serves,
-// `imagesPerProduct` of them, each with bytes and a content type of its own, so a test can tell which source image a
-// stored object came from. Any request without Basic credentials is refused, as WooCommerce does.
+// An HTTP WooCommerce REST API (wp-json/wc/v3) over the importer's fixtures, for imports run through the CLI, where a
+// fetch mock cannot reach. Every product's images are rewritten to images this server serves, `imagesPerProduct` of
+// them, each with bytes and a content type of its own, so a test can tell which source image a stored object came
+// from. Any request without Basic credentials is refused, as WooCommerce does.
 
 const FIXTURES = fileURLToPath(
   new URL('../../packages/importers/tests/integration/fixtures', import.meta.url),
@@ -52,7 +52,7 @@ function fixture(name: string): Array<Record<string, unknown>> {
 
 /** Bytes no other image has: a marker naming the src, then a run derived from its hash. */
 function bytesFor(src: string, index: number): Uint8Array {
-  const marker = new TextEncoder().encode(`p2-11 image ${src}\n`)
+  const marker = new TextEncoder().encode(`s3 image ${src}\n`)
   const tail = createHash('sha256').update(src).digest()
   const out = new Uint8Array(marker.length + tail.length * (1 + (index % 3)))
   out.set(marker)

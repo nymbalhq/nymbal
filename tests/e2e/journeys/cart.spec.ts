@@ -125,9 +125,9 @@ test.describe('Cart interactions', () => {
   })
 })
 
-// P2-15 AC-5 (theming.views-are-elements): the cart page is `nymbal-cart-page` on both templates. Its lines are in the
-// element's shadow root, not the template's markup, and agree with GET /api/cart: one line per item in its order,
-// each with its product name, and the summary showing the API's subtotalMinor (P2-15 decision 2).
+// AC-5: the cart page is `nymbal-cart-page` on both templates. Its lines are in the element's shadow root, not the
+// template's markup, and agree with GET /api/cart: one line per item in its order, each with its product name, and the
+// summary showing the API's subtotalMinor.
 
 interface ApiCartLines {
   data: {

@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { PLAN_LIMITS, type CfRule, type Plan } from './fake-cloudflare.js'
 
-// P2-04 acceptance support (spec P2-04-cloudflare-waf): the `security` block the adapter is given, the context its
-// `createAdapter` is called with, and generators of configs. The shapes are the spec's (Decision 4, Interface), written
-// here so the tests depend on the spec and not on the implementation's types.
+// The `security` block the adapter is given, the context its `createAdapter` is called with, and generators of
+// configs. The shapes are written here so the tests depend on the documented interface and not on the
+// implementation's types.
 
 export type RateLimitAction = 'block' | 'challenge' | 'throttle'
 export type CustomRuleAction = 'block' | 'managed_challenge' | 'js_challenge' | 'log'
@@ -13,7 +13,7 @@ export type SpecRateLimit = { requests: number; window: string; action: RateLimi
 export type SpecCustomRule = { name: string; expression: string; action: CustomRuleAction }
 export type SpecCloudflareBlock = { zoneId?: string; apiToken?: string; apiBase?: string }
 
-/** The parsed `security` block of a `cloudflare` store (Decision 4). A type alias, so it has an implicit index signature. */
+/** The parsed `security` block of a `cloudflare` store. A type alias, so it has an implicit index signature. */
 export type SpecSecurityConfig = {
   adapter: 'cloudflare'
   rateLimit: Record<string, SpecRateLimit>
@@ -42,7 +42,7 @@ export type SpecPlan = {
   }>
 }
 
-/** Decision 5: each window and the period it becomes, in seconds. */
+/** Each window and the period it becomes, in seconds. */
 export const WINDOW_PERIODS: Readonly<Record<string, number>> = {
   '10s': 10,
   '1m': 60,
@@ -53,7 +53,7 @@ export const WINDOW_PERIODS: Readonly<Record<string, number>> = {
 }
 export const WINDOWS = Object.keys(WINDOW_PERIODS)
 
-export const TOKEN = 'cf-p2-04-token-never-printed-7Qm2Xv'
+export const TOKEN = 'cf-token-never-printed-7Qm2Xv'
 
 export function securityConfig(
   cloudflare: SpecCloudflareBlock,
@@ -70,7 +70,7 @@ export function securityConfig(
       xFrameOptions: 'deny',
     },
     csrf: true,
-    auth: { jwtSecret: 'p2-04-jwt-secret-long-enough', accessTtl: '15m', refreshTtl: '7d' },
+    auth: { jwtSecret: 'cf-jwt-secret-long-enough', accessTtl: '15m', refreshTtl: '7d' },
     geo: { block: [] },
     customRules: [],
     managedRulesets: [],
@@ -97,7 +97,7 @@ export const silentLogger: SilentLogger = {
   child: () => silentLogger,
 }
 
-/** Decision 4: for the `security` slot, `ctx.config` is the `security.cloudflare` block. */
+/** For the `security` slot, `ctx.config` is the `security.cloudflare` block. */
 export function adapterContext(cloudflare: SpecCloudflareBlock) {
   return {
     slot: 'security' as const,

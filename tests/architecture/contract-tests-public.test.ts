@@ -5,20 +5,19 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, type Manifest } from './workspace-manifests'
 
-// P2-13 AC-1 (spec P2-13-contract-tests-public, decision 1): @nymbalhq/contract-tests is publishable and versions with
-// the group. Its manifest is not private, has publishConfig (public) and repository, depends on fast-check (the moved
-// property suites need it at runtime) and peers vitest without depending on it; it is in the changesets fixed group
-// the kernel is in, at the kernel's version. `npm pack` holds dist/index.js and its declarations, and that build
-// exports `contractSuites` with a suite for every kind that has a contract (the eight commerce slots, documentStore,
+// AC-1: @nymbalhq/contract-tests is publishable and versions with the group. Its manifest is not private, has
+// publishConfig (public) and repository, depends on fast-check (the property suites need it at runtime) and peers
+// vitest without depending on it (two vitests in a project would break); it is in the changesets fixed group the
+// kernel is in, at the kernel's version. `npm pack` holds dist/index.js and its declarations, and that build exports
+// `contractSuites` with a suite for every kind that has a contract (the eight commerce slots, documentStore,
 // eventBus, media) and the search oracle the runners use. PUBLISHED_DIRS (workspace-names.test.ts) lists it too.
-// Needs `pnpm build`. Kills: a package that stays private or outside the group, a tarball without the suites or the
-// oracle, a suite missing for a kind the CLI looks up, and vitest bundled as a dependency (two vitests in a project).
+// Needs `pnpm build`.
 
 const DIR = join(REPO_ROOT, 'packages', 'contract-tests')
 const read = (dir: string): Manifest =>
   JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Manifest
 
-/** Decision 3: ContractKind = Slot, and every kind with a contract today has a suite. */
+/** ContractKind = Slot, and every kind with a contract has a suite. */
 const KINDS = [
   'payments',
   'email',
@@ -34,7 +33,7 @@ const KINDS = [
 ] as const
 const ORACLE = ['searchTerms', 'matchesQuery', 'toSearchDocument'] as const
 
-describe('P2-13 AC-1: @nymbalhq/contract-tests publishes with the group', () => {
+describe('AC-1: @nymbalhq/contract-tests publishes with the group', () => {
   it('AC-1: the manifest is public, with publishConfig access public and a repository; fast-check is a dependency and vitest only a peer', () => {
     const m = read(DIR)
 
@@ -88,7 +87,7 @@ describe('P2-13 AC-1: @nymbalhq/contract-tests publishes with the group', () => 
     ).toEqual([])
     // The oracle the package exports is the runners' one: a product matches a query made of its own name's terms.
     const product = {
-      id: 'p2-13',
+      id: 'contracts',
       name: 'Merino Crew-Neck',
       description: 'warm',
       variants: [],

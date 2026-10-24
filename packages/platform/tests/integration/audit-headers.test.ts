@@ -12,10 +12,9 @@ import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, seedVariant, type Seeded } from '../support/kernel.js'
 import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 
-// Acceptance test for P3-04 AC-7, the request half (spec P3-04-audit-trail, decision 5) on SQLite: an admin write with
-// an Idempotency-Key outside 1-128 characters of [A-Za-z0-9._:-] answers 400 naming the header, before anything
-// moves; a well-formed one is accepted and stored. The CORS half is packages/http/src/cors-expose-headers.test.ts.
-// Kills: any string stored as a key (today the header is ignored and the write applies).
+// AC-7, the request half, on SQLite: an admin write with an Idempotency-Key outside 1-128 characters of
+// [A-Za-z0-9._:-] answers 400 naming the header before anything moves; a well-formed one is stored. The CORS half is
+// packages/http/src/cors-expose-headers.test.ts.
 
 let served: ServedKernel
 let raw: RawReader
@@ -40,7 +39,7 @@ function asReceived(sent: string): string {
   return sent.replace(/^[ \t]+|[ \t]+$/g, '')
 }
 
-describe('P3-04 AC-7: a malformed Idempotency-Key is refused', () => {
+describe('AC-7: a malformed Idempotency-Key is refused', () => {
   const latin1 = fc
     .integer({ min: 0x20, max: 0xff })
     .filter((c) => c !== 0x7f)

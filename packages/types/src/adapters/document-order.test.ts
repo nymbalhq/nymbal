@@ -2,17 +2,15 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { compareDocumentValues, matchesSortKey } from './document-order.js'
 
-// Acceptance tests for P2-02 AC-2 (spec P2-02-primitives-are-protocols), the reference half: compareDocumentValues and
-// matchesSortKey are the one model every document store is held to (decision 3). Strings compare with Intl.Collator at
-// base sensitivity, numbers numerically; values of different types rank by type first (number, then string, then any
-// other type, then null and missing), so the order is total and antisymmetric (R1); `eq` is `===`, and `gt`, `lt` and
-// `between` are compareDocumentValues. Kills: today's compare, which returns 1 both ways for 1 and '1'; byte order for
-// strings; a text `eq` that matches 1 against '1'; nulls ranked first.
+// AC-2, the reference half: compareDocumentValues and matchesSortKey are the one model every document store is held
+// to. Strings compare with Intl.Collator at base sensitivity, numbers numerically; values of different types rank by
+// type first (number, then string, then any other type, then null and missing), so the order is total and
+// antisymmetric; `eq` is `===`, and `gt`, `lt` and `between` are compareDocumentValues.
 
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
 const sign = (n: number): number => (n > 0 ? 1 : n < 0 ? -1 : 0)
 
-/** Decision 3's generator domain: case, accent and equal-base strings, ints and numeric strings, null and missing. */
+/** The generator domain: case, accent and equal-base strings, ints and numeric strings, null and missing. */
 const strings = fc.oneof(
   fc.constantFrom('a', 'A', 'á', 'b', 'B', 'e', 'é', 'E', 'ab', 'Ab', 'áb', '1', '10', '2', '01'),
   fc.string({ maxLength: 4 }),
@@ -36,7 +34,7 @@ function rankOf(v: unknown): Rank {
   return 2
 }
 
-describe('P2-02 AC-2: compareDocumentValues is a total order over the generator domain', () => {
+describe('AC-2: compareDocumentValues is a total order over the generator domain', () => {
   it('AC-2: antisymmetric: compare(a, b) and compare(b, a) have opposite signs, for every pair (1 and "1" included)', () => {
     fc.assert(
       fc.property(value, value, (a, b) => {
@@ -87,7 +85,7 @@ describe('P2-02 AC-2: compareDocumentValues is a total order over the generator 
   })
 })
 
-describe('P2-02 AC-2: matchesSortKey is === for eq and compareDocumentValues for gt, lt and between', () => {
+describe('AC-2: matchesSortKey is === for eq and compareDocumentValues for gt, lt and between', () => {
   it('AC-2: eq matches exactly the strictly equal values: 1 is not "1", and "a" is not "A"', () => {
     fc.assert(
       fc.property(value, value, (v, target) => {

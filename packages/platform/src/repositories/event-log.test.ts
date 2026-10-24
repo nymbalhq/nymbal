@@ -9,8 +9,8 @@ import { TEST_BUILDER_CONTEXT } from '../tests/publisher.js'
 import { buildRepositories } from './index.js'
 import type { LoggedEvent } from './event-log.js'
 
-// The event log's reads and retention writes on SQLite (spec P3-01-event-log-surface): each filter is checked against
-// the same selection done in memory over `listAll`, and every write against the rows it must leave alone.
+// The event log's reads and retention writes on SQLite: each filter is checked against the same selection done in
+// memory over `listAll`, and every write against the rows it must leave alone.
 
 const makeEvent = createEventBuilder(TEST_BUILDER_CONTEXT)
 const T0 = new Date('2026-01-01T00:00:00.000Z')
@@ -102,8 +102,16 @@ describe('event log: delivery state', () => {
     })
 
     const byId = new Map((await env.all()).map((r) => [r.event.id, r]))
-    expect(byId.get(delivered!.id)).toMatchObject({ deliveredAt: minutes(1), deadAt: null, attempts: 0 })
-    expect(byId.get(dying!.id)).toMatchObject({ deliveredAt: null, deadAt: minutes(3), attempts: 2 })
+    expect(byId.get(delivered!.id)).toMatchObject({
+      deliveredAt: minutes(1),
+      deadAt: null,
+      attempts: 0,
+    })
+    expect(byId.get(dying!.id)).toMatchObject({
+      deliveredAt: null,
+      deadAt: minutes(3),
+      attempts: 2,
+    })
     expect(byId.get(failing!.id)).toMatchObject({ deliveredAt: null, deadAt: null, attempts: 1 })
     expect(byId.get(pending!.id)).toMatchObject({ deliveredAt: null, deadAt: null, attempts: 0 })
 
@@ -151,7 +159,9 @@ describe('event log: retention', () => {
   it('deleteDeliveredBefore deletes only rows delivered before the cutoff and counts them', async () => {
     const env = await setup()
     const rows = await retentionLog(env)
-    const deleted = await env.store.transaction((tx) => env.log.deleteDeliveredBefore(tx, minutes(10)))
+    const deleted = await env.store.transaction((tx) =>
+      env.log.deleteDeliveredBefore(tx, minutes(10)),
+    )
     const left = ids(await env.all())
 
     expect(left).not.toContain(rows.early.id)
@@ -235,7 +245,9 @@ describe('event log: queryByCorrelation and listAfter', () => {
     expect(await query({ limit: 10, until: minutes(2) })).toEqual([created.id, added.id])
     expect(await query({ limit: 10, since: minutes(1), until: minutes(2) })).toEqual([added.id])
     expect(
-      await env.store.read((tx) => env.log.queryByCorrelation(tx, 'corr-b', { limit: 10 })).then(ids),
+      await env.store
+        .read((tx) => env.log.queryByCorrelation(tx, 'corr-b', { limit: 10 }))
+        .then(ids),
     ).toEqual([other.id])
   })
 

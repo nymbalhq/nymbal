@@ -1,8 +1,8 @@
 import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
 import type { RawReader } from './raw.js'
 
-// P1-03 support: the `events` table as a second connection sees it, and a bus whose publish rejects for chosen
-// event types (the AC-6 / AC-9 wrapper; the relay looks `publish` up on the bus at call time).
+// The `events` table as a second connection sees it, and a bus whose publish rejects for chosen event types (the
+// relay looks `publish` up on the bus at call time).
 
 export interface EventRow {
   seq: number

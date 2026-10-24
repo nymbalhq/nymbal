@@ -16,12 +16,11 @@ import {
   type CartProjection,
 } from '../__fixtures__/server-data.js'
 
-// P2-18 AC-2 (spec Decision 2): an element the server rendered from a property keeps showing that property's data
-// once it has a client, until its store's first settled update (`loading: false`); an update with `loading: true`
-// (the cart store's first, `cart-store.ts:38`) leaves it showing; after the settled one the element shows the store's
-// data. With no property and a client it shows the store's, as before. The store is empty when the element connects,
-// so a property that is ignored shows the empty state. Kills: an element that ignores its property, drops it on the
-// `loading: true` update (the header badge flips 1 → 0 → 1), or keeps it after the store settled.
+// AC-2: an element the server rendered from a property keeps showing that property's data once it has a client, until
+// its store's first settled update (`loading: false`); an update with `loading: true` (the cart store's first,
+// `cart-store.ts:38`) leaves it showing; after the settled one the element shows the store's data. With no property
+// and a client it shows the store's. The store is empty when the element connects, so a property that is ignored
+// shows the empty state.
 //
 // Data from a property is prefixed `p-`, from a store `s-`, so the two are never mistaken for each other.
 
@@ -66,7 +65,7 @@ const settledCart = (c: CartProjection) => ({ ...c, loading: false, error: null 
 
 /** The cart elements: each shows its lines' names in `[part~=item-name]`. */
 for (const tag of ['nymbal-cart-page', 'nymbal-checkout', 'nymbal-cart-drawer']) {
-  describe(`P2-18 AC-2: ${tag}`, () => {
+  describe(`AC-2: ${tag}`, () => {
     it(`AC-2: property: ${tag} shows its cart property's lines through a loading update, the cart store's after the first settled one, and the store's with no property`, async () => {
       await fc.assert(
         fc.asyncProperty(cart('p-', 1), cart('s-', 1), async (property, stored) => {
@@ -131,7 +130,7 @@ for (const tag of ['nymbal-cart-page', 'nymbal-checkout', 'nymbal-cart-drawer'])
   })
 }
 
-describe('P2-18 AC-2: nymbal-mini-cart', () => {
+describe('AC-2: nymbal-mini-cart', () => {
   const badge = (el: Element): string => partTexts(el, 'badge')[0] ?? ''
   const shown = (n: number): string => (n > 0 ? String(n) : '')
 
@@ -162,7 +161,7 @@ describe('P2-18 AC-2: nymbal-mini-cart', () => {
   })
 })
 
-describe('P2-18 AC-2: nymbal-search-results', () => {
+describe('AC-2: nymbal-search-results', () => {
   /** The slugs of the product cards the results render, in order. */
   const slugs = (el: Element): string[] =>
     [...shadow(el).querySelectorAll('nymbal-product-card')].map(
@@ -193,7 +192,7 @@ describe('P2-18 AC-2: nymbal-search-results', () => {
   })
 })
 
-describe('P2-18 AC-2: nymbal-variant-selector', () => {
+describe('AC-2: nymbal-variant-selector', () => {
   const options = (el: Element): string[] => partTexts(el, 'option').sort()
 
   it('AC-2: property: nymbal-variant-selector shows its product property’s options through a loading update, the product store’s after the first settled one, and the store’s with no property', async () => {
@@ -219,7 +218,7 @@ describe('P2-18 AC-2: nymbal-variant-selector', () => {
   })
 })
 
-describe('P2-18 AC-2: nymbal-product-filter', () => {
+describe('AC-2: nymbal-product-filter', () => {
   const labels = (el: Element): string[] => partTexts(el, 'option-label')
   const labelsOf = (list: Array<{ values: Array<{ label: string }> }>): string[] =>
     list.flatMap((f) => f.values.map((v) => v.label))
@@ -251,7 +250,7 @@ describe('P2-18 AC-2: nymbal-product-filter', () => {
   })
 })
 
-describe('P2-18 AC-2: nymbal-profile-form', () => {
+describe('AC-2: nymbal-profile-form', () => {
   /** The values the form's fields show, by field name. */
   const fields = (el: Element): Record<string, string> =>
     Object.fromEntries([...shadow(el).querySelectorAll('input')].map((i) => [i.name, i.value]))
@@ -288,7 +287,7 @@ describe('P2-18 AC-2: nymbal-profile-form', () => {
   })
 })
 
-describe('P2-18 AC-2: nymbal-address-book', () => {
+describe('AC-2: nymbal-address-book', () => {
   /** The ids of the addresses the book lists, in order. */
   // The part token read exactly: happy-dom's `[part~="address"]` also matches `address-line` and `address-badge`.
   const listed = (el: Element): string[] =>
@@ -335,20 +334,17 @@ describe('P2-18 AC-2: nymbal-address-book', () => {
   })
 })
 
-// ─── P2-17 AC-2 (spec Decision 1): the grid, the PDP's price and its stock badge ─────────────────────────────────
+// ─── AC-2: the grid, the PDP's price and its stock badge ─────────────────────────────────
 //
-// The same rule for the three store-backed elements P2-17 adds. `nymbal-product-grid` with `source="product-list"`
+// The same rule for the three store-backed catalogue elements. `nymbal-product-grid` with `source="product-list"`
 // shows its `products` attribute's cards until the product-list store's first settled update, then the store's items
 // in the store's order, following every later settled update (a sort, a load-more). `nymbal-product-price` and
 // `nymbal-stock-badge` show their attributes until the product store settles on the product their `product-id` names,
 // then the selected variant's price and stock, following `selectVariant`; a store settled on another product (the one a
 // Next soft navigation PDP → PDP left behind) is ignored. The badge's level and label are the one rule of
-// @nymbalhq/types (P2-12), negatives included; the two tests that held that rule over the templates' badges
-// (templates/{astro,nextjs}/tests/stock-badge.test.*) go with the badges. Kills: a grid that re-renders from its
-// attribute after the store moved, or shows the store before it settled; a price or badge that ignores the selected
-// variant, follows another product's store, or keeps a rule of its own.
+// @nymbalhq/types, negatives included.
 
-describe('P2-17 AC-2: nymbal-product-grid source="product-list"', () => {
+describe('AC-2: nymbal-product-grid source="product-list"', () => {
   /** The slugs of the cards the grid renders, in order. */
   const slugs = (el: Element): string[] =>
     [...shadow(el).querySelectorAll('nymbal-product-card')].map(
@@ -417,7 +413,7 @@ const selected = (product: { variants: unknown[] }, i: number) => ({
   error: null,
 })
 
-describe('P2-17 AC-2: nymbal-product-price', () => {
+describe('AC-2: nymbal-product-price', () => {
   const price = (el: Element): string[] => partTexts(el, 'price')
 
   it('AC-2: property: the price shows its price-minor through a loading update and while the store holds another product, the selected variant’s price once the store settles on its product-id, and each variant selectVariant chooses after', async () => {
@@ -506,7 +502,7 @@ describe('P2-17 AC-2: nymbal-product-price', () => {
   })
 })
 
-describe('P2-17 AC-2: nymbal-stock-badge', () => {
+describe('AC-2: nymbal-stock-badge', () => {
   /** The badge's level and label, as the shopper's page shows them. */
   const badge = (el: Element) => {
     const node = shadow(el).querySelector('[part~="badge"]')

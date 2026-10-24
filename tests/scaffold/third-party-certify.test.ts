@@ -5,14 +5,12 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-// P2-13 AC-7, the roadmap proof (spec P2-13-contract-tests-public): in scripts/scaffold-clean.sh's Verdaccio flow (the
-// CI job scaffold-clean runs this project after the script has published every public package), a directory outside
-// the workspace installs `nymbal`, `@nymbalhq/contract-tests` and vitest from the registry the script set up, plus the
-// third-party fixture (tests/fixtures/third-party-search) from a tarball, names the fixture on its search slot, and
-// `npx nymbal test:contracts --package <fixture>` exits 0 with the certified line. It installs at the version the
-// scaffold resolved, so it certifies with exactly what was published. Kills: a contract-tests package that is not
-// published (private, or outside the fixed group), a tarball without the suites, and a command that cannot run from
-// an npm install.
+// AC-7: in scripts/scaffold-clean.sh's Verdaccio flow (the CI job scaffold-clean runs this project after the script
+// has published every public package), a directory outside the workspace installs `nymbal`, `@nymbalhq/contract-tests`
+// and vitest from the registry the script set up, plus the third-party fixture (tests/fixtures/third-party-search)
+// from a tarball, names the fixture on its search slot, and `npx nymbal test:contracts --package <fixture>` exits 0
+// with the certified line. It installs at the version the scaffold resolved, so it certifies with exactly what was
+// published.
 //
 //   NYMBAL_SCAFFOLD_DIR   the scaffolded project (its node_modules holds the published version)
 //   npm_config_registry   the registry the script published to, exported by scaffold-clean.sh with its userconfig
@@ -21,7 +19,7 @@ const SCAFFOLD_DIR = process.env['NYMBAL_SCAFFOLD_DIR']
 const REGISTRY = process.env['npm_config_registry']
 if (!SCAFFOLD_DIR || !REGISTRY) {
   throw new Error(
-    'P2-13 AC-7 needs NYMBAL_SCAFFOLD_DIR and npm_config_registry (the local registry the packages were published to). ' +
+    'AC-7 needs NYMBAL_SCAFFOLD_DIR and npm_config_registry (the local registry the packages were published to). ' +
       'Run it through scripts/scaffold-clean.sh <astro|nextjs>, which publishes, scaffolds and sets both.',
   )
 }
@@ -30,7 +28,7 @@ const REPO = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..')
 const FIXTURE = join(REPO, 'tests', 'fixtures', 'third-party-search')
 const PKG = '@acme/nymbal-search'
 
-const project = mkdtempSync(join(tmpdir(), 'p2-13-certify-published-'))
+const project = mkdtempSync(join(tmpdir(), 'contracts-certify-published-'))
 afterAll(() => rmSync(project, { recursive: true, force: true }))
 
 /** The npm a user has: no Vitest variables, so the certifying run is not taken for this one. */
@@ -48,7 +46,7 @@ function npm(args: string[], timeout = 300_000) {
   return { status: res.status, out: `${res.stdout ?? ''}${res.stderr ?? ''}` }
 }
 
-describe('P2-13 AC-7: a store outside the workspace certifies a third-party adapter with the published packages', () => {
+describe('AC-7: a store outside the workspace certifies a third-party adapter with the published packages', () => {
   it('AC-7: nymbal, @nymbalhq/contract-tests and vitest from the registry, the fixture from its tarball: `nymbal test:contracts --package` exits 0 with `certified … (search): N cases passed`', () => {
     const published = (
       JSON.parse(readFileSync(join(DIR, 'node_modules', 'nymbal', 'package.json'), 'utf8')) as {
@@ -57,14 +55,14 @@ describe('P2-13 AC-7: a store outside the workspace certifies a third-party adap
     ).version
     writeFileSync(
       join(project, 'package.json'),
-      `${JSON.stringify({ name: 'p2-13-certify', private: true, type: 'module' }, null, 2)}\n`,
+      `${JSON.stringify({ name: 'contracts-certify', private: true, type: 'module' }, null, 2)}\n`,
     )
     const packed = npm(['pack', FIXTURE, '--pack-destination', project])
     const tarball = readdirSync(project).find((f) => f.endsWith('.tgz'))
     writeFileSync(
       join(project, 'nymbal.config.ts'),
       `export default ${JSON.stringify({
-        store: { name: 'P2-13', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+        store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
         template: 'astro',
         infrastructure: {
           commandStore: 'sqlite',

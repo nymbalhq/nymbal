@@ -23,18 +23,15 @@ import {
   rebuildFresh,
 } from '../read-models.js'
 
-// P3-02 AC-3 on one dialect (spec P3-02-replay-engine, decision 3, Fable B1 and R1): no write is lost to a rebuild.
-// The rebuild of every model runs against the kernel's own read models with a small page size and is paused by its
-// `onPage` hook at a generated page; while it waits, writes go through the services and the in-process relay delivers
-// them to the old set; then the rebuild swaps and catches up. Some runs restamp those events' `delivered_at` up to five
-// minutes before the rebuild started, as a relay on a slower clock would (R1). After each run the live read models
-// equal a fresh rebuild, and each write is there. On Postgres a lower-seq transaction that commits after the rebuild's
-// reads is caught up too (B1; SQLite serialises writers, so it cannot happen there). A catch-up handler that fails is
-// reported with the event's seq, the model is swapped all the same, and catch-up carries on past it.
+// AC-3 on one dialect: no write is lost to a rebuild. The rebuild of every model runs against the kernel's own read
+// models with a small page size and is paused by its `onPage` hook at a generated page; while it waits, writes go
+// through the services and the in-process relay delivers them to the old set; then the rebuild swaps and catches up.
+// Some runs restamp those events' `delivered_at` up to five minutes before the rebuild started, as a relay on a slower
+// clock would. After each run the live read models equal a fresh rebuild, and each write is there. On Postgres a
+// lower-seq transaction that commits after the rebuild's reads is caught up too (SQLite serialises writers, so it
+// cannot happen there). A catch-up handler that fails is reported with the event's seq, the model is swapped all the
+// same, and catch-up carries on past it.
 // `listForCatchUp` is checked directly: non-dead, delivered at or after `since` or never, by seq.
-// Kills: a swap that discards writes made while the rebuild read; a catch-up cursor of `seq > maxSeq` (the late
-// commit); a catch-up of `delivered_at >= T0` with no margin (the skewed relay); catch-up through the bus, which
-// swallows a failed handler; a failed catch-up event that aborts the swap or the rest of catch-up.
 
 const PAGE_SIZE = 2
 const SKEW_MAX_MS = 5 * 60_000
@@ -110,7 +107,7 @@ async function pendingOrder(
   const started = await k.services.checkout.beginCheckout({
     cartToken: cart.token,
     customerId,
-    email: `catchup-${randomUUID()}+stub-pending@p3-02.test`,
+    email: `catchup-${randomUUID()}+stub-pending@replay.test`,
     billingAddress: address,
     shippingAddress: address,
   })
@@ -173,7 +170,7 @@ export function replayCatchUpSuite(
   open: () => Promise<{ kernel: Kernel; drop(): Promise<void> }>,
   opts: { runs: number },
 ): void {
-  describe(`P3-02 AC-3: writes during a rebuild survive the swap (${dialect})`, () => {
+  describe(`AC-3: writes during a rebuild survive the swap (${dialect})`, () => {
     let k: Kernel
     let drop: () => Promise<void>
 
@@ -203,7 +200,7 @@ export function replayCatchUpSuite(
             const items: Item[] = []
             for (let i = 0; i < 5; i++) items.push(await product(k, [category.id]))
             const { customer } = await k.services.auth.register({
-              email: `catchup-${tag}@p3-02.test`,
+              email: `catchup-${tag}@replay.test`,
               password: 'correct-horse-battery',
             })
             const order = await pendingOrder(k, items[0]!, customer.id)
@@ -217,9 +214,9 @@ export function replayCatchUpSuite(
             const before = await maxSeq(k)
             const renamed = `renamed ${randomUUID().slice(0, 8)}`
             await k.services.product.update(items[1]!.id, { name: renamed })
-            await k.services.inventory.adjustStock(items[2]!.variantId, -2, 'manual', 'p3-02')
+            await k.services.inventory.adjustStock(items[2]!.variantId, -2, 'manual', 'replay')
             const added = await product(k, [category.id])
-            await k.services.checkout.markPaid(order.id, 'p3-02')
+            await k.services.checkout.markPaid(order.id, 'replay')
             await k.services.customer.updateProfile(customer.id, { firstName: `Ada ${tag}` })
             await k.app.relay.drain()
             if (skewed) await restampDelivered(k, before, new Date(Date.now() - skewMs))
@@ -370,9 +367,9 @@ export function replayCatchUpSuite(
         storeId: k.config.store.name,
         environment: 'development',
         version: '0.0.0',
-        source: 'p3-02-probe',
+        source: 'replay-probe',
       })
-      const events = Array.from({ length: 5 }, (_, i) => make('p3-02.probe.v1', { i }))
+      const events = Array.from({ length: 5 }, (_, i) => make('replay.probe.v1', { i }))
       const ids = events.map((e) => e.id)
       const since = new Date(Date.now() - 60 * 60_000)
       await k.store.transaction(async (tx) => {
@@ -416,14 +413,14 @@ function withFailingPut(
     get(target, prop, receiver) {
       if (prop === 'put') {
         return async (c: string, key: string, doc: unknown, options?: unknown) => {
-          if (hit(c, key)) throw new Error(`p3-02: the document store refused ${c}/${key}`)
+          if (hit(c, key)) throw new Error(`replay: the document store refused ${c}/${key}`)
           return target.put(c, key, doc, options as never)
         }
       }
       if (prop === 'batchPut') {
         return async (c: string, items: Map<string, unknown>) => {
           for (const key of items.keys()) {
-            if (hit(c, key)) throw new Error(`p3-02: the document store refused ${c}/${key}`)
+            if (hit(c, key)) throw new Error(`replay: the document store refused ${c}/${key}`)
           }
           return target.batchPut(c, items)
         }

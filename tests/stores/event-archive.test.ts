@@ -43,21 +43,19 @@ import {
   type TestBucket,
 } from '../support/s3'
 
-// Acceptance tests for P3-01 AC-8 and AC-9, the archive (spec P3-01-event-log-surface, decision 8), on SQLite and
-// Postgres with MinIO (NYMBAL_TEST_S3_ENDPOINT, NYMBAL_TEST_POSTGRES_URL). The retention sweeper is given an object
-// writer as `archive`: createS3ObjectWriter on a private bucket this run makes (no anonymous download), or an
-// in-memory double that fails, or that keeps the object and then loses the answer. Rows are dated through the
-// repositories' `at` arguments (markDelivered, recordFailure), and `created_at` is set beside them by a second
-// connection, so each row's age is what the case says. The sweeper hands the writer `events/<yyyy>/<mm>/<dd>/<first>-
-// <last>.ndjson.gz` (dated in UTC by the first row's created_at) and the writer puts it under its prefix.
+// AC-8 and AC-9, the archive, on SQLite and Postgres with MinIO (NYMBAL_TEST_S3_ENDPOINT, NYMBAL_TEST_POSTGRES_URL).
+// The retention sweeper is given an object writer as `archive`: createS3ObjectWriter on a private bucket this run
+// makes (no anonymous download), or an in-memory double that fails, or that keeps the object and then loses the
+// answer. Rows are dated through the repositories' `at` arguments (markDelivered, recordFailure), and `created_at` is
+// set beside them by a second connection, so each row's age is what the case says. The sweeper hands the writer
+// `events/<yyyy>/<mm>/<dd>/<first>-<last>.ndjson.gz` (dated in UTC by the first row's created_at) and the writer puts
+// it under its prefix.
 // AC-8, property: after a sweep every deleted row is in an archived object under its date key, its line equal to the
 // parsed envelope plus seq and deliveredAt; exactly the delivered rows older than the cutoff are deleted, and no
 // undelivered or dead row; retentionDays 7 or 30 moves the cutoff. A failed put deletes nothing and the next sweep
 // archives the same batch; so does a put whose answer is lost, and deduping by seq gives each row once. AC-9: what
-// createS3ObjectWriter writes is not readable anonymously (403). Without an archive the sweeper deletes as it does
-// today: packages/platform/tests/integration/event-retention.test.ts.
-// Kills: rows deleted before or without archiving, a failed put that loses events, dead or undelivered rows dropped,
-// a retry batch that grows, and archives readable by anyone.
+// createS3ObjectWriter writes is not readable anonymously (403). Without an archive the sweeper only deletes:
+// packages/platform/tests/integration/event-retention.test.ts.
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
@@ -132,7 +130,7 @@ function bySeq(objects: Archived[]): Map<number, Record<string, unknown>> {
   return out
 }
 
-/** A line as decision 8 defines it, compared with the row it came from. */
+/** An archive line, compared with the row it came from. */
 function expectLineOf(row: Snapshot, line: Record<string, unknown> | undefined): void {
   expect(line, `seq ${row.seq} (${row.kind}) is in no archived object`).toBeDefined()
   const { seq, deliveredAt, ...envelope } = line!
@@ -162,7 +160,7 @@ function expectWellFormed(objects: Archived[], rows: Map<number, Snapshot>): voi
 
 const dialects: Dialect[] = ['sqlite', 'postgres']
 
-describe.each(dialects)('P3-01 AC-8: archive before delete (%s)', (dialect) => {
+describe.each(dialects)('AC-8: archive before delete (%s)', (dialect) => {
   let store: CommandStore
   let repos: Repositories
   let target: string
@@ -171,7 +169,7 @@ describe.each(dialects)('P3-01 AC-8: archive before delete (%s)', (dialect) => {
 
   beforeAll(async () => {
     if (dialect === 'sqlite') {
-      const dir = mkdtempSync(join(tmpdir(), 'p3-01-archive-'))
+      const dir = mkdtempSync(join(tmpdir(), 'events-archive-'))
       cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
       target = join(dir, 'store.sqlite')
     } else {
@@ -449,7 +447,7 @@ describe.each(dialects)('P3-01 AC-8: archive before delete (%s)', (dialect) => {
   }, 60_000)
 })
 
-describe('P3-01 AC-9: archives are private', () => {
+describe('AC-9: archives are private', () => {
   let bucket: TestBucket
 
   beforeAll(async () => {

@@ -14,11 +14,11 @@ import {
   type StepSpec,
 } from '../../scripts/gate'
 
-// Acceptance tests for P0-03 part 2, AC-1 and AC-2: the flags CI jobs pass to `scripts/gate.ts --full`.
-// `--only` reaches `plan` as `only`; `--services external` as `services: 'external'` with the
-// NYMBAL_TEST_POSTGRES_URL the CLI read as `postgresUrl`; `--no-build` as `noBuild: true` with the CLI's artefact
-// check as `artefactPresent`. Each plan is rehearsed: every command is replaced by one that leaves a marker, so what
-// ran is read from the scratch directory, not from the plan's own description of itself.
+// AC-1 and AC-2: the flags CI jobs pass to `scripts/gate.ts --full`. `--only` reaches `plan` as `only`;
+// `--services external` as `services: 'external'` with the NYMBAL_TEST_POSTGRES_URL the CLI read as `postgresUrl`;
+// `--no-build` as `noBuild: true` with the CLI's artefact check as `artefactPresent`. Each plan is rehearsed: every
+// command is replaced by one that leaves a marker, so what ran is read from the scratch directory, not from the
+// plan's own description of itself.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -234,7 +234,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
                 `${label}: ${name} skipped with detail "${detail}"`,
               ).toBe(true)
             }
-            // Round 1, AC-11: the E2E steps need build only, so Postgres no longer gates them.
+            // AC-11: the E2E steps need build only, so Postgres does not gate them.
             for (const name of E2E_NAMES) {
               expect(ran.includes(name), `${label}: ${name}`).toBe(buildMet)
               // A step skipped for want of the build names the missing artefact.
@@ -252,7 +252,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
 })
 
 // ---------------------------------------------------------------------------------------------------------------
-// Round 1 (review of PR #4): AC-8, AC-9, AC-11 (gate side), AC-12 (Stryker quoting)
+// AC-8, AC-9, AC-11 (gate side), AC-12 (Stryker quoting)
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Environment for a child gate.ts: no Postgres URL and no git variables leaking in from the parent. */

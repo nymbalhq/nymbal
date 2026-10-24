@@ -17,11 +17,9 @@ import {
   processedCount,
 } from '../support/webhooks.js'
 
-// P1-05 AC-4 to AC-7 on SQLite, through the served kernel's real route on the stub payments adapter: every captured
-// payment ends in exactly one recorded outcome, the dedupe record exists iff the work committed, and a payment.failed
-// names its order. Kills: a dedupe written before the work (AC-4), an in-memory dedupe that forgets on restart
-// (AC-5), `finalize_failed` → 5xx and rollback for a confirmed, cancelled or unknown order (AC-6), and
-// `orderId: ''` on payment.failed (AC-7).
+// AC-4 to AC-7 on SQLite, through the served kernel's real route on the stub payments adapter: every captured payment
+// ends in exactly one recorded outcome, the dedupe record exists iff the work committed, and a payment.failed names
+// its order.
 
 describe('webhook outcomes', () => {
   let k: Kernel
@@ -71,7 +69,7 @@ describe('webhook outcomes', () => {
   })
 
   it('AC-5: the same event id delivered twice with a restart in between, on one database, confirms once: the second answer is 200 deduped and there is one order.paid', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'p1-05-restart-'))
+    const dir = mkdtempSync(join(tmpdir(), 'webhook-restart-'))
     const sqlitePath = join(dir, 'store.sqlite')
     const eventId = `evt_${randomUUID()}`
     try {
@@ -135,7 +133,7 @@ describe('webhook outcomes', () => {
     expect(await stockOf(raw, seeded.variantId)).toBe(seeded.initialStock - qty)
   })
 
-  // P1-12 AC-12 (decision 11): the capture for a cancelled order is refunded and recorded as order_cancelled_refunded.
+  // AC-12: the capture for a cancelled order is refunded and recorded as order_cancelled_refunded.
   it('AC-6b: a captured event for a cancelled order gets 200 finalized: false, reason order_cancelled_refunded, one payment.failed with the order id, a history note, the order stays cancelled, and a redelivery is deduped', async () => {
     const seeded = await seedVariant(k, 3)
     const started = await checkoutOf(k, seeded, 1)

@@ -13,12 +13,12 @@ import {
   write,
 } from './scratch-gate'
 
-// Acceptance tests for P1-20 (spec P1-20-loop-waits-less), AC-2: a ratchet change re-measures only the files whose
-// entry moved. `ratchetChanges(base, head)`, exported by scripts/gate.ts, takes the text of the base's and the head's
-// mutation-ratchet.json and returns the files whose `files` entry was added or changed. When the ratchet differs from
-// the base, the gate adds those files to the files Stryker mutates, and the stryker step drops their mutants from
-// reports/mutation/stryker-incremental.json before Stryker runs, so they are measured fresh while every other file
-// keeps its cached statuses. With identical ratchets the plan is today's.
+// AC-2: a ratchet change re-measures only the files whose entry moved. `ratchetChanges(base, head)`, exported by
+// scripts/gate.ts, takes the text of the base's and the head's mutation-ratchet.json and returns the files whose
+// `files` entry was added or changed. When the ratchet differs from the base, the gate adds those files to the files
+// Stryker mutates, and the stryker step drops their mutants from reports/mutation/stryker-incremental.json before
+// Stryker runs, so they are measured fresh while every other file keeps its cached statuses. With identical ratchets
+// the plan is unchanged.
 // The CLI runs in a scratch repository; `pnpm` is a stand-in that logs its calls and, when called to run Stryker,
 // copies the incremental report as Stryker would find it. `pnpm exec tsx` goes to the real tsx.
 

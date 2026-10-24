@@ -1,8 +1,8 @@
 import { connect, createServer, type Server, type Socket } from 'node:net'
 
 // A TCP proxy to a service, so a client that connects at construction (the Redis primitives) can be built while the
-// service is up and then left on a port that refuses: P2-09 AC-3's way to make "unreachable", which P2-13 decision 3
-// names for `unreachable`. `reopen()` listens on the same port again, so a test can see the client reconnect.
+// service is up and then left on a port that refuses: the way the health and contract tests make "unreachable".
+// `reopen()` listens on the same port again, so a test can see the client reconnect.
 
 export interface TcpProxy {
   port: number

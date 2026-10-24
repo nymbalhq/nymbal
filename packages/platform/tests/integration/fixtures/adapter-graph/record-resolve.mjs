@@ -1,7 +1,7 @@
-// Module hooks for the P2-01 AC-2 and AC-7 child process (adapter-graph.test.ts). Every URL the process resolves is
-// appended to `out`. A specifier in `hide` is resolved as if imported from an empty directory beside `out` (the test's
-// scratch directory, with no node_modules above it), so Node itself raises the error it raises for a package that is
-// not installed. A package in `poison` resolves but throws while it evaluates: a broken SDK, not a missing one.
+// Module hooks for the child process of adapter-graph.test.ts. Every URL the process resolves is appended to `out`. A
+// specifier in `hide` is resolved as if imported from an empty directory beside `out` (the test's scratch directory,
+// with no node_modules above it), so Node itself raises the error it raises for a package that is not installed. A
+// package in `poison` resolves but throws while it evaluates: a broken SDK, not a missing one.
 import { appendFileSync, mkdtempSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -32,7 +32,7 @@ export async function load(url, context, nextLoad) {
     return {
       format: 'commonjs',
       shortCircuit: true,
-      source: `throw new Error('p2-01 poisoned ${name}')\n`,
+      source: `throw new Error('adapters poisoned ${name}')\n`,
     }
   }
   return nextLoad(url, context)

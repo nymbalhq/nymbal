@@ -13,13 +13,13 @@ import {
 } from '../support/checkout'
 import { expect, test } from '../support/fixtures'
 
-// P1-12 AC-7, AC-8 and AC-9 on both templates (the astro and nextjs projects run this file), against the stub store
-// the suite starts: store end states checkout.order-confirmed, checkout.cart-empty and checkout.single-order. Each test
-// buys its own product, so its stock moves only by what the test does. The order is read back through the API, never
-// confirmed by the test.
+// AC-7, AC-8 and AC-9 on both templates (the astro and nextjs projects run this file), against the stub store the
+// suite starts: the order is confirmed, the cart is empty, and one cart makes one order. Each test buys its own
+// product, so its stock moves only by what the test does. The order is read back through the API, never confirmed by
+// the test.
 
 const email = (tag: string, trigger = '') =>
-  `e2e-p1-12-${tag}-${randomUUID().slice(0, 8)}${trigger}@e2e.test`
+  `e2e-checkout-${tag}-${randomUUID().slice(0, 8)}${trigger}@e2e.test`
 
 test.describe('A checkout that completes', () => {
   // Kills: a confirmation page that says confirmed for a pending order, a cart left full after payment, and stock

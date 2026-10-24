@@ -20,11 +20,11 @@ import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { plan, run, type StepSpec } from '../../scripts/gate'
 
-// Acceptance test for P1-10 (phase exit), AC-4: the gate's stryker step fails when the fresh report has a file below
-// the ratchet, and passes when it is equal or above. The step is the one gate:full plans, run by the gate's own runner
-// in a scratch copy of the repo's scripts and package.json, where `stryker` is a stub that writes a fixture report to
-// the path stryker.config.mjs names (and exits 0, as a run with survivors does). So what decides the step is whatever
-// the step runs after Stryker, against the scratch's mutation-ratchet.json.
+// AC-4: the gate's stryker step fails when the fresh report has a file below the ratchet, and passes when it is equal
+// or above. The step is the one gate:full plans, run by the gate's own runner in a scratch copy of the repo's scripts
+// and package.json, where `stryker` is a stub that writes a fixture report to the path stryker.config.mjs names (and
+// exits 0, as a run with survivors does). So what decides the step is whatever the step runs after Stryker, against
+// the scratch's mutation-ratchet.json.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const FILE = 'packages/platform/src/services/cart-service.ts'

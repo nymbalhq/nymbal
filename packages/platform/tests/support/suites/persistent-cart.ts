@@ -7,8 +7,8 @@ import { race } from '../proof-kit.js'
 import { lineFor } from '../replica.js'
 import { shopper, type CookieJar } from '../shopper.js'
 
-// P1-04 AC-1, AC-2 and AC-3 on one dialect: a cart is a command-store row, so it survives a restart, is the same cart
-// on every replica over one database, and concurrent adds from two replicas lose nothing. The store is a kernel from
+// AC-1, AC-2 and AC-3 on one dialect: a cart is a command-store row, so it survives a restart, is the same cart on
+// every replica over one database, and concurrent adds from two replicas lose nothing. The store is a kernel from
 // `src/` served over HTTP (tests/support/http.ts), restarted on, or doubled over, one database.
 
 const CART_COOKIE = 'nymbal.cart'

@@ -6,10 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { KNOWN_PROVIDERS, loadConfig, type CommerceSlot } from './index.js'
 
-// Acceptance tests for P2-01 AC-1: the config knows its providers. Every slot's provider is one of
-// KNOWN_PROVIDERS[slot] or `custom`; any other string fails loadConfig with a ConfigError naming the slot, the string
-// and the slot's known list; and a `native` email block asking for the SMTP transport fails too, naming `smtp`.
-// Kills: a typo parsing and silently becoming the native stub, and an old SMTP config silently printing to the console.
+// AC-1: every slot's provider is one of KNOWN_PROVIDERS[slot] or `custom`; any other string fails loadConfig naming
+// the slot, the string and the known list, and a `native` email block asking for SMTP fails naming `smtp`.
 
 const SLOTS = [
   'payments',
@@ -26,7 +24,7 @@ type Slot = (typeof SLOTS)[number]
 /** The config's list for a slot (the interface under test). */
 const known = (slot: Slot): readonly string[] => KNOWN_PROVIDERS[slot]
 
-/** Decision 1, per slot, without `custom` (which every slot also accepts). */
+/** The known providers, per slot, without `custom` (which every slot also accepts). */
 const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   payments: ['native', 'stripe'],
   email: ['native', 'smtp'],
@@ -38,7 +36,7 @@ const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   tax: ['native'],
 }
 
-/** Every provider name the spec gives any slot: a generated string outside it is unknown to every slot. */
+/** Every provider name any slot knows: a generated string outside it is unknown to every slot. */
 const EVERY_NAME = new Set([...Object.values(SPEC_PROVIDERS).flat(), 'custom'])
 
 const dirs: string[] = []
@@ -48,7 +46,7 @@ afterAll(() => {
 
 function baseConfig(): Record<string, unknown> & { commerce: Record<string, unknown> } {
   return {
-    store: { name: 'P2-01', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
@@ -79,7 +77,7 @@ function withBlock(slot: Slot, block: Record<string, unknown>) {
 
 /** Writes `config` as a project's nymbal.config.ts in a fresh directory and returns the directory. */
 function project(config: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-01-config-'))
+  const dir = mkdtempSync(join(tmpdir(), 'adapters-config-'))
   dirs.push(dir)
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -113,8 +111,8 @@ const unknownProvider = fc
   )
   .filter((s) => !EVERY_NAME.has(s))
 
-describe('P2-01 AC-1: the config knows its providers', () => {
-  it('AC-1: KNOWN_PROVIDERS lists, per slot, exactly the providers decision 1 names (custom aside)', () => {
+describe('AC-1: the config knows its providers', () => {
+  it('AC-1: KNOWN_PROVIDERS lists, per slot, exactly the known providers (custom aside)', () => {
     expect(Object.keys(KNOWN_PROVIDERS).sort()).toEqual([...SLOTS].sort())
     for (const slot of SLOTS) {
       const listed = known(slot).filter((p) => p !== 'custom')

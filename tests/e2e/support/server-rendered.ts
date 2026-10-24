@@ -3,9 +3,9 @@ import { seedProducts } from '../../../packages/platform/src/seed/data'
 import { API_URL } from './csrf'
 import { blockExternalRequests, expect } from './fixtures'
 
-// P2-18 (AC-4, AC-5): what the server-rendering journeys share. A shopper's cart comes through the product, as a
-// shopper's does: a JS-on add-to-cart on the PDP, so the API's Set-Cookie lands in the context's jar; a JS-off context
-// is then made from that context's storage state, so it sends the same `nymbal.cart` cookie.
+// What the server-rendering journeys share. A shopper's cart comes through the product, as a shopper's does: a JS-on
+// add-to-cart on the PDP, so the API's Set-Cookie lands in the context's jar; a JS-off context is then made from that
+// context's storage state, so it sends the same `nymbal.cart` cookie.
 
 export const PRODUCT = seedProducts[0]!.slug
 

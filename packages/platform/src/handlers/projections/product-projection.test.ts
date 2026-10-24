@@ -17,8 +17,8 @@ import {
   type ProductProjectionDeps,
 } from './product-projection.js'
 
-// The product projection builds from the rows the command store holds at handle time (P3-02 decision 1), so each
-// case gives it those rows through an in-memory stand-in for the four catalogue repositories.
+// The product projection builds from the rows the command store holds at handle time, so each case gives it those
+// rows through an in-memory stand-in for the four catalogue repositories.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 

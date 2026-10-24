@@ -9,14 +9,12 @@ import { openRaw, stockOf, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 import { orderStatus, reservationsFor } from '../support/webhooks.js'
 
-// P1-12 AC-3, diff-review findings B1 and M3, on SQLite over HTTP. B1: a pending order that never got its intent (T2
-// failed, or the process died between T1 and T2) must not hold its cart at 409 checkout.in_progress for good: older
-// than 120 s it is abandoned (cancelled, reservations released) and the checkout places a new order; younger, it is
-// still a checkout in flight. The stranded order is made the way a crash leaves it: a real T1 order whose intent
-// column is cleared and whose created_at is moved back, on a second connection (no clock in the service, no sleep).
-// M3: a resubmit of an unchanged cart answers its pending order by what the provider says of the intent now: an
-// intent the provider cancelled or failed cancels the order and starts afresh; an open one answers the same order;
-// that answer is never `succeeded`.
+// AC-3 on SQLite over HTTP. A pending order that never got its intent does not hold its cart at 409
+// checkout.in_progress for good: older than 120 s it is abandoned and the checkout places a new order; younger, it is
+// still a checkout in flight. The stranded order is made the way a crash leaves it: a real order whose intent column
+// is cleared and whose created_at is moved back, on a second connection (no clock in the service, no sleep).
+// A resubmit of an unchanged cart answers its pending order by what the provider says of the intent now, never
+// `succeeded`.
 
 interface CheckoutAnswer {
   orderId: string
@@ -32,12 +30,12 @@ interface ErrorAnswer {
 
 type Shop = Awaited<ReturnType<typeof primedShopper>>
 
-const pending = (tag: string) => `ac3-${tag}-${randomUUID()}+stub-pending@p1-12.test`
-const paying = (tag: string) => `ac3-${tag}-${randomUUID()}@p1-12.test`
+const pending = (tag: string) => `ac3-${tag}-${randomUUID()}+stub-pending@checkout.test`
+const paying = (tag: string) => `ac3-${tag}-${randomUUID()}@checkout.test`
 
 const ABANDON_AFTER_MS = 120_000
 
-describe('P1-12 AC-3: review round, a pending order that can no longer be paid (sqlite)', () => {
+describe('AC-3: review round, a pending order that can no longer be paid (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader

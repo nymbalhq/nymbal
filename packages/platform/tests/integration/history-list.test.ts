@@ -15,18 +15,11 @@ import {
   type HistoryKind,
 } from '../support/history.js'
 
-// AC-3 on SQLite (decisions 4 and 5): `GET …/:id/history`
-// for a product, an order and a customer, each made and changed over HTTP by an admin, a guest and the customer. Each
-// lists the base entry (`base: true`, no changes) and one entry per event that changes the view, newest first, with
-// the event's seq, time, type and correlation id. Each entry's `changes` equal `diffViews` of the fold before and
-// after its event, over the subject's rows from `listBySubjects`; its `actor` and `command` equal the `applied`
-// audit entry with its correlation id. Anchored on what the test did: the admin's PATCH names the admin and
-// `product.update` and changes name and short description from → to; the adjust and the checkout each move
-// `variants.<id>.stock` by their quantity, the checkout's entry under the checkout's correlation; the admin's ship
-// moves status processing → shipped. The cursor at limit 1 walks every entry exactly once. No customer entry holds a
-// password hash.
-// Kills: no actor join; a diff that misses array items keyed by id; an `inventory.reserved` entry listed with no
-// change; pages that overlap or skip.
+// AC-3 on SQLite: `GET …/:id/history` for a product, an order and a customer, each made and changed over HTTP by an
+// admin, a guest and the customer. Each lists the base entry and one entry per event that changes the view, newest
+// first; each entry's `changes` equal `diffViews` of the fold before and after its event, and its `actor` and
+// `command` equal the `applied` audit entry with its correlation id. The cursor at limit 1 walks every entry exactly
+// once, and no customer entry holds a password hash.
 
 let k: Kernel
 let served: ServedKernel

@@ -14,9 +14,8 @@ import {
   reservationsFor,
 } from '../webhooks.js'
 
-// P1-05 AC-11 on one dialect: a payment captured after the reservation sweeper released the order's reservation.
-// Kills: a finalize whose commitReservation throws NotFoundError on the released row (404, rollback, nothing recorded,
-// Stripe retries for three days), and a re-take that does not use the conditional decrement.
+// AC-11 on one dialect: a payment captured after the reservation sweeper released the order's reservation is
+// recorded, re-taking the stock with the conditional decrement rather than failing on the released row.
 
 export function latePaymentSuite(dialect: Kernel['dialect'], start: () => Promise<Kernel>): void {
   describe(`late payment after the reservation expired (${dialect})`, () => {

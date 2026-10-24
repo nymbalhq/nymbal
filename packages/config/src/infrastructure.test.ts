@@ -6,21 +6,18 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { KNOWN_INFRASTRUCTURE, loadConfig } from './index.js'
 
-// Acceptance tests for P2-02 AC-1 (spec P2-02-primitives-are-protocols): the config lists what is built and nothing
-// else. Every infrastructure slot × known value loads; any other value fails naming the slot and its list; `cloud` and
-// `compute` fail saying they were removed and should be deleted; any other unknown key fails; postgres-jsonb needs the
-// postgres command store and redis-streams a document store other than in-memory; no `media` means local-fs.
-// Kills: a value that throws "planned for v1.0" at start, or a key that drives nothing, still loading.
+// AC-1: the config lists what is built and nothing else; any other value fails naming the slot and its list, and
+// `cloud` and `compute` fail saying they were removed.
 
 const SLOTS = ['commandStore', 'documentStore', 'eventBus', 'media'] as const
 type Slot = (typeof SLOTS)[number]
 
-/** Decision 1, per slot. */
+/** The known values, per slot. */
 const SPEC_VALUES: Record<Slot, readonly string[]> = {
   commandStore: ['sqlite', 'postgres'],
   documentStore: ['in-memory', 'redis', 'postgres-jsonb'],
   eventBus: ['in-process', 'redis-streams'],
-  // P2-11 decision 2 adds s3, and its `s3` block below.
+  // s3 has its own `s3` block below.
   media: ['local-fs', 's3'],
 }
 
@@ -36,7 +33,7 @@ type Infrastructure = Record<string, unknown>
 
 function configWith(infrastructure: Infrastructure): Record<string, unknown> {
   return {
-    store: { name: 'P2-02', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure,
     security: { adapter: 'middleware' },
@@ -61,7 +58,7 @@ const BASE: Infrastructure = {
   eventBus: 'in-process',
 }
 
-/** The slot set to `value`, with the companions decision 1 requires so that only `value` is under test. */
+/** The slot set to `value`, with the companions it requires so that only `value` is under test. */
 function cell(slot: Slot, value: string): Infrastructure {
   const infra: Infrastructure = { ...BASE, [slot]: value }
   if (infra['documentStore'] === 'postgres-jsonb') infra['commandStore'] = 'postgres'
@@ -72,7 +69,7 @@ function cell(slot: Slot, value: string): Infrastructure {
 }
 
 function project(config: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p2-02-config-'))
+  const dir = mkdtempSync(join(tmpdir(), 'primitives-config-'))
   dirs.push(dir)
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -116,8 +113,8 @@ const unknownKey = fc
   .stringMatching(/^[a-z][a-zA-Z0-9]{0,15}$/)
   .filter((k) => !KNOWN_KEYS.has(k) && k !== 'cloud' && k !== 'compute' && !(k in {}))
 
-describe('P2-02 AC-1: the infrastructure config lists what is built, and nothing else', () => {
-  it('AC-1: KNOWN_INFRASTRUCTURE lists, per slot, exactly the values decision 1 names', () => {
+describe('AC-1: the infrastructure config lists what is built, and nothing else', () => {
+  it('AC-1: KNOWN_INFRASTRUCTURE lists, per slot, exactly the known values', () => {
     expect(Object.keys(KNOWN_INFRASTRUCTURE).sort()).toEqual([...SLOTS].sort())
     for (const slot of SLOTS) {
       expect([...KNOWN_INFRASTRUCTURE[slot]].sort(), slot).toEqual([...SPEC_VALUES[slot]].sort())

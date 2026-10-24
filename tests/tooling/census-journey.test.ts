@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanupScratch, gateCli, git, scratchRepo, write } from './scratch-gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-12: the census trend's journey rule. On a
-// touched tests/e2e/journeys/** file, every test() needs an assertion outside C1, and the file needs an API read
-// (the `request` fixture, `page.request` or `fetch`, to /api/) whose value reaches an expect(). Violations print as
-// rule 2's do, with the text `journey rule`. Each bad shape below also holds a C3 assertion, so rule 2 alone passes
-// it and only the journey rule can name it. The step is the real `gate.ts census-trend <base>` on a scratch repo.
+// AC-12: the census trend's journey rule. On a touched tests/e2e/journeys/** file, every test() needs an assertion
+// outside C1, and the file needs an API read (the `request` fixture, `page.request` or `fetch`, to /api/) whose value
+// reaches an expect(). Violations print as rule 2's do, with the text `journey rule`. Each bad shape below also holds
+// a C3 assertion, so rule 2 alone passes it and only the journey rule can name it. The step is the real
+// `gate.ts census-trend <base>` on a scratch repo.
 
 afterEach(cleanupScratch)
 

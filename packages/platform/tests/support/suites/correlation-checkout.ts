@@ -25,14 +25,12 @@ import { stubPaymentWebhook, type TestStore } from '../proof-kit.js'
 import type { RawReader } from '../raw.js'
 import { shopper } from '../shopper.js'
 
-// P3-01 AC-1 and AC-1b on one dialect (spec P3-01-event-log-surface, decisions 2 and 4): a shopper checks out over HTTP
-// on startTestStore (stub payments, `+stub-pending` so the order waits for its webhook), then the stub webhook arrives
-// as a request of its own. AC-1: every event from POST /api/checkout through the webhook's confirm carries the
-// checkout response's x-correlation-id, and the webhook response's own id differs. AC-1b: a failed payment, a capture
-// for the wrong amount, and a webhook for an intent no order holds. Events are read from the `events` table through a
-// second connection, by seq: nothing else publishes on the store while a case runs (no sweeper is due).
-// Kills: events defaulting to their own id (today), a webhook that starts a new id, and publishFailed or the outcome
-// paths publishing outside the order's scope.
+// AC-1 and AC-1b on one dialect: a shopper checks out over HTTP on startTestStore (stub payments, `+stub-pending` so
+// the order waits for its webhook), then the stub webhook arrives as a request of its own. AC-1: every event from POST
+// /api/checkout through the webhook's confirm carries the checkout response's x-correlation-id, and the webhook
+// response's own id differs. AC-1b: a failed payment, a capture for the wrong amount, and a webhook for an intent no
+// order holds. Events are read from the `events` table through a second connection, by seq: nothing else publishes
+// on the store while a case runs (no sweeper is due).
 
 interface Line {
   priceMinor: number
@@ -73,7 +71,7 @@ export function checkoutCorrelationSuite(
   start: () => Promise<Harness>,
   opts: { runs: number },
 ): void {
-  describe(`P3-01 AC-1 and AC-1b: one checkout, one correlation id (${dialect})`, () => {
+  describe(`AC-1 and AC-1b: one checkout, one correlation id (${dialect})`, () => {
     let h: Harness
 
     beforeAll(async () => {
@@ -89,7 +87,7 @@ export function checkoutCorrelationSuite(
       const variants = []
       for (const [i, line] of lines.entries()) {
         const product = await h.store.app.services.product.create({
-          slug: `p3-01-${tag}-${i}`,
+          slug: `events-${tag}-${i}`,
           name: `Correlated ${i}`,
           description: '',
           status: 'active',
@@ -113,7 +111,7 @@ export function checkoutCorrelationSuite(
       }
       const before = await maxSeq(h.raw)
       const res = await s.call<Placed>('POST', '/api/checkout', {
-        email: `ac1-${tag}+stub-pending@p3-01.test`,
+        email: `ac1-${tag}+stub-pending@events.test`,
         billingAddress: address,
         shippingAddress: address,
       })

@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-// P1-08 AC-16 (decision 1): every publish path builds @nymbalhq/admin before it publishes, and the admin refuses to
-// pack without its dist. Release and canary publish after root `pnpm build`, which builds only packages/**, and
-// scripts/scaffold-clean.sh does the same; so npm would get an admin with no dist. Kills exactly that.
+// AC-16: every publish path builds @nymbalhq/admin before it publishes, and the admin refuses to pack without its
+// dist. Release and canary publish after root `pnpm build`, which builds only packages/**, and
+// scripts/scaffold-clean.sh does the same; so without its own build npm would get an admin with no dist.
 //
 // A command "builds the admin" when it filters pnpm to @nymbalhq/admin (or apps/admin) and runs build, or when it is
 // a root script (`pnpm build`, `pnpm run <script>`) whose body does. Comment lines are ignored.
@@ -91,7 +91,7 @@ afterAll(() => {
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true })
 })
 
-describe('P1-08 AC-16: every publish path builds the admin', () => {
+describe('AC-16: every publish path builds the admin', () => {
   it('AC-16: in release.yml and canary.yml, every job that publishes builds @nymbalhq/admin before the publish step', () => {
     const missing = ['.github/workflows/release.yml', '.github/workflows/canary.yml'].flatMap(
       publishJobsBuildAdminFirst,
@@ -116,7 +116,7 @@ describe('P1-08 AC-16: every publish path builds the admin', () => {
     expect(prepack, 'apps/admin package.json scripts.prepack').toEqual(expect.any(String))
 
     // A copy of the package without node_modules or dist, so the real checkout's build state cannot decide it.
-    const copy = join(mkdtempSync(join(tmpdir(), 'p1-08-prepack-')), 'admin')
+    const copy = join(mkdtempSync(join(tmpdir(), 'admin-prepack-')), 'admin')
     scratch.push(join(copy, '..'))
     cpSync(join(REPO, 'apps/admin'), copy, {
       recursive: true,

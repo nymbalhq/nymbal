@@ -15,11 +15,10 @@ import {
   reservationsFor,
 } from '../support/webhooks.js'
 
-// P1-12 AC-12 (decision 11) on SQLite over HTTP, with a fake payments adapter in the kernel's place: every intent
-// needs confirming (as Stripe's do), and the test decides whether a cancel is refused. Superseding a changed cart's
-// pending order cancels its intent first; a refused cancel answers 409 checkout.payment_in_progress and changes
-// nothing; a capture that arrives for a cancelled order is refunded in full through the adapter and recorded. Never
-// money without an order.
+// AC-12 on SQLite over HTTP, with a fake payments adapter in the kernel's place: every intent needs confirming (as
+// Stripe's do), and the test decides whether a cancel is refused. Superseding a changed cart's pending order cancels
+// its intent first; a refused cancel answers 409 checkout.payment_in_progress and changes nothing; a capture that
+// arrives for a cancelled order is refunded in full and recorded. Never money without an order.
 
 interface CheckoutAnswer {
   orderId: string
@@ -34,7 +33,7 @@ interface ErrorAnswer {
   context?: { orderNumber?: string }
 }
 
-describe('P1-12 AC-12: superseding never strands money (sqlite)', () => {
+describe('AC-12: superseding never strands money (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader
@@ -91,7 +90,7 @@ describe('P1-12 AC-12: superseding never strands money (sqlite)', () => {
 
   function submit(shop: Awaited<ReturnType<typeof shopWith>>) {
     return shop.call<CheckoutAnswer>('POST', '/api/checkout', {
-      email: `ac12-${randomUUID()}@p1-12.test`,
+      email: `ac12-${randomUUID()}@checkout.test`,
       billingAddress: address,
       shippingAddress: address,
     })

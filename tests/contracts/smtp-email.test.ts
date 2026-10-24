@@ -7,13 +7,11 @@ import { createSmtpEmailAdapter } from '../../packages/adapter-smtp/src/index.js
 import { fakeSmtpServer, type FakeSmtpServer } from '../support/smtp-server'
 import { closedPort, settleWithin } from '../support/tcp-proxy'
 
-// P2-13 AC-5 (spec P2-13-contract-tests-public) on @nymbalhq/adapter-smtp, a bundled adapter with an external
-// dependency: the published email suite runs against an SMTP server in this process (healthy when up), and, given
-// `unreachable` (the adapter pointed at a port nobody listens on), its downtime cases. The case below holds the
-// adapter itself to the bound: on a dead host healthCheck says `down`, not `degraded`, within 6 s, and a send rejects
-// within 6 s. Kills: smtp-adapter.ts's healthCheck reporting a refused connection as `degraded` (a check that passes
-// on a dead dependency), and a send that waits out nodemailer's two-minute connection timeout or its 30 s greeting
-// timeout on a host that accepts and never answers.
+// AC-5 on @nymbalhq/adapter-smtp, a bundled adapter with an external dependency: the published email suite runs
+// against an SMTP server in this process (healthy when up), and, given `unreachable` (the adapter pointed at a port
+// nobody listens on), its downtime cases. The case below holds the adapter itself to the bound: on a dead host
+// healthCheck says `down`, not `degraded`, within 6 s, and a send rejects within 6 s rather than waiting out
+// nodemailer's two-minute connection timeout or its 30 s greeting timeout.
 
 const DOWN_WITHIN_MS = 6000
 const HUNG_AFTER_MS = 12_000
@@ -47,20 +45,20 @@ afterAll(async () => {
 function on(port: number): EmailAdapter {
   return createSmtpEmailAdapter({
     logger,
-    config: { from: 'shop@p2-13.test', smtp: { host: '127.0.0.1', port, secure: false } },
+    config: { from: 'shop@contracts.test', smtp: { host: '127.0.0.1', port, secure: false } },
   })
 }
 
 runEmailContract('smtp', () => on(smtp!.port), { unreachable: () => on(deadPort) })
 
-describe('P2-13 AC-5: adapter-smtp on a dead host', () => {
+describe('AC-5: adapter-smtp on a dead host', () => {
   it('AC-5: on a port nobody listens on, healthCheck reports down within 6 s and sendTransactional rejects within 6 s, where the live server takes the same send', async () => {
     const dead = on(deadPort)
     const live = on(smtp!.port)
     const mail = {
       template: 'order-confirmation',
-      to: 'buyer@p2-13.test',
-      vars: { orderNumber: 'P2-13' },
+      to: 'buyer@contracts.test',
+      vars: { orderNumber: 'NYM-1001' },
     }
 
     const health = await settleWithin(dead.healthCheck(), HUNG_AFTER_MS)
@@ -84,8 +82,8 @@ describe('P2-13 AC-5: adapter-smtp on a dead host', () => {
     const send = await settleWithin(
       on(port).sendTransactional({
         template: 'order-confirmation',
-        to: 'buyer@p2-13.test',
-        vars: { orderNumber: 'P2-13' },
+        to: 'buyer@contracts.test',
+        vars: { orderNumber: 'NYM-1001' },
       }),
       HUNG_AFTER_MS,
     )

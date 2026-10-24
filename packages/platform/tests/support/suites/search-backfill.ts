@@ -8,12 +8,10 @@ import { createLogger } from '../../../src/logger.js'
 import { kernelConfig, type Kernel } from '../kernel.js'
 import { queryOnce } from '../postgres.js'
 
-// P2-07 AC-6 on one dialect (decision 2): the index is derivable. Products created by one kernel, the search tables
-// migration 0007 created then emptied (as a store upgraded to 0007 starts: products, no index), and a new kernel on
-// the same database answers search for every one of them, because warm-up replays product.created to the derived
-// search handler. On that kernel an update re-indexes: the old name no longer matches, the new one does.
-// Kills: an index fed only by new events (no backfill on start), and an update that appends a second row instead of
-// replacing the first.
+// AC-6 on one dialect: the index is derivable. Products created by one kernel, the search tables migration 0007
+// created then emptied (as a store upgraded to 0007 starts: products, no index), and a new kernel on the same database
+// answers search for every one of them, because warm-up replays product.created to the derived search handler. On
+// that kernel an update re-indexes: the old name no longer matches, the new one does.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 const PRODUCTS = 12
@@ -78,12 +76,12 @@ export function searchBackfillSuite(
   dialect: Kernel['dialect'],
   fresh: () => Promise<ReopenableDatabase>,
 ): void {
-  describe(`P2-07 AC-6: the search index is backfilled on start (${dialect})`, () => {
+  describe(`AC-6: the search index is backfilled on start (${dialect})`, () => {
     it(`AC-6: products created before the search tables held them answer search after a restart, and an update re-indexes: the old name no longer matches, the new one does (${dialect})`, async () => {
       const db = await fresh()
       try {
         const token = `bf${randomUUID().replace(/-/g, '').slice(0, 12)}`
-        // Only the name carries the token: decision 3 also matches SKUs, so a SKU holding it would keep the renamed
+        // Only the name carries the token: search also matches SKUs, so a SKU holding it would keep the renamed
         // product matching and hide an index that appends the new name instead of replacing the old.
         const skuToken = `sk${randomUUID().replace(/-/g, '').slice(0, 12)}`
         const ids: string[] = []
@@ -92,7 +90,7 @@ export function searchBackfillSuite(
         try {
           for (let i = 0; i < PRODUCTS; i++) {
             const product = await first.services.product.create({
-              slug: `p2-07-backfill-${token}-${i}`,
+              slug: `search-backfill-${token}-${i}`,
               name: `Backfill ${token} item${i}`,
               description: 'A product made before its store had a search index.',
               status: 'active',

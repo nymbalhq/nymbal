@@ -23,17 +23,17 @@ function event(type: string): NymbalEvent {
     id: `evt-${randomUUID()}`,
     type,
     timestamp: new Date().toISOString(),
-    source: 'p2-02-streams',
-    correlationId: 'corr-p2-02',
+    source: 'primitives-streams',
+    correlationId: 'corr-primitives',
     payload: {},
-    metadata: { storeId: 'p2-02', environment: 'development', version: '0.0.0' },
+    metadata: { storeId: 'primitives', environment: 'development', version: '0.0.0' },
   }
 }
 
 describe('the Redis Streams bus keeps a batch when its group leaves this instance', () => {
   it('entries read in one batch after the last local subscription of a group unsubscribes are handled by the group’s consumer on another instance', async () => {
     const prefix = `${run}-${(count += 1)}`
-    const group = 'p2-02-leaves'
+    const group = 'primitives-leaves'
     const a = await createRedisStreamsEventBus({ url, prefix, ...TIMING })
     const publisher = await createRedisStreamsEventBus({ url, prefix, ...TIMING })
     let b: RedisStreamsEventBus | undefined

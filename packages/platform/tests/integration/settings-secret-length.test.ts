@@ -20,17 +20,15 @@ import {
   storedSettings,
 } from '../support/settings.js'
 
-// P3-07 (spec P3-07-secrets-settings, diff review M1), on SQLite: the scrub set skips values shorter than
-// SECRET_MIN_LENGTH, so Settings refuses a secret that short. A 7-character apiKey PUT answers 400 with
-// `settings.secret_too_short`, naming ai.apiKey and the minimum and never the value, and writes no row and no
-// `settings.changed`; an 8-character one is saved, and an adapter error carrying it reaches neither the 5xx body nor
-// any log record. A non-secret field still takes one character.
-// Kills: a short secret accepted, used and logged unmasked.
+// On SQLite: the scrub set skips values shorter than SECRET_MIN_LENGTH, so Settings refuses a secret that short. A
+// 7-character apiKey PUT answers 400 `settings.secret_too_short`, naming ai.apiKey and the minimum and never the
+// value, and writes nothing; an 8-character one is saved and never reaches a 5xx body or a log record. A non-secret
+// field still takes one character.
 
 const SHORT = 'Zq!7#wK'
 const SHORTEST_ACCEPTED = 'Zq!7#wK@'
 
-describe('P3-07 M1: a secret shorter than the scrub minimum is refused', () => {
+describe('a secret shorter than the scrub minimum is refused', () => {
   const scope = cleanups()
   afterEach(() => scope.run())
 
@@ -38,7 +36,7 @@ describe('P3-07 M1: a secret shorter than the scrub minimum is refused', () => {
     scope.add(setEnv({ [SECRETS_KEY]: newSecretsKey(), ANTHROPIC_API_KEY: undefined }))
     const stub = await startStub('anthropic')
     scope.add(() => stub.close())
-    const dir = mkdtempSync(join(tmpdir(), 'p3-07-secret-length-'))
+    const dir = mkdtempSync(join(tmpdir(), 'settings-secret-length-'))
     scope.add(() => rmSync(dir, { recursive: true, force: true }))
     const target = join(dir, 'store.sqlite')
     const logs = captureLogs()
@@ -85,7 +83,7 @@ describe('P3-07 M1: a secret shorter than the scrub minimum is refused', () => {
         context: { slot: 'ai', apiKey: SHORTEST_ACCEPTED },
       })
     }
-    const failed = await admin.call('POST', '/api/admin/products/p3-07/enhance', {
+    const failed = await admin.call('POST', '/api/admin/products/settings/enhance', {
       field: 'description',
       context: { name: 'Short Key Widget' },
     })

@@ -4,12 +4,11 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// P2-16 AC-7: checkout moved out of the templates into `nymbal-checkout`, not copied. The files Decision 6 deletes
-// are gone from both templates and from the scaffold `create-nymbal-app` copies, the scaffold's checkout pages are the
-// templates' own byte for byte (the re-sync ran), and the checkout's test ids live in the web-components source and in
-// no file a template or the scaffold holds. Files are what git tracks plus what it would add (untracked, not ignored),
-// so a build output or a dependency never counts. Kills: checkout duplicated in a template, a scaffold left holding
-// the deleted checkout, a scaffold that drifted from its template.
+// AC-7: checkout lives in `nymbal-checkout`, not in the templates. The old checkout files are gone from both
+// templates and from the scaffold `create-nymbal-app` copies, the scaffold's checkout pages are the templates' own
+// byte for byte, and the checkout's test ids live in the web-components source and in no file a template or the
+// scaffold holds. Files are what git tracks plus what it would add (untracked, not ignored), so a build output or a
+// dependency never counts.
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCAFFOLD = 'packages/create-app/scaffold/templates'
@@ -28,7 +27,7 @@ const DELETED: Record<'astro' | 'nextjs', string[]> = {
   ],
 }
 
-/** The checkout pages each template keeps (Decision 6), as paths under the template. */
+/** The checkout pages each template keeps, as paths under the template. */
 const PAGES: Record<'astro' | 'nextjs', string> = {
   astro: 'src/pages/checkout.astro',
   nextjs: 'app/(shopper)/checkout',
@@ -61,8 +60,8 @@ function walk(path: string): string[] {
     .map((entry) => relative(path, join(entry.parentPath, entry.name)))
 }
 
-describe('P2-16 AC-7: the checkout left the templates', () => {
-  it('AC-7: none of the files Decision 6 deletes exists in either template or in the scaffold, and the scaffold’s checkout pages are the templates’ byte for byte', () => {
+describe('AC-7: the checkout left the templates', () => {
+  it('AC-7: none of the old checkout files exists in either template or in the scaffold, and the scaffold’s checkout pages are the templates’ byte for byte', () => {
     const present = (['astro', 'nextjs'] as const).flatMap((template) =>
       [`templates/${template}`, `${SCAFFOLD}/${template}`].flatMap((base) =>
         DELETED[template]

@@ -15,12 +15,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Shared by the P2-03 acceptance tests (spec P2-03-nymbal-add-recipe): a project outside the workspace that resolves
-// the built @nymbalhq packages and the provider SDKs through node_modules symlinks, as AC-4 describes, and a
-// byte-level listing of a project's files to diff before and after a command.
+// Shared by the recipe tests: a project outside the workspace that resolves the built @nymbalhq packages and the
+// provider SDKs through node_modules symlinks, and a byte-level listing of a project's files to diff before and after
+// a command.
 
 /**
- * The `Recipe` and `RecipeValue` shapes of decision 1, as the tests use them.
+ * The `Recipe` and `RecipeValue` shapes, as the tests use them.
  * tests/architecture/recipe-type.test-d.ts holds the exported types to these, both ways.
  */
 export type SpecRecipeValue =
@@ -41,7 +41,7 @@ export interface SpecRecipe {
 
 export const REPO = fileURLToPath(new URL('../../../../../', import.meta.url))
 
-/** Decision 1: the recipes and the package that ships each one; P2-04 AC-9 adds cloudflare, making five. */
+/** The recipes and the package that ships each one. */
 export const SPEC_HOLDERS: Readonly<Record<string, string>> = {
   cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
@@ -71,7 +71,7 @@ const SDK_HOMES: Readonly<Record<string, string>> = {
 }
 
 export function tempDir(label: string): string {
-  return mkdtempSync(join(tmpdir(), `nymbal-p2-03-${label}-`))
+  return mkdtempSync(join(tmpdir(), `nymbal-recipes-${label}-`))
 }
 
 /**
@@ -99,7 +99,7 @@ export function linkedProject(label: string, omit: readonly string[] = []): stri
   const dir = tempDir(label)
   writeFileSync(
     join(dir, 'package.json'),
-    JSON.stringify({ name: `p2-03-${label}`, private: true, type: 'module' }, null, 2),
+    JSON.stringify({ name: `recipes-${label}`, private: true, type: 'module' }, null, 2),
   )
   linkPackages(dir, omit)
   return dir

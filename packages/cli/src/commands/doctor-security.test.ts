@@ -17,13 +17,8 @@ import {
   type CliRun,
 } from '../../../../tests/support/doctor.js'
 
-// Diff review M1 (spec P2-04-cloudflare-waf, Decision 4: "healthCheck calls GET /zones/{zone}, so nymbal doctor is
-// the connection check"): doctor checks the security slot as it checks a commerce slot. With `security.adapter`
-// `cloudflare` on the fake API, a token the zone refuses is `slot security` down and exit 1; with the package not
-// installed, `package security` is down with the install line and the slot is down too; the right token is
-// `slot security` ok; `middleware` is `slot security` ok. Kills: a doctor that never builds the security slot, so a
-// revoked token or a missing package reads as healthy while every `security:*` command and `nymbal dev` fail.
-// Spawns the built CLI (`pnpm build` first).
+// doctor checks the security slot as it checks a commerce slot, against a fake Cloudflare API: a refused token or a
+// missing package is down and exits 1. Spawns the built CLI (`pnpm build` first).
 
 const TOKEN = 'cf-doctor-token-accepted-3Rk9'
 const SECURITY_PACKAGE = PROVIDER_PACKAGES.security['cloudflare']!.package
@@ -81,7 +76,10 @@ async function doctor(
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { ...repoConfig.security, ...security },
   }
-  writeFileSync(join(project, 'nymbal.config.ts'), `export default ${JSON.stringify(raw, null, 2)}\n`)
+  writeFileSync(
+    join(project, 'nymbal.config.ts'),
+    `export default ${JSON.stringify(raw, null, 2)}\n`,
+  )
   const sqlitePath = join(project, 'nymbal.db')
   await migratedSqlite(sqlitePath)
   const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath, ...extraEnv })
@@ -113,9 +111,11 @@ describe('nymbal doctor checks the security slot', () => {
     expect(slot?.status).toBe('down')
     expect(slot?.detail).toMatch(/^cloudflare/)
     expect(line(run, 'package security')?.status).toBe('ok')
-    expect(doctorLines(run.out).filter((l) => l.status === 'down').map((l) => l.name)).toEqual([
-      'slot security',
-    ])
+    expect(
+      doctorLines(run.out)
+        .filter((l) => l.status === 'down')
+        .map((l) => l.name),
+    ).toEqual(['slot security'])
     expect(run.out).not.toContain(revoked)
   }, 60_000)
 

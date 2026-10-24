@@ -3,12 +3,10 @@ import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 import { submitOnce } from '../src/lib/submit-once'
 
-// P1-15 AC-1: `submitOnce(form, handler)` (decision 1). For any number and kind of extra submits while one call is in
-// flight, the handler runs once and the submit button is disabled. A rejection, a synchronous throw or a resolve without
-// 'leaving' unlocks the form: the next submit runs the handler again and the button is enabled. A resolve of 'leaving'
-// keeps it locked. Kills: a second submit running the handler (a guard that trusts the disabled button, since
-// `requestSubmit()` still fires `submit` while it is disabled), a throw or rejection that leaves the form locked, and a
-// leaving form that unlocks.
+// AC-1: `submitOnce(form, handler)`. For any number and kind of extra submits while one call is in flight, the handler
+// runs once and the submit button is disabled (`requestSubmit()` still fires `submit` while it is disabled). A
+// rejection, a synchronous throw or a resolve without 'leaving' unlocks the form: the next submit runs the handler
+// again and the button is enabled. A resolve of 'leaving' keeps it locked.
 
 type Extra = 'click' | 'requestSubmit' | 'requestSubmitWithButton'
 type Settle = 'resolve' | 'reject' | 'throw' | 'leaving'

@@ -4,16 +4,9 @@ import type { AdapterSetting } from '@nymbalhq/types'
 import { COMMERCE_SLOTS } from '../adapters/registry.js'
 import { fillFromSettings } from './resolve.js'
 
-// P3-07 AC-2 (spec P3-07-secrets-settings, ruling 3, Decision 4): `fillFromSettings(slot, block, declared, rows, env)`
-// resolves each declared path as `block[path] ?? env[decl.env] ?? row`, a pure function. Over generated blocks (dot
-// paths nested as the config nests them), declarations, environments and decrypted rows for this slot and others:
-// - every value the block has is in the output unchanged;
-// - a declared path the block lacks takes its declared env when that is set, and a row of this slot only when both
-//   lack it;
-// - nothing else is added: no undeclared path, no row of another slot;
-// - the block passed in is not changed.
-// Kills: Settings overriding config or env, a declared env not honoured, undeclared keys injected, another slot's row
-// used, the caller's block mutated.
+// AC-2: `fillFromSettings(slot, block, declared, rows, env)` resolves each declared path as
+// `block[path] ?? env[decl.env] ?? row`, a pure function: the block's values are kept, nothing undeclared or from
+// another slot is added, and the block passed in is not changed.
 
 /** Leaf paths only: none is a prefix of another, so each can be set in one nested block. */
 const UNIVERSE = [
@@ -29,7 +22,14 @@ const UNIVERSE = [
   'smtp.pass',
   'smtp.host',
 ] as const
-const ENV_NAMES = ['P3_07_A', 'P3_07_B', 'P3_07_C', 'P3_07_D', 'P3_07_E', 'P3_07_F'] as const
+const ENV_NAMES = [
+  'SETTINGS_A',
+  'SETTINGS_B',
+  'SETTINGS_C',
+  'SETTINGS_D',
+  'SETTINGS_E',
+  'SETTINGS_F',
+] as const
 
 type Row = { slot: string; path: string; value: string }
 
@@ -106,7 +106,7 @@ function leafPaths(value: unknown, prefix = ''): string[] {
   )
 }
 
-describe('P3-07 AC-2: precedence is config, then environment, then Settings', () => {
+describe('AC-2: precedence is config, then environment, then Settings', () => {
   it('AC-2: the output equals the block wherever the block has a value', () => {
     fc.assert(
       fc.property(caseArb, ({ slot, block, declared, env, rows }) => {

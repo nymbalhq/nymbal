@@ -7,7 +7,7 @@ import { runMigrations } from '../../src/db/migrate.js'
 import { createProductRepository, type ProductInsert } from '../../src/repositories/product.js'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 
-// Acceptance tests for P0-02 AC-8 and AC-9: the `integration-postgres` Vitest project.
+// AC-8 and AC-9: the `integration-postgres` Vitest project.
 // AC-9: the file refuses to load without NYMBAL_TEST_POSTGRES_URL, so a missing database fails the project; it can
 // never skip or pass. The test in tests/tooling/integration-postgres.test.ts checks that from outside.
 // AC-8: each run creates its own database on that server, so "runMigrations applies the migrations" is observed

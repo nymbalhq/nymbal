@@ -5,11 +5,11 @@ import { afterAll } from 'vitest'
 import { createLocalFsMediaStorage } from '@nymbalhq/platform'
 import type { HealthReport, MediaStorage } from '@nymbalhq/types'
 
-// Local-fs media for the breakers (P2-13 AC-5): the real storage on a fresh root, the same on a root it cannot write
-// (its dependency, the filesystem, is gone: health `down` and put rejects), and the defective shapes the suite must
+// Local-fs media for the breakers: the real storage on a fresh root, the same on a root it cannot write (its
+// dependency, the filesystem, is gone: health `down` and put rejects), and the defective shapes the suite must
 // refuse. Every root is removed when the file's run ends.
 
-const URL_PREFIX = '/p2-13-media'
+const URL_PREFIX = '/contracts-media'
 const roots: string[] = []
 let root = ''
 
@@ -21,7 +21,7 @@ afterAll(() => {
 })
 
 function freshRoot(): string {
-  const r = mkdtempSync(join(tmpdir(), 'p2-13-breaker-media-'))
+  const r = mkdtempSync(join(tmpdir(), 'contracts-breaker-media-'))
   roots.push(r)
   return r
 }

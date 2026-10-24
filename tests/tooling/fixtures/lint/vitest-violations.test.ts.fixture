@@ -1,4 +1,4 @@
-// P0-05 AC-2 lint fixture: linted as a Vitest test file by tests/tooling/test-lint-rules.test.ts. Each line marked
+// AC-2 lint fixture: linted as a Vitest test file by tests/tooling/test-lint-rules.test.ts. Each line marked
 // `lint: <rule>` must be reported by that rule. Not run by any test runner (the .fixture suffix).
 import { describe, expect, it } from 'vitest'
 

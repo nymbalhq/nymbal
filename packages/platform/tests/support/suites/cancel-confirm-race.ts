@@ -6,13 +6,12 @@ import { adminClient, storedMoney, type AdminClient } from '../money.js'
 import { openRaw, type RawReader } from '../raw.js'
 import { deliverCapture, type WebhookAnswer } from '../webhooks.js'
 
-// P1-13 diff review B2 on one dialect: an admin cancel of a pending (+stub-pending) order, and a confirm of the same
-// order (the provider's capture through finalize, or the admin's mark-paid) let in between the cancel's read and its
-// write. The interleaving is injected: the cancel's status write (`OrderRepository.setStatus`, or `setStatusIf` to
-// cancelled) is held until the confirm has either answered (it committed: nothing serialised it behind the cancel) or
-// is parked behind it (Postgres: a backend of this database waits on a lock; SQLite: the confirm has reached the kernel
-// and takes its turn on the store's queue). Kills: cancel's `order.paid` guard read without the row lock and an
-// unconditional status write, so a confirm committed in between is overwritten to `cancelled` with its money captured.
+// On one dialect: an admin cancel of a pending (+stub-pending) order, and a confirm of the same order (the provider's
+// capture through finalize, or the admin's mark-paid) let in between the cancel's read and its write. The
+// interleaving is injected: the cancel's status write (`OrderRepository.setStatus`, or `setStatusIf` to cancelled) is
+// held until the confirm has either answered (it committed: nothing serialised it behind the cancel) or is parked
+// behind it (Postgres: a backend of this database waits on a lock; SQLite: the confirm has reached the kernel and
+// takes its turn on the store's queue). A confirm must never be overwritten to `cancelled` with its money captured.
 // Run on Postgres only: SQLite's single writer queue serialises the cancel and the confirm, so the race cannot happen.
 
 const PARKED_DEADLINE_MS = 15_000
@@ -24,7 +23,7 @@ export function cancelConfirmRaceSuite(
   dialect: Kernel['dialect'],
   start: () => Promise<Kernel>,
 ): void {
-  describe(`P1-13 B2: a cancel racing a confirm (${dialect})`, () => {
+  describe(`a cancel racing a confirm (${dialect})`, () => {
     let k: Kernel
     let served: ServedKernel
     let raw: RawReader

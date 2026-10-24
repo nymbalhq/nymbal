@@ -2,9 +2,9 @@ import { rawClients, type CommandStore, type ReadTx, type Tx } from '../db/comma
 import type { Repositories } from './index.js'
 import type { VariantInsert } from './variant.js'
 
-// P1-02 AC-14: a repository write does not compile without a transaction handle, with the ReadTx that store.read
-// hands its callback, or with the raw Drizzle client; a read does not compile without a handle. A write with a Tx
-// and a read with a ReadTx compile. Checked by `pnpm typecheck` (tsc), never executed.
+// AC-14: a repository write does not compile without a transaction handle, with the ReadTx that store.read hands its
+// callback, or with the raw Drizzle client; a read does not compile without a handle. A write with a Tx and a read
+// with a ReadTx compile. Checked by `pnpm typecheck` (tsc), never executed.
 
 declare const store: CommandStore
 declare const repos: Repositories

@@ -7,11 +7,11 @@ import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { canaryReady } from '../../scripts/canary-ready'
 
-// Acceptance tests for P0-04 round 1, AC-11: `scripts/canary-ready.ts` decides whether a canary may publish. For
-// every public workspace package: if it is being snapshotted it must already exist on npm (some version), so a canary
-// never becomes a package's first publish (npm gives a first publish `latest` whatever `--tag` says); if it is not
-// snapshotted, its current `name@version` must exist on npm (`changeset publish` publishes any public package whose
-// current version is missing). Private packages are never published and are ignored.
+// AC-11: `scripts/canary-ready.ts` decides whether a canary may publish. For every public workspace package: if it is
+// being snapshotted it must already exist on npm (some version), so a canary never becomes a package's first publish
+// (npm gives a first publish `latest` whatever `--tag` says); if it is not snapshotted, its current `name@version`
+// must exist on npm (`changeset publish` publishes any public package whose current version is missing). Private
+// packages are never published and are ignored.
 //
 // Interface the tests call:
 //   canaryReady(packages, snapshotted, registry) -> { ready, missing } (or a promise of it)

@@ -6,12 +6,8 @@ import { appendRecipeEnv, readRecipe } from './index.js'
 import { REPO, RECIPE_NAMES, linkedProject, removeAll } from './fixtures/linked-project.js'
 import type { SpecRecipe as Recipe } from './fixtures/linked-project.js'
 
-// Acceptance tests for P2-03 AC-3 (spec P2-03-nymbal-add-recipe, decision 5): appendRecipeEnv on generated
-// .env.example text (variables, comments, blank lines, a recipe's variables already there as NAME= or # NAME=, and
-// names that only start or end like one) adds each missing variable exactly once under the recipe's header, with its
-// comment above it, commented out when optional; it never removes or reorders a line; a second application changes
-// nothing. Kills: duplicated env lines, lost or reordered ones, a prefix match taken for a present variable, and an
-// optional variable written live.
+// AC-3: appendRecipeEnv adds each missing variable once under the recipe's header (commented out when optional),
+// never removes or reorders a line, and is idempotent.
 
 const dirs: string[] = []
 const real: Recipe[] = []
@@ -31,13 +27,13 @@ const POOL = [
   'AWS_REGION',
   'STRIPE_SECRET_KEY',
   'STRIPE_PUBLISHABLE_KEY',
-  'P2_03_ALPHA',
-  'P2_03_BETA',
+  'RECIPES_ALPHA',
+  'RECIPES_BETA',
 ]
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 
-/** NAME= or # NAME=, the two forms decision 5 counts as present. */
+/** NAME= or # NAME=, the two forms that count as present. */
 const declares = (name: string) => (line: string) =>
   new RegExp(`^(#\\s*)?${escapeRe(name)}=`).test(line.trim())
 
@@ -55,7 +51,7 @@ const envVarArb = (name: string) =>
 
 const generatedRecipeArb: fc.Arbitrary<Recipe> = fc
   .tuple(
-    fc.constantFrom('redis', 's3', 'stripe', 'postgres', 'p2-03-extra'),
+    fc.constantFrom('redis', 's3', 'stripe', 'postgres', 'recipes-extra'),
     fc.shuffledSubarray(POOL, { minLength: 1, maxLength: 5 }),
   )
   .chain(([name, names]) =>
@@ -134,7 +130,7 @@ const envAppended = (examples: fc.Arbitrary<string>, recipes: fc.Arbitrary<Recip
     if (missing.length === 0) expect(out).toBe(example)
   })
 
-describe('P2-03 AC-3: appendRecipeEnv', () => {
+describe('AC-3: appendRecipeEnv', () => {
   it('AC-3: on generated .env.example text and generated recipes, adds each missing variable once, keeps every line, and is idempotent', () => {
     const start = checked
     fc.assert(envAppended(exampleArb, generatedRecipeArb), { numRuns: 300 })

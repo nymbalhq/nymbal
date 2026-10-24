@@ -20,17 +20,11 @@ import { openRaw, stockOf, type RawReader } from '../raw.js'
 import { primedShopper } from '../security.js'
 import { captureFor } from '../webhooks.js'
 
-// P3-04 AC-2 (spec P3-04-audit-trail, decisions 1-4 and 6) on either dialect: a kernel from `src/` served over HTTP,
-// commands sent by an admin, a customer, guests and the payment webhook, and `audit_entries` read through a second
-// connection by each request's x-correlation-id. Every outermost command that commits leaves exactly one `applied`
-// entry with its actor (from the request's principal, not a string argument), a command name of its own, its subjects
-// (a checkout's include its order and reserved variant) and the request's correlation id. A command that throws inside
-// its transaction leaves no `applied` entry and no stock move; one its service refuses leaves one `refused` entry; a
-// schema 400 and a cart command leave none. A guest's actor id is never its cart token. Rows are never updated or
-// removed, by later commands or by the event-retention sweep.
-// Kills: a command left unaudited; the actor taken from the ad-hoc string or missing; a nested command writing a row
-// of its own; an entry kept for a rolled-back write; a schema 400 or a cart add audited; the cart token stored as the
-// guest's id; an entry updated in place; retention deleting entries.
+// AC-2 on either dialect: a kernel from `src/` served over HTTP, commands sent by an admin, a customer, guests and the
+// payment webhook, and `audit_entries` read through a second connection by each request's x-correlation-id. Every
+// outermost command that commits leaves exactly one `applied` entry with its actor, name, subjects and correlation
+// id; a command that throws leaves none and moves no stock; a refused one leaves one `refused` entry; a schema 400
+// and a cart command leave none. A guest's actor id is never its cart token, and rows are never updated or removed.
 
 type Kind =
   | 'adjust'
@@ -113,7 +107,7 @@ export function auditEntriesSuite(
   start: () => Promise<Kernel>,
   opts: { runs: number },
 ): void {
-  describe(`P3-04 AC-2: every outermost command leaves one entry, in its transaction (${dialect})`, () => {
+  describe(`AC-2: every outermost command leaves one entry, in its transaction (${dialect})`, () => {
     let k: Kernel
     let served: ServedKernel
     let raw: RawReader
@@ -150,7 +144,7 @@ export function auditEntriesSuite(
     }
 
     const pendingOrder = () => checkoutOf(k, stocked, 1)
-    const paidOrder = () => checkoutOf(k, stocked, 1, `paid-${randomUUID()}@p3-04.test`)
+    const paidOrder = () => checkoutOf(k, stocked, 1, `paid-${randomUUID()}@audit.test`)
 
     function step(
       kind: Kind,
@@ -216,7 +210,7 @@ export function auditEntriesSuite(
         case 'productCreate': {
           const tag = randomUUID()
           const res = await admin.send<{ id: string }>('POST', '/api/admin/products', {
-            slug: `p3-04-ac2-${tag}`,
+            slug: `audit-ac2-${tag}`,
             name: 'Audited',
             description: '',
             status: 'draft',
@@ -258,7 +252,7 @@ export function auditEntriesSuite(
         case 'checkoutGuest': {
           const { s, token } = await guestWithCart()
           const res = await s.call<{ orderId: string }>('POST', '/api/checkout', {
-            email: `guest-${randomUUID()}+stub-pending@p3-04.test`,
+            email: `guest-${randomUUID()}+stub-pending@audit.test`,
             billingAddress: address,
             shippingAddress: address,
           })
@@ -291,8 +285,8 @@ export function auditEntriesSuite(
         case 'register': {
           const s = await primedShopper(served.baseUrl)
           const res = await s.call<{ customer: { id: string } }>('POST', '/api/auth/register', {
-            email: `reg-${randomUUID()}@p3-04.test`,
-            password: 'p3-04-correct-horse',
+            email: `reg-${randomUUID()}@audit.test`,
+            password: 'audit-correct-horse',
           })
           return step(kind, res, 201, {
             outcome: 'applied',
@@ -353,7 +347,7 @@ export function auditEntriesSuite(
           const passThrough = original as (...args: unknown[]) => Promise<unknown>
           publisher.publish = (async (type: string, payload: unknown, options?: unknown) => {
             if (type === EVT_INVENTORY_CHANGED) {
-              throw new Error('p3-04: publish refused mid-transaction')
+              throw new Error('audit: publish refused mid-transaction')
             }
             return passThrough.call(publisher, type, payload, options)
           }) as typeof publisher.publish
@@ -438,7 +432,7 @@ export function auditEntriesSuite(
       expect(new Set(all).size, `command names ${JSON.stringify([...names])}`).toBe(all.length)
     }
 
-    it('AC-2: each kind of command, in turn: one applied entry with its actor, name, subjects and correlation id; refused, schema-400, cart and thrown commands as decision 2 and 6 say', async () => {
+    it('AC-2: each kind of command, in turn: one applied entry with its actor, name, subjects and correlation id; one refused entry for a refused command, none for a schema 400, a cart command or a thrown one', async () => {
       for (const kind of KINDS) await runAndCheck(kind)
       expectNamesConsistent()
     }, 120_000)

@@ -17,20 +17,18 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { noScript, upgraded } from '../support/server-rendered'
 import { formatPrice, specStockLevel } from '../support/variants'
 
-// P2-17 AC-3, store end state browse.grid-is-element, on production builds of both templates
-// (playwright.prod.config.ts); the JS-off contexts are made from a JS-on context's storage state.
+// AC-3, on production builds of both templates (playwright.prod.config.ts); the JS-off contexts are made from a JS-on
+// context's storage state.
 // With JavaScript off: `/` shows the featured grid's `nymbal-product-card`s inside `nymbal-product-grid`, the first
 // four images eager and the rest lazy; `/products` and `/category/<slug>` show their grids in the API's order, with
 // `load-more` exactly when `GET /api/products` has a `nextCursor`; a product page shows `nymbal-product-price` and
-// `nymbal-stock-badge` for its first variant (the badge's `data-level` the spec's rule), `nymbal-breadcrumb` with the
+// `nymbal-stock-badge` for its first variant (the badge's `data-level` the stock rule's), `nymbal-breadcrumb` with the
 // product as `aria-current="page"`, `nymbal-image-gallery`'s main image and one thumbnail per image, and the related
 // `nymbal-product-grid`. With JavaScript on: the same pages reuse the markup (per-part counts equal, no template left,
 // no console error); a sort on the listing re-renders the grid from the store in the order the store's
 // `GET /api/products?sort=<key>` answered, in the same document; `load-more` appends the page
 // `GET /api/products?cursor=…` answered; the PDP's price and badge follow a variant click and a thumbnail click swaps
 // the main image; on Next the home → listing → PDP clicks are soft navigations that hold the same.
-// Kills: a page still rendering template markup for a grid or the PDP; a grid empty without JS; a sort that leaves
-// the server's cards or duplicates them, or reloads the page; a lazy first card; a card click that is a full load on Next.
 
 const PRODUCT = seedProducts[0]!.slug
 const PAGE_SIZE = 24
@@ -156,7 +154,7 @@ async function highPriorityImages(
   })
 }
 
-test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)', () => {
+test.describe('AC-3: the grids and the PDP are elements (production build)', () => {
   test('AC-3: browse.grid-is-element: with JS off, / shows the featured grid’s nymbal-product-cards inside nymbal-product-grid, the first four images eager with high priority and the rest lazy, and the head preloads the first card’s image', async ({
     browser,
     context,
@@ -175,7 +173,7 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
     expect(images.map(({ loading, priority }) => ({ loading, high: priority === 'high' }))).toEqual(
       slugs.map((_, i) => ({ loading: i < 4 ? 'eager' : 'lazy', high: i < 4 })),
     )
-    // Decision 9: the preload scanner never reaches an image inside a declarative shadow root, so the head starts it.
+    // The preload scanner never reaches an image inside a declarative shadow root, so the head starts it.
     expect(images[0]?.src, 'the first card has an image').toBeTruthy()
     expect(
       await headImagePreloads(page),
@@ -204,9 +202,9 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
         page = await scriptOff(browser, testInfo, context, path)
         const grid = page.locator('nymbal-product-grid')
         await expect(grid, `${path}: one grid`).toHaveCount(1)
-        // P2-19 (Decisions 1 and 3): Next's listing reads the catalog through the data cache, up to 300 s old, and
-        // products are only ever added, newest first: Next's grid is a page of the API's order from its first card.
-        // Astro renders per request, so its grid is the API's first page.
+        // Next's listing reads the catalog through the data cache, up to 300 s old, and products are only ever added,
+        // newest first: Next's grid is a page of the API's order from its first card. Astro renders per request, so
+        // its grid is the API's first page.
         const cards = await cardSlugs(grid)
         const all = (await apiPage(request, { ...query, limit: '100' })).items.map((p) => p.slug)
         const start = all.indexOf(cards[0] ?? '')
@@ -280,7 +278,7 @@ test.describe('P2-17 AC-3: the grids and the PDP are elements (production build)
     expect(related.length).toBeLessThanOrEqual(4)
     expect(related, 'the product is not its own relation').not.toContain(product.slug)
 
-    // Decision 9: the gallery's main image is the PDP's LCP; nothing below the fold outranks it.
+    // The gallery's main image is the PDP's LCP; nothing below the fold outranks it.
     const gallery = await mainImage(page)
     expect.soft(gallery.priority, 'the gallery’s main image fetchpriority').toBe('high')
     expect

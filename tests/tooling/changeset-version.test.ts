@@ -18,10 +18,10 @@ import {
   type WorkspaceMember,
 } from '../architecture/workspace-manifests'
 
-// Acceptance test for P0-04 AC-8: `pnpm changeset version` succeeds on the repository's changesets in a scratch
-// repository and versions only published packages. The scratch repository holds the workspace manifests,
-// pnpm-workspace.yaml and .changeset/ (sources are irrelevant to versioning); node_modules is linked, not installed.
-// It holds on every branch: with no pending changesets nothing is named and nothing may change.
+// AC-8: `pnpm changeset version` succeeds on the repository's changesets in a scratch repository and versions only
+// published packages. The scratch repository holds the workspace manifests, pnpm-workspace.yaml and .changeset/
+// (sources are irrelevant to versioning); node_modules is linked, not installed. It holds on every branch: with no
+// pending changesets nothing is named and nothing may change.
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(

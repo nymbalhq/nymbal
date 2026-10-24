@@ -4,10 +4,10 @@ import { createMailSink, type MailSink } from '@nymbalhq/proof-kit/mail'
 import { startTestStore, type TestStore } from '@nymbalhq/proof-kit/store'
 import { storefrontClient } from '../fixtures/storefront-client'
 
-// P1-12 AC-10, the store end state `checkout.email-on-payment`: a shopper's paid order, made only through the store's
-// own API (cart, item, checkout; no webhook call and no proof-kit payment hook, which this file does not import),
-// leaves one order-placed message in the mail sink, and the order it names is confirmed. "One" is read after a
-// barrier: a registration whose welcome email has arrived, delivered after every event the checkout published.
+// AC-10: a shopper's paid order, made only through the store's own API (cart, item, checkout; no webhook call and no
+// proof-kit payment hook, which this file does not import), leaves one order-placed message in the mail sink, and the
+// order it names is confirmed. "One" is read after a barrier: a registration whose welcome email has arrived,
+// delivered after every event the checkout published.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.
 
 const URL_VAR = 'NYMBAL_TEST_MAILPIT_URL'

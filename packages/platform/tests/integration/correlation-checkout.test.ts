@@ -5,13 +5,12 @@ import { startTestStore } from '../support/proof-kit.js'
 import { openRaw } from '../support/raw.js'
 import { checkoutCorrelationSuite } from '../support/suites/correlation-checkout.js'
 
-// P3-01 AC-1 and AC-1b on SQLite (spec P3-01-event-log-surface), over HTTP on startTestStore. The kit runs the built
-// kernel: `pnpm build` first.
+// AC-1 and AC-1b on SQLite, over HTTP on startTestStore. The kit runs the built kernel: `pnpm build` first.
 
 checkoutCorrelationSuite(
   'sqlite',
   async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'p3-01-checkout-'))
+    const dir = mkdtempSync(join(tmpdir(), 'events-checkout-'))
     const sqlitePath = join(dir, 'store.sqlite')
     const store = await startTestStore({ sqlitePath })
     const raw = openRaw('sqlite', sqlitePath)

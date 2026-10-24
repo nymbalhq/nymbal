@@ -2,8 +2,8 @@ import fc from 'fast-check'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-06 decisions 1 and 2: the element is a Lit element that renders in an open shadow root, so its internals are
-// read through `shadowRoot`, once its render has settled (`updateComplete`).
+// The element is a Lit element that renders in an open shadow root, so its internals are read through `shadowRoot`,
+// once its render has settled (`updateComplete`).
 
 beforeEach(() => {
   setupMockClient()

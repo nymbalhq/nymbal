@@ -23,12 +23,9 @@ import {
 import { openRaw, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 
-// Acceptance tests for P2-01 AC-3: createApp(config, { adapters }) puts an injected adapter in the slot whose provider
-// is `custom`, and uses it everywhere the built one would be: a checkout over the API pays through it, for the order's
-// total, and the order holds the intent it returned. `custom` with nothing injected, and an adapter injected for a slot
-// that is not `custom`, fail createApp with `adapter.custom_mismatch` naming the slot. AC-3's production cells (an
-// injected real adapter starts, an injected stub is refused) are in production-refusals.test.ts, beside P1-05 AC-8's.
-// Kills: an injected adapter ignored or partly used, and one silently accepted beside a built one.
+// AC-3: createApp(config, { adapters }) puts an injected adapter in a `custom` slot and uses it everywhere the built
+// one would be; `custom` with nothing injected, or an adapter for a slot that is not `custom`, fails with
+// `adapter.custom_mismatch`. The production cells are in production-refusals.test.ts.
 
 const SLOTS = [
   'payments',
@@ -50,8 +47,8 @@ function recorder() {
   const calls: Array<{ params: PaymentIntentParams; intentId: string }> = []
   const adapter = {
     ...stub,
-    providerName: 'p2-01-recorder',
-    capabilities: () => ['intent', 'capture', 'refund', 'p2-01-recorded'],
+    providerName: 'adapters-recorder',
+    capabilities: () => ['intent', 'capture', 'refund', 'adapters-recorded'],
     async createPaymentIntent(params: PaymentIntentParams) {
       const intent = await stub.createPaymentIntent(params)
       calls.push({ params, intentId: intent.id })
@@ -65,7 +62,7 @@ function recorder() {
 function doubleFor(slot: Slot) {
   return {
     kind: slot,
-    providerName: `p2-01-${slot}-double`,
+    providerName: `adapters-${slot}-double`,
     capabilities: () => [],
     producesEvents: [],
     consumesEvents: [],
@@ -93,7 +90,7 @@ const arbLines = fc.array(
   { minLength: 1, maxLength: 3 },
 )
 
-describe('P2-01 AC-3: a custom payments adapter, injected, takes the checkout', () => {
+describe('AC-3: a custom payments adapter, injected, takes the checkout', () => {
   const rec = recorder()
   let k: Kernel
   let served: ServedKernel
@@ -132,7 +129,7 @@ describe('P2-01 AC-3: a custom payments adapter, injected, takes the checkout', 
         const before = rec.calls.length
 
         const res = await shop.call<CheckoutAnswer>('POST', '/api/checkout', {
-          email: `ac3-${randomUUID()}@p2-01.test`,
+          email: `ac3-${randomUUID()}@adapters.test`,
           billingAddress: address,
           shippingAddress: address,
         })
@@ -154,7 +151,7 @@ describe('P2-01 AC-3: a custom payments adapter, injected, takes the checkout', 
   }, 120_000)
 })
 
-describe('P2-01 AC-3: custom and an injected adapter go together, or createApp refuses', () => {
+describe('AC-3: custom and an injected adapter go together, or createApp refuses', () => {
   const dirs: string[] = []
   const apps: NymbalApp[] = []
 
@@ -168,7 +165,7 @@ describe('P2-01 AC-3: custom and an injected adapter go together, or createApp r
     config: NymbalConfig,
     adapters?: Record<string, unknown>,
   ): Promise<unknown> {
-    const dir = mkdtempSync(join(tmpdir(), 'p2-01-custom-'))
+    const dir = mkdtempSync(join(tmpdir(), 'adapters-custom-'))
     dirs.push(dir)
     const sqlitePath = join(dir, 'store.sqlite')
     const store = createCommandStore(config, { sqlitePath })

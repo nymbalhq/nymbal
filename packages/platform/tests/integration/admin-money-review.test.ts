@@ -23,20 +23,19 @@ import {
   reservationsFor,
 } from '../support/webhooks.js'
 
-// P1-13 diff review B1 and M3 on SQLite: a kernel from `src/` served over HTTP, the stub payments adapter (its
-// `cancelPaymentIntent` and `refund` wrapped where a test needs the provider to answer otherwise, every call recorded),
-// and the committed rows read through a second connection.
+// Mark-paid and the cancelled-order backstop on SQLite: a kernel from `src/` served over HTTP, the stub payments
+// adapter (its `cancelPaymentIntent` and `refund` wrapped where a test needs the provider to answer otherwise, every
+// call recorded), and the committed rows read through a second connection.
 //
-// B1: mark-paid left the order's provider intent live, and a provider capture that then reached the order was neither
-// recorded nor refunded (the shopper charged twice). M3: finalize's backstop refund for a cancelled order persisted
-// nothing before the provider call, so an unknown outcome rolled the delivery back and the money that moved was never
-// recorded.
+// Mark-paid closes the order's provider intent, so a later provider capture is recorded and refunded rather than
+// charging the shopper twice. Finalize's backstop refund for a cancelled order is recorded before the provider call,
+// so an unknown outcome never leaves money moved and unrecorded.
 
 type RefundImpl = NonNullable<PaymentsAdapter['refund']>
 
 const DUPLICATE = 'duplicate_capture_refunded'
 
-describe('P1-13 diff review: mark-paid, duplicate captures and the backstop refund (sqlite)', () => {
+describe('mark-paid, duplicate captures and the backstop refund (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let raw: RawReader
@@ -218,7 +217,7 @@ describe('P1-13 diff review: mark-paid, duplicate captures and the backstop refu
         status: 'delivered',
         createdAt: new Date('2025-06-01T10:00:00Z'),
         customerId: null,
-        email: `imported-${randomUUID()}@p1-13.test`,
+        email: `imported-${randomUUID()}@money.test`,
         billingAddress: address,
         shippingAddress: address,
         lineItems: [],

@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { KNOWN_PROVIDERS } from './known-providers.js'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
-// P2-13 AC-8 (spec P2-13-contract-tests-public, decision 6), the schema half: every commerce slot block takes an
-// optional `package`, a string that is a valid npm package name, which the parsed config keeps as written; a malformed
-// name, or a value that is not a string, is refused with the issue at that slot's `package`. Kills: a schema that
-// strips the field (zod's default for an unknown key, today), and one that takes any string.
+// AC-8, the schema half: every commerce slot block takes an optional `package`, a valid npm package name kept as
+// written; anything else is refused with the issue at that slot's `package`.
 
 type Slot = keyof typeof KNOWN_PROVIDERS
 const SLOTS = Object.keys(KNOWN_PROVIDERS) as Slot[]
@@ -24,7 +22,7 @@ function input(slot: Slot, pkg: unknown): NymbalConfigInput {
   }
   commerce[slot] = { provider: 'custom', package: pkg, config: { region: 'eu' } }
   return {
-    store: { name: 'P2-13', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
     security: { adapter: 'middleware' },
@@ -57,7 +55,7 @@ const issueAt = (slot: Slot, pkg: unknown): string[] => {
   return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'))
 }
 
-describe('P2-13 AC-8: commerce.<slot>.package', () => {
+describe('AC-8: commerce.<slot>.package', () => {
   it('AC-8: for any commerce slot and any valid npm name, scoped or not, the config parses and keeps the name as written', () => {
     fc.assert(
       fc.property(fc.constantFrom(...SLOTS), validName, (slot, name) => {

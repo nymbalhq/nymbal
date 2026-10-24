@@ -11,12 +11,10 @@ import { createLogger } from '../../src/logger.js'
 import { resolvePrimitives } from '../../src/platform.js'
 import { createKernel, kernelConfig, type Kernel } from '../support/kernel.js'
 
-// Acceptance tests for P2-11 AC-2, the MinIO-backed load (spec P2-11-s3-media, decision 3): with media 's3', the media
-// resolvePrimitives builds is the S3 storage on the configured bucket. A put through it returns a URL under the
-// bucket's URL, an anonymous GET of that URL serves the bytes, and the object is in the bucket under its key; and
-// app.capabilities() reports media as provider 's3' with ['put']. A local-fs instance answers a /imported-media URL that
-// no GET reaches, so it fails here. Credentials come from the SDK's default chain (AWS_ACCESS_KEY_ID and
-// AWS_SECRET_ACCESS_KEY), never from the config. Needs `pnpm build` and MinIO (NYMBAL_TEST_S3_ENDPOINT).
+// AC-2, the MinIO-backed load: with media 's3', a put returns a URL under the bucket's URL that an anonymous GET
+// serves, the object is in the bucket under its key, and app.capabilities() reports media as 's3' with ['put'].
+// Credentials come from the SDK's default chain (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY), never from the config.
+// Needs `pnpm build` and MinIO (NYMBAL_TEST_S3_ENDPOINT).
 
 const endpoint = s3Endpoint()
 const logger = createLogger({ pretty: false, level: 'error' })
@@ -50,15 +48,15 @@ function withS3(config: NymbalConfig): NymbalConfig {
   } as unknown as NymbalConfig
 }
 
-describe("P2-11 AC-2: media 's3' resolves to the S3 storage on the configured bucket", () => {
+describe("AC-2: media 's3' resolves to the S3 storage on the configured bucket", () => {
   it("AC-2: resolvePrimitives(...).media puts into the bucket: each URL is under the bucket's URL, an anonymous GET serves the bytes, and the object is in the bucket at its key", async () => {
     const config = withS3(kernelConfig('sqlite'))
     // No S3_* variables: the block alone names the bucket and the endpoint.
     const { media, documentStore, eventBus } = await resolvePrimitives(config, { env: {}, logger })
     try {
       const bodies = new Map<string, Uint8Array>([
-        ['products/p2-11-resolve/front.png', Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 1])],
-        ['products/p2-11-resolve/back side ü.jpg', new TextEncoder().encode('jpeg bytes, p2-11')],
+        ['products/s3-resolve/front.png', Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 1])],
+        ['products/s3-resolve/back side ü.jpg', new TextEncoder().encode('jpeg bytes, s3')],
       ])
       const urls = new Set<string>()
       for (const [key, body] of bodies) {

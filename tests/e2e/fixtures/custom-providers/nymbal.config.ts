@@ -1,10 +1,10 @@
 import { env } from '@nymbalhq/config'
 import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adapters'
 
-// P2-05 decision 9: the swap config. The repository root's config with `search` and `payments` set to `custom`, the
-// adapters injected through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a
-// custom E2E run never reaches the native store on 3001. `nymbal dev --api-only` runs from this directory; the
-// NYMBAL_E2E_TARGET values astro-custom and nextjs-custom start it (tests/e2e/playwright.config.ts).
+// The swap config: the repository root's config with `search` and `payments` set to `custom`, the adapters injected
+// through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
+// reaches the native store on 3001. `nymbal dev --api-only` runs from this directory; the NYMBAL_E2E_TARGET values
+// astro-custom and nextjs-custom start it (tests/e2e/playwright.config.ts).
 
 export const adapters = {
   search: createFixtureSearchAdapter(),

@@ -9,9 +9,9 @@ import {
 import { seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, type RawReader } from '../raw.js'
 
-// P1-02 AC-4 (SQLite) / AC-5 (Postgres): a transaction that writes through two repositories then throws leaves
-// neither write. AC-9 (both): events are delivered after commit, never after rollback, in order, before
-// `transaction` resolves; a rejected joined block poisons the outermost even when the outer callback catches it.
+// AC-4 (SQLite) / AC-5 (Postgres): a transaction that writes through two repositories then throws leaves neither
+// write. AC-9 (both): events are delivered after commit, never after rollback, in order, before `transaction`
+// resolves; a rejected joined block poisons the outermost even when the outer callback catches it.
 
 type Reserved = NymbalEvent<{ variantId: string; reservationId: string }>
 type Marker = NymbalEvent<{ variantId: string }>

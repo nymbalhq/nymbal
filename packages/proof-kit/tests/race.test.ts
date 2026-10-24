@@ -2,8 +2,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { checkStock, race, type StockLedger, type StockViolation } from '@nymbalhq/proof-kit/race'
 
-// Acceptance tests for P1-01 AC-1 (race starts every attempt together and reports every outcome) and AC-2
-// (checkStock is clean exactly when the three stock invariants hold, and names every one that breaks).
+// AC-1 (race starts every attempt together and reports every outcome) and AC-2 (checkStock is clean exactly when the
+// three stock invariants hold, and names every one that breaks).
 
 describe('AC-1: race starts every contender before any finishes, and reports every outcome', () => {
   it('AC-1: for any contenders in 2..64, every start precedes every finish; won holds every value, lost every rejection', async () => {
@@ -50,7 +50,7 @@ describe('AC-1: race starts every contender before any finishes, and reports eve
   })
 })
 
-/** The violations a ledger must produce, from the spec's definitions, in invariant order. */
+/** The violations a ledger must produce, from the invariants' definitions, in invariant order. */
 function expectedViolations(l: StockLedger): StockViolation[] {
   const out: StockViolation[] = []
   if (!(l.final >= 0)) out.push({ invariant: 'stock-non-negative', final: l.final })

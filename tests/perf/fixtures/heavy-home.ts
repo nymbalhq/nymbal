@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-// P2-08 AC-2's fixture: a copy of the Astro template whose home page loads one more script of 300 KB. Its content is
+// AC-2's fixture: a copy of the Astro template whose home page loads one more script of 300 KB. Its content is
 // pseudo-random base64, so gzip leaves most of it (about 230 KB): a byte budget measured on gzip still sees it. The
 // copy shares the template's node_modules (a symlink), so it builds as the template does, and the template itself is
 // never touched.

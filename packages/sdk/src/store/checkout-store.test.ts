@@ -102,10 +102,9 @@ describe('CheckoutStore', () => {
   })
 })
 
-// P1-12 AC-5 (decision 3): the store tells the truth. `paymentStatus` is what the server said about the payment, not
-// "the order was created"; `submitPayment()` resolves to the server's checkout result (null when there is none); a
-// template calls `markConfirmed()` once Stripe's confirmation succeeds. Kills: `succeeded` set on any 200, a
-// Stripe-pending checkout redirected as paid, and a result only reachable through a stale render snapshot.
+// AC-5: `paymentStatus` is what the server said about the payment, not "the order was created"; `submitPayment()`
+// resolves to the server's checkout result (null when there is none); a template calls `markConfirmed()` once
+// Stripe's confirmation succeeds.
 describe('AC-5: CheckoutStore follows the server payment status', () => {
   type ServerStatus = 'succeeded' | 'requires_action' | 'failed'
 

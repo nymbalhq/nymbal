@@ -7,8 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// P1-14 AC-2: `nymbal dev --api-only` exits promptly on a signal with the admin's live stream open. Kills: a shutdown
-// that waits on the open stream (measured by the 2026-10-19 release QA: over 60 s), for SIGTERM or for SIGINT.
+// AC-2: `nymbal dev --api-only` exits promptly on SIGTERM or SIGINT with the admin's live stream open.
 // Spawns the built CLI (`pnpm build` first), on a free port and a fresh SQLite file of its own.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -50,7 +49,7 @@ interface Api {
 
 async function startApi(): Promise<Api> {
   const port = await freePort()
-  const dir = mkdtempSync(join(tmpdir(), 'nymbal-p1-14-'))
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-shutdown-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
   const child = spawn(process.execPath, [CLI_BIN, 'dev', '--api-only', '--port', String(port)], {
     cwd: REPO_ROOT,
@@ -170,7 +169,7 @@ async function signalAndTime(
   return { ms: Date.now() - sentAt, code: exit.code }
 }
 
-describe('P1-14 nymbal dev --api-only shutdown with the admin stream open', () => {
+describe('nymbal dev --api-only shutdown with the admin stream open', () => {
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     it(
       `AC-2: with an admin holding /api/admin/events open, ${signal} ends the process with code 0 within 3 s`,

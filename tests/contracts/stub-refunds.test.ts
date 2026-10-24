@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { createLogger, createNativeStubPaymentsAdapter } from '@nymbalhq/platform'
 import { PaymentError, type PaymentsAdapter } from '@nymbalhq/types'
 
-// P1-13 AC-9 (decision 9, M6): the stub refunds like a provider, within its memory. It refuses an id it did not mint,
-// an intent it holds that was never captured, and more than it captured on an intent it holds; it accepts its own id
-// after a restart (a new adapter, an empty memory), where the service's refundable check is the guard; and it answers
-// in the intent's currency. Kills: the stub still accepting any refund, and pre-restart orders made unrefundable.
+// AC-9: the stub refunds like a provider, within its memory. It refuses an id it did not mint, an intent it holds that
+// was never captured, and more than it captured on an intent it holds; it accepts its own id after a restart (a new
+// adapter, an empty memory), where the service's refundable check is the guard; and it answers in the intent's
+// currency.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 const build = (): PaymentsAdapter => createNativeStubPaymentsAdapter({ logger })
@@ -36,7 +36,7 @@ describe('native stub: refunds (AC-9)', () => {
     const intent = await stub.createPaymentIntent({
       amountMinor: 2_000,
       currency: 'GBP',
-      receiptEmail: 'buyer+stub-pending@p1-13.test',
+      receiptEmail: 'buyer+stub-pending@money.test',
     })
     expect(intent.status).not.toBe('succeeded')
 
@@ -109,11 +109,10 @@ describe('native stub: refunds (AC-9)', () => {
   })
 })
 
-// P2-13 AC-4 (spec P2-13-contract-tests-public, decision 4, Fable spec B3): the stub keeps a key → refund map, so a
-// refund repeated with the same idempotency key answers the first refund and refunds once. Seen through the payments
-// surface alone (Fable recheck M1): after T/2 twice under one key, the remainder still fits and one more minor unit
-// does not. Kills: a stub that mints a new id and adds the amount on every call (native-stub.ts today).
-describe('native stub: a refund repeated with one idempotency key refunds once (P2-13 AC-4)', () => {
+// AC-4: the stub keeps a key → refund map, so a refund repeated with the same idempotency key answers the first refund
+// and refunds once. Seen through the payments surface alone: after T/2 twice under one key, the remainder still fits
+// and one more minor unit does not.
+describe('native stub: a refund repeated with one idempotency key refunds once', () => {
   it('AC-4: over generated amounts T, refunding T/2 twice under key K gives one refund id; T − T/2 then succeeds and one more minor unit is refund_rejected', async () => {
     await fc.assert(
       fc.asyncProperty(

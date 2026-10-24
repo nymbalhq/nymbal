@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance tests for P0-04 round 1, AC-12 (release.yml) and the workflow half of AC-11 (canary.yml).
+// AC-12 (release.yml) and the workflow half of AC-11 (canary.yml).
 // AC-12: version and the release commit run only when changesets exist; the build runs before the commit and its
 // outputs are committed; publish, tags and GitHub releases run whenever the tokens exist (they are idempotent), so a
-// re-run after a failed publish completes the release; back-merge runs on every push to main.
+// re-run after a failed publish completes the release.
 // AC-11: canary.yml runs scripts/canary-ready.ts before publishing and gates the publish on its `ready` output.
 // No YAML library is a dependency of the repo, so the workflows are read by the small block-YAML reader below (the
-// one P0-03 used for ci.yml). It throws on anything outside the subset the workflows use, and the job list it returns
-// is checked against the job keys found textually, so a misread fails loudly instead of passing quietly.
+// one ci-workflow.test.ts uses). It throws on anything outside the subset the workflows use, and the job list it
+// returns is checked against the job keys found textually, so a misread fails loudly instead of passing quietly.
 
 const RELEASE = fileURLToPath(new URL('../../.github/workflows/release.yml', import.meta.url))
 const CANARY = fileURLToPath(new URL('../../.github/workflows/canary.yml', import.meta.url))
@@ -329,41 +329,20 @@ describe('AC-12: release.yml', () => {
       `a build not conditioned on changesets precedes publish (${publish.job}[${publish.index}])`,
     ).not.toHaveLength(0)
   })
-
-  it('AC-12: back-merge runs on every push to main, the release commit included', () => {
-    const backMerge = Object.entries(jobs).filter(([, j]) =>
-      (j.steps ?? []).some((s) => /\bgh\s+pr\s+create\b[^\n]*--base\s+dev\b/.test(s.run ?? '')),
-    )
-    expect(
-      backMerge.map(([id]) => id),
-      'exactly one job opens the main -> dev pull request',
-    ).toHaveLength(1)
-    const [id, job] = backMerge[0]!
-    const condition = job.if ?? ''
-    expect(condition, `${id} must not exclude chore(release): commits`).not.toMatch(
-      /chore\(release\)/,
-    )
-    expect(condition, `${id} must not depend on changesets`).not.toMatch(MENTIONS_CHANGESETS)
-    expect(
-      needsOf(job).length === 0 || SURVIVES_SKIPPED_NEEDS.test(condition),
-      `${id} needs ${needsOf(job)} and must run when they are skipped: if "${condition}"`,
-    ).toBe(true)
-  })
 })
 
 describe('AC-11: canary.yml', () => {
   const jobs = loadJobs(CANARY)
   const steps = stepsOf(jobs)
 
-  it('AC-11: canary.yml runs scripts/canary-ready.ts before publishing and gates publish and the prerelease on its ready output', () => {
+  it('AC-11: canary.yml runs scripts/canary-ready.ts before publishing and gates publish on its ready output', () => {
     const ready = only(steps, 'run scripts/canary-ready.ts', /scripts\/canary-ready\.ts\b/)
     const publish = only(steps, 'run `changeset publish`', PUBLISH)
-    const prerelease = only(steps, 'create the GitHub prerelease', GH_RELEASE)
 
     expect(ready.step.id, 'the readiness step has an id to read its output by').toMatch(/^[\w-]+$/)
     const id = ready.step.id!.replace(/[-]/g, '\\-')
     const gate = new RegExp(`steps\\.${id}\\.outputs\\.ready\\s*==\\s*'true'`)
-    for (const s of [publish, prerelease]) {
+    for (const s of [publish]) {
       expect(s.job, `${s.step.name ?? s.run} runs in the readiness step's job`).toBe(ready.job)
       expect(s.index, `${s.step.name ?? s.run} runs after the readiness step`).toBeGreaterThan(
         ready.index,

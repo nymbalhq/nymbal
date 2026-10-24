@@ -5,7 +5,7 @@ import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P1-11 AC-4, AC-7, AC-8, AC-9 on both templates: the grid on /products and on a category page is in the order
+// AC-4, AC-7, AC-8 and AC-9 on both templates: the grid on /products and on a category page is in the order
 // `GET /api/products?sort=<key>` returns, the sort lives in the URL and the server render, "load more" continues the
 // same order, and a sort on a category page stays in the category.
 //
@@ -14,9 +14,9 @@ import { expect, test } from '../support/fixtures'
 // began (`known`): a product created later may push known ones down the page, never reorder them, so the known cards
 // on the page must be exactly the first known products in the API's order.
 //
-// P2-05 AC-4: the keys come from the store, never from this file: the dropdown offers exactly GET /api/capabilities'
+// The keys come from the store, never from this file: the dropdown offers exactly GET /api/capabilities'
 // `catalog.sortKeys`, in that order, with `catalog.defaultSort` chosen when the URL names no key or an unknown one,
-// and each offered key still sorts the grid as P1-11 requires.
+// and each offered key still sorts the grid.
 
 type SortKey = 'newest' | 'price-asc' | 'price-desc' | 'name-asc' | 'name-desc'
 
@@ -32,7 +32,7 @@ interface ApiProduct {
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })
 
-/** The spec's order for a key (Decision 1): the key, then slug ascending; a product with no price last in both price orders. */
+/** The order for a key: the key, then slug ascending; a product with no price last in both price orders. */
 function compareBy(key: SortKey) {
   return (a: ApiProduct, b: ApiProduct): number => {
     let c = 0
@@ -133,7 +133,7 @@ async function createProduct(request: APIRequestContext, priceMinor: number): Pr
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), authorization: `Bearer ${token}` },
     data: {
-      slug: `p1-11-${tag}`,
+      slug: `sort-${tag}`,
       name: `Sort Journey ${tag}`,
       description: 'A product of the sort journey.',
       status: 'active',
@@ -141,7 +141,7 @@ async function createProduct(request: APIRequestContext, priceMinor: number): Pr
     },
   })
   expect(res.status(), `POST /api/admin/products: ${await res.text()}`).toBe(201)
-  const slug = `p1-11-${tag}`
+  const slug = `sort-${tag}`
   await expect
     .poll(async () => (await request.get(`${API_URL}/api/products/${slug}`)).status(), {
       timeout: 10_000,
@@ -207,7 +207,7 @@ test.describe('Browse: sort', () => {
     const { defaultSort } = (await storeCapabilities(request)).catalog
     const known = await knownSlugs(request)
 
-    await openListing(page, '/products?sort=p2-05-not-a-key')
+    await openListing(page, '/products?sort=caps-not-a-key')
 
     await expect(page.getByTestId('sort-dropdown')).toHaveValue(defaultSort)
     await expect(async () => {
@@ -330,11 +330,10 @@ test.describe('Browse: sort', () => {
     }
   })
 
-  // Store walk (browse.sort): a shopper who sorts before the listing script's own first request has answered. The
-  // first browser `GET /api/products?` is held until the price-desc answer has arrived (or 5 s at most), so that
-  // answer lands while the first is still in flight. Kills: the script subscribing its grid render only after its first
-  // load resolves, so the sorted answer reaches the state with nothing rendering it and the grid keeps the server's
-  // newest order under a dropdown and URL that say price-desc.
+  // A shopper who sorts before the listing script's own first request has answered. The first browser
+  // `GET /api/products?` is held until the price-desc answer has arrived (or 5 s at most), so that answer lands while
+  // the first is still in flight. The grid must show the sorted answer, not the server's newest order under a dropdown
+  // and URL that say price-desc.
   test('AC-7: a sort chosen while the first listing request is still in flight renders the grid in GET /api/products?sort=<key> order', async ({
     page,
     request,

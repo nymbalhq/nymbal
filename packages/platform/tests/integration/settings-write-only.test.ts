@@ -23,21 +23,12 @@ import {
   STUB_SUGGESTION,
 } from '../support/settings.js'
 
-// P3-07 AC-4 (spec P3-07-secrets-settings, Decision 7), on SQLite: a secret saved through Settings is write-only.
-// Property over generated secret values (16-64 characters from base64's alphabet and URL-unsafe punctuation): after an
-// admin PUT of the AI slot's apiKey (Anthropic, its stub at the declared baseUrl), neither the value nor its base64 appears in
-// - GET /api/admin/settings, before and after a restart;
-// - the PUT's own response, and the 400s of two malformed PUTs carrying the value;
-// - every log record the API wrote across boot, write, restart and an adapter error, captured both as a caller's own
-//   Logger received it (objects, Errors included) and as `createLogger({ destination })` wrote it (parsed JSON lines);
-// - product enhance answered by the stub with the loaded key, and the response of the same route once its adapter
-//   throws an error carrying the key in its context;
-// - the `settings.changed` event's envelope in the event log, which still names slot, path and source.
-// The CLI half (`nymbal doctor` and `--json` on a store whose key is held in Settings) is
-// packages/cli/src/commands/doctor-settings.test.ts.
-// Kills: any leak path in the spec's Context: the logger, an error's context, the envelope, the listing.
+// AC-4 on SQLite: a secret saved through Settings is write-only. Over generated secret values, after an admin PUT of
+// the AI slot's apiKey neither the value nor its base64 appears in the settings listing (before and after a restart),
+// any response, any log record (as a caller's Logger received it and as `createLogger({ destination })` wrote it), or
+// the `settings.changed` envelope. The CLI half is packages/cli/src/commands/doctor-settings.test.ts.
 
-describe('P3-07 AC-4: a saved secret never leaves the process', () => {
+describe('AC-4: a saved secret never leaves the process', () => {
   it('AC-4: over generated secrets, no listing, PUT answer, 400, log record, adapter error response or settings.changed envelope carries the value or its base64', async () => {
     await fc.assert(
       fc.asyncProperty(secretArb, async (secret) => {
@@ -51,7 +42,7 @@ describe('P3-07 AC-4: a saved secret never leaves the process', () => {
           )
           const stub = await startStub('anthropic')
           run.add(() => stub.close())
-          const dir = mkdtempSync(join(tmpdir(), 'p3-07-write-only-'))
+          const dir = mkdtempSync(join(tmpdir(), 'settings-write-only-'))
           run.add(() => rmSync(dir, { recursive: true, force: true }))
           const target = join(dir, 'store.sqlite')
           const config = settingsConfig('sqlite', { ai: anthropicBlock(stub) })
@@ -84,7 +75,7 @@ describe('P3-07 AC-4: a saved secret never leaves the process', () => {
           bodies.push(JSON.stringify(listedAfter.body))
 
           const enhance = () =>
-            again.call<{ suggestion: string }>('POST', '/api/admin/products/p3-07/enhance', {
+            again.call<{ suggestion: string }>('POST', '/api/admin/products/settings/enhance', {
               field: 'description',
               context: { name: 'Write-only Widget' },
             })

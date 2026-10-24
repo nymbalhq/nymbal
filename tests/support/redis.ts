@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { connect } from 'node:net'
 
-// The Redis server the P2-02 store tests use, and a minimal RESP2 client for what the tests themselves read or clean
-// up (keys under a prefix): the repository carries no Redis SDK outside the packages that peer one. A missing
-// NYMBAL_TEST_REDIS_URL throws, so a suite that needs Redis fails instead of skipping (as P0-02 AC-9 does for Postgres).
+// The Redis server the store tests use, and a minimal RESP2 client for what the tests themselves read or clean up
+// (keys under a prefix): the repository carries no Redis SDK outside the packages that peer one. A missing
+// NYMBAL_TEST_REDIS_URL throws, so a suite that needs Redis fails instead of skipping.
 
 export const REDIS_URL_VAR = 'NYMBAL_TEST_REDIS_URL'
 
@@ -20,7 +20,7 @@ export function redisServerUrl(): string {
 
 /** A prefix no other test run has used: lower-case, digits and dashes, safe in a SCAN pattern. */
 export function uniquePrefix(label: string): string {
-  return `p2-02-${label}-${randomUUID().slice(0, 8)}`
+  return `primitives-${label}-${randomUUID().slice(0, 8)}`
 }
 
 type Reply = string | number | null | Reply[] | Error

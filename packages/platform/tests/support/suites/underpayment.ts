@@ -5,9 +5,8 @@ import { checkoutOf, seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 import { deliverCapture, failedFor, orderStatus, paidFor, reservationsFor } from '../webhooks.js'
 
-// P1-05 AC-3 on one dialect: a captured amount that is not the order's total, or not its currency, never confirms
-// the order; the exact total in the same currency does. Sentinel S007 (finalize ignores the paid amount) runs this
-// file. Kills: `finalize` that never compares `paid` with the order (S007), or compares only the amount.
+// AC-3 on one dialect: a captured amount that is not the order's total, or not its currency, never confirms the
+// order; the exact total in the same currency does. Sentinel S007 (finalize ignores the paid amount) runs this file.
 
 type Mismatch = 'below' | 'above' | 'currency'
 

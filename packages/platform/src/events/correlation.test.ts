@@ -12,11 +12,8 @@ import { createLogger } from '../logger.js'
 import type { EventPublisher } from './publisher.js'
 import { currentCorrelationId, isValidCorrelationId, runWithCorrelation } from './correlation.js'
 
-// Acceptance tests for P3-01 (spec P3-01-event-log-surface), the unit half of AC-2 and AC-3: the correlation scope
-// (decision 1) and the inbound-id rule (decision 3). The HTTP halves are packages/platform/tests/integration/
-// correlation-http.test.ts. Kills: a scope kept in a module variable (lost or swapped across awaits and concurrent
-// scopes), a publisher that ignores the scope or lets it override an explicit or bound id, and a validator wider or
-// narrower than decision 3's pattern.
+// The unit half of AC-2 and AC-3: the correlation scope and the inbound-id rule. The HTTP halves are
+// packages/platform/tests/integration/correlation-http.test.ts.
 
 const DECISION_3 = /^[A-Za-z0-9._:-]{1,128}$/
 
@@ -28,7 +25,7 @@ let publisher: EventPublisher
 beforeAll(async () => {
   store = createCommandStore(
     // @ts-expect-error a minimal config: only the command store kind is read
-    { infrastructure: { commandStore: 'sqlite' }, store: { name: 'p3-01', currency: 'GBP' } },
+    { infrastructure: { commandStore: 'sqlite' }, store: { name: 'events', currency: 'GBP' } },
     { sqlitePath: ':memory:' },
   )
   await runMigrations(store, {
@@ -48,8 +45,8 @@ afterAll(async () => {
 
 const payload = { cartId: 'c', itemCount: 0, totalMinor: 0 }
 
-describe('P3-01 AC-3 (decision 3): isValidCorrelationId', () => {
-  it('AC-3: property: over arbitrary strings, and over strings near the pattern, isValidCorrelationId(s) is exactly decision 3’s ^[A-Za-z0-9._:-]{1,128}$', () => {
+describe('AC-3: isValidCorrelationId', () => {
+  it('AC-3: property: over arbitrary strings, and over strings near the pattern, isValidCorrelationId(s) is exactly ^[A-Za-z0-9._:-]{1,128}$', () => {
     const near = fc.oneof(
       fc.stringMatching(/^[A-Za-z0-9._:-]{0,130}$/),
       fc
@@ -75,7 +72,7 @@ describe('P3-01 AC-3 (decision 3): isValidCorrelationId', () => {
   })
 })
 
-describe('P3-01 AC-2 (decision 1): the correlation scope', () => {
+describe('AC-2: the correlation scope', () => {
   it('AC-2: property: concurrent scopes each see their own id after every await, and none is visible outside them', async () => {
     await fc.assert(
       fc.asyncProperty(

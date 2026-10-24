@@ -4,11 +4,10 @@ import { describe, expect, it } from 'vitest'
 import { REPO } from './scratch-gate'
 import { parseYaml } from './workflow-yaml'
 
-// Acceptance test for P1-20 (spec P1-20-loop-waits-less), AC-3: the mutation job's incremental cache survives a
-// ratchet change. With `hashFiles('mutation-ratchet.json')` in the key, any ratchet change misses the cache and,
-// with a changed platform test selecting the whole mutate set, measures every file cold (25-32 min). The changed
-// entries are re-measured by the gate instead (AC-2), so the key carries no ratchet hash, and the restore key still
-// finds the previous run's report.
+// AC-3: the mutation job's incremental cache survives a ratchet change. With `hashFiles('mutation-ratchet.json')` in
+// the key, any ratchet change would miss the cache and, with a changed platform test selecting the whole mutate set,
+// measure every file cold (25-32 min). The changed entries are re-measured by the gate instead (AC-2), so the key
+// carries no ratchet hash, and the restore key still finds the previous run's report.
 
 type Step = { uses?: string; with?: Record<string, string> }
 const INCREMENTAL = 'reports/mutation/stryker-incremental.json'

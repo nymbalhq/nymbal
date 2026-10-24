@@ -10,8 +10,7 @@ import {
   type CommandStore,
 } from '@nymbalhq/platform'
 
-// The processed-event repository is command-store backed since P1-03 (the document-store one is gone), so the
-// contract runs on a SQLite :memory: store per build.
+// The processed-event repository is command-store backed, so the contract runs on a SQLite :memory: store per build.
 
 const logger = createLogger({ pretty: false, level: 'error' })
 const stores: CommandStore[] = []

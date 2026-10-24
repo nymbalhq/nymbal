@@ -6,8 +6,8 @@ import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { type PlanInput, plan, type StepSpec } from '../../scripts/gate'
 
-// Acceptance tests for P2-14 AC-8 (review round 1, Decisions 10 and 11): the timing-bound tests run in projects of
-// their own, as gate steps under the exclusive hold, and every CPU-heavy step holds a shared one.
+// AC-8: the timing-bound tests run in projects of their own, as gate steps under the exclusive hold, and every
+// CPU-heavy step holds a shared one.
 
 const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -15,11 +15,11 @@ const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 const PERF_POSTGRES_FILE = 'packages/platform/tests/postgres/search-performance.postgres.test.ts'
 
-/** The hold a step is marked to take while it runs (Decision 10). */
+/** The hold a step is marked to take while it runs. */
 type Hold = 'shared' | 'exclusive'
 const holdOf = (step: StepSpec): Hold | undefined => (step as StepSpec & { hold?: Hold }).hold
 
-/** Decision 10's steps that load the CPU, besides the `e2e *` steps. */
+/** The steps that load the CPU, besides the `e2e *` steps. */
 const SHARED_STEPS = [
   'tests',
   'integration-postgres',
@@ -80,7 +80,7 @@ function sentinelSuiteArgs(): string[] {
 }
 
 describe('AC-8: the timing-bound tests run apart, under the quiet lock', () => {
-  it('AC-8 (a): plan({ full: true }) marks perf and perf-postgres to hold the exclusive lock, and every step of Decision 10 a shared one', () => {
+  it('AC-8 (a): plan({ full: true }) marks perf and perf-postgres to hold the exclusive lock, and every CPU-heavy step a shared one', () => {
     const { steps } = plan({ ...BASE, full: true, mutated: ['packages/sdk/src/client.ts'] })
     const names = steps.map((step) => step.name)
     const exclusive = steps.filter((step) => holdOf(step) === 'exclusive').map((s) => s.name)

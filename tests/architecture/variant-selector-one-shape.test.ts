@@ -4,12 +4,14 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './workspace-manifests'
 
-// P2-12 AC-5 (the architecture check): <nymbal-variant-selector> takes `VariantOption[]` only, so its source holds no
-// `JSON.parse` (decision 4: the JSON-string paths for the `options` attribute and for variant options are removed).
-// Read from the AST, so a comment or a string that names JSON.parse is not counted, and `JSON['parse']` or an alias
-// (`const parse = JSON.parse`) is. Kills: the selector keeping a second input shape.
+// AC-5 (the architecture check): <nymbal-variant-selector> takes `VariantOption[]` only, so its source holds no
+// `JSON.parse`. Read from the AST, so a comment or a string that names JSON.parse is not counted, and `JSON['parse']`
+// or an alias (`const parse = JSON.parse`) is.
 
-const VARIANT_SELECTOR = join(REPO_ROOT, 'packages/web-components/src/components/variant-selector.ts')
+const VARIANT_SELECTOR = join(
+  REPO_ROOT,
+  'packages/web-components/src/components/variant-selector.ts',
+)
 
 /** Every reference to JSON.parse in a module: called, aliased, or reached by an element access. */
 function jsonParseReferences(source: string): string[] {
@@ -17,7 +19,11 @@ function jsonParseReferences(source: string): string[] {
   const found: string[] = []
   const visit = (node: ts.Node): void => {
     const isJson = (e: ts.Expression) => ts.isIdentifier(e) && e.text === 'JSON'
-    if (ts.isPropertyAccessExpression(node) && isJson(node.expression) && node.name.text === 'parse') {
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      isJson(node.expression) &&
+      node.name.text === 'parse'
+    ) {
       found.push(node.getText(file))
     }
     if (
@@ -34,7 +40,7 @@ function jsonParseReferences(source: string): string[] {
   return found
 }
 
-describe('P2-12: the variant selector parses no JSON', () => {
+describe('the variant selector parses no JSON', () => {
   it('AC-5: variant-selector.ts holds no JSON.parse', () => {
     // The scanner sees each spelling and skips text that only names it, so an empty answer below is not a blind one.
     const control = `JSON.parse(a); JSON['parse'](b); const p = JSON.parse; // JSON.parse(c)\nconst s = 'JSON.parse(d)'`

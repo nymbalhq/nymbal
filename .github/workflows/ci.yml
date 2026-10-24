@@ -655,22 +655,3 @@ jobs:
         run: |
           scripts/scaffold-clean.sh "$TEMPLATE" | tee scaffold-clean.log
           grep '^scaffold-clean: ' scaffold-clean.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
-
-  changeset:
-    name: Changeset
-    # A task's merge into dev (merge-to-dev.sh writes `Merge feat/…` or `Merge fix/…`), never the main -> dev
-    # back-merge, which carries the release commit and no changes of its own.
-    if: github.ref == 'refs/heads/dev' && (startsWith(github.event.head_commit.message, 'Merge feat/') || startsWith(github.event.head_commit.message, 'Merge fix/'))
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      # A diff whose only package files are tests needs no changeset; any other defers to `changeset status`.
-      - run: pnpm exec tsx scripts/changeset-needed.ts --base "$GATE_BASE"

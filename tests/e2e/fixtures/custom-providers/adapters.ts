@@ -1,18 +1,18 @@
 import { randomUUID } from 'node:crypto'
 
-// P2-05 decision 9: the swap fixture's own adapters, injected through the config's `adapters` export into the
-// `custom` search and payments slots. Self-contained on purpose: nothing from @nymbalhq/platform (jiti would load a
-// second instance of it, and of its error classes) and no runtime import from @nymbalhq/types. The shapes below are
-// the SearchAdapter and PaymentsAdapter contracts written out; tests/contracts/custom-providers.test.ts runs both
-// adapter contracts on them, which is where a drift from @nymbalhq/types shows.
+// The swap fixture's own adapters, injected through the config's `adapters` export into the `custom` search and
+// payments slots. Self-contained on purpose: nothing from @nymbalhq/platform (jiti would load a second instance of it,
+// and of its error classes) and no runtime import from @nymbalhq/types. The shapes below are the SearchAdapter and
+// PaymentsAdapter contracts written out; tests/contracts/custom-providers.test.ts runs both adapter contracts on them,
+// which is where a drift from @nymbalhq/types shows.
 //
-// - search: in memory, `index` and `search` only (no `facet`). P2-07 decision 9: it matches by decision 3's rule (a
-//   term is a maximal run of ASCII letters and digits after lowercasing; every query term prefix-matches a term of
-//   the name, a SKU, a variant name or the description), filters by `categoryIds`, pages by an offset cursor and
-//   reports an exact total. Results are in index order: the fixture promises no ranking;
+// - search: in memory, `index` and `search` only (no `facet`). It matches as the native search does (a term is a
+//   maximal run of ASCII letters and digits after lowercasing; every query term prefix-matches a term of the name, a
+//   SKU, a variant name or the description), filters by `categoryIds`, pages by an offset cursor and reports an exact
+//   total. Results are in index order: the fixture promises no ranking;
 // - payments: the native stub's `+stub-*` receipt-email rules, with `client()` null, so the storefront has no payment
 //   step to render. A refund repeated with the same idempotency key answers the first refund again and moves no money
-//   (P2-13 decision 4: the payments contract's idempotency case runs on this fixture too).
+//   (the payments contract's idempotency case runs on this fixture too).
 
 export type Health = { status: 'healthy' | 'degraded' | 'down'; detail?: string }
 
@@ -25,7 +25,7 @@ export interface Doc {
 /** What the fixture's search offers: no `facet`, so the listing route sends no facets and no filter renders. */
 export const FIXTURE_SEARCH_CAPABILITIES: readonly string[] = ['index', 'search']
 
-/** Decision 3's terms of a text. */
+/** The search terms of a text. */
 function termsOf(text: unknown): string[] {
   return typeof text === 'string' ? (text.toLowerCase().match(/[a-z0-9]+/g) ?? []) : []
 }
@@ -59,7 +59,7 @@ export function createFixtureSearchAdapter() {
   const docs = new Map<string, Doc>()
   return {
     kind: 'search' as const,
-    providerName: 'p2-05-fixture-search',
+    providerName: 'caps-fixture-search',
     capabilities: (): readonly string[] => [...FIXTURE_SEARCH_CAPABILITIES],
     producesEvents: [] as readonly string[],
     consumesEvents: [] as readonly string[],
@@ -171,7 +171,7 @@ export function createFixturePaymentsAdapter() {
   })
   return {
     kind: 'payments' as const,
-    providerName: 'p2-05-fixture-payments',
+    providerName: 'caps-fixture-payments',
     capabilities: (): readonly string[] => ['intent', 'capture', 'refund'],
     /** No client half: the storefront renders no payment step. */
     client: (): null => null,

@@ -3,15 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 import { cards, categories, columns, crumbs, links } from '../__fixtures__/server-data.js'
 
-// P2-17 AC-7, the element's half (spec Decision 7): the anchors in the elements' shadow roots are plain <a>, which
-// Next does not route, so every element whose part is an anchor (the card, the grid's cards, the header's logo, links
-// and account link, the breadcrumb's items, the category nav's cards, the footer's links) dispatches `nymbal:navigate`
-// with `{ href }` on a plain left click: bubbling, composed (it leaves the shadow roots) and cancelable, synchronously
-// inside the click handler; when a listener cancels it, the element prevents the click's default (Next has routed it),
-// and when nobody does the click goes on as a navigation (Astro). A click with a modifier key or another button
-// dispatches nothing and is left alone, so a new tab still opens. The router half (NymbalSetup's `router.push`) and
-// "Next keeps the page" are the prod E2E's. Kills: the event missing, not cancelable or not composed; a cancel that
-// still lets the browser load the page; a ctrl-click hijacked into the same tab.
+// AC-7, the element's half: the anchors in the elements' shadow roots are plain <a>, which Next does not route, so
+// every element whose part is an anchor (the card, the grid's cards, the header's logo, links and account link, the
+// breadcrumb's items, the category nav's cards, the footer's links) dispatches `nymbal:navigate` with `{ href }` on a
+// plain left click: bubbling, composed (it leaves the shadow roots) and cancelable, synchronously inside the click
+// handler; when a listener cancels it, the element prevents the click's default (Next has routed it), and when nobody
+// does the click goes on as a navigation (Astro). A click with a modifier key or another button dispatches nothing
+// and is left alone, so a new tab still opens. The router half (NymbalSetup's `router.push`) is the prod E2E's.
 
 interface Case {
   tag: string
@@ -128,7 +126,7 @@ function clickOnce(
   return { seen, prevented }
 }
 
-describe('P2-17 AC-7: element anchors dispatch nymbal:navigate', () => {
+describe('AC-7: element anchors dispatch nymbal:navigate', () => {
   for (const { tag, attributes } of CASES) {
     it(`AC-7: property: ${tag}: a plain click on each anchor part dispatches one bubbling, composed, cancelable nymbal:navigate with its href, and the click is prevented exactly when a listener cancels it; a modifier or middle click dispatches nothing and is left alone`, async () => {
       expect(customElements.get(tag), `${tag} is defined by registerComponents()`).toBeDefined()

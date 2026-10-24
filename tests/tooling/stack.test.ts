@@ -8,8 +8,8 @@ import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 import { COMPOSE_PORT_VARS, expectedBlock, PORT_FIELDS } from './stack-table'
 
-// Acceptance tests for P2-14 AC-1, AC-2 and AC-6: scripts/stack.ts gives each checkout a stack slot (the main checkout
-// 0, a linked worktree the lowest free 1..9, kept until the worktree is removed) and each slot a block of ports.
+// AC-1, AC-2 and AC-6: scripts/stack.ts gives each checkout a stack slot (the main checkout 0, a linked worktree the
+// lowest free 1..9, kept until the worktree is removed) and each slot a block of ports.
 // AC-2 and AC-6 run in a throwaway git repository with linked worktrees, made in the system temp directory.
 
 const exec = promisify(execFile)
@@ -179,7 +179,7 @@ async function resolveInChildren(
 }
 
 describe('AC-1: stackBlock gives each slot a disjoint block of ports', () => {
-  it("AC-1: stackBlock(0) is the spec table's slot 0 row exactly, and MAX_SLOT is 9", async () => {
+  it("AC-1: stackBlock(0) is the stack table's slot 0 row exactly, and MAX_SLOT is 9", async () => {
     const { stackBlock, MAX_SLOT } = await loadStack()
     expect(stackBlock(0)).toEqual(expectedBlock(0))
     expect(MAX_SLOT).toBe(9)
@@ -195,7 +195,7 @@ describe('AC-1: stackBlock gives each slot a disjoint block of ports', () => {
     }
   })
 
-  it('AC-1: property: two distinct slots share no port; within a block all 20 ports (17, and P2-18’s three override ports) are distinct and in 1024..65535', async () => {
+  it('AC-1: property: two distinct slots share no port; within a block all 20 ports (17, and the three override ports) are distinct and in 1024..65535', async () => {
     const { stackBlock, MAX_SLOT } = await loadStack()
     const ports = (slot: number): number[] => PORT_FIELDS.map((f) => stackBlock(slot)[f])
     fc.assert(
@@ -278,8 +278,8 @@ describe('AC-2: resolveSlot gives each worktree a slot of its own, kept until th
     expect(resolveSlot(scratch('nymbal-stack-outside-'), {})).toBe(0)
   })
 
-  // Review round 1, B1: the stale sweep unlinked by path, so a racer that read a stale claim could delete the fresh
-  // claim another racer had just made in its place, and a third took the same slot.
+  // A stale sweep that unlinked by path would let a racer that read a stale claim delete the fresh claim another racer
+  // had just made in its place, and a third take the same slot.
   it('AC-2 (strengthened): property: with five stale claims, six new worktrees resolving at the same moment, each in its own process, get six distinct slots and keep them', async () => {
     const { resolveSlot, MAX_SLOT } = await loadStack()
     const RACERS = 6
@@ -309,7 +309,7 @@ describe('AC-2: resolveSlot gives each worktree a slot of its own, kept until th
     )
   }, 180_000)
 
-  // Decision 9: listing, sweeping and claiming happen under `<git-common-dir>/nymbal-stacks/.lock`, broken after 30 s.
+  // Listing, sweeping and claiming happen under `<git-common-dir>/nymbal-stacks/.lock`, broken after 30 s.
   it('AC-2 (strengthened): a claim waits while another process holds the stacks lock, and a lock over 30 s old is broken', async () => {
     const { resolveSlot } = await loadStack()
     const main = tempRepo()

@@ -2,7 +2,7 @@ import type { APIRequestContext, Page } from '@playwright/test'
 import { expect } from './fixtures'
 import { API_URL, csrf } from './csrf'
 
-// P1-08: helpers for the admin journeys that `nymbal dev --api-only` serves at <api>/admin/ (one origin with /api).
+// Helpers for the admin journeys that `nymbal dev --api-only` serves at <api>/admin/ (one origin with /api).
 
 export const ADMIN_EMAIL = process.env.NYMBAL_ADMIN_EMAIL ?? 'admin@nymbal.local'
 export const ADMIN_PASSWORD = process.env.NYMBAL_ADMIN_PASSWORD ?? 'nymbal-admin-dev'
@@ -20,11 +20,11 @@ export const SHIPPING_ADDRESS = {
 
 /**
  * A real pending order through the API: a seeded in-stock variant into a cart, then checkout (native-stub). The email's
- * `+stub-pending` keeps the order pending (P1-12 decision 7); without it the stub pays inline.
+ * `+stub-pending` keeps the order pending; without it the stub pays inline.
  */
 export async function placeOrder(
   request: APIRequestContext,
-  email = `e2e-p1-08-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
+  email = `e2e-admin-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`,
 ): Promise<{ orderId: string; orderNumber: string }> {
   const productsRes = await request.get(`${API_URL}/api/products?limit=50`)
   expect(productsRes.ok(), 'GET /api/products').toBe(true)

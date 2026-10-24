@@ -3,12 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-15 AC-3: `nymbal-search-results` is the search page's results region on both templates, and it agrees with the
-// search store: one `nymbal-product-card` per result in store order, each a link `product-card-<slug>` to
-// `/product/<encodeURIComponent(slug)>` with its name as text; the loading, no-term and no-results states where
-// today's script (`templates/astro/src/scripts/search.ts:56-102`) renders them, by the headings the search journeys
-// find them by; load-more iff `nextCursor !== null`, one click one `loadMore()`.
-// Kills: cards drifting from results, a slug or name injected as markup, load-more shown with no next page.
+// AC-3: `nymbal-search-results` is the search page's results region on both templates, and it agrees with the search
+// store: one `nymbal-product-card` per result in store order, each a link `product-card-<slug>` to
+// `/product/<encodeURIComponent(slug)>` with its name as text; the loading, no-term and no-results states, by the
+// headings the search journeys find them by; load-more iff `nextCursor !== null`, one click one `loadMore()`.
 
 const TAG = 'nymbal-search-results'
 const NO_TERM = 'Search our store'

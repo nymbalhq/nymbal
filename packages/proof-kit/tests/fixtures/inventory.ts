@@ -2,7 +2,7 @@ import { checkStock, race, type StockViolation } from '@nymbalhq/proof-kit/race'
 import Database from 'better-sqlite3'
 import pg from 'pg'
 
-// P1-01 fixture pair: a one-table inventory with a correct conditional decrement and a deliberately broken
+// A fixture pair: a one-table inventory with a correct conditional decrement and a deliberately broken
 // read-then-write one, on SQLite and on Postgres. The harness must pass the first and catch the second.
 
 export interface Inventory {

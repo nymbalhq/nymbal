@@ -3,19 +3,15 @@ import { fileURLToPath } from 'node:url'
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P2-06 AC-5 on every storefront target, and P2-18 AC-3 on the project-elements fixture (@override).
-// - theming.override-wins (P2-18 AC-3, replacing P2-06 AC-4's client-only override, which the server render made
-//   obsolete): the store's elements entry (tests/e2e/fixtures/override-elements, on the astro-override and
+// AC-5 on every storefront target, and AC-3 on the project-elements fixture (@override).
+// - override wins: the store's elements entry (tests/e2e/fixtures/override-elements, on the astro-override and
 //   nextjs-override targets) overrides nymbal-mini-cart. With JS off the header's mini-carts hold the project's shadow
-//   content, so the server rendered the project's class under the tag; with JS on they are the project's class, and the
-//   store still works around it: adding to cart from a PDP lands the line in GET /api/cart. Kills: the server rendering
-//   the package element under an overridden tag; registerComponents() redefining or throwing on a defined tag; one
-//   override breaking the other elements.
-// - theming.tokens-apply: the add-to-cart button, a part in the element's shadow root, is painted with
-//   --nymbal-color-primary as the template's own tokens.css declares it and :root resolves it. Kills: tokens that do
-//   not cross the shadow boundary, and a template still on the package's tokens rather than its own file.
-// P2-17 (spec, Tests this task obsoletes): the header is `nymbal-site-header`, with the mini-cart as its light-DOM
-// child in its `cart` slot, so the mini-carts are found as `nymbal-site-header nymbal-mini-cart`.
+//   content, so the server rendered the project's class under the tag; with JS on they are the project's class, and
+//   the store still works around it: adding to cart from a PDP lands the line in GET /api/cart.
+// - tokens apply: the add-to-cart button, a part in the element's shadow root, is painted with --nymbal-color-primary
+//   as the template's own tokens.css declares it and :root resolves it.
+// The header is `nymbal-site-header`, with the mini-cart as its light-DOM child in its `cart` slot, so the mini-carts
+// are found as `nymbal-site-header nymbal-mini-cart`.
 
 const PDP = 'ceramic-mug'
 /** What only the package's nymbal-mini-cart renders, in light DOM or shadow root. */
@@ -46,7 +42,7 @@ function declared(css: string, property: string): string | undefined {
 }
 
 test.describe('Theming', () => {
-  // P2-18 AC-3: the override lives in the project's elements entry (the fixture), which the server honours too.
+  // AC-3: the override lives in the project's elements entry (the fixture), which the server honours too.
   test('AC-3: theming.override-wins: with JS off, every header nymbal-mini-cart holds the project’s shadow content and none of the package’s parts @override', async ({
     browser,
   }, testInfo) => {

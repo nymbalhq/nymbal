@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 
-// P2-18: the data a server hands an element as properties (spec Decision 2), generated for the AC-1 and AC-2 suites.
-// Names carry a prefix so data from a property and data from a store can never be mistaken for each other.
+// The data a server hands an element as properties, generated for the server-property suites. Names carry a prefix
+// so data from a property and data from a store can never be mistaken for each other.
 
 export const word = fc.stringMatching(/^[a-z][a-z0-9]{0,7}$/)
 const money = fc.integer({ min: 0, max: 100_000 })
@@ -16,7 +16,7 @@ export interface Line {
   imageUrl: string
 }
 
-/** Decision 2's projection of `GET /api/cart`: the lines and their sums, never the token or the customer. */
+/** The projection of `GET /api/cart`: the lines and their sums, never the token or the customer. */
 export interface CartProjection {
   items: Line[]
   subtotalMinor: number
@@ -181,7 +181,7 @@ export const addresses = (prefix: string, minLength = 0) =>
 
 export const SORT_KEYS = ['newest', 'price-asc', 'price-desc', 'name-asc']
 
-// ─── P2-17: the data the eleven new elements take as attributes (spec Decision 1) ──────────────────────────────
+// ─── The data the store elements take as attributes ──────────────────────────────
 
 const prefixed = (prefix: string) => word.map((w) => `${prefix}${w}`)
 const path = word.map((w) => `/${w}`)

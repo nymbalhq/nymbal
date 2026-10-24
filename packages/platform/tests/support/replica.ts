@@ -19,9 +19,9 @@ import { startCartAbandonmentSweeper, type SweeperHandle } from '../../src/sweep
 import { createLogger } from '../../src/logger.js'
 import { kernelConfig, MIGRATIONS_ROOT, type Dialect } from './kernel.js'
 
-// P1-04 support: one API replica's worth of kernel on a database the caller owns, without createApp (no relay loop,
-// no sweepers, no projections): a command store, its repositories, an outbox publisher and the services the cart
-// tests drive, all on a clock the test moves. Several replicas on one target are several processes on one database.
+// One API replica's worth of kernel on a database the caller owns, without createApp (no relay loop, no sweepers, no
+// projections): a command store, its repositories, an outbox publisher and the services the cart tests drive, all on
+// a clock the test moves. Several replicas on one target are several processes on one database.
 
 export interface Clock {
   now(): Date

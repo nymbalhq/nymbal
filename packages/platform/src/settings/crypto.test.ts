@@ -5,12 +5,9 @@ import { COMMERCE_SLOTS } from '../adapters/registry.js'
 import { bytesOf, flipByte } from '../../tests/support/bytes.js'
 import { decrypt, encrypt, keyId } from './crypto.js'
 
-// P3-07 AC-1 (spec P3-07-secrets-settings, Decision 3): AES-256-GCM per value with a fresh 12-byte IV and the AAD
-// "<slot>:<path>". Over generated keys, slots, dot paths and values (multi-byte included): a value decrypts back to
-// itself; two encryptions of one value differ; a ciphertext read under another slot, another path or another key
-// throws; one flipped byte in the ciphertext, the IV or the tag throws. `encrypt` returns the row's binary columns
-// ({ ciphertext, iv, tag }) in whatever representation the store keeps; `decrypt` takes that row back.
-// Kills: a static IV, no AAD (a row moved to another field still decrypts), tampering left undetected.
+// AC-1: AES-256-GCM per value with a fresh 12-byte IV and the AAD "<slot>:<path>". A value decrypts back to itself,
+// two encryptions differ, and another slot, path or key, or one flipped byte, throws. `encrypt` returns the row's
+// binary columns ({ ciphertext, iv, tag }) in whatever representation the store keeps; `decrypt` takes that row back.
 
 const keyArb = fc.uint8Array({ minLength: 32, maxLength: 32 }).map((bytes) => Buffer.from(bytes))
 const slotArb = fc.constantFrom(...COMMERCE_SLOTS)
@@ -30,7 +27,7 @@ const aad = (slot: string, path: string): string => `${slot}:${path}`
 type Row = ReturnType<typeof encrypt>
 const FIELDS = ['ciphertext', 'iv', 'tag'] as const
 
-describe('P3-07 AC-1: encryption round trip and binding', () => {
+describe('AC-1: encryption round trip and binding', () => {
   it('AC-1: decrypt(encrypt(v)) is v for every key, slot, path and value', () => {
     fc.assert(
       fc.property(keyArb, slotArb, pathArb, valueArb, (key, slot, path, value) => {
@@ -124,7 +121,7 @@ describe('P3-07 AC-1: encryption round trip and binding', () => {
     )
   })
 
-  it("AC-1 (Decision 3): keyId is the first 8 hex characters of the key's SHA-256", () => {
+  it("AC-1: keyId is the first 8 hex characters of the key's SHA-256", () => {
     fc.assert(
       fc.property(keyArb, (key) => {
         expect(keyId(key)).toBe(createHash('sha256').update(key).digest('hex').slice(0, 8))

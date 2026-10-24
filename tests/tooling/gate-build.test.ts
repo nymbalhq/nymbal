@@ -11,11 +11,10 @@ import {
   type StepSpec,
 } from '../../scripts/gate'
 
-// Acceptance tests for P1-01 AC-18 (the kit runs in gate and CI), the build half: workspace packages read one
-// another through `dist`, so a gate that tests without building after a package's source changed tests a stale
-// build and goes green. The plain gate builds before typecheck and tests when a build input changed, and runs the
-// proof-kit project when the change is in the kit's dependency closure; gate:full always builds first, and the
-// steps that read `dist` need that build.
+// AC-18 (the kit runs in gate and CI), the build half: workspace packages read one another through `dist`, so a gate
+// that tests without building after a package's source changed tests a stale build and goes green. The plain gate
+// builds before typecheck and tests when a build input changed, and runs the proof-kit project when the change is in
+// the kit's dependency closure; gate:full always builds first, and the steps that read `dist` need that build.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const KIT = 'packages/proof-kit'

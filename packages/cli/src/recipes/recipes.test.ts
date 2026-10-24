@@ -19,12 +19,8 @@ import type {
   SpecRecipeValue as RecipeValue,
 } from './fixtures/linked-project.js'
 
-// Acceptance tests for P2-03 AC-1, the unit half (spec P2-03-nymbal-add-recipe, decisions 1 and 2): each of the four
-// recipes is data its holder package ships, read from a project through Node resolution of the holder's
-// `./recipes/*` export; it has the `Recipe` shape; its `set` applied to the scaffold's config still parses; and for
-// every slot provider it sets that the loader would ask for (`PROVIDER_PACKAGES`), it installs that package and SDK.
-// Kills: a recipe kept in the CLI, a holder that does not export it, a malformed recipe, a recipe the schema refuses,
-// and one that installs other than what the loader asks for. The architecture half is
+// AC-1, the unit half: each recipe is data its holder package ships under `./recipes/*`, has the `Recipe` shape,
+// leaves the scaffold's config parsing, and installs the package and SDK the loader asks for. The architecture half is
 // tests/architecture/recipe-holders.test.ts.
 
 const dirs: string[] = []
@@ -50,7 +46,7 @@ beforeAll(async () => {
 afterAll(() => removeAll(dirs))
 
 /** A `{ env }` value as the config sees it once the variable is set: a stand-in naming the variable. */
-const placeholder = (name: string): string => `p2-03-placeholder-${name}`
+const placeholder = (name: string): string => `recipes-placeholder-${name}`
 
 function isEnvRef(v: unknown): v is { env: string; default?: string } {
   return typeof v === 'object' && v !== null && typeof (v as { env?: unknown }).env === 'string'
@@ -150,7 +146,7 @@ async function allRecipes(): Promise<Recipe[]> {
   return Promise.all(RECIPE_NAMES.map((name) => readRecipe(name, project)))
 }
 
-describe('P2-03 AC-1: recipes are data in their packages', () => {
+describe('AC-1: recipes are data in their packages', () => {
   it('AC-1: readRecipe resolves <holder>/recipes/<name>.json from the project through the exports subpath, and returns that file', async () => {
     const require = createRequire(join(project, 'package.json'))
     for (const name of RECIPE_NAMES) {
@@ -180,7 +176,7 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     }
   })
 
-  it('AC-1: each recipe installs, sets and names the env decision 2 gives it', async () => {
+  it('AC-1: each recipe installs, sets and names the env it is given', async () => {
     const byName = new Map((await allRecipes()).map((r) => [r.name, r]))
     const r = (name: string): Recipe => byName.get(name)!
 
@@ -229,7 +225,7 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     ).toEqual(['S3_BUCKET'])
 
     expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/adapter-stripe', 'stripe'])
-    // P3-07 Decision 1: the fields the Stripe package declares as settings leave `set` (an unset variable would throw at
+    // The fields the Stripe package declares as settings are not in `set` (an unset variable would throw at
     // loadConfig before Settings could fill them), so the recipe sets the provider and writes no env() at all; the
     // variables stay in `.env`, required, for a deploy that sets them there.
     const stripe = applied({}, r('stripe'))
@@ -267,7 +263,7 @@ describe('P2-03 AC-1: recipes are data in their packages', () => {
     let related = 0
     for (const recipe of await allRecipes()) {
       for (const [path, value] of leaves(recipe)) {
-        // P2-04 decision 1: `security` is a slot too, its choice `security.adapter`, and its package peers no SDK.
+        // `security` is a slot too, its choice `security.adapter`, and its package peers no SDK.
         const slot =
           /^infrastructure\.(\w+)$/.exec(path)?.[1] ??
           /^commerce\.(\w+)\.provider$/.exec(path)?.[1] ??

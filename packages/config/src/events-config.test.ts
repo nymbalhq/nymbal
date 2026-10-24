@@ -6,11 +6,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { loadConfig, nymbalConfigSchema } from './index.js'
 
-// Acceptance tests for P3-01 AC-8 and AC-9, the config half (spec P3-01-event-log-surface, decision 8): `events`
-// sets the retention period (default 30, at least 1) and an optional archive; an archive in the bucket `media: 's3'`
-// serves publicly is refused with a ConfigError naming both keys. The sweeper half is
-// tests/stores/event-archive.test.ts. Kills: a period that cannot be set or that accepts 0, an archive block dropped
-// on load, and archives allowed into the public media bucket.
+// AC-8 and AC-9, the config half: `events` sets the retention period (default 30, at least 1) and an optional archive,
+// and an archive in the public `media: 's3'` bucket is refused. The sweeper half is tests/stores/event-archive.test.ts.
 
 const dirs: string[] = []
 afterAll(() => {
@@ -19,7 +16,7 @@ afterAll(() => {
 
 function configWith(more: Record<string, unknown>, infrastructure: Record<string, unknown> = {}) {
   return {
-    store: { name: 'P3-01', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
@@ -45,7 +42,7 @@ function configWith(more: Record<string, unknown>, infrastructure: Record<string
 }
 
 function project(config: unknown): string {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-01-config-'))
+  const dir = mkdtempSync(join(tmpdir(), 'events-config-'))
   dirs.push(dir)
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -65,7 +62,7 @@ function rejectionOf(config: unknown): Promise<string | null> {
   )
 }
 
-describe('P3-01 AC-8 (decision 8): events.retentionDays', () => {
+describe('AC-8: events.retentionDays', () => {
   it('AC-8: without an events block the retention period is 30 days and no archive is set', () => {
     const parsed = nymbalConfigSchema.parse(configWith({}))
     expect(parsed.events?.retentionDays).toBe(30)
@@ -103,7 +100,7 @@ describe('P3-01 AC-8 (decision 8): events.retentionDays', () => {
   })
 })
 
-describe('P3-01 AC-9 (decision 8): archives never share the public media bucket', () => {
+describe('AC-9: archives never share the public media bucket', () => {
   const media = { media: 's3', s3: { bucket: 'shop-media', endpoint: 'http://localhost:59000' } }
 
   it('AC-9: events.archive.bucket equal to infrastructure.s3.bucket with media s3 fails loadConfig with a ConfigError naming both keys; a bucket of its own loads', async () => {

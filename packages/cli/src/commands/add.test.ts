@@ -16,13 +16,8 @@ import {
   tempDir,
 } from '../recipes/fixtures/linked-project.js'
 
-// Acceptance tests for P2-03 AC-4 (spec P2-03-nymbal-add-recipe, decisions 3 to 7): `nymbal add` through the built CLI
-// on temp copies of a scaffold made by create-nymbal-app --no-install, each resolving the built @nymbalhq packages and
-// the SDKs through node_modules symlinks, always with --no-install, and with npm_config_user_agent unset so the
-// lockfile picks the package manager. Each copy's files (node_modules aside) are hashed before and after a run.
-// Kills: a command that touches a template file or leaves a temp file, is not idempotent, overwrites on a conflict,
-// changes something on --dry-run, names the wrong install command, or fails on an unset secret it should only report.
-// Spawns the built CLI and create-app (`pnpm build` first).
+// AC-4: `nymbal add` through the built CLI on temp copies of a create-nymbal-app --no-install scaffold, always with
+// --no-install; each copy's files (node_modules aside) are hashed before and after a run. Needs `pnpm build`.
 
 const exec = promisify(execFile)
 const CLI = join(REPO, 'packages/cli/bin/nymbal.mjs')
@@ -94,8 +89,8 @@ beforeAll(async () => {
 afterAll(() => removeAll(dirs))
 
 // Quarantined to the nightly project (vitest.config.ts): the CLI spawns time out under load, red then green with no
-// code change; the board row owns it.
-describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
+// code change.
+describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
   it('AC-4: `nymbal add redis` exits 0 and changes only nymbal.config.ts and .env.example; a second run changes nothing and exits 0', async () => {
     const dir = project('redis')
     const before = listing(dir)
@@ -146,11 +141,11 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
-  it('AC-4 (and P2-04 AC-9): an unknown recipe exits 1, lists cloudflare, postgres, redis, s3, stripe, and changes nothing', async () => {
+  it('AC-4: an unknown recipe exits 1, lists cloudflare, postgres, redis, s3, stripe, and changes nothing', async () => {
     const dir = project('unknown')
     const before = listing(dir)
 
-    const result = await add(dir, 'p2-03-no-such-recipe', '--no-install')
+    const result = await add(dir, 'recipes-no-such-recipe', '--no-install')
     expect(result.code, result.output).toBe(1)
     expect(result.output).toMatch(/cloudflare,\s*postgres,\s*redis,\s*s3,\s*stripe/)
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
@@ -172,7 +167,7 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
     },
   )
 
-  // P3-07 Decision 1: a variable the package declares as a setting can come from the admin's Settings as well.
+  // A variable the package declares as a setting can come from the admin's Settings as well.
   it('AC-4: `nymbal add stripe` with no Stripe env set exits 0 and prints "set STRIPE_SECRET_KEY in .env or in the admin\'s Settings"', async () => {
     const dir = project('stripe')
     const before = listing(dir)
@@ -208,19 +203,19 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
         "import { defineConfig } from '@nymbalhq/config'",
         "import { defineConfig, env } from '@nymbalhq/config'",
       )
-      .replace("xFrameOptions: 'deny'", "xFrameOptions: env('P2_03_X_FRAME_OPTIONS', 'deny')")
+      .replace("xFrameOptions: 'deny'", "xFrameOptions: env('RECIPES_X_FRAME_OPTIONS', 'deny')")
     expect(edited.match(/env\(/g), 'the scaffold config has the import and the field').toHaveLength(
       1,
     )
     expect(edited).toContain('import { defineConfig, env }')
     writeFileSync(path, edited)
-    expect(cleanEnv()['P2_03_X_FRAME_OPTIONS']).toBeUndefined()
+    expect(cleanEnv()['RECIPES_X_FRAME_OPTIONS']).toBeUndefined()
 
     const postgres = await add(dir, 'postgres', '--no-install')
     expect(postgres.code, postgres.output).toBe(0)
     const after = readFileSync(path, 'utf8')
     expect(after).toMatch(/commandStore: ['"]postgres['"]/)
-    expect(after).toContain("xFrameOptions: env('P2_03_X_FRAME_OPTIONS', 'deny')")
+    expect(after).toContain("xFrameOptions: env('RECIPES_X_FRAME_OPTIONS', 'deny')")
   })
 
   it("AC-4: with an enum field read as env('X', <valid default>) and an invalid X in .env, `nymbal add postgres` exits 1 and leaves the config byte-identical: .env applies as `nymbal dev` loads it", async () => {
@@ -231,14 +226,14 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
         "import { defineConfig } from '@nymbalhq/config'",
         "import { defineConfig, env } from '@nymbalhq/config'",
       )
-      .replace("xFrameOptions: 'deny'", "xFrameOptions: env('P2_03_X_FRAME_OPTIONS', 'deny')")
+      .replace("xFrameOptions: 'deny'", "xFrameOptions: env('RECIPES_X_FRAME_OPTIONS', 'deny')")
     expect(edited.match(/env\(/g), 'the scaffold config has the import and the field').toHaveLength(
       1,
     )
     expect(edited).toContain('import { defineConfig, env }')
     writeFileSync(path, edited)
-    writeFileSync(join(dir, '.env'), 'P2_03_X_FRAME_OPTIONS=not-a-frame-option\n')
-    expect(cleanEnv()['P2_03_X_FRAME_OPTIONS']).toBeUndefined()
+    writeFileSync(join(dir, '.env'), 'RECIPES_X_FRAME_OPTIONS=not-a-frame-option\n')
+    expect(cleanEnv()['RECIPES_X_FRAME_OPTIONS']).toBeUndefined()
     const before = listing(dir)
 
     const postgres = await add(dir, 'postgres', '--no-install')
@@ -249,16 +244,11 @@ describe('P2-03 AC-4: nymbal add', { timeout: 30_000 }, () => {
   })
 })
 
-// Acceptance tests for P2-04 AC-9 (spec P2-04-cloudflare-waf, Interface Recipe; takes P2-03 `cloudflare-recipe`):
-// `nymbal add cloudflare` on a copy of the same scaffold installs the package PROVIDER_PACKAGES names for the security
-// slot, sets `security.adapter` and `security.cloudflare` to the two `env()` reads, and adds both variables to
-// .env.example; its next steps name the token scopes and `http.trustProxy`. The scaffold's rate limits all use a
-// window Cloudflare has a period for, so the store's first `security:plan` is not refused on every entry, and the next
-// steps say what the zone's plan still refuses (throttle below Enterprise, the rate-limit count). Kills: no recipe, a
-// recipe that installs something the loader does not ask for, a token written into the config, and a scaffold window
-// (`60s`) the edge cannot apply.
+// AC-9: `nymbal add cloudflare` installs the security package, sets `security.adapter` and `security.cloudflare` to
+// two `env()` reads, adds both variables to .env.example, and names the token scopes and `http.trustProxy`. The
+// scaffold's rate limits use windows Cloudflare has a period for, so the first `security:plan` is not refused.
 
-describe('P2-04 AC-9: nymbal add cloudflare', () => {
+describe('AC-9: nymbal add cloudflare', () => {
   const securityPackage = (): string | undefined =>
     (PROVIDER_PACKAGES as Readonly<Record<string, Readonly<Record<string, { package: string }>>>>)[
       'security'
@@ -287,7 +277,7 @@ describe('P2-04 AC-9: nymbal add cloudflare', () => {
     expect(example).toMatch(/^CLOUDFLARE_API_TOKEN=$/m)
 
     // Loaded with both variables set, as `nymbal dev` loads it, the config carries what the environment holds.
-    const set = { CLOUDFLARE_ZONE_ID: 'p2-04-zone-3f9a', CLOUDFLARE_API_TOKEN: 'p2-04-token-8c1d' }
+    const set = { CLOUDFLARE_ZONE_ID: 'cf-zone-3f9a', CLOUDFLARE_API_TOKEN: 'cf-token-8c1d' }
     const saved = Object.fromEntries(Object.keys(set).map((k) => [k, process.env[k]]))
     Object.assign(process.env, set)
     let security: Record<string, unknown>
@@ -316,8 +306,7 @@ describe('P2-04 AC-9: nymbal add cloudflare', () => {
     }
   }, 60_000)
 
-  // P2-19 AC-9 (spec P2-19-fragments-and-isr): the fragment cache rule needs Zone › Cache Rules › Edit, named beside
-  // the other two scopes in the same step.
+  // The fragment cache rule needs Zone › Cache Rules › Edit, named beside the other two scopes in the same step.
   it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit, Cache Rules Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
     const dir = project('cloudflare-next')
     const next = (await readRecipe('cloudflare', dir)).next.join('\n')

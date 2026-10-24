@@ -11,11 +11,8 @@ import { createHttpServer, type HttpServer } from '@nymbalhq/http'
 import { registerAdminStaticRoute } from '@nymbalhq/platform'
 import type { DocumentStoreAdapter } from '@nymbalhq/types'
 
-// P1-08 AC-9, AC-10, AC-11: the admin's dist served at /admin/ by `registerAdminStaticRoute` on a real
-// `createHttpServer` (the server `nymbal dev` builds), against a fixture dist. AC-9 kills: no route; an SPA fallback
-// that swallows missing assets; a wrong MIME (module scripts refuse anything but a JavaScript type); binaries sent as
-// base64 text. AC-10 kills: a naive `join(root, url)` that reads outside the root. AC-11 kills: a crash or a silent 200
-// when no dist is installed.
+// AC-9 to AC-11: the admin's dist served at /admin/ by `registerAdminStaticRoute` on a real `createHttpServer` (the
+// server `nymbal dev` builds), against a fixture dist.
 
 const HOST = '127.0.0.1'
 const logger = {
@@ -126,7 +123,7 @@ let root: string
 let files: Record<string, Buffer>
 
 beforeAll(() => {
-  scratch = realpathSync(mkdtempSync(join(tmpdir(), 'p1-08-admin-static-')))
+  scratch = realpathSync(mkdtempSync(join(tmpdir(), 'admin-static-')))
   root = join(scratch, 'dist')
   files = {
     'index.html': Buffer.from(
@@ -157,7 +154,7 @@ afterAll(() => {
 
 // ─── AC-9 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe('P1-08 AC-9: the admin is served at /admin/', () => {
+describe('AC-9: the admin is served at /admin/', () => {
   let server: Served
   beforeAll(async () => {
     server = await serve(root)
@@ -251,7 +248,7 @@ describe('P1-08 AC-9: the admin is served at /admin/', () => {
 
 // ─── AC-10 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe('P1-08 AC-10: no path escapes the admin root', () => {
+describe('AC-10: no path escapes the admin root', () => {
   let server: Served
   beforeAll(async () => {
     server = await serve(root)
@@ -338,7 +335,7 @@ describe('P1-08 AC-10: no path escapes the admin root', () => {
 
 // ─── AC-11 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe('P1-08 AC-11: no dist installed', () => {
+describe('AC-11: no dist installed', () => {
   let server: Served
   beforeAll(async () => {
     server = await serve(null)

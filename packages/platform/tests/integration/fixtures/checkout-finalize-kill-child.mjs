@@ -1,7 +1,7 @@
-// P1-04 fixture for AC-4: a real store (startTestStore, built kit and kernel) in a child process checks out two units
-// of a variant at stock 3 from the cart `token` and finalises. The bus is armed (NYMBAL_CHAOS, set by runUntilKilled)
-// only once beginCheckout is done, so the first bus publish from then on is the relay's drain after the finalize
-// transaction commits: the process SIGKILLs itself there. The order id is written to `handoff` before finalize.
+// A real store (startTestStore, built kit and kernel) in a child process checks out two units of a variant at stock 3
+// from the cart `token` and finalises. The bus is armed (NYMBAL_CHAOS, set by runUntilKilled) only once beginCheckout
+// is done, so the first bus publish from then on is the relay's drain after the finalize transaction commits: the
+// process SIGKILLs itself there. The order id is written to `handoff` before finalize.
 //
 //   node checkout-finalize-kill-child.mjs <sqlite|postgres> <sqlite file | postgres url> <cart token> <handoff json>
 import { writeFileSync } from 'node:fs'
@@ -54,8 +54,8 @@ await services.cart.addItem(cart.token, {
 
 const started = await services.checkout.beginCheckout({
   cartToken: cart.token,
-  // `+stub-pending` (P1-12 decision 7): the order stays pending, so the finalize below is the one that confirms it.
-  email: 'convert+stub-pending@p1-04.test',
+  // `+stub-pending`: the order stays pending, so the finalize below is the one that confirms it.
+  email: 'convert+stub-pending@cart.test',
   billingAddress: address,
   shippingAddress: address,
 })

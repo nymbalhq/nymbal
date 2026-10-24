@@ -6,7 +6,7 @@ import type { Kernel } from '../kernel.js'
 import { TEST_BUILDER_CONTEXT } from '../../../src/tests/publisher.js'
 import { openRaw } from '../raw.js'
 
-// P1-03 AC-7 on one dialect: a withIdempotency handler sees an event id, the kernel stops, a new kernel opens the same
+// AC-7 on one dialect: a withIdempotency handler sees an event id, the kernel stops, a new kernel opens the same
 // database, and the same envelope delivered again does not run the side effect. The record is a processed_events row,
 // so the restart cannot forget it. The handler is called directly, as a subscriber would be.
 

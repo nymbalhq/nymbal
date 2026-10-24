@@ -17,14 +17,11 @@ import { createLogger } from '../../src/logger.js'
 import { createLocalFsMediaStorage } from '../../src/media/index.js'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres'
 
-// Acceptance tests for P2-09 AC-3 (spec P2-09-dev-stage, decision 3): every bundled primitive answers healthCheck().
-// Against the composed services, doc-store-redis, event-bus-redis-streams, doc-store-postgres-jsonb and media-s3
-// (MinIO) report `healthy` when up, and `down` within 6 s once their host is unreachable, with no credential from the
-// URL or the options in `detail`. The Redis ones are built through a TCP proxy that is then closed, so the port they
-// point at refuses: their clients retry a closed port forever (ioredis), which is the hang the 5 s bound exists for.
-// The in-memory store, the in-process bus and local-fs media report healthy; local-fs on a root that is not writable
-// reports `down`, and checking a writable root writes nothing in it. Kills: a primitive with no healthCheck, a check
-// that hangs on an unreachable host, a detail that echoes a secret, a local-fs check that probes by writing.
+// AC-3: every bundled primitive answers healthCheck(). Against the composed services, the Redis, Postgres and S3
+// (MinIO) primitives report `healthy` when up and `down` within 6 s once their host is unreachable, with no credential
+// in `detail`. The Redis ones are built through a TCP proxy that is then closed, so their clients retry a closed port
+// forever (ioredis), which is the hang the 5 s bound exists for. In-memory, in-process and local-fs report healthy;
+// local-fs on a root that is not writable reports `down`, and checking a writable root writes nothing in it.
 // Needs `pnpm build` (the stores load their SDKs) and Redis, Postgres and MinIO (NYMBAL_TEST_REDIS_URL,
 // NYMBAL_TEST_POSTGRES_URL, NYMBAL_TEST_S3_ENDPOINT).
 
@@ -34,7 +31,7 @@ const HUNG_AFTER_MS = 12_000
 
 const logger = createLogger({ pretty: false, level: 'silent' })
 const redisUrl = redisServerUrl()
-const prefix = uniquePrefix('p2-09-health')
+const prefix = uniquePrefix('doctor-health')
 
 interface Proxy {
   port: number
@@ -121,8 +118,8 @@ let bucket: TestBucket
 let db: TestDatabase
 
 beforeAll(async () => {
-  bucket = await createPublicBucket('p2-09-health')
-  db = await createDatabase(postgresServerUrl(), 'p2_09_health')
+  bucket = await createPublicBucket('doctor-health')
+  db = await createDatabase(postgresServerUrl(), 'doctor_health')
 })
 
 afterAll(async () => {
@@ -131,7 +128,7 @@ afterAll(async () => {
   await db?.drop()
 })
 
-describe('P2-09 AC-3: primitives against the composed services report healthy when up and down within 6 s when unreachable', () => {
+describe('AC-3: primitives against the composed services report healthy when up and down within 6 s when unreachable', () => {
   it('AC-3: doc-store-redis: healthy through a live connection; down within 6 s once its port refuses; no password in detail', async () => {
     const password = secret('redispw')
     const proxy = await tcpProxy(new URL(redisUrl))
@@ -246,7 +243,7 @@ describe('P2-09 AC-3: primitives against the composed services report healthy wh
   }, 60_000)
 })
 
-describe('P2-09 AC-3: the platform built-ins report their health', () => {
+describe('AC-3: the platform built-ins report their health', () => {
   it('AC-3: the in-memory document store and the in-process event bus report healthy', async () => {
     const store = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const bus = new InProcessEventBus({ logger })
@@ -260,7 +257,7 @@ describe('P2-09 AC-3: the platform built-ins report their health', () => {
   })
 
   it('AC-3: local-fs media on a writable root reports healthy and leaves the root as it was (no probe write)', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-media-'))
+    const root = mkdtempSync(join(tmpdir(), 'nymbal-doctor-media-'))
     try {
       const before = { entries: readdirSync(root), mtimeMs: statSync(root).mtimeMs }
       const media = createLocalFsMediaStorage({ root })
@@ -274,8 +271,8 @@ describe('P2-09 AC-3: the platform built-ins report their health', () => {
   })
 
   it('AC-3: local-fs media on a root that is not writable reports down', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-media-ro-'))
-    const writableRoot = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-media-rw-'))
+    const root = mkdtempSync(join(tmpdir(), 'nymbal-doctor-media-ro-'))
+    const writableRoot = mkdtempSync(join(tmpdir(), 'nymbal-doctor-media-rw-'))
     chmodSync(root, 0o555)
     try {
       const writable = createLocalFsMediaStorage({ root: writableRoot })

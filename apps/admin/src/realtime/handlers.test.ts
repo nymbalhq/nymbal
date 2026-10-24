@@ -1,15 +1,12 @@
 import fc from 'fast-check'
 import { QueryClient, hashKey } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it } from 'vitest'
-// Shared shapes, read from source: the admin's dependency on @nymbalhq/types is part of P1-08 itself.
+// Shared shapes, read from source: the admin depends on @nymbalhq/types.
 import type { Order, OrderStatus } from '../../../../packages/types/src/index'
 import { useNotifications } from '@/hooks/useNotifications'
 import { createEventHandlers } from './handlers'
 
-// P1-08 AC-3 and AC-4: what the realtime handler does with real event payloads
-// (packages/types/src/events/payloads.ts). AC-3 kills: a placed order prepended to every list and page, whatever its
-// filter; a `{ orderId }` payload merged into a cached order. AC-4 kills: notifications built from fields the payload
-// does not carry (`row.productName`, `row.stock`, `payload.adapter`), which render `undefined`.
+// AC-3 and AC-4: what the realtime handler does with real event payloads (packages/types/src/events/payloads.ts).
 
 const STATUSES: OrderStatus[] = [
   'pending',
@@ -104,7 +101,7 @@ const firstPageFilters: fc.Arbitrary<Filters> = fc.record(
 
 const unset = (v: unknown): boolean => v === undefined
 
-/** The spec's admit predicate (AC-3). */
+/** The admit predicate (AC-3), written out independently. */
 function admits(f: Filters, s: OrderStatus): boolean {
   return (
     (unset(f.status) || f.status === s) &&
@@ -127,7 +124,7 @@ beforeEach(() => {
   useNotifications.getState().clearAll()
 })
 
-describe('P1-08 AC-3: a placed order goes only into the lists whose filter admits it', () => {
+describe('AC-3: a placed order goes only into the lists whose filter admits it', () => {
   it('AC-3: written first, trimmed to limit and once into admitting lists; other lists its status admits are invalidated, not written; lists its status excludes are untouched (property)', async () => {
     const scenario = fc.record({
       status: fc.constantFrom(...STATUSES),
@@ -204,8 +201,8 @@ describe('P1-08 AC-3: a placed order goes only into the lists whose filter admit
       [
         'order.refunded.v1',
         (h, orderId) => {
-          // P1-13 gives refund payloads refundId and currency and drops the partial's lineItems. Built apart from
-          // the call (no excess-property check), so the payload fits the event map before and after that change.
+          // Refund payloads carry refundId and currency and no lineItems. Built apart from the call (no
+          // excess-property check), so the payload is checked against the event map.
           const payload = {
             orderId,
             refundId: 'refund-1',
@@ -265,7 +262,7 @@ describe('P1-08 AC-3: a placed order goes only into the lists whose filter admit
   })
 })
 
-describe('P1-08 AC-4: notifications name what the payload carries', () => {
+describe('AC-4: notifications name what the payload carries', () => {
   // Prefixed so one generated value cannot contain another by accident; quantities and thresholds never overlap.
   const id = (prefix: string) => fc.stringMatching(/^[a-z0-9]{4,12}$/).map((s) => `${prefix}-${s}`)
   const latest = () => useNotifications.getState().notifications[0]

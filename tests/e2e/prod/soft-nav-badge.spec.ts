@@ -3,11 +3,10 @@ import { markWindow, windowMarked } from '../support/elements'
 import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { addOneLine, apiCart, upgraded } from '../support/server-rendered'
 
-// P2-19 (spec P2-19-fragments-and-isr, Decision 1; store end states cart.badge-sum and caching.next-isr), on the Next
-// production build: the shopper pages' header carries the cart's count, the catalog pages' header carries none and
-// fills it from the cart store. A soft navigation from a shopper page to a catalog page mounts the catalog header's
-// mini-cart after the cart store has loaded, so the store sends it no update; its badge must still equal the cart.
-// Kills: a mini-cart mounted after the cart loaded that shows no count (the walk's empty badge against API 1).
+// On the Next production build: the shopper pages' header carries the cart's count, the catalog pages' header carries
+// none and fills it from the cart store. A soft navigation from a shopper page to a catalog page mounts the catalog
+// header's mini-cart after the cart store has loaded, so the store sends it no update; its badge must still equal the
+// cart.
 
 interface Hop {
   from: string
@@ -28,7 +27,7 @@ const HOPS: Hop[] = [
   { from: '/account/login', to: '/products', anchor: productsLink },
 ]
 
-test.describe('P2-19: the header badge after a soft navigation from a shopper page to a catalog page (production build)', () => {
+test.describe('the header badge after a soft navigation from a shopper page to a catalog page (production build)', () => {
   for (const { from, to, anchor } of HOPS) {
     test(`cart.badge-sum: after a soft navigation from ${from} to ${to}, the header's mini-cart badge equals the sum of GET /api/cart's quantities @nextjs`, async ({
       page,

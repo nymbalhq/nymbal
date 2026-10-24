@@ -1,9 +1,9 @@
 import type { APIRequestContext } from '@playwright/test'
 import { API_URL } from './csrf'
 
-// P2-05 decision 9: a journey whose expectation depends on what the store can do reads GET /api/capabilities from
-// API_URL (the native store on 3001, or the fixture store on 3011 in the astro-custom and nextjs-custom runs) and
-// asserts the branch the report names. It never skips.
+// A journey whose expectation depends on what the store can do reads GET /api/capabilities from API_URL (the native
+// store on 3001, or the fixture store on 3011 in the astro-custom and nextjs-custom runs) and asserts the branch the
+// report names. It never skips.
 
 export interface StoreCapabilities {
   payments: {

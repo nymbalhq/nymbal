@@ -3,15 +3,15 @@ import bcrypt from 'bcryptjs'
 import type { Kernel } from './kernel.js'
 import { shopper, type ShopResponse } from './shopper.js'
 
-// P3-04 support (spec P3-04-audit-trail), the HTTP half: an admin and a customer over HTTP who can send any header, and
-// the activity API's pages (decision 7). Kept apart from the table reads (audit.ts) so the CLI's tests, compiled with
-// the root project, can use it without the second-connection reader. Nothing here knows how the audit scope, the
-// idempotency wrapper or the repository are implemented.
+// The audit tests' HTTP half: an admin and a customer over HTTP who can send any header, and the activity API's pages.
+// Kept apart from the table reads (audit.ts) so the CLI's tests, compiled with the root project, can use it without
+// the second-connection reader. Nothing here knows how the audit scope, the idempotency wrapper or the repository are
+// implemented.
 
 export const IDEMPOTENCY_KEY = 'Idempotency-Key'
 export const REPLAYED = 'idempotent-replayed'
 export const CORRELATION = 'x-correlation-id'
-/** Decision 5's well-formed key. */
+/** A well-formed Idempotency-Key. */
 export const KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
 /** A shopper whose jar holds the CSRF cookie: one safe request makes the guard mint it. */
@@ -56,7 +56,7 @@ export interface AdminSession {
 /** An admin account of its own (roles ['admin'], a known id), signed in over HTTP; every call carries its token. */
 export async function adminSession(k: Kernel, baseUrl: string): Promise<AdminSession> {
   const userId = randomUUID()
-  const email = `admin-${userId}@p3-04.test`
+  const email = `admin-${userId}@audit.test`
   const password = 'correct-horse-battery'
   const now = new Date()
   await k.store.transaction((tx) =>
@@ -93,8 +93,8 @@ export async function adminSession(k: Kernel, baseUrl: string): Promise<AdminSes
 /** A shopper signed in as a customer of its own, registered over HTTP. */
 export async function customerSession(baseUrl: string) {
   const shop = await primed(baseUrl)
-  const email = `customer-${randomUUID()}@p3-04.test`
-  const password = 'p3-04-correct-horse'
+  const email = `customer-${randomUUID()}@audit.test`
+  const password = 'audit-correct-horse'
   const registered = await shop.call<{ customer: { id: string }; accessToken: string }>(
     'POST',
     '/api/auth/register',

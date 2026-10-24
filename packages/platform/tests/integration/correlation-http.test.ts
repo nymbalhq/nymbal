@@ -16,15 +16,10 @@ import { maxSeq, type EventRow } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { shopper } from '../support/shopper.js'
 
-// Acceptance tests for P3-01 AC-2 and AC-3 (spec P3-01-event-log-surface, decisions 2 and 3) on SQLite: a kernel from
-// `src/` served by the http package's `src/`. AC-2: every event a cart add or a registration publishes carries the
-// request's id (the response's x-correlation-id), and two concurrent requests never share or swap ids. AC-3: a
-// well-formed inbound x-correlation-id is used and echoed; a malformed one is replaced by a uuidv7, echoed and on the
-// events; every response carries the header, Fastify's own 404 and body-parse 400 included. Events are read from the
-// `events` table through a second connection. A newline cannot reach the store in a header (Node's HTTP parser answers
-// 400 before Fastify sees the request), so that case is the unit test in src/events/correlation.test.ts.
-// Kills: a scope that leaks across concurrent requests or is lost after an await, an inbound header used unvalidated,
-// and a response without the header.
+// AC-2 and AC-3 on SQLite: every event a request publishes carries the request's id (the response's
+// x-correlation-id), concurrent requests never share or swap ids, a well-formed inbound id is used and a malformed one
+// replaced, and every response carries the header. A newline cannot reach the store in a header (Node's HTTP parser
+// answers 400 first), so that case is the unit test in src/events/correlation.test.ts.
 
 let served: ServedKernel
 let raw: RawReader
@@ -55,7 +50,7 @@ function addItem(s: ReturnType<typeof shopper>, headers: Record<string, string> 
 }
 
 function register(s: ReturnType<typeof shopper>, email: string) {
-  return s.call('POST', '/api/auth/register', { email, password: 'p3-01-correct-horse' })
+  return s.call('POST', '/api/auth/register', { email, password: 'events-correct-horse' })
 }
 
 /** The rows above `before` whose payload names the cart. */
@@ -75,7 +70,7 @@ function ofCustomer(rows: EventRow[], email: string): EventRow[] {
   )
 }
 
-describe('P3-01 AC-2: every event an HTTP request publishes carries the request’s id', () => {
+describe('AC-2: every event an HTTP request publishes carries the request’s id', () => {
   it('AC-2: a cart add: every event it publishes carries the response’s x-correlation-id', async () => {
     const { s, token } = await shopperWithCart()
     const before = await maxSeq(raw)
@@ -90,7 +85,7 @@ describe('P3-01 AC-2: every event an HTTP request publishes carries the request�
 
   it('AC-2: a customer registration: every event it publishes carries the response’s x-correlation-id', async () => {
     const { s } = await shopperWithCart()
-    const email = `ac2-${randomUUID()}@p3-01.test`
+    const email = `ac2-${randomUUID()}@events.test`
     const before = await maxSeq(raw)
     const res = await register(s, email)
     expect(res.status, JSON.stringify(res.body)).toBe(201)
@@ -115,7 +110,7 @@ describe('P3-01 AC-2: every event an HTTP request publishes carries the request�
           const sides = await Promise.all(
             kinds.map(async (kind) => ({
               kind,
-              email: `ac2-${randomUUID()}@p3-01.test`,
+              email: `ac2-${randomUUID()}@events.test`,
               ...(await shopperWithCart()),
             })),
           )
@@ -161,7 +156,7 @@ function asReceived(sent: string): string {
   return sent.replace(/^[ \t]+|[ \t]+$/g, '')
 }
 
-describe('P3-01 AC-3: the inbound x-correlation-id is used only when well formed, and every response echoes one', () => {
+describe('AC-3: the inbound x-correlation-id is used only when well formed, and every response echoes one', () => {
   it('AC-3: a well-formed inbound id is echoed and is the id on the events', async () => {
     const { s } = await shopperWithCart()
     const inbound = `ac3.shop:${randomUUID()}`
@@ -198,7 +193,7 @@ describe('P3-01 AC-3: the inbound x-correlation-id is used only when well formed
     },
   )
 
-  it('AC-3: property: whatever strings are sent as x-correlation-id (or none) and as request-id, the echoed id matches decision 3: the x-correlation-id itself when well formed, else a fresh uuidv7, never the request-id', async () => {
+  it('AC-3: property: whatever strings are sent as x-correlation-id (or none) and as request-id, the echoed id is the x-correlation-id itself when well formed, else a fresh uuidv7, never the request-id', async () => {
     const latin1 = fc
       .integer({ min: 0x20, max: 0xff })
       .filter((c) => c !== 0x7f)

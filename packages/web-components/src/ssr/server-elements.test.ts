@@ -3,11 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { NymbalMiniCart, NymbalToast, type NymbalElementClass } from '../index.js'
 import { registerServerElements, renderElement } from './index.js'
 
-// P2-18 AC-3, the unit half (spec Decision 3): a project registers its own class under a Nymbal tag, and the server
-// renders that class's template under the tag and none of the package element's parts, whether or not the package
-// element was rendered under it before (Lit SSR defines once per process, so the class is resolved per call). A second
-// registration of a different class under one tag is refused. Kills: the server rendering the package element under
-// an overridden tag, so a project's override shows the package's markup until the client replaces it.
+// AC-3, the unit half: a project registers its own class under a Nymbal tag, and the server renders that class's
+// template under the tag and none of the package element's parts, whether or not the package element was rendered
+// under it before (Lit SSR defines once per process, so the class is resolved per call). A second registration of a
+// different class under one tag is refused.
 
 /** A project's element, as its elements entry would declare it. */
 function projectElement(tag: string, marker: string): NymbalElementClass {
@@ -45,7 +44,7 @@ function serverParts(out: string): string[] {
 const packageParts = (parts: string[], element: NymbalElementClass): string[] =>
   parts.filter((p) => element.schema.parts.includes(p))
 
-describe('P2-18 AC-3: the server honours the project’s elements entry', () => {
+describe('AC-3: the server honours the project’s elements entry', () => {
   it('AC-3: after registerServerElements({ "nymbal-mini-cart": ProjectMiniCart }), renderElement("nymbal-mini-cart") renders the project’s marker part and none of the package’s, though the package mini-cart rendered under the tag first', () => {
     const before = serverParts(renderElement('nymbal-mini-cart'))
     expect(packageParts(before, NymbalMiniCart).length).toBeGreaterThan(0)

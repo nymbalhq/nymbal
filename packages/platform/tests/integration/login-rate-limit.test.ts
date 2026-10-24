@@ -6,11 +6,9 @@ import { createKernel, withoutAuthRateRules } from '../support/kernel.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { login, primedShopper } from '../support/security.js'
 
-// P1-06 AC-5 and AC-6 on a served kernel (SQLite) with no user rule for `/api/auth/login`, so the built-in default
-// (10 per 15m, block) applies, keyed by IP and by the lowercased email; failures count, a success clears the email
-// bucket only, and the IP bucket expires with its window. Kills: no default login rule, the guard running after the
-// handler, successes counted against the limit, a success clearing the IP bucket, no per-email key, `trustProxy`
-// defaulting to true.
+// AC-5 and AC-6 on a served kernel (SQLite) with no user rule for `/api/auth/login`, so the built-in default (10 per
+// 15m, block) applies, keyed by IP and by the lowercased email; failures count, a success clears the email bucket
+// only, and the IP bucket expires with its window.
 
 const PASSWORD = 'correct-horse-battery'
 const WRONG = 'wrong-password'
@@ -36,7 +34,7 @@ async function withServed(
 }
 
 async function registered(s: ServedKernel): Promise<{ email: string; id: string }> {
-  const email = `login-${randomUUID()}@p1-06.test`
+  const email = `login-${randomUUID()}@security.test`
   const { customer } = await s.kernel.services.auth.register({ email, password: PASSWORD })
   return { email, id: customer.id }
 }
@@ -111,7 +109,7 @@ describe('login rate limit (built-in default)', () => {
       const own = await registered(s)
       const next = await registered(s)
       const shop = await primedShopper(s.baseUrl)
-      const sprayed = (i: number): string => `spray5b-${i}-${randomUUID()}@p1-06.test`
+      const sprayed = (i: number): string => `spray5b-${i}-${randomUUID()}@security.test`
 
       const before: number[] = []
       for (let i = 0; i < LIMIT - 1; i += 1) {
@@ -149,7 +147,7 @@ describe('login rate limit (built-in default)', () => {
         const answer = await login(
           s.baseUrl,
           shop.jar,
-          { email: `other-${i}-${randomUUID()}@p1-06.test`, password: WRONG },
+          { email: `other-${i}-${randomUUID()}@security.test`, password: WRONG },
           { 'x-forwarded-for': `10.1.0.${i + 1}` },
         )
         control.push(answer.status)
@@ -181,7 +179,7 @@ describe('login rate limit (built-in default)', () => {
         const answer = await login(
           s.baseUrl,
           shop.jar,
-          { email: `spray-${i}-${randomUUID()}@p1-06.test`, password: WRONG },
+          { email: `spray-${i}-${randomUUID()}@security.test`, password: WRONG },
           { 'x-forwarded-for': `10.3.0.${i + 1}` },
         )
         statuses.push(answer.status)

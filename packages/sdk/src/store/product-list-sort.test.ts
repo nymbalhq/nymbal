@@ -3,12 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ProductSortKey } from '@nymbalhq/types'
 import { createNymbalClient } from '../client.js'
 
-// P1-11 AC-6: the product list sends the active sort and the active category on every request it makes, however the
+// AC-6: the product list sends the active sort and the active category on every request it makes, however the
 // category was set (Astro's `applyFilter`, Next's `load({ category })`), and `loadMore` keeps both next to its cursor.
-// Kills: `buildParams` without `sort`, the adapter dropping `sort` from the query string, `setSort` or `loadMore`
-// losing a category that came in through `load(params)`.
 
-const BASE = 'https://api.p1-11.test'
+const BASE = 'https://api.sort.test'
 const KEYS: ProductSortKey[] = ['newest', 'price-asc', 'price-desc', 'name-asc', 'name-desc']
 const FIRST_CURSOR = 'cursor-after-page-1'
 
@@ -57,7 +55,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('product list sort (P1-11)', () => {
+describe('product list sort', () => {
   it('AC-6: setSort(key) requests sort=<key> with the active category, and loadMore keeps both beside the cursor', async () => {
     await fc.assert(
       fc.asyncProperty(

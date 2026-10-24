@@ -10,9 +10,9 @@ import {
   removeChaosCases,
 } from './fixtures/chaos'
 
-// Acceptance test for P1-01 AC-9: armChaos on the bus of a real store (createApp, through startTestStore) inside a
-// child process. Killing it before order.placed.v1 is published leaves the order row in the SQLite file and the
-// event undelivered: the kernel's write-then-publish gap is observable.
+// AC-9: armChaos on the bus of a real store (createApp, through startTestStore) inside a child process. Killing it
+// before order.placed.v1 is published leaves the order row in the SQLite file and the event undelivered: the kernel's
+// write-then-publish gap is observable.
 
 afterAll(() => {
   removeChaosCases()
@@ -21,7 +21,7 @@ afterAll(() => {
 describe('AC-9: the chaos wrapper on a real createApp bus', () => {
   it('AC-9: point { beforePublish: order.placed.v1 } kills the child after the order row exists, before the event is delivered', async () => {
     const c = chaosCase()
-    // `+stub-pending` (P1-12 decision 7): the order stays pending, so the kill finds it as checkout left it.
+    // `+stub-pending`: the order stays pending, so the kill finds it as checkout left it.
     const email = `chaos-${randomUUID()}+stub-pending@proof-kit.test`
     const run = await runUntilKilled({
       script: CHAOS_ORDER_CHILD,

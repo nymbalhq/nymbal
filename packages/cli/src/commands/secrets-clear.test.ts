@@ -16,11 +16,9 @@ import {
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
 
-// P3-07 AC-6, the recovery for a lost key (spec P3-07-secrets-settings, Decision 5): `nymbal secrets clear [--slot <s>]
-// [--path <p>]`, spawned from the built CLI (`pnpm build` first) with NYMBAL_SECRETS_KEY unset, deletes rows without
-// the key: `--slot ai --path apiKey` removes that row alone, a bare `clear` the rest, and the store then
-// boots without the key it refused to boot without before.
-// Kills: a lost key leaving the store unbootable; a filtered clear deleting other rows.
+// AC-6, recovery from a lost key: `nymbal secrets clear [--slot <s>] [--path <p>]` with NYMBAL_SECRETS_KEY unset
+// deletes the matching rows (a filtered clear that row alone), and the store then boots without the key.
+// Spawns the built CLI (`pnpm build` first).
 
 const COMMERCE = {
   ai: { provider: 'anthropic' },
@@ -30,7 +28,7 @@ const COMMERCE = {
 const scope = cleanups()
 afterEach(() => scope.run())
 
-describe('P3-07 AC-6: nymbal secrets clear needs no key', () => {
+describe('AC-6: nymbal secrets clear needs no key', () => {
   it('AC-6: with NYMBAL_SECRETS_KEY unset, clear --slot --path removes one row, clear removes the rest, and the store then boots without a key', async () => {
     scope.add(
       setEnv({
@@ -38,7 +36,7 @@ describe('P3-07 AC-6: nymbal secrets clear needs no key', () => {
         ANTHROPIC_API_KEY: undefined,
       }),
     )
-    const dir = mkdtempSync(join(tmpdir(), 'p3-07-clear-'))
+    const dir = mkdtempSync(join(tmpdir(), 'settings-clear-'))
     scope.add(() => rmSync(dir, { recursive: true, force: true }))
     writeFileSync(
       join(dir, 'nymbal.config.ts'),
@@ -47,8 +45,8 @@ describe('P3-07 AC-6: nymbal secrets clear needs no key', () => {
     const db = join(dir, 'nymbal.db')
     const config = settingsConfig('sqlite', COMMERCE)
     await saveSettings({ dialect: 'sqlite', target: db, config }, [
-      ['ai', 'apiKey', `sk-ant-p3-07-clear-${Date.now()}`],
-      ['email', 'smtp.pass', `smtp-pass-p3-07-clear-${Date.now()}`],
+      ['ai', 'apiKey', `sk-ant-settings-clear-${Date.now()}`],
+      ['email', 'smtp.pass', `smtp-pass-settings-clear-${Date.now()}`],
     ])
     scope.add(setEnv({ [SECRETS_KEY]: undefined }))
     const refused = await attemptStore({ dialect: 'sqlite', target: db, config })

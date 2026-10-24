@@ -5,7 +5,7 @@ function baseConfig(): NymbalConfigInput {
   return {
     store: { name: 'Test', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro' as const,
-    // P2-02 decision 1: cloud and compute are gone; the cast keeps this compiling until the schema drops them.
+    // cloud and compute are gone; the cast keeps this compiling until the schema drops them.
     infrastructure: {
       commandStore: 'sqlite' as const,
       documentStore: 'in-memory' as const,

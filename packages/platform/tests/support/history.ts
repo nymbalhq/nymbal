@@ -1,10 +1,9 @@
 import type { AdminSession, Answer } from './audit-http.js'
 import type { RawReader } from './raw.js'
 
-// Support for the admin history tests: the as-of views as Decision 3 publishes them, computed here from the
-// live admin reads so a test holds its own oracle beside the kernel's `to<Kind>AsOf`; the `?at=` and `…/history`
-// routes of Decision 5; and the clock steps AC-1 takes between commands. Nothing here knows how the fold, the subject
-// columns or the routes are implemented.
+// Support for the admin history tests: the as-of views, computed here from the live admin reads so a test holds its
+// own oracle beside the kernel's `to<Kind>AsOf`; the `?at=` and `…/history` routes; and the clock steps AC-1 takes
+// between commands. Nothing here knows how the fold, the subject columns or the routes are implemented.
 
 export type HistoryKind = 'order' | 'product' | 'customer'
 
@@ -14,7 +13,7 @@ function without(record: Json, keys: readonly string[]): Json {
   return Object.fromEntries(Object.entries(record).filter(([key]) => !keys.includes(key)))
 }
 
-/** Decision 3: the admin order read without the fields no event carries. */
+/** The admin order read without the fields no event carries. */
 export const ORDER_OMITTED = [
   'notes',
   'metadata',
@@ -24,7 +23,7 @@ export const ORDER_OMITTED = [
   'history',
 ] as const
 export const ORDER_PAYMENT_OMITTED = ['refunds', 'refundableMinor'] as const
-/** Decision 2: CustomerSnapshot's keys, and so CustomerAsOf's. */
+/** CustomerSnapshot's keys, and so CustomerAsOf's. */
 export const CUSTOMER_SNAPSHOT_KEYS = [
   'id',
   'email',

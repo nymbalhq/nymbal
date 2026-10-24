@@ -6,8 +6,8 @@ import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from './index.js'
 import type { KeysetPage } from './page.js'
 
-// The keyset walk the snapshot builders read a table with (spec P3-02-replay-engine, Decision 1): every page of
-// `listPage` on SQLite is checked against the slice a direct read of the whole table, sorted by id, gives.
+// The keyset walk the snapshot builders read a table with: every page of `listPage` on SQLite is checked against the
+// slice a direct read of the whole table, sorted by id, gives.
 
 async function setup() {
   const store = createCommandStore(
@@ -102,9 +102,8 @@ describe('listPage: a keyset walk over a table by id', () => {
             const all = await table.list(env)
             expect(all.map((r) => r.id).sort()).toEqual([...ids].sort())
             const sorted = [...all].sort((a, b) => (a.id < b.id ? -1 : 1))
-            const expected = Array.from(
-              { length: Math.ceil(sorted.length / limit) },
-              (_, i) => sorted.slice(i * limit, (i + 1) * limit),
+            const expected = Array.from({ length: Math.ceil(sorted.length / limit) }, (_, i) =>
+              sorted.slice(i * limit, (i + 1) * limit),
             )
 
             let next: KeysetPage = { limit }

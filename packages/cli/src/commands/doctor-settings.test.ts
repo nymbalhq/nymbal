@@ -18,14 +18,11 @@ import {
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, doctorJson, doctorLines, runCli } from '../../../../tests/support/doctor.js'
 
-// P3-07 AC-4, the doctor half (spec P3-07-secrets-settings, Decisions 4 and 7): on a Stripe store whose secretKey is
-// held only in Settings (saved through the admin API), with a stub Stripe API that answers that key alone, the built
-// CLI's `nymbal doctor` and `nymbal doctor --json` (`pnpm build` first) report payments healthy, so diagnose read and
-// decrypted the row, and print neither the value nor its base64. Property over generated secret values (base64 and
-// URL-unsafe characters). The in-process half is packages/platform/tests/integration/settings-write-only.test.ts.
-// Kills: doctor building adapters without settings, and doctor printing a value it decrypted.
+// AC-4: with a Stripe secretKey held only in Settings, `nymbal doctor` (and `--json`) reports payments healthy and
+// prints neither the value nor its base64. Needs `pnpm build`. The in-process half is
+// packages/platform/tests/integration/settings-write-only.test.ts.
 
-describe('P3-07 AC-4: doctor on a store whose key is held in Settings', () => {
+describe('AC-4: doctor on a store whose key is held in Settings', () => {
   it('AC-4: over generated secrets, doctor and doctor --json report payments healthy and print neither the value nor its base64', async () => {
     await fc.assert(
       fc.asyncProperty(secretArb, async (secret) => {
@@ -42,8 +39,10 @@ describe('P3-07 AC-4: doctor on a store whose key is held in Settings', () => {
           const stub = await startStub('stripe')
           run.add(() => stub.close())
           stub.accept = (credential) => credential === secret
-          const commerce = { payments: stripeBlock(stub, { webhookSecret: 'whsec_p3_07_doctor' }) }
-          const dir = mkdtempSync(join(tmpdir(), 'p3-07-doctor-'))
+          const commerce = {
+            payments: stripeBlock(stub, { webhookSecret: 'whsec_settings_doctor' }),
+          }
+          const dir = mkdtempSync(join(tmpdir(), 'settings-doctor-'))
           run.add(() => rmSync(dir, { recursive: true, force: true }))
           writeFileSync(
             join(dir, 'nymbal.config.ts'),

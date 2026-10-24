@@ -1,8 +1,8 @@
-// P2-09 decision 6: the no-search store's search adapter, injected through the config's `adapters` export into the
-// `custom` search slot. It offers nothing (`capabilities()` is `[]`), so GET /api/capabilities reports search without
-// `search` and the templates' header renders no search bar. It still takes the documents the kernel indexes, so the
-// projections that call it run as they do on any store. Self-contained on purpose, as the custom-providers fixture is:
-// nothing from @nymbalhq/platform (jiti would load a second instance of it) and no runtime import from @nymbalhq/types.
+// The no-search store's search adapter, injected through the config's `adapters` export into the `custom` search
+// slot. It offers nothing (`capabilities()` is `[]`), so GET /api/capabilities reports search without `search` and the
+// templates' header renders no search bar. It still takes the documents the kernel indexes, so the projections that
+// call it run as they do on any store. Self-contained on purpose, as the custom-providers fixture is: nothing from
+// @nymbalhq/platform (jiti would load a second instance of it) and no runtime import from @nymbalhq/types.
 
 export type Health = { status: 'healthy' | 'degraded' | 'down'; detail?: string }
 
@@ -19,7 +19,7 @@ export function createNoSearchAdapter() {
   const docs = new Map<string, Doc>()
   return {
     kind: 'search' as const,
-    providerName: 'p2-09-no-search',
+    providerName: 'doctor-no-search',
     capabilities: (): readonly string[] => [...NO_SEARCH_CAPABILITIES],
     producesEvents: [] as readonly string[],
     consumesEvents: [] as readonly string[],

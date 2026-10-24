@@ -2,12 +2,10 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { s3ObjectUrl } from '../../packages/media-s3/src/index.js'
 
-// Acceptance test for P2-11 AC-3, the pure half (spec P2-11-s3-media, decision 4): s3ObjectUrl(options, key) is the
-// base (publicUrl, else endpoint/bucket, else the AWS virtual-hosted URL), with trailing slashes trimmed, then the
-// object key `<prefix>/<key>` (just `<key>` when the prefix, once its edge slashes are trimmed, is empty) with each
-// path segment percent-encoded. The key is used verbatim: empty and edge segments stay, so two distinct keys never
-// share a URL. Kills: keys that collide (`a/b` and `a//b`), a `//` after a trailing-slash base, an encoding that leaves
-// a space, `%`, `?` or `#` raw or loses a character, and a prefix that is not where the object is.
+// AC-3, the pure half: s3ObjectUrl(options, key) is the base (publicUrl, else endpoint/bucket, else the AWS
+// virtual-hosted URL), with trailing slashes trimmed, then the object key `<prefix>/<key>` (just `<key>` when the
+// prefix, once its edge slashes are trimmed, is empty) with each path segment percent-encoded. The key is used
+// verbatim: empty and edge segments stay, so two distinct keys never share a URL.
 // The MinIO half (the URL serves the object) is tests/stores/media-s3-contract.test.ts.
 
 /** What encodeURIComponent leaves unescaped; every other character of a segment must be a %XX escape. */
@@ -24,7 +22,7 @@ interface Options {
 const trimTrailing = (s: string): string => s.replace(/\/+$/, '')
 const trimEdges = (s: string): string => s.replace(/^\/+|\/+$/g, '')
 
-/** Decision 4's base: where every URL starts, followed by `/`. */
+/** The base: where every URL starts, followed by `/`. */
 function baseOf(o: Options): string {
   if (o.publicUrl !== undefined) return trimTrailing(o.publicUrl)
   if (o.endpoint !== undefined) return `${trimTrailing(o.endpoint)}/${o.bucket}`
@@ -59,7 +57,7 @@ const segment = fc
     fc.string({ unit: 'grapheme', minLength: 1, maxLength: 6 }),
   )
   .map((s) => s.replace(/\//g, '_'))
-  // `.` and `..` are dot-segments a URL parser resolves away; decision 4 does not cover them.
+  // `.` and `..` are dot-segments a URL parser resolves away; the URL rule does not cover them.
   .filter((s) => s !== '.' && s !== '..')
 
 const key = fc
@@ -122,7 +120,7 @@ const nearMiss = (k: string) =>
     k.toUpperCase(),
   )
 
-describe('P2-11 AC-3: s3ObjectUrl follows decision 4', () => {
+describe('AC-3: s3ObjectUrl follows the URL rule', () => {
   it('AC-3: every URL is the base, then each segment of the object key percent-encoded; decoding the segments gives back the object key', () => {
     fc.assert(
       fc.property(options, key, (o, k) => {

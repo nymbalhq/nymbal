@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FetchClient, NymbalApiError } from './fetch-client.js'
 
-// P1-06 AC-8: the SDK fetches a CSRF token from `GET /api/csrf` before its first unsafe request, caches it, sends it
-// as `x-csrf-token` on POST/PUT/PATCH/DELETE only, and on a 403 `csrf.invalid` refetches once and retries once.
-// Kills: no header, a refetch on every request, an infinite retry.
+// AC-8: the SDK fetches a CSRF token from `GET /api/csrf` before its first unsafe request, caches it, sends it as
+// `x-csrf-token` on POST/PUT/PATCH/DELETE only, and on a 403 `csrf.invalid` refetches once and retries once.
 
-const BASE = 'https://api.p1-06.test'
+const BASE = 'https://api.security.test'
 
 interface Call {
   method: string

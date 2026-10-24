@@ -10,11 +10,9 @@ import {
   underModule,
 } from '../support/primitive-graph.js'
 
-// Acceptance tests for P2-11 AC-1 (the resolvePrimitives half) and AC-2 (the missing package), spec P2-11-s3-media,
-// decisions 2 and 3. Neither needs an S3 server: a missing bucket fails before anything is loaded or connected, and a
-// missing package before any connection is made. The MinIO-backed load is tests/primitives/s3-media.test.ts.
-// Kills: a missing bucket that fails late or obscurely (an SDK error at the first put, or after Redis connected), a
-// fallback that ignores S3_BUCKET, and a missing @nymbalhq/media-s3 with no install line. Needs `pnpm build`.
+// AC-1 (the resolvePrimitives half) and AC-2 (the missing package). Neither needs an S3 server: a missing bucket fails
+// before anything is loaded or connected, and a missing @nymbalhq/media-s3 before any connection, with an install
+// line. The MinIO-backed load is tests/primitives/s3-media.test.ts. Needs `pnpm build`.
 
 afterAll(cleanupGraphDirs)
 
@@ -23,7 +21,7 @@ const logger = createLogger({ pretty: false, level: 'error' })
 /** Never connected to: every case here fails or resolves before a request is made. */
 const NOWHERE = 'http://127.0.0.1:1'
 
-/** The S3 variables a store reads (decision 2), cleared so the developer's shell cannot leak into a case. */
+/** The S3 variables a store reads, cleared so the developer's shell cannot leak into a case. */
 const NO_S3_ENV = {
   S3_BUCKET: undefined,
   S3_ENDPOINT: undefined,
@@ -64,7 +62,7 @@ async function rejectionOf(
   }
 }
 
-describe('P2-11 AC-1: a missing bucket fails resolvePrimitives with config.s3_bucket_missing', () => {
+describe('AC-1: a missing bucket fails resolvePrimitives with config.s3_bucket_missing', () => {
   it("AC-1: media 's3' with no bucket in the block or in S3_BUCKET (unset or empty) rejects config.s3_bucket_missing, naming infrastructure.s3.bucket and S3_BUCKET", async () => {
     const cases: Array<[string, NymbalConfig, NodeJS.ProcessEnv]> = [
       ['no block, no S3_BUCKET', s3Config(), {}],
@@ -82,8 +80,8 @@ describe('P2-11 AC-1: a missing bucket fails resolvePrimitives with config.s3_bu
   })
 
   it('AC-1: a bucket in either place is enough: S3_BUCKET alone, or the block alone, never fails config.s3_bucket_missing', async () => {
-    const fromEnv = await rejectionOf(s3Config({ endpoint: NOWHERE }), { S3_BUCKET: 'p2-11-env' })
-    const fromBlock = await rejectionOf(s3Config({ bucket: 'p2-11-block', endpoint: NOWHERE }), {})
+    const fromEnv = await rejectionOf(s3Config({ endpoint: NOWHERE }), { S3_BUCKET: 's3-env' })
+    const fromBlock = await rejectionOf(s3Config({ bucket: 's3-block', endpoint: NOWHERE }), {})
     const neither = await rejectionOf(s3Config({ endpoint: NOWHERE }), {})
 
     // The contrast: only the bucket differs between these and the case that fails.
@@ -97,7 +95,7 @@ describe('P2-11 AC-1: a missing bucket fails resolvePrimitives with config.s3_bu
     // primitives, the failure would be a Redis one, or the Redis package would have been imported first.
     const config = s3Config(undefined, {
       documentStore: 'redis',
-      redis: { url: 'redis://127.0.0.1:1', prefix: 'p2-11-early' },
+      redis: { url: 'redis://127.0.0.1:1', prefix: 's3-early' },
     })
 
     const { resolutions, outcome } = await runGraphChild(config, { env: NO_S3_ENV })
@@ -120,9 +118,9 @@ describe('P2-11 AC-1: a missing bucket fails resolvePrimitives with config.s3_bu
   }, 90_000)
 })
 
-describe('P2-11 AC-2: a missing @nymbalhq/media-s3 fails with the install line', () => {
+describe('AC-2: a missing @nymbalhq/media-s3 fails with the install line', () => {
   it('AC-2: media \'s3\' with @nymbalhq/media-s3 not installed fails createApp adapter.package_missing, naming the media slot and "npm install @nymbalhq/media-s3 @aws-sdk/client-s3"', async () => {
-    const config = s3Config({ bucket: 'p2-11-hidden', endpoint: NOWHERE })
+    const config = s3Config({ bucket: 's3-hidden', endpoint: NOWHERE })
 
     const { resolutions, outcome } = await runGraphChild(config, {
       hide: ['@nymbalhq/media-s3'],

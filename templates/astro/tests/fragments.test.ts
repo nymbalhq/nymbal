@@ -3,13 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchCategories } from '../src/lib/api'
 import { headerFragment, navFragment, productFragment } from '../src/lib/fragments'
 
-// P2-19 (spec P2-19-fragments-and-isr, invariant "Never worse than no cache"; store end state caching.fragments-cached):
-// the data behind Astro's header, nav and product fragments, with `fetch` stubbed. A CDN keeps a fragment for its
-// s-maxage (hours), so when the API fails (no answer, an error status, a body with no data) each fragment answers a
-// 502 with `Cache-Control: no-store`, and with the API's answer it carries exactly what the API sent. The pages, which
-// render per request, show no categories rather than a list the API did not send.
-// Kills: the nav fragment serving the seed categories with the API down, which a CDN held for 6 h; a header cached
-// without its search bar for an hour after an API blip; a 500 on a product becoming a 404.
+// The data behind Astro's header, nav and product fragments, with `fetch` stubbed. A fragment is never worse than no
+// cache: a CDN keeps it for its s-maxage (hours), so when the API fails (no answer, an error status, a body with no
+// data) each fragment answers a 502 with `Cache-Control: no-store`, and with the API's answer it carries exactly what
+// the API sent. The pages, which render per request, show no categories rather than a list the API did not send.
 
 type Failure = { kind: 'network' } | { kind: 'status'; status: number } | { kind: 'no-data' }
 
@@ -86,7 +83,7 @@ const notStored = (status: number) => ({
   html: false,
 })
 
-describe('P2-19: Astro fragments under an API failure', () => {
+describe('Astro fragments under an API failure', () => {
   it('caching.fragments-cached: property: when the API fails a read, the header, nav and product fragments each answer 502 with Cache-Control no-store', async () => {
     await fc.assert(
       fc.asyncProperty(failure(true), failure(false), async (whole, product) => {

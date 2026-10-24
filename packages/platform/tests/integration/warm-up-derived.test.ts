@@ -6,15 +6,11 @@ import { createKernel, seedVariant, type Kernel, type Seeded } from '../support/
 import { openRaw } from '../support/raw.js'
 import { ALL_MODELS, rebuildDeps } from '../support/read-models.js'
 
-// P1-03 AC-10 on SQLite, as P3-02 decision 5 restates it: warm-up writes only derived read models. Boot warm is now
-// the rebuild of every read model (P3-02), with no synthetic events. Called directly, on a kernel whose last commands
-// are seconds old (so its catch-up has events to apply), it restores a product's document and its search entry after
-// both were removed, while a subscriber that is not derived (as the email handler is not) hears nothing from it, and
-// the event log, the processed-event records and the product's rows are unchanged; a later real command still reaches
-// that subscriber. Sentinel S009 runs this file.
-// Kills: catch-up handing its events to the bus's publish (every subscriber, side effects included, hears them on
-// every boot and every replay: each restart re-sends recent order confirmations), a rebuild that writes to the
-// command store, and one that does not rebuild the document store or the index.
+// AC-10 on SQLite: warm-up writes only derived read models. Boot warm rebuilds every read model with no synthetic
+// events. Called directly, on a kernel whose last commands are seconds old (so its catch-up has events to apply), it
+// restores a product's document and its search entry after both were removed, while a subscriber that is not derived
+// (as the email handler is not) hears nothing from it, and the event log, the processed-event records and the
+// product's rows are unchanged; a later real command still reaches that subscriber. Sentinel S009 runs this file.
 
 let k: Kernel
 let seeded: Seeded

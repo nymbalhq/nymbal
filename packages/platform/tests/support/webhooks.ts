@@ -6,11 +6,11 @@ import { address, cartWith, type Kernel, type Seeded } from './kernel.js'
 import type { RawReader } from './raw.js'
 import { stubPaymentWebhook, type StubPaymentWebhookRequest } from './proof-kit.js'
 
-// P1-05 support: the captured-payment webhook as the kernel's route sees it, and the committed records a delivery
-// leaves behind, read through a second connection. Events are read from the `events` table (the outbox from P1-03),
-// so a test never waits on the bus.
+// The captured-payment webhook as the kernel's route sees it, and the committed records a delivery leaves behind,
+// read through a second connection. Events are read from the `events` table (the outbox), so a test never waits on
+// the bus.
 
-/** The handler name decision 3 gives the Stripe route's processed-event record. */
+/** The handler name of the Stripe route's processed-event record. */
 export const WEBHOOK_HANDLER = 'webhook:stripe'
 
 /** What beginCheckout returned, as far as a webhook needs it. */
@@ -152,8 +152,8 @@ export async function expiredCheckout(
   const cartToken = await cartWith(k, seeded, qty)
   const started = await checkout.beginCheckout({
     cartToken,
-    // `+stub-pending` (P1-12 decision 7): the stub leaves the order pending for the late capture under test.
-    email: opts.email ?? `late-${randomUUID()}+stub-pending@p1-05.test`,
+    // `+stub-pending`: the stub leaves the order pending for the late capture under test.
+    email: opts.email ?? `late-${randomUUID()}+stub-pending@webhook.test`,
     billingAddress: address,
     shippingAddress: address,
     ...(opts.customerId !== undefined && { customerId: opts.customerId }),

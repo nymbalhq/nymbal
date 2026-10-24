@@ -6,7 +6,7 @@ import {
   isDependencyLayoutPath,
 } from '../../scripts/tests-fail-on-base'
 
-// Acceptance tests for P0-02 follow-up round 1, AC-25 to AC-27: the pure decisions inside tests-fail-on-base.
+// AC-25 to AC-27: the pure decisions inside tests-fail-on-base.
 // - AC-25 `isDependencyLayoutPath(path)`: whether a changed path moves the dependency graph, so the base worktree
 //   must install its own dependencies instead of mirroring HEAD's.
 // - AC-26 `installBase(worktree, session, run)`: the offline install, then an online retry only when going online

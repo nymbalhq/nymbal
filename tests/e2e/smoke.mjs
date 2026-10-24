@@ -48,7 +48,7 @@ async function main() {
     deployment: { strategy: 'standard' },
   })
 
-  // P2-02 decision 2: the primitives are resolved before createPlatform, which takes them as instances.
+  // The primitives are resolved before createPlatform, which takes them as instances.
   const platform = createPlatform(config, {
     sqlitePath: join(tmp, 'smoke.db'),
     documentStore: new InMemoryDocumentStore(),

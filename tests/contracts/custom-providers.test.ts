@@ -12,13 +12,11 @@ import {
 import type { PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
 import { encodeFixtureCursor } from '../e2e/fixtures/custom-providers/adapters'
 
-// P2-05 decisions 8 and 9: the swap fixture (tests/e2e/fixtures/custom-providers), loaded the way `nymbal dev` loads
-// it (loadConfig, which returns the config module's named `adapters` export), injects adapters that pass the search
-// and payments contracts, and its search is what the spec says: no `facet`, and (P2-07 decision 9) decision 3's
-// matching over name, SKU, variant name and description, paged by cursor with an exact total. Kills: a loader that
-// drops the `adapters` export, a fixture that only looks like an adapter, and a search that matches by another rule.
-// P2-13 (spec P2-13-contract-tests-public): the suites and the search oracle come from the package, so the fixture runs
-// the cases a third party certifies against, the refund idempotency case included.
+// The swap fixture (tests/e2e/fixtures/custom-providers), loaded the way `nymbal dev` loads it (loadConfig, which
+// returns the config module's named `adapters` export), injects adapters that pass the search and payments contracts,
+// and its search has no `facet` and matches over name, SKU, variant name and description, paged by cursor with an
+// exact total. The suites and the search oracle come from the package, so the fixture runs the cases a third party
+// certifies against, the refund idempotency case included.
 
 const FIXTURE_DIR = fileURLToPath(new URL('../e2e/fixtures/custom-providers/', import.meta.url))
 
@@ -42,13 +40,13 @@ function loadedOr<T>(adapter: T | undefined, slot: string): T {
   return adapter
 }
 
-// P2-07 AC-1 and AC-4 on the fixture: no `facet`, no ranking promised.
+// AC-1 and AC-4 on the fixture: no `facet`, no ranking promised.
 runSearchContract('custom fixture', () => loadedOr(search, 'search'), {
   cursorAt: encodeFixtureCursor,
 })
 runPaymentsContract('custom fixture', () => loadedOr(payments, 'payments'))
 
-describe('P2-05 swap fixture, as loadConfig returns it', () => {
+describe('swap fixture, as loadConfig returns it', () => {
   it('AC-5: loadConfig returns the fixture config module’s adapters export, one adapter per custom slot', () => {
     expect(slots).toEqual(['payments', 'search'])
   })
@@ -65,9 +63,9 @@ describe('P2-05 swap fixture, as loadConfig returns it', () => {
     expect(adapter.client!()).toBeNull()
   })
 
-  // P2-07 decision 9 reshapes P2-05's matching case: a description, SKU or variant-name match now counts, case and
-  // punctuation separate terms, and each query term is a prefix.
-  it('AC-5: over generated products and queries in mixed case and punctuation, the loaded fixture returns exactly the products decision 3 matches through name, SKU, variant name or description', async () => {
+  // A description, SKU or variant-name match counts, case and punctuation separate terms, and each query term is a
+  // prefix.
+  it('AC-5: over generated products and queries in mixed case and punctuation, the loaded fixture returns exactly the products the search rule matches through name, SKU, variant name or description', async () => {
     const adapter = loadedOr(search, 'search')
     const text = (maxLength: number) =>
       fc.string({ unit: fc.constantFrom('a', 'B', 'c', '1', ' ', '-', '.', 'é'), maxLength })
@@ -88,7 +86,7 @@ describe('P2-05 swap fixture, as loadConfig returns it', () => {
           // so runs do not see each other.
           run += 1
           const products: ContractProduct[] = generated.map((g, i) => ({
-            id: `p2-05-run-${run}-${i}`,
+            id: `caps-run-${run}-${i}`,
             name: g.name,
             description: g.description,
             variants: g.variants.map((v) => ({ ...v, priceMinor: 100 })),

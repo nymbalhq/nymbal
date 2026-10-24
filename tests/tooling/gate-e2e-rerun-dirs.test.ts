@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { plan, type StepSpec } from '../../scripts/gate'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-16, review round finding 5: Playwright's
-// `--last-failed` reads `<output dir>/.last-run.json`, and the three E2E steps shared one output dir, so after a
-// three-project gate an earlier red project re-ran nothing. Each E2E step passes `--output test-results/<target>`,
-// and `--rerun-red` re-runs a step with `--last-failed` in that same dir. Plan level: the commands are the contract.
+// AC-16: Playwright's `--last-failed` reads `<output dir>/.last-run.json`, so E2E steps that shared one output dir
+// would re-run nothing for an earlier red project. Each E2E step passes `--output test-results/<target>`, and
+// `--rerun-red` re-runs a step with `--last-failed` in that same dir. Plan level: the commands are the contract.
 
-// P2-05 decision 9 adds the two custom-providers targets, which run on the default store set this INPUT plans; P2-09
-// decision 6 adds the two no-search targets (tests/e2e/fixtures/no-search), wired the same way; P2-18 answer 2 the two
-// project-elements targets (tests/e2e/fixtures/override-elements).
+// The custom-providers targets run on the default store set this INPUT plans; the no-search targets
+// (tests/e2e/fixtures/no-search) and the project-elements targets (tests/e2e/fixtures/override-elements) are wired the
+// same way.
 const TARGETS = [
   'astro',
   'nextjs',

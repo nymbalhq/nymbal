@@ -11,7 +11,7 @@ import { runUntilKilled } from '../proof-kit.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 import { clockAt, lineFor, migrateTarget, openReplica, type Replica } from '../replica.js'
 
-// P1-04 AC-4 and AC-4b on one dialect: a paid order and its emptied cart commit together. The child process
+// AC-4 and AC-4b on one dialect: a paid order and its emptied cart commit together. The child process
 // (fixtures/checkout-finalize-kill-child.mjs) checks out and finalises on a real store and is SIGKILLed at the first
 // bus publish after the finalize transaction commits; a kernel reopened on the database then sees the order confirmed,
 // the cart present and empty, and one cart.converted.v1 for the order. AC-4b: a cart that expired before finalize is
@@ -44,7 +44,7 @@ export function checkoutConvertsCartSuite(
 
     it('AC-4: SIGKILL at the first bus publish after the finalize commit: reopened, the order is confirmed, the cart token reads back with zero items, and events holds exactly one cart.converted.v1 for the order', async () => {
       const db = await fresh()
-      const dir = mkdtempSync(join(tmpdir(), 'p1-04-finalize-kill-'))
+      const dir = mkdtempSync(join(tmpdir(), 'cart-finalize-kill-'))
       const handoff = join(dir, 'handoff.json')
       const token = randomUUID()
       let kernel: Kernel | undefined
@@ -114,8 +114,8 @@ export function checkoutConvertsCartSuite(
         await replica.services.cart.addItem(cart.token, lineFor(seeded, qty))
         const started = await replica.services.checkout.beginCheckout({
           cartToken: cart.token,
-          // `+stub-pending` (P1-12 decision 7): the cart expires before the payment, which is the finalize below.
-          email: `expired-${randomUUID()}+stub-pending@p1-04.test`,
+          // `+stub-pending`: the cart expires before the payment, which is the finalize below.
+          email: `expired-${randomUUID()}+stub-pending@cart.test`,
           billingAddress: address,
           shippingAddress: address,
         })

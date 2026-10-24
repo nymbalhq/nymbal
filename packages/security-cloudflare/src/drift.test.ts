@@ -16,10 +16,9 @@ import {
   type SpecSecurityConfig,
 } from './tests/support.js'
 
-// Acceptance tests for P2-04 AC-6 (spec P2-04-cloudflare-waf, Interface `drift`): after `apply`, a dashboard edit of a
-// Nymbal rule (`fake.edit`) is one difference at `<phase>/<ref>/<field>` carrying the configured and the live value; a
-// deleted Nymbal rule is a difference whose `actual` is undefined; an extra `nymbal:` rule is a difference; a rule of
-// the owner's never counts. Kills: a dashboard edit that goes unseen, and the owner's own rules reported as drift.
+// AC-6: after `apply`, a dashboard edit of a Nymbal rule (`fake.edit`) is one difference at `<phase>/<ref>/<field>`
+// carrying the configured and the live value; a deleted Nymbal rule is a difference whose `actual` is undefined; an
+// extra `nymbal:` rule is a difference; a rule of the owner's never counts.
 
 let fake: FakeCloudflare
 
@@ -68,7 +67,7 @@ const desiredGeo = (config: SpecSecurityConfig): CfRule =>
     (r) => r.ref === GEO,
   )!
 
-describe('P2-04 AC-6: drift', () => {
+describe('AC-6: drift', () => {
   it("AC-6 (a): a dashboard edit of the geo rule's expression is drift with one difference at http_request_firewall_custom/nymbal:geo:block/expression, configured and actual the two expressions", async () => {
     const { zoneId, adapter, config } = await applied()
     const edited = '(ip.src.country in {"FR"})'
@@ -87,7 +86,7 @@ describe('P2-04 AC-6: drift', () => {
 
   it('AC-6 (a): over every live Nymbal rule, an edited expression is exactly one difference at that rule; editing it back is no drift', async () => {
     const { zoneId, adapter, config } = await applied()
-    // P2-19 AC-8: the fragment cache rule's phase is among them.
+    // The fragment cache rule's phase is among them.
     const phases: Phase[] = [
       'http_ratelimit',
       CUSTOM,
@@ -102,7 +101,7 @@ describe('P2-04 AC-6: drift', () => {
     await fc.assert(
       fc.asyncProperty(fc.constantFrom(...live), async ({ phase, rule }) => {
         const ref = String(rule.ref)
-        fake.edit(zoneId, phase, ref, { expression: '(http.host eq "p2-04.example")' })
+        fake.edit(zoneId, phase, ref, { expression: '(http.host eq "cf.example")' })
         const report = await adapter.drift(config)
         expect(report.differences.map((d) => d.path)).toEqual([`${phase}/${ref}/expression`])
         expect(report.differences[0]!.actual).not.toEqual(report.differences[0]!.configured)
@@ -129,7 +128,7 @@ describe('P2-04 AC-6: drift', () => {
   it('AC-6 (b): an extra nymbal: rule on the zone is one difference for that rule', async () => {
     const { zoneId, adapter, config } = await applied()
     fake.add(zoneId, CUSTOM, {
-      ref: 'nymbal:custom:p2-04-stale',
+      ref: 'nymbal:custom:cf-stale',
       description: 'nymbal: stale',
       expression: '(http.request.uri.path eq "/stale")',
       action: 'block',
@@ -138,7 +137,7 @@ describe('P2-04 AC-6: drift', () => {
     const report = await adapter.drift(config)
     expect(report.drift).toBe(true)
     expect(
-      report.differences.map((d) => d.path.startsWith(`${CUSTOM}/nymbal:custom:p2-04-stale`)),
+      report.differences.map((d) => d.path.startsWith(`${CUSTOM}/nymbal:custom:cf-stale`)),
     ).toEqual([true])
   })
 
@@ -159,9 +158,9 @@ describe('P2-04 AC-6: drift', () => {
   })
 })
 
-// Diff review M2: a dashboard reorder that moves a Nymbal rule above one of the owner's is drift at that rule's
-// `position`, and apply puts the owner's rules first again with one PUT, after which apply writes nothing.
-// Kills: a diff by ref alone, which sees no change in a reorder.
+// A dashboard reorder that moves a Nymbal rule above one of the owner's is drift at that rule's `position`, and apply
+// puts the owner's rules first again with one PUT, after which apply writes nothing. A diff by ref alone would see no
+// change in a reorder.
 describe('drift and apply see a dashboard reorder', () => {
   it("a Nymbal rule moved above an owner rule is one difference at its position; apply restores the owner's rules first with one PUT, and a second apply writes nothing", async () => {
     const { zoneId, adapter, config } = await applied()

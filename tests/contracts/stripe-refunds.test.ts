@@ -7,11 +7,10 @@ import { createStripePaymentsAdapter } from '@nymbalhq/adapter-stripe'
 import { createLogger } from '@nymbalhq/platform'
 import { PaymentError, type PaymentsAdapter } from '@nymbalhq/types'
 
-// P1-13 AC-4 (decision 4, B2) for the Stripe adapter, through the real stripe-node client against an in-process mock of
-// POST /v1/refunds. The idempotency key the service passes (the refund row's id) reaches Stripe as the Idempotency-Key
-// request header, so a retry of one row cannot refund twice; a definite refusal (a card error, an invalid request) is
-// `refund_rejected`; an outcome the shop cannot know (an API error, a refused connection) is `refund_unknown`. Kills: no
-// idempotency key sent, and every failure wrapped as one code, so a timeout settles as failed and is refunded again.
+// AC-4 for the Stripe adapter, through the real stripe-node client against an in-process mock of POST /v1/refunds. The
+// idempotency key the service passes (the refund row's id) reaches Stripe as the Idempotency-Key request header, so a
+// retry of one row cannot refund twice; a definite refusal (a card error, an invalid request) is `refund_rejected`; an
+// outcome the shop cannot know (an API error, a refused connection) is `refund_unknown`.
 
 const SECRET_KEY = 'sk_test_mock'
 const WEBHOOK_SECRET = 'whsec_test_mock'
@@ -124,7 +123,8 @@ function adapter(on = port): PaymentsAdapter {
 async function codeOf(call: Promise<unknown>): Promise<string | null> {
   return call.then(
     () => null,
-    (err: unknown) => (err instanceof PaymentError ? err.code : `not a PaymentError: ${String(err)}`),
+    (err: unknown) =>
+      err instanceof PaymentError ? err.code : `not a PaymentError: ${String(err)}`,
   )
 }
 
@@ -135,7 +135,9 @@ describe('Stripe adapter refunds (AC-4)', () => {
     const rowA = randomUUID()
     const rowB = randomUUID()
 
-    const first = await stripe.refund(intent, 700, 'requested_by_customer', { idempotencyKey: rowA })
+    const first = await stripe.refund(intent, 700, 'requested_by_customer', {
+      idempotencyKey: rowA,
+    })
     await stripe.refund(intent, 700, 'requested_by_customer', { idempotencyKey: rowA })
     await stripe.refund(intent, 300, 'requested_by_customer', { idempotencyKey: rowB })
 

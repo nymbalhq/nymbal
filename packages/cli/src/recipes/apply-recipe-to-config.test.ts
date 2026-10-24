@@ -17,21 +17,15 @@ import type {
   SpecRecipeValue as RecipeValue,
 } from './fixtures/linked-project.js'
 
-// Acceptance tests for P2-03 AC-2 (spec P2-03-nymbal-add-recipe, decision 4): applyRecipeToConfig on the config the
-// exported scaffold(dir, answers) writes for generated answers, varied with extra keys, comments, reordered properties,
-// a plain-object default export and an `env` import already in use, each with LF, CRLF and mixed line endings. For
-// every recipe the edit leaves every line outside the edited properties in place (line endings included), sets exactly
-// the recipe's paths (the loaded result is the loaded original with those paths changed), is idempotent, imports `env`
-// only when an env() call is written, and loads through loadConfig. A path holding a value that is neither the
-// scaffold default nor the recipe's is a conflict, and `force` writes the recipe's value; a config that is not an
-// object literal, or that binds `env` to something else, is refused by a recipe that writes env().
-// Kills: an edit that loses user content, duplicates on re-run, breaks the import, or overwrites a user's choice.
+// AC-2: applyRecipeToConfig on generated scaffold configs (extra keys, comments, reordered properties, LF, CRLF and
+// mixed line endings) sets exactly the recipe's paths, keeps every other line, is idempotent, imports `env` only when
+// needed, reports a user's value as a conflict unless forced, and refuses a config it cannot edit safely.
 
 type Answers = Parameters<typeof scaffold>[1]
 type Applied = ReturnType<typeof applyRecipeToConfig>
 
 const SCAFFOLD_DEFAULTS = ['sqlite', 'in-memory', 'in-process', 'local-fs', 'native']
-const STORE_NAME_VAR = 'P2_03_STORE_NAME'
+const STORE_NAME_VAR = 'RECIPES_STORE_NAME'
 
 const dirs: string[] = []
 const recipes: Recipe[] = []
@@ -41,7 +35,7 @@ beforeAll(async () => {
   const project = linkedProject('apply')
   dirs.push(project)
   for (const name of RECIPE_NAMES) recipes.push(await readRecipe(name, project))
-  // Every env() the recipes write is set while their results load, as decision 6's placeholders are.
+  // Every env() the recipes write is set while their results load, as the scaffold's placeholders are.
   const written = [...new Set(envNames(...recipes))]
   for (const name of [...written, STORE_NAME_VAR]) savedEnv.set(name, process.env[name])
   for (const name of written) process.env[name] = placeholder(name)
@@ -56,7 +50,7 @@ afterAll(() => {
   removeAll(dirs)
 })
 
-const placeholder = (name: string): string => `p2-03-placeholder-${name}`
+const placeholder = (name: string): string => `recipes-placeholder-${name}`
 
 function isEnvRef(v: unknown): v is { env: string; default?: string } {
   return typeof v === 'object' && v !== null && typeof (v as { env?: unknown }).env === 'string'
@@ -113,11 +107,11 @@ const answersArb: fc.Arbitrary<Answers> = fc.record({
   seedDemo: fc.boolean(),
 })
 
-/** A recipe that writes one env() call, as no shipped recipe does since P3-07: what the `binds env` guard refuses. */
+/** A recipe that writes one env() call, as no shipped recipe does: what the `binds env` guard refuses. */
 const envWriterArb: fc.Arbitrary<Recipe> = fc
   .record({
     name: fc.stringMatching(/^generated-[a-z]{1,8}$/),
-    envName: fc.stringMatching(/^P3_07_[A-Z][A-Z0-9_]{0,10}$/),
+    envName: fc.stringMatching(/^SETTINGS_[A-Z][A-Z0-9_]{0,10}$/),
     fallback: fc.option(fc.stringMatching(/^[a-z][a-z0-9-]{0,11}$/), { nil: undefined }),
     at: fc.constantFrom('infrastructure.redis', 'commerce.email', 'commerce.payments'),
   })
@@ -227,7 +221,9 @@ function vary(source: string, v: Variation): string {
     )
   }
   if (v.extraTopLevel)
-    blocks.push("  // not a schema key: the schema strips it\n  meta: {\n    owner: 'p2-03',\n  },")
+    blocks.push(
+      "  // not a schema key: the schema strips it\n  meta: {\n    owner: 'recipes',\n  },",
+    )
   blocks = permute(blocks, v.order.slice(3)).map((b) => [...comment('  '), b].join('\n'))
   const header = v.headerComment ? '/* the shop config, kept by hand */\n' : ''
   return v.plainObject
@@ -346,7 +342,7 @@ function sourceOf(result: Applied, label: string): { source: string; changed: st
   return result
 }
 
-describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => {
+describe('AC-2: applyRecipeToConfig on generated scaffold configs', () => {
   it('AC-2: for every recipe and line ending the edit keeps every other line, sets exactly the set paths, is idempotent, imports env only when it writes env(), and loads', async () => {
     await fc.assert(
       fc.asyncProperty(answersArb, variationArb, async (answers, variation) => {
@@ -499,9 +495,9 @@ describe('P2-03 AC-2: applyRecipeToConfig on generated scaffold configs', () => 
       plain.replace(head, `${head}import env from './env'\n`),
       plain.replace(head, `${head}const env = (name: string) => process.env[name] ?? ''\n`),
     ]
-    // P3-07 Decision 1: no shipped recipe writes env() any more (Stripe's declared fields left `set`), so the guard is
-    // exercised by generated recipes that do, at slot and infrastructure paths the scaffold leaves at their defaults,
-    // with and without a default.
+    // No shipped recipe writes env() (Stripe's declared fields are settings), so the guard is exercised by generated
+    // recipes that do, at slot and infrastructure paths the scaffold leaves at their defaults, with and without a
+    // default.
     fc.assert(
       fc.property(envWriterArb, (recipe) => {
         expect(envNames(recipe).length).toBeGreaterThan(0)

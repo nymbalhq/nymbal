@@ -1,7 +1,7 @@
 import { createDatabase, postgresServerUrl } from '../support/postgres.js'
 import { moneyMigrationSuite } from '../support/suites/money-migration.js'
 
-// P1-13 AC-8 on Postgres, a fresh database per test. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
+// AC-8 on Postgres, a fresh database per test. Refuses to load without NYMBAL_TEST_POSTGRES_URL.
 
 const serverUrl = postgresServerUrl()
 

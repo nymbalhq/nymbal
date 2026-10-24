@@ -2,7 +2,7 @@
 # kind: injected
 # defect: withIdempotency no longer skips an event it has already processed
 # where: packages/platform/src/handlers/idempotency.ts:16-22
-# killed-by: packages/platform/tests/integration/idempotency-restart.test.ts (P1-03 AC-7)
+# killed-by: packages/platform/tests/integration/idempotency-restart.test.ts (AC-7)
 # suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/idempotency-restart.test.ts
 diff --git a/packages/platform/src/handlers/idempotency.ts b/packages/platform/src/handlers/idempotency.ts
 --- a/packages/platform/src/handlers/idempotency.ts

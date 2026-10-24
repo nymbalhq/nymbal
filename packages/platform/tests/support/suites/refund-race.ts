@@ -7,11 +7,10 @@ import { checkoutOf, createKernel, seedVariant, type Kernel } from '../kernel.js
 import { adminClient, storedMoney, storedRefunds, sumOf, type AdminClient } from '../money.js'
 import { openRaw, type RawReader } from '../raw.js'
 
-// P1-13 AC-5 on one dialect: two admin refunds of one order, sent together, that between them ask for more than was
+// AC-5 on one dialect: two admin refunds of one order, sent together, that between them ask for more than was
 // captured. The first to reach the provider is held there until the other request has answered (or has reached the
-// provider too, when nothing serialises them), so both requests are in flight across step 1 at once. Kills: the
-// order's row lock (`OrderRepository.lock`: Postgres FOR UPDATE, SQLite BEGIN IMMEDIATE) missing, so both read the same
-// refundable and both refunds succeed.
+// provider too, when nothing serialises them), so both requests are in flight at once. The order's row lock
+// (`OrderRepository.lock`: Postgres FOR UPDATE, SQLite BEGIN IMMEDIATE) keeps one of them out.
 
 type RefundImpl = (...args: unknown[]) => Promise<Refund>
 
@@ -30,7 +29,7 @@ export function refundRaceSuite(
   /** A fresh, empty database: its target and how to drop it afterwards. */
   fresh: () => Promise<{ target: string; drop(): Promise<void> }>,
 ): void {
-  describe(`P1-13 AC-5: concurrent refunds (${dialect})`, () => {
+  describe(`AC-5: concurrent refunds (${dialect})`, () => {
     let db: { target: string; drop(): Promise<void> }
     let served: ServedKernel
     let k: Kernel
@@ -63,7 +62,7 @@ export function refundRaceSuite(
       await fc.assert(
         fc.asyncProperty(race, async ({ priceMinor, qty, pa, pb }) => {
           const seeded = await seedVariant(k, qty + 1, { priceMinor })
-          const order = await checkoutOf(k, seeded, qty, `race-${randomUUID()}@p1-13.test`)
+          const order = await checkoutOf(k, seeded, qty, `race-${randomUUID()}@money.test`)
           expect(order.orderStatus).toBe('confirmed')
           const captured = order.totalMinor
           expect(captured).toBe(priceMinor * qty)

@@ -6,10 +6,8 @@ import { openRaw, type RawReader } from '../support/raw.js'
 import { CSRF_COOKIE, CSRF_HEADER, primedShopper } from '../support/security.js'
 import { deliverCapture, orderStatus } from '../support/webhooks.js'
 
-// P1-06 AC-2, AC-3 and AC-4 on a served kernel (SQLite): the double-submit check holds on platform routes, the Stripe
-// webhook's `csrf: false` is honoured, and `GET /api/csrf` hands out the cookie's token. Kills: a comparison that
-// accepts any header, routes attached to an unguarded adapter, a guard that ignores `RouteOptions.csrf`, a token
-// endpoint whose body and cookie disagree or that mints a new token per call.
+// AC-2, AC-3 and AC-4 on a served kernel (SQLite): the double-submit check holds on platform routes, the Stripe
+// webhook's `csrf: false` is honoured, and `GET /api/csrf` hands out the cookie's token.
 
 /** One character changed, same length: a guard comparing lengths only, or presence only, lets it through. */
 function oneCharOff(token: string): string {

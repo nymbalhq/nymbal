@@ -2,13 +2,11 @@ import { storeCapabilities } from '../support/capabilities'
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// Acceptance tests for P2-09 AC-8 (spec P2-09-dev-stage, decision 6; P2-05 `search-bar-absent`): on the no-search
-// store (tests/e2e/fixtures/no-search, search `custom` with no capability), run as the astro-nosearch and
-// nextjs-nosearch targets, GET /api/capabilities reports search without `search`, and the header renders no
-// `search-input` on the home page, /products and a product page, while each page renders (the product's name shows)
-// and no console message mentions search. The fixtures' autoFailOnErrors fails any page error besides.
+// AC-8: on the no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability), run as the
+// astro-nosearch and nextjs-nosearch targets, GET /api/capabilities reports search without `search`, and the header
+// renders no `search-input` on the home page, /products and a product page, while each page renders (the product's
+// name shows) and no console message mentions search. The fixtures' autoFailOnErrors fails any page error besides.
 // Tagged @nosearch: only those targets run it, and they run nothing else.
-// Kills: a header that renders the bar whatever the store reports, and a no-search branch that crashes a page.
 
 interface Listed {
   data: { items: Array<{ slug: string; name: string }> }

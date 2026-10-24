@@ -3,11 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { KNOWN_PROVIDERS, nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
 import { storefrontEnv } from './dev.js'
 
-// P2-05 decision 3 (replacing P1-07 AC-6's payments branch): the storefront learns how to take a payment from GET
-// /api/capabilities, so the environment `nymbal dev` starts it with says nothing about the payments provider. Over
-// every payments provider the config accepts (custom included), the storefront environment is the same, carries the
-// API URL and the port, and holds no `*_PAYMENTS_PROVIDER` or `*_STRIPE_*` variable the base environment did not.
-// Kills: the vendor branch surviving in the CLI (a template told `native-stub` keeps its stub branch).
+// The storefront learns how to take a payment from GET /api/capabilities, so the environment `nymbal dev` starts it
+// with is the same for every payments provider and names none.
 
 const API_URL = 'http://localhost:3001'
 const VENDOR_VARIABLE = /(_PAYMENTS_PROVIDER$|_STRIPE_)/

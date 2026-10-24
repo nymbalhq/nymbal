@@ -17,10 +17,10 @@ const WEBHOOK_SECRET = 'whsec_test_mock'
  * what stripe-node sends) and the mock honours the amount/currency the
  * adapter sent — nothing the contract asserts is hardcoded here.
  *
- * P2-13 decision 4 (spec P2-13-contract-tests-public, Fable spec B3): refunds behave as Stripe's do, so the payments
- * contract's idempotency case can see a double refund. A POST with an Idempotency-Key it has answered before gets that
- * answer again and moves nothing; a refund needs a succeeded intent and never exceeds what is left of the amount
- * received, else it is an invalid request (which the adapter reports as refund_rejected).
+ * Refunds behave as Stripe's do, so the payments contract's idempotency case can see a double refund. A POST with an
+ * Idempotency-Key it has answered before gets that answer again and moves nothing; a refund needs a succeeded intent
+ * and never exceeds what is left of the amount received, else it is an invalid request (which the adapter reports as
+ * refund_rejected).
  */
 
 /** Stripe wire shape (provider boundary), not a Nymbal domain type. */
@@ -256,7 +256,7 @@ function buildAdapter() {
   })
 }
 
-// P2-13 AC-4 and AC-5: the refund idempotency case against the mock's replay, parsing one signed webhook twice, and the
+// AC-4 and AC-5: the refund idempotency case against the mock's replay, parsing one signed webhook twice, and the
 // downtime cases on a port nobody listens on.
 runPaymentsContract('stripe', buildAdapter, {
   unreachable: () =>
@@ -272,14 +272,14 @@ runPaymentsContract('stripe', buildAdapter, {
     }),
   signedWebhook: () => {
     const rawBody = JSON.stringify({
-      id: 'evt_contract_p2_13',
+      id: 'evt_contract_contracts',
       object: 'event',
       api_version: '2025-02-24.acacia',
       created: Math.floor(Date.now() / 1000),
       type: 'payment_intent.succeeded',
       data: {
         object: {
-          id: 'pi_webhook_p2_13',
+          id: 'pi_webhook_contracts',
           object: 'payment_intent',
           amount: 1234,
           amount_received: 1234,

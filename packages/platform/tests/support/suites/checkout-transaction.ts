@@ -13,8 +13,8 @@ import { address, checkoutOf, seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 import { lineFor } from '../replica.js'
 
-// P1-02 AC-6, AC-10 and AC-11 on one dialect: finalize's inner service calls join its transaction, beginCheckout
-// does its database work in one transaction, and finalize finds its order by payment intent through an index.
+// AC-6, AC-10 and AC-11 on one dialect: finalize's inner service calls join its transaction, beginCheckout does its
+// database work in one transaction, and finalize finds its order by payment intent through an index.
 
 type WithVariant = NymbalEvent<{ variantId: string }>
 type Paid = NymbalEvent<{ orderId: string }>
@@ -109,7 +109,7 @@ export function checkoutTransactionSuite(
       const cart = await k.services.cart.getOrCreate()
       await k.services.cart.addItem(cart.token, lineFor(first, 1))
       await k.services.cart.addItem(cart.token, lineFor(second, 1))
-      const email = `refused-${randomUUID()}@p1-02.test`
+      const email = `refused-${randomUUID()}@txn.test`
 
       await expect(
         checkout.beginCheckout({
@@ -146,7 +146,7 @@ export function checkoutTransactionSuite(
             await k.services.order.createFromCheckout({
               orderId: uuidv7(),
               customerId: null,
-              email: `filler-${i}@p1-02.test`,
+              email: `filler-${i}@txn.test`,
               billingAddress: address,
               shippingAddress: address,
               lineItems: [],

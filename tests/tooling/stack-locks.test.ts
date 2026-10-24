@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P2-14 AC-7 (review round 1, Decision 10): the quiet lock. A timing step holds the exclusive
-// hold, and every CPU-heavy gate step a shared one, across the worktrees of one repository. Each holder here is a
-// child process in a linked worktree of a throwaway repository, so that the holds are what two gates would take.
+// AC-7: the quiet lock. A timing step holds the exclusive hold, and every CPU-heavy gate step a shared one, across the
+// worktrees of one repository. Each holder here is a child process in a linked worktree of a throwaway repository, so
+// that the holds are what two gates would take.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')

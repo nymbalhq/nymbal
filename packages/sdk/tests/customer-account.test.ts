@@ -7,8 +7,8 @@ import { startTestStore, type TestStore } from '../../proof-kit/dist/store.js'
 import { finaliseStubPayment } from '../../proof-kit/dist/payments.js'
 import { createNymbalClient, type NymbalClient } from '../src/index.js'
 
-// P1-09 acceptance (AC-1, AC-2): the SDK's account calls against a running API. Each client is one shopper: its own
-// token manager (memory), its own cart token, signed in through the SDK's own register.
+// AC-1 and AC-2: the SDK's account calls against a running API. Each client is one shopper: its own token manager
+// (memory), its own cart token, signed in through the SDK's own register.
 
 let store: TestStore
 const clients: NymbalClient[] = []
@@ -36,7 +36,7 @@ async function signedInShopper(firstName: string): Promise<Shopper> {
     getCartToken: () => cartToken,
   })
   clients.push(client)
-  const email = `p1-09-${randomUUID()}@sdk.test`
+  const email = `account-${randomUUID()}@sdk.test`
   await client.auth.register({
     email,
     password: 'correct-horse-battery',
@@ -108,7 +108,7 @@ describe('AC-2: SDK customer orders against a running API', () => {
     const other = await signedInShopper('Other')
     const tag = randomUUID()
     const product = await store.app.services.product.create({
-      slug: `p1-09-${tag}`,
+      slug: `account-${tag}`,
       name: 'Account Widget',
       description: '',
       status: 'active',

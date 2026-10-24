@@ -13,8 +13,8 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
-// Acceptance test for P0-04 AC-5: `nymbal --version` equals the version in packages/cli/package.json. It runs the
-// built bin (run `pnpm build` first), from a directory unrelated to the repository so cwd cannot supply a version.
+// AC-5: `nymbal --version` equals the version in packages/cli/package.json. It runs the built bin (run `pnpm build`
+// first), from a directory unrelated to the repository so cwd cannot supply a version.
 
 const CLI_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const BIN = resolve(CLI_ROOT, 'bin', 'nymbal.mjs')

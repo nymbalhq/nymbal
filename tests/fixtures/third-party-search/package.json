@@ -1,7 +1,7 @@
 {
   "name": "@acme/nymbal-search",
   "version": "1.0.0",
-  "description": "P2-13 fixture: a third-party Nymbal search adapter, certified by `nymbal test:contracts --package`",
+  "description": "Test fixture: a third-party Nymbal search adapter, certified by `nymbal test:contracts --package`",
   "license": "MIT",
   "type": "module",
   "main": "./index.js",

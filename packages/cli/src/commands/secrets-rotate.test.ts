@@ -23,13 +23,9 @@ import {
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
 
-// P3-07 AC-7 (spec P3-07-secrets-settings, Decision 9): `nymbal secrets rotate`, spawned from the built CLI
-// (`pnpm build` first) in a project whose settings rows were saved through the admin API under OLD. Property over n
-// rows (a generated subset of the declared secrets of a Stripe and Anthropic store, with or without plain rows): with
-// NYMBAL_SECRETS_KEY_OLD=OLD and NYMBAL_SECRETS_KEY=NEW it exits 0, every secret row decrypts under NEW to the value
-// saved and carries NEW's key_id (and no longer decrypts under OLD), plain rows are untouched, no row is lost or added,
-// and the output carries no value. With one row that fails under OLD it exits 2 and no row changes.
-// Kills: a partial rotation; rows left under the old key.
+// AC-7: `nymbal secrets rotate` with NYMBAL_SECRETS_KEY_OLD and NYMBAL_SECRETS_KEY re-encrypts every secret row under
+// the new key and leaves plain rows untouched; one row that fails under the old key exits 2 and changes nothing.
+// Spawns the built CLI (`pnpm build` first).
 
 const COMMERCE = { payments: { provider: 'stripe' }, ai: { provider: 'anthropic' } }
 const SECRET_FIELDS = [
@@ -38,7 +34,7 @@ const SECRET_FIELDS = [
   ['ai', 'apiKey'],
 ] as const
 const PLAIN_FIELDS = [
-  ['payments', 'publishableKey', 'pk_test_p3_07_rotate'],
+  ['payments', 'publishableKey', 'pk_test_settings_rotate'],
   ['ai', 'baseUrl', 'http://127.0.0.1:9'],
 ] as const
 
@@ -46,7 +42,7 @@ const aad = (slot: string, path: string): string => `${slot}:${path}`
 
 /** A project whose nymbal.config.ts is the store's config, on a SQLite file of its own. */
 function project(run: ReturnType<typeof cleanups>): { dir: string; db: string } {
-  const dir = mkdtempSync(join(tmpdir(), 'p3-07-rotate-'))
+  const dir = mkdtempSync(join(tmpdir(), 'settings-rotate-'))
   run.add(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
@@ -69,7 +65,7 @@ const rotate = (dir: string, db: string, oldKey: string, newKey: string) =>
     }),
   })
 
-describe('P3-07 AC-7: rotation is all or nothing', () => {
+describe('AC-7: rotation is all or nothing', () => {
   it('AC-7: over n rows, rotate with OLD and NEW set exits 0 and leaves every secret row under NEW with its value, plain rows untouched', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -145,7 +141,7 @@ describe('P3-07 AC-7: rotation is all or nothing', () => {
       await saveSettings(
         { dialect: 'sqlite', target: db, config: settingsConfig('sqlite', COMMERCE) },
         SECRET_FIELDS.map(
-          ([slot, path], i) => [slot, path, `p3-07-rotate-${i}-${Date.now()}`] as const,
+          ([slot, path], i) => [slot, path, `settings-rotate-${i}-${Date.now()}`] as const,
         ),
       )
       const raw = openReader('sqlite', db)

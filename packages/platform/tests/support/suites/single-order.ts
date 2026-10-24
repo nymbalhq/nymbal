@@ -9,12 +9,12 @@ import { address, seedVariant, type Kernel, type Seeded } from '../kernel.js'
 import { openRaw, stockOf, type RawReader } from '../raw.js'
 import { primedShopper } from '../security.js'
 
-// P1-12 AC-3 on one dialect, over HTTP on a kernel from `src/`: one cart makes one order. Two submits racing in the
-// window before the payment intent is set, two racing after it, a resubmit after the first answer, and a changed cart
-// each leave one order for the cart and one set of reservations. The property drives random submits (one at a time
-// and in bursts) and cart changes against one cart: pending orders per cart ≤ 1 and the stock plus what is reserved
-// is the stock at the start. The partial unique index is checked with the lock bypassed: a second pending row for
-// the cart is refused, a cancelled one is not.
+// AC-3 on one dialect, over HTTP on a kernel from `src/`: one cart makes one order. Two submits racing in the window
+// before the payment intent is set, two racing after it, a resubmit after the first answer, and a changed cart each
+// leave one order for the cart and one set of reservations. The property drives random submits (one at a time and in
+// bursts) and cart changes against one cart: pending orders per cart ≤ 1 and the stock plus what is reserved is the
+// stock at the start. The partial unique index is checked with the lock bypassed: a second pending row for the cart
+// is refused, a cancelled one is not.
 
 interface CheckoutAnswer {
   orderId: string
@@ -32,11 +32,11 @@ interface ErrorAnswer {
 
 type Shop = Awaited<ReturnType<typeof primedShopper>>
 
-const pending = (tag: string) => `ac3-${tag}-${randomUUID()}+stub-pending@p1-12.test`
-const paying = (tag: string) => `ac3-${tag}-${randomUUID()}@p1-12.test`
+const pending = (tag: string) => `ac3-${tag}-${randomUUID()}+stub-pending@checkout.test`
+const paying = (tag: string) => `ac3-${tag}-${randomUUID()}@checkout.test`
 
 export function singleOrderSuite(dialect: Kernel['dialect'], start: () => Promise<Kernel>): void {
-  describe(`P1-12 AC-3: one order per cart (${dialect})`, () => {
+  describe(`AC-3: one order per cart (${dialect})`, () => {
     let k: Kernel
     let served: ServedKernel
     let raw: RawReader

@@ -4,9 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 
-// P1-14 AC-1: the adapter ends its open streams when it stops. Kills: a `stop()` that waits on an open stream or on
-// its keep-alive socket; a stream ended by aborting the socket; a close callback that runs twice (once from the
-// server's end, once from the client's late socket close); a stream opened during shutdown that holds `close()` again.
+// AC-1: the adapter ends its open streams when it stops, without aborting sockets, running a close callback twice, or
+// letting a stream opened during shutdown hold `close()`.
 
 const logger = {
   trace() {},
@@ -160,7 +159,7 @@ function lateStream(port: number, agent: Agent): Promise<LateOutcome> {
   })
 }
 
-describe('P1-14 FastifyHttpAdapter.stop() with open streams', () => {
+describe('FastifyHttpAdapter.stop() with open streams', () => {
   it('AC-1: with a keep-alive client holding a stream open, stop() resolves within 1 s, the response ends cleanly and onClose runs exactly once, also after the client socket closes late', async () => {
     const { adapter, port, closes } = await startAdapter()
     const agent = keepAliveAgent()

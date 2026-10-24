@@ -3,18 +3,17 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, type Manifest } from './workspace-manifests'
 
-// Acceptance tests for P2-01 AC-6: the kernel's manifest holds no provider SDK and peers the three adapter packages as
-// optional; the stack lists no adapter package; each adapter package peers its own SDK, depends on @nymbalhq/types and
-// never on the kernel, and versions with the fixed group; no kernel source file imports a provider SDK. Kills: an SDK
-// creeping back into the kernel, an adapter package depending on the kernel (a cycle), and the stack pulling SDKs in.
-// PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the three as well.
+// AC-6: the kernel's manifest holds no provider SDK and peers the three adapter packages as optional; the stack lists
+// no adapter package; each adapter package peers its own SDK, depends on @nymbalhq/types and never on the kernel, and
+// versions with the fixed group; no kernel source file imports a provider SDK. PUBLISHED_DIRS
+// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the three as well.
 
 interface PackageManifest extends Manifest {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
   optionalDependencies?: Record<string, string>
 }
 
-/** Decision 3: each adapter package, its directory and the SDK range it peers. */
+/** Each adapter package, its directory and the SDK range it peers. */
 const ADAPTERS = [
   {
     dir: 'packages/adapter-stripe',
@@ -82,7 +81,7 @@ function specifiers(source: string): string[] {
 const isSdk = (spec: string): boolean =>
   SDKS.some((sdk) => spec === sdk || spec.startsWith(`${sdk}/`))
 
-describe('P2-01 AC-6: provider SDKs live in adapter packages, never in the kernel', () => {
+describe('AC-6: provider SDKs live in adapter packages, never in the kernel', () => {
   it("AC-6: neither the kernel's nor the stack's install pulls a provider SDK or an adapter package in", () => {
     const platform = read('packages/platform')
     const stack = read('packages/stack')
@@ -144,16 +143,14 @@ describe('P2-01 AC-6: provider SDKs live in adapter packages, never in the kerne
   })
 })
 
-// Acceptance tests for P2-04 AC-10 (spec P2-04-cloudflare-waf, Decision 1): @nymbalhq/security-cloudflare publishes as
-// the adapter packages do: in the changesets fixed group at the kernel's version, `dist` and `recipes` in `files` and
-// `./recipes/*` exported, depending on @nymbalhq/types and never on the kernel, with no Cloudflare SDK anywhere (it
-// talks to the API with fetch), and peered by the kernel as optional and linked for the workspace, so the kernel's
-// loader resolves it. Kills: a new package outside the group (P2-02's 2.0.0 slip), its recipe missing from the tarball,
-// and a package the kernel cannot resolve from a project.
+// AC-10: @nymbalhq/security-cloudflare publishes as the adapter packages do: in the changesets fixed group at the
+// kernel's version, `dist` and `recipes` in `files` and `./recipes/*` exported, depending on @nymbalhq/types and never
+// on the kernel, with no Cloudflare SDK anywhere (it talks to the API with fetch), and peered by the kernel as
+// optional and linked for the workspace, so the kernel's loader resolves it.
 
 const SECURITY = { dir: 'packages/security-cloudflare', name: '@nymbalhq/security-cloudflare' }
 
-describe('P2-04 AC-10: @nymbalhq/security-cloudflare publishes like the adapter packages', () => {
+describe('AC-10: @nymbalhq/security-cloudflare publishes like the adapter packages', () => {
   it("AC-10: it is in the fixed group the kernel is in, at the kernel's version", () => {
     const changesets = JSON.parse(
       readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),

@@ -10,13 +10,10 @@ import { diagnose } from '../../src/index.js'
 import { createLogger } from '../../src/logger.js'
 import { kernelConfig, MIGRATIONS_ROOT } from '../support/kernel.js'
 
-// Acceptance test for P2-09 AC-5 (f) (spec P2-09-dev-stage, decision 4; Fable recheck M1), in-process: no primitive
-// can be injected from a config, so the missing-method case is a `custom` commerce slot. diagnose(config, { adapters:
-// { search: <the custom-providers fixture search with healthCheck removed> } }) reports `slot search` degraded with
-// `no healthCheck`, and nothing down; its check names are those of the same config with the healthCheck kept.
-// Kills: a missing healthCheck that crashes diagnose or reads as down, and a check dropped from the list.
-// Fable diff review M1 (decision 4): a healthCheck that throws synchronously is `slot search` down with its message,
-// and one that returns a plain report rather than a promise is read as that report; neither rejects diagnose.
+// AC-5 (f), in-process: no primitive can be injected from a config, so the missing-method case is a `custom` search
+// slot without healthCheck, reported `slot search` degraded with `no healthCheck` and nothing down. A healthCheck that
+// throws synchronously is down with its message, and one that returns a plain report is read as that report; neither
+// rejects diagnose.
 
 const logger = createLogger({ pretty: false, level: 'silent' })
 
@@ -29,7 +26,7 @@ const config: NymbalConfig = {
 } as NymbalConfig
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-09-diagnose-'))
+  dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-diagnose-'))
   const sqlitePath = join(dir, 'store.sqlite')
   const store = createCommandStore(config, { sqlitePath })
   try {
@@ -51,7 +48,7 @@ function searchWithoutHealthCheck() {
   return rest
 }
 
-describe('P2-09 AC-5 (f): a custom slot adapter with no healthCheck', () => {
+describe('AC-5 (f): a custom slot adapter with no healthCheck', () => {
   it('AC-5 (f): `slot search` is degraded with `no healthCheck`, nothing is down, and the check names equal those with the healthCheck kept', async () => {
     const kept = await diagnose(config, {
       adapters: { search: createFixtureSearchAdapter() as never },

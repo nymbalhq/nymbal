@@ -4,9 +4,8 @@ import { routeSchemas } from './schemas.js'
 import type * as SchemasModule from './schemas.js'
 import { createKernel } from '../../tests/support/kernel.js'
 
-// P1-06 AC-13 and AC-14: the schema registry is exactly the set of routes `attachHttp` registers (plain and stream,
-// with the admin routes, registered when an admin root is given), and a route with no entry stops startup. Kills: a route without a schema,
-// a stale entry, stream routes skipped, a missing schema skipped silently.
+// AC-13 and AC-14: the schema registry is exactly the set of routes `attachHttp` registers (plain and stream, with the
+// admin routes, registered when an admin root is given), and a route with no entry stops startup.
 
 /** An adapter that serves nothing and records every `"<METHOD> <path>"` registered on it. */
 function recordingAdapter(): { adapter: HttpAdapter; keys: string[] } {

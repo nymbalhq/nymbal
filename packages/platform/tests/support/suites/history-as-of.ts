@@ -17,18 +17,13 @@ import {
   type HistoryKind,
 } from '../history.js'
 
-// AC-1 (decisions 1-4): state at t from the log equals the read taken at t, on
-// one dialect. A kernel from `src/` served over HTTP; commands from an admin over HTTP, a customer over HTTP, and
-// checkouts and reservation releases through the services. After each command the test reads every subject of the
-// run live (the product through `product.getById`, which `GET /api/admin/products/:idOrSlug` answers; the order and the
-// customer through their admin GETs), records the instant `t` a millisecond after, and starts the next command a
-// millisecond after `t`. Afterwards every recorded `GET <detail>?at=t` answers 200 with `record` equal to the view the
-// live read gave at t: Decision 3's view, computed here, and equal to the kernel's `to<Kind>AsOf` of the same read.
-// Kills: the fold missing an event type or applying one out of seq order; stock taken from the last snapshot rather
-// than `inventory.changed`; `customer.*` with no snapshot; refunds double-counted or overwriting a status the guard
-// keeps; `paymentIntentId` left null after checkout; `created_at` against t with the wrong inclusivity; a capture that
-// lands on a cancelled order (recorded and refunded in full) with its captured or refunded amount missing from the
-// fold, or its refund counted twice.
+// AC-1 on one dialect: state at t from the log equals the read taken at t. A kernel from `src/` served over HTTP;
+// commands from an admin over HTTP, a customer over HTTP, and checkouts and reservation releases through the services.
+// After each command the test reads every subject of the run live (the product through `product.getById`, which
+// `GET /api/admin/products/:idOrSlug` answers; the order and the customer through their admin GETs), records the
+// instant `t` a millisecond after, and starts the next command a millisecond after `t`. Afterwards every recorded
+// `GET <detail>?at=t` answers 200 with `record` equal to the view the live read gave at t, computed here, and equal to
+// the kernel's `to<Kind>AsOf` of the same read.
 
 type Json = Record<string, unknown>
 

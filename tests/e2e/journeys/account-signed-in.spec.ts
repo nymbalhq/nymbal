@@ -4,9 +4,9 @@ import { expect, test } from '../support/fixtures'
 import { adminToken, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
 
-// P1-09 acceptance (AC-5, AC-6, AC-7): a shopper who signs in sees their own account on either storefront, and
-// signing out really signs them out. Both template projects run this file. Selectors are the data-testid contract both
-// templates share (templates/CLAUDE.md); the account navigation is found by its aria-label, which both already carry.
+// AC-5, AC-6 and AC-7: a shopper who signs in sees their own account on either storefront, and signing out really
+// signs them out. Both template projects run this file. Selectors are the data-testid contract both templates share
+// (templates/CLAUDE.md); the account navigation is found by its aria-label, which both carry.
 
 const API = process.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -22,7 +22,7 @@ function newShopper(): Shopper {
   return {
     firstName: `Ada${tag}`,
     lastName: 'Signedin',
-    email: `p1-09-${tag}@e2e.test`,
+    email: `account-${tag}@e2e.test`,
     password: 'TestPassword123!',
   }
 }
@@ -184,10 +184,10 @@ test.describe('Signed-in account', () => {
   })
 })
 
-// P2-15 AC-5 (theming.views-are-elements): register, sign in, the profile and the add-address form are each an
-// element (`nymbal-register-form`, `nymbal-login-form`, `nymbal-profile-form`, `nymbal-address-book`) on both
-// templates. Each control is in its element's shadow root, each action reaches the API (read back with a token of the
-// test's own), and sign-in still lands on `?redirect` as both templates' login does today.
+// AC-5: register, sign in, the profile and the add-address form are each an element (`nymbal-register-form`,
+// `nymbal-login-form`, `nymbal-profile-form`, `nymbal-address-book`) on both templates. Each control is in its
+// element's shadow root, each action reaches the API (read back with a token of the test's own), and sign-in still
+// lands on `?redirect`.
 
 /** Whether `[data-testid=testId]` is inside `<host>`'s shadow root (or one nested in it), not in the light DOM. */
 function inShadowOf(page: Page, host: string, testId: string): Promise<boolean> {

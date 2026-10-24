@@ -6,15 +6,12 @@ import { API_URL, csrf } from '../../support/csrf'
 import { placeOrder, SHIPPING_ADDRESS, signInAsAdmin } from '../../support/admin'
 import { adminToken, type OwnProduct } from '../../support/checkout'
 
-// P3-04 AC-5 (spec P3-04-audit-trail, decisions 5, 7, 8 and 10), journeys audit.retry-applies-once and
-// audit.activity-lists-commands: the admin's own requests, captured as the page sends them. A stock adjust re-sent once
-// with the same headers is answered as a replay and moves stock once. /admin/activity lists the admin's adjust, order
-// cancel and product save newest first, each with the admin's actor, its command, its subjects and the correlation id
-// of its request; the adjust shows one applied and one replayed entry; filters by command, subject and correlation id
-// narrow to those; the export's NDJSON lines equal the activity API's entries and carry no email, address or cart
-// cookie. The stock-history drawer shows the adjustment.
-// Kills: no key sent or none honoured (the re-send applies again); no Activity page; entries missing, out of order or
-// misattributed; an export that leaks PII; the drawer that reads `result.history` and so is always empty (today).
+// AC-5: the admin's own requests, captured as the page sends them. A stock adjust re-sent once with the same headers
+// is answered as a replay and moves stock once. /admin/activity lists the admin's adjust, order cancel and product
+// save newest first, each with the admin's actor, its command, its subjects and the correlation id of its request; the
+// adjust shows one applied and one replayed entry; filters by command, subject and correlation id narrow to those; the
+// export's NDJSON lines equal the activity API's entries and carry no email, address or cart cookie. The stock-history
+// drawer shows the adjustment.
 
 const KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/
@@ -124,7 +121,7 @@ async function draftProduct(
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), ...auth(token) },
     data: {
-      slug: `p3-04-${tag}`,
+      slug: `audit-${tag}`,
       name,
       description: 'A draft product of one activity journey.',
       status: 'draft',
@@ -165,7 +162,7 @@ async function rowIds(page: Page): Promise<string[]> {
   return ids.map((id) => id.slice('activity-row-'.length))
 }
 
-test.describe('P3-04 AC-5: retry and the Activity page', () => {
+test.describe('AC-5: retry and the Activity page', () => {
   test('AC-5 audit.retry-applies-once: the admin’s adjust, re-sent with its own headers, is answered as a replay and moves stock once', async ({
     page,
     request,
@@ -222,7 +219,7 @@ test.describe('P3-04 AC-5: retry and the Activity page', () => {
     const me = await request.get(`${API_URL}/api/admin/me`, { headers: auth(token) })
     const adminId = ((await me.json()) as { data: { userId: string } }).data.userId
     const stocked = await draftProduct(request, token, 10)
-    const email = `e2e-p3-04-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`
+    const email = `e2e-audit-${Date.now()}-${Math.floor(Math.random() * 1e6)}+stub-pending@nymbal.dev`
     const order = await placeOrder(request, email)
     const cartCookies = (await request.storageState()).cookies
       .filter((c) => c.name === 'nymbal.cart')

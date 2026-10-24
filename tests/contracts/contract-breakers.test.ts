@@ -5,20 +5,15 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-// P2-13 AC-3, AC-4 and AC-5 (spec P2-13-contract-tests-public), the half that says the new cases can fail: the
-// published suites run on in-memory adapters with one defect each, beside a correct control with the same options
-// (tests/contracts/fixtures/breakers, a vitest run of its own, read through its JSON report). Each defective adapter
-// fails at least one case, every case it fails is the one its defect is about, and its control passes every case
-// of the same count. Kills: a pagination case that a cursor-ignoring adapter passes; an idempotency case that a
-// double refund passes; a health case that waits on a check that never settles, or skips a primitive without
-// healthCheck; a downtime case that passes on a dependency that still answers (`degraded` is not `down`) or hangs on
-// one that never does. Case names are matched by what they are about: pagination or cursor, idempotency, health,
-// down or unreachable.
-// P3-02 AC-1 (spec P3-02-replay-engine, decision 2) adds the document store suite's replaceCollection cases: an
-// in-memory store whose replaceCollection is not atomic, merges instead of replacing, or empties the collection before
-// a source that then throws, beside the real in-memory store as the control. Each defective store fails only cases
-// named for replaceCollection, among them the one about its defect (a reader during the replace, the exact new set,
-// a failing source). Kills: a suite without replaceCollection cases, or with cases these defects pass.
+// AC-3, AC-4 and AC-5, the half that says the cases can fail: the published suites run on in-memory adapters with one
+// defect each, beside a correct control with the same options (tests/contracts/fixtures/breakers, a vitest run of its
+// own, read through its JSON report). Each defective adapter fails at least one case, every case it fails is the one
+// its defect is about, and its control passes every case of the same count. Case names are matched by what they are
+// about: pagination or cursor, idempotency, health, down or unreachable.
+// The document store suite's replaceCollection cases run the same way: an in-memory store whose replaceCollection is
+// not atomic, merges instead of replacing, or empties the collection before a source that then throws, beside the
+// real in-memory store as the control. Each defective store fails only cases named for replaceCollection, among them
+// the one about its defect (a reader during the replace, the exact new set, a failing source).
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -43,7 +38,7 @@ interface Outcome {
 
 const outcomes = new Map<string, Outcome>()
 let runOutput = ''
-const scratch = mkdtempSync(join(tmpdir(), 'p2-13-breakers-'))
+const scratch = mkdtempSync(join(tmpdir(), 'contracts-breakers-'))
 
 beforeAll(() => {
   const report = join(scratch, 'report.json')
@@ -97,7 +92,7 @@ function compare(broken: string, control: string, about: RegExp) {
   }
 }
 
-describe('P2-13: the published suites fail an adapter with the defect they exist for', () => {
+describe('the published suites fail an adapter with the defect they exist for', () => {
   it('AC-3: a reviews adapter that ignores the cursor fails the pagination case and nothing else; the same adapter honouring it passes every case', () => {
     const run = compare('reviews-cursor-ignored', 'reviews-control', PAGINATION)
 
@@ -153,7 +148,7 @@ describe('P2-13: the published suites fail an adapter with the defect they exist
   })
 })
 
-describe('P3-02: the published document store suite fails a replaceCollection with the defect it exists for', () => {
+describe('the published document store suite fails a replaceCollection with the defect it exists for', () => {
   it('AC-1: a document store whose replaceCollection is not atomic fails the concurrent-reader replaceCollection case, and only replaceCollection cases; the real in-memory store passes every case', () => {
     const run = compare('documents-replace-not-atomic', 'documents-control', REPLACE)
 

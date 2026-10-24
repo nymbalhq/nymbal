@@ -6,13 +6,12 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { postgresServerUrl, queryOnce } from '../../packages/platform/tests/support/postgres'
 import { deleteUnder, keysUnder, redisServerUrl } from '../support/redis'
 
-// Acceptance test for P2-02 AC-7 (spec P2-02-primitives-are-protocols, decision 7), the harness half: the E2E harness
-// (scripts/e2e-server.mjs, tests/e2e/playwright.config.ts) gives each run its own stores, as it gives each run a
-// fresh SQLite file. On the postgres-redis set the API server it starts sees a DATABASE_URL naming a database
-// nymbal_e2e_<stamp> that exists, and NYMBAL_REDIS_PREFIX=e2e-<stamp>; no two runs share either; once the run is over
-// the database is dropped and the prefix's keys are deleted. The API server is a probe (fixtures/api-probe.ts) run
-// under the real wrapper with the API server's environment as the Playwright config builds it.
-// Kills: one run reading another's data, and runs that leave databases and keys behind.
+// AC-7, the harness half: the E2E harness (scripts/e2e-server.mjs, tests/e2e/playwright.config.ts) gives each run its
+// own stores, as it gives each run a fresh SQLite file. On the postgres-redis set the API server it starts sees a
+// DATABASE_URL naming a database nymbal_e2e_<stamp> that exists, and NYMBAL_REDIS_PREFIX=e2e-<stamp>; no two runs
+// share either; once the run is over the database is dropped and the prefix's keys are deleted. The API server is a
+// probe (fixtures/api-probe.ts) run under the real wrapper with the API server's environment as the Playwright config
+// builds it.
 
 const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -34,7 +33,7 @@ const SET_ENV = {
 }
 
 const PICK = ['DATABASE_URL', 'NYMBAL_REDIS_PREFIX', 'REDIS_URL'] as const
-const PRINT = `import(process.env.P2_02_PW_URL).then((m) => {
+const PRINT = `import(process.env.PRIMITIVES_PW_URL).then((m) => {
   const env = {}
   for (const k of ${JSON.stringify(PICK)}) if (process.env[k] !== undefined) env[k] = process.env[k]
   process.stdout.write('\\n' + JSON.stringify({ webServer: m.default.webServer ?? null, env }) + '\\n')
@@ -57,7 +56,7 @@ async function apiServerEnv(): Promise<Record<string, string>> {
     cwd: join(REPO, 'tests/e2e'),
     env: {
       ...baseEnv(),
-      P2_02_PW_URL: pathToFileURL(join(REPO, 'tests/e2e/playwright.config.ts')).href,
+      PRIMITIVES_PW_URL: pathToFileURL(join(REPO, 'tests/e2e/playwright.config.ts')).href,
     },
   })
   const printed = JSON.parse(stdout.trimEnd().split('\n').pop() ?? '{}') as {
@@ -89,9 +88,9 @@ async function runOnce(): Promise<Probe> {
     [join(REPO, 'scripts/e2e-server.mjs'), '--', TSX, PROBE],
     { cwd: REPO, env, timeout: 60_000 },
   )
-  const line = stdout.split('\n').find((l) => l.startsWith('P2-02-PROBE '))
+  const line = stdout.split('\n').find((l) => l.startsWith('API-PROBE '))
   if (line === undefined) throw new Error(`the probe printed nothing:\n${stdout}`)
-  return JSON.parse(line.slice('P2-02-PROBE '.length)) as Probe
+  return JSON.parse(line.slice('API-PROBE '.length)) as Probe
 }
 
 const seen: Probe[] = []
@@ -116,7 +115,7 @@ async function databaseExists(name: string): Promise<boolean> {
   return rows[0]!.n > 0
 }
 
-describe('P2-02 AC-7: each E2E run gets a database and a prefix of its own, gone afterwards', () => {
+describe('AC-7: each E2E run gets a database and a prefix of its own, gone afterwards', () => {
   it('AC-7: two postgres-redis runs: each API server sees its own nymbal_e2e_ database and e2e- prefix, and writes to them; after each run both are gone', async () => {
     const first = await runOnce()
     seen.push(first)

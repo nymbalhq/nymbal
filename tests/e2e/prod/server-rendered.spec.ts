@@ -5,16 +5,14 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { addOneLine, noScript, type ApiCart } from '../support/server-rendered'
 import { formatPrice, optionProduct, type OptionCombination } from '../support/variants'
 
-// P2-18 AC-4 (theming.server-rendered), on production builds of both templates (playwright.prod.config.ts), with
-// JavaScript off: the pages arrive with their Nymbal elements rendered. With a `nymbal.cart` cookie holding one line
-// (added on the PDP with JS on, so the API's Set-Cookie is the jar's), `/cart` lists the line inside
-// `nymbal-cart-page`'s shadow root, `/checkout` shows the contact step and the line in its summary, and the header's
-// `nymbal-mini-cart` shows the line count; `/search?q=wool` lists the API's wool cards inside `nymbal-search-results`;
-// a product page shows the variant selector's options, the quantity selector and add-to-cart; the account login and
-// register pages show their forms. Every assertion reads the parsed DOM (Chrome parses the declarative shadow roots),
-// except the token's: the cart token and `customerId` are in the HTML source of none of `/cart`, `/checkout` and `/`.
-// Kills: an element whose content needs the client render; a server that does not forward the cart cookie (the cart
-// renders empty); a `fetchCart` that passes the API body, token included, into the page.
+// AC-4, on production builds of both templates (playwright.prod.config.ts), with JavaScript off: the pages arrive with
+// their Nymbal elements rendered. With a `nymbal.cart` cookie holding one line (added on the PDP with JS on, so the
+// API's Set-Cookie is the jar's), `/cart` lists the line inside `nymbal-cart-page`'s shadow root, `/checkout` shows the
+// contact step and the line in its summary, and the header's `nymbal-mini-cart` shows the line count;
+// `/search?q=wool` lists the API's wool cards inside `nymbal-search-results`; a product page shows the variant
+// selector's options, the quantity selector and add-to-cart; the account login and register pages show their forms.
+// Every assertion reads the parsed DOM (Chrome parses the declarative shadow roots), except the token's: the cart
+// token and `customerId` are in the HTML source of none of `/cart`, `/checkout` and `/`.
 
 /** Two options of two values; the product page offers each value once. */
 const COMBINATIONS: OptionCombination[] = [
@@ -85,7 +83,7 @@ test.afterEach(async () => {
   for (const context of shoppers.splice(0)) await context.close()
 })
 
-test.describe('P2-18 AC-4: the pages are rendered with JavaScript off', () => {
+test.describe('AC-4: the pages are rendered with JavaScript off', () => {
   test('AC-4: theming.server-rendered: /cart lists the line’s name, quantity and price and the subtotal inside nymbal-cart-page’s shadow root', async ({
     browser,
   }, testInfo) => {
@@ -131,10 +129,10 @@ test.describe('P2-18 AC-4: the pages are rendered with JavaScript off', () => {
     )
   })
 
-  // P2-17 (spec, Tests this task obsoletes): the header is nymbal-site-header with the mini-cart as its light-DOM child.
-  // P2-19 (spec, Tests this task obsoletes; Decision 1): Next's / is cached for every shopper, so its header carries no
-  // count; the count with JS off moves to Next's /cart and /checkout (tests/e2e/prod/next-isr.spec.ts AC-5), and Next's
-  // / gets the no-count check (AC-4). Astro renders every page per request and keeps the count on /.
+  // The header is nymbal-site-header with the mini-cart as its light-DOM child. Next's / is cached for every shopper,
+  // so its header carries no count; the count with JS off is on Next's /cart and /checkout
+  // (tests/e2e/prod/next-isr.spec.ts AC-5), and Next's / gets the no-count check (AC-4). Astro renders every page per
+  // request and keeps the count on /.
   test('AC-4: theming.server-rendered: the header’s nymbal-mini-cart shows the cart’s item count on / (Astro) @astro', async ({
     browser,
   }, testInfo) => {

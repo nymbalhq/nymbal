@@ -3,18 +3,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 import { cards } from '../__fixtures__/server-data.js'
 
-// P2-17 `nymbal-product-grid` (spec Decision 1), beside its settled-store case in server-properties.test.ts.
+// `nymbal-product-grid`, beside its settled-store case in server-properties.test.ts.
 // - AC-2: with `source="product-list"` its `load-more` part shows while the page says there is more (`has-more`, the
 //   page's `nextCursor !== null`, before the store settles; the store's `pagination.hasMore` after), calls
 //   `client.productList.loadMore()` once per click, and hides once the store's cursor is null. A grid without `source`
 //   (home, related) never subscribes to the store: whatever the store does, it shows its attribute.
-// - AC-1 (Invariants): the first four cards of any grid are `eager`, the rest are not, from the attribute and from the
-//   store alike, so the listing's LCP image is never lazy; under `lazy` (a grid below the fold) no card is eager.
-// - The P1-11 store walk, carried over from templates/astro/tests/plp-script.test.ts (whose `renderGrid` this element
-//   replaces): a product named with markup shows its name as text and adds no element.
-// Kills: a load-more that calls twice or not at all, shows when the server said there is no more, or stays after the
-// last page; a static grid that follows the listing's store; the first cards rendered lazy; a grid built from
-// unescaped HTML.
+// - AC-1: the first four cards of any grid are `eager`, the rest are not, from the attribute and from the store
+//   alike, so the listing's LCP image is never lazy; under `lazy` (a grid below the fold) no card is eager.
+// - A product named with markup shows its name as text and adds no element.
 
 const TAG = 'nymbal-product-grid'
 
@@ -70,7 +66,7 @@ const settledList = (products: unknown[], cursor: string | null) => ({
   error: null,
 })
 
-describe('P2-17 AC-2: the grid’s load-more follows the product-list store', () => {
+describe('AC-2: the grid’s load-more follows the product-list store', () => {
   it('AC-2: property: load-more shows exactly when has-more is set before the store settles, then exactly while the store has a cursor; k clicks call loadMore() k times', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -129,7 +125,7 @@ describe('P2-17 AC-2: the grid’s load-more follows the product-list store', ()
   })
 })
 
-describe('P2-17 AC-1: the first four cards of a grid are eager', () => {
+describe('AC-1: the first four cards of a grid are eager', () => {
   it('AC-1: property: card i carries eager exactly when i < 4 and the grid is not lazy, from the products attribute and from the store', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -171,8 +167,8 @@ describe('P2-17 AC-1: the first four cards of a grid are eager', () => {
   })
 })
 
-describe('P2-17: the grid renders product names as text', () => {
-  it('Store walk: after the store settles on a product named with markup, its card shows the name literally and nothing in the grid is an element the name made', async () => {
+describe('the grid renders product names as text', () => {
+  it('after the store settles on a product named with markup, its card shows the name literally and nothing in the grid is an element the name made', async () => {
     const hostile = 'Tag "><img src=x data-p111-xss> <b data-p111-xss>bold</b>'
     const c = client()
     const el = await mount({

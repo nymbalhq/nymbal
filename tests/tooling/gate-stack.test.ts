@@ -21,10 +21,10 @@ import {
 } from '../../scripts/gate'
 import { COMPOSE_PORT_VARS, type ExpectedBlock, expectedBlock, type PortField } from './stack-table'
 
-// Acceptance tests for P2-14 AC-3: a gate:full plan in stack slot k names slot k's compose project and ports. Each plan
-// is rehearsed: every step runs through the gate's own `run`, in a scratch directory where `pnpm`, `docker` and
-// `node_modules/.bin/tsx` are stand-ins that record their arguments and environment. So what is asserted is what each
-// tool would be started with, however the command spells it.
+// AC-3: a gate:full plan in stack slot k names slot k's compose project and ports. Each plan is rehearsed: every step
+// runs through the gate's own `run`, in a scratch directory where `pnpm`, `docker` and `node_modules/.bin/tsx` are
+// stand-ins that record their arguments and environment. So what is asserted is what each tool would be started
+// with, however the command spells it.
 
 const BASE_INPUT: PlanInput = {
   full: true,
@@ -34,7 +34,7 @@ const BASE_INPUT: PlanInput = {
   mutated: ['packages/sdk/src/client.ts'],
 }
 
-/** `PlanInput` with the stack field the spec adds (`PlanInput.stack?: StackBlock`). */
+/** `PlanInput` with the stack field (`PlanInput.stack?: StackBlock`). */
 type StackPlanInput = PlanInput & { stack?: ExpectedBlock }
 
 function fullPlan(extra: Partial<StackPlanInput> = {}): StepSpec[] {

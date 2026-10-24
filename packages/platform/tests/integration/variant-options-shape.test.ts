@@ -14,12 +14,10 @@ import { createLogger } from '../../src/logger.js'
 import { registerProductRoutes } from '../../src/routes/products.js'
 import { createTestEnv } from './setup.js'
 
-// P2-12 AC-5 (the read model): every product reads back from GET /api/products/:slug with `variants[].options` as
-// `VariantOption[]`, whether it was created now with an array or projected from an older row whose variant options
-// are a JSON string. The projection builds from the rows at handle time (P3-02 decision 1), so the older shape is a
-// second product, created alike, whose variant rows are then rewritten to hold the options stringified, and whose own
-// product.created.v1 is delivered again; the two differ only in that shape. Kills: a projection that copies `options`
-// through as `unknown`, leaving a string in the read model for the storefronts to parse.
+// AC-5 (the read model): every product reads back from GET /api/products/:slug with `variants[].options` as
+// `VariantOption[]`, whether it was created with an array or projected from a row whose variant options are a JSON
+// string. The projection builds from the rows at handle time, so the older shape is a second product whose variant
+// rows are rewritten to hold the options stringified and whose own product.created.v1 is delivered again.
 
 type Env = Awaited<ReturnType<typeof createTestEnv>>
 
@@ -74,8 +72,8 @@ beforeAll(async () => {
       rawBody: undefined,
       headers: {},
       cookies: {},
-      requestId: 'p2-12-req',
-      correlationId: 'p2-12-corr',
+      requestId: 'variants-req',
+      correlationId: 'variants-corr',
       logger: {
         trace() {},
         debug() {},
@@ -117,7 +115,7 @@ const arbVariantOptions: fc.Arbitrary<VariantOption[][]> = fc.array(
   { minLength: 1, maxLength: 4 },
 )
 
-describe('P2-12: one option shape in the read model', () => {
+describe('one option shape in the read model', () => {
   it('AC-5: a product created with VariantOption[] and one projected from an older row with JSON-string options both read back from GET /api/products/:slug as VariantOption[]', async () => {
     await fc.assert(
       fc.asyncProperty(arbVariantOptions, async (variantOptions) => {
@@ -139,8 +137,8 @@ describe('P2-12: one option shape in the read model', () => {
           })
         const newSku = (i: number) => `P212-${tag}-${i}`
         const oldSku = (i: number) => `P212-${tag}-old-${i}`
-        const product = await create(`p2-12-new-${tag}`, newSku)
-        const older = await create(`p2-12-old-${tag}`, oldSku)
+        const product = await create(`variants-new-${tag}`, newSku)
+        const older = await create(`variants-old-${tag}`, oldSku)
         await new Promise((r) => setImmediate(r))
 
         // The older product as an older row holds it: every variant's options a JSON string.

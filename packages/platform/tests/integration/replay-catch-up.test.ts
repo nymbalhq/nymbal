@@ -4,13 +4,13 @@ import { join } from 'node:path'
 import { createKernel } from '../support/kernel.js'
 import { replayCatchUpSuite } from '../support/suites/replay-catch-up.js'
 
-// P3-02 AC-3 on a SQLite file (spec P3-02-replay-engine): case (b) and the failure report. The late lower-seq commit
-// is Postgres only (packages/platform/tests/postgres/replay-catch-up.postgres.test.ts).
+// AC-3 on a SQLite file: case (b) and the failure report. The late lower-seq commit is Postgres only
+// (packages/platform/tests/postgres/replay-catch-up.postgres.test.ts).
 
 replayCatchUpSuite(
   'sqlite',
   async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'p3-02-catch-up-'))
+    const dir = mkdtempSync(join(tmpdir(), 'replay-catch-up-'))
     const kernel = await createKernel({ dialect: 'sqlite', sqlitePath: join(dir, 'store.sqlite') })
     return {
       kernel,

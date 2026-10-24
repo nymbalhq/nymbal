@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-11: E2E and scaffold tests reach the store
-// through its own surface. The repository's eslint.config.js reports, as errors, an import of `finaliseStubPayment`
-// or `stubPaymentWebhook` from @nymbalhq/proof-kit (no-restricted-imports) and a string or template literal holding
-// `/api/webhooks/` (no-restricted-syntax) in tests/e2e/** and tests/scaffold/**, and neither in the kernel's tests
-// or the contract suites, which drive the hook on purpose. The fixture is linted at virtual paths, as
-// test-lint-rules.test.ts does; lines marked `lint: <rule>` are where each rule must report, and only there.
+// AC-11: E2E and scaffold tests reach the store through its own surface. The repository's eslint.config.js reports,
+// as errors, an import of `finaliseStubPayment` or `stubPaymentWebhook` from @nymbalhq/proof-kit
+// (no-restricted-imports) and a string or template literal holding `/api/webhooks/` (no-restricted-syntax) in
+// tests/e2e/** and tests/scaffold/**, and neither in the kernel's tests or the contract suites, which drive the hook
+// on purpose. The fixture is linted at virtual paths, as test-lint-rules.test.ts does; lines marked `lint: <rule>`
+// are where each rule must report, and only there.
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('./fixtures/lint/payment-hook.ts.fixture', import.meta.url))

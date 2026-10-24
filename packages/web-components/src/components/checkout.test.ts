@@ -12,19 +12,15 @@ import {
 import type { Address } from '@nymbalhq/types'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-16 AC-2, AC-3 and AC-4: `nymbal-checkout` runs the checkout the templates ran (Decisions 2-4). The SDK under it is
-// the real checkout store over a fake adapter, so `submitPayment()` answers as it does in a store: a result, or null
-// with `error` (and `placedOrderNumber` on a 409 that names an order). Every call the element makes on it, the payment
-// driver double's `confirm`, and each `nymbal:checkout:placed` the document hears go into one log, in order.
+// AC-2, AC-3 and AC-4: `nymbal-checkout` runs the checkout. The SDK under it is the real checkout store over a fake
+// adapter, so `submitPayment()` answers as it does in a store: a result, or null with `error` (and
+// `placedOrderNumber` on a 409 that names an order). Every call the element makes on it, the payment driver double's
+// `confirm`, and each `nymbal:checkout:placed` the document hears go into one log, in order.
 //
 // A frame is one `requestAnimationFrame` callback. As AC-2 says, each step's submits and the click that follows are
 // dispatched after a frame has passed since the step change, and the k rapid submits of one step land within one frame;
 // the stray submits that follow a step change (the second click of a double click, a second Enter) land in that same
-// frame, so only the multi-click rule (Decision 4) stops them.
-//
-// Kills: a double click that skips a step or places twice; billing sent as the shipping address when the shopper
-// entered another; a form stuck after a failure, re-armed after a success, or a second order; a navigation event
-// with no reset before it; place-order enabled while the payment element errors; the payment card remounted per step.
+// frame, so only the multi-click rule stops them.
 
 const CHECKOUT = 'nymbal-checkout'
 const PAYMENT = 'nymbal-payment-element'
@@ -51,7 +47,7 @@ interface Entry {
 type Confirmation = PaymentConfirmation
 type CreateAnswer = () => Promise<unknown>
 
-/** The method both templates fix today (Decision 3), in the cart's currency. */
+/** The shipping method the checkout fixes, in the cart's currency. */
 const FIXED_METHOD = {
   carrier: 'Standard',
   service: 'Standard Shipping',
@@ -101,7 +97,7 @@ function result(n: string, status: 'succeeded' | 'requires_action' | 'failed', r
 
 /** A payment driver of the test's own: it records each mount and confirm, and answers confirm as told. */
 function driverDouble(log: Entry[]) {
-  const name = `p2-16-driver-${++seq}`
+  const name = `checkout-el-driver-${++seq}`
   const mounts: HTMLElement[] = []
   let answer: Confirmation = { ok: true, confirmed: false }
   let mountResult: () => Promise<void> | void = () => undefined
@@ -224,7 +220,7 @@ function byTestId<T extends HTMLElement = HTMLElement>(el: HTMLElement, id: stri
   return found as T
 }
 
-/** The form that holds a step's submit button: each step is its own form (Decision 1). */
+/** The form that holds a step's submit button: each step is its own form. */
 function formOf(button: HTMLElement): HTMLFormElement {
   const form = button.closest('form')
   expect(form, `${button.getAttribute('data-testid')} sits in a form`).not.toBeNull()
@@ -353,7 +349,7 @@ const shopper: fc.Arbitrary<Shopper> = fc.record({
 })
 
 const SHOPPER: Shopper = {
-  email: 'ada@p2-16.test',
+  email: 'ada@checkout-el.test',
   shipping: {
     firstName: 'Ada',
     lastName: 'Lovelace',
@@ -393,7 +389,7 @@ async function walkToPayment(r: Rig, s: Shopper): Promise<void> {
 
 // ─── AC-2 ───────────────────────────────────────────────────────────────────
 
-describe('P2-16 AC-2: the flow calls the SDK once per step, in order', () => {
+describe('AC-2: the flow calls the SDK once per step, in order', () => {
   it('AC-2: property: over generated contacts, addresses and k = 1-5 rapid submits per step (with a double click and a second submit landing on each next step), one setEmail, one setShippingAddress + setShippingMethod, one setBillingAddress + submitPayment, in that order; billing is the shipping address passed with billing-same, else the billing form’s values', async () => {
     await fc.assert(
       fc.asyncProperty(shopper, k, k, k, async (s, kContact, kShipping, kPlace) => {
@@ -520,7 +516,7 @@ const OUTCOMES: Outcome[] = [
 const PLACES = new Set<Outcome>(['succeeded', 'confirmed', 'unconfirmed', 'placed409'])
 const ASKS_DRIVER = new Set<Outcome>(['confirmed', 'unconfirmed', 'declined'])
 
-/** What one place-order press makes, in order, for each outcome (Decision 3). */
+/** What one place-order press makes, in order, for each outcome. */
 const SEQUENCE: Record<Outcome, Logged[]> = {
   succeeded: ['setBillingAddress', 'submitPayment', 'reset', 'placed'],
   confirmed: ['setBillingAddress', 'submitPayment', 'confirm', 'markConfirmed', 'reset', 'placed'],
@@ -547,7 +543,7 @@ function stage(r: Rig, outcome: Outcome, i: number): { orderNumber?: string; mes
       r.answerConfirm({ ok: true, confirmed: false })
       return { orderNumber: n }
     case 'declined': {
-      const message = `Card declined (p2-16 attempt ${i})`
+      const message = `Card declined (checkout-el attempt ${i})`
       r.answerCreate(() => Promise.resolve(result(n, 'requires_action')))
       r.answerConfirm({ ok: false, error: message })
       return { message }
@@ -569,7 +565,7 @@ function stage(r: Rig, outcome: Outcome, i: number): { orderNumber?: string; mes
       return { orderNumber: placed }
     }
     case 'network': {
-      const message = `Failed to fetch (p2-16 attempt ${i})`
+      const message = `Failed to fetch (checkout-el attempt ${i})`
       r.answerCreate(() => Promise.reject(new TypeError(message)))
       return { message }
     }
@@ -581,7 +577,7 @@ const errorText = (el: HTMLElement): string => {
   return found?.textContent ?? ''
 }
 
-describe('P2-16 AC-3: outcomes', () => {
+describe('AC-3: outcomes', () => {
   it('AC-3: property: over outcome sequences, a success or a 409-placed fires exactly one nymbal:checkout:placed with its orderNumber after checkout.reset(), and place-order stays disabled; a failure fires none, shows its message in checkout-error and re-enables place-order; on requires_action confirm gets the response’s clientSecret and { email, billing } before reset and placed', async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -679,7 +675,7 @@ describe('P2-16 AC-3: outcomes', () => {
     await walkToPayment(r, SHOPPER)
     expect(r.pay.status, 'still mounting when the shopper reaches payment').toBe('pending')
 
-    fail(new Error('The card form could not load (p2-16).'))
+    fail(new Error('The card form could not load (checkout-el).'))
     await vi.waitFor(() => expect(r.pay.status).toBe('error'))
     await afterFrame(r.el)
     const button = byTestId<HTMLButtonElement>(r.el, 'place-order')
@@ -694,7 +690,7 @@ describe('P2-16 AC-3: outcomes', () => {
 
 // ─── AC-4 ───────────────────────────────────────────────────────────────────
 
-describe('P2-16 AC-4: the payment element mounts once', () => {
+describe('AC-4: the payment element mounts once', () => {
   it('AC-4: contact → shipping → back to contact → shipping → payment mounts the driver once, and the payment element is the same node, never removed, throughout', async () => {
     const r = await rig()
     const removed: Node[] = []
@@ -745,7 +741,7 @@ describe('P2-16 AC-4: the payment element mounts once', () => {
   })
 })
 
-describe('P2-16 diff review B1: a step change never moves what is under the cursor', () => {
+describe('a step change never moves what is under the cursor', () => {
   // happy-dom lays nothing out, so the main column's height is modelled: the shown step's own height, raised to the
   // column's min-height, as a browser lays out a block. Payment is shorter than shipping, as on a desktop store.
   const STEP_HEIGHT = { contact: 260, shipping: 720, payment: 410 } as const

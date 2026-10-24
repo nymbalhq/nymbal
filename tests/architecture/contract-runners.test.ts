@@ -5,13 +5,11 @@ import { join, relative } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { REPO_ROOT } from './workspace-manifests'
 
-// P2-13 AC-2 (spec P2-13-contract-tests-public, decision 2): the suites live in @nymbalhq/contract-tests and nowhere
-// else. tests/contracts/suites/ is gone and no file imports from it; every runner (tests/contracts/*.test.ts and
-// packages/*/src/contract.test.ts that call a run*Contract) imports its suite from the package (where a workspace
-// package cannot depend on it, from the package's own src/index.ts: the same code, no fork); and each runner collects
-// at least as many cases as it did at 45a48d6, so the property cases that moved in still run on every bundled adapter.
-// The counts are `vitest list` (collection only: no service is reached). Needs `pnpm build`. Kills: the suites kept
-// in tests/, a runner that imports a copy, and a runner that silently loses the moved cases.
+// AC-2: the suites live in @nymbalhq/contract-tests and nowhere else. tests/contracts/suites/ is gone and no file
+// imports from it; every runner (tests/contracts/*.test.ts and packages/*/src/contract.test.ts that call a
+// run*Contract) imports its suite from the package (where a workspace package cannot depend on it, from the
+// package's own src/index.ts: the same code, no fork); and each runner collects at least as many cases as it did at
+// 45a48d6. The counts are `vitest list` (collection only: no service is reached). Needs `pnpm build`.
 
 /** Each runner's case count at 45a48d6, by project, as `vitest list --project <p> <file>` collected it. */
 const BASE_COUNTS: Record<string, Record<string, number>> = {
@@ -111,7 +109,7 @@ function specifiers(source: string): string[] {
   ].map((m) => m[1]!)
 }
 
-const scratch = mkdtempSync(join(tmpdir(), 'p2-13-runner-counts-'))
+const scratch = mkdtempSync(join(tmpdir(), 'contracts-runner-counts-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 /** `vitest list` for one project's files: each file's collected case count, and the run's output when it failed. */
@@ -125,7 +123,8 @@ function collected(
     // Collection reaches no service; the store suites only need the variables present to load.
     NYMBAL_TEST_REDIS_URL: process.env['NYMBAL_TEST_REDIS_URL'] ?? 'redis://127.0.0.1:1',
     NYMBAL_TEST_POSTGRES_URL:
-      process.env['NYMBAL_TEST_POSTGRES_URL'] ?? 'postgres://p2-13:p2-13@127.0.0.1:1/p2_13',
+      process.env['NYMBAL_TEST_POSTGRES_URL'] ??
+      'postgres://contracts:contracts@127.0.0.1:1/contracts',
     NYMBAL_TEST_S3_ENDPOINT: process.env['NYMBAL_TEST_S3_ENDPOINT'] ?? 'http://127.0.0.1:1',
   }
   for (const key of Object.keys(env)) if (key.startsWith('VITEST')) delete env[key]
@@ -151,7 +150,7 @@ function collected(
   return { counts, output: `${run.stdout ?? ''}${run.stderr ?? ''}`.slice(-2000) }
 }
 
-describe('P2-13 AC-2: the suites live in the package, and every runner runs them', () => {
+describe('AC-2: the suites live in the package, and every runner runs them', () => {
   it('AC-2: tests/contracts/suites/ does not exist, and no source file imports from it', () => {
     const roots = ['packages', 'tests', 'apps', 'templates', 'scripts'].map((d) =>
       join(REPO_ROOT, d),

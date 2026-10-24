@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance test for P0-02 AC-9: the `integration-postgres` Vitest project fails, never skips or passes, when
-// NYMBAL_TEST_POSTGRES_URL is missing, and the failure names the variable.
+// AC-9: the `integration-postgres` Vitest project fails, never skips or passes, when NYMBAL_TEST_POSTGRES_URL is
+// missing, and the failure names the variable.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const URL_VAR = 'NYMBAL_TEST_POSTGRES_URL'

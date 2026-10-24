@@ -16,10 +16,10 @@ import { kernelConfig, MIGRATIONS_ROOT } from '../support/kernel.js'
 import { TEST_BUILDER_CONTEXT } from '../../src/tests/publisher.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
-// P1-03 AC-8 on SQLite: the retention sweeper's tick() deletes delivered events and processed-event records older than
-// the 30-day window, and nothing else: younger ones, undelivered ones and dead ones of any age stay. A second tick
-// deletes nothing. The rows are dated through the repositories' `at` arguments (markDelivered, recordFailure,
-// markProcessed), so the test does not depend on how a dialect stores a timestamp. No relay runs on this store.
+// AC-8 on SQLite: the retention sweeper's tick() deletes delivered events and processed-event records older than the
+// 30-day window, and nothing else: younger ones, undelivered ones and dead ones of any age stay. A second tick deletes
+// nothing. The rows are dated through the repositories' `at` arguments (markDelivered, recordFailure, markProcessed),
+// so the test does not depend on how a dialect stores a timestamp. No relay runs on this store.
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const RETENTION_DAYS = 30
@@ -34,7 +34,7 @@ const logger = createLogger({ pretty: false, level: 'error' })
 const makeEvent = createEventBuilder(TEST_BUILDER_CONTEXT)
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'p1-03-retention-'))
+  dir = mkdtempSync(join(tmpdir(), 'outbox-retention-'))
   const sqlitePath = join(dir, 'store.sqlite')
   store = createCommandStore(kernelConfig('sqlite'), { sqlitePath })
   await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })

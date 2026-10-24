@@ -11,14 +11,13 @@ import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
 import { kernelConfig, MIGRATIONS_ROOT } from '../support/kernel.js'
 
-// P1-05 AC-8: a production process refuses the stub payments adapter and the schema's default JWT secret before it
-// opens the store; development and test are unchanged. Kills: no check (in production the stub's unsigned webhook
-// confirms any order), or a check that runs after createPlatform opened the store file.
+// AC-8: a production process refuses the stub payments adapter and the schema's default JWT secret before it opens
+// the store; development and test are unchanged.
 //
-// P2-01 (decision 4, AC-3): the refusal reads the resolved payments adapter, not the config string, so a `custom` slot
-// is judged by the adapter injected into it: the native stub injected is refused before the store directory is touched,
-// a real adapter injected starts. An unregistered provider string no longer reaches createApp: loadConfig rejects it
-// (P2-01 AC-1, packages/config/src/known-providers.test.ts).
+// The refusal reads the resolved payments adapter, not the config string, so a `custom` slot is judged by the adapter
+// injected into it: the native stub injected is refused before the store directory is touched, a real adapter
+// injected starts. An unregistered provider string never reaches createApp: loadConfig rejects it
+// (packages/config/src/known-providers.test.ts).
 
 const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
 const logger = createLogger({ pretty: false, level: 'error' })
@@ -30,7 +29,7 @@ function withStripe(config: NymbalConfig): NymbalConfig {
       ...config.commerce,
       payments: {
         provider: 'stripe',
-        config: { secretKey: 'sk_test_p1_05_never_called', webhookSecret: 'whsec_p1_05' },
+        config: { secretKey: 'sk_test_webhook_never_called', webhookSecret: 'whsec_webhook' },
       },
     },
   }
@@ -44,7 +43,7 @@ function withCustomPayments(config: NymbalConfig): NymbalConfig {
 function ownPaymentsAdapter() {
   return {
     ...createNativeStubPaymentsAdapter({ logger }),
-    providerName: 'p2-01-own-payments',
+    providerName: 'adapters-own-payments',
     capabilities: () => ['intent', 'capture', 'refund'],
   }
 }
@@ -69,7 +68,7 @@ describe('production refusals at createApp', () => {
   })
 
   function storePath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'p1-05-prod-'))
+    const dir = mkdtempSync(join(tmpdir(), 'webhook-prod-'))
     dirs.push(dir)
     return join(dir, 'store.sqlite')
   }
@@ -100,7 +99,7 @@ describe('production refusals at createApp', () => {
   it('AC-8: NODE_ENV=production with payments provider native rejects with ConfigError config.production_stub_payments before any store file is created', async () => {
     process.env.NODE_ENV = 'production'
     const sqlitePath = storePath()
-    const config = withJwtSecret(kernelConfig('sqlite'), 'p1-05-production-secret-0123456789')
+    const config = withJwtSecret(kernelConfig('sqlite'), 'webhook-production-secret-0123456789')
     expect(config.commerce.payments.provider).toBe('native')
 
     const error = await attempt(config, sqlitePath)
@@ -129,7 +128,7 @@ describe('production refusals at createApp', () => {
     const sqlitePath = storePath()
     const config = withJwtSecret(
       withStripe(kernelConfig('sqlite')),
-      'p1-05-production-secret-0123456789',
+      'webhook-production-secret-0123456789',
     )
     await migrated(config, sqlitePath)
 
@@ -137,12 +136,12 @@ describe('production refusals at createApp', () => {
     expect(existsSync(sqlitePath)).toBe(true)
   })
 
-  it('AC-8 (P2-01 AC-3): NODE_ENV=production with payments custom and a real adapter injected starts', async () => {
+  it('AC-8: NODE_ENV=production with payments custom and a real adapter injected starts', async () => {
     process.env.NODE_ENV = 'production'
     const sqlitePath = storePath()
     const config = withJwtSecret(
       withCustomPayments(kernelConfig('sqlite')),
-      'p1-05-production-secret-0123456789',
+      'webhook-production-secret-0123456789',
     )
     await migrated(config, sqlitePath)
 
@@ -150,12 +149,11 @@ describe('production refusals at createApp', () => {
     expect(apps.at(-1)?.adapters.payments.providerName).toBe(ownPaymentsAdapter().providerName)
   })
 
-  // Decision 7 refuses the resolved stub, whether the registry built it (`native`) or the project injected it into a
-  // `custom` slot (P2-01 AC-3). Kills a check on the config string, which refuses a real injected adapter or lets an
-  // injected stub through, and a check that opens the store before refusing.
-  it('AC-8: in production every stub-or-default-secret cell is refused with a code the spec predicts and leaves the store directory as it found it', async () => {
+  // The resolved stub is refused whether the registry built it (`native`) or the project injected it into a `custom`
+  // slot, and before the store is opened.
+  it('AC-8: in production every stub-or-default-secret cell is refused with a code its cell predicts and leaves the store directory as it found it', async () => {
     process.env.NODE_ENV = 'production'
-    const CUSTOM_SECRET = 'p1-05-production-secret-0123456789'
+    const CUSTOM_SECRET = 'webhook-production-secret-0123456789'
     type Payments = 'native' | 'custom-stub' | 'custom-own' | 'stripe'
     const cells: Array<{ payments: Payments; secret: string }> = [
       { payments: 'native', secret: CUSTOM_SECRET },
@@ -166,7 +164,7 @@ describe('production refusals at createApp', () => {
       { payments: 'stripe', secret: DEFAULT_JWT_SECRET },
     ]
 
-    /** The refusal codes decision 7 predicts for a cell; createApp throws one of them. */
+    /** The refusal codes a cell may answer with; createApp throws one of them. */
     function predictedCodes(cell: { payments: Payments; secret: string }): string[] {
       const codes: string[] = []
       if (cell.payments === 'native' || cell.payments === 'custom-stub') {

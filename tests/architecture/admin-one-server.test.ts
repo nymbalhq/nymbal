@@ -3,10 +3,9 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, trackedFiles } from './workspace-manifests'
 
-// P1-08 AC-17: `registerAdminStaticRoute` (packages/platform/src/routes/admin-static.ts) is the only server of the
-// admin's files. No other non-test source under packages/ registers an /admin route, and routes/register.ts has no
-// NODE_ENV branch for it (the production-only registration and its monorepo-relative dist path go, decision 2).
-// Kills: a second, traversable copy left beside the fixed one.
+// AC-17: `registerAdminStaticRoute` (packages/platform/src/routes/admin-static.ts) is the only server of the admin's
+// files. No other non-test source under packages/ registers an /admin route, and routes/register.ts has no NODE_ENV
+// branch for it.
 
 const THE_ONE = 'packages/platform/src/routes/admin-static.ts'
 const REGISTER = 'packages/platform/src/routes/register.ts'
@@ -16,7 +15,7 @@ const SOURCE_FILE = /\.[cm]?[jt]sx?$/
 /** A string literal that is an admin route path: '/admin', '/admin/', '/admin/*', '/admin/assets/:file' and so on. */
 const ADMIN_PATH_LITERAL = /(['"`])\/admin(?:\/[\w*:.-]*)*\1/
 
-describe('P1-08 AC-17: one admin server', () => {
+describe('AC-17: one admin server', () => {
   const sources = trackedFiles().filter(
     (f) =>
       f.startsWith('packages/') && f.includes('/src/') && SOURCE_FILE.test(f) && !TEST_FILE.test(f),

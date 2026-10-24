@@ -1,16 +1,16 @@
 import fc from 'fast-check'
 
-// P2-04 AC-1 (d) (spec P2-04-cloudflare-waf): `security` blocks of `middleware` stores, as a project may write them at
-// d872ee8: any rate limit the key pattern allows, every optional block present or absent. `middleware-security-d872ee8.json`
-// holds RECORD_RUNS of them, drawn with RECORD_SEED, beside what the d872ee8 schema parsed each one to (the config
-// beside it is BASE_CONFIG). The recording ran once, at d872ee8, before the schema changed; it is not re-run.
+// `security` blocks of `middleware` stores, as a project may write them at d872ee8: any rate limit the key pattern
+// allows, every optional block present or absent. `middleware-security-d872ee8.json` holds RECORD_RUNS of them, drawn
+// with RECORD_SEED, beside what the d872ee8 schema parsed each one to (the config beside it is BASE_CONFIG). The
+// recording ran once, at d872ee8, before the schema changed; it is not re-run.
 
 export const RECORD_SEED = 2404
 export const RECORD_RUNS = 60
 
 /** Every top-level block but `security`, as schema.test.ts's base config has it. */
 export const BASE_CONFIG = {
-  store: { name: 'P2-04', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+  store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
   template: 'astro',
   infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
   commerce: {

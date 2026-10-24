@@ -1,4 +1,4 @@
-// P2-05 AC-2 support: a stand-in for Stripe.js in jsdom, with no network. The `stripe` payment driver injects
+// A stand-in for Stripe.js in jsdom, with no network. The `stripe` payment driver injects
 // <script src="https://js.stripe.com/v3"> and uses `window.Stripe`; this watches the document for that script and,
 // when one is added, plays the browser's part: `window.Stripe` appears and the script fires `load`. jsdom fetches no
 // script itself (no `resources` option), so nothing leaves the process. Every call the driver makes is recorded.

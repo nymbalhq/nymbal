@@ -1,19 +1,18 @@
 import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// P2-17 AC-4, the override clause of theming.chrome-is-elements (spec Decision 8), on the `astro-override` and
-// `nextjs-override` targets: the project's elements entry (tests/e2e/fixtures/override-elements) overrides
-// `nymbal-site-footer` as it overrides `nymbal-mini-cart`. With JS off the page's footer holds the project's marker
-// part and none of the package footer's, so the server rendered the project's class under the tag; with JS on the tag
-// is the project's class and still shows the marker and no package part, and the package's other chrome still renders
-// the store's data around it (the category nav's cards are `GET /api/categories`'). Kills: the server rendering the
-// package footer under an overridden tag; the client redefining it; one override breaking the other elements.
+// AC-4, the override clause, on the `astro-override` and `nextjs-override` targets: the project's elements entry
+// (tests/e2e/fixtures/override-elements) overrides `nymbal-site-footer` as it overrides `nymbal-mini-cart`. With JS
+// off the page's footer holds the project's marker part and none of the package footer's, so the server rendered the
+// project's class under the tag; with JS on the tag is the project's class and still shows the marker and no package
+// part, and the package's other chrome still renders the store's data around it (the category nav's cards are
+// `GET /api/categories`').
 
 /** What only the package's nymbal-site-footer renders. */
 const PACKAGE_PARTS =
   '[data-testid="site-footer"], [part~="footer"], [part~="column"], [part~="heading"], [part~="link"], [part~="legal"]'
 
-test.describe('P2-17 AC-4: a project overrides nymbal-site-footer by tag', () => {
+test.describe('AC-4: a project overrides nymbal-site-footer by tag', () => {
   test('AC-4: theming.chrome-is-elements: with JS off, nymbal-site-footer holds the project’s marker and none of the package’s parts @override', async ({
     browser,
   }, testInfo) => {

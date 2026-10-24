@@ -7,25 +7,24 @@ import * as wc from './index.js'
 import type { ElementSchema } from './index.js'
 import { setupMockClient } from './testing/index.js'
 
-// P2-06 AC-1: every element `registerComponents()` defines (tests/setup.ts calls it) is a LitElement whose static
-// `schema` names the tag it is defined under; every one but `nymbal-payment-element` renders in an open shadow root;
-// and the `part`s it renders are exactly the ones its schema lists, so a project can know every part it may style.
-// The states driven per element are the render branches each element has today (empty and filled store, loading,
-// open, error), seeded through the mock client's stores.
+// AC-1: every element `registerComponents()` defines (tests/setup.ts calls it) is a LitElement whose static `schema`
+// names the tag it is defined under; every one but `nymbal-payment-element` renders in an open shadow root; and the
+// `part`s it renders are exactly the ones its schema lists, so a project can know every part it may style. The states
+// driven per element are its render branches (empty and filled store, loading, open, error), seeded through the mock
+// client's stores.
 //
-// P2-15 AC-1 extends the same three checks to the eight views moved out of the templates (cart page, product card,
-// search results, the four account forms and the address book). Their states add what their render branches hang on:
-// the signed-in customer's addresses, and a form submitted once with its SDK call held, refused or answered.
+// The views (cart page, product card, search results, the four account forms and the address book) add the signed-in
+// customer's addresses, and a form submitted once with its SDK call held, refused or answered.
 //
-// P2-16 AC-1 adds `nymbal-checkout`. Its states are its steps (contact, shipping, payment with billing the same or
-// not), a place-order held, refused and answered, a payment element in error, and a cart in its summary; each is
-// reached by walking the steps as a shopper does, with the payment element as its `payment`-slotted child.
+// `nymbal-checkout`'s states are its steps (contact, shipping, payment with billing the same or not), a place-order
+// held, refused and answered, a payment element in error, and a cart in its summary; each is reached by walking the
+// steps as a shopper does, with the payment element as its `payment`-slotted child.
 //
-// P2-17 AC-1 adds the eleven elements the templates' server-rendered components become (spec Decision 1): each is a
-// LitElement with a static schema, in an open shadow root, renders exactly its schema's parts across its states (an
-// empty and a filled grid with and without the product-list store, a gallery of none, one and several images, a review
-// form submitted once with its call held, refused and answered, an order with and without a discount), styles them on
-// `--nymbal-*` tokens, has its `src/elements/<tag>.ts` entry, and carries the interface the templates call it by.
+// The catalogue and page elements (grid, price, stock badge, breadcrumb, gallery, header, footer, category nav,
+// reviews, order summary) render exactly their schema's parts across their states (an empty and a filled grid with and
+// without the product-list store, a gallery of none, one and several images, a review form submitted once with its
+// call held, refused and answered, an order with and without a discount), style them on `--nymbal-*` tokens, have
+// their `src/elements/<tag>.ts` entry, and carry the interface the templates call them by.
 
 const PAYMENT = 'nymbal-payment-element'
 const TAGS = [
@@ -39,7 +38,7 @@ const TAGS = [
   'nymbal-toast',
   PAYMENT,
   'nymbal-sort-dropdown',
-  // P2-15
+  // Views
   'nymbal-cart-page',
   'nymbal-product-card',
   'nymbal-search-results',
@@ -48,9 +47,9 @@ const TAGS = [
   'nymbal-profile-form',
   'nymbal-address-form',
   'nymbal-address-book',
-  // P2-16
+  // Checkout
   'nymbal-checkout',
-  // P2-17
+  // Catalogue and page elements
   'nymbal-product-grid',
   'nymbal-product-price',
   'nymbal-stock-badge',
@@ -743,7 +742,7 @@ const FIXED: Record<Tag, State[]> = {
       ]),
     }).slice(0, 1),
   ],
-  // P2-17
+  // Catalogue and page elements
   'nymbal-product-grid': [
     state(),
     state({ attrs: { products: JSON.stringify([]) } }),
@@ -1040,7 +1039,7 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       at: fc.nat({ max: checkoutStates().length - 1 }),
     })
     .map(({ items, at }) => checkoutStates({ cart: cartOf(items) })[at]!),
-  // P2-17
+  // Catalogue and page elements
   'nymbal-product-grid': fc
     .record({
       products: fc.uniqueArray(cardProduct, { maxLength: 6, selector: (p) => p.slug }),
@@ -1219,9 +1218,9 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
     }),
 }
 
-describe('P2-06 AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
+describe('AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
   it('AC-1: every element registerComponents() defines is a LitElement, and its schema.tag is the name it is defined under', async () => {
-    // Lit is the dependency the spec adds; imported at run time so the other cases still report their own red.
+    // Lit is a dependency of the package; imported at run time so the other cases still report their own red.
     const lit = 'lit'
     const { LitElement } = (await import(/* @vite-ignore */ lit)) as {
       LitElement: typeof HTMLElement
@@ -1279,14 +1278,14 @@ describe('P2-06 AC-1: elements are Lit, in an open shadow root, with the parts t
   })
 })
 
-// The names the templates reach the new views by: the React wrapper and its handler props are generated from these
-// (P2-06 AC-2), so a wrapper named or wired differently from the spec's interface leaves Next's page calling a prop
-// that never fires (`onSignedIn` is how Next navigates after sign-in).
+// The names the templates reach the views by: the React wrapper and its handler props are generated from these, so a
+// wrapper named or wired differently leaves Next's page calling a prop that never fires (`onSignedIn` is how Next
+// navigates after sign-in).
 const INTERFACE: Array<{
   tag: Tag
   reactName: string
   events: Array<{ name: string; prop: string }>
-  /** Pinned attributes, in any order; a type left out is the element's own choice (the spec names none). */
+  /** Pinned attributes, in any order; a type left out is the element's own choice (none is pinned). */
   attributes?: Array<{ name: string; type?: string }>
 }> = [
   { tag: 'nymbal-cart-page', reactName: 'CartPage', events: [] },
@@ -1294,7 +1293,7 @@ const INTERFACE: Array<{
     tag: 'nymbal-product-card',
     reactName: 'ProductCard',
     events: [],
-    // P2-17 Decision 1: the card gains `eager`.
+    // The card takes `eager`.
     attributes: [
       { name: 'product', type: 'json' },
       { name: 'eager', type: 'boolean' },
@@ -1324,7 +1323,7 @@ const INTERFACE: Array<{
     reactName: 'AddressBook',
     events: [{ name: 'nymbal:address-book:changed', prop: 'onChanged' }],
   },
-  // P2-17 (spec Decision 1 and Interface)
+  // Catalogue and page elements
   {
     tag: 'nymbal-product-grid',
     reactName: 'ProductGrid',
@@ -1420,7 +1419,7 @@ const INTERFACE: Array<{
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name)
 
-describe('P2-15 AC-1: the moved views carry the interface the templates call them by', () => {
+describe('AC-1: the moved views carry the interface the templates call them by', () => {
   it('AC-1: each new element’s schema names its React wrapper, its events with their handler props, and its attributes', () => {
     for (const want of INTERFACE) {
       const schema = schemaOf(customElements.get(want.tag))
@@ -1449,13 +1448,12 @@ describe('P2-15 AC-1: the moved views carry the interface the templates call the
   })
 })
 
-// P2-16 AC-1: the checkout's own interface (its React wrapper `Checkout` takes `onPlaced` and passes `PaymentElement`
-// through as a child), its address blocks are P2-15's `nymbal-address-form` in its own shadow root, each in the form
-// its step submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its
-// summary is built as the cart page's is, with names as text. Kills: a checkout that copies the address fields, an
-// Enter that submits nothing, a product name rendered as markup, a summary that adds up the lines itself.
-describe('P2-16 AC-1: nymbal-checkout meets the foundation', () => {
-  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (P2-18’s cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
+// AC-1: the checkout's own interface (its React wrapper `Checkout` takes `onPlaced` and passes `PaymentElement`
+// through as a child), its address blocks are `nymbal-address-form` in its own shadow root, each in the form its step
+// submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its summary is
+// built as the cart page's is, with names as text.
+describe('AC-1: nymbal-checkout meets the foundation', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
     const schema = schemaOf(customElements.get('nymbal-checkout'))
     expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
     expect(schema?.reactName).toBe('Checkout')
@@ -1526,20 +1524,18 @@ describe('P2-16 AC-1: nymbal-checkout meets the foundation', () => {
   })
 })
 
-// P2-17 AC-1 (spec Decision 1): what the per-element conventions add for the eleven. Each styles its parts on the
-// `--nymbal-*` tokens (a project restyles it from its tokens file, as the elements before it); each has the
-// `src/elements/<tag>.ts` entry a page and a generated wrapper import (Decision 5's per-page defines), with the hydrate
-// support as its first import so it evaluates before lit; the review form fires `nymbal:review:submitted` with
-// `{ reviewId: string }`; the header places the page's search bar and mini-cart through its `search` and `cart` slots.
-// Kills: an element with hard-coded colours a tokens file cannot reach, a missing entry (the Next wrapper's import
-// fails the build), an entry that imports lit before the hydrate support, a header that drops its slotted children.
-const P2_17_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
+// AC-1: what the per-element conventions add for the catalogue and page elements. Each styles its parts on the
+// `--nymbal-*` tokens (a project restyles it from its tokens file); each has the `src/elements/<tag>.ts` entry a page
+// and a generated wrapper import (per-page defines), with the hydrate support as its first import so it evaluates
+// before lit; the review form fires `nymbal:review:submitted` with `{ reviewId: string }`; the header places the
+// page's search bar and mini-cart through its `search` and `cart` slots.
+const CATALOGUE_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-describe('P2-17 AC-1: the eleven elements meet the element conventions', () => {
+describe('AC-1: the eleven elements meet the element conventions', () => {
   it('AC-1: each of the eleven styles itself with var(--nymbal-*) tokens', () => {
-    expect(P2_17_TAGS).toHaveLength(11)
-    for (const tag of P2_17_TAGS) {
+    expect(CATALOGUE_TAGS).toHaveLength(11)
+    for (const tag of CATALOGUE_TAGS) {
       const ctor = customElements.get(tag) as
         | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })
         | undefined

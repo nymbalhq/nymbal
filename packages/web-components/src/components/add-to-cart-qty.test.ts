@@ -3,19 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNymbalClient, type NymbalClient } from '@nymbalhq/sdk'
 import { registerClient } from '../registry.js'
 
-// P2-12 AC-1: <nymbal-add-to-cart qty> adds the quantity it is given. For any `qty` attribute (an integer inside or
-// outside 1-99, a non-integer, a non-number, or none), set before or after the element connects, one click sends one
+// AC-1: <nymbal-add-to-cart qty> adds the quantity it is given. For any `qty` attribute (an integer inside or outside
+// 1-99, a non-integer, a non-number, or none), set before or after the element connects, one click sends one
 // `POST /api/cart/items` whose body `qty` is the attribute's integer, or 1 for anything else, clamped to 1-99, and
 // emits `nymbal:cart:item-added` with `{ variantId, qty }` of the same quantity. The real SDK client over a fake
-// `fetch`, so the request body is the one the API would receive. Kills: an element that ignores `qty` (always 1), one
-// that sends it unclamped or unparsed, and an event whose quantity differs from the request's.
+// `fetch`, so the request body is the one the API would receive.
 //
-// Ruling on "clamp(round-or-1, 1, 99)": decision 1 says "an integer clamped to 1-99, where a non-integer becomes 1",
-// so a fractional value ("3.7") is 1, not 4. Spellings whose integer-ness is a parsing choice ("1e2", "5.0", " 5 ",
-// "0x10") are not generated.
+// A non-integer becomes 1, so a fractional value ("3.7") is 1, not 4. Spellings whose integer-ness is a parsing choice
+// ("1e2", "5.0", " 5 ", "0x10") are not generated.
 
 const API = 'http://api.test'
-const VARIANT = 'var-p2-12-qty'
+const VARIANT = 'var-variants-qty'
 const POLL = { interval: 1, timeout: 1000 }
 
 interface ItemPost {
@@ -23,7 +21,7 @@ interface ItemPost {
   qty: unknown
 }
 
-/** The quantity decision 1 gives an attribute value (null: the attribute is absent). */
+/** The quantity an attribute value gives (null: the attribute is absent). */
 function expectedQty(attr: string | null): number {
   const n = attr === null || attr.trim() === '' ? Number.NaN : Number(attr)
   const whole = Number.isInteger(n) ? n : 1
@@ -38,12 +36,12 @@ function fakeApi() {
       headers: { 'content-type': 'application/json' },
     })
   const cart = (items: unknown[]) => ({
-    data: { token: 'cart-p2-12', items, subtotalMinor: 0, currency: 'GBP' },
+    data: { token: 'cart-variants', items, subtotalMinor: 0, currency: 'GBP' },
   })
   const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input.toString())
     const method = (init?.method ?? 'GET').toUpperCase()
-    if (url.pathname === '/api/csrf') return json(200, { data: { token: 'csrf-p2-12' } })
+    if (url.pathname === '/api/csrf') return json(200, { data: { token: 'csrf-variants' } })
     if (url.pathname === '/api/cart/items' && method === 'POST') {
       const body = JSON.parse(String(init?.body)) as ItemPost
       posts.push(body)
@@ -52,7 +50,7 @@ function fakeApi() {
         cart([
           {
             variantId: body.variantId,
-            productId: 'prod-p2-12',
+            productId: 'prod-variants',
             productName: 'Quantity Widget',
             variantName: 'Default',
             priceMinor: 1000,
@@ -81,8 +79,8 @@ const arbQtyAttr: fc.Arbitrary<string | null> = fc.oneof(
   fc.constant(null),
 )
 
-// P2-06 decisions 1 and 2: the element is a Lit element in an open shadow root; its button is read through
-// `shadowRoot`, once its render has settled (`updateComplete`).
+// The element is a Lit element in an open shadow root; its button is read through `shadowRoot`, once its render has
+// settled (`updateComplete`).
 function shadow(el: Element): ShadowRoot {
   const root = el.shadowRoot
   if (root === null) throw new Error(`<${el.localName}> has no open shadow root`)
@@ -108,7 +106,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('P2-12: add-to-cart takes a quantity', () => {
+describe('add-to-cart takes a quantity', () => {
   it('AC-1: for any qty attribute, one click sends one POST /api/cart/items with qty = the integer or 1, clamped to 1-99, and emits item-added with the same qty', async () => {
     await fc.assert(
       fc.asyncProperty(arbQtyAttr, fc.boolean(), async (attr, setAfterConnect) => {

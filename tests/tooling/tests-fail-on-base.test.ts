@@ -16,10 +16,10 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 
-// Acceptance tests for P0-02 AC-6 and AC-13 to AC-15: `scripts/tests-fail-on-base.ts <base> --root <repo>
-// --suite <command>`. Each test builds a throwaway git repo: a tiny module, tests, a base commit and a change that
-// adds tests. The script runs `<suite> <test file>` for every added test file against the base commit's source in
-// a temporary worktree, and must leave the checkout exactly as it found it.
+// AC-6 and AC-13 to AC-15: `scripts/tests-fail-on-base.ts <base> --root <repo> --suite <command>`. Each test builds a
+// throwaway git repo: a tiny module, tests, a base commit and a change that adds tests. The script runs
+// `<suite> <test file>` for every added test file against the base commit's source in a temporary worktree, and must
+// leave the checkout exactly as it found it.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')

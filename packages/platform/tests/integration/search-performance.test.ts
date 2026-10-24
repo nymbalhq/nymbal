@@ -16,12 +16,10 @@ import {
   type QueryTiming,
 } from '../support/search-catalogue.js'
 
-// P2-07 AC-7 on SQLite (a file database, as a store runs): the 10k-product catalogue (tests/support/search-catalogue.ts),
+// AC-7 on SQLite (a file database, as a store runs): the 10k-product catalogue (tests/support/search-catalogue.ts),
 // built once for the file through the adapter one product per call, as a warm start indexes; then 50 warm queries,
-// each search({limit: 20}) and its facet('categoryIds', {query}). The Postgres run is in integration-postgres
-// (packages/platform/tests/postgres/search-performance.postgres.test.ts).
-// Kills: a search that scans in memory, a missing index that makes a query a table scan, an upsert that is a full
-// scan (a warm start O(N²)), and a fast answer that is wrong (each total is checked against decision 3's oracle).
+// each search({limit: 20}) and its facet('categoryIds', {query}), every total checked against an in-memory oracle.
+// The Postgres run is in integration-postgres (packages/platform/tests/postgres/search-performance.postgres.test.ts).
 
 const BUILD_BUDGET_MS = 10_000
 const P95_BUDGET_MS = 50
@@ -35,7 +33,7 @@ let adapter: SearchAdapter
 let buildMs = Number.NaN
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'p2-07-bench-'))
+  dir = mkdtempSync(join(tmpdir(), 'search-bench-'))
   store = createCommandStore(kernelConfig('sqlite'), { sqlitePath: join(dir, 'bench.sqlite') })
   await runMigrations(store, { migrationsRoot: MIGRATIONS_ROOT })
   adapter = createNativeSearchAdapter({ sql: rawClients(store), logger })
@@ -52,12 +50,12 @@ function report(dialect: string, timings: QueryTiming[]): { p95: number; p50: nu
   const p50 = percentile(timings, 50)
   // eslint-disable-next-line no-console -- AC-7: the test prints the p95, the p50 and the build time
   console.log(
-    `[P2-07 AC-7 ${dialect}] 10k build ${buildMs.toFixed(0)} ms; search+facet p95 ${p95.toFixed(2)} ms, p50 ${p50.toFixed(2)} ms over ${timings.length} queries`,
+    `[search performance ${dialect}] 10k build ${buildMs.toFixed(0)} ms; search+facet p95 ${p95.toFixed(2)} ms, p50 ${p50.toFixed(2)} ms over ${timings.length} queries`,
   )
   return { p95, p50 }
 }
 
-describe('P2-07 AC-7: 10k products on SQLite', () => {
+describe('AC-7: 10k products on SQLite', () => {
   it('AC-7 (a): indexing the 10k catalogue through the adapter, one product per call, takes under 10 s', () => {
     expect(buildMs).toBeLessThan(BUILD_BUDGET_MS)
   })

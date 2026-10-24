@@ -13,18 +13,13 @@ import { blockExternalRequests, expect, test } from '../support/fixtures'
 import { addOneLine, apiCart, noScript, PRODUCT } from '../support/server-rendered'
 import { formatPrice } from '../support/variants'
 
-// P2-19 AC-4 and AC-5 (spec P2-19-fragments-and-isr, Decisions 1, 3, 5 and 7; store end states caching.next-isr and
-// caching.shopper-pages-live), on the Next production build (playwright.prod.config.ts; every test is @nextjs).
+// AC-4 and AC-5, on the Next production build (playwright.prod.config.ts; every test is @nextjs).
 // AC-4: the second request for `/` and for `/product/<seed slug>` is served from Next's cache (`x-nextjs-cache: HIT`,
 // or `STALE` once the window has passed) with `s-maxage=300` and `s-maxage=60`; `/` shows the API's eight newest
 // products in order, the PDP the API's first-variant price; neither has a Set-Cookie; requested with a one-line cart
 // cookie, the header's mini-cart has no `count` in the HTML, and with JS on its badge fills to the cart's quantity sum.
-// AC-5 (green on the base by design: every route is dynamic there; a regression guard beside AC-4): `/cart`,
-// `/checkout`, `/order/<n>` and `/account` are never a cache HIT and are `private` or `no-store`, and with JS off the
-// header on `/cart` and `/checkout` still shows the cookie's count (P2-18's, moved here from `/`).
-// Kills: a page left dynamic (the header still reads headers(), or a fetch is still no-store); a cached page carrying a
-// shopper's count; a badge that never fills on a cached page; a shopper page that is cached (one shopper's cart or order
-// served to the next); the per-request header that lost its count in the move.
+// AC-5 (a regression guard beside AC-4): `/cart`, `/checkout`, `/order/<n>` and `/account` are never a cache HIT and
+// are `private` or `no-store`, and with JS off the header on `/cart` and `/checkout` still shows the cookie's count.
 
 const contexts: BrowserContext[] = []
 
@@ -88,7 +83,7 @@ async function shopper(
   return { on, off, count: cart.items.reduce((n, line) => n + line.qty, 0) }
 }
 
-test.describe('P2-19 AC-4: Next’s home and product pages are ISR (production build)', () => {
+test.describe('AC-4: Next’s home and product pages are ISR (production build)', () => {
   test('AC-4: caching.next-isr: the second GET / is served from Next’s cache with s-maxage=300 and no Set-Cookie, and / shows the API’s eight newest products in order @nextjs', async ({
     browser,
     request,
@@ -158,7 +153,7 @@ test.describe('P2-19 AC-4: Next’s home and product pages are ISR (production b
   })
 })
 
-test.describe('P2-19 AC-5: the shopper pages stay live (production build)', () => {
+test.describe('AC-5: the shopper pages stay live (production build)', () => {
   test('AC-5: caching.shopper-pages-live: /cart, /checkout, /order/<n> of a completed checkout and /account never answer x-nextjs-cache: HIT on a second request, and their Cache-Control is private or no-store @nextjs', async ({
     page,
     request,
@@ -167,7 +162,7 @@ test.describe('P2-19 AC-5: the shopper pages stay live (production build)', () =
     await blockExternalRequests(page)
     const product = await ownProduct(request, await adminToken(request), 5)
     await openCheckout(page, product)
-    await walkToPayment(page, `e2e-p2-19-${randomUUID().slice(0, 8)}@e2e.test`)
+    await walkToPayment(page, `e2e-fragments-${randomUUID().slice(0, 8)}@e2e.test`)
     await page.getByTestId('place-order').click()
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)

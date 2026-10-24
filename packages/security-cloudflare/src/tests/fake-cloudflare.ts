@@ -2,21 +2,21 @@ import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-// P2-04 (spec P2-04-cloudflare-waf, Interface "Tests' fake"): the Cloudflare v4 API as the adapter uses it, in process
-// on 127.0.0.1 and port 0. It holds zones (plan, token) and each zone's per-phase entrypoint rulesets, and serves:
+// The Cloudflare v4 API as the adapter uses it, in process on 127.0.0.1 and port 0. It holds zones (plan, token) and
+// each zone's per-phase entrypoint rulesets, and serves:
 //   GET  /zones/{zone}                                          the zone, with plan.legacy_id
 //   GET  /zones/{zone}/rulesets                                 the zone's entrypoints and the managed rulesets
 //   POST /zones/{zone}/rulesets                                 creates a phase's entrypoint (the deploy guide's way)
 //   GET  /zones/{zone}/rulesets/phases/{phase}/entrypoint       404 for a phase never written
 //   PUT  /zones/{zone}/rulesets/phases/{phase}/entrypoint       replaces the phase's rules whole, creating it if absent
-// Every write is checked against the spec's plan table over the whole phase (every rule, not only Nymbal's): the rule
-// counts, the periods, the managed rulesets, `cf.colo.id` in characteristics and `mitigation_timeout` by action and
-// plan. A violation is refused as Cloudflare refuses it: 400 with an `errors` array, and the phase is left as it was.
-// A wrong bearer token is 401. Every request is recorded with the status it got. `edit`, `remove` and `add` are the
-// dashboard: they change the zone without any check. Where the spec marks a Cloudflare fact unconfirmed, the fake takes
-// the reading the spec takes and the live proof checks: PUT creates an absent entrypoint, and a rule keeps its `ref`.
-// P2-19 (spec P2-19-fragments-and-isr, Interface): the cache phase holds `set_cache_settings` rules only, at most the
-// plan's `cacheRules` (10 / 25 / 50 / 300), counted over the whole phase like the custom rules.
+// Every write is checked against Cloudflare's plan limits over the whole phase (every rule, not only Nymbal's): the
+// rule counts, the periods, the managed rulesets, `cf.colo.id` in characteristics and `mitigation_timeout` by action
+// and plan. A violation is refused as Cloudflare refuses it: 400 with an `errors` array, and the phase is left as it
+// was. A wrong bearer token is 401. Every request is recorded with the status it got. `edit`, `remove` and `add` are
+// the dashboard: they change the zone without any check. Where a Cloudflare behaviour is unconfirmed, the fake takes
+// the reading the live proof checks: PUT creates an absent entrypoint, and a rule keeps its `ref`.
+// The cache phase holds `set_cache_settings` rules only, at most the plan's `cacheRules` (10 / 25 / 50 / 300), counted
+// over the whole phase like the custom rules.
 
 export const PHASES = [
   'http_ratelimit',
@@ -35,7 +35,7 @@ export const MANAGED_RULESET_IDS = {
   owasp: '4814384a9e5d4991b9815dcfc25d2f1f',
 } as const
 
-/** The spec's plan table (Context, "Limits by plan"). */
+/** Cloudflare's limits by plan. */
 export const PLAN_LIMITS: Readonly<
   Record<
     Plan,
@@ -44,7 +44,7 @@ export const PLAN_LIMITS: Readonly<
       periods: readonly number[]
       customRules: number
       managedRulesets: boolean
-      /** P2-19 (Interface): the cache rules the `http_request_cache_settings` phase may hold, the owner's included. */
+      /** The cache rules the `http_request_cache_settings` phase may hold, the owner's included. */
       cacheRules: number
     }
   >

@@ -4,9 +4,9 @@ import { runUntilKilled } from '../proof-kit.js'
 import { openRaw, type RawReader } from '../raw.js'
 import type { Dialect } from '../kernel.js'
 
-// P1-02 AC-7 (SQLite) / AC-8 (Postgres): a child process runs beginCheckout on a real store and is SIGKILLed after
-// the order insert and before commit (the fixture wraps orderHistory.append). Reopened, the database holds no order,
-// history or reservation row, stock is unchanged and order_sequences is untouched. The control run leaves them all.
+// AC-7 (SQLite) / AC-8 (Postgres): a child process runs beginCheckout on a real store and is SIGKILLed after the order
+// insert and before commit (the fixture wraps orderHistory.append). Reopened, the database holds no order, history or
+// reservation row, stock is unchanged and order_sequences is untouched. The control run leaves them all.
 
 export const CHECKOUT_KILL_CHILD = fileURLToPath(
   new URL('../../integration/fixtures/checkout-kill-child.mjs', import.meta.url),
@@ -35,7 +35,7 @@ export async function footprint(raw: RawReader): Promise<Footprint> {
 }
 
 // runUntilKilled arms NYMBAL_CHAOS; this child kills itself from its own hook and never reads the point.
-const UNUSED_POINT = { beforePublish: 'p1-02.unused' }
+const UNUSED_POINT = { beforePublish: 'txn.unused' }
 
 export function checkoutKillSuite(
   ac: string,

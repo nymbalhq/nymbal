@@ -3,11 +3,10 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// P2-05 AC-2 (architecture) and the spec's first invariant: no template names a vendor, imports a vendor SDK or reads
-// a vendor variable. Over every source file and package.json of both templates and of their scaffold copies: no
-// `@stripe/` package, no js.stripe.com, and no `*_STRIPE_*` or `*_PAYMENTS_PROVIDER` variable. The payment step comes
-// from the payments adapter's client half through a driver the SDK holds. Kills: a vendor branch left in a template
-// or in the copy create-nymbal-app ships, and a template dependency that pins a vendor SDK on every store.
+// AC-2 (architecture): no template names a vendor, imports a vendor SDK or reads a vendor variable. Over every source
+// file and package.json of both templates and of their scaffold copies: no `@stripe/` package, no js.stripe.com, and
+// no `*_STRIPE_*` or `*_PAYMENTS_PROVIDER` variable. The payment step comes from the payments adapter's client half
+// through a driver the SDK holds.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 

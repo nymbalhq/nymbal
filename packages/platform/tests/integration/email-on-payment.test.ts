@@ -6,12 +6,12 @@ import { address, checkoutOf, createKernel, seedVariant, type Kernel } from '../
 import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
-// P1-12 AC-13 (decision 5) on SQLite, through the kernel's own bus and email handler: the `order-placed` email goes on
-// payment, once per order. A pending order sends nothing; its payment sends one; a second order.paid for the same order
-// (a redelivered or replayed event) sends nothing more; an imported order, which publishes order.placed, sends
-// nothing. Sends are read from the email adapter the handler calls, after the outbox has delivered every event.
+// AC-13 on SQLite, through the kernel's own bus and email handler: the `order-placed` email goes on payment, once per
+// order. A pending order sends nothing; its payment sends one; a second order.paid for the same order (a redelivered
+// or replayed event) sends nothing more; an imported order, which publishes order.placed, sends nothing. Sends are
+// read from the email adapter the handler calls, after the outbox has delivered every event.
 
-describe('P1-12 AC-13: one order-placed email per paid order (sqlite)', () => {
+describe('AC-13: one order-placed email per paid order (sqlite)', () => {
   let k: Kernel
   let raw: RawReader
   const sent: TransactionalEmail[] = []
@@ -46,7 +46,7 @@ describe('P1-12 AC-13: one order-placed email per paid order (sqlite)', () => {
 
   /**
    * A second order.paid for an order already confirmed, as a redelivered or replayed event would carry it. Published
-   * straight through the kernel's publisher: since P1-13 mark-paid confirms only a pending order, it no longer makes one.
+   * straight through the kernel's publisher: mark-paid confirms only a pending order, so it cannot make one.
    */
   async function secondPaid(started: {
     orderId: string
@@ -75,7 +75,7 @@ describe('P1-12 AC-13: one order-placed email per paid order (sqlite)', () => {
   // event, so a second order.paid for the order sends a second email.
   it('AC-13: a pending order sends no order-placed email; its payment sends one, to the buyer, naming the order; a second order.paid for it sends nothing more', async () => {
     const seeded = await seedVariant(k, 5)
-    const buyer = `ac13-${randomUUID()}+stub-pending@p1-12.test`
+    const buyer = `ac13-${randomUUID()}+stub-pending@checkout.test`
     const started = await checkoutOf(k, seeded, 1, buyer)
     await delivered()
     const atPlacement = orderPlacedTo(buyer).length
@@ -99,7 +99,7 @@ describe('P1-12 AC-13: one order-placed email per paid order (sqlite)', () => {
   // Kills: the inline confirm and a later order.paid each counted as a payment to announce.
   it('AC-13: a checkout the stub pays inline sends one order-placed email; a second order.paid after the inline confirm sends nothing more', async () => {
     const seeded = await seedVariant(k, 5)
-    const buyer = `ac13-inline-${randomUUID()}@p1-12.test`
+    const buyer = `ac13-inline-${randomUUID()}@checkout.test`
     const started = await checkoutOf(k, seeded, 1, buyer)
     await delivered()
     const afterCheckout = orderPlacedTo(buyer).length
@@ -114,7 +114,7 @@ describe('P1-12 AC-13: one order-placed email per paid order (sqlite)', () => {
 
   // Kills: an import (which publishes order.placed for every historical order) emailing each imported customer.
   it('AC-13: an imported order publishes order.placed and sends no order-placed email', async () => {
-    const customer = `ac13-import-${randomUUID()}@p1-12.test`
+    const customer = `ac13-import-${randomUUID()}@checkout.test`
     const before = (await eventRows(raw, 'type = ?', ['order.placed.v1'])).length
     await k.services.order.importOrder({
       orderId: uuidv7(),

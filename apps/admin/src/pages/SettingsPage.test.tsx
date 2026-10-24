@@ -4,9 +4,7 @@ import type { SettingsListing } from '@nymbalhq/types'
 import { renderWithProviders } from '@/tests/render'
 import { SettingsPage } from './SettingsPage'
 
-// P3-07 (spec P3-07-secrets-settings, diff review W1 and M1): a field's save sends one PUT however fast it is clicked,
-// and a refused PUT's message is shown on the page. Kills: a double click saving twice (two `settings.changed`); a
-// refusal the admin never sees.
+// A field's save sends one PUT however fast it is clicked, and a refused PUT's message is shown on the page.
 
 const LISTING: SettingsListing = {
   slots: [
@@ -60,7 +58,13 @@ describe('Settings save', () => {
   it('W1: a double click on settings-save-ai-apiKey sends exactly one PUT while the first is in flight', async () => {
     const api = fakeApi(() =>
       json({
-        data: { slot: 'ai', path: 'apiKey', state: 'set', source: 'settings', restartRequired: true },
+        data: {
+          slot: 'ai',
+          path: 'apiKey',
+          state: 'set',
+          source: 'settings',
+          restartRequired: true,
+        },
       }),
     )
     renderWithProviders(<SettingsPage />)

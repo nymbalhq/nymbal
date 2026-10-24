@@ -12,12 +12,9 @@ import {
 } from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
 import type { SpecPlan } from '../../../security-cloudflare/src/tests/support.js'
 
-// Acceptance tests for P2-04 AC-7 (spec P2-04-cloudflare-waf, Interface CLI): `nymbal security:plan [--json]`,
-// `security:apply`, `security:drift [--json]` and `security:inspect` through the built CLI (`pnpm build` first), in temp
-// projects whose config reads the zone and token from CLOUDFLARE_ZONE_ID and CLOUDFLARE_API_TOKEN and sets
-// `security.cloudflare.apiBase` to the fake. Exit codes: 0 done or in sync, 1 drift (drift only), 2 a config, credential
-// or API error, and 2 for every command on a `middleware` store. Property: across every command and outcome, the token
-// is in neither stdout nor stderr. Kills: no commands, exit codes that are not distinct, and a token leaked into output.
+// AC-7: `nymbal security:plan [--json]`, `security:apply`, `security:drift [--json]` and `security:inspect` against a
+// fake Cloudflare API: exit 0 done or in sync, 1 drift, 2 a config, credential or API error (and on a `middleware`
+// store), and the token never in the output. Spawns the built CLI (`pnpm build` first).
 
 const COMMANDS = [
   ['security:plan'],
@@ -59,7 +56,7 @@ function project(opts: {
   adapter?: 'cloudflare' | 'middleware'
   rateLimit?: Record<string, { requests: number; window: string; action: string }>
 }): Project {
-  const dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-04-cli-'))
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-cf-cli-'))
   dirs.push(dir)
   const security = {
     ...repoConfig.security,
@@ -103,9 +100,9 @@ function parsePlan(stdout: string): SpecPlan {
 const planIsEmpty = (plan: SpecPlan): boolean =>
   plan.phases.every((p) => p.add.length + p.change.length + p.remove.length === 0)
 
-describe('P2-04 AC-7: nymbal security:*', () => {
+describe('AC-7: nymbal security:*', () => {
   it('AC-7: security:plan --json prints a SecurityPlan adding exactly the rules desiredRules gives; security:apply exits 0; a second plan --json prints an empty plan', async () => {
-    const token = 'cf-p2-04-cli-token-Hq7Zt2'
+    const token = 'cf-cli-token-Hq7Zt2'
     const p = project({ apiBase: fake.url, zoneId: zone('pro', token), token })
 
     const first = await cli(p, ['security:plan', '--json'])
@@ -130,7 +127,7 @@ describe('P2-04 AC-7: nymbal security:*', () => {
   }, 60_000)
 
   it('AC-7: after apply, security:drift exits 0; after a dashboard edit it exits 1 and names the path; with the API answering 401 it exits 2 naming CLOUDFLARE_API_TOKEN', async () => {
-    const token = 'cf-p2-04-cli-token-Rw3Lp9'
+    const token = 'cf-cli-token-Rw3Lp9'
     const zoneId = zone('pro', token)
     const p = project({ apiBase: fake.url, zoneId, token })
     const applied = await cli(p, ['security:apply'])
@@ -144,7 +141,7 @@ describe('P2-04 AC-7: nymbal security:*', () => {
     expect(drifted.code, drifted.out).toBe(1)
     expect(drifted.out).toContain(`${CUSTOM}/${GEO}/expression`)
 
-    const wrong = project({ apiBase: fake.url, zoneId, token: 'cf-p2-04-revoked-Kd82Mx' })
+    const wrong = project({ apiBase: fake.url, zoneId, token: 'cf-revoked-Kd82Mx' })
     const refused = await cli(wrong, ['security:drift'])
     expect(refused.code, refused.out).toBe(2)
     expect(refused.out).toContain('CLOUDFLARE_API_TOKEN')
@@ -152,7 +149,7 @@ describe('P2-04 AC-7: nymbal security:*', () => {
   }, 60_000)
 
   it('AC-7: with security.adapter middleware, every command exits 2', async () => {
-    const token = 'cf-p2-04-cli-token-Mw5Nb1'
+    const token = 'cf-cli-token-Mw5Nb1'
     const p = project({
       apiBase: fake.url,
       zoneId: zone('pro', token),

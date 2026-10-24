@@ -3,9 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { stubPaymentWebhook } from '@nymbalhq/proof-kit/payments'
 import { createLogger, createNativeStubPaymentsAdapter } from '@nymbalhq/platform'
 
-// Acceptance tests for P1-01 AC-13: the request stubPaymentWebhook builds is one the real route accepts (a
-// stripe-signature header, a body the stub adapter's parseWebhook reads back field for field) and carries
-// id = eventId, generated unique when absent.
+// AC-13: the request stubPaymentWebhook builds is one the real route accepts (a stripe-signature header, a body the
+// stub adapter's parseWebhook reads back field for field) and carries id = eventId, generated unique when absent.
 
 const payments = createNativeStubPaymentsAdapter({
   logger: createLogger({ pretty: false, level: 'error' }),

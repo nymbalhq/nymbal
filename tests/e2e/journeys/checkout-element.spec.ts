@@ -11,13 +11,10 @@ import {
 } from '../support/checkout'
 import { expect, test } from '../support/fixtures'
 
-// P2-16 AC-5 and AC-6 on both templates: /checkout is `nymbal-checkout`, with the payment element as its light-DOM
-// child. AC-5 is store end state checkout.billing-differs: a billing address that differs from shipping in every field
-// reaches the order as entered (Astro's script read it with `new FormData` on a div, which throws, and either template
-// could send shipping as billing). AC-6 is the double click: on contact-continue, then on shipping-continue, it
-// advances one step each and places nothing: the next step renders under the cursor, so the second click lands on its
-// button (the release QA of 2026-10-20 inferred that it placed the order on Astro; the template's `e.detail > 1` guard
-// stops it at 606e5aa, and the element must carry the guard).
+// AC-5 and AC-6 on both templates: /checkout is `nymbal-checkout`, with the payment element as its light-DOM child.
+// AC-5: a billing address that differs from shipping in every field reaches the order as entered. AC-6: a double
+// click on contact-continue, then on shipping-continue, advances one step each and places nothing: the next step
+// renders under the cursor, so the second click lands on its button, and the element's multi-click guard stops it.
 // Each test buys a product of its own, and the order is read back through the admin API.
 
 const FIELDS = [
@@ -56,7 +53,7 @@ const BILLING: Required<Address> = {
   country: 'IE',
 }
 
-const email = (tag: string) => `e2e-p2-16-${tag}-${randomUUID().slice(0, 8)}@e2e.test`
+const email = (tag: string) => `e2e-checkout-el-${tag}-${randomUUID().slice(0, 8)}@e2e.test`
 
 /** An address as the API holds it, the eight fields the shopper types, an empty one as absent. */
 function typed(address: Record<string, unknown>): Address {
@@ -206,7 +203,7 @@ test.describe('Checkout is an element', () => {
     { width: 1440, height: 900 },
   ]) {
     for (const hand of ['dblclick', 'person'] as const) {
-      test(`diff review B1: at ${viewport.width}x${viewport.height}, a double click (${hand}) on shipping-continue leaves the page on /checkout with place-order shown, sends no POST /api/checkout and creates no order`, async ({
+      test(`at ${viewport.width}x${viewport.height}, a double click (${hand}) on shipping-continue leaves the page on /checkout with place-order shown, sends no POST /api/checkout and creates no order`, async ({
         page,
         request,
       }) => {

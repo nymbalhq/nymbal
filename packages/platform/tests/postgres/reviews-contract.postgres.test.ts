@@ -12,11 +12,9 @@ import { buildRepositories } from '../../src/repositories/index.js'
 import { seedReviews, walkReviews } from '../../../../tests/support/reviews-pages'
 import { createDatabase, postgresServerUrl, type TestDatabase } from '../support/postgres.js'
 
-// P2-13 AC-3 (spec P2-13-contract-tests-public), Postgres half: the published reviews suite, pagination case included,
-// on the native reviews adapter over a database of this file's own migrated with the platform's migrations, and the
-// same keyset property the SQLite runner holds (tests/contracts/reviews-contract.test.ts): the repository's cursor
-// query is per dialect (decision 4: created time, then id). Kills: a Postgres listByProduct that ignores the cursor, or
-// orders by something the cursor does not carry, so a page repeats or skips a review.
+// AC-3, Postgres half: the published reviews suite, pagination case included, on the native reviews adapter over a
+// database of this file's own, and the same keyset property the SQLite runner holds
+// (tests/contracts/reviews-contract.test.ts): the cursor query is per dialect (created time, then id).
 
 const serverUrl = postgresServerUrl()
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url))
@@ -50,7 +48,7 @@ function build(): ReviewsAdapter {
 
 runReviewsContract('native-postgres', build)
 
-describe('P2-13 AC-3: native reviews page by cursor (Postgres)', () => {
+describe('AC-3: native reviews page by cursor (Postgres)', () => {
   it('AC-3: over generated page sizes and seeds larger than one page, the cursor walk yields each seeded review once, the union is the seed, no page exceeds limit, and nextCursor is null exactly on the last page', async () => {
     const native = build()
     await fc.assert(

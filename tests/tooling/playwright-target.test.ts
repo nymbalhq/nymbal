@@ -4,9 +4,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
-// Acceptance test for P0-03 part 2, AC-3: with NYMBAL_E2E_TARGET set, the Playwright config starts only that
-// target's servers (and the API they all call). The config is evaluated in a child process with the environment a
-// CI job would give it, so the env is read exactly as Playwright reads it, at import time.
+// AC-3: with NYMBAL_E2E_TARGET set, the Playwright config starts only that target's servers (and the API they all
+// call). The config is evaluated in a child process with the environment a CI job would give it, so the env is read
+// exactly as Playwright reads it, at import time.
 
 const exec = promisify(execFile)
 
@@ -42,7 +42,7 @@ async function webServers(env: Record<string, string>): Promise<WebServer[]> {
   return parsed === null ? [] : Array.isArray(parsed) ? parsed : [parsed]
 }
 
-/** Which server an entry is, from its command, URL and port. Package names may carry the P0-04 scope. */
+/** Which server an entry is, from its command, URL and port. Package names may carry the @nymbalhq scope. */
 const KINDS: Record<string, RegExp> = {
   api: /--api-only|:3001\b/,
   astro: /template-astro\b|templates\/astro\b|:4321\b/,
@@ -77,16 +77,16 @@ describe('AC-3: NYMBAL_E2E_TARGET starts only that target and the API', () => {
   )
 })
 
-// P1-08 AC-1 (Interface, E2E): the admin is served by `nymbal dev --api-only` at <api>/admin/, so the admin target
-// starts the API alone (no Vite server), and both admin projects default their baseURL to the API's /admin/.
+// AC-1: the admin is served by `nymbal dev --api-only` at <api>/admin/, so the admin target starts the API alone (no
+// Vite server), and both admin projects default their baseURL to the API's /admin/.
 const PRINT_ADMIN_BASE_URLS = `import(process.env.NYMBAL_TEST_CONFIG_URL).then((m) => {
   const urls = (m.default.projects ?? []).filter((p) => p.name.startsWith('admin')).map((p) => p.use && p.use.baseURL)
   process.stdout.write('\\n' + JSON.stringify(urls) + '\\n')
 })`
 
-describe('P1-08: the admin E2E runs against the admin the API serves', () => {
+describe('the admin E2E runs against the admin the API serves', () => {
   it.each([{ NYMBAL_E2E_TARGET: 'admin' }, { NYMBAL_E2E_ADMIN: 'true' }])(
-    'P1-08 AC-1: with CI=1 and %o, the webServer list is the API alone, not built, and the admin baseURL is http://localhost:3001/admin/',
+    'AC-1: with CI=1 and %o, the webServer list is the API alone, not built, and the admin baseURL is http://localhost:3001/admin/',
     async (selector) => {
       const servers = await webServers({ CI: '1', ...selector })
       expect(servers.map(kindsOf), JSON.stringify(servers.map((s) => s.command))).toEqual([['api']])
@@ -109,8 +109,8 @@ describe('P1-08: the admin E2E runs against the admin the API serves', () => {
   )
 })
 
-// Round 1, AC-10: an unknown NYMBAL_E2E_TARGET makes the config throw, naming the allowed targets. The evaluation
-// prints only the error's message, so a name in a stack frame or a code frame cannot satisfy the assertion.
+// AC-10: an unknown NYMBAL_E2E_TARGET makes the config throw, naming the allowed targets. The evaluation prints only
+// the error's message, so a name in a stack frame or a code frame cannot satisfy the assertion.
 const PRINT_OUTCOME = `import(process.env.NYMBAL_TEST_CONFIG_URL).then(
   (m) => process.stdout.write('\\n' + JSON.stringify({ webServer: m.default.webServer ?? null }) + '\\n'),
   (e) => process.stdout.write('\\n' + JSON.stringify({ error: String(e && e.message !== undefined ? e.message : e) }) + '\\n'),

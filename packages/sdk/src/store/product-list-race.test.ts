@@ -5,11 +5,10 @@ import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { DenormalisedProduct, ProductListParams, ProductListResult } from '../types.js'
 import { createProductListStore } from './product-list-store.js'
 
-// P1-11 diff review M2: the product list keeps only the answer to its latest request. A response that arrives after a
-// newer request was made (a `newest` page answered after `setSort('price-desc')`, a "load more" page answered after
-// the sort changed) is dropped: it must not replace the products, set the sort or leave its cursor, which the next
-// "load more" would send beside the new sort (the API answers 400).
-// Kills: `load` and `loadMore` applying every response they await, in whatever order the responses arrive.
+// The product list keeps only the answer to its latest request. A response that arrives after a newer request was made
+// (a `newest` page answered after `setSort('price-desc')`, a "load more" page answered after the sort changed) is
+// dropped: it must not replace the products, set the sort or leave its cursor, which the next "load more" would send
+// beside the new sort (the API answers 400).
 
 const KEYS: ProductSortKey[] = ['newest', 'price-asc', 'price-desc', 'name-asc', 'name-desc']
 
@@ -62,7 +61,7 @@ function threePages(slugs: string[]): [string[], string[], string[]] {
   return [slugs.slice(0, third), slugs.slice(third, 2 * third), slugs.slice(2 * third)]
 }
 
-describe('product list: out-of-order responses (P1-11 review M2)', () => {
+describe('product list: out-of-order responses', () => {
   it('M2: a stale load response arriving after setSort’s leaves the products, sort and cursor of setSort’s response', async () => {
     await fc.assert(
       fc.asyncProperty(scenario, async ({ keys: [first, second], slugs, cursors }) => {

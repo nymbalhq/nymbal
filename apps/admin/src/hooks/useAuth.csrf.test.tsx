@@ -5,9 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { useAuth } from './useAuth'
 import { clearToken, getToken } from '@/lib/auth'
 
-// P1-06 AC-9: the admin login sends `x-csrf-token` from `GET /api/csrf`, and reads the admin role from
-// `customer.roles` (decision 5), not `metadata`. Kills: a login without the header (403 with CSRF on); a login check
-// that still reads `metadata.roles`, which no longer carries roles.
+// AC-9: the admin login sends `x-csrf-token` from `GET /api/csrf`, and reads the admin role from `customer.roles`,
+// not `metadata`.
 
 interface Call {
   method: string

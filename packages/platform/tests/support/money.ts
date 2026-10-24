@@ -5,8 +5,8 @@ import type { RawReader } from './raw.js'
 import { login, primedShopper } from './security.js'
 import type { ShopResponse } from './shopper.js'
 
-// P1-13 support: an admin over HTTP against a served kernel, and the money an order carries as a second connection
-// reads it (the `orders` amount columns and the `order_refunds` rows migration 0006 adds).
+// An admin over HTTP against a served kernel, and the money an order carries as a second connection reads it (the
+// `orders` amount columns and the `order_refunds` rows migration 0006 adds).
 
 export interface AdminClient {
   call<T>(method: string, path: string, body?: unknown): Promise<ShopResponse<T>>
@@ -14,7 +14,7 @@ export interface AdminClient {
 
 /** An admin account of its own (roles ['admin']), signed in over HTTP; every call carries its bearer token. */
 export async function adminClient(k: Kernel, baseUrl: string): Promise<AdminClient> {
-  const email = `admin-${randomUUID()}@p1-13.test`
+  const email = `admin-${randomUUID()}@money.test`
   const password = 'correct-horse-battery'
   const now = new Date()
   await k.store.transaction((tx) =>
@@ -38,7 +38,7 @@ export async function adminClient(k: Kernel, baseUrl: string): Promise<AdminClie
   }
 }
 
-/** The `payment` an admin order read carries (decision 3). */
+/** The `payment` an admin order read carries. */
 export interface PaymentView {
   state: 'unpaid' | 'paid' | 'partially_refunded' | 'refunded'
   capturedMinor: number
@@ -65,7 +65,9 @@ export interface AdminOrder {
 export async function adminOrder(admin: AdminClient, orderNumber: string): Promise<AdminOrder> {
   const res = await admin.call<AdminOrder>('GET', `/api/admin/orders/${orderNumber}`)
   if (res.status !== 200) {
-    throw new Error(`GET /api/admin/orders/${orderNumber}: ${res.status} ${JSON.stringify(res.body)}`)
+    throw new Error(
+      `GET /api/admin/orders/${orderNumber}: ${res.status} ${JSON.stringify(res.body)}`,
+    )
   }
   return res.body.data!
 }

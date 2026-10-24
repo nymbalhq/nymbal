@@ -5,10 +5,9 @@ import { serveKernel, type ServedKernel } from '../http.js'
 import type { Kernel } from '../kernel.js'
 import { adminClient, type AdminClient } from '../money.js'
 
-// P2-02 AC-3 at the route (spec P2-02-primitives-are-protocols, decision 4, B1): every open admin tab receives every
-// live event. Each admin SSE connection subscribes to the bus; on Redis Streams a subscription that shares a name with
-// the other tabs' is one consumer of one group, so each event would reach one tab only. The route subscribes unnamed.
-// Kills: the admin stream subscribing under one shared name, so a second tab misses the order it should show.
+// AC-3 at the route: every open admin tab receives every live event. Each admin SSE connection subscribes to the bus;
+// on Redis Streams a subscription that shares a name with the other tabs' is one consumer of one group, so each event
+// would reach one tab only. The route subscribes unnamed.
 
 interface Tab {
   frames: Array<{ event: string; data: unknown }>
@@ -63,7 +62,7 @@ async function until(check: () => boolean, label: string, ms = 10_000): Promise<
 }
 
 export function adminTabsSuite(bus: string, start: () => Promise<Kernel>): void {
-  describe(`P2-02 AC-3: every admin tab receives every live event (${bus})`, () => {
+  describe(`AC-3: every admin tab receives every live event (${bus})`, () => {
     let k: Kernel
     let served: ServedKernel
     const tabs: Tab[] = []
@@ -85,7 +84,7 @@ export function adminTabsSuite(bus: string, start: () => Promise<Kernel>): void 
         'every tab to connect',
       )
 
-      const variants = Array.from({ length: 3 }, () => `p2-02-variant-${randomUUID()}`)
+      const variants = Array.from({ length: 3 }, () => `primitives-variant-${randomUUID()}`)
       for (const variantId of variants) {
         await k.publisher.publish(EVT_INVENTORY_CHANGED, {
           variantId,

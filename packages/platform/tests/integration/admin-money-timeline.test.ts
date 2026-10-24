@@ -7,11 +7,9 @@ import { checkoutOf, createKernel, seedVariant, type Kernel } from '../support/k
 import { adminClient, type AdminClient, type AdminOrder } from '../support/money.js'
 import { deliverCapture } from '../support/webhooks.js'
 
-// P1-13 store walk at e3eec31 (`admin-orders.timeline`, AC-11): the admin order Timeline read "refund of 1000 GBP" for a
-// £10.00 refund, the duplicate-capture note carried no amount, and `refund.request_reused` named minor units. A merchant
-// reads £1000 for £10. Every amount the refund path writes into a history note or a 409 message reads as money in the
-// order's currency, as the admin shows money (`apps/admin/src/lib/money.ts`: en-GB, two decimals). Kills: a note or
-// message built from `amountMinor` and a currency code, and a duplicate-capture note that names no amount.
+// Every amount the refund path writes into a history note or a 409 message reads as money in the order's currency, as
+// the admin shows money (`apps/admin/src/lib/money.ts`: en-GB, two decimals), never as minor units, and the
+// duplicate-capture note names its amount.
 
 type RefundImpl = NonNullable<PaymentsAdapter['refund']>
 
@@ -36,7 +34,7 @@ function bareMinor(text: string, amountMinor: number): boolean {
   return new RegExp(`(?<![\\d.,])${amountMinor}(?![\\d.,])`).test(text)
 }
 
-describe('P1-13 store walk: money in the admin timeline and refund messages reads as money (sqlite)', () => {
+describe('money in the admin timeline and refund messages reads as money (sqlite)', () => {
   let k: Kernel
   let served: ServedKernel
   let admin: AdminClient
@@ -58,7 +56,7 @@ describe('P1-13 store walk: money in the admin timeline and refund messages read
   /** A checkout the stub pays inline: a confirmed order whose capture is its total. */
   async function paidOrder(priceMinor: number) {
     const seeded = await seedVariant(k, 2, { priceMinor })
-    const order = await checkoutOf(k, seeded, 1, `timeline-${randomUUID()}@p1-13.test`)
+    const order = await checkoutOf(k, seeded, 1, `timeline-${randomUUID()}@money.test`)
     expect(order.orderStatus).toBe('confirmed')
     return order
   }
@@ -77,7 +75,7 @@ describe('P1-13 store walk: money in the admin timeline and refund messages read
     return res.body.data!.history.map((h) => h.note)
   }
 
-  // Kills: `refund of ${amountMinor} ${currency}` in the history note (the walk's "refund of 1000 GBP").
+  // Kills: `refund of ${amountMinor} ${currency}` in the history note ("refund of 1000 GBP" for £10.00).
   it('AC-11 (timeline): a partial refund of 1000 then the rest of a 3900 GBP order shows "£10.00" and "£29.00" in GET /api/admin/orders/:n history, and no note shows 1000 or 2900 as a bare number', async () => {
     const order = await paidOrder(3_900)
     expect(order.currency).toBe('GBP')

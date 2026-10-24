@@ -2,10 +2,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { images } from '../__fixtures__/server-data.js'
 
-// P2-17 AC-3, the unit half (spec Decision 1): `nymbal-image-gallery` replaces `scripts/image-gallery.ts` and Next's
-// `ImageGallery.tsx`. Its `main` image is the first image; one `thumbnail` per image when there are several; clicking
-// thumbnail i shows image i in `main` (its url and alt), whatever was shown before. Kills: a thumbnail click that does
-// nothing (the script that did it is deleted), swaps in the wrong image, or keeps the old alt.
+// AC-3, the unit half: `nymbal-image-gallery`'s `main` image is the first image; one `thumbnail` per image when there
+// are several; clicking thumbnail i shows image i in `main` (its url and alt), whatever was shown before.
 
 const TAG = 'nymbal-image-gallery'
 
@@ -26,7 +24,7 @@ function mainImage(el: Element): { src: string | null; alt: string | null } {
   return { src: img?.getAttribute('src') ?? null, alt: img?.getAttribute('alt') ?? null }
 }
 
-describe('P2-17 AC-3: a thumbnail click swaps the gallery’s main image', () => {
+describe('AC-3: a thumbnail click swaps the gallery’s main image', () => {
   it('AC-3: property: main shows the first image, one thumbnail per image, and after clicking thumbnails in any order main shows the last one clicked', async () => {
     expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
     await fc.assert(

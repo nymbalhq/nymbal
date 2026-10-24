@@ -21,11 +21,11 @@ import { shopper, type ShopResponse } from './shopper.js'
 
 export { bytesOf, flipByte }
 
-// P3-07 acceptance support (spec P3-07-secrets-settings): a store booted through createApp on a database the caller
-// owns, served over HTTP with the logger the app hands its platform (as `nymbal dev` serves it), so a test can stop it
-// and boot it again on the same rows; stub Stripe and Anthropic APIs that record the credential of every call; a log
-// capture that keeps every record as written and parsed; and the settings rows read and written through a second
-// connection. Nothing here knows how settings are stored beyond the table and column names Decision 2 gives.
+// A store booted through createApp on a database the caller owns, served over HTTP with the logger the app hands its
+// platform (as `nymbal dev` serves it), so a test can stop it and boot it again on the same rows; stub Stripe and
+// Anthropic APIs that record the credential of every call; a log capture that keeps every record as written and
+// parsed; and the settings rows read and written through a second connection. Nothing here knows how settings are
+// stored beyond the table and column names.
 
 const HOST = '127.0.0.1'
 
@@ -46,7 +46,7 @@ export const secretArb = fc
   .string({ unit: fc.constantFrom(...SECRET_CHARS), minLength: 16, maxLength: 64 })
   .filter((s) => new Set(s).size >= 8)
 
-/** A fresh master key as Decision 3 gives it: 32 random bytes, base64. */
+/** A fresh master key: 32 random bytes, base64. */
 export function newSecretsKey(): string {
   return randomBytes(32).toString('base64')
 }
@@ -130,7 +130,7 @@ export function settingsConfigInput(
   commerce: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    store: { name: 'P3-07', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
+    store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
     infrastructure: { commandStore: dialect, documentStore: 'in-memory', eventBus: 'in-process' },
     security: {
@@ -171,7 +171,7 @@ export function anthropicBlock(stub: Stub, extra: Record<string, unknown> = {}) 
 
 /** A copy of the migrations folder for `dialect` holding only 0000-0007: a store from before the settings table. */
 export function migrationsBefore0008(dialect: Dialect): { root: string; drop(): void } {
-  const root = mkdtempSync(join(tmpdir(), 'p3-07-migrations-'))
+  const root = mkdtempSync(join(tmpdir(), 'settings-migrations-'))
   const from = join(MIGRATIONS_ROOT, dialect)
   const to = join(root, dialect)
   mkdirSync(join(to, 'meta'), { recursive: true })
@@ -257,7 +257,7 @@ export async function openStore(opts: {
     }
     const baseUrl = `http://${HOST}:${port}`
     const member = async (roles: Role[]): Promise<ApiClient> => {
-      const email = `p3-07-${randomUUID()}@settings.test`
+      const email = `settings-${randomUUID()}@settings.test`
       const password = 'correct-horse-battery'
       const now = new Date()
       await app.platform.commandStore.transaction((tx) =>
@@ -328,9 +328,9 @@ export interface SettingsFieldView {
 }
 
 /**
- * The `{ slot, path }` field of a `GET /api/admin/settings` body (Decision 6: each slot's provider and its declared
- * fields). Found by walking the body for a slot entry carrying `fields`, so the test does not pin how the slots are
- * enclosed (an array of `{ slot, fields }` or an object keyed by slot).
+ * The `{ slot, path }` field of a `GET /api/admin/settings` body (each slot's provider and its declared fields).
+ * Found by walking the body for a slot entry carrying `fields`, so the test does not pin how the slots are enclosed
+ * (an array of `{ slot, fields }` or an object keyed by slot).
  */
 export function settingsField(
   body: unknown,
@@ -522,7 +522,7 @@ export interface Stub {
   close(): Promise<void>
 }
 
-export const STUB_SUGGESTION = 'A stub suggestion from the P3-07 Anthropic stand-in'
+export const STUB_SUGGESTION = 'A stub suggestion from the Anthropic stand-in'
 
 async function drain(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = []
@@ -626,9 +626,9 @@ export interface LogCapture {
 }
 
 /**
- * Decision 7's two capture paths at once: the logger handed to createApp is a caller's own (not pino), whose calls
- * are kept as objects, and it writes each call on to `createLogger({ destination })`, whose JSON lines are kept and
- * parsed (JSON escaping hides a raw match).
+ * Both log capture paths at once: the logger handed to createApp is a caller's own (not pino), whose calls are kept
+ * as objects, and it writes each call on to `createLogger({ destination })`, whose JSON lines are kept and parsed
+ * (JSON escaping hides a raw match).
  */
 export function captureLogs(): LogCapture {
   const lines: string[] = []

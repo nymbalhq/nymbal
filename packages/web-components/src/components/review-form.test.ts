@@ -2,15 +2,12 @@ import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 
-// P2-17 AC-5 (spec Decision 1, the mandatory double-submit criterion): `nymbal-review-form` submits once per click
-// through `client.adapter.reviews.submit`. The shopper fills the form and clicks submit, then the form is submitted
-// k - 1 more times (`requestSubmit()`, which fires `submit` even while the button is disabled) while the first call is
-// held. Exactly one call is made, with `{ productId, rating, title, body }`; `submit` is disabled while it is held; on
-// success one `nymbal:review:submitted` fires with the review's id, the form resets and `submit` re-enables; on a
-// refusal the `error` part shows, `submit` re-enables and nothing fires. This replaces the review case of
-// templates/astro/tests/forms-submit-once.test.ts, whose script (`scripts/review-form.ts`) goes. Kills: a handler not
-// guarded while in flight (k clicks make k reviews), a refusal leaving the form stuck, success firing twice or not at
-// all, a form that keeps the text it sent.
+// AC-5: `nymbal-review-form` submits once per click through `client.adapter.reviews.submit`. The shopper fills the
+// form and clicks submit, then the form is submitted k - 1 more times (`requestSubmit()`, which fires `submit` even
+// while the button is disabled) while the first call is held. Exactly one call is made, with `{ productId, rating,
+// title, body }`; `submit` is disabled while it is held; on success one `nymbal:review:submitted` fires with the
+// review's id, the form resets and `submit` re-enables; on a refusal the `error` part shows, `submit` re-enables and
+// nothing fires.
 
 const TAG = 'nymbal-review-form'
 const EVENT = 'nymbal:review:submitted'
@@ -75,7 +72,7 @@ function type(el: Element, id: string, value: string): void {
 
 const text = fc.stringMatching(/^[A-Z][a-z]{2,12}( [a-z]{2,8}){0,3}$/)
 
-describe('P2-17 AC-5: the review form submits once per click', () => {
+describe('AC-5: the review form submits once per click', () => {
   it('AC-5: property: k = 1-5 submits while the first call is held make one reviews.submit call with the form’s fields; submit is disabled while held; success fires nymbal:review:submitted once with the review id, resets the form and re-enables submit; a refusal shows the error part, re-enables submit and fires nothing', async () => {
     expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
     await fc.assert(

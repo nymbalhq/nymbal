@@ -3,7 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test'
 import { API_URL, csrf } from './csrf'
 import { expect } from './fixtures'
 
-// P2-12 helpers for the PDP journeys on both templates: a product of the test's own whose variants are given option
+// Helpers for the PDP journeys on both templates: a product of the test's own whose variants are given option
 // combinations, the API's view of it, and the API's view of the shopper's cart.
 
 export interface VariantOption {
@@ -45,7 +45,7 @@ export async function optionProduct(
   combinations: OptionCombination[],
 ): Promise<ServedProduct> {
   const tag = randomUUID().slice(0, 8)
-  const slug = `p2-12-${tag}`
+  const slug = `variants-${tag}`
   const res = await request.post(`${API_URL}/api/admin/products`, {
     headers: { ...(await csrf(request)), authorization: `Bearer ${token}` },
     data: {
@@ -94,7 +94,7 @@ export async function cartQty(page: Page, variantId: string): Promise<number> {
   return (await cartLines(page)).find((l) => l.variantId === variantId)?.qty ?? 0
 }
 
-/** The stock rule of the spec (P2-12 decision 5), written out here as the journeys' oracle. */
+/** The stock rule, written out here as the journeys' oracle. */
 export function specStockLevel(stock: number): 'out' | 'low' | 'in' {
   return stock <= 0 ? 'out' : stock < 5 ? 'low' : 'in'
 }

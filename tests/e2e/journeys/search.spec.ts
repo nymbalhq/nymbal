@@ -26,8 +26,8 @@ function slugsInResults(page: Page): Promise<string[] | null> {
 }
 
 test.describe('Search', () => {
-  // P2-15 AC-5 (theming.views-are-elements): the results region is `nymbal-search-results` on both templates, its
-  // cards `nymbal-product-card`s in its shadow root, and they are the API's results for the term, in its order.
+  // AC-5: the results region is `nymbal-search-results` on both templates, its cards `nymbal-product-card`s in its
+  // shadow root, and they are the API's results for the term, in its order.
   test('AC-5: theming.views-are-elements: /search?q=wool renders inside nymbal-search-results the slugs GET /api/products/search?q=wool returns, in order', async ({
     page,
   }) => {
@@ -84,8 +84,8 @@ test.describe('Search', () => {
     }
   })
 
-  // P2-05 AC-3: the header search bar renders from the search slot. The branch is the one GET /api/capabilities names
-  // (both the native and the custom-providers store report `search`); neither branch skips.
+  // AC-3: the header search bar renders from the search slot. The branch is the one GET /api/capabilities names (both
+  // the native and the custom-providers store report `search`); neither branch skips.
   test('AC-3: the header search bar is present iff search reports search, and submitting a term opens the search page', async ({
     page,
     request,
@@ -188,8 +188,8 @@ test.describe('Search', () => {
     await expect(page.getByText(payload).first()).toBeVisible()
   })
 
-  // P1-09 AC-8: choosing a suggestion in the header search bar opens that product's page (Next pushed /products/<slug>,
-  // a 404). The term is a seeded product's name from the API's own search; the expected page is whichever suggestion is first.
+  // AC-8: choosing a suggestion in the header search bar opens that product's page. The term is a seeded product's
+  // name from the API's own search; the expected page is whichever suggestion is first.
   test('AC-8: choosing the first header suggestion for a seeded product lands on that product page, HTTP 200', async ({
     page,
   }) => {

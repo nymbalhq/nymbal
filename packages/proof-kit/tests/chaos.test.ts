@@ -11,9 +11,9 @@ import {
   type ChildStep,
 } from './fixtures/chaos'
 
-// Acceptance tests for P1-01 AC-6, AC-7 and AC-8: runUntilKilled and armChaos on a child that writes rows to a
-// SQLite file and publishes events (tests/fixtures/chaos-child.mjs). The row written before the kill point must be
-// in the reopened file, and the event at the kill point must never reach the child's subscriber.
+// AC-6, AC-7 and AC-8: runUntilKilled and armChaos on a child that writes rows to a SQLite file and publishes events
+// (tests/fixtures/chaos-child.mjs). The row written before the kill point must be in the reopened file, and the event
+// at the kill point must never reach the child's subscriber.
 
 const T = 'proof.target.v1'
 const U = 'proof.other.v1'

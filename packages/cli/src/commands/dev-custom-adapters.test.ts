@@ -8,13 +8,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { matchesQuery, type ContractProduct } from '../../../contract-tests/src/index.js'
 import { FIXTURE_SEARCH_CAPABILITIES } from '../../../../tests/e2e/fixtures/custom-providers/adapters.js'
 
-// P2-05 AC-5 (integration) and decision 8: `nymbal dev --api-only`, run from the swap fixture's directory
-// (tests/e2e/fixtures/custom-providers), starts with both `custom` slots filled from the config's `adapters` export,
-// and the API it serves answers through them: the capabilities report is the fixture's (search without `facet`,
-// payments with no client), the listing has no facets, and search matches by P2-07 decision 3 (name, SKU, variant name
-// or description; decision 9 moved the fixture there). Kills: a CLI that cannot run a `custom` slot
-// (`adapter.custom_mismatch` at start), and one that starts on the native adapters anyway.
-// Spawns the built CLI (`pnpm build` first), on a free port and a fresh SQLite file of its own.
+// AC-5: `nymbal dev --api-only`, run from the swap fixture's directory (tests/e2e/fixtures/custom-providers), starts
+// with both `custom` slots filled from the config's `adapters` export and answers through them. Spawns the built CLI
+// (`pnpm build` first), on a free port and a fresh SQLite file of its own.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLI_BIN = resolve(HERE, '..', '..', 'bin', 'nymbal.mjs')
@@ -54,7 +50,7 @@ let startError: Error | null = null
 
 beforeAll(async () => {
   const port = await freePort()
-  const dir = mkdtempSync(join(tmpdir(), 'nymbal-p2-05-'))
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-caps-'))
   const child = spawn(process.execPath, [CLI_BIN, 'dev', '--api-only', '--port', String(port)], {
     cwd: FIXTURE_DIR,
     env: { ...process.env, NYMBAL_SQLITE_PATH: join(dir, 'nymbal.db') },
@@ -109,7 +105,7 @@ describe('nymbal dev --api-only from the custom-providers fixture', () => {
     expect(res.data.payments.client).toBeNull()
   })
 
-  it('AC-5: the listing it serves has no facets, and search answers by decision 3: exactly the listed products whose name, SKU, variant name or description matches the term', async () => {
+  it('AC-5: the listing it serves has no facets, and search answers exactly the listed products whose name, SKU, variant name or description matches the term', async () => {
     const listing = await get<{
       items: Array<ContractProduct & { slug: string }>
       facets?: unknown

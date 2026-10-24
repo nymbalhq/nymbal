@@ -1,13 +1,11 @@
 import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-// The shared constants, read from source: the admin's dependency on @nymbalhq/types is part of P1-08 itself.
+// The shared constants, read from source: the admin depends on @nymbalhq/types.
 import { STANDARD_EVENT_TYPES } from '../../../../packages/types/src/index'
 import { createSseClient } from './sse'
 
-// P1-08 AC-2: the server names each SSE event by its type and sends `{ id, type, timestamp, payload }`
-// (packages/platform/src/routes/events-sse.ts). The client must listen per type and hand the handler
-// `(type, payload)`. Kills: listening on `message`/`event` only; passing the envelope or `data` instead of `payload`;
-// a malformed frame that throws or stops later frames; an `error` that does not reconnect.
+// AC-2: the server names each SSE event by its type and sends `{ id, type, timestamp, payload }`
+// (packages/platform/src/routes/events-sse.ts). The client listens per type and hands the handler `(type, payload)`.
 
 type Listener = (event: MessageEvent<string>) => void
 
@@ -102,7 +100,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('P1-08 AC-2: named SSE events decoded', () => {
+describe('AC-2: named SSE events decoded', () => {
   it('AC-2: a named event reaches the handler as (type, payload), for every type in STANDARD_EVENT_TYPES', async () => {
     const received: Array<{ type: string; payload: unknown }> = []
     const client = await connected(received)

@@ -32,7 +32,7 @@ describe('finalize() — order confirmation flow', () => {
 
     const started = await env.checkout.beginCheckout({
       cartToken: cart.token,
-      // `+stub-pending` (P1-12 decision 7): pending until the finalize below, which publishes what the test watches.
+      // `+stub-pending`: pending until the finalize below, which publishes what the test watches.
       email: 'webhook+stub-pending@test.com',
       billingAddress: testAddr,
       shippingAddress: testAddr,
@@ -60,7 +60,7 @@ describe('finalize() — order confirmation flow', () => {
     await env.commandStore.close()
   })
 
-  // P1-05 decision 4 step 1: an unknown intent is the recorded outcome `no_order`, not a throw Stripe would retry.
+  // An unknown intent is the recorded outcome `no_order`, not a throw Stripe would retry.
   it('AC-6c: finalize for an unknown paymentIntentId is the outcome no_order with no order number', async () => {
     const env = await createTestEnv()
     const result = await env.checkout.finalize('pi_unknown_intent', {
@@ -71,8 +71,8 @@ describe('finalize() — order confirmation flow', () => {
     await env.commandStore.close()
   })
 
-  // P1-05 decision 5 inverts the old "throws when already confirmed": a second finalize for a confirmed order is the
-  // idempotent no-op. Its defect is now a second order.paid, read from the committed event log, not the bus.
+  // A second finalize for a confirmed order is the idempotent no-op. Its defect is a second order.paid, read from the
+  // committed event log, not the bus.
   it('AC-6a: a second finalize for an already confirmed order returns the same order number with finalized: true and no second order.paid', async () => {
     const env = await createTestEnv()
 

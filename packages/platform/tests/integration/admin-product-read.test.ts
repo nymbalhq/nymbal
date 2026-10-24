@@ -5,10 +5,8 @@ import { serveKernel, type ServedKernel } from '../support/http.js'
 import { createKernel, type Kernel } from '../support/kernel.js'
 import { asJson } from '../support/history.js'
 
-// AC-6 on SQLite (decision 5): `GET /api/admin/products/:idOrSlug` answers the
-// live ProductSnapshot, by id and by slug alike (what `product.getById` returns, as JSON); 404 `not_found` for an id or
-// slug that is neither; 401 without a session. The admin's product edit page reads it with the slug.
-// Kills: the route not registered (today); the slug not resolved.
+// AC-6 on SQLite: `GET /api/admin/products/:idOrSlug` answers the live ProductSnapshot, by id and by slug alike; 404
+// `not_found` for neither; 401 without a session. The admin's product edit page reads it with the slug.
 
 let k: Kernel
 let served: ServedKernel

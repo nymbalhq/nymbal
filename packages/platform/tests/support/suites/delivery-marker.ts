@@ -7,17 +7,21 @@ import {
 } from '@nymbalhq/types'
 import type { Kernel } from '../kernel.js'
 
-// P2-02 AC-3 on a composed kernel, one bus per run (spec P2-02-primitives-are-protocols, decision 4, M2):
+// AC-3 on a composed kernel, one bus per run:
 // - a subscriber whose handler runs a command (which asks the relay to drain, publisher.ts afterCommit) must not wait
 //   on the pass that is waiting on that handler. The handler is wrapped by the relay's asDelivery, as the app wraps
 //   every handler on the bus it hands subscribers, so it runs inside the relay's delivery context whether the bus calls
 //   it inside `publish` (in-process) or from a stream consumer loop (Redis Streams);
 // - a read straight after a command sees its projection (the invariant publish-after-handlers exists for).
-// Kills: the delivery marker set only around `publish`, so a consumer-loop handler's drain waits on its own delivery
-// and the outer command stalls until the bus times the publish out; a bus whose publish resolves before the projection.
 
 function product(slug: string) {
-  return { slug, name: 'P2-02', description: '', status: 'active' as const, variants: [] }
+  return {
+    slug,
+    name: 'Delivery marker product',
+    description: '',
+    status: 'active' as const,
+    variants: [],
+  }
 }
 
 export function deliveryMarkerSuite(
@@ -26,7 +30,7 @@ export function deliveryMarkerSuite(
   /** Under this, the outer command did not wait on a timeout: half the bus's ackTimeoutMs, or a deadline in-process. */
   boundMs: number,
 ): void {
-  describe(`P2-02 AC-3: commands and their handlers on ${bus}`, () => {
+  describe(`AC-3: commands and their handlers on ${bus}`, () => {
     let k: Kernel
 
     beforeAll(async () => {
@@ -37,18 +41,18 @@ export function deliveryMarkerSuite(
     })
 
     it('AC-3: a product created by a handler of product.created, through asDelivery, lets the outer create resolve well before the bus timeout, and the inner create completes', async () => {
-      const outerSlug = `p2-02-outer-${randomUUID()}`
+      const outerSlug = `primitives-outer-${randomUUID()}`
       const inner: Array<Promise<string>> = []
       await k.eventBus.subscribe(
         EVT_PRODUCT_CREATED,
         k.app.relay.asDelivery(async (event: NymbalEvent) => {
           if ((event.payload as ProductCreatedV1Payload).product.slug !== outerSlug) return
           // A command from inside a handler: its afterCommit drain is the one that must not wait on this delivery.
-          const created = k.services.product.create(product(`p2-02-inner-${randomUUID()}`))
+          const created = k.services.product.create(product(`primitives-inner-${randomUUID()}`))
           inner.push(created.then((p) => p.id))
           await created
         }),
-        { name: 'p2-02-drain-probe' },
+        { name: 'primitives-drain-probe' },
       )
 
       const timedOut = Symbol('timed out')
@@ -67,7 +71,7 @@ export function deliveryMarkerSuite(
     }, 60_000)
 
     it('AC-3: a product is readable from its projection straight after the create resolves, for every one of several', async () => {
-      const slugs = Array.from({ length: 5 }, () => `p2-02-ryw-${randomUUID()}`)
+      const slugs = Array.from({ length: 5 }, () => `primitives-ryw-${randomUUID()}`)
       const misses: string[] = []
       for (const slug of slugs) {
         const created = await k.services.product.create(product(slug))

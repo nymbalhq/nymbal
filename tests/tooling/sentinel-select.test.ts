@@ -7,15 +7,13 @@ import { loadSentinels, type Sentinel, touchedPaths } from '../../scripts/sentin
 import { cleanupScratch, gateCli, REPO, scratchRepo, STRYKER_CONFIG, write } from './scratch-gate'
 import { parseYaml } from './workflow-yaml'
 
-// Acceptance tests for P1-17 (spec P1-17-loop-asks-what-user-sees), AC-13 and AC-14: sentinels by impact.
-// selectSentinels(sentinels, changed, closure) is exported by scripts/gate.ts; `closure(packageDir)` is the
-// workspace closure of a package, `(dir) => workspaceClosure(root, dir)` in the gate. A sentinel is selected when a
-// changed file is a path its patch touches, its `# killed-by` file, or inside the closure of the killed-by file's
-// package; scripts/sentinels.ts or tests/sentinels/** selects every one, and since the harness audit of 2026-10-22 a
-// configuration file selects none on its own (dev CI runs them all on every push). The plan takes the
-// selection as `sentinels: 'all' | Set<string>`; the CLI's `--sentinels all|impacted` defaults to impacted.
-// P1-20 AC-4 (spec P1-20-loop-waits-less) replaces AC-14's workflow assertion: ci.yml's sentinel job passes
-// `--sentinels impacted` on a pull request and `all` on a push; the nightly keeps `all`.
+// AC-13 and AC-14: sentinels by impact. selectSentinels(sentinels, changed, closure) is exported by scripts/gate.ts;
+// `closure(packageDir)` is the workspace closure of a package, `(dir) => workspaceClosure(root, dir)` in the gate. A
+// sentinel is selected when a changed file is a path its patch touches, its `# killed-by` file, or inside the closure
+// of the killed-by file's package; scripts/sentinels.ts or tests/sentinels/** selects every one, and a configuration
+// file selects none on its own (dev CI runs them all on every push). The plan takes the selection as
+// `sentinels: 'all' | Set<string>`; the CLI's `--sentinels all|impacted` defaults to impacted. ci.yml's sentinel job
+// passes `all` on a push, and the nightly keeps `all`.
 
 afterEach(cleanupScratch)
 
@@ -338,8 +336,8 @@ function sentinelsArgs(file: string, job: string, runs: RegExp, event: string): 
   return args
 }
 
-// P2-20 dropped CI on pull requests (tasks merge into dev locally), so every CI sentinel run is a push's: all.
-describe('AC-4 (P1-20, P2-20): a push and the nightly run all sentinels', () => {
+// CI runs on pushes only, so every CI sentinel run is a push's: all.
+describe('AC-4: a push and the nightly run all sentinels', () => {
   it("AC-4: ci.yml's sentinel job passes all on push; nightly.yml's gate:full passes all", () => {
     const ci = (event: string): string[] =>
       sentinelsArgs('.github/workflows/ci.yml', 'sentinels', /scripts\/gate\.ts/, event)

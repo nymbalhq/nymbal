@@ -15,11 +15,9 @@ import {
 } from '../money.js'
 import { openRaw, type RawReader } from '../raw.js'
 
-// P1-13 store walk at 6b529da (`standing.submit-once-admin`): a double-clicked "Refund £10.00" made two £10 refunds,
-// because the POST carried no key. `POST /api/admin/orders/:id/refund` takes an optional `requestId`; a repeat of the
-// same `requestId` for the order answers 200 with the existing refund and moves no money. Kills: the route ignoring
-// `requestId` (two rows, two provider calls, refundedMinor doubled), a check-then-insert with no unique index or lock
-// (both concurrent repeats insert), and a dedup keyed on the amount (a second, distinct refund swallowed).
+// `POST /api/admin/orders/:id/refund` takes an optional `requestId`, so a double-clicked refund moves money once: a
+// repeat of the same `requestId` for the order answers 200 with the existing refund and moves no money, in turn or
+// concurrently, while a distinct refund of the same amount is still made.
 
 type RefundImpl = (...args: unknown[]) => Promise<Refund>
 
@@ -43,7 +41,7 @@ export function refundRequestIdSuite(
   /** A fresh, empty database: its target and how to drop it afterwards. */
   fresh: () => Promise<{ target: string; drop(): Promise<void> }>,
 ): void {
-  describe(`P1-13 store walk: a refund's requestId moves money once (${dialect})`, () => {
+  describe(`a refund's requestId moves money once (${dialect})`, () => {
     let db: { target: string; drop(): Promise<void> }
     let served: ServedKernel
     let k: Kernel
@@ -89,7 +87,7 @@ export function refundRequestIdSuite(
     /** A checkout the stub pays inline: a confirmed order whose capture is its total. */
     async function paidOrder(priceMinor = 4_000, qty = 2) {
       const seeded = await seedVariant(k, qty + 1, { priceMinor })
-      const order = await checkoutOf(k, seeded, qty, `request-id-${randomUUID()}@p1-13.test`)
+      const order = await checkoutOf(k, seeded, qty, `request-id-${randomUUID()}@money.test`)
       expect(order.orderStatus).toBe('confirmed')
       return order
     }
@@ -103,7 +101,7 @@ export function refundRequestIdSuite(
     }
 
     // Kills: the route dropping `requestId`, so a retried POST refunds again.
-    it('Store walk (submit-once-admin): the same requestId sent twice in turn records one refund, calls payments.refund once, and the repeat answers 200 with the same refund id and moves no money', async () => {
+    it('the same requestId sent twice in turn records one refund, calls payments.refund once, and the repeat answers 200 with the same refund id and moves no money', async () => {
       const order = await paidOrder()
       const amount = Math.floor(order.totalMinor / 4)
       const requestId = randomUUID()
@@ -133,7 +131,7 @@ export function refundRequestIdSuite(
 
     // Kills: a check for an existing requestId and an insert with no unique index or lock between them, so two repeats
     // in flight together both find nothing and both refund.
-    it('Store walk (submit-once-admin): the same requestId sent twice concurrently records one refund, calls payments.refund once, and both answer 200 with the same refund id', async () => {
+    it('the same requestId sent twice concurrently records one refund, calls payments.refund once, and both answer 200 with the same refund id', async () => {
       const order = await paidOrder()
       const amount = Math.floor(order.totalMinor / 4)
       const requestId = randomUUID()
@@ -173,7 +171,7 @@ export function refundRequestIdSuite(
 
     // Kills: a dedup keyed on the amount or the order (a distinct refund swallowed), a requestId shared across refunds,
     // and repeats moving money; and a POST with no requestId no longer refunding each time.
-    it('Store walk (submit-once-admin): over generated sequences of refunds with repeated, distinct and absent requestIds, one refund row and one provider call per distinct requestId plus one per request without one; each repeat answers its first refund id; Σ succeeded = refundedMinor = Σ first-occurrence amounts', async () => {
+    it('over generated sequences of refunds with repeated, distinct and absent requestIds, one refund row and one provider call per distinct requestId plus one per request without one; each repeat answers its first refund id; Σ succeeded = refundedMinor = Σ first-occurrence amounts', async () => {
       await fc.assert(
         fc.asyncProperty(steps, async (seq) => {
           const order = await paidOrder()

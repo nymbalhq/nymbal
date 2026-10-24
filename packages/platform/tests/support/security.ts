@@ -1,14 +1,14 @@
 import type { RawReader } from './raw.js'
 import { shopper, type CookieJar } from './shopper.js'
 
-// P1-06 support: a shopper holding a CSRF cookie, logins over HTTP, and the roles a token and a row carry.
+// A shopper holding a CSRF cookie, logins over HTTP, and the roles a token and a row carry.
 
 export const CSRF_COOKIE = 'nymbal.csrf'
 export const CSRF_HEADER = 'x-csrf-token'
 
 /**
- * A shopper whose jar holds the `nymbal.csrf` cookie. The guard mints it on any response that lacks one (decision 2),
- * so one safe request primes the jar; the shopper then echoes it in `x-csrf-token` on every request.
+ * A shopper whose jar holds the `nymbal.csrf` cookie. The guard mints it on any response that lacks one, so one safe
+ * request primes the jar; the shopper then echoes it in `x-csrf-token` on every request.
  */
 export async function primedShopper(baseUrl: string, jar: CookieJar = new Map()) {
   const shop = shopper(baseUrl, jar)

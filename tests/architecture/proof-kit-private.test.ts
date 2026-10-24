@@ -3,9 +3,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, trackedFiles, workspaceMembers } from './workspace-manifests'
 
-// Acceptance test for P1-01 AC-17: @nymbalhq/proof-kit (the test-only finalise hook, chaos wrapper and mail sink)
-// is private, and nothing that ships can reach it: no src/ file of another workspace member imports it (by name or
-// by a relative path into packages/proof-kit), and no member lists it outside devDependencies.
+// AC-17: @nymbalhq/proof-kit (the test-only finalise hook, chaos wrapper and mail sink) is private, and nothing that
+// ships can reach it: no src/ file of another workspace member imports it (by name or by a relative path into
+// packages/proof-kit), and no member lists it outside devDependencies.
 
 const KIT_DIR = 'packages/proof-kit'
 const KIT_NAME = '@nymbalhq/proof-kit'

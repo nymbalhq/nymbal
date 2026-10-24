@@ -12,11 +12,10 @@ import { eventRows } from '../../../platform/tests/support/outbox.js'
 import { createDatabase } from '../../../platform/tests/support/postgres.js'
 import { openRaw } from '../../../platform/tests/support/raw.js'
 
-// Acceptance tests for P1-03 AC-1 (SQLite) and AC-2 (Postgres), the roadmap proof: a child process runs a checkout,
-// which the stub pays inline, with armChaos at order.paid.v1 and is SIGKILLed when that event reaches the bus, after
-// its transaction committed. The events table holds the row, undelivered. A store restarted on the same database
-// delivers it: one order-placed email in Mailpit (P1-12 decision 5 sends it on order.paid) and the order served from
-// the document store, confirmed. A second restart sends nothing.
+// AC-1 (SQLite) and AC-2 (Postgres): a child process runs a checkout, which the stub pays inline, with armChaos at
+// order.paid.v1 and is SIGKILLed when that event reaches the bus, after its transaction committed. The events table
+// holds the row, undelivered. A store restarted on the same database delivers it: one order-placed email in Mailpit
+// (sent on order.paid) and the order served from the document store, confirmed. A second restart sends nothing.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_POSTGRES_URL.
 
 function required(name: string, example: string): string {
@@ -50,7 +49,7 @@ const cases: Array<{ ac: string; dialect: Dialect; fresh: () => Promise<Database
     ac: 'AC-1',
     dialect: 'sqlite',
     async fresh() {
-      const dir = mkdtempSync(join(tmpdir(), 'p1-03-outbox-kill-'))
+      const dir = mkdtempSync(join(tmpdir(), 'outbox-kill-'))
       return {
         target: join(dir, 'store.sqlite'),
         async drop() {

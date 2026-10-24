@@ -21,15 +21,12 @@ import {
 } from '../../../tests/support/tcp-proxy'
 import { createAdapter } from './index.js'
 
-// P2-02 AC-3 on @nymbalhq/event-bus-redis-streams (spec P2-02-primitives-are-protocols) against the composed Redis, and
-// P2-13 AC-2 and AC-5 (spec P2-13-contract-tests-public): runEventBusContract from the published package runs the old
-// cases and the delivery contract, including the cases only a shared bus has (`second` is another instance on the
-// streams of the bus `make` built last), and, given `unreachable`, the downtime cases. The knobs are small so the claim
-// and timeout windows are seen in a test: claimIdleMs 400, ackTimeoutMs 4000 (P2-02 decision 4 orders them:
-// ackTimeoutMs exceeds claimIdleMs plus the slowest handler, 200 ms here). `unreachable` is a bus built through a TCP
-// proxy while Redis is up, whose proxy then closes (P2-13 decision 3). Kills, beyond the suite's: a key or stream
-// outside the prefix (the E2E teardown would leave it), a stream that is never trimmed, a writer client that retries a
-// dead host forever (decision 4, B1), and a bound that stops it reconnecting when the host returns.
+// runEventBusContract from the published package on @nymbalhq/event-bus-redis-streams, against the composed Redis,
+// including the cases only a shared bus has (`second` is another instance on the streams of the bus `make` built
+// last). The knobs are small so the claim and timeout windows are seen in a test: claimIdleMs 400, ackTimeoutMs 4000
+// (ackTimeoutMs must exceed claimIdleMs plus the slowest handler, 200 ms here). `unreachable` is a bus built through a
+// TCP proxy while Redis is up, whose proxy then closes. Beyond the suite: every key stays under the prefix, streams are
+// trimmed, and the writer is bounded on a dead host and reconnects when it returns.
 
 const url = redisServerUrl()
 const run = uniquePrefix('streams')
@@ -45,7 +42,7 @@ async function busOn(p: string, extra: Record<string, unknown> = {}, on = url) {
 
 const proxies: TcpProxy[] = []
 
-/** Within this a command on a dead host has rejected (decision 4); past HUNG_AFTER_MS it has hung. */
+/** Within this a command on a dead host has rejected; past HUNG_AFTER_MS it has hung. */
 const DOWN_WITHIN_MS = 6000
 const HUNG_AFTER_MS = 12_000
 
@@ -86,21 +83,21 @@ function event(type: string) {
     id: `evt-${randomUUID()}`,
     type,
     timestamp: new Date().toISOString(),
-    source: 'p2-02-streams',
-    correlationId: 'corr-p2-02',
+    source: 'primitives-streams',
+    correlationId: 'corr-primitives',
     payload: {},
-    metadata: { storeId: 'p2-02', environment: 'development' as const, version: '0.0.0' },
+    metadata: { storeId: 'primitives', environment: 'development' as const, version: '0.0.0' },
   }
 }
 
-describe('P2-02 AC-3 (decision 4): the Redis Streams bus keeps its streams under the prefix, trimmed', () => {
-  it('AC-3: with streamMaxLen 20, after 300 publishes and a named and an unnamed subscription, every key in the database is under a P2-02 test prefix (the stores suites share it, in parallel), and the streams hold fewer entries than were published', async () => {
+describe('AC-3: the Redis Streams bus keeps its streams under the prefix, trimmed', () => {
+  it('AC-3: with streamMaxLen 20, after 300 publishes and a named and an unnamed subscription, every key in the database is under a store-suite test prefix (the stores suites share it, in parallel), and the streams hold fewer entries than were published', async () => {
     const p = `${run}-trim`
     const bus = await busOn(p, { streamMaxLen: 20 }, onDb15())
     try {
       const handled: string[] = []
       await bus.subscribe('p2.trim.*', async (e: { id: string }) => void handled.push(e.id), {
-        name: 'p2-02-trim',
+        name: 'primitives-trim',
       })
       const sub = await bus.subscribe('p2.trim.*', async () => undefined)
       const published = Array.from({ length: 300 }, () => event('p2.trim.x'))
@@ -109,7 +106,7 @@ describe('P2-02 AC-3 (decision 4): the Redis Streams bus keeps its streams under
 
       const ours = await keysUnder(onDb15(), p)
       const everything = await keysUnder(onDb15(), '')
-      expect(everything.filter((key) => !key.startsWith('p2-02-'))).toEqual([])
+      expect(everything.filter((key) => !key.startsWith('primitives-'))).toEqual([])
       const types = await redis(
         onDb15(),
         ours.map((key) => ['TYPE', key]),
@@ -138,7 +135,7 @@ const silent: Logger = {
   child: () => silent,
 }
 
-describe('P2-13 AC-5 (decision 4, B1): the Redis Streams writer is bounded and still reconnects', () => {
+describe('AC-5: the Redis Streams writer is bounded and still reconnects', () => {
   it('AC-5: built through a proxy that then closes, a publish rejects within 6 s instead of hanging; once the port answers again, the same bus publishes to a named subscription that handles it', async () => {
     const proxy = await tcpProxy(new URL(url))
     proxies.push(proxy)
@@ -152,7 +149,7 @@ describe('P2-13 AC-5 (decision 4, B1): the Redis Streams writer is bounded and s
     try {
       const handled: string[] = []
       await bus.subscribe('p2.bounded.*', async (e: { id: string }) => void handled.push(e.id), {
-        name: 'p2-13-bounded',
+        name: 'contracts-bounded',
       })
       await bus.publish(event('p2.bounded.before'))
       await proxy.close()

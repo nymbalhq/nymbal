@@ -1,7 +1,7 @@
 import pg from 'pg'
 
 // A fresh Postgres database per test file on the server NYMBAL_TEST_POSTGRES_URL names. A missing variable throws at
-// import time so the integration-postgres project fails, never skips (P0-02 AC-9).
+// import time so the integration-postgres project fails, never skips.
 
 export const URL_VAR = 'NYMBAL_TEST_POSTGRES_URL'
 
@@ -67,7 +67,7 @@ export async function createDatabase(serverUrl: string, prefix: string): Promise
   }
 }
 
-/** One query on its own connection to `url`, for tests that read a database they do not own (P2-02). */
+/** One query on its own connection to `url`, for tests that read a database they do not own. */
 export async function queryOnce<R extends Record<string, unknown>>(
   url: string,
   sql: string,

@@ -228,8 +228,8 @@ const NAMED_TEST_FILE =
 
 /**
  * A change that can move every sentinel: the runner, or the sentinels themselves. A configuration change does not:
- * dev CI runs every sentinel on every push, so a local gate:full selects by the changed files alone (P2-13 spent
- * 246 s of 533 s on all of them for a package.json change).
+ * dev CI runs every sentinel on every push, so a local gate:full selects by the changed files alone (running all of
+ * them for a package.json change cost about half the run).
  */
 function selectsEverySentinel(path: string): boolean {
   return path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')

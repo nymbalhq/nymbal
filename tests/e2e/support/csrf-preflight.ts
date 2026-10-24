@@ -3,8 +3,8 @@ import { expect } from './fixtures'
 import { API_URL, csrf } from './csrf'
 
 /**
- * P1-06 AC-10 preflight: the API the suite runs against refuses a bare cart write with 403 `csrf.invalid`, and takes
- * the same write with the pair from `GET /api/csrf`. Without the first half every journey passing would prove nothing
+ * AC-10 preflight: the API the suite runs against refuses a bare cart write with 403 `csrf.invalid`, and takes the
+ * same write with the pair from `GET /api/csrf`. Without the first half every journey passing would prove nothing
  * about CSRF; without the second the refusal could be any 403.
  */
 export async function assertCsrfEnforced(): Promise<void> {

@@ -19,12 +19,9 @@ import {
   type SpecSecurityConfig,
 } from './tests/support.js'
 
-// Acceptance tests for P2-04 AC-4 (spec P2-04-cloudflare-waf, Interface `validate` error codes, Context plan table):
-// `validate` reads the zone's plan and live rules from the API (the fake) and refuses at plan time what Cloudflare
-// would refuse at apply time, counting every rule in a phase, the owner's included. Property: whatever `validate`
-// accepts on a plan, the fake (which enforces the plan table on every write) accepts from `apply`. Kills: a `validate`
-// that always passes (as `middleware`'s does), one that counts only Nymbal's rules, and a plan whose limits it ignores,
-// each of which leaves `apply` to fail at Cloudflare.
+// AC-4: `validate` reads the zone's plan and live rules from the API (the fake) and refuses at plan time what
+// Cloudflare would refuse at apply time, counting every rule in a phase, the owner's included. Property: whatever
+// `validate` accepts on a plan, the fake (which enforces the plan limits on every write) accepts from `apply`.
 
 let fake: FakeCloudflare
 
@@ -61,7 +58,7 @@ const limit = (window: string, action: 'block' | 'challenge' | 'throttle' = 'blo
 
 const TWO_LIMITS = { '/api/auth/login': limit('10s'), '/api/auth/register': limit('10s') }
 
-describe('P2-04 AC-4: validate against the plan', () => {
+describe('AC-4: validate against the plan', () => {
   it('AC-4 (a): on free, two rate limits give cloudflare.plan-limit naming the count 2, the limit 1 and the plan; on pro they are valid', async () => {
     const free = zone('free')
     const result = await free.adapter.validate(free.config({ rateLimit: TWO_LIMITS }))
@@ -146,7 +143,7 @@ describe('P2-04 AC-4: validate against the plan', () => {
     const zoneId = fake.addZone({ plan: 'pro', token: TOKEN })
     const results = await Promise.all(
       [
-        { zoneId, apiToken: 'cf-p2-04-wrong-token', apiBase: fake.url },
+        { zoneId, apiToken: 'cf-wrong-token', apiBase: fake.url },
         { apiToken: TOKEN, apiBase: fake.url },
         { zoneId, apiBase: fake.url },
       ].map((cloudflare) =>
