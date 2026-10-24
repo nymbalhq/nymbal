@@ -72,6 +72,8 @@ function liveNymbalRefs(zoneId: string): string[] {
     'http_ratelimit',
     'http_request_firewall_custom',
     'http_request_firewall_managed',
+    // P2-19 AC-8: the fragment cache rule's phase.
+    'http_request_cache_settings',
   ]
   return refsOf(phases.flatMap((p) => (fake.rules(zoneId, p) ?? []).filter(isNymbal)))
 }

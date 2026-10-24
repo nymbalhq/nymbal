@@ -316,11 +316,15 @@ describe('P2-04 AC-9: nymbal add cloudflare', () => {
     }
   }, 60_000)
 
-  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
+  // P2-19 AC-9 (spec P2-19-fragments-and-isr): the fragment cache rule needs Zone › Cache Rules › Edit, named beside
+  // the other two scopes in the same step.
+  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit, Cache Rules Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
     const dir = project('cloudflare-next')
     const next = (await readRecipe('cloudflare', dir)).next.join('\n')
     expect(next).toMatch(/Zone WAF/)
     expect(next).toMatch(/Zone\s*›?\s*Zone\s*›?\s*Read|Zone Read/)
+    const tokenStep = (await readRecipe('cloudflare', dir)).next.find((s) => /Zone WAF/.test(s))
+    expect(tokenStep).toMatch(/Zone\s*›\s*Cache Rules\s*›\s*Edit/)
     expect(next).toContain('trustProxy')
     expect(next).toMatch(/throttle[^.]*Enterprise/)
     expect(next).toMatch(/block or challenge/)

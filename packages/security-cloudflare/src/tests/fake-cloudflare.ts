@@ -15,6 +15,8 @@ import type { AddressInfo } from 'node:net'
 // A wrong bearer token is 401. Every request is recorded with the status it got. `edit`, `remove` and `add` are the
 // dashboard: they change the zone without any check. Where the spec marks a Cloudflare fact unconfirmed, the fake takes
 // the reading the spec takes and the live proof checks: PUT creates an absent entrypoint, and a rule keeps its `ref`.
+// P2-19 (spec P2-19-fragments-and-isr, Interface): the cache phase holds `set_cache_settings` rules only, at most the
+// plan's `cacheRules` (10 / 25 / 50 / 300), counted over the whole phase like the custom rules.
 
 export const PHASES = [
   'http_ratelimit',
@@ -42,22 +44,38 @@ export const PLAN_LIMITS: Readonly<
       periods: readonly number[]
       customRules: number
       managedRulesets: boolean
+      /** P2-19 (Interface): the cache rules the `http_request_cache_settings` phase may hold, the owner's included. */
+      cacheRules: number
     }
   >
 > = {
-  free: { rateLimitRules: 1, periods: [10], customRules: 5, managedRulesets: false },
-  pro: { rateLimitRules: 2, periods: [10, 60], customRules: 20, managedRulesets: true },
+  free: {
+    rateLimitRules: 1,
+    periods: [10],
+    customRules: 5,
+    managedRulesets: false,
+    cacheRules: 10,
+  },
+  pro: {
+    rateLimitRules: 2,
+    periods: [10, 60],
+    customRules: 20,
+    managedRulesets: true,
+    cacheRules: 25,
+  },
   business: {
     rateLimitRules: 5,
     periods: [10, 60, 120, 300, 600],
     customRules: 100,
     managedRulesets: true,
+    cacheRules: 50,
   },
   enterprise: {
     rateLimitRules: 100,
     periods: [10, 60, 120, 300, 600, 3600],
     customRules: 1000,
     managedRulesets: true,
+    cacheRules: 300,
   },
 }
 
@@ -192,6 +210,17 @@ export function violations(plan: Plan, phase: Phase, rules: readonly CfRule[]): 
     out.push(
       `the ${plan} plan allows ${limits.customRules} custom rules; the ruleset has ${rules.length}`,
     )
+  }
+  if (phase === 'http_request_cache_settings') {
+    if (rules.length > limits.cacheRules) {
+      out.push(
+        `the ${plan} plan allows ${limits.cacheRules} cache rules; the ruleset has ${rules.length}`,
+      )
+    }
+    rules.forEach((rule, i) => {
+      if (rule.action !== 'set_cache_settings')
+        out.push(`rules[${i}]: the http_request_cache_settings phase takes set_cache_settings only`)
+    })
   }
   if (phase === 'http_request_firewall_managed' && !limits.managedRulesets) {
     const managed = new Set<string>(Object.values(MANAGED_RULESET_IDS))

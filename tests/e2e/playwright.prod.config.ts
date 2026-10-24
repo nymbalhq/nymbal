@@ -79,7 +79,12 @@ const projects = [
     grepInvert: /@nextjs/,
     use: { ...devices['Desktop Chrome'], baseURL: astroURL },
   },
-  { name: 'nextjs-prod', use: { ...devices['Desktop Chrome'], baseURL: nextjsURL } },
+  // `@astro`: a journey of Astro's alone (P2-19: Astro's / renders per request, Next's is cached).
+  {
+    name: 'nextjs-prod',
+    grepInvert: /@astro\b/,
+    use: { ...devices['Desktop Chrome'], baseURL: nextjsURL },
+  },
 ].filter((p) => target === undefined || p.name === `${target}-prod`)
 
 export default defineConfig({
