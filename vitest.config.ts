@@ -61,13 +61,36 @@ if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
   throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
 }
 
+// Set by the coverage job (ci.yml), whose instrumented runs are three to four times slower than the gate's: each
+// project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
+// the longer budgets some projects set instead.
+const timeoutScale = Number(process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? 1)
+if (!Number.isInteger(timeoutScale) || timeoutScale < 1) {
+  throw new Error(
+    `NYMBAL_TEST_TIMEOUT_SCALE must be a positive integer; got "${process.env['NYMBAL_TEST_TIMEOUT_SCALE']}"`,
+  )
+}
+function scaled<P extends { test: { testTimeout?: number; hookTimeout?: number } }>(
+  projects: P[],
+): P[] {
+  if (timeoutScale === 1) return projects
+  return projects.map((p) => ({
+    ...p,
+    test: {
+      ...p.test,
+      testTimeout: (p.test.testTimeout ?? 5000) * timeoutScale,
+      hookTimeout: (p.test.hookTimeout ?? 10000) * timeoutScale,
+    },
+  }))
+}
+
 export default defineConfig({
   test: {
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
     // Node 25+ defines a global `localStorage` that is undefined without --localstorage-file, and it shadows the one
     // jsdom and happy-dom install; without Node's, the test environment's is the only one.
     poolOptions: { forks: { execArgv: ['--no-experimental-webstorage'] } },
-    projects: [
+    projects: scaled([
       {
         test: {
           name: 'create-app',
@@ -301,7 +324,7 @@ export default defineConfig({
           testTimeout: 60000,
         },
       },
-    ],
+    ]),
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**'],
