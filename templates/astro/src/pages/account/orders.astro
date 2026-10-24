@@ -1,0 +1,81 @@
+---
+import '../../styles/pages/account.css'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="Order History">
+  <h1 class="account-page-title">Order History</h1>
+
+  <div id="orders-container" data-testid="orders-list">
+    <p style="color: var(--nymbal-color-text-muted, #71717a); font-size: var(--nymbal-font-size-sm, 0.875rem);">
+      Loading orders...
+    </p>
+  </div>
+</AccountLayout>
+
+<script>
+  import type { Order } from '@nymbalhq/types'
+  import { client } from '../../lib/client.js'
+  import { escapeHtml, formatPrice, formatDate } from '../../lib/format.js'
+
+  const container = document.getElementById('orders-container')
+
+  function renderOrder(order: Order): string {
+    const number = escapeHtml(order.orderNumber)
+    const items = order.lineItems ?? []
+    return `
+      <a class="order-card" href="/account/orders/${encodeURIComponent(order.orderNumber)}" data-testid="order-${number}">
+        <div class="order-card-header">
+          <div>
+            <span class="order-card-number">#${number}</span>
+            ${order.createdAt ? `<span class="order-card-date" style="margin-left: var(--nymbal-spacing-sm, 0.5rem);">${formatDate(order.createdAt)}</span>` : ''}
+          </div>
+          <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
+        </div>
+        <div class="order-card-body">
+          <div class="order-card-items">
+            ${items
+              .slice(0, 3)
+              .map((item) => `<span>${escapeHtml(item.productName)} x${item.qty}</span>`)
+              .join('')}
+            ${items.length > 3 ? `<span>+${items.length - 3} more items</span>` : ''}
+          </div>
+        </div>
+        <div class="order-card-footer">
+          <span class="order-card-total">${formatPrice(order.totalMinor, order.currency)}</span>
+          <span class="order-card-link">View Details</span>
+        </div>
+      </a>
+    `
+  }
+
+  async function loadOrders() {
+    if (!container) return
+
+    try {
+      const { items: orders } = await client.customer.orders.list()
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="account-empty">
+            <h2 class="account-empty-title">No orders yet</h2>
+            <p class="account-empty-text">Once you place an order, it will appear here.</p>
+            <a href="/products" class="btn btn-primary">Start Shopping</a>
+          </div>
+        `
+        return
+      }
+
+      container.innerHTML = `<div class="order-list">${orders.map(renderOrder).join('')}</div>`
+    } catch {
+      container.innerHTML = `
+        <div class="account-empty">
+          <h2 class="account-empty-title">Unable to load orders</h2>
+          <p class="account-empty-text">Please try again later.</p>
+        </div>
+      `
+    }
+  }
+
+  loadOrders()
+</script>

@@ -1,0 +1,21 @@
+{
+  "name": "@nymbalhq/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@nymbalhq/config": "workspace:*",
+    "@nymbalhq/http": "workspace:*",
+    "@nymbalhq/platform": "workspace:*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@nymbalhq/web-components": "workspace:*",
+    "@playwright/test": "1.64.0",
+    "lit": "^3.3.3"
+  }
+}

@@ -1,0 +1,72 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { api } from '@/lib/api'
+import type { StockAdjustment, StockAdjustmentReason } from '@nymbalhq/types'
+import type { InventoryRow } from '@/types'
+
+interface InventoryFilters {
+  status?: string | undefined
+  q?: string | undefined
+  sort?: string | undefined
+  limit?: number | undefined
+}
+
+export function useInventory(filters: InventoryFilters = {}) {
+  return useQuery({
+    queryKey: ['inventory', 'list', filters],
+    queryFn: () => api.get<InventoryRow[]>('/api/admin/inventory', filters as Record<string, string | number | boolean | undefined | null>),
+  })
+}
+
+export function useInventoryHistory(variantId: string) {
+  return useQuery({
+    queryKey: ['inventory', 'history', variantId],
+    // The route answers the adjustments themselves, newest first.
+    queryFn: () => api.get<StockAdjustment[]>(`/api/admin/inventory/${variantId}/history`),
+    enabled: !!variantId,
+  })
+}
+
+export function useAdjustStock() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      variantId,
+      delta,
+      reason,
+      idempotencyKey,
+    }: {
+      variantId: string
+      delta: number
+      reason: StockAdjustmentReason
+      idempotencyKey?: string
+    }) =>
+      api.post<{ newQty: number; variantId: string }>(
+        `/api/admin/inventory/${variantId}/adjust`,
+        { delta, reason },
+        idempotencyKey === undefined ? undefined : { idempotencyKey },
+      ),
+    onMutate: async ({ variantId, delta }) => {
+      await queryClient.cancelQueries({ queryKey: ['inventory', 'list'] })
+      const previousData = queryClient.getQueryData<InventoryRow[]>(['inventory', 'list', {}])
+      if (previousData) {
+        queryClient.setQueryData(
+          ['inventory', 'list', {}],
+          previousData.map((row) =>
+            row.variantId === variantId
+              ? { ...row, stock: Math.max(0, row.stock + delta) }
+              : row
+          )
+        )
+      }
+      return { previousData }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(['inventory', 'list', {}], context.previousData)
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+    },
+  })
+}

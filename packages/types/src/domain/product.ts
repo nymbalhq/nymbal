@@ -1,0 +1,72 @@
+export type ProductStatus = 'draft' | 'active' | 'archived'
+export type ProductType = 'simple' | 'variable'
+export type VariantStatus = 'active' | 'inactive'
+
+export interface ProductMedia {
+  url: string
+  altText: string
+  position: number
+}
+
+export interface VariantOption {
+  name: string
+  value: string
+}
+
+export interface VariantDimensions {
+  lengthMm?: number
+  widthMm?: number
+  heightMm?: number
+}
+
+export interface Variant {
+  id: string
+  productId: string
+  sku: string
+  name: string
+  priceMinor: number
+  compareAtPriceMinor: number | null
+  weightGrams: number | null
+  dimensions: VariantDimensions | null
+  stock: number
+  lowStockThreshold: number
+  options: VariantOption[]
+  status: VariantStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Product {
+  id: string
+  slug: string
+  name: string
+  description: string
+  shortDescription: string
+  status: ProductStatus
+  type: ProductType
+  seoTitle: string
+  seoDescription: string
+  media: ProductMedia[]
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+/** The orders a product listing can be requested in; ties break by slug, ascending. */
+export const PRODUCT_SORT_KEYS = [
+  'newest',
+  'price-asc',
+  'price-desc',
+  'name-asc',
+  'name-desc',
+] as const
+export type ProductSortKey = (typeof PRODUCT_SORT_KEYS)[number]
+export const DEFAULT_PRODUCT_SORT: ProductSortKey = 'newest'
+/** What a storefront shows for each sort. */
+export const PRODUCT_SORT_LABELS: Readonly<Record<ProductSortKey, string>> = {
+  newest: 'Newest',
+  'price-asc': 'Price: Low to High',
+  'price-desc': 'Price: High to Low',
+  'name-asc': 'Name: A to Z',
+  'name-desc': 'Name: Z to A',
+}

@@ -1,0 +1,72 @@
+/* ── Search Results Page ───────────────────────────────────────────── */
+
+.page {
+  padding-block: var(--nymbal-spacing-xl);
+}
+
+.header {
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+.pageTitle {
+  font-size: 2rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  margin-bottom: var(--nymbal-spacing-sm);
+}
+
+/* ── Category filter beside the results ──────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--nymbal-spacing-lg);
+}
+
+@media (min-width: 769px) {
+  .layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+.sidebar {
+  align-self: start;
+}
+
+/* ── Suggestions ──────────────────────────────────────────────────── */
+
+.suggestions {
+  margin-top: var(--nymbal-spacing-xl);
+  padding-top: var(--nymbal-spacing-xl);
+  border-top: 1px solid var(--nymbal-color-border);
+}
+
+.suggestionsTitle {
+  font-size: var(--nymbal-font-size-lg);
+  font-weight: var(--nymbal-font-weight-bold);
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
+.suggestionTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nymbal-spacing-sm);
+}
+
+.suggestionTag {
+  padding: var(--nymbal-spacing-xs) var(--nymbal-spacing-md);
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text);
+  background: #f4f4f5;
+  border: 1px solid var(--nymbal-color-border);
+  border-radius: var(--nymbal-radius-full);
+  text-decoration: none;
+  transition: border-color var(--nymbal-transition-fast),
+    background-color var(--nymbal-transition-fast);
+}
+
+.suggestionTag:hover {
+  border-color: var(--nymbal-color-accent);
+  background-color: rgba(37, 99, 235, 0.04);
+  text-decoration: none;
+  color: var(--nymbal-color-accent);
+}

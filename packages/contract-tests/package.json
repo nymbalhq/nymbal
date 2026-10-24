@@ -1,0 +1,53 @@
+{
+  "name": "@nymbalhq/contract-tests",
+  "version": "1.3.0",
+  "description": "The contract suites every Nymbal adapter passes, for certifying your own: `nymbal test:contracts --package <pkg>`",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/contract-tests"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./kinds": {
+      "types": "./dist/kinds.d.ts",
+      "import": "./dist/kinds.js",
+      "default": "./dist/kinds.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*",
+    "fast-check": "^4.10.2"
+  },
+  "peerDependencies": {
+    "vitest": ">=3.0.0"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

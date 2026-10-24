@@ -1,0 +1,22 @@
+// AC-2: every assertion here is C4 (exact). 17 assertions, 1 test.
+import { expect, test } from 'vitest'
+
+test('exact matchers', async () => {
+  expect(count).toBe(3)
+  expect(order).toEqual({ status: 'pending' })
+  expect(list).toStrictEqual([1, 2])
+  expect(order).toMatchObject({ currency: 'USD' })
+  expect(items).toHaveLength(2)
+  expect(tags).toContain('sale')
+  expect(sku).toMatch(/^SKU-/)
+  await expect(status).toHaveText('Pending')
+  await expect(page).toHaveURL('/cart')
+  expect(spy).toHaveBeenCalledWith('order.paid')
+  expect(spy).toHaveBeenCalledTimes(1)
+  expect(tree).toMatchSnapshot()
+  expect(() => run()).toThrow('boom')
+  expect(() => run()).toThrow(AuthError)
+  expect(() => run()).toThrow(errors.NotFound)
+  expect(total).toBe(expected)
+  expect(line.priceMinor).toBe(fixture.priceMinor)
+})

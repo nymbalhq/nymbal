@@ -1,0 +1,257 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  perf-budgets:
+    name: Performance budgets — both templates, five pages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Seeds an API with the store's own images, builds and serves both templates, and holds every page to
+      # perf-budgets.json, as the pull request job does.
+      - run: pnpm perf:budgets
+      - name: Upload the budget report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-budgets
+          path: reports/perf-budgets.json
+          if-no-files-found: warn
+
+  build:
+    name: Build all packages, templates and admin
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm build:templates
+      - run: pnpm --filter @nymbalhq/admin build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: |
+            packages/*/dist
+            templates/astro/dist
+            templates/astro/.astro
+            templates/nextjs/.next
+            !templates/nextjs/.next/cache
+            apps/admin/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  mutation-full:
+    name: Mutation — full Stryker run
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Stryker over every mutate target, ignoring the incremental file
+        run: pnpm mutation --force
+      - name: Upload the Stryker report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stryker-report
+          path: reports/mutation
+          if-no-files-found: warn
+
+  quarantine:
+    # The tests the gate quarantined (vitest.config.ts, NIGHTLY): red then green with no code change in a gate or CI.
+    # Each runs here, apart from every gate, until it is fixed.
+    name: Quarantined tests
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 30
+    env:
+      CI: true
+      NYMBAL_NIGHTLY: '1'
+      NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
+      NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
+      NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      # MinIO for the S3 import suite, as in ci.yml's integration job.
+      - name: MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
+          timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
+            || { docker logs minio; exit 1; }
+      - name: The quarantined tests
+        run: pnpm exec vitest run --project nightly
+
+  gate-full:
+    name: Gate — full, end to end
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      # The previous nightly's commit is not tracked, so the incremental steps judge the last commit.
+      - name: gate:full with Docker Compose services
+        run: pnpm gate:full --base HEAD~1 --sentinels all
+      - name: Upload the gate reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-full-reports
+          path: reports
+          if-no-files-found: warn
+
+  e2e-full:
+    # gate-full already runs the desktop projects; this job adds the mobile ones.
+    name: E2E — ${{ matrix.target }}, mobile
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [astro, nextjs, admin]
+    env:
+      CI: true
+      NYMBAL_E2E_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Visual, mobile
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile
+      - name: Upload the Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ matrix.target }}
+          path: |
+            tests/e2e/test-results
+            tests/e2e/playwright-report
+          if-no-files-found: ignore
+
+  e2e-stores:
+    # The same journeys, unedited, on the other store sets: every implementation must give the storefront and
+    # the admin the same products, orders, carts, accounts and live events.
+    name: E2E — ${{ matrix.target }} on ${{ matrix.stores }}
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        stores: [postgres-redis, postgres-jsonb]
+        target: [astro, nextjs, admin]
+    env:
+      CI: true
+      NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nymbal
+          POSTGRES_DB: nymbal
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Install Playwright browsers
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      # The gate's E2E step on the set: the repo-root config's store variables, and a database and a key prefix of
+      # the run's own (scripts/e2e-server.mjs).
+      - name: E2E on the store set
+        run: >-
+          pnpm exec tsx scripts/gate.ts --full --stores ${{ matrix.stores }} --only "e2e ${{ matrix.target }}"
+          --no-build --services external --base HEAD~1
+      - name: Upload the Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ matrix.target }}-${{ matrix.stores }}
+          path: |
+            tests/e2e/test-results
+            tests/e2e/playwright-report
+          if-no-files-found: ignore

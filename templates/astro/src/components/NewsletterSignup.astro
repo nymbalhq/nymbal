@@ -1,0 +1,39 @@
+---
+import '../styles/pages/home.css'
+---
+
+<section class="newsletter section" data-testid="newsletter-signup">
+  <div class="container">
+    <h2 class="newsletter-title">Stay in the loop</h2>
+    <p class="newsletter-subtitle">Subscribe for new arrivals, exclusive offers, and more.</p>
+    <form class="newsletter-form" id="newsletter-form" data-testid="newsletter-form">
+      <input
+        type="email"
+        name="email"
+        placeholder="Your email address"
+        required
+        aria-label="Email address"
+        data-testid="newsletter-email"
+      />
+      <button type="submit" class="btn btn-primary" data-testid="newsletter-submit">
+        Subscribe
+      </button>
+    </form>
+    <p class="newsletter-success" id="newsletter-success" style="display:none; margin-top: var(--nymbal-spacing-md, 1rem); font-size: var(--nymbal-font-size-sm, 0.875rem); color: rgba(255,255,255,0.8);">
+      Thank you for subscribing!
+    </p>
+  </div>
+</section>
+
+<script>
+  const form = document.getElementById('newsletter-form') as HTMLFormElement | null
+  const success = document.getElementById('newsletter-success')
+
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault()
+    if (form && success) {
+      form.style.display = 'none'
+      success.style.display = 'block'
+    }
+  })
+</script>

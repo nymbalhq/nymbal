@@ -1,0 +1,9 @@
+// AC-6: 3 unknown matchers are other; 1 known C4 matcher. 1 test.
+import { expect, test } from 'vitest'
+
+test('custom matchers', () => {
+  expect(order).toBeValidOrder()
+  expect(lines).toSatisfyAll(isPositive)
+  expect(response).not.toHaveStatus(200)
+  expect(order.status).toBe('paid')
+})

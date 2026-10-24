@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "email": "alice@example.com",
+    "first_name": "Alice",
+    "last_name": "Smith",
+    "username": "alice",
+    "billing": { "first_name": "Alice", "last_name": "Smith", "company": "", "address_1": "1 Main St", "address_2": "", "city": "London", "state": "England", "postcode": "E1 6AN", "country": "GB", "phone": "07700900000", "email": "alice@example.com" },
+    "shipping": { "first_name": "Alice", "last_name": "Smith", "company": "", "address_1": "1 Main St", "address_2": "", "city": "London", "state": "England", "postcode": "E1 6AN", "country": "GB", "phone": "" },
+    "meta_data": [],
+    "date_created": "2024-01-15T10:00:00"
+  }
+]

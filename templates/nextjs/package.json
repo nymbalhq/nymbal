@@ -1,0 +1,33 @@
+{
+  "name": "@nymbalhq/template-nextjs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Next.js storefront shell for Nymbal (Prompt 4 extends this)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/react": "workspace:*",
+    "@nymbalhq/web-components": "workspace:*",
+    "@nymbalhq/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

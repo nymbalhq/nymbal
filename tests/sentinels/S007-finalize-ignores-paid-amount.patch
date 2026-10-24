@@ -1,0 +1,21 @@
+# id: S007
+# kind: injected
+# defect: finalize skips the amount and currency check, so any captured amount in any currency confirms the order
+# where: packages/platform/src/services/checkout-service.ts:787-790
+# killed-by: packages/platform/tests/integration/underpayment.test.ts AC-3
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/underpayment.test.ts
+diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
+--- a/packages/platform/src/services/checkout-service.ts
++++ b/packages/platform/src/services/checkout-service.ts
+@@ -784,10 +784,7 @@ export function createCheckoutService(
+       return settled(tx, paymentIntentId, order, paid)
+     }
+     // Amount and currency: an underpayment, overpayment or other currency is an outcome, never a confirmation.
+-    if (
+-      paid.amountMinor !== order.totalMinor ||
+-      paid.currency.toUpperCase() !== order.currency.toUpperCase()
+-    ) {
++    if (false) {
+       return outcome(
+         order,
+         `amount_mismatch: paid ${paid.amountMinor} ${paid.currency.toUpperCase()}, ` +

@@ -1,0 +1,58 @@
+{
+  "name": "@nymbalhq/template-astro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Nymbal commerce project",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "migrate": "nymbal migrate",
+    "seed": "nymbal seed"
+  },
+  "dependencies": {
+    "nymbal": "1.3.0",
+    "@nymbalhq/config": "1.3.0",
+    "@nymbalhq/platform": "1.3.0",
+    "@nymbalhq/stack": "1.3.0",
+    "@astrojs/node": "^11.1.8",
+    "@nymbalhq/sdk": "1.3.0",
+    "@nymbalhq/types": "1.3.0",
+    "@nymbalhq/web-components": "1.3.0",
+    "astro": "^7.4.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "nymbal": "1.3.0",
+      "@nymbalhq/config": "1.3.0",
+      "@nymbalhq/http": "1.3.0",
+      "@nymbalhq/platform": "1.3.0",
+      "@nymbalhq/react": "1.3.0",
+      "@nymbalhq/sdk": "1.3.0",
+      "@nymbalhq/stack": "1.3.0",
+      "@nymbalhq/types": "1.3.0",
+      "@nymbalhq/web-components": "1.3.0"
+    }
+  },
+  "overrides": {
+    "nymbal": "1.3.0",
+    "@nymbalhq/config": "1.3.0",
+    "@nymbalhq/http": "1.3.0",
+    "@nymbalhq/platform": "1.3.0",
+    "@nymbalhq/react": "1.3.0",
+    "@nymbalhq/sdk": "1.3.0",
+    "@nymbalhq/stack": "1.3.0",
+    "@nymbalhq/types": "1.3.0",
+    "@nymbalhq/web-components": "1.3.0"
+  }
+}

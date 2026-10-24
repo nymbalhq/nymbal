@@ -1,0 +1,74 @@
+# Services the integration tests and E2E runs depend on. `pnpm gate:full` brings them up and leaves them running.
+# Host ports are deliberately away from the defaults so they do not collide with other projects' containers; each can
+# be moved with the variable named in its mapping. The project and the ports come from the worktree's stack slot
+# (scripts/stack.ts): the main checkout is slot 0, this file's `nymbal` and defaults; a linked worktree's slot runs
+# `docker compose -p nymbal-s<k>` with every port moved, so worktrees share no container. A hand-run `docker compose`
+# gets both in a subshell, so the slot is not left pinned in the shell: `(eval "$(pnpm --silent stack env)"; docker compose up -d)`.
+name: nymbal
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: nymbal
+      POSTGRES_DB: nymbal
+    ports:
+      - '${NYMBAL_POSTGRES_PORT:-54329}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d nymbal']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '${NYMBAL_REDIS_PORT:-63799}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - '${NYMBAL_MAILPIT_SMTP_PORT:-11025}:1025'
+      - '${NYMBAL_MAILPIT_UI_PORT:-18025}:8025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible storage for `media: 's3'`. The community fork of MinIO: minio/minio and minio/mc are no longer
+  # published. Its credentials are MinIO's defaults, which the S3 test suites assume.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: ['server', '/data']
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '${NYMBAL_MINIO_PORT:-59000}:9000'
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:9000/minio/health/live']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: the bucket a local development store uses, `nymbal-media`, with anonymous download. Run it with
+  # `docker compose run --rm minio-init`; it is under a profile because `up --wait` fails on a container that exits,
+  # even with 0. The tests make buckets of their own.
+  minio-init:
+    image: pgsty/mc:RELEASE.2026-10-18T00-00-00Z@sha256:6ecdaec70bc5e8cf9d0e9a70c190f3beb1c83f11617ff4333f1fcd71ab1daf18
+    profiles: ['init']
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/nymbal-media &&
+        mc anonymous set download local/nymbal-media

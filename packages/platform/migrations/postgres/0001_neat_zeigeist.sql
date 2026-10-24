@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "orders_payment_intent_idx" ON "orders" USING btree ("payment_intent_id");

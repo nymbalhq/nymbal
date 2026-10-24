@@ -1,0 +1,17 @@
+// Linted at virtual paths by tests/tooling/payment-hook-lint.test.ts (AC-11). A line marked `lint: <rule>` is where
+// that rule must report in tests/e2e/** and tests/scaffold/**, and nowhere else in the file.
+import { startTestStore } from '@nymbalhq/proof-kit'
+import { finaliseStubPayment } from '@nymbalhq/proof-kit' // lint: no-restricted-imports
+import { stubPaymentWebhook as hook } from '@nymbalhq/proof-kit' // lint: no-restricted-imports
+
+const API = 'http://localhost:3001'
+
+export async function journey(orderId: string): Promise<unknown> {
+  const store = await startTestStore()
+  await finaliseStubPayment(store, orderId)
+  await hook(store, orderId)
+  await fetch(`${API}/api/orders/${orderId}`)
+  await fetch('/api/webhooks/stripe', { method: 'POST' }) // lint: no-restricted-syntax
+  await fetch(`${API}/api/webhooks/stripe`, { method: 'POST' }) // lint: no-restricted-syntax
+  return fetch(new URL(`/api/webhooks/${orderId}`, API)) // lint: no-restricted-syntax
+}

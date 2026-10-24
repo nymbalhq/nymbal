@@ -1,0 +1,71 @@
+{
+  "name": "@nymbalhq/web-components",
+  "version": "1.3.0",
+  "description": "Interactive commerce UI as native Web Components",
+  "keywords": [
+    "astro-component",
+    "web-components"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/web-components"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "*.css",
+    "./dist/hydrate-support.js",
+    "./src/hydrate-support.ts"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./elements/*": {
+      "types": "./dist/elements/*.d.ts",
+      "import": "./dist/elements/*.js"
+    },
+    "./hydrate-support": {
+      "types": "./dist/hydrate-support.d.ts",
+      "import": "./dist/hydrate-support.js"
+    },
+    "./ssr": {
+      "types": "./dist/ssr/index.d.ts",
+      "import": "./dist/ssr/index.js"
+    },
+    "./astro": "./astro/NymbalElement.astro",
+    "./tokens.css": "./src/tokens/tokens.css"
+  },
+  "files": [
+    "dist",
+    "astro",
+    "src/tokens/tokens.css"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@lit-labs/ssr": "^3.3.1",
+    "@lit-labs/ssr-client": "^1.1.8",
+    "@nymbalhq/sdk": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
+    "lit": "^3.3.3"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}

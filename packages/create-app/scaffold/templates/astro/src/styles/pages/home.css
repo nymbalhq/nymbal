@@ -1,0 +1,178 @@
+/* ----------------------------------------------------------------
+   Home page styles
+   ---------------------------------------------------------------- */
+
+/* ---- Hero section ---- */
+
+.hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem var(--nymbal-spacing-md, 1rem);
+  min-height: 420px;
+  background: linear-gradient(
+    135deg,
+    var(--nymbal-color-primary, #18181b) 0%,
+    #27272a 50%,
+    var(--nymbal-color-accent, #2563eb) 100%
+  );
+  color: var(--nymbal-color-text-inverse, #fff);
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 50%, rgba(37, 99, 235, 0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero-content {
+  position: relative;
+  max-width: 40rem;
+}
+
+.hero-title {
+  font-size: 2.25rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  line-height: 1.1;
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 641px) {
+  .hero {
+    padding: 5rem var(--nymbal-spacing-lg, 1.5rem);
+    min-height: 480px;
+  }
+
+  .hero-title {
+    font-size: 3rem;
+  }
+}
+
+@media (min-width: 1025px) {
+  .hero {
+    padding: 6rem var(--nymbal-spacing-lg, 1.5rem);
+    min-height: 540px;
+  }
+
+  .hero-title {
+    font-size: 3.5rem;
+  }
+}
+
+.hero-subtitle {
+  font-size: var(--nymbal-font-size-lg, 1.125rem);
+  font-weight: var(--nymbal-font-weight-normal, 400);
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
+  line-height: 1.5;
+}
+
+.hero-actions {
+  display: flex;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero-actions .btn-primary {
+  background-color: var(--nymbal-color-text-inverse, #fff);
+  color: var(--nymbal-color-primary, #18181b);
+  border-color: var(--nymbal-color-text-inverse, #fff);
+}
+
+.hero-actions .btn-primary:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+.hero-actions .btn-secondary {
+  color: var(--nymbal-color-text-inverse, #fff);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.hero-actions .btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* ---- Featured products ---- */
+
+.featured-section {
+  background-color: #fafafa;
+}
+
+.featured-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
+  flex-wrap: wrap;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+}
+
+.featured-link {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  font-weight: var(--nymbal-font-weight-medium, 500);
+  color: var(--nymbal-color-accent, #2563eb);
+  text-decoration: none;
+}
+
+.featured-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Newsletter section ---- */
+
+.newsletter {
+  text-align: center;
+  background-color: var(--nymbal-color-primary, #18181b);
+  color: var(--nymbal-color-text-inverse, #fff);
+}
+
+.newsletter-title {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+  color: var(--nymbal-color-text-inverse, #fff);
+}
+
+.newsletter-subtitle {
+  font-size: var(--nymbal-font-size-sm, 0.875rem);
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
+}
+
+.newsletter-form {
+  display: flex;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  max-width: 28rem;
+  margin-inline: auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.newsletter-form input[type='email'] {
+  flex: 1;
+  min-width: 200px;
+  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--nymbal-color-text-inverse, #fff);
+}
+
+.newsletter-form input[type='email']::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.newsletter-form input[type='email']:focus {
+  border-color: var(--nymbal-color-accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+.newsletter-form .btn {
+  flex-shrink: 0;
+}

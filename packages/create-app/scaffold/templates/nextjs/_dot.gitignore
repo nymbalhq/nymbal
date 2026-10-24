@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.astro/
+.next/
+next-env.d.ts
+coverage/
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+nymbal.db
+nymbal.db-journal
+nymbal.db-shm
+nymbal.db-wal

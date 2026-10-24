@@ -1,0 +1,15 @@
+---
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { HEADER, headerSlots } from '../../lib/chrome'
+import { headerFragment } from '../../lib/fragments'
+
+const header = await headerFragment()
+if (header instanceof Response) return header
+
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=300')
+// A fragment has no <meta charset>, so the charset is in the header.
+Astro.response.headers.set('Content-Type', 'text/html; charset=utf-8')
+---
+<NymbalElement tag="nymbal-site-header" attributes={HEADER}>
+  <Fragment set:html={headerSlots(header.canSearch)} />
+</NymbalElement>

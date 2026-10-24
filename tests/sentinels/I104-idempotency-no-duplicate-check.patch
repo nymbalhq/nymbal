@@ -1,0 +1,23 @@
+# id: I104
+# kind: injected
+# defect: withIdempotency no longer skips an event it has already processed
+# where: packages/platform/src/handlers/idempotency.ts:16-22
+# killed-by: packages/platform/tests/integration/idempotency-restart.test.ts (AC-7)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/idempotency-restart.test.ts
+diff --git a/packages/platform/src/handlers/idempotency.ts b/packages/platform/src/handlers/idempotency.ts
+--- a/packages/platform/src/handlers/idempotency.ts
++++ b/packages/platform/src/handlers/idempotency.ts
+@@ -13,13 +13,6 @@
+ ): EventHandler<T> {
+   return async (event: NymbalEvent<T>) => {
+     const { store } = repo
+-    if (await store.read((tx) => repo.seen(tx, handlerName, event.id))) {
+-      logger?.debug(
+-        { handlerName, eventId: event.id, type: event.type },
+-        'idempotency: skipping duplicate event',
+-      )
+-      return
+-    }
+     await handler(event)
+     await store.transaction((tx) => repo.markProcessed(tx, handlerName, event.id, new Date()))
+   }

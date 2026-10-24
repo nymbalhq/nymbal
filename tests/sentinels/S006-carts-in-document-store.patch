@@ -1,0 +1,86 @@
+# id: S006
+# kind: injected
+# defect: cart reads and writes are served from a process-local store, so a restart loses every cart and a second API replica answers with a different cart for the same cookie
+# where: packages/platform/src/routes/cart.ts:39
+# killed-by: packages/platform/tests/integration/persistent-cart.test.ts AC-1, AC-2
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/persistent-cart.test.ts
+diff --git a/packages/platform/src/routes/cart.ts b/packages/platform/src/routes/cart.ts
+--- a/packages/platform/src/routes/cart.ts
++++ b/packages/platform/src/routes/cart.ts
+@@ -36,7 +36,75 @@
+ }
+ 
+ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoutesDeps): void {
+-  const { cart, productRepo, variantRepo } = deps
++  const { productRepo, variantRepo } = deps
++  // S006: every cart read and write is served from this process's memory; the command store never sees a cart.
++  type LocalCart = NonNullable<Awaited<ReturnType<CartService['get']>>>
++  const local = new Map<string, LocalCart>()
++  const subtotal = (c: LocalCart): number => c.items.reduce((s, i) => s + i.priceMinor * i.qty, 0)
++  const held = (token: string): LocalCart => {
++    const c = local.get(token)
++    if (!c) throw new Error(`cart ${token} not found`)
++    return c
++  }
++  const cart: CartService = {
++    async getOrCreate(token, customerId = null) {
++      const t = token ?? globalThis.crypto.randomUUID()
++      const existing = local.get(t)
++      if (existing) return existing
++      const now = new Date()
++      const fresh: LocalCart = {
++        token: t,
++        customerId,
++        items: [],
++        subtotalMinor: 0,
++        currency: 'GBP',
++        expiresAt: new Date(now.getTime() + 30 * 24 * 3_600_000).toISOString(),
++        createdAt: now.toISOString(),
++        updatedAt: now.toISOString(),
++      }
++      local.set(t, fresh)
++      return fresh
++    },
++    async get(token) {
++      return local.get(token) ?? null
++    },
++    async addItem(token, item) {
++      const c = held(token)
++      const qty = item.qty ?? 1
++      const line = c.items.find((i) => i.variantId === item.variantId)
++      if (line) line.qty += qty
++      else c.items.push({ ...item, qty })
++      c.subtotalMinor = subtotal(c)
++      c.updatedAt = new Date().toISOString()
++      return c
++    },
++    async updateItemQuantity(token, variantId, qty) {
++      const c = held(token)
++      c.items =
++        qty === 0
++          ? c.items.filter((i) => i.variantId !== variantId)
++          : c.items.map((i) => (i.variantId === variantId ? { ...i, qty } : i))
++      c.subtotalMinor = subtotal(c)
++      c.updatedAt = new Date().toISOString()
++      return c
++    },
++    async removeItem(token, variantId) {
++      const c = held(token)
++      c.items = c.items.filter((i) => i.variantId !== variantId)
++      c.subtotalMinor = subtotal(c)
++      c.updatedAt = new Date().toISOString()
++      return c
++    },
++    async clear(token) {
++      const c = held(token)
++      c.items = []
++      c.subtotalMinor = 0
++      c.updatedAt = new Date().toISOString()
++      return c
++    },
++    merge: (guestToken, customerToken) => deps.cart.merge(guestToken, customerToken),
++    attachCustomer: (token, customerId) => deps.cart.attachCustomer(token, customerId),
++  }
+ 
+   adapter.registerRoute('GET', '/api/cart', async (ctx) => {
+     try {

@@ -1,0 +1,7 @@
+export function covered(n: number): number {
+  return n + 1
+}
+
+export function uncovered(n: number): number {
+  return n - 1
+}

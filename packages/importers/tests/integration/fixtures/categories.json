@@ -1,0 +1,4 @@
+[
+  { "id": 10, "name": "Clothing", "slug": "clothing", "parent": 0, "description": "All clothing items", "count": 2 },
+  { "id": 11, "name": "T-Shirts", "slug": "t-shirts", "parent": 10, "description": "Casual tees", "count": 2 }
+]

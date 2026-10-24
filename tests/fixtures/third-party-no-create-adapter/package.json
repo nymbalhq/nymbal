@@ -1,0 +1,14 @@
+{
+  "name": "@acme/nymbal-search-no-factory",
+  "version": "1.0.0",
+  "description": "Test fixture: a package that names itself an adapter but exports no createAdapter",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ]
+}

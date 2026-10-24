@@ -1,0 +1,17 @@
+---
+import '../styles/pages/error.css'
+import BaseLayout from '../layouts/BaseLayout.astro'
+---
+
+<BaseLayout title="Server Error | Nymbal" description="Something went wrong on our end.">
+  <div class="error-page server-error">
+    <span class="error-code">500</span>
+    <h1 class="error-title">Something went wrong</h1>
+    <p class="error-message">
+      We're having trouble loading this page. Please try again in a moment.
+    </p>
+    <div class="error-actions">
+      <a href="/" class="btn btn-primary">Go to Homepage</a>
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,69 @@
+/* ----------------------------------------------------------------
+   Error page styles (404, 500, etc.)
+   ---------------------------------------------------------------- */
+
+.error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 60vh;
+  padding: var(--nymbal-spacing-xl, 2rem) var(--nymbal-spacing-md, 1rem);
+}
+
+.error-code {
+  font-size: 6rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  line-height: 1;
+  color: var(--nymbal-color-border, #e4e4e7);
+  margin-bottom: var(--nymbal-spacing-md, 1rem);
+  letter-spacing: -0.04em;
+}
+
+@media (min-width: 641px) {
+  .error-code {
+    font-size: 8rem;
+  }
+}
+
+.error-title {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold, 700);
+  color: var(--nymbal-color-primary, #18181b);
+  margin-bottom: var(--nymbal-spacing-xs, 0.25rem);
+}
+
+@media (min-width: 641px) {
+  .error-title {
+    font-size: 1.75rem;
+  }
+}
+
+.error-message {
+  font-size: var(--nymbal-font-size-base, 1rem);
+  color: var(--nymbal-color-text-muted, #71717a);
+  max-width: 32ch;
+  margin-inline: auto;
+  margin-bottom: var(--nymbal-spacing-lg, 1.5rem);
+  line-height: 1.5;
+}
+
+.error-actions {
+  display: flex;
+  gap: var(--nymbal-spacing-sm, 0.5rem);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---- Server error variant ---- */
+
+.error-page.server-error .error-code {
+  color: rgba(220, 38, 38, 0.15);
+}
+
+/* ---- Offline / network error ---- */
+
+.error-page.network-error .error-code {
+  color: rgba(217, 119, 6, 0.15);
+}

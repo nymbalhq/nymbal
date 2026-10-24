@@ -1,0 +1,42 @@
+---
+import '../styles/pages/search.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { fetchSearch } from '../lib/api'
+
+const q = Astro.url.searchParams.get('q')?.trim() ?? ''
+const search = q === '' ? null : await fetchSearch(q, Astro.url.searchParams.get('category'))
+// The results the page's search would show, so they are in the HTML; the search store takes over once it answers.
+const results: Record<string, string> =
+  search === null ? {} : { results: JSON.stringify(search.items), query: q }
+---
+
+<BaseLayout title="Search | Nymbal" description="Search our product catalogue.">
+  <div class="search-hero">
+    <h1 class="search-hero-title">Search</h1>
+    <div class="search-bar-wrapper">
+      <input
+        type="search"
+        id="search-input"
+        class="search-input-large"
+        placeholder="Search for products..."
+        aria-label="Search products"
+        data-testid="search-page-input"
+        autocomplete="off"
+      />
+    </div>
+  </div>
+
+  <div class="container section">
+    <div class="search-layout">
+      <aside class="search-sidebar">
+        <nymbal-product-filter source="search" empty></nymbal-product-filter>
+      </aside>
+      <NymbalElement tag="nymbal-search-results" attributes={{ 'data-testid': 'search-results', ...results }} />
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../scripts/search.js'
+</script>

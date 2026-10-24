@@ -1,0 +1,36 @@
+{
+  "name": "@nymbalhq/test-factories",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed test data factories for Nymbal packages and adapters",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@nymbalhq/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@nymbalhq/stack",
+      "nymbal",
+      "@nymbalhq/config",
+      "@nymbalhq/platform",
+      "@nymbalhq/sdk",
+      "@nymbalhq/types",
+      "@nymbalhq/web-components",
+      "@nymbalhq/http",
+      "@nymbalhq/react",
+      "@nymbalhq/admin",
+      "@nymbalhq/adapter-stripe",
+      "@nymbalhq/adapter-anthropic",
+      "@nymbalhq/adapter-smtp",
+      "@nymbalhq/doc-store-redis",
+      "@nymbalhq/doc-store-postgres-jsonb",
+      "@nymbalhq/event-bus-redis-streams",
+      "@nymbalhq/media-s3",
+      "@nymbalhq/security-cloudflare",
+      "@nymbalhq/contract-tests"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "dev",
+  "updateInternalDependencies": "patch",
+  "ignore": [],
+  "privatePackages": { "version": false, "tag": false },
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true
+  }
+}

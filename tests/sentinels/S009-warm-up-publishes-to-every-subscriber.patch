@@ -1,0 +1,18 @@
+# id: S009
+# kind: injected
+# defect: warm-up (the boot rebuild) hands its catch-up events to publish (the outbox, which the relay delivers to the bus) instead of calling the derived handlers, so every subscriber hears them on every boot and every replay, side effects included: each restart re-sends recent order confirmations and welcome emails
+# where: packages/platform/src/read-models/index.ts:184
+# killed-by: packages/platform/tests/integration/warm-up-derived.test.ts AC-10
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/warm-up-derived.test.ts
+diff --git a/packages/platform/src/read-models/index.ts b/packages/platform/src/read-models/index.ts
+--- a/packages/platform/src/read-models/index.ts
++++ b/packages/platform/src/read-models/index.ts
+@@ -182,5 +182,7 @@
+       for (const h of matching) {
+         try {
+-          await h.handle(event)
++          await deps.store.transaction((tx) =>
++            deps.repos.eventLog.append(tx, [{ ...event, id: crypto.randomUUID() }]),
++          )
+         } catch (error) {
+           failures.push({

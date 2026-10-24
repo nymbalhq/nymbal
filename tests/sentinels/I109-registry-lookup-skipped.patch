@@ -1,0 +1,26 @@
+# id: I109
+# kind: injected
+# defect: a route with no routeSchemas entry registers unvalidated instead of stopping startup
+# where: packages/platform/src/routes/validated-adapter.ts:22-29
+# killed-by: packages/platform/src/routes/schemas.test.ts (AC-14)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/routes/schemas.test.ts
+diff --git a/packages/platform/src/routes/validated-adapter.ts b/packages/platform/src/routes/validated-adapter.ts
+--- a/packages/platform/src/routes/validated-adapter.ts
++++ b/packages/platform/src/routes/validated-adapter.ts
+@@ -19,14 +19,8 @@ const PARTS = ['params', 'query', 'body'] as const
+ 
+ function schemaFor(method: HttpMethod, path: string): RouteSchema {
+   const key = `${method} ${path}`
+-  const schema = routeSchemas[key]
+-  if (!schema) {
+-    throw new ConfigError(`route ${key} has no entry in routeSchemas`, {
+-      code: 'config.route_schema_missing',
+-      context: { method, path },
+-    })
+-  }
+-  return schema
++  void ConfigError
++  return routeSchemas[key] ?? { name: key, description: key }
+ }
+ 
+ /** The context the handler sees: each part parsed by its schema, an undeclared part empty. */

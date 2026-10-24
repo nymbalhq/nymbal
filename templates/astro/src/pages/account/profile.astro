@@ -1,0 +1,19 @@
+---
+import '../../styles/pages/account.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import AccountLayout from '../../layouts/AccountLayout.astro'
+---
+
+<AccountLayout title="Profile">
+  <h1 class="account-page-title">Profile</h1>
+  <p class="account-page-subtitle">Update your personal information.</p>
+
+  <NymbalElement tag="nymbal-profile-form" attributes={{ class: 'account-form' }} />
+</AccountLayout>
+
+<script>
+  import '../../lib/client.js'
+  import { NymbalProfileForm } from '@nymbalhq/web-components/elements/nymbal-profile-form'
+
+  NymbalProfileForm.define()
+</script>

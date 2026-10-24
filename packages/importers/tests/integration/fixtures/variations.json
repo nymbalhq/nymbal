@@ -1,0 +1,5 @@
+[
+  { "id": 201, "sku": "GLT-S", "regular_price": "39.99", "sale_price": "29.99", "stock_quantity": 10, "status": "publish", "attributes": [{ "id": 1, "name": "Size", "option": "S" }], "weight": "0.25", "dimensions": { "length": "30", "width": "20", "height": "2" } },
+  { "id": 202, "sku": "GLT-M", "regular_price": "39.99", "sale_price": "29.99", "stock_quantity": 15, "status": "publish", "attributes": [{ "id": 1, "name": "Size", "option": "M" }], "weight": "0.25", "dimensions": { "length": "30", "width": "20", "height": "2" } },
+  { "id": 203, "sku": "GLT-L", "regular_price": "39.99", "sale_price": "29.99", "stock_quantity": 8, "status": "publish", "attributes": [{ "id": 1, "name": "Size", "option": "L" }], "weight": "0.25", "dimensions": { "length": "30", "width": "20", "height": "2" } }
+]

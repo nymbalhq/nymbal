@@ -1,0 +1,105 @@
+---
+import '../../styles/pages/confirmation.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { fetchOrder } from '../../lib/api'
+import { isPaid, orderHeading } from '../../lib/order-status'
+
+const { orderNumber } = Astro.params
+const order = await fetchOrder(orderNumber!)
+
+if (!order) return Astro.redirect('/404')
+
+const summary = {
+  items: JSON.stringify(
+    (order.lineItems ?? []).map((item) => ({
+      name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
+      qty: item.qty,
+      unitPriceMinor: item.unitPriceMinor,
+      lineTotalMinor: item.lineTotalMinor,
+    })),
+  ),
+  'subtotal-minor': String(order.subtotalMinor),
+  'discount-minor': String(order.discountTotalMinor ?? 0),
+  'shipping-minor': String(order.shippingTotalMinor ?? 0),
+  'tax-minor': String(order.taxTotalMinor ?? 0),
+  'total-minor': String(order.totalMinor),
+  currency: order.currency,
+}
+
+const shippingAddress = order.shippingAddress
+const heading = orderHeading(order.status)
+const paid = isPaid(order.status)
+---
+
+<BaseLayout title={`${heading} | Nymbal`} description="Your order with Nymbal.">
+  <div class="container section">
+    <div class="confirmation-page" data-order-number={order.orderNumber} data-order-status={order.status}>
+      {paid && (
+        <div class="confirmation-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
+      )}
+
+      <h1 class="confirmation-title" data-testid="order-heading">{heading}</h1>
+      {paid ? (
+        <p class="confirmation-subtitle">
+          Thank you. Your order <strong data-testid="order-number">{order.orderNumber}</strong> is paid.
+          We'll send a confirmation to <strong>{order.email}</strong>.
+        </p>
+      ) : order.status === 'pending' ? (
+        <p class="confirmation-subtitle">
+          Your order <strong data-testid="order-number">{order.orderNumber}</strong> is waiting for its payment.
+          We'll email <strong>{order.email}</strong> once it arrives.
+        </p>
+      ) : (
+        <p class="confirmation-subtitle">
+          Your order <strong data-testid="order-number">{order.orderNumber}</strong> is {order.status.replace(/_/g, ' ')}.
+        </p>
+      )}
+
+      <div class="confirmation-card">
+        <h2 class="confirmation-card-title">Order Details</h2>
+
+        <dl>
+          <div class="confirmation-detail-row">
+            <dt>Order Number</dt>
+            <dd>{order.orderNumber}</dd>
+          </div>
+          <div class="confirmation-detail-row">
+            <dt>Status</dt>
+            <dd style="text-transform: capitalize;" data-testid="order-status">{order.status}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
+
+      {shippingAddress && (
+        <div class="confirmation-card">
+          <h2 class="confirmation-card-title">Shipping Address</h2>
+          <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
+            {shippingAddress.addressLine1}<br />
+            {shippingAddress.addressLine2 && <>{shippingAddress.addressLine2}<br /></>}
+            {shippingAddress.city}, {shippingAddress.region} {shippingAddress.postalCode}<br />
+            {shippingAddress.country}
+          </p>
+        </div>
+      )}
+
+      <div class="confirmation-actions">
+        <a href="/account/register" class="btn btn-primary">Create an Account</a>
+        <a href="/products" class="btn btn-secondary">Continue Shopping</a>
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../scripts/order-status.js'
+  import { NymbalOrderSummary } from '@nymbalhq/web-components/elements/nymbal-order-summary'
+
+  NymbalOrderSummary.define()
+</script>

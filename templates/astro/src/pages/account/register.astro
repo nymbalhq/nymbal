@@ -1,0 +1,28 @@
+---
+import '../../styles/pages/account.css'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+---
+
+<BaseLayout title="Create Account | Nymbal" description="Create a new Nymbal account.">
+  <div class="auth-page">
+    <div class="auth-card">
+      <h1 class="auth-card-title">Create Account</h1>
+      <p class="auth-card-subtitle">Join us and start shopping.</p>
+
+      <NymbalElement tag="nymbal-register-form" />
+
+      <p class="auth-footer">
+        Already have an account? <a href="/account/login">Sign in</a>
+      </p>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../lib/client.js'
+  import { NymbalRegisterForm } from '@nymbalhq/web-components/elements/nymbal-register-form'
+  import '../../scripts/signed-in-redirect.js'
+
+  NymbalRegisterForm.define()
+</script>

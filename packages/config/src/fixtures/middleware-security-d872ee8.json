@@ -1,0 +1,3163 @@
+{
+  "recordedAt": "d872ee8",
+  "seed": 2404,
+  "runs": 60,
+  "cases": [
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 9,
+            "window": "312s",
+            "action": "throttle"
+          }
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 9,
+            "window": "312s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["178.242.60.208"]
+        },
+        "headers": {
+          "hsts": true,
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "8ek4aXZD6KE12FX1d8he71iZ23Ab61",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["178.242.60.208"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "8ek4aXZD6KE12FX1d8he71iZ23Ab61",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/y2/-/1/": {
+            "requests": 9213,
+            "window": "984h",
+            "action": "challenge"
+          },
+          "/_-ca*5953": {
+            "requests": 61615,
+            "window": "199m",
+            "action": "throttle"
+          },
+          "/": {
+            "requests": 22348,
+            "window": "646m",
+            "action": "throttle"
+          }
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/y2/-/1/": {
+            "requests": 9213,
+            "window": "984h",
+            "action": "challenge"
+          },
+          "/_-ca*5953": {
+            "requests": 61615,
+            "window": "199m",
+            "action": "throttle"
+          },
+          "/": {
+            "requests": 22348,
+            "window": "646m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*9/0__2/": {
+            "requests": 6,
+            "window": "3m",
+            "action": "throttle"
+          },
+          "/q": {
+            "requests": 99986,
+            "window": "3s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["192.148.4.1"]
+        },
+        "headers": {
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*9/0__2/": {
+            "requests": 6,
+            "window": "3m",
+            "action": "throttle"
+          },
+          "/q": {
+            "requests": 99986,
+            "window": "3s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["192.148.4.1"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 4,
+            "window": "9h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "allowList": ["5.3.112.25"]
+        },
+        "headers": {
+          "hsts": true,
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "DELf1bBvE97C3dVXB",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 4,
+            "window": "9h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["5.3.112.25"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "DELf1bBvE97C3dVXB",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/cal": {
+            "requests": 23833,
+            "window": "1h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["36.239.189.108"]
+        },
+        "csrf": false,
+        "auth": {
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/cal": {
+            "requests": 23833,
+            "window": "1h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["36.239.189.108"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/apply": {
+            "requests": 56439,
+            "window": "990s",
+            "action": "challenge"
+          },
+          "/*/:x:_": {
+            "requests": 3994,
+            "window": "811s",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "0YS0238OCe4kdW12M8U56R1q0wYPG5S8l5l2pbg0",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/apply": {
+            "requests": 56439,
+            "window": "990s",
+            "action": "challenge"
+          },
+          "/*/:x:_": {
+            "requests": 3994,
+            "window": "811s",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "0YS0238OCe4kdW12M8U56R1q0wYPG5S8l5l2pbg0",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "strict"
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "XE7Z6ZdA1BFD1i0b3xZB5eKDxlnKk9UacD9DF8E2",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "XE7Z6ZdA1BFD1i0b3xZB5eKDxlnKk9UacD9DF8E2",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//o1-41/5": {
+            "requests": 37575,
+            "window": "205s",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["181.147.208.150"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "LgF6w4AEqsnZP3x689SgOw7s889",
+          "accessTtl": "15m"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//o1-41/5": {
+            "requests": 37575,
+            "window": "205s",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["181.147.208.150"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "LgF6w4AEqsnZP3x689SgOw7s889",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["252.46.174.201", "200.147.109.138", "208.102.234.75"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["252.46.174.201", "200.147.109.138", "208.102.234.75"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/___3_9**": {
+            "requests": 20388,
+            "window": "331h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["81.5.69.20"]
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "ouGho5vPS9t3465C0KS3o5X02y7TXSl13"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/___3_9**": {
+            "requests": 20388,
+            "window": "331h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["81.5.69.20"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "ouGho5vPS9t3465C0KS3o5X02y7TXSl13",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/**bf_/o": {
+            "requests": 195,
+            "window": "667ms",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["240.7.137.218"]
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "bVHZsr80655Oz1f5",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/**bf_/o": {
+            "requests": 195,
+            "window": "667ms",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["240.7.137.218"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "bVHZsr80655Oz1f5",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/4m-": {
+            "requests": 61263,
+            "window": "920h",
+            "action": "throttle"
+          },
+          "/_": {
+            "requests": 90542,
+            "window": "866h",
+            "action": "challenge"
+          },
+          "/": {
+            "requests": 66966,
+            "window": "106ms",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["10.69.213.114"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/4m-": {
+            "requests": 61263,
+            "window": "920h",
+            "action": "throttle"
+          },
+          "/_": {
+            "requests": 90542,
+            "window": "866h",
+            "action": "challenge"
+          },
+          "/": {
+            "requests": 66966,
+            "window": "106ms",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["10.69.213.114"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "auth": {
+          "jwtSecret": "3DzdvpVRViTj1p7sv523T794",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "3DzdvpVRViTj1p7sv523T794",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "managed"
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "u15LSaNbbg7YARh5"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "u15LSaNbbg7YARh5",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "auth": {
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//l2:d:": {
+            "requests": 90746,
+            "window": "856s",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["137.133.45.53", "175.12.28.106", "219.88.41.144"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "6O5lLf7r8BNKVz9k91sY38dI4me3ne6OVzZis",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//l2:d:": {
+            "requests": 90746,
+            "window": "856s",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["137.133.45.53", "175.12.28.106", "219.88.41.144"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "6O5lLf7r8BNKVz9k91sY38dI4me3ne6OVzZis",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*j_:a-": {
+            "requests": 75651,
+            "window": "438s",
+            "action": "challenge"
+          },
+          "/c-_*p::6": {
+            "requests": 56953,
+            "window": "634s",
+            "action": "throttle"
+          },
+          "/x_eu__-_*_": {
+            "requests": 6268,
+            "window": "912h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["157.123.226.227", "244.180.71.112", "110.216.189.230"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "aE5xQkFCLl30Dp3937OEOZPE61a22Nrj8W",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*j_:a-": {
+            "requests": 75651,
+            "window": "438s",
+            "action": "challenge"
+          },
+          "/c-_*p::6": {
+            "requests": 56953,
+            "window": "634s",
+            "action": "throttle"
+          },
+          "/x_eu__-_*_": {
+            "requests": 6268,
+            "window": "912h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["157.123.226.227", "244.180.71.112", "110.216.189.230"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "aE5xQkFCLl30Dp3937OEOZPE61a22Nrj8W",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/j/-_-r_": {
+            "requests": 7370,
+            "window": "969m",
+            "action": "block"
+          },
+          "/_-6/*/fj": {
+            "requests": 68495,
+            "window": "118h",
+            "action": "block"
+          },
+          "/_:65l/*": {
+            "requests": 63823,
+            "window": "794m",
+            "action": "block"
+          },
+          "/5/_:_/6*b:": {
+            "requests": 19075,
+            "window": "18s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "allowList": ["100.142.124.55"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "Gvr9cY9DAm8E01cN",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/j/-_-r_": {
+            "requests": 7370,
+            "window": "969m",
+            "action": "block"
+          },
+          "/_-6/*/fj": {
+            "requests": 68495,
+            "window": "118h",
+            "action": "block"
+          },
+          "/_:65l/*": {
+            "requests": 63823,
+            "window": "794m",
+            "action": "block"
+          },
+          "/5/_:_/6*b:": {
+            "requests": 19075,
+            "window": "18s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["100.142.124.55"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "Gvr9cY9DAm8E01cN",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/8fi/9*-_-": {
+            "requests": 2355,
+            "window": "365s",
+            "action": "throttle"
+          },
+          "/::_//_": {
+            "requests": 26663,
+            "window": "668h",
+            "action": "throttle"
+          },
+          "/*-": {
+            "requests": 1072,
+            "window": "723m",
+            "action": "throttle"
+          }
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "6r14vNn286Z61LDM5vGw",
+          "accessTtl": "1h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/8fi/9*-_-": {
+            "requests": 2355,
+            "window": "365s",
+            "action": "throttle"
+          },
+          "/::_//_": {
+            "requests": 26663,
+            "window": "668h",
+            "action": "throttle"
+          },
+          "/*-": {
+            "requests": 1072,
+            "window": "723m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "6r14vNn286Z61LDM5vGw",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*:/": {
+            "requests": 86785,
+            "window": "379m",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "allowList": ["152.154.55.170"]
+        },
+        "headers": {
+          "hsts": false,
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "fN1gG380981okdrt7wWa0ijko8",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*:/": {
+            "requests": 86785,
+            "window": "379m",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["152.154.55.170"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "fN1gG380981okdrt7wWa0ijko8",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["227.160.63.231", "66.228.152.224", "154.68.222.233"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "79aU280iJ3iC36LnTwh4A3IEH5OROK",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["227.160.63.231", "66.228.152.224", "154.68.222.233"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "79aU280iJ3iC36LnTwh4A3IEH5OROK",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*1_*:/*e*:": {
+            "requests": 97283,
+            "window": "421ms",
+            "action": "throttle"
+          },
+          "/-:": {
+            "requests": 1687,
+            "window": "968s",
+            "action": "throttle"
+          },
+          "//3/_99t*4": {
+            "requests": 57718,
+            "window": "322h",
+            "action": "challenge"
+          },
+          "//z_x:/": {
+            "requests": 13197,
+            "window": "862m",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["255.249.3.3", "195.251.107.69"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*1_*:/*e*:": {
+            "requests": 97283,
+            "window": "421ms",
+            "action": "throttle"
+          },
+          "/-:": {
+            "requests": 1687,
+            "window": "968s",
+            "action": "throttle"
+          },
+          "//3/_99t*4": {
+            "requests": 57718,
+            "window": "322h",
+            "action": "challenge"
+          },
+          "//z_x:/": {
+            "requests": 13197,
+            "window": "862m",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["255.249.3.3", "195.251.107.69"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": true,
+        "auth": {
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/e*bx": {
+            "requests": 15205,
+            "window": "200s",
+            "action": "block"
+          },
+          "/-/-_": {
+            "requests": 30123,
+            "window": "642s",
+            "action": "challenge"
+          },
+          "/_": {
+            "requests": 97357,
+            "window": "763s",
+            "action": "block"
+          },
+          "//_*:3:-_-": {
+            "requests": 62124,
+            "window": "108m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["1.152.204.236", "206.44.1.241"]
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "9PZ89i7cx4AubfP2s0K0ZyPp7Z",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/e*bx": {
+            "requests": 15205,
+            "window": "200s",
+            "action": "block"
+          },
+          "/-/-_": {
+            "requests": 30123,
+            "window": "642s",
+            "action": "challenge"
+          },
+          "/_": {
+            "requests": 97357,
+            "window": "763s",
+            "action": "block"
+          },
+          "//_*:3:-_-": {
+            "requests": 62124,
+            "window": "108m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["1.152.204.236", "206.44.1.241"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "9PZ89i7cx4AubfP2s0K0ZyPp7Z",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:**-/_3*": {
+            "requests": 68915,
+            "window": "967ms",
+            "action": "challenge"
+          },
+          "/dl0:": {
+            "requests": 6973,
+            "window": "45m",
+            "action": "throttle"
+          },
+          "/7:": {
+            "requests": 49035,
+            "window": "946m",
+            "action": "throttle"
+          },
+          "/*f_*/_6a_:": {
+            "requests": 90699,
+            "window": "271ms",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["218.245.46.211", "77.59.57.246"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:**-/_3*": {
+            "requests": 68915,
+            "window": "967ms",
+            "action": "challenge"
+          },
+          "/dl0:": {
+            "requests": 6973,
+            "window": "45m",
+            "action": "throttle"
+          },
+          "/7:": {
+            "requests": 49035,
+            "window": "946m",
+            "action": "throttle"
+          },
+          "/*f_*/_6a_:": {
+            "requests": 90699,
+            "window": "271ms",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["218.245.46.211", "77.59.57.246"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "headers": {
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Cf6XcsoTmJfbrgjGd88cso",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Cf6XcsoTmJfbrgjGd88cso",
+          "accessTtl": "1h",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//--": {
+            "requests": 9744,
+            "window": "232ms",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["87.161.22.245", "242.159.35.4", "117.96.210.203"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "bF2kfqDNt6WtIoHsvyx0y",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//--": {
+            "requests": 9744,
+            "window": "232ms",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["87.161.22.245", "242.159.35.4", "117.96.210.203"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "bF2kfqDNt6WtIoHsvyx0y",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["194.203.54.211", "243.209.101.72"]
+        },
+        "headers": {
+          "hsts": true,
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "AD0REeQ6KXZi7UR38f1UdTAIH3xlD2R9sxA95VE",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["194.203.54.211", "243.209.101.72"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "AD0REeQ6KXZi7UR38f1UdTAIH3xlD2R9sxA95VE",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["195.137.48.207"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Ge29ueu954qcJG23g",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["195.137.48.207"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Ge29ueu954qcJG23g",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_n*:*0-key": {
+            "requests": 26222,
+            "window": "272h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["207.26.244.250"]
+        },
+        "headers": {
+          "hsts": true,
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "P7zlyhh9HEA64O10z",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_n*:*0-key": {
+            "requests": 26222,
+            "window": "272h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["207.26.244.250"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "P7zlyhh9HEA64O10z",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/-": {
+            "requests": 65863,
+            "window": "181m",
+            "action": "throttle"
+          },
+          "/7_*v-:/*/-": {
+            "requests": 18977,
+            "window": "107m",
+            "action": "throttle"
+          },
+          "/-vx__": {
+            "requests": 28038,
+            "window": "400h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/-": {
+            "requests": 65863,
+            "window": "181m",
+            "action": "throttle"
+          },
+          "/7_*v-:/*/-": {
+            "requests": 18977,
+            "window": "107m",
+            "action": "throttle"
+          },
+          "/-vx__": {
+            "requests": 28038,
+            "window": "400h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_c-//s02g": {
+            "requests": 86509,
+            "window": "695ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "ApPb2hP0P87WxC00eXuVKf55E3ok1Ih",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_c-//s02g": {
+            "requests": 86509,
+            "window": "695ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "ApPb2hP0P87WxC00eXuVKf55E3ok1Ih",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "allowList": ["139.133.158.75", "222.217.114.15"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["139.133.158.75", "222.217.114.15"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/1": {
+            "requests": 22168,
+            "window": "5s",
+            "action": "throttle"
+          },
+          "/:/_": {
+            "requests": 32759,
+            "window": "947ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["35.9.184.86", "222.62.201.192", "121.167.235.255"]
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "873Y8KSUEq1zcq99VptBTjT54FzaYio77N8",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/1": {
+            "requests": 22168,
+            "window": "5s",
+            "action": "throttle"
+          },
+          "/:/_": {
+            "requests": 32759,
+            "window": "947ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["35.9.184.86", "222.62.201.192", "121.167.235.255"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "873Y8KSUEq1zcq99VptBTjT54FzaYio77N8",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//--__:_:": {
+            "requests": 99985,
+            "window": "853m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "allowList": ["64.45.13.172"]
+        },
+        "headers": {
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "M7Js1VQxv89l7E2O2M40H0bDyJUST",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//--__:_:": {
+            "requests": 99985,
+            "window": "853m",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["64.45.13.172"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "M7Js1VQxv89l7E2O2M40H0bDyJUST",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["138.154.158.82", "31.84.107.0", "237.106.19.95"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["138.154.158.82", "31.84.107.0", "237.106.19.95"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/8*-w_/*": {
+            "requests": 42362,
+            "window": "659h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["136.51.74.148", "191.249.214.208", "219.57.7.94"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/8*-w_/*": {
+            "requests": 42362,
+            "window": "659h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["136.51.74.148", "191.249.214.208", "219.57.7.94"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["213.58.234.148", "193.106.12.144", "47.255.118.66"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "QJ2t745xs3rtS5dj",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["213.58.234.148", "193.106.12.144", "47.255.118.66"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "QJ2t745xs3rtS5dj",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 95081,
+            "window": "46h",
+            "action": "challenge"
+          },
+          "/41": {
+            "requests": 53123,
+            "window": "351h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "xUdX10Fst1QMxdm1FNHeKwvm54092U3mA",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/": {
+            "requests": 95081,
+            "window": "46h",
+            "action": "challenge"
+          },
+          "/41": {
+            "requests": 53123,
+            "window": "351h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "xUdX10Fst1QMxdm1FNHeKwvm54092U3mA",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*2_": {
+            "requests": 25993,
+            "window": "1s",
+            "action": "throttle"
+          },
+          "/__:": {
+            "requests": 99986,
+            "window": "478h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed"
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "5MMoF79053yN6HY2AHxL6GY6X",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*2_": {
+            "requests": 25993,
+            "window": "1s",
+            "action": "throttle"
+          },
+          "/__:": {
+            "requests": 99986,
+            "window": "478h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "5MMoF79053yN6HY2AHxL6GY6X",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "JF5qb8OTvpL314EuFr8Iie9ZjxrLBQYG",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "JF5qb8OTvpL314EuFr8Iie9ZjxrLBQYG",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:-*7-*": {
+            "requests": 81798,
+            "window": "160ms",
+            "action": "block"
+          },
+          "/:0": {
+            "requests": 79082,
+            "window": "348m",
+            "action": "throttle"
+          },
+          "/:**/:8v*/": {
+            "requests": 61248,
+            "window": "518ms",
+            "action": "challenge"
+          },
+          "/": {
+            "requests": 39114,
+            "window": "946h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "auth": {
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:-*7-*": {
+            "requests": 81798,
+            "window": "160ms",
+            "action": "block"
+          },
+          "/:0": {
+            "requests": 79082,
+            "window": "348m",
+            "action": "throttle"
+          },
+          "/:**/:8v*/": {
+            "requests": 61248,
+            "window": "518ms",
+            "action": "challenge"
+          },
+          "/": {
+            "requests": 39114,
+            "window": "946h",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*:__": {
+            "requests": 17783,
+            "window": "206h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["96.53.146.91", "175.49.73.156", "62.91.206.217"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/:*:__": {
+            "requests": 17783,
+            "window": "206h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "managed",
+          "allowList": ["96.53.146.91", "175.49.73.156", "62.91.206.217"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//*:_:": {
+            "requests": 76908,
+            "window": "981s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["125.170.94.192"]
+        },
+        "headers": {
+          "hsts": true,
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "auth": {
+          "jwtSecret": "ae0xr91U6mHl8Ys9c01674",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//*:_:": {
+            "requests": 76908,
+            "window": "981s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["125.170.94.192"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "ae0xr91U6mHl8Ys9c01674",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/z:::4": {
+            "requests": 93333,
+            "window": "335h",
+            "action": "challenge"
+          },
+          "/-_-": {
+            "requests": 33179,
+            "window": "609m",
+            "action": "challenge"
+          },
+          "/-*": {
+            "requests": 77841,
+            "window": "409h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer"
+        },
+        "csrf": false
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/z:::4": {
+            "requests": 93333,
+            "window": "335h",
+            "action": "challenge"
+          },
+          "/-_-": {
+            "requests": 33179,
+            "window": "609m",
+            "action": "challenge"
+          },
+          "/-*": {
+            "requests": 77841,
+            "window": "409h",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "strict",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//**_/:a": {
+            "requests": 7841,
+            "window": "178m",
+            "action": "throttle"
+          },
+          "/_:_:": {
+            "requests": 84809,
+            "window": "748h",
+            "action": "block"
+          },
+          "/3-_**-/wr": {
+            "requests": 5566,
+            "window": "168m",
+            "action": "challenge"
+          },
+          "//c": {
+            "requests": 4720,
+            "window": "923s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["251.141.189.75"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "//**_/:a": {
+            "requests": 7841,
+            "window": "178m",
+            "action": "throttle"
+          },
+          "/_:_:": {
+            "requests": 84809,
+            "window": "748h",
+            "action": "block"
+          },
+          "/3-_**-/wr": {
+            "requests": 5566,
+            "window": "168m",
+            "action": "challenge"
+          },
+          "//c": {
+            "requests": 4720,
+            "window": "923s",
+            "action": "throttle"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["251.141.189.75"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed"
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "546UnS76n32eDdHl",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "managed",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "546UnS76n32eDdHl",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/__::": {
+            "requests": 79386,
+            "window": "570s",
+            "action": "throttle"
+          },
+          "/3i_8y:/": {
+            "requests": 89360,
+            "window": "493m",
+            "action": "block"
+          },
+          "/:-6/-p": {
+            "requests": 96470,
+            "window": "289s",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "V373c16CLHIRCP9wTau6bKg14Q13kQ",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/__::": {
+            "requests": 79386,
+            "window": "570s",
+            "action": "throttle"
+          },
+          "/3i_8y:/": {
+            "requests": 89360,
+            "window": "493m",
+            "action": "block"
+          },
+          "/:-6/-p": {
+            "requests": 96470,
+            "window": "289s",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "V373c16CLHIRCP9wTau6bKg14Q13kQ",
+          "accessTtl": "30s",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/t:7/-*i/*": {
+            "requests": 36143,
+            "window": "407h",
+            "action": "challenge"
+          },
+          "/*/-7_-5jl-": {
+            "requests": 97697,
+            "window": "750ms",
+            "action": "challenge"
+          }
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "strict-origin-when-cross-origin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "8Mc26bebEE3A9DDnn",
+          "accessTtl": "30s"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/t:7/-*i/*": {
+            "requests": 36143,
+            "window": "407h",
+            "action": "challenge"
+          },
+          "/*/-7_-5jl-": {
+            "requests": 97697,
+            "window": "750ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "8Mc26bebEE3A9DDnn",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["54.192.7.0", "76.16.145.7", "217.218.255.179"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "auth": {
+          "jwtSecret": "70E1Flx4J3xFsuf88k1eH5FbAXjaKLU",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["54.192.7.0", "76.16.145.7", "217.218.255.179"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "70E1Flx4J3xFsuf88k1eH5FbAXjaKLU",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "headers": {
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "99raurmLJzkx4xk36e264nJx0y",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "99raurmLJzkx4xk36e264nJx0y",
+          "accessTtl": "30s",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["119.15.215.118", "63.148.246.92"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "auth": {
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["119.15.215.118", "63.148.246.92"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "dev-secret-please-override-me-1234567890",
+          "accessTtl": "1h",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*_-/6_": {
+            "requests": 16,
+            "window": "837m",
+            "action": "challenge"
+          },
+          "/1callerke": {
+            "requests": 20803,
+            "window": "493m",
+            "action": "throttle"
+          },
+          "/_*-": {
+            "requests": 1288,
+            "window": "997s",
+            "action": "block"
+          }
+        },
+        "headers": {
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "auth": {
+          "jwtSecret": "AjZ09BeaE6w2YJ6QeSDZoM2kAfnq0CN6vfD7xV9",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/*_-/6_": {
+            "requests": 16,
+            "window": "837m",
+            "action": "challenge"
+          },
+          "/1callerke": {
+            "requests": 20803,
+            "window": "493m",
+            "action": "throttle"
+          },
+          "/_*-": {
+            "requests": 1288,
+            "window": "997s",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "AjZ09BeaE6w2YJ6QeSDZoM2kAfnq0CN6vfD7xV9",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/1k8/": {
+            "requests": 25437,
+            "window": "170m",
+            "action": "throttle"
+          },
+          "/-//": {
+            "requests": 51643,
+            "window": "23ms",
+            "action": "throttle"
+          },
+          "/_:*e*": {
+            "requests": 35015,
+            "window": "2h",
+            "action": "throttle"
+          },
+          "/*__/i1a:": {
+            "requests": 41640,
+            "window": "603ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Pl1vIZhZkMkzH1JF8ZaPi3p0",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/1k8/": {
+            "requests": 25437,
+            "window": "170m",
+            "action": "throttle"
+          },
+          "/-//": {
+            "requests": 51643,
+            "window": "23ms",
+            "action": "throttle"
+          },
+          "/_:*e*": {
+            "requests": 35015,
+            "window": "2h",
+            "action": "throttle"
+          },
+          "/*__/i1a:": {
+            "requests": 41640,
+            "window": "603ms",
+            "action": "challenge"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "default-src 'self'",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "Pl1vIZhZkMkzH1JF8ZaPi3p0",
+          "accessTtl": "30s",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_c:9a*": {
+            "requests": 20092,
+            "window": "226h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "allowList": ["133.245.86.80"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "qDjEOZG69W97NL5Cta1H3",
+          "accessTtl": "15m"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {
+          "/_c:9a*": {
+            "requests": 20092,
+            "window": "226h",
+            "action": "block"
+          }
+        },
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["133.245.86.80"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "relaxed",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "qDjEOZG69W97NL5Cta1H3",
+          "accessTtl": "15m",
+          "refreshTtl": "7d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["8.128.5.234", "190.67.73.69", "208.98.35.190"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "EapXDY1Aa6pWp6gUf3Mf",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": ["8.128.5.234", "190.67.73.69", "208.98.35.190"]
+        },
+        "headers": {
+          "hsts": false,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "no-referrer",
+          "xFrameOptions": "sameorigin"
+        },
+        "csrf": false,
+        "auth": {
+          "jwtSecret": "EapXDY1Aa6pWp6gUf3Mf",
+          "accessTtl": "15m",
+          "refreshTtl": "30d"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off"
+        },
+        "headers": {
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "propertyIsEnumerableYpropertyIsE",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "off",
+          "allowList": []
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "off",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "propertyIsEnumerableYpropertyIsE",
+          "accessTtl": "15m",
+          "refreshTtl": "12h"
+        }
+      }
+    },
+    {
+      "input": {
+        "adapter": "middleware",
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["250.250.248.173", "145.247.52.215", "253.2.128.144"]
+        },
+        "auth": {
+          "jwtSecret": "BCf4t8zUbjoS9909W9K61QT9JMPZiDd3cy",
+          "accessTtl": "1h"
+        }
+      },
+      "output": {
+        "adapter": "middleware",
+        "rateLimit": {},
+        "botProtection": {
+          "mode": "strict",
+          "allowList": ["250.250.248.173", "145.247.52.215", "253.2.128.144"]
+        },
+        "headers": {
+          "hsts": true,
+          "contentSecurityPolicy": "strict",
+          "referrerPolicy": "strict-origin-when-cross-origin",
+          "xFrameOptions": "deny"
+        },
+        "csrf": true,
+        "auth": {
+          "jwtSecret": "BCf4t8zUbjoS9909W9K61QT9JMPZiDd3cy",
+          "accessTtl": "1h",
+          "refreshTtl": "7d"
+        }
+      }
+    }
+  ]
+}

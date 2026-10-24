@@ -1,0 +1,13 @@
+---
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardProductOf } from '@nymbalhq/web-components/ssr'
+import { productFragment } from '../../../lib/fragments'
+
+const card = await productFragment(Astro.params.slug!)
+if (card instanceof Response) return card
+
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60')
+// A fragment has no <meta charset>, so the charset is in the header.
+Astro.response.headers.set('Content-Type', 'text/html; charset=utf-8')
+---
+<NymbalElement tag="nymbal-product-card" attributes={{ product: JSON.stringify(cardProductOf(card.product)) }} />

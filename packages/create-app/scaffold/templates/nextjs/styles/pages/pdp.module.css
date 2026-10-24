@@ -1,0 +1,143 @@
+/* ── PDP Layout ────────────────────────────────────────────────────── */
+
+.page {
+  padding-block: var(--nymbal-spacing-xl);
+}
+
+.productLayout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-xl);
+}
+
+@media (min-width: 1024px) {
+  .productLayout {
+    flex-direction: row;
+    gap: 3rem;
+  }
+}
+
+/* ── Gallery ──────────────────────────────────────────────────────── */
+
+.gallery {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Product Info ─────────────────────────────────────────────────── */
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .info {
+    max-width: 28rem;
+    position: sticky;
+    top: 5.5rem;
+    align-self: flex-start;
+  }
+}
+
+.productTitle {
+  font-size: 1.75rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  line-height: 1.2;
+  margin-bottom: var(--nymbal-spacing-sm);
+}
+
+.description {
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text-muted);
+  line-height: 1.6;
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+/* ── Variant Selector Area ────────────────────────────────────────── */
+
+.variantSection {
+  margin-bottom: var(--nymbal-spacing-lg);
+  padding-bottom: var(--nymbal-spacing-lg);
+  border-bottom: 1px solid var(--nymbal-color-border);
+}
+
+/* ── Add to Cart Area ─────────────────────────────────────────────── */
+
+.addToCartSection {
+  display: flex;
+  gap: var(--nymbal-spacing-md);
+  align-items: center;
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+.quantityWrapper {
+  flex-shrink: 0;
+}
+
+.addToCartWrapper {
+  flex: 1;
+}
+
+/* ── Details / Accordion ──────────────────────────────────────────── */
+
+.detailsSection {
+  border-top: 1px solid var(--nymbal-color-border);
+}
+
+.detailsItem {
+  border-bottom: 1px solid var(--nymbal-color-border);
+}
+
+.detailsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--nymbal-spacing-md) 0;
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.detailsSummary::-webkit-details-marker {
+  display: none;
+}
+
+.detailsSummary::after {
+  content: '+';
+  font-size: var(--nymbal-font-size-lg);
+  color: var(--nymbal-color-text-muted);
+  transition: transform var(--nymbal-transition-fast);
+}
+
+.detailsItem[open] .detailsSummary::after {
+  content: '-';
+}
+
+.detailsContent {
+  padding-bottom: var(--nymbal-spacing-md);
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text-muted);
+  line-height: 1.6;
+}
+
+/* ── Reviews ──────────────────────────────────────────────────────── */
+
+.reviewsSection {
+  margin-top: var(--nymbal-spacing-xl);
+  padding-top: var(--nymbal-spacing-xl);
+  border-top: 1px solid var(--nymbal-color-border);
+}
+
+.reviewsTitle {
+  font-size: 1.25rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+.reviewForm {
+  margin-top: var(--nymbal-spacing-xl);
+}

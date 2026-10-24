@@ -1,0 +1,132 @@
+/* ── Error Page ────────────────────────────────────────────────────── */
+
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: var(--nymbal-spacing-xl);
+  text-align: center;
+}
+
+.wrapper {
+  max-width: 28rem;
+}
+
+/* ── Error Icon ───────────────────────────────────────────────────── */
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background-color: #fef2f2;
+  color: var(--nymbal-color-error);
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
+.icon svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+/* ── Status Code ──────────────────────────────────────────────────── */
+
+.statusCode {
+  font-size: 4rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  color: var(--nymbal-color-primary);
+  line-height: 1;
+  margin-bottom: var(--nymbal-spacing-sm);
+}
+
+/* ── Text ─────────────────────────────────────────────────────────── */
+
+.title {
+  font-size: 1.5rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  margin-bottom: var(--nymbal-spacing-sm);
+}
+
+.message {
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text-muted);
+  line-height: 1.6;
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+/* ── Actions ──────────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: var(--nymbal-spacing-md);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.homeLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-sm);
+  padding: 0.625rem 1.5rem;
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  color: var(--nymbal-color-text-inverse);
+  background-color: var(--nymbal-color-primary);
+  border-radius: var(--nymbal-radius-md);
+  text-decoration: none;
+  transition: background-color var(--nymbal-transition-fast);
+}
+
+.homeLink:hover {
+  background-color: var(--nymbal-color-primary-hover);
+  text-decoration: none;
+  color: var(--nymbal-color-text-inverse);
+}
+
+.retryButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-sm);
+  padding: 0.625rem 1.5rem;
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  color: var(--nymbal-color-text);
+  background: none;
+  border: 1px solid var(--nymbal-color-border);
+  border-radius: var(--nymbal-radius-md);
+  cursor: pointer;
+  transition: border-color var(--nymbal-transition-fast),
+    background-color var(--nymbal-transition-fast);
+}
+
+.retryButton:hover {
+  border-color: var(--nymbal-color-primary);
+  background-color: #f4f4f5;
+}
+
+/* ── 404 specific ─────────────────────────────────────────────────── */
+
+.notFoundIcon {
+  background-color: #f4f4f5;
+  color: var(--nymbal-color-text-muted);
+}
+
+.searchPrompt {
+  margin-top: var(--nymbal-spacing-xl);
+  padding-top: var(--nymbal-spacing-lg);
+  border-top: 1px solid var(--nymbal-color-border);
+}
+
+.searchPromptText {
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text-muted);
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
+.searchPromptInput {
+  max-width: 20rem;
+  margin-inline: auto;
+}

@@ -1,0 +1,147 @@
+/* ── PLP Layout ────────────────────────────────────────────────────── */
+
+.page {
+  padding-block: var(--nymbal-spacing-xl);
+}
+
+.pageTitle {
+  font-size: 2rem;
+  font-weight: var(--nymbal-font-weight-bold);
+  margin-bottom: var(--nymbal-spacing-lg);
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nymbal-spacing-lg);
+}
+
+@media (min-width: 1024px) {
+  .layout {
+    flex-direction: row;
+  }
+}
+
+/* ── Filter Sidebar ───────────────────────────────────────────────── */
+
+.sidebar {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  .sidebar {
+    width: 16rem;
+    position: sticky;
+    top: 5rem;
+    align-self: flex-start;
+  }
+}
+
+.filterSection {
+  padding: var(--nymbal-spacing-md);
+  background: var(--nymbal-color-surface);
+  border: 1px solid var(--nymbal-color-border);
+  border-radius: var(--nymbal-radius-lg);
+}
+
+/* Below the sidebar's breakpoint the filters wait behind the toggle: open by default, they sat above the grid and
+   pushed it down when the filter element rendered its facets after hydration. */
+@media (max-width: 1023px) {
+  .filterSection {
+    display: none;
+  }
+}
+
+.filterTitle {
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
+.filterGroup {
+  margin-bottom: var(--nymbal-spacing-md);
+}
+
+.filterGroup:last-child {
+  margin-bottom: 0;
+}
+
+.filterGroupLabel {
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  margin-bottom: var(--nymbal-spacing-sm);
+  display: block;
+}
+
+.filterOption {
+  display: flex;
+  align-items: center;
+  gap: var(--nymbal-spacing-sm);
+  padding: var(--nymbal-spacing-xs) 0;
+  font-size: var(--nymbal-font-size-sm);
+  color: var(--nymbal-color-text);
+  cursor: pointer;
+}
+
+.filterOption input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--nymbal-color-accent);
+}
+
+.clearFilters {
+  display: inline-block;
+  margin-top: var(--nymbal-spacing-md);
+  font-size: var(--nymbal-font-size-xs);
+  color: var(--nymbal-color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+/* ── Content Area ─────────────────────────────────────────────────── */
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Sort Bar ─────────────────────────────────────────────────────── */
+
+.sortBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--nymbal-spacing-md);
+  gap: var(--nymbal-spacing-md);
+  flex-wrap: wrap;
+}
+
+.sortSelect {
+  width: 100%;
+}
+
+.mobileFilterToggle {
+  display: block;
+  width: 100%;
+  padding: 0.625rem;
+  font-size: var(--nymbal-font-size-sm);
+  font-weight: var(--nymbal-font-weight-medium);
+  color: var(--nymbal-color-text);
+  background: var(--nymbal-color-surface);
+  border: 1px solid var(--nymbal-color-border);
+  border-radius: var(--nymbal-radius-md);
+  cursor: pointer;
+  margin-bottom: var(--nymbal-spacing-md);
+  text-align: center;
+}
+
+@media (min-width: 1024px) {
+  .mobileFilterToggle {
+    display: none;
+  }
+}

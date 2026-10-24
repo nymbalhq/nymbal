@@ -1,0 +1,88 @@
+---
+import '../../styles/pages/plp.css'
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import NymbalElement from '@nymbalhq/web-components/astro'
+import { cardImageOf, cardProductOf } from '@nymbalhq/web-components/ssr'
+import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
+import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
+
+const { slug } = Astro.params
+const capabilities = await fetchCapabilities()
+const sortKeys = capabilities?.catalog.sortKeys ?? []
+const sort = sortFromUrl(Astro.url, capabilities?.catalog)
+
+const [productResult, categories] = await Promise.all([
+  fetchProducts({ limit: 24, category: slug, sort }),
+  fetchCategories(),
+])
+
+const products = productResult.items.map(cardProductOf)
+// The first card's image is the page's LCP, and the preload scanner never reaches it inside the grid's shadow root:
+// the head starts it.
+const firstImage = products[0] === undefined ? null : cardImageOf(products[0]).url
+const category = categories.find((c) => c.slug === slug)
+const categoryName = category?.name ?? slug ?? 'Category'
+const facets = productResult.facets ?? []
+---
+
+<BaseLayout
+  title={`${categoryName} | Nymbal`}
+  description={category?.description ?? `Browse ${categoryName} products.`}
+>
+  {firstImage && <link slot="head" rel="preload" as="image" href={firstImage} fetchpriority="high" />}
+  <div class="container section">
+    <NymbalElement tag="nymbal-breadcrumb" attributes={{ items: JSON.stringify([{ label: 'Home', href: '/' }, { label: categoryName }]) }} />
+
+    <div class="plp-header">
+      <h1 class="plp-title">{categoryName}</h1>
+      {category?.description && (
+        <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">
+          {category.description}
+        </p>
+      )}
+    </div>
+
+    <div class="plp-layout">
+      <aside class="plp-sidebar">
+        {facets.length > 0 && (
+          <nymbal-product-filter
+            facets={JSON.stringify(facets)}
+          ></nymbal-product-filter>
+        )}
+      </aside>
+
+      <div class="plp-grid-area">
+        {sortKeys.length > 0 && (
+          <div class="plp-sort-bar">
+            <label for="sort-select">Sort by</label>
+            <nymbal-sort-dropdown
+              sort-keys={JSON.stringify(sortKeys)}
+              value={sort}
+              default-sort={capabilities?.catalog.defaultSort}
+            >
+              <select id="sort-select" data-testid="sort-dropdown">
+                {sortKeys.map((key) => (
+                  <option value={key} selected={key === sort}>{PRODUCT_SORT_LABELS[key]}</option>
+                ))}
+              </select>
+            </nymbal-sort-dropdown>
+          </div>
+        )}
+
+        <NymbalElement
+          tag="nymbal-product-grid"
+          attributes={{
+            products: JSON.stringify(products),
+            source: 'product-list',
+            ...(productResult.nextCursor !== null && { 'has-more': '' }),
+            'data-category': slug!,
+          }}
+        />
+      </div>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  import '../../scripts/plp.js'
+</script>

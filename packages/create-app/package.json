@@ -1,0 +1,45 @@
+{
+  "name": "create-nymbal-app",
+  "version": "0.5.0",
+  "description": "Scaffold a new Nymbal commerce project",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/create-app"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "create-nymbal-app": "./bin/create-nymbal-app.mjs"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "bin",
+    "dist",
+    "scaffold"
+  ],
+  "scripts": {
+    "build": "tsup && pnpm sync:scaffold",
+    "dev": "tsup --watch",
+    "sync:scaffold": "node ./scripts/sync-scaffold.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

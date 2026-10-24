@@ -1,0 +1,31 @@
+{
+  "name": "@nymbalhq/stack",
+  "version": "1.3.0",
+  "description": "The Nymbal runtime packages at one exact, tested version",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/stack"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "package.json"
+  ],
+  "dependencies": {
+    "@nymbalhq/config": "1.3.0",
+    "@nymbalhq/http": "1.3.0",
+    "@nymbalhq/platform": "1.3.0",
+    "@nymbalhq/react": "1.3.0",
+    "@nymbalhq/sdk": "1.3.0",
+    "@nymbalhq/types": "1.3.0",
+    "@nymbalhq/web-components": "1.3.0",
+    "nymbal": "1.3.0"
+  }
+}

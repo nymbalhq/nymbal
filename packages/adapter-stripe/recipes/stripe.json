@@ -1,0 +1,37 @@
+{
+  "name": "stripe",
+  "summary": "Take card payments with Stripe instead of the native stub.",
+  "install": ["@nymbalhq/adapter-stripe", "stripe"],
+  "set": [
+    {
+      "path": "commerce.payments",
+      "value": {
+        "provider": "stripe"
+      }
+    }
+  ],
+  "env": [
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "example": "",
+      "required": true,
+      "comment": "Your Stripe secret key (Dashboard, Developers, API keys)"
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "example": "",
+      "required": true,
+      "comment": "The signing secret of the webhook endpoint below"
+    },
+    {
+      "name": "STRIPE_PUBLISHABLE_KEY",
+      "example": "",
+      "required": true,
+      "comment": "Your Stripe publishable key, which the storefront's payment form uses"
+    }
+  ],
+  "next": [
+    "Add a webhook endpoint in the Stripe dashboard at https://<your API host>/api/webhooks/stripe and copy its signing secret into STRIPE_WEBHOOK_SECRET.",
+    "For local development, stripe listen --forward-to localhost:3001/api/webhooks/stripe prints a signing secret to use instead."
+  ]
+}
