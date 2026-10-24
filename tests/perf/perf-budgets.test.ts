@@ -26,6 +26,13 @@ const baseline = JSON.parse(
 ) as { commit: string; scriptBytes: number }
 
 const LIMITS = { lcpMs: 2500, cls: 0.1, tbtMs: 200 } as const
+// P2-17 (spec Decision 9, the human's ruling of 2026-10-23): the Next home and listing, whose RSC flight payload
+// repeats every server-rendered element's styles, are held to 3000 ms until those styles are sent once, as the budget
+// file records (tests/tooling/perf-budgets-file.test.ts keeps that list to these two). Every other page has no exception.
+const LCP_EXCEPTIONS_MS: Record<string, number> = {
+  'nextjs / home': 3000,
+  'nextjs / listing': 3000,
+}
 const PAGES = ['home', 'listing', 'product', 'cart', 'checkout'] as const
 const TEMPLATES = ['astro', 'nextjs'] as const
 
@@ -151,7 +158,7 @@ describe('P2-08 AC-2: the run fails a slow page', () => {
 })
 
 describe('P2-08 AC-4: the budgets hold', () => {
-  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (P2-18 AC-6: no exception), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
+  it('AC-4: perf:budgets exits 0 for both templates on the five pages, each within LCP 2500 ms (P2-17 Decision 9: nextjs home and listing at 3000), CLS 0.1, TBT 200 ms and its scriptBytes budget', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     expect(real.status, tail(real.output)).toBe(0)
     expect(real.report, 'reports/perf-budgets.json after the real run').toBeDefined()
@@ -159,7 +166,9 @@ describe('P2-08 AC-4: the budgets hold', () => {
     expect(pages).toEqual(TEMPLATES.flatMap((t) => PAGES.map((p) => `${t} / ${p}`)).sort())
     for (const r of real.report!) {
       const at = `${r.template} / ${r.page}`
-      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(LIMITS.lcpMs)
+      expect(r.measured.lcpMs, `${at} lcpMs`).toBeLessThanOrEqual(
+        LCP_EXCEPTIONS_MS[at] ?? LIMITS.lcpMs,
+      )
       expect(r.measured.cls, `${at} cls`).toBeLessThanOrEqual(LIMITS.cls)
       expect(r.measured.tbtMs, `${at} tbtMs`).toBeLessThanOrEqual(LIMITS.tbtMs)
       expect(r.measured.scriptBytes, `${at} scriptBytes`).toBeLessThanOrEqual(r.budget.scriptBytes)
