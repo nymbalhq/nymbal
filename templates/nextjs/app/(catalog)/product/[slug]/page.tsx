@@ -28,7 +28,7 @@ interface ProductPageProps {
 
 export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
   const { slug } = await params
-  const product = await fetchProduct(slug)
+  const product = await fetchProduct(slug, revalidate)
 
   if (!product) {
     return { title: 'Product Not Found' }
@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params
-  const product = await fetchProduct(slug)
+  const product = await fetchProduct(slug, revalidate)
 
   if (!product) notFound()
 

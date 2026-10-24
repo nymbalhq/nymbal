@@ -23,9 +23,10 @@ const CATALOG_REVALIDATE_S = {
   reviews: 60,
 } as const
 
-function revalidateOf(read: keyof typeof CATALOG_REVALIDATE_S): number {
+function revalidateOf(read: keyof typeof CATALOG_REVALIDATE_S, seconds?: number): number {
   const override = Number(process.env.NYMBAL_CATALOG_REVALIDATE_S)
-  return Number.isInteger(override) && override > 0 ? override : CATALOG_REVALIDATE_S[read]
+  if (Number.isInteger(override) && override > 0) return override
+  return seconds ?? CATALOG_REVALIDATE_S[read]
 }
 
 /**
@@ -38,12 +39,13 @@ function revalidateOf(read: keyof typeof CATALOG_REVALIDATE_S): number {
 async function catalogFetch(
   url: string,
   read: keyof typeof CATALOG_REVALIDATE_S,
+  seconds?: number,
 ): Promise<Response> {
   const res = await fetch(
     url,
     process.env.NODE_ENV === 'development'
       ? { cache: 'no-store' }
-      : { next: { revalidate: revalidateOf(read) } },
+      : { next: { revalidate: revalidateOf(read, seconds) } },
   )
   if (!res.ok && res.status !== 404) throw new Error(`[api] GET ${url} answered ${res.status}`)
   return res
@@ -85,10 +87,17 @@ export function sortFromSearchParams(
   return keys.find((key) => key === sort) ?? catalog?.defaultSort ?? DEFAULT_PRODUCT_SORT
 }
 
-/** The product, or null when the API has none by that slug (a 404, the only answer that is null). */
-export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {
+/**
+ * The product, or null when the API has none by that slug (a 404, the only answer that is null). `revalidateS` is the
+ * caller's route TTL when it is shorter than the default: callers share one data-cache entry, and Next judges its
+ * staleness by each caller's own seconds, so the PDP's 60 s regeneration reads stock no older than 60 s.
+ */
+export async function fetchProduct(
+  slug: string,
+  revalidateS?: number,
+): Promise<DenormalisedProduct | null> {
   const url = `${API_URL}/api/products/${encodeURIComponent(slug)}`
-  const res = await catalogFetch(url, 'product')
+  const res = await catalogFetch(url, 'product', revalidateS)
   if (res.status === 404) return null
   const envelope = (await res.json()) as { data: DenormalisedProduct }
   return envelope.data ?? null

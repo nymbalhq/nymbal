@@ -11,7 +11,8 @@ import type * as ApiModule from '@/lib/api'
 // does not cache and a failed regeneration keeps the last good page, while the shopper fetchers (cart, order, search)
 // still resolve to null. (c) `fetchProduct` is null on a 404 only, and `fetchCategories` is the API's list. (d) The
 // catalog fetchers pass `next.revalidate` (capabilities 3600, categories 21600, product 300, products 300, reviews 60,
-// or NYMBAL_CATALOG_REVALIDATE_S when set) and never `cache: 'no-store'`; the shopper fetchers keep `no-store`.
+// the product 60 when the PDP reads it, or NYMBAL_CATALOG_REVALIDATE_S when set) and never `cache: 'no-store'`; the
+// shopper fetchers keep `no-store`.
 // Kills: a fetcher that swallows Next's signal; a catalog fetcher that returns an empty value or the seed categories on
 // failure, which ISR then caches; a 500 that becomes a 404; a revalidate shorter than its longest route's TTL, which
 // lowers that route's s-maxage; a shopper fetch that is cached.
@@ -232,6 +233,37 @@ describe('P2-19 AC-7: the Next fetchers’ failure modes and cache options', () 
     for (const name of Object.keys(SHOPPER)) {
       expect(seen[name]!.cache, `${name} cache`).toBe('no-store')
     }
+  })
+
+  it('AC-7 (d): fetchProduct called by the PDP (its page and generateMetadata) passes 60, the PDP’s own seconds, and no cache: no-store, while fetchProduct called with no seconds keeps 300', async () => {
+    await load()
+    answer = okFor
+    const pdp = await import('@/app/(catalog)/product/[slug]/page')
+    const productCalls = () =>
+      calls.filter((c) => new URL(c.url).pathname === '/api/products/p2-19-product')
+    const params = Promise.resolve({ slug: 'p2-19-product' })
+
+    await pdp.generateMetadata({ params })
+    await pdp.default({ params })
+    expect(
+      productCalls().map((c) => ({ revalidate: c.init?.next?.revalidate, cache: c.init?.cache })),
+      'the PDP’s product reads',
+    ).toEqual([
+      { revalidate: 60, cache: undefined },
+      { revalidate: 60, cache: undefined },
+    ])
+
+    const api = await import('@/lib/api')
+    calls.length = 0
+    await api.fetchProduct('p2-19-product')
+    expect(productCalls().map((c) => c.init?.next?.revalidate)).toEqual([300])
+
+    // NYMBAL_CATALOG_REVALIDATE_S replaces the PDP's seconds too.
+    await load('2')
+    const overridden = await import('@/app/(catalog)/product/[slug]/page')
+    calls.length = 0
+    await overridden.generateMetadata({ params })
+    expect(productCalls().map((c) => c.init?.next?.revalidate)).toEqual([2])
   })
 
   it('AC-7 (d): over generated NYMBAL_CATALOG_REVALIDATE_S values, every catalog fetcher’s next.revalidate is that number, and the shopper fetchers still pass cache: no-store', async () => {
