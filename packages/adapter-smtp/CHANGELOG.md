@@ -1,5 +1,81 @@
 # @nymbalhq/adapter-smtp
 
+## 1.2.0
+
+### Minor Changes
+
+- 1653d3f: A third party can certify their own adapter: `npm install --save-dev @nymbalhq/contract-tests vitest`, name the
+  package on its slot (`commerce.search: { provider: 'custom', package: '@acme/nymbal-search', config: {...} }`) and run
+  `nymbal test:contracts --package @acme/nymbal-search`. It builds the adapter with the package's
+  `createAdapter(<the slot's config>)` and runs the published suite for its kind with the project's own vitest. It
+  prints `certified <pkg> (<kind>): N cases passed` and exits 0 only when every case passed, else
+  `not certified <pkg> (<kind>): F of N cases failed` and exits 1.
+  - `@nymbalhq/contract-tests` publishes with the group. Every `run<Kind>Contract(name, build, options?)` runs the
+    same cases Nymbal's own adapters pass: the document store's reference-model property, the event bus's delivery
+    contract and search's pagination, ranking, facet and hostile-input properties are part of it now; reviews gain a
+    cursor-walk case and payments a refund idempotency case (and, with `signedWebhook`, a webhook parsed twice). Every
+    suite checks that `healthCheck()` resolves `healthy` or `degraded` within 6 s, which a primitive must implement to
+    certify. With `unreachable` (an adapter whose dependency is gone) it checks that `healthCheck()` reports `down` and
+    one representative operation rejects, each within 6 s. `runMediaStorageContract` takes `{ fetchUrl }` as options.
+    `contractSuites` maps each kind to its suite, and the search oracle (`searchTerms`, `matchesQuery`,
+    `toSearchDocument`) is exported.
+  - A package may export `contractOptions: { options?, unreachable?, kind? }`: the options when no slot names it, the
+    options of an unreachable adapter, and a primitive's kind (`documentStore`, `eventBus` or `media`). Both go to
+    `createAdapter` and then to `initialize` when the adapter has one, as the slot's config does. A slot config holding
+    a value JSON cannot carry (a function, a Date, a BigInt) is refused with one line. `--slot` picks the slot when
+    several name the package. `--adapter` runs the monorepo's own contract files, as before.
+  - Every commerce slot block takes an optional `package`, an npm package name. The kernel does not read it.
+  - Native reviews page by cursor: `getProductReviews(productId, { limit, cursor })` returns a `nextCursor` until the
+    last page, newest first. The native payments stub answers a refund repeated under one `idempotencyKey` with the
+    first refund and refunds once. adapter-smtp's `healthCheck` reports `down` when the server cannot be reached
+    (`degraded` stays for a server that refuses the login), within 5 s, and a send gives up after 4 s on a host that
+    does not connect, greet or answer, where nodemailer waited up to two minutes.
+  - The Redis document store's client and the Redis Streams bus's command client no longer queue a command until the
+    server returns: on a dead server it rejects within a few seconds, and the client keeps reconnecting, so commands
+    succeed again once the server is back.
+
+- 0fe6563: A store owner can enter the provider keys the config leaves unset in the admin's Settings page, instead of editing
+  environment files. Each value is encrypted at rest, never shown again, and applied when the store next starts.
+  - **Precedence.** The config wins, then the environment, then Settings. A field the config or environment sets shows
+    as "Set by environment" and cannot be changed in the admin.
+  - **The key.** Values are encrypted with AES-256-GCM under `NYMBAL_SECRETS_KEY` (32 random bytes, base64), each bound
+    to its slot and path. `create-nymbal-app` writes a fresh key into the new project's `.env` (never `.env.example`).
+    Back it up with your deploy's secrets: a store holding a saved secret refuses to start without its key, with a
+    `ConfigError` naming the slot and path. A key that does not match, or a row that was changed, refuses the same way.
+  - **Adapters declare their settings.** A provider package may export
+    `settings: Array<{ path, label, secret, env?, optional? }>` (`AdapterSetting` in `@nymbalhq/types`). Stripe declares
+    `secretKey`, `webhookSecret` (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`) and `publishableKey`; Anthropic
+    `apiKey` (`ANTHROPIC_API_KEY`) and `baseUrl`; SMTP `smtp.user` and `smtp.pass`. The kernel honours a declared `env`
+    whether or not the package reads it.
+  - **A missing key no longer stops the store.** When a declared secret is set nowhere, the slot gets an adapter that
+    reports itself `down` (naming the field) and refuses every operation, so the store boots and the admin can take the
+    key. For payments, the storefront's Place Order stays disabled. Before, Stripe without a `secretKey` stopped boot.
+  - **`nymbal add stripe`** no longer writes `env('STRIPE_SECRET_KEY')` and `env('STRIPE_WEBHOOK_SECRET')` into the
+    config (an unset variable threw before Settings could fill it); the variables stay in `.env.example`, and the hint
+    says to set them in `.env` or in the admin's Settings.
+  - **Admin API.** `GET /api/admin/settings` lists each slot's declared fields with their state and source, and never a
+    secret's value; `PUT /api/admin/settings/:slot/:path` with `{ value }` saves one and `DELETE` clears it (409
+    `settings.set_by_environment`, 404 `settings.unknown_field`, 503 `settings.key_missing`). A write publishes
+    `settings.changed.v1` with `{ slot, path, source }` and answers `restartRequired: true`.
+  - **No value leaks.** `createApp` wraps whatever logger it is given so no saved secret reaches a log record, and error
+    responses are scrubbed the same way. `createLogger` takes a `destination`. `nymbal doctor` reads the saved values
+    to check each slot and prints none of them.
+  - **CLI.** `nymbal secrets rotate` re-encrypts every saved secret from `NYMBAL_SECRETS_KEY_OLD` to
+    `NYMBAL_SECRETS_KEY` in one transaction, or changes nothing and exits 2. `nymbal secrets clear [--slot] [--path]`
+    deletes saved values without a key, the recovery for a lost one.
+  - **Migration 0008** adds the `settings` table on SQLite and Postgres: run `nymbal migrate`. A store not yet migrated
+    boots with no settings.
+  - The Anthropic adapter takes `baseUrl` (passed to the SDK as `baseURL`).
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [b836370]
+- Updated dependencies [3591951]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+  - @nymbalhq/types@1.2.0
+
 ## 1.1.0
 
 ### Patch Changes

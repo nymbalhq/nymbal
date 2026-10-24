@@ -1,5 +1,21 @@
 # @nymbalhq/importers
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [b836370]
+- Updated dependencies [1653d3f]
+- Updated dependencies [3591951]
+- Updated dependencies [7d839a4]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+- Updated dependencies [94fcffd]
+  - @nymbalhq/platform@1.2.0
+  - @nymbalhq/types@1.2.0
+  - @nymbalhq/config@1.2.0
+
 ## 0.3.0
 
 ### Minor Changes

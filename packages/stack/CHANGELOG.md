@@ -1,5 +1,32 @@
 # @nymbalhq/stack
 
+## 1.2.0
+
+### Patch Changes
+
+- Updated dependencies [45b8128]
+- Updated dependencies [757150c]
+- Updated dependencies [68d2358]
+- Updated dependencies [b836370]
+- Updated dependencies [5b89c81]
+- Updated dependencies [1653d3f]
+- Updated dependencies [a05b2e4]
+- Updated dependencies [2d5ee9c]
+- Updated dependencies [3591951]
+- Updated dependencies [eaa120c]
+- Updated dependencies [7d839a4]
+- Updated dependencies [7a4e472]
+- Updated dependencies [0fe6563]
+- Updated dependencies [94fcffd]
+  - @nymbalhq/platform@1.2.0
+  - @nymbalhq/types@1.2.0
+  - @nymbalhq/http@1.2.0
+  - nymbal@1.2.0
+  - @nymbalhq/web-components@1.2.0
+  - @nymbalhq/react@1.2.0
+  - @nymbalhq/config@1.2.0
+  - @nymbalhq/sdk@1.2.0
+
 ## 1.1.0
 
 ### Patch Changes
