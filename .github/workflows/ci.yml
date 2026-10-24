@@ -286,13 +286,15 @@ jobs:
       # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
       # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
-      # Instrumented code runs three to four times slower on the runner than in the gate, which holds every test to
-      # the 5 s default, so the timeout scales here: a test that only times out under coverage is not a failure.
+      # Instrumented code runs three to four times slower on the runner than in the gate, so every project's own
+      # timeouts scale here (vitest.config.ts): a test that only times out under coverage is not a failure.
       - name: Coverage (reported, not a gate)
+        env:
+          NYMBAL_TEST_TIMEOUT_SCALE: '4'
         run: |
           rm -rf coverage reports/coverage-tests.json
           status=0
-          pnpm vitest run --coverage --testTimeout=20000 --coverage.reporter=text --coverage.reporter=json-summary \
+          pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
             --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
             --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**' || status=$?
           node -e '
