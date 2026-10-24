@@ -90,6 +90,8 @@ jobs:
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Production E2E (tests/e2e/prod)
         run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
+      - name: ISR E2E (tests/e2e/isr)
+        run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.isr.config.ts
       - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
