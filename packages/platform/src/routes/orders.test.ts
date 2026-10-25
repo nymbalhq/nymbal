@@ -1,8 +1,17 @@
 import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
+import { buildOrderDoc, orderWrites, type OrderDoc } from '../read-models/builders.js'
 import { registerOrderRoutes } from './orders.js'
-import type { HttpAdapter, RouteHandler, RequestContext } from '@nymbalhq/types'
+import {
+  documentValueAt,
+  type HttpAdapter,
+  type Order,
+  type OrderHistoryEntry,
+  type OrderStatus,
+  type RouteHandler,
+  type RequestContext,
+} from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 
 function makeAdapter() {
@@ -199,5 +208,237 @@ describe('GET /api/orders/:orderNumber', () => {
       params: { orderNumber: 'NYM-004' },
     })
     expect(resp.status).toBe(200)
+  })
+})
+
+const STATUSES: OrderStatus[] = [
+  'pending',
+  'confirmed',
+  'processing',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'refunded',
+  'partially_refunded',
+]
+
+/** Paths a shopper's order never carries: checkout's cart and stock bookkeeping, import provenance, store keys. */
+const INTERNAL_PATHS = [
+  'metadata.cartToken',
+  'metadata.reservationIds',
+  'metadata.correlationId',
+  'metadata.woocommerce',
+  'partitionKey',
+  'sortKey',
+] as const
+
+/** Every order field the storefront templates and elements read. */
+const READ_FIELDS = [
+  'id',
+  'orderNumber',
+  'status',
+  'email',
+  'createdAt',
+  'currency',
+  'lineItems',
+  'billingAddress',
+  'shippingAddress',
+  'subtotalMinor',
+  'taxTotalMinor',
+  'shippingTotalMinor',
+  'discountTotalMinor',
+  'totalMinor',
+] as const
+
+const CREATED = '2026-10-01T09:00:00.000Z'
+const ADDRESS = {
+  firstName: 'Ada',
+  lastName: 'Buyer',
+  addressLine1: '1 Main St',
+  city: 'London',
+  region: 'England',
+  postalCode: 'E1 6AN',
+  country: 'GB',
+}
+
+const placed = fc.record({
+  id: fc.uuid(),
+  owner: fc.constantFrom(null, 'cust-1', 'cust-2'),
+  status: fc.constantFrom(...STATUSES),
+  cart: fc.uuid(),
+  reservations: fc.array(fc.uuid(), { minLength: 1, maxLength: 3 }),
+  correlation: fc.option(fc.uuid(), { nil: undefined }),
+  imported: fc.boolean(),
+  intent: fc.option(fc.uuid(), { nil: null }),
+  staff: fc.uuid(),
+  staffNote: fc.uuid(),
+  totalMinor: fc.integer({ min: 1, max: 100_000 }),
+})
+
+type Placed = typeof placed extends fc.Arbitrary<infer T> ? T : never
+
+/** The order as checkout and the admin leave it, and the internal values in it, each prefixed so no two collide. */
+function orderOf(p: Placed, i: number): { doc: OrderDoc; secrets: string[] } {
+  const orderNumber = `NYM-${String(i).padStart(4, '0')}`
+  const paid = p.status !== 'pending' && p.status !== 'cancelled'
+  const cartToken = `cart-${p.cart}`
+  const reservationIds = p.reservations.map((r) => `res-${r}`)
+  const correlationId = p.correlation === undefined ? undefined : `corr-${p.correlation}`
+  const paymentIntentId = p.intent === null ? null : `pi_${p.intent}`
+  const staff = `admin:${p.staff}`
+  const staffNote = `note-${p.staffNote}`
+  const order: Order = {
+    id: p.id,
+    orderNumber,
+    sequence: i,
+    customerId: p.owner,
+    status: p.status,
+    email: `shopper-${i}@orders.test`,
+    billingAddress: ADDRESS,
+    shippingAddress: ADDRESS,
+    lineItems: [
+      {
+        variantId: 'v-1',
+        productId: 'p-1',
+        productName: 'Widget',
+        variantName: 'Default',
+        sku: 'W-1',
+        qty: 1,
+        unitPriceMinor: p.totalMinor,
+        lineSubtotalMinor: p.totalMinor,
+        lineTaxMinor: 0,
+        lineTotalMinor: p.totalMinor,
+        imageUrl: '',
+      },
+    ],
+    subtotalMinor: p.totalMinor,
+    taxTotalMinor: 0,
+    shippingTotalMinor: 0,
+    discountTotalMinor: 0,
+    totalMinor: p.totalMinor,
+    currency: 'GBP',
+    notes: JSON.stringify([{ body: staffNote, actor: staff, at: CREATED }]),
+    metadata: {
+      cartToken,
+      reservationIds,
+      ...(correlationId !== undefined && { correlationId }),
+      ...(p.imported && { woocommerce: { orderId: 41, paymentMethod: 'cod' } }),
+    },
+    paymentIntentId,
+    capturedMinor: paid ? p.totalMinor : 0,
+    capturedAt: paid ? CREATED : null,
+    refundedMinor: 0,
+    captureMethod: paid ? 'provider' : null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+  }
+  const history: OrderHistoryEntry[] = [
+    {
+      id: `h-${i}-0`,
+      orderId: p.id,
+      fromStatus: null,
+      toStatus: 'pending',
+      actor: 'system:checkout',
+      note: 'order draft created',
+      timestamp: CREATED,
+    },
+    ...(p.status === 'pending'
+      ? []
+      : [
+          {
+            id: `h-${i}-1`,
+            orderId: p.id,
+            fromStatus: 'pending' as const,
+            toStatus: p.status,
+            actor: staff,
+            note: 'Shipped via royal-mail: TRK-1',
+            timestamp: CREATED,
+          },
+        ]),
+  ]
+  const secrets = [cartToken, ...reservationIds, staff, staffNote]
+  if (correlationId !== undefined) secrets.push(correlationId)
+  if (paymentIntentId !== null) secrets.push(paymentIntentId)
+  return { doc: buildOrderDoc(order, history), secrets }
+}
+
+describe('shopper order responses', () => {
+  it('serve no internal field of any order, guest or customer, pending or paid, from GET /api/orders/:orderNumber or GET /api/orders, and every field the storefront reads unchanged', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(placed, { minLength: 1, maxLength: 6 }), async (placements) => {
+        const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+        const orders = placements.map(orderOf)
+        for (const { doc } of orders) {
+          for (const w of orderWrites(doc)) await documentStore.put(w.collection, w.key, w.doc)
+        }
+        const { adapter, invoke } = makeAdapter()
+        registerOrderRoutes(adapter, makeOrderService(), documentStore)
+
+        const served: Array<{ label: string; body: unknown; order: unknown }> = []
+        for (const { doc } of orders) {
+          const owner = doc.customerId
+          const reads = [
+            { label: `${doc.orderNumber} anonymously`, auth: undefined },
+            ...(owner === null
+              ? []
+              : [
+                  {
+                    label: `${doc.orderNumber} as ${owner}`,
+                    auth: { userId: owner, roles: ['customer'] },
+                  },
+                ]),
+          ]
+          for (const { label, auth } of reads) {
+            const resp = await invoke('GET', '/api/orders/:orderNumber', {
+              params: { orderNumber: doc.orderNumber },
+              ...(auth !== undefined && { auth }),
+            })
+            expect(resp.status, label).toBe(200)
+            served.push({ label, body: resp.body, order: (resp.body as { data: unknown }).data })
+          }
+        }
+        for (const customerId of ['cust-1', 'cust-2']) {
+          const resp = await invoke('GET', '/api/orders', {
+            auth: { userId: customerId, roles: ['customer'] },
+          })
+          expect(resp.status, customerId).toBe(200)
+          const listed = (resp.body as { data: unknown[] }).data
+          expect(listed.length, customerId).toBe(
+            orders.filter((o) => o.doc.customerId === customerId).length,
+          )
+          for (const order of listed)
+            served.push({ label: `GET /api/orders as ${customerId}`, body: resp.body, order })
+        }
+
+        const secrets = orders.flatMap((o) => o.secrets)
+        for (const { label, body, order } of served) {
+          const text = JSON.stringify(body)
+          for (const secret of secrets)
+            expect(text.includes(secret), `${label} carries ${secret}`).toBe(false)
+          for (const path of INTERNAL_PATHS)
+            expect(documentValueAt(order, path), `${label}: ${path}`).toBeUndefined()
+          const o = order as OrderDoc
+          expect(
+            o.history.filter((h) => 'actor' in h),
+            `${label}: history actors`,
+          ).toEqual([])
+
+          const source = orders.find((x) => x.doc.orderNumber === o.orderNumber)!.doc
+          for (const field of READ_FIELDS)
+            expect(o[field], `${label}: ${field}`).toEqual(source[field])
+          expect(
+            o.history.map((h) => [h.toStatus, h.note]),
+            `${label}: history`,
+          ).toEqual(source.history.map((h) => [h.toStatus, h.note]))
+        }
+
+        // The stored document keeps everything: the admin reads it in full.
+        for (const { doc } of orders) {
+          const stored = await documentStore.get<OrderDoc>('orders', doc.orderNumber)
+          expect(stored?.metadata.cartToken).toBe(doc.metadata.cartToken)
+        }
+      }),
+      { numRuns: 25 },
+    )
   })
 })
