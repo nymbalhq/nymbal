@@ -7,7 +7,12 @@ import pg from 'pg'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
-import type { EmailAdapter, NymbalEvent, TransactionalEmail } from '@nymbalhq/types'
+import {
+  renderEmailTemplate,
+  type EmailAdapter,
+  type NymbalEvent,
+  type TransactionalEmail,
+} from '@nymbalhq/types'
 import { createCommandStore } from '../../../src/db/command-store.js'
 import { runMigrations } from '../../../src/db/migrate.js'
 import { InMemoryDocumentStore } from '../../../src/document-store/in-memory.js'
@@ -23,11 +28,11 @@ import { eventRows } from '../outbox.js'
 import { openRaw, type RawReader } from '../raw.js'
 import { primedShopper } from '../security.js'
 
-// Back-in-stock alerts on one dialect, over HTTP against a kernel built from `src/` whose email slot is a capturing
-// adapter of the project's own (`custom`, so the store delivers). A shopper subscribes from a storefront origin the
-// store allows, follows the confirmation's link, and is mailed once when the variant comes back; every email carries
-// an unsubscribe link. Mail is read from the adapter the handler calls, rows from a second connection, events from the
-// log.
+// Back-in-stock and price-drop alerts on one dialect, over HTTP against a kernel built from `src/` whose email slot is
+// a capturing adapter of the project's own (`custom`, so the store delivers). A shopper subscribes from a storefront
+// origin the store allows, follows the confirmation's link, and is mailed once when the variant comes back, or each
+// time its price falls below the last price the subscription was told; every email carries an unsubscribe link. Mail
+// is read from the adapter the handler calls, rows from a second connection, events from the log.
 
 export interface OpenKernel {
   configure: (config: NymbalConfig) => NymbalConfig
@@ -52,6 +57,12 @@ const UNSUBSCRIBE = '/api/alerts/unsubscribe'
 const KIND = 'back_in_stock'
 const CONFIRM_MAIL = 'alert-confirm'
 const ALERT_MAIL = 'alert-back-in-stock'
+const PRICE_DROP = 'price_drop'
+const PRICE_CONFIRM_MAIL = 'alert-confirm-price-drop'
+const PRICE_ALERT_MAIL = 'alert-price-drop'
+const PRICE_CHANGED = 'product.variant_price_changed.v1'
+/** The price-drop store's currency: no minor-unit digits, so an amount formatted as if in pence is plainly wrong. */
+const PRICE_CURRENCY = 'JPY'
 const TABLE = 'alert_subscriptions'
 
 // ─── The store under test ─────────────────────────────────────────────────────────────────────────────────────────
@@ -94,10 +105,11 @@ function capture(): Capture {
   return { adapter, sent, attempts, refuse }
 }
 
-function alertsConfig(email: 'custom' | 'native', origins: string[]) {
+function alertsConfig(email: 'custom' | 'native', origins: string[], currency?: string) {
   return (config: NymbalConfig): NymbalConfig =>
     ({
       ...config,
+      ...(currency !== undefined && { store: { ...config.store, currency } }),
       commerce: {
         ...config.commerce,
         ...(email === 'custom' ? { email: { provider: 'custom' } } : {}),
@@ -129,7 +141,7 @@ interface Store {
 
 async function openStore(
   options: AlertsSuiteOptions,
-  opts: { email?: 'custom' | 'native'; origins?: string[] } = {},
+  opts: { email?: 'custom' | 'native'; origins?: string[]; currency?: string } = {},
 ): Promise<Store> {
   const mail = capture()
   const logs: string[] = []
@@ -140,7 +152,7 @@ async function openStore(
   })
   const email = opts.email ?? 'custom'
   const k = await options.open({
-    configure: alertsConfig(email, opts.origins ?? ORIGINS),
+    configure: alertsConfig(email, opts.origins ?? ORIGINS, opts.currency),
     appOptions: email === 'custom' ? { adapters: { email: mail.adapter } } : {},
     logger,
   })
@@ -222,9 +234,10 @@ async function subscribed(
   email: string,
   variantId: string,
   origin: string = SHOP_A,
+  kind: string = KIND,
 ): Promise<void> {
-  const res = await subscribe(s, email, variantId, origin)
-  expect(res.status, `subscribe ${email}: ${res.text.slice(0, 300)}`).toBe(202)
+  const res = await subscribe(s, email, variantId, origin, kind)
+  expect(res.status, `subscribe ${email} (${kind}): ${res.text.slice(0, 300)}`).toBe(202)
 }
 
 // ─── Rows, events and mail ────────────────────────────────────────────────────────────────────────────────────────
@@ -239,6 +252,7 @@ interface Row {
   confirm_token: string
   unsubscribe_token: string
   origin: string
+  baseline_price_minor: number | string | null
   updated_at: unknown
 }
 
@@ -246,21 +260,26 @@ const norm = (email: string): string => email.trim().toLowerCase()
 
 function rowsWhere(s: Store, where: string, params: unknown[]): Promise<Row[]> {
   return s.raw.rows<Row>(
-    `SELECT id, email, kind, variant_id, product_id, status, confirm_token, unsubscribe_token, origin, updated_at
+    `SELECT id, email, kind, variant_id, product_id, status, confirm_token, unsubscribe_token, origin,
+            baseline_price_minor, updated_at
        FROM ${TABLE} WHERE ${where}`,
     params,
   )
 }
 
-const rowsFor = (s: Store, email: string, variantId: string): Promise<Row[]> =>
-  rowsWhere(s, 'email = ? AND variant_id = ? AND kind = ?', [norm(email), variantId, KIND])
+const rowsFor = (s: Store, email: string, variantId: string, kind = KIND): Promise<Row[]> =>
+  rowsWhere(s, 'email = ? AND variant_id = ? AND kind = ?', [norm(email), variantId, kind])
 
 /** The one row for an address, variant and kind; the test depends on it. */
-async function rowOf(s: Store, email: string, variantId: string): Promise<Row> {
-  const rows = await rowsFor(s, email, variantId)
-  expect(rows.length, `${TABLE} rows for ${norm(email)}`).toBe(1)
+async function rowOf(s: Store, email: string, variantId: string, kind = KIND): Promise<Row> {
+  const rows = await rowsFor(s, email, variantId, kind)
+  expect(rows.length, `${TABLE} ${kind} rows for ${norm(email)}`).toBe(1)
   return rows[0]!
 }
+
+/** A row's baseline as a number, whichever way the driver hands the integer back. */
+const baselineOf = (row: Row): number | null =>
+  row.baseline_price_minor === null ? null : Number(row.baseline_price_minor)
 
 /** Every (email, variant, kind) the table holds more than once. */
 function duplicates(s: Store): Promise<unknown[]> {
@@ -344,8 +363,12 @@ function link(value: unknown, path: string): { origin: string; token: string } {
 }
 
 /** The tokens of the newest confirmation to an address. */
-function latestConfirmation(s: Store, email: string): { confirm: string; unsubscribe: string } {
-  const mails = mailsTo(s, email, CONFIRM_MAIL)
+function latestConfirmation(
+  s: Store,
+  email: string,
+  template: string = CONFIRM_MAIL,
+): { confirm: string; unsubscribe: string } {
+  const mails = mailsTo(s, email, template)
   expect(mails.length, `confirmations to ${norm(email)}`).toBeGreaterThan(0)
   const last = mails.at(-1)!
   return {
@@ -416,6 +439,41 @@ async function activate(
 
 async function restock(s: Store, variantId: string, delta: number): Promise<void> {
   await s.k.services.inventory.adjustStock(variantId, delta, 'manual', 'alerts-suite')
+}
+
+/** Subscribed for a price drop, delivered and confirmed: an active price-drop row. */
+async function activatePriceDrop(
+  s: Store,
+  email: string,
+  variantId: string,
+  origin = SHOP_A,
+): Promise<void> {
+  await subscribed(s, email, variantId, origin, PRICE_DROP)
+  await delivered(s)
+  const res = await confirm(s, latestConfirmation(s, email, PRICE_CONFIRM_MAIL).confirm)
+  expect(res.status, `confirm ${email}: ${res.text.slice(0, 300)}`).toBe(200)
+  await delivered(s)
+}
+
+/** The variant's price set through the product command, as the admin's save sets it. */
+async function reprice(s: Store, p: Seeded, priceMinor: number): Promise<void> {
+  await s.k.services.product.update(p.productId, {
+    variants: [{ id: p.variantId, priceMinor }],
+  })
+}
+
+/** An amount in minor units as money in `currency`, independently of the kernel's formatter. */
+function money(minor: number, currency: string): string {
+  const format = new Intl.NumberFormat('en-GB', { style: 'currency', currency })
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2
+  return format.format(minor / 10 ** digits)
+}
+
+/** The price events the log holds for a variant, by id. */
+async function priceEventIds(s: Store, variantId: string): Promise<string[]> {
+  return (await eventRows(s.raw, 'type = ?', [PRICE_CHANGED]))
+    .filter((e) => (e.envelope.payload as { variantId?: string }).variantId === variantId)
+    .map((e) => e.id)
 }
 
 // ─── Addresses that differ only in case and spaces ────────────────────────────────────────────────────────────────
@@ -550,6 +608,112 @@ class Machine {
   }
 }
 
+// ─── The model: price-drop subscriptions and the baseline rule ──────────────────────────────────────────────────────
+
+type PriceOp =
+  | { kind: 'subscribe'; who: number; origin: number }
+  | { kind: 'confirm'; who: number }
+  | { kind: 'unsubscribe'; who: number }
+  | { kind: 'price'; move: 'up' | 'down' | 'equal'; step: number }
+
+interface Watcher {
+  email: string
+  state: Exclude<State, 'fired'>
+  origin: string | null
+  /** The price the row was last told, or saw when it subscribed. */
+  baseline: number | null
+  confirmations: number
+  /** Each alert sent: the old and new price, and the origin its links are at. */
+  alerts: Array<{ previous: number; price: number; origin: string }>
+}
+
+const arbPriceSubscribe = fc.record({
+  kind: fc.constant('subscribe' as const),
+  who: arbWho,
+  origin: fc.integer({ min: 0, max: ORIGINS.length - 1 }),
+})
+const arbPrice = fc.record({
+  kind: fc.constant('price' as const),
+  move: fc.constantFrom('up' as const, 'down' as const, 'equal' as const),
+  step: fc.integer({ min: 1, max: 400 }),
+})
+
+class PriceMachine {
+  readonly people: Watcher[]
+  price: number
+
+  constructor(
+    readonly s: Store,
+    readonly product: Seeded,
+    startPrice: number,
+  ) {
+    const tag = randomUUID().slice(0, 8)
+    this.price = startPrice
+    this.people = Array.from({ length: PEOPLE }, (_, i) => ({
+      email: `watcher${i}-${tag}@alerts.test`,
+      state: 'none' as const,
+      origin: null,
+      baseline: null,
+      confirmations: 0,
+      alerts: [],
+    }))
+  }
+
+  async apply(op: PriceOp): Promise<void> {
+    const { s, product } = this
+    if (op.kind === 'subscribe') {
+      const p = this.people[op.who]!
+      const origin = ORIGINS[op.origin]!
+      const res = await subscribe(s, p.email, product.variantId, origin, PRICE_DROP)
+      expect(res.status, `${JSON.stringify(op)}: ${res.text.slice(0, 300)}`).toBe(202)
+      if (p.state !== 'active') {
+        if (p.state === 'none' || p.state === 'unsubscribed') p.baseline = this.price
+        p.state = 'pending'
+        p.origin = origin
+        p.confirmations += 1
+      }
+    } else if (op.kind === 'confirm') {
+      const p = this.people[op.who]!
+      if (mailsTo(s, p.email, PRICE_CONFIRM_MAIL).length === 0) return
+      const res = await confirm(s, latestConfirmation(s, p.email, PRICE_CONFIRM_MAIL).confirm)
+      const accepted = p.state === 'pending' || p.state === 'active'
+      expect([res.status, said(res)], JSON.stringify(op)).toEqual(
+        accepted ? [200, 'active'] : [404, 'alerts.link_invalid'],
+      )
+      if (accepted) p.state = 'active'
+    } else if (op.kind === 'unsubscribe') {
+      const p = this.people[op.who]!
+      const last = mailsTo(s, p.email).at(-1)
+      if (last === undefined) return
+      const res = await unsubscribe(
+        s,
+        link(last.vars['unsubscribeUrl'], '/alerts/unsubscribe').token,
+      )
+      expect([res.status, said(res)], JSON.stringify(op)).toEqual([200, 'unsubscribed'])
+      p.state = 'unsubscribed'
+    } else {
+      const next =
+        op.move === 'up'
+          ? this.price + op.step
+          : op.move === 'down'
+            ? Math.max(0, this.price - op.step)
+            : this.price
+      if (next !== this.price) {
+        for (const p of this.people) {
+          if (p.state !== 'active' || p.baseline === null) continue
+          if (next < this.price && next < p.baseline) {
+            p.alerts.push({ previous: this.price, price: next, origin: p.origin! })
+            p.baseline = next
+          }
+        }
+      }
+      await reprice(s, product, next)
+      this.price = next
+    }
+    await delivered(s)
+  }
+}
+
 // ─── The migration ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -598,7 +762,13 @@ async function seedAt(dialect: Dialect, target: string): Promise<void> {
       { createEventPublisher, createRelay },
       { store, eventLog: repos.eventLog, eventBus: new InProcessEventBus({ logger }), logger },
     )
-    const product = createProductService({ store, repos, publisher, logger })
+    const product = createProductService({
+      store,
+      repos,
+      publisher,
+      logger,
+      currency: kernelConfig(dialect).store.currency,
+    })
     const tag = randomUUID().slice(0, 8)
     await product.create({
       slug: `before-alerts-${tag}`,
@@ -890,23 +1060,16 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       expect(tried.flatMap((t) => mailsTo(s, t.email))).toEqual([])
     })
 
-    it('AC-2: an unknown variant answers 404 alerts.variant_not_found and a price_drop kind answers 400, each with no row and no mail', async () => {
-      const p = await seedProduct(s.k, 0)
+    it('AC-2: an unknown variant answers 404 alerts.variant_not_found, with no row and no mail', async () => {
       const ghost = randomUUID()
       const a = freshEmail('ac2-ghost')
-      const b = freshEmail('ac2-price')
 
       const unknown = await subscribe(s, a, ghost)
-      const priceDrop = await subscribe(s, b, p.variantId, SHOP_A, 'price_drop')
       await delivered(s)
 
       expect([unknown.status, said(unknown)]).toEqual([404, 'alerts.variant_not_found'])
-      expect(priceDrop.status, priceDrop.text.slice(0, 300)).toBe(400)
-      expect([
-        ...(await rowsWhere(s, 'variant_id = ?', [ghost])),
-        ...(await rowsWhere(s, 'variant_id = ?', [p.variantId])),
-      ]).toEqual([])
-      expect([...mailsTo(s, a), ...mailsTo(s, b)]).toEqual([])
+      expect(await rowsWhere(s, 'variant_id = ?', [ghost])).toEqual([])
+      expect(mailsTo(s, a)).toEqual([])
     })
 
     it('AC-2: an address of 255 characters or more answers 400 with no row and no mail, and one of 254 is accepted', async () => {
@@ -1248,6 +1411,349 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
 
       expect(alerted()).toEqual([1, 1])
       expect(await statuses()).toEqual(['fired', 'fired'])
+    })
+  })
+
+  describe(`alerts: price-drop subscriptions and their baseline (${dialect})`, () => {
+    let s: Store
+
+    beforeAll(async () => {
+      s = await openStore(options)
+    }, 60_000)
+
+    afterAll(async () => {
+      await s?.close()
+    })
+
+    it('AC-3: a price_drop subscribe answers 202 pending and writes one pending price_drop row whose baseline is the variant’s price at that moment', async () => {
+      const p = await seedProduct(s.k, 4)
+      await reprice(s, p, 1300)
+      const email = freshEmail('ac3')
+
+      const res = await subscribe(s, email, p.variantId, SHOP_A, PRICE_DROP)
+      expect(res.status, res.text.slice(0, 300)).toBe(202)
+      expect(res.body).toEqual({ data: { status: 'pending' } })
+      await delivered(s)
+
+      const served = (await s.k.services.product.getById(p.productId)).variants[0]!.priceMinor
+      const row = await rowOf(s, email, p.variantId, PRICE_DROP)
+      expect({ kind: row.kind, status: row.status, baseline: baselineOf(row) }).toEqual({
+        kind: PRICE_DROP,
+        status: 'pending',
+        baseline: served,
+      })
+    })
+
+    it('AC-3: a repeat subscribe on a pending or an active row leaves its baseline; after a price change and an unsubscribe, a resubscribe resets it to the price at that moment', async () => {
+      const p = await seedProduct(s.k, 4)
+      const email = freshEmail('ac3-again')
+      const at = async () => baselineOf(await rowOf(s, email, p.variantId, PRICE_DROP))
+
+      await subscribed(s, email, p.variantId, SHOP_A, PRICE_DROP)
+      await delivered(s)
+      const first = await at()
+      expect(first, 'the baseline at the first subscribe').toBe(1500)
+
+      await reprice(s, p, 1200)
+      await subscribed(s, email, p.variantId, SHOP_B, PRICE_DROP)
+      await delivered(s)
+      const pendingRepeat = await at()
+
+      const tokens = latestConfirmation(s, email, PRICE_CONFIRM_MAIL)
+      expect((await confirm(s, tokens.confirm)).status).toBe(200)
+      await reprice(s, p, 1700)
+      await subscribed(s, email, p.variantId, SHOP_A, PRICE_DROP)
+      await delivered(s)
+      const activeRepeat = await at()
+
+      expect((await unsubscribe(s, tokens.unsubscribe)).status).toBe(200)
+      await reprice(s, p, 1350)
+      await subscribed(s, email, p.variantId, SHOP_A, PRICE_DROP)
+      await delivered(s)
+      const row = await rowOf(s, email, p.variantId, PRICE_DROP)
+
+      expect([pendingRepeat, activeRepeat], 'repeats on a pending and an active row').toEqual([
+        first,
+        first,
+      ])
+      const now = (await s.k.services.product.getById(p.productId)).variants[0]!.priceMinor
+      expect(now, 'the price the resubscribe saw').toBe(1350)
+      expect([row.status, baselineOf(row)], 'the resubscribe').toEqual(['pending', now])
+    })
+
+    it('AC-3: a back_in_stock and a price_drop subscribe for one address and variant are two rows, the back_in_stock one with no baseline, and confirming one leaves the other pending', async () => {
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('ac3-both')
+
+      await subscribed(s, email, p.variantId, SHOP_A, KIND)
+      await subscribed(s, email, p.variantId, SHOP_A, PRICE_DROP)
+      await delivered(s)
+      const res = await confirm(s, latestConfirmation(s, email, PRICE_CONFIRM_MAIL).confirm)
+      expect(res.status, res.text.slice(0, 300)).toBe(200)
+
+      const rows = await rowsWhere(s, 'email = ? AND variant_id = ?', [norm(email), p.variantId])
+      expect(
+        rows
+          .map((r) => [r.kind, r.status, baselineOf(r)])
+          .sort((x, y) => String(x[0]).localeCompare(String(y[0]))),
+      ).toEqual([
+        [KIND, 'pending', null],
+        [PRICE_DROP, 'active', 1500],
+      ])
+      expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length)
+    })
+
+    it('AC-4: a price_drop subscribe sends one alert-confirm-price-drop and no alert-confirm, with the row’s links, whose subject and text name the price drop and never back in stock; a back_in_stock subscribe still sends alert-confirm', async () => {
+      const p = await seedProduct(s.k, 4)
+      const watcher = freshEmail('ac4-confirm')
+      const waiter = freshEmail('ac4-restock')
+
+      await subscribed(s, watcher, p.variantId, SHOP_B, PRICE_DROP)
+      await subscribed(s, waiter, p.variantId, SHOP_A, KIND)
+      await delivered(s)
+
+      expect(mailsTo(s, watcher).map((m) => m.template)).toEqual([PRICE_CONFIRM_MAIL])
+      expect(mailsTo(s, waiter).map((m) => m.template)).toEqual([CONFIRM_MAIL])
+
+      const row = await rowOf(s, watcher, p.variantId, PRICE_DROP)
+      const vars = mailsTo(s, watcher)[0]!.vars
+      expect(link(vars['confirmUrl'], '/alerts/confirm')).toEqual({
+        origin: SHOP_B,
+        token: row.confirm_token,
+      })
+      expect(link(vars['unsubscribeUrl'], '/alerts/unsubscribe')).toEqual({
+        origin: SHOP_B,
+        token: row.unsubscribe_token,
+      })
+      expect(link(vars['productUrl'], `/product/${p.slug}`).origin).toBe(SHOP_B)
+      expect(vars['productName']).toBe(p.name)
+
+      const rendered = renderEmailTemplate(PRICE_CONFIRM_MAIL, vars)
+      expect(rendered.subject).toBe(`Confirm your price alert for ${p.name}`)
+      expect(rendered.text).toContain(`the price of ${p.name} drops`)
+      expect(rendered.text).toContain(String(vars['confirmUrl']))
+      expect(rendered.text).toContain(String(vars['unsubscribeUrl']))
+      expect(`${rendered.subject}\n${rendered.text}`).not.toMatch(/back in stock/i)
+    })
+  })
+
+  describe(`alerts: price drops, by the baseline rule, row by row (${dialect})`, () => {
+    let s: Store
+    const twice = { on: true }
+
+    beforeAll(async () => {
+      s = await openStore(options, { currency: PRICE_CURRENCY })
+      // At-least-once: while `twice.on`, the bus hands every event to the subscribers twice.
+      const bus = s.k.eventBus
+      const publish = bus.publish.bind(bus)
+      bus.publish = async function <T>(event: NymbalEvent<T>): Promise<void> {
+        await publish(event)
+        if (twice.on) await publish(event)
+      }
+    }, 60_000)
+
+    afterAll(async () => {
+      await s?.close()
+    })
+
+    it('AC-4: property: with every event delivered twice, over random price rises, drops and equal saves and subscription states, the price alerts sent equal the model: an active row is mailed exactly when the new price is below the previous one and its baseline, which then moves to the new price, and it stays active; pending and unsubscribed rows get nothing; each alert names both prices in the store currency, links the product and the row’s unsubscribe link at its origin, never says back in stock or one-time, and has one alert.sent.v1', async () => {
+      twice.on = true
+      const arbOps = fc.array(
+        fc.oneof(
+          { arbitrary: arbPriceSubscribe, weight: 2 },
+          { arbitrary: arbConfirm, weight: 2 },
+          { arbitrary: arbUnsubscribe, weight: 1 },
+          { arbitrary: arbPrice, weight: 4 },
+        ),
+        { minLength: 1, maxLength: 12 },
+      ) as fc.Arbitrary<PriceOp[]>
+      await fc.assert(
+        fc.asyncProperty(arbOps, async (ops) => {
+          const product = await seedProduct(s.k, 4)
+          const m = new PriceMachine(s, product, 1500)
+          for (const op of ops) {
+            await m.apply(op)
+            const label = JSON.stringify(op)
+
+            const rows = await rowsWhere(s, 'variant_id = ? AND kind = ?', [
+              product.variantId,
+              PRICE_DROP,
+            ])
+            expect(
+              Object.fromEntries(rows.map((r) => [r.email, [r.status, baselineOf(r)]])),
+              `${label}: statuses and baselines`,
+            ).toEqual(
+              Object.fromEntries(
+                m.people
+                  .filter((p) => p.state !== 'none')
+                  .map((p) => [p.email, [p.state, p.baseline]]),
+              ),
+            )
+            expect(
+              m.people.map((p) => mailsTo(s, p.email, PRICE_CONFIRM_MAIL).length),
+              `${label}: confirmations`,
+            ).toEqual(m.people.map((p) => p.confirmations))
+            expect(
+              m.people.flatMap((p) =>
+                mailsTo(s, p.email)
+                  .filter((mail) => ![PRICE_CONFIRM_MAIL, PRICE_ALERT_MAIL].includes(mail.template))
+                  .map((mail) => mail.template),
+              ),
+              `${label}: other mail`,
+            ).toEqual([])
+            expect(
+              m.people.map((p) =>
+                mailsTo(s, p.email, PRICE_ALERT_MAIL).map((mail) => [
+                  mail.vars['previousPriceFormatted'],
+                  mail.vars['priceFormatted'],
+                  link(mail.vars['productUrl'], `/product/${product.slug}`).origin,
+                ]),
+              ),
+              `${label}: alerts`,
+            ).toEqual(
+              m.people.map((p) =>
+                p.alerts.map((a) => [
+                  money(a.previous, PRICE_CURRENCY),
+                  money(a.price, PRICE_CURRENCY),
+                  a.origin,
+                ]),
+              ),
+            )
+
+            const triggers = await priceEventIds(s, product.variantId)
+            const sent = (await eventRows(s.raw, 'type = ?', ['alert.sent.v1'])).map(
+              (e) =>
+                e.envelope.payload as {
+                  subscriptionId: string
+                  kind: string
+                  triggerEventId: string
+                },
+            )
+            for (const p of m.people) {
+              const row = rows.find((r) => r.email === p.email)
+              const alerts = mailsTo(s, p.email, PRICE_ALERT_MAIL)
+              for (const mail of alerts) {
+                expect(link(mail.vars['unsubscribeUrl'], '/alerts/unsubscribe'), label).toEqual({
+                  origin: link(mail.vars['productUrl'], `/product/${product.slug}`).origin,
+                  token: row?.unsubscribe_token,
+                })
+                const rendered = renderEmailTemplate(PRICE_ALERT_MAIL, mail.vars)
+                const copy = `${rendered.subject}\n${rendered.text}`
+                for (const part of [
+                  mail.vars['previousPriceFormatted'],
+                  mail.vars['priceFormatted'],
+                  mail.vars['productUrl'],
+                  mail.vars['unsubscribeUrl'],
+                ]) {
+                  expect(copy, `${label}: the alert's copy`).toContain(String(part))
+                }
+                expect(copy, label).not.toMatch(/back in stock|one-time/i)
+              }
+              const own = sent.filter((e) => e.subscriptionId === row?.id)
+              expect(own.length, `${label}: alert.sent.v1 for ${p.email}`).toBe(alerts.length)
+              for (const e of own) {
+                expect(e.kind).toBe(PRICE_DROP)
+                expect(triggers, label).toContain(e.triggerEventId)
+              }
+            }
+          }
+        }),
+        {
+          numRuns: options.propertyRuns,
+          examples: [
+            [
+              [
+                { kind: 'subscribe', who: 0, origin: 1 },
+                { kind: 'confirm', who: 0 },
+                { kind: 'price', move: 'down', step: 300 },
+                { kind: 'price', move: 'up', step: 300 },
+                { kind: 'price', move: 'down', step: 300 },
+                { kind: 'price', move: 'down', step: 100 },
+                { kind: 'subscribe', who: 1, origin: 0 },
+                { kind: 'price', move: 'down', step: 100 },
+                { kind: 'confirm', who: 1 },
+                { kind: 'price', move: 'equal', step: 1 },
+                { kind: 'unsubscribe', who: 0 },
+                { kind: 'price', move: 'down', step: 100 },
+                { kind: 'subscribe', who: 0, origin: 0 },
+                { kind: 'confirm', who: 0 },
+                { kind: 'price', move: 'down', step: 50 },
+              ],
+            ],
+          ],
+        },
+      )
+    }, 300_000)
+
+    it('AC-4: the price event carries the store currency, and each alert formats both prices from minor units in it', async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 4)
+      const email = freshEmail('ac4-currency')
+      await activatePriceDrop(s, email, p.variantId)
+
+      await reprice(s, p, 1234)
+      await delivered(s)
+
+      const [event] = (await eventRows(s.raw, 'type = ?', [PRICE_CHANGED])).filter(
+        (e) => (e.envelope.payload as { variantId?: string }).variantId === p.variantId,
+      )
+      expect(event?.envelope.payload).toMatchObject({
+        previousPriceMinor: 1500,
+        priceMinor: 1234,
+        currency: s.k.config.store.currency,
+      })
+      expect(
+        mailsTo(s, email, PRICE_ALERT_MAIL).map((m) => [
+          m.vars['previousPriceFormatted'],
+          m.vars['priceFormatted'],
+        ]),
+      ).toEqual([[money(1500, s.k.config.store.currency), money(1234, s.k.config.store.currency)]])
+    })
+
+    it('AC-4: when the adapter refuses one address, the other active rows are mailed once and their baselines move, the refused row is tried once and stays active with its baseline unmoved, and the next drop below its baseline mails it alone', async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 4)
+      const a = freshEmail('ac4-a')
+      const bad = freshEmail('ac4-bad')
+      const c = freshEmail('ac4-c')
+      for (const email of [a, bad, c]) await activatePriceDrop(s, email, p.variantId)
+      s.mail.refuse.set(norm(bad), Number.POSITIVE_INFINITY)
+
+      await reprice(s, p, 1200)
+      await delivered(s)
+
+      const tried = (email: string) =>
+        s.mail.attempts.filter((m) => m.to === norm(email) && m.template === PRICE_ALERT_MAIL)
+          .length
+      const alerted = () => [a, bad, c].map((e) => mailsTo(s, e, PRICE_ALERT_MAIL).length)
+      const state = () =>
+        Promise.all(
+          [a, bad, c].map(async (e) => {
+            const row = await rowOf(s, e, p.variantId, PRICE_DROP)
+            return [row.status, baselineOf(row)]
+          }),
+        )
+      expect(alerted()).toEqual([1, 0, 1])
+      expect(tried(bad)).toBe(1)
+      expect(await state()).toEqual([
+        ['active', 1200],
+        ['active', 1500],
+        ['active', 1200],
+      ])
+
+      // The refusals end; a rise, then a drop below the refused row's baseline but not the others'.
+      s.mail.refuse.delete(norm(bad))
+      await reprice(s, p, 1400)
+      await delivered(s)
+      await reprice(s, p, 1300)
+      await delivered(s)
+
+      expect(alerted()).toEqual([1, 1, 1])
+      expect(await state()).toEqual([
+        ['active', 1200],
+        ['active', 1300],
+        ['active', 1200],
+      ])
     })
   })
 

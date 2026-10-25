@@ -9,6 +9,7 @@ export interface NymbalEventMap {
   [C.EVT_PRODUCT_UNPUBLISHED]: P.ProductUnpublishedV1Payload
   [C.EVT_PRODUCT_VIEWED]: P.ProductViewedV1Payload
   [C.EVT_PRODUCT_RESTOCKED]: P.ProductRestockedV1Payload
+  [C.EVT_PRODUCT_VARIANT_PRICE_CHANGED]: P.ProductVariantPriceChangedV1Payload
 
   [C.EVT_CATEGORY_CREATED]: P.CategoryCreatedV1Payload
   [C.EVT_CATEGORY_UPDATED]: P.CategoryUpdatedV1Payload

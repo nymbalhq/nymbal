@@ -451,11 +451,13 @@ export function OrderDetailPage() {
               Customer
             </h3>
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
                 {(order.email[0] ?? '?').toUpperCase()}
               </div>
-              <div>
-                <p className="text-sm font-medium text-zinc-800">{order.email}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-800 [overflow-wrap:anywhere]">
+                  {order.email}
+                </p>
                 {order.customerId && (
                   <Link
                     to={`/customers/${order.customerId}`}

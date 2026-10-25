@@ -72,6 +72,12 @@ const productVariant = z.object({
   options: z.array(z.object({ name: z.string(), value: z.string() })),
   status: z.enum(['active', 'inactive']).optional(),
 })
+/** A variant's prices in a product update: an omitted compare-at price keeps the stored one, null clears it. */
+const variantPrices = z.object({
+  id,
+  priceMinor: money.min(0),
+  compareAtPriceMinor: money.min(0).nullable().optional(),
+})
 const productFields = {
   description: z.string().optional(),
   shortDescription: z.string().optional(),
@@ -162,16 +168,16 @@ export const routeSchemas: Record<string, RouteSchema> = {
     query: z.object({ limit: queryValue, cursor: queryValue }),
   },
 
-  // Back-in-stock alerts
+  // Back-in-stock and price-drop alerts
   'POST /api/alerts/subscribe': {
     name: 'alerts.subscribe',
     command: 'alert.subscribe',
     description:
-      'Ask to be emailed when a variant is back in stock; a confirmation email is sent first.',
+      'Ask to be emailed when a variant is back in stock (`back_in_stock`) or when its price drops (`price_drop`); a confirmation email is sent first.',
     body: z.object({
       email: z.string().trim().max(254).email(),
       variantId: id,
-      kind: z.enum(['back_in_stock']),
+      kind: z.enum(['back_in_stock', 'price_drop']),
     }),
   },
   'POST /api/alerts/confirm': {
@@ -459,9 +465,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'PATCH /api/admin/products/:id': {
     name: 'admin.products.update',
     command: 'product.update',
-    description: "Update a product's fields.",
+    description:
+      "Update a product's fields and its variants' prices; a variant left out keeps its prices, and stock moves only through inventory.",
     params: idParams,
-    body: z.object({ name: z.string().optional(), ...productFields }),
+    body: z.object({
+      name: z.string().optional(),
+      ...productFields,
+      variants: z.array(variantPrices).optional(),
+    }),
   },
   'DELETE /api/admin/products/:id': {
     name: 'admin.products.delete',

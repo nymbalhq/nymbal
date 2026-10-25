@@ -8,14 +8,20 @@ const token = Astro.url.searchParams.get('token') ?? ''
 const confirmed = token === '' ? null : await confirmAlert(token)
 ---
 
-<BaseLayout title="Back-in-stock alert | Nymbal" description="Confirm your back-in-stock alert.">
+<BaseLayout title="Email alert | Nymbal" description="Confirm your email alert.">
   {confirmed ? (
-    <div class="error-page" data-testid="alert-confirmed">
+    <div class="error-page" data-testid="alert-confirmed" data-kind={confirmed.kind}>
       <h1 class="error-title">Your alert is on</h1>
-      <p class="error-message">
-        We'll email you once when <a href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</a> is back
-        in stock.
-      </p>
+      {confirmed.kind === 'price_drop' ? (
+        <p class="error-message">
+          We'll email you when the price of <a href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</a> drops.
+        </p>
+      ) : (
+        <p class="error-message">
+          We'll email you once when <a href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</a> is back
+          in stock.
+        </p>
+      )}
     </div>
   ) : (
     <div class="error-page" data-testid="alert-link-invalid">

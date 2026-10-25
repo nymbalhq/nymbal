@@ -54,7 +54,13 @@ async function setup() {
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
   ).publisher
   const payments = createNativeStubPaymentsAdapter({ logger })
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const inventory = createInventoryService({ store: commandStore, repos, publisher, logger })
   const order = createOrderService({
     store: commandStore,

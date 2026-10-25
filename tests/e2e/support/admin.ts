@@ -61,9 +61,14 @@ export async function placeOrder(
   return { orderId: body.data.orderId, orderNumber: body.data.orderNumber }
 }
 
-/** Signs in through the admin's login form and waits for the shell. */
-export async function signInAsAdmin(page: Page): Promise<void> {
-  const served = await page.goto('login')
+/**
+ * Signs in through the admin's login form and waits for the shell: the admin at the page's base URL, or the one at
+ * `adminBase` (a storefront journey's API, whose admin is not at the storefront's base).
+ */
+export async function signInAsAdmin(page: Page, adminBase?: string): Promise<void> {
+  const served = await page.goto(
+    adminBase === undefined ? 'login' : new URL('login', adminBase).href,
+  )
   expect(served?.status(), `GET ${page.url()}: is the admin served here?`).toBe(200)
   await page.getByTestId('admin-login-email').fill(ADMIN_EMAIL)
   await page.getByTestId('admin-login-password').fill(ADMIN_PASSWORD)

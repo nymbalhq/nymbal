@@ -4,7 +4,7 @@ import { confirmAlert } from '@/lib/api'
 import styles from '@/styles/pages/error.module.css'
 import { LinkInvalid } from '../LinkInvalid'
 
-export const metadata: Metadata = { title: 'Back-in-stock alert' }
+export const metadata: Metadata = { title: 'Email alert' }
 
 interface ConfirmPageProps {
   searchParams: Promise<{ token?: string | string[] }>
@@ -20,14 +20,21 @@ export default async function ConfirmAlertPage({ searchParams }: ConfirmPageProp
     return <LinkInvalid message="It may be from an older email, or the alert has been stopped." />
   }
   return (
-    <div className={styles.page} data-testid="alert-confirmed">
+    <div className={styles.page} data-testid="alert-confirmed" data-kind={confirmed.kind}>
       <div className={styles.wrapper}>
         <h1 className={styles.title}>Your alert is on</h1>
-        <p className={styles.message}>
-          We&apos;ll email you once when{' '}
-          <Link href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</Link> is back
-          in stock.
-        </p>
+        {confirmed.kind === 'price_drop' ? (
+          <p className={styles.message}>
+            We&apos;ll email you when the price of{' '}
+            <Link href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</Link> drops.
+          </p>
+        ) : (
+          <p className={styles.message}>
+            We&apos;ll email you once when{' '}
+            <Link href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</Link> is
+            back in stock.
+          </p>
+        )}
       </div>
     </div>
   )

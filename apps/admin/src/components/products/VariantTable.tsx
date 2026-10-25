@@ -2,7 +2,13 @@ import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { tid } from '@/lib/testid'
 import type { Variant } from '@nymbalhq/types'
 
@@ -41,7 +47,7 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
     variants.map((v) => ({
       ...v,
       _priceDisplay: (v.priceMinor / 100).toFixed(2),
-    }))
+    })),
   )
 
   const updateVariant = (id: string, field: keyof Variant | '_priceDisplay', value: unknown) => {
@@ -82,11 +88,21 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 border-b border-zinc-200">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">SKU</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">Name</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">Price</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">Stock</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">Status</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                SKU
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Name
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Price
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Stock
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500">
+                Status
+              </th>
               <th className="w-10 px-3 py-2"></th>
             </tr>
           </thead>
@@ -126,6 +142,7 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
                     <Input
                       value={variant._priceDisplay}
                       onChange={(e) => updateVariant(variant.id, '_priceDisplay', e.target.value)}
+                      data-testid={tid('product', 'variant-price', variant.id)}
                       onBlur={(e) => {
                         const val = parseFloat(e.target.value)
                         if (!isNaN(val)) {
@@ -140,7 +157,9 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
                   <Input
                     type="number"
                     value={variant.stock}
-                    onChange={(e) => updateVariant(variant.id, 'stock', parseInt(e.target.value) || 0)}
+                    onChange={(e) =>
+                      updateVariant(variant.id, 'stock', parseInt(e.target.value) || 0)
+                    }
                     className="h-7 w-16 text-right font-mono text-xs ml-auto"
                     min={0}
                   />
@@ -177,9 +196,7 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
       <div className="flex items-center justify-between pt-1">
         <p className="text-xs text-zinc-400">
           {editing.length} variant{editing.length !== 1 ? 's' : ''}
-          {editing.length > 0 && (
-            <> · Total stock: {editing.reduce((a, v) => a + v.stock, 0)}</>
-          )}
+          {editing.length > 0 && <> · Total stock: {editing.reduce((a, v) => a + v.stock, 0)}</>}
         </p>
         <Button variant="outline" size="sm" onClick={addVariant} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />

@@ -5,6 +5,8 @@ import {
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_PUBLISHED,
   EVT_PRODUCT_UNPUBLISHED,
+  EVT_PRODUCT_VARIANT_PRICE_CHANGED,
+  HttpError,
   NotFoundError,
   ValidationError,
   type Product,
@@ -37,8 +39,17 @@ export interface ProductCreateInput {
   >
 }
 
+/** A variant's prices: `compareAtPriceMinor` omitted keeps the stored one, null clears it. */
+export interface VariantPriceInput {
+  id: string
+  priceMinor: number
+  compareAtPriceMinor?: number | null
+}
+
 export interface ProductUpdateInput extends Omit<ProductUpdate, 'updatedAt'> {
   categoryIds?: string[]
+  /** Prices of some of the product's own variants; a variant left out is unchanged, and none is added or deleted. */
+  variants?: VariantPriceInput[]
 }
 
 export interface ProductService {
@@ -61,6 +72,8 @@ export interface CreateProductServiceDeps {
   repos: Repositories
   publisher: EventPublisher
   logger: Logger
+  /** The store's currency, which a price event names. */
+  currency: string
 }
 
 async function snapshot(
@@ -76,7 +89,7 @@ async function snapshot(
 }
 
 export function createProductService(deps: CreateProductServiceDeps): ProductService {
-  const { store, repos, publisher } = deps
+  const { store, repos, publisher, currency } = deps
 
   async function requireProduct(tx: ReadTx, id: string): Promise<Product> {
     const product = await repos.product.findById(tx, id)
@@ -147,6 +160,17 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
       return store.transaction(async (tx) => {
         audit.note('product.update', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
+        // Every listed variant is checked before anything is written, so a refusal changes nothing.
+        const current = new Map(
+          (await repos.variant.findByProduct(tx, product.id)).map((v) => [v.id, v]),
+        )
+        for (const item of input.variants ?? []) {
+          if (!current.has(item.id)) {
+            throw new HttpError(400, `Variant ${item.id} is not a variant of this product`, {
+              code: 'product.variant_unknown',
+            })
+          }
+        }
         const now = new Date()
         const updateInput: ProductUpdate = {
           ...(input.name !== undefined && { name: input.name }),
@@ -166,6 +190,34 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
           for (const categoryId of input.categoryIds) {
             await repos.productCategory.attach(tx, product.id, categoryId)
           }
+        }
+        for (const item of input.variants ?? []) {
+          const before = current.get(item.id)!
+          const compareAtPriceMinor =
+            item.compareAtPriceMinor === undefined
+              ? before.compareAtPriceMinor
+              : item.compareAtPriceMinor
+          if (
+            item.priceMinor === before.priceMinor &&
+            compareAtPriceMinor === before.compareAtPriceMinor
+          ) {
+            continue
+          }
+          await repos.variant.update(tx, item.id, {
+            priceMinor: item.priceMinor,
+            compareAtPriceMinor,
+            updatedAt: now,
+          })
+          current.set(item.id, { ...before, priceMinor: item.priceMinor, compareAtPriceMinor })
+          await publisher.publish(EVT_PRODUCT_VARIANT_PRICE_CHANGED, {
+            productId: product.id,
+            variantId: item.id,
+            previousPriceMinor: before.priceMinor,
+            priceMinor: item.priceMinor,
+            previousCompareAtPriceMinor: before.compareAtPriceMinor,
+            compareAtPriceMinor,
+            currency,
+          })
         }
         const snap = await snapshot(tx, repos, await requireProduct(tx, product.id))
         await publisher.publish(EVT_PRODUCT_UPDATED, { product: snap })

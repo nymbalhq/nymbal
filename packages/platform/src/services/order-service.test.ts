@@ -53,7 +53,13 @@ async function setup() {
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
   ).publisher
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const orderService = createOrderService({
     store: commandStore,
     repos,

@@ -27,14 +27,24 @@ const SCHEMA: ElementSchema = {
   children: false,
 }
 
-const KIND: AlertKind = 'back_in_stock'
 const NOTICE = 'Check your inbox to confirm.'
 
+const HEADINGS: Record<AlertKind, string> = {
+  back_in_stock: "Email me when it's back",
+  price_drop: 'Email me if the price drops',
+}
+
+/** The alert a variant at `stock` offers, or none while its stock is unknown. */
+function kindFor(stock: number | undefined): AlertKind | null {
+  if (stock === undefined || Number.isNaN(stock)) return null
+  return stock > 0 ? 'price_drop' : 'back_in_stock'
+}
+
 /**
- * An out-of-stock variant's "email me when it's back" form, for the variant the page shows; an in-stock one renders
- * nothing. One subscribe per submission: `requestSubmit()` and Enter fire `submit` while the button is disabled, so the
- * pending flag, not the button, is the guard (as `NymbalFormElement`'s). An accepted request stays accepted for its
- * variant, so a second click cannot send a second confirmation.
+ * The alert form for the variant the page shows: "email me when it's back" for an out-of-stock variant, "email me if
+ * the price drops" for an in-stock one. One subscribe per submission: `requestSubmit()` and Enter fire `submit` while
+ * the button is disabled, so the pending flag, not the button, is the guard (as `NymbalFormElement`'s). An accepted
+ * request stays accepted for its variant and kind, so a second click cannot send a second confirmation.
  */
 export class NymbalNotifyMe extends NymbalVariantElement {
   static override schema = SCHEMA
@@ -71,8 +81,8 @@ export class NymbalNotifyMe extends NymbalVariantElement {
 
   private pending = false
   private error: string | null = null
-  /** The variant an accepted request was for. */
-  private acceptedFor: string | undefined
+  /** `${variantId}:${kind}` of each accepted request. */
+  private readonly acceptedFor = new Set<string>()
 
   /** The variant the form is for and its stock: the store's selected one once it holds this product. */
   private followed(): { variantId: string | undefined; stock: number | undefined } {
@@ -83,23 +93,25 @@ export class NymbalNotifyMe extends NymbalVariantElement {
 
   private readonly onSubmit = (event: Event): void => {
     event.preventDefault()
-    const { variantId } = this.followed()
-    if (this.pending || variantId === undefined || this.acceptedFor === variantId) return
+    const { variantId, stock } = this.followed()
+    const kind = kindFor(stock)
+    if (this.pending || variantId === undefined || kind === null) return
+    if (this.acceptedFor.has(`${variantId}:${kind}`)) return
     this.pending = true
     this.error = null
     const email = this.renderRoot.querySelector<HTMLInputElement>('[name="email"]')?.value ?? ''
-    const sent = this.client.adapter.alerts.subscribe({ email, variantId, kind: KIND })
+    const sent = this.client.adapter.alerts.subscribe({ email, variantId, kind })
     this.requestUpdate()
     sent.then(
       () => {
         this.pending = false
-        this.acceptedFor = variantId
+        this.acceptedFor.add(`${variantId}:${kind}`)
         this.requestUpdate()
         this.dispatchEvent(
           new CustomEvent('nymbal:alert:requested', {
             bubbles: true,
             composed: true,
-            detail: { kind: KIND, variantId },
+            detail: { kind, variantId },
           }),
         )
       },
@@ -113,11 +125,12 @@ export class NymbalNotifyMe extends NymbalVariantElement {
 
   protected override render() {
     const { variantId, stock } = this.followed()
-    if (stock === undefined || Number.isNaN(stock) || stock > 0) return nothing
-    const accepted = variantId !== undefined && this.acceptedFor === variantId
+    const kind = kindFor(stock)
+    if (kind === null) return nothing
+    const accepted = variantId !== undefined && this.acceptedFor.has(`${variantId}:${kind}`)
     return html`
-      <form part="form" data-testid="notify-me" data-kind=${KIND} @submit=${this.onSubmit}>
-        <h3 part="heading">Email me when it's back</h3>
+      <form part="form" data-testid="notify-me" data-kind=${kind} @submit=${this.onSubmit}>
+        <h3 part="heading">${HEADINGS[kind]}</h3>
         ${renderField({
           id: 'notify-me-email',
           name: 'email',

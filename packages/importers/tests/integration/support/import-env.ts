@@ -153,7 +153,13 @@ export async function buildImportEnv() {
   const reviews = createNativeReviewsAdapter({ repos, logger })
   // The native search adapter is SQL over the command store's own database.
   const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const category = createCategoryService({ repos, publisher, logger })
   const auth = createAuthService({
     repos,

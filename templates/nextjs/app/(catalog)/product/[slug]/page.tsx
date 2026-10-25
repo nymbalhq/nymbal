@@ -60,8 +60,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   // The product's elements as the server renders them for its first variant, which ProductInteractive shows first.
   const variant = product.variants?.[0]
-  // The back-in-stock form only where the store's email reaches a mailbox (an API older than the report says nothing);
-  // it shows itself only for a variant out of stock, and follows the selected variant once hydrated.
+  // The alert form only where the store's email reaches a mailbox (an API older than the report says nothing): back in
+  // stock for a variant out of stock, price drop for one in stock, following the selected variant once hydrated.
   const offersAlerts = capabilities?.email?.delivers === true && variant !== undefined
   const serverHtml = {
     price: renderNymbal('nymbal-product-price', {

@@ -42,8 +42,8 @@ const breadcrumb = breadcrumbJsonLd([
   { name: product.name, url: `${Astro.url.origin}/product/${product.slug}` },
 ])
 
-// The back-in-stock form only where the store's email reaches a mailbox (an API older than the report says nothing);
-// it shows itself only for a variant out of stock.
+// The alert form only where the store's email reaches a mailbox (an API older than the report says nothing): back in
+// stock for a variant out of stock, price drop for one in stock.
 const offersAlerts = capabilities?.email?.delivers === true && defaultVariant !== undefined
 
 // The selector derives its option groups from the product's variants.

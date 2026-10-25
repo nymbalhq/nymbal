@@ -34,6 +34,16 @@ export interface ProductRestockedV1Payload {
   previousQty: number
   newQty: number
 }
+/** Prices in `currency`'s minor units; each compare-at price is the stored one, null when the variant has none. */
+export interface ProductVariantPriceChangedV1Payload {
+  productId: string
+  variantId: string
+  previousPriceMinor: number
+  priceMinor: number
+  previousCompareAtPriceMinor: number | null
+  compareAtPriceMinor: number | null
+  currency: string
+}
 
 /** Whose view it is: an anonymous visitor (the `nymbal.visitor` cookie) or a signed-in customer. */
 export interface RecentViewer {
@@ -227,7 +237,10 @@ export interface AlertUnsubscribedV1Payload {
 export interface AlertSentV1Payload {
   subscriptionId: string
   kind: AlertKind
-  /** The event the alert answered: a product.restocked.v1 for a back-in-stock alert. */
+  /**
+   * The event the alert answered: a product.restocked.v1 for a back-in-stock alert, a
+   * product.variant_price_changed.v1 for a price-drop one.
+   */
   triggerEventId: string
 }
 

@@ -34,7 +34,13 @@ export async function createTestEnv() {
   ).publisher
   const payments = createNativeStubPaymentsAdapter({ logger })
 
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const inventory = createInventoryService({ store: commandStore, repos, publisher, logger })
   const order = createOrderService({
     store: commandStore,

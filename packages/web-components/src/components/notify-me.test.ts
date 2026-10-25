@@ -108,8 +108,45 @@ const email = fc
   .tuple(fc.stringMatching(/^[a-z][a-z0-9]{0,9}$/), fc.stringMatching(/^[a-z]{2,8}$/))
   .map(([local, domain]) => `${local}@${domain}.test`)
 
+type Kind = 'back_in_stock' | 'price_drop'
+
+const kindFor = (stock: number): Kind => (stock <= 0 ? 'back_in_stock' : 'price_drop')
+
+/** The form a variant at `stock` shows: its kind and its heading. */
+const formFor = (stock: number): { kind: Kind; heading: string } =>
+  stock <= 0
+    ? { kind: 'back_in_stock', heading: "Email me when it's back" }
+    : { kind: 'price_drop', heading: 'Email me if the price drops' }
+
+/** The form the element shows, or null for none; the heading with its apostrophe made plain. */
+function shownForm(el: Element): { kind: string | null; heading: string } | null {
+  const form = find<HTMLFormElement>(el, 'notify-me')
+  if (form === null) return null
+  const heading = form.querySelector('[part~="heading"]')?.textContent ?? ''
+  return { kind: form.getAttribute('data-kind'), heading: heading.trim().replace('’', "'") }
+}
+
+/** The parts the element's shadow root renders, as a sorted set. */
+function partsOf(el: Element): string[] {
+  const parts = new Set<string>()
+  for (const node of el.shadowRoot?.querySelectorAll('[part]') ?? []) {
+    for (const part of (node.getAttribute('part') ?? '').split(/\s+/)) if (part) parts.add(part)
+  }
+  return [...parts].sort()
+}
+
+/** The product store's product with each variant at its stock, and the one selected. */
+function select(client: Client, variants: Variant[], selectedId: string): void {
+  const product = productWith(variants)
+  client.product.setState({
+    product,
+    selectedVariant: product.variants.find((v) => v.id === selectedId),
+    loading: false,
+  })
+}
+
 describe('nymbal-notify-me', () => {
-  it('AC-8: property: from its attributes alone, a stock of 0 or less renders the back-in-stock form and a stock above 0 renders none', async () => {
+  it('AC-5: property: from its attributes alone, a stock of 0 or less renders the back-in-stock form and a stock above 0 renders the price-drop form', async () => {
     expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
     setupMockClient()
     await fc.assert(
@@ -120,17 +157,7 @@ describe('nymbal-notify-me', () => {
           'variant-id': 'v-attrs',
           stock: String(stock),
         })
-        const form = find<HTMLFormElement>(el, 'notify-me')
-        const shown =
-          form === null
-            ? null
-            : {
-                kind: form.getAttribute('data-kind'),
-                heading: /Email me when it['’]s back/.test(form.textContent ?? ''),
-              }
-        expect(shown, `stock ${stock}`).toEqual(
-          stock <= 0 ? { kind: 'back_in_stock', heading: true } : null,
-        )
+        expect(shownForm(el), `stock ${stock}`).toEqual(formFor(stock))
       }),
       { numRuns: 30, examples: [[0], [1]] },
     )
@@ -153,21 +180,24 @@ describe('nymbal-notify-me', () => {
     }).toEqual({ type: 'email', required: true, labelled: true, submit: 'submit', sameForm: true })
   })
 
-  it('AC-8: property: once the product store holds its product, the form follows the selected variant: shown for an out-of-stock one, gone for an in-stock one, and a submit names the variant followed, never the server’s first', async () => {
+  it('AC-5: property: once the product store holds its product, the form follows the selected variant, back-in-stock for an out-of-stock one and price-drop for an in-stock one, switching both ways; a submit names the variant followed and the kind of its state, never the server’s first', async () => {
     expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.integer({ min: 0, max: 3 }), { minLength: 2, maxLength: 4 }),
-        fc.array(fc.nat({ max: 3 }), { minLength: 1, maxLength: 5 }),
+        fc.array(fc.nat({ max: 3 }), { minLength: 1, maxLength: 6 }),
+        fc.nat({ max: 3 }),
         email,
-        async (stocks, picks, address) => {
+        async (stocks, picks, last, address) => {
           document.body.innerHTML = ''
-          // The last variant is out of stock: the shopper ends on it and submits.
-          const variants = [...stocks, 0].map((stock, i) => ({ id: `v${i}`, stock }))
+          const variants = stocks.map((stock, i) => ({ id: `v${i}`, stock }))
           const product = productWith(variants)
           const client = setupMockClient() as unknown as Client
-          const subscribe = vi.fn(async () => ({ status: 'pending' }))
-          installAlerts(client, subscribe)
+          const sent: unknown[] = []
+          installAlerts(client, async (input) => {
+            sent.push(input)
+            return { status: 'pending' }
+          })
           client.product.setState({ product, selectedVariant: product.variants[0], loading: false })
           const el = await mount({
             'product-id': 'p1',
@@ -179,27 +209,150 @@ describe('nymbal-notify-me', () => {
             const chosen = product.variants[pick % product.variants.length]!
             client.product.setState({ selectedVariant: chosen })
             await flush(el)
-            const form = find(el, 'notify-me')
-            expect(form !== null, `${chosen.id} at stock ${chosen.stock}`).toBe(chosen.stock <= 0)
+            expect(shownForm(el), `${chosen.id} at stock ${chosen.stock}`).toEqual(
+              formFor(chosen.stock),
+            )
           }
 
-          const last = product.variants.at(-1)!
-          client.product.setState({ selectedVariant: last })
+          const ending = product.variants[last % product.variants.length]!
+          client.product.setState({ selectedVariant: ending })
           await flush(el)
           type(el, address)
           byTestId<HTMLButtonElement>(el, 'notify-me-submit').click()
           await flush(el)
-          expect(subscribe.mock.calls).toEqual([
-            [{ email: address, variantId: last.id, kind: 'back_in_stock' }],
+          expect(sent).toEqual([
+            { email: address, variantId: ending.id, kind: kindFor(ending.stock) },
           ])
         },
       ),
       {
         numRuns: 30,
-        // In-stock variants only before the last: the submit must name the last, not the server's first.
-        examples: [[[3, 2], [1], 'ada@example.test']],
+        examples: [
+          // The server's first is in stock and the shopper ends on an out-of-stock one, and the reverse.
+          [[3, 0], [1, 0, 1], 1, 'ada@example.test'],
+          [[0, 2], [1, 0], 1, 'bea@example.test'],
+        ],
       },
     )
+  })
+
+  it('AC-5: in stock and out of stock, the parts rendered at rest are the same set', async () => {
+    expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
+    setupMockClient()
+    const out = await mount({ 'product-id': 'p1', 'variant-id': 'v0', stock: '0' })
+    const inStock = await mount({ 'product-id': 'p1', 'variant-id': 'v1', stock: '5' })
+    expect(shownForm(inStock)?.kind).toBe('price_drop')
+    expect(partsOf(inStock)).toEqual(partsOf(out))
+  })
+
+  it('AC-5: property: k = 1-5 submits in stock (clicks and requestSubmit()) while the call is held make one alerts.subscribe call with kind price_drop; acceptance shows the notice and emits nymbal:alert:requested once with that kind', async () => {
+    expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
+    await fc.assert(
+      fc.asyncProperty(email, fc.integer({ min: 1, max: 5 }), async (address, k) => {
+        document.body.innerHTML = ''
+        const held = deferred()
+        const client = setupMockClient() as unknown as Client
+        const sent: unknown[] = []
+        installAlerts(client, async (input) => {
+          sent.push(input)
+          await held.promise
+          return { status: 'pending' }
+        })
+        const events: unknown[] = []
+        const listener = (e: Event): void => {
+          events.push((e as CustomEvent).detail)
+        }
+        document.addEventListener(EVENT, listener)
+        try {
+          const el = await mount({ 'product-id': 'p9', 'variant-id': 'v9', stock: '4' })
+          expect(shownForm(el)?.kind, 'the in-stock form').toBe('price_drop')
+          type(el, address)
+          const button = byTestId<HTMLButtonElement>(el, 'notify-me-submit')
+          const form = button.closest('form')!
+          for (let i = 0; i < k; i += 1) {
+            if (i % 2 === 0) button.click()
+            else form.requestSubmit()
+          }
+          await flush(el)
+          expect(sent, `${k} submits while held`).toEqual([
+            { email: address, variantId: 'v9', kind: 'price_drop' },
+          ])
+
+          held.resolve()
+          await flush(el)
+          byTestId<HTMLButtonElement>(el, 'notify-me-submit').click()
+          await flush(el)
+          expect({ calls: sent.length, notice: shownText(el, 'notify-me-notice'), events }).toEqual(
+            {
+              calls: 1,
+              notice: NOTICE,
+              events: [{ kind: 'price_drop', variantId: 'v9' }],
+            },
+          )
+        } finally {
+          document.removeEventListener(EVENT, listener)
+        }
+      }),
+      { numRuns: 25 },
+    )
+  })
+
+  it('AC-5: acceptance is per variant and kind: after an accepted back-in-stock submit, the same variant in stock shows the price-drop form enabled with no notice and its submit makes one price_drop call; back out of stock the accepted notice shows again and a further submit sends nothing', async () => {
+    expect(customElements.get(TAG), `${TAG} is defined by registerComponents()`).toBeDefined()
+    const client = setupMockClient() as unknown as Client
+    const sent: Array<{ kind: string; variantId: string }> = []
+    installAlerts(client, async (input) => {
+      sent.push(input as { kind: string; variantId: string })
+      return { status: 'pending' }
+    })
+    select(client, [{ id: 'v0', stock: 0 }], 'v0')
+    const el = await mount({ 'product-id': 'p1', 'variant-id': 'v0', stock: '0' })
+    const submit = () => byTestId<HTMLButtonElement>(el, 'notify-me-submit')
+    const state = () => ({
+      kind: shownForm(el)?.kind ?? null,
+      disabled: find<HTMLButtonElement>(el, 'notify-me-submit')?.disabled ?? null,
+      notice: shownText(el, 'notify-me-notice'),
+    })
+
+    type(el, 'ada@example.test')
+    submit().click()
+    await flush(el)
+    expect(state(), 'out of stock, accepted').toEqual({
+      kind: 'back_in_stock',
+      disabled: true,
+      notice: NOTICE,
+    })
+
+    select(client, [{ id: 'v0', stock: 3 }], 'v0')
+    await flush(el)
+    expect(state(), 'the same variant in stock').toEqual({
+      kind: 'price_drop',
+      disabled: false,
+      notice: '',
+    })
+    type(el, 'ada@example.test')
+    submit().click()
+    await flush(el)
+    expect(state(), 'in stock, accepted').toEqual({
+      kind: 'price_drop',
+      disabled: true,
+      notice: NOTICE,
+    })
+
+    select(client, [{ id: 'v0', stock: 0 }], 'v0')
+    await flush(el)
+    expect(state(), 'out of stock again').toEqual({
+      kind: 'back_in_stock',
+      disabled: true,
+      notice: NOTICE,
+    })
+    el.shadowRoot!.querySelector('form')!.requestSubmit()
+    await flush(el)
+
+    expect(sent.map((call) => [call.variantId, call.kind])).toEqual([
+      ['v0', 'back_in_stock'],
+      ['v0', 'price_drop'],
+    ])
   })
 
   it('AC-8: property: k = 1-5 submits (clicks and requestSubmit()) while the call is held make one alerts.subscribe call; acceptance shows the notice and emits nymbal:alert:requested once with the kind and variant; a refusal shows notify-me-error, re-enables the form and emits nothing', async () => {

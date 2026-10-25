@@ -86,7 +86,11 @@ export function ProductEditPage() {
       const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
       navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
-      await updateProduct.mutateAsync({ id: existingProduct.id, data: form, idempotencyKey })
+      // Only the product's own variants: the server refuses an id it does not have, and rows the table added are not
+      // saved by this form.
+      const own = new Set(existingProduct.variants.map((v) => v.id))
+      const data = { ...form, variants: (form.variants ?? []).filter((v) => own.has(v.id)) }
+      await updateProduct.mutateAsync({ id: existingProduct.id, data, idempotencyKey })
       setIsDirty(false)
     }
   }
@@ -167,7 +171,9 @@ export function ProductEditPage() {
           <Tabs defaultValue="general">
             <TabsList className="mb-4">
               <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="variants">Variants</TabsTrigger>
+              <TabsTrigger value="variants" data-testid={tid('product', 'tab', 'variants')}>
+                Variants
+              </TabsTrigger>
               <TabsTrigger value="media">Media</TabsTrigger>
               <TabsTrigger value="seo">SEO</TabsTrigger>
               {existingProduct && (

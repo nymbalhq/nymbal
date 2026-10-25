@@ -108,6 +108,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       repos,
       publisher,
       logger: logger.child({ service: 'product' }),
+      currency: config.store.currency,
     }),
     category: createCategoryService({
       repos,

@@ -40,6 +40,8 @@ export interface AlertSubscriptionRequest {
   confirmToken: string
   unsubscribeToken: string
   origin: string
+  /** A price-drop row's price at subscribe time; null for a back-in-stock row. */
+  baselinePriceMinor: number | null
   at: Date
 }
 
@@ -47,13 +49,15 @@ export interface AlertSubscriptionPatch {
   status: AlertStatus
   updatedAt: Date
   confirmedAt?: Date
+  /** The price a price-drop row was last told. */
+  baselinePriceMinor?: number
 }
 
 export interface AlertSubscriptionRepository extends StoreRepository {
   /**
    * One write on the unique (email, variant, kind): a new row is `pending`; a `pending` row takes the request's origin;
-   * an `unsubscribed` or `fired` row returns to `pending` with the request's origin and confirm token (its unsubscribe
-   * token is kept); an `active` row only has `updated_at` touched. Answers the row after the write.
+   * an `unsubscribed` or `fired` row returns to `pending` with the request's origin, confirm token and baseline (its
+   * unsubscribe token is kept); an `active` row only has `updated_at` touched. Answers the row after the write.
    */
   upsertPending(tx: Tx, request: AlertSubscriptionRequest): Promise<AlertSubscription>
   findById(tx: ReadTx, id: string): Promise<AlertSubscription | null>
@@ -114,6 +118,7 @@ export function createAlertSubscriptionRepository(
         status: sql`CASE WHEN ${keep(t)} THEN ${t.status} ELSE 'pending' END`,
         origin: sql`CASE WHEN ${keep(t)} THEN ${t.origin} ELSE excluded.origin END`,
         confirmToken: sql`CASE WHEN ${reissue(t)} THEN excluded.confirm_token ELSE ${t.confirmToken} END`,
+        baselinePriceMinor: sql`CASE WHEN ${reissue(t)} THEN excluded.baseline_price_minor ELSE ${t.baselinePriceMinor} END`,
         confirmedAt: sql`CASE WHEN ${keep(t)} THEN ${t.confirmedAt} ELSE NULL END`,
         updatedAt: sql`excluded.updated_at`,
       })
@@ -127,7 +132,7 @@ export function createAlertSubscriptionRepository(
         confirmToken: r.confirmToken,
         unsubscribeToken: r.unsubscribeToken,
         origin: r.origin,
-        baselinePriceMinor: null,
+        baselinePriceMinor: r.baselinePriceMinor,
         confirmedAt: null,
       }
       if (tx.kind === 'sqlite') {
@@ -177,6 +182,9 @@ export function createAlertSubscriptionRepository(
             ...(patch.confirmedAt !== undefined && {
               confirmedAt: patch.confirmedAt.toISOString(),
             }),
+            ...(patch.baselinePriceMinor !== undefined && {
+              baselinePriceMinor: patch.baselinePriceMinor,
+            }),
           })
           .where(and(eq(s.id, id), inArray(s.status, [...from])))
           .returning()
@@ -189,6 +197,9 @@ export function createAlertSubscriptionRepository(
           status: patch.status,
           updatedAt: patch.updatedAt,
           ...(patch.confirmedAt !== undefined && { confirmedAt: patch.confirmedAt }),
+          ...(patch.baselinePriceMinor !== undefined && {
+            baselinePriceMinor: patch.baselinePriceMinor,
+          }),
         })
         .where(and(eq(p.id, id), inArray(p.status, [...from])))
         .returning()

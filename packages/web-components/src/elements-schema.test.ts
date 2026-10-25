@@ -973,7 +973,8 @@ const FIXED: Record<Tag, State[]> = {
     }),
   ],
   'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
-  // Out of stock (the form), submitted held, refused and accepted; in stock (nothing); and following the store.
+  // Out of stock (the back-in-stock form), submitted held, refused and accepted; in stock (the price-drop form); and
+  // following the store.
   'nymbal-notify-me': [
     ...formStates({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '0' } }),
     state({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '4' } }),

@@ -7,6 +7,8 @@ export const EVT_PRODUCT_UNPUBLISHED = 'product.unpublished.v1'
 export const EVT_PRODUCT_VIEWED = 'product.viewed.v1'
 /** A variant's stock went from 0 to above 0, in the transaction of the inventory.changed.v1 it accompanies. */
 export const EVT_PRODUCT_RESTOCKED = 'product.restocked.v1'
+/** A variant's price or compare-at price changed, in the transaction of the product.updated.v1 it accompanies. */
+export const EVT_PRODUCT_VARIANT_PRICE_CHANGED = 'product.variant_price_changed.v1'
 
 // Category
 export const EVT_CATEGORY_CREATED = 'category.created.v1'
@@ -73,6 +75,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PRODUCT_UNPUBLISHED,
   EVT_PRODUCT_VIEWED,
   EVT_PRODUCT_RESTOCKED,
+  EVT_PRODUCT_VARIANT_PRICE_CHANGED,
   EVT_CATEGORY_CREATED,
   EVT_CATEGORY_UPDATED,
   EVT_CATEGORY_DELETED,

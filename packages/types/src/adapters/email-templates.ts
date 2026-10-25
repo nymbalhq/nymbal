@@ -47,6 +47,14 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: '{{productName}} is back in stock',
     body: `Hi,\n\n{{productName}} is back in stock at {{storeName}}:\n\n{{productUrl}}\n\nThis was a one-time alert. Stop it:\n{{unsubscribeUrl}}`,
   },
+  'alert-confirm-price-drop': {
+    subject: 'Confirm your price alert for {{productName}}',
+    body: `Hi,\n\nYou asked {{storeName}} to email you when the price of {{productName}} drops, each time it falls below the last price we told you. Confirm by following this link:\n\n{{confirmUrl}}\n\nIf you did not ask, ignore this email and you will hear nothing more.\n\nStop this alert:\n{{unsubscribeUrl}}`,
+  },
+  'alert-price-drop': {
+    subject: 'Price drop: {{productName}} is now {{priceFormatted}}',
+    body: `Hi,\n\nThe price of {{productName}} at {{storeName}} has dropped from {{previousPriceFormatted}} to {{priceFormatted}}:\n\n{{productUrl}}\n\nWe'll email you again if it drops below {{priceFormatted}}. Stop this alert:\n{{unsubscribeUrl}}`,
+  },
 }
 
 export function renderEmailTemplate(

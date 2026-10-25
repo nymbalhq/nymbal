@@ -73,6 +73,12 @@ export const isBackInStock = (mail: Mail, slug: string): boolean =>
   /back in stock/i.test(`${mail.subject} ${mail.text}`) &&
   linksIn(mail).some((url) => url.pathname === `/product/${slug}`)
 
+/** A price-drop alert for the product: no confirm link, the product link, and copy about its price. */
+export const isPriceDrop = (mail: Mail, slug: string): boolean =>
+  !isConfirmation(mail) &&
+  /price/i.test(`${mail.subject} ${mail.text}`) &&
+  linksIn(mail).some((url) => url.pathname === `/product/${slug}`)
+
 export interface ApiAnswer {
   status: number
   text: string
@@ -84,10 +90,11 @@ export async function subscribeThroughApi(
   origin: string,
   email: string,
   variantId: string,
+  kind: 'back_in_stock' | 'price_drop' = 'back_in_stock',
 ): Promise<ApiAnswer> {
   const res = await request.post(`${API_URL}/api/alerts/subscribe`, {
     headers: { ...(await csrf(request)), origin },
-    data: { email, variantId, kind: 'back_in_stock' },
+    data: { email, variantId, kind },
   })
   return { status: res.status(), text: await res.text() }
 }

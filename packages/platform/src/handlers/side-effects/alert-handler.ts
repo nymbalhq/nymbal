@@ -1,14 +1,19 @@
 import {
   EVT_ALERT_REQUESTED,
   EVT_PRODUCT_RESTOCKED,
+  EVT_PRODUCT_VARIANT_PRICE_CHANGED,
   type AlertRequestedV1Payload,
   type EmailAdapter,
   type EventBusAdapter,
   type EventHandler,
   type Logger,
+  type NymbalEvent,
   type Product,
   type ProductRestockedV1Payload,
+  type ProductVariantPriceChangedV1Payload,
+  type TransactionalEmail,
 } from '@nymbalhq/types'
+import { formatMoney } from '../../money.js'
 import type { AlertSubscription } from '../../repositories/alert-subscription.js'
 import type { Repositories } from '../../repositories/index.js'
 import type { AlertService } from '../../services/alert-service.js'
@@ -55,7 +60,7 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
     const { row, product } = found
     const { confirmUrl, unsubscribeUrl, productUrl } = links(row, product)
     await email.sendTransactional({
-      template: 'alert-confirm',
+      template: row.kind === 'price_drop' ? 'alert-confirm-price-drop' : 'alert-confirm',
       to: row.email,
       vars: { storeName, productName: product.name, productUrl, confirmUrl, unsubscribeUrl },
     })
@@ -64,15 +69,14 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
     )
   }
 
-  // Each active row is mailed, marked and fired on its own: one refused address neither stops nor repeats another's
-  // alert, and stays active for the variant's next restock.
-  const onRestocked: EventHandler<ProductRestockedV1Payload> = async (event) => {
-    const { variantId, productId } = event.payload
-    const { rows, product } = await store.read(async (tx) => ({
-      rows: await repos.alertSubscription.listActive(tx, variantId, 'back_in_stock'),
-      product: await repos.product.findById(tx, productId),
-    }))
-    if (product === null) return
+  // Each row is mailed and recorded on its own: one refused address neither stops nor repeats another's alert, and keeps
+  // its status (and a price-drop row its baseline) for the next trigger.
+  async function fanOut(
+    event: NymbalEvent<unknown>,
+    rows: AlertSubscription[],
+    what: { alert: string; next: string },
+    message: (row: AlertSubscription) => Omit<TransactionalEmail, 'to'>,
+  ): Promise<void> {
     let attempted = 0
     let failed = 0
     for (const row of rows) {
@@ -80,12 +84,7 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       if (await store.read((tx) => repos.processedEvent.seen(tx, HANDLER, key))) continue
       attempted += 1
       try {
-        const { productUrl, unsubscribeUrl } = links(row, product)
-        await email.sendTransactional({
-          template: 'alert-back-in-stock',
-          to: row.email,
-          vars: { storeName, productName: product.name, productUrl, unsubscribeUrl },
-        })
+        await email.sendTransactional({ ...message(row), to: row.email })
         await store.transaction(async (tx) => {
           await repos.processedEvent.markProcessed(tx, HANDLER, key, new Date())
           await alerts.recordSent(tx, row, event)
@@ -94,13 +93,59 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
         failed += 1
         logger.warn(
           { err, subscriptionId: row.id, eventId: event.id },
-          'back-in-stock alert failed; the subscription stays active for the next restock',
+          `${what.alert} alert failed; the subscription stays active for the next ${what.next}`,
         )
       }
     }
     if (attempted > 0 && failed === attempted) {
-      throw new Error(`every back-in-stock alert for event ${event.id} failed`)
+      throw new Error(`every ${what.alert} alert for event ${event.id} failed`)
     }
+  }
+
+  const onRestocked: EventHandler<ProductRestockedV1Payload> = async (event) => {
+    const { variantId, productId } = event.payload
+    const { rows, product } = await store.read(async (tx) => ({
+      rows: await repos.alertSubscription.listActive(tx, variantId, 'back_in_stock'),
+      product: await repos.product.findById(tx, productId),
+    }))
+    if (product === null) return
+    await fanOut(event, rows, { alert: 'back-in-stock', next: 'restock' }, (row) => {
+      const { productUrl, unsubscribeUrl } = links(row, product)
+      return {
+        template: 'alert-back-in-stock',
+        vars: { storeName, productName: product.name, productUrl, unsubscribeUrl },
+      }
+    })
+  }
+
+  // A row is mailed when the price falls below both the previous price and the last price it was told (its baseline).
+  const onPriceChanged: EventHandler<ProductVariantPriceChangedV1Payload> = async (event) => {
+    const { variantId, productId, previousPriceMinor, priceMinor, currency } = event.payload
+    if (priceMinor >= previousPriceMinor) return
+    const { rows, product } = await store.read(async (tx) => ({
+      rows: await repos.alertSubscription.listActive(tx, variantId, 'price_drop'),
+      product: await repos.product.findById(tx, productId),
+    }))
+    if (product === null) return
+    const due = rows.filter(
+      (row) => row.baselinePriceMinor !== null && priceMinor < row.baselinePriceMinor,
+    )
+    const previousPriceFormatted = formatMoney(previousPriceMinor, currency)
+    const priceFormatted = formatMoney(priceMinor, currency)
+    await fanOut(event, due, { alert: 'price-drop', next: 'drop' }, (row) => {
+      const { productUrl, unsubscribeUrl } = links(row, product)
+      return {
+        template: 'alert-price-drop',
+        vars: {
+          storeName,
+          productName: product.name,
+          productUrl,
+          unsubscribeUrl,
+          previousPriceFormatted,
+          priceFormatted,
+        },
+      }
+    })
   }
 
   await eventBus.subscribe(EVT_ALERT_REQUESTED, onRequested as EventHandler, {
@@ -108,5 +153,8 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
   })
   await eventBus.subscribe(EVT_PRODUCT_RESTOCKED, onRestocked as EventHandler, {
     name: 'email-alert-back-in-stock',
+  })
+  await eventBus.subscribe(EVT_PRODUCT_VARIANT_PRICE_CHANGED, onPriceChanged as EventHandler, {
+    name: 'email-alert-price-drop',
   })
 }

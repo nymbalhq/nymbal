@@ -26,7 +26,8 @@ interface Fixture {
 async function seed(request: APIRequestContext): Promise<Fixture> {
   const product = await ownProduct(request, await adminToken(request), 5)
   const tag = randomUUID().slice(0, 8)
-  const customerEmail = `phone-${tag}@e2e.test`
+  // 45 characters with no hyphen or space, so nothing but the page's own wrapping keeps it inside 412 px.
+  const customerEmail = `phonewidthshopper${tag}${tag}@example.com`
   const shopper = await playwrightRequest.newContext()
   try {
     const reg = await shopper.post(`${API_URL}/api/auth/register`, {

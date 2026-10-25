@@ -6,22 +6,26 @@ import {
   customStoreEvents,
   isBackInStock,
   isConfirmation,
+  isPriceDrop,
   linkTo,
   mailbox,
   subscribeThroughApi,
+  type Mail,
   type Mailbox,
 } from '../support/alerts'
+import { signInAsAdmin } from '../support/admin'
 import { isCustomProject, storeCapabilities, type StoreCapabilities } from '../support/capabilities'
 import { adminToken, ownProduct, type OwnProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 import { upgraded } from '../support/server-rendered'
 
-// Back-in-stock alerts on both templates. Each journey reads GET /api/capabilities and asserts the branch it reports
-// (@capabilities): on the native store, whose email only logs, there is no form and subscribe is refused; on the
-// custom-providers store, whose email is SMTP into Mailpit, a shopper subscribes from the product page, confirms from
-// the email, and is mailed once when the variant comes back. State moves only through the product's own routes: the
-// admin stock adjustment, and the links in the mail.
+// Back-in-stock and price-drop alerts on both templates. Each journey reads GET /api/capabilities and asserts the
+// branch it reports (@capabilities): on the native store, whose email only logs, there is no form and subscribe is
+// refused; on the custom-providers store, whose email is SMTP into Mailpit, a shopper subscribes from the product page,
+// confirms from the email, and is mailed once when the variant comes back, or when the admin lowers its price below
+// the last price the subscription was told. State moves only through the product's own routes: the admin stock
+// adjustment, the admin's product page, and the links in the mail.
 
 const TAG = 'nymbal-notify-me'
 
@@ -76,8 +80,9 @@ async function confirmedThroughApi(
   origin: string,
   email: string,
   product: OwnProduct,
+  kind: 'back_in_stock' | 'price_drop' = 'back_in_stock',
 ): Promise<void> {
-  const sub = await subscribeThroughApi(request, origin, email, product.variantId)
+  const sub = await subscribeThroughApi(request, origin, email, product.variantId, kind)
   expect(sub.status, sub.text).toBe(202)
   const token = linkTo(await confirmation(mail, email), '/alerts/confirm').searchParams.get('token')
   const answer = await confirmThroughApi(request, token ?? '')
@@ -88,8 +93,52 @@ async function alertsTo(mail: Mailbox, to: string, slug: string) {
   return (await mail.messages(to)).filter((m) => isBackInStock(m, slug))
 }
 
+async function priceDropsTo(mail: Mailbox, to: string, slug: string): Promise<Mail[]> {
+  return (await mail.messages(to)).filter((m) => isPriceDrop(m, slug))
+}
+
+/** The admin the custom API serves, one origin with that API. */
+const ADMIN_BASE = `${API_URL}/admin/`
+
+const pounds = (minor: number): string => `£${(minor / 100).toFixed(2)}`
+
+/**
+ * Opens the product in the admin's product page, sets the variant's price on the Variants tab (pressing Add Variant
+ * first when asked) and saves; answers the save's PATCH status and echoed correlation id.
+ */
+async function saveAdminPrice(
+  admin: Page,
+  product: OwnProduct,
+  priceMinor: number,
+  opts: { addRow?: boolean } = {},
+): Promise<{ status: number; correlationId: string }> {
+  await admin.goto(new URL(`products/${product.slug}`, ADMIN_BASE).href)
+  await admin.getByTestId('admin-product-tab-variants').click()
+  if (opts.addRow === true) await admin.getByRole('button', { name: /Add Variant/ }).click()
+  await admin
+    .getByTestId(`admin-product-variant-price-${product.variantId}`)
+    .fill((priceMinor / 100).toFixed(2))
+  const saved = admin.waitForResponse(
+    (res) =>
+      res.request().method() === 'PATCH' &&
+      new URL(res.url()).pathname.startsWith('/api/admin/products/'),
+  )
+  await admin.getByTestId('admin-product-save').click()
+  const res = await saved
+  return { status: res.status(), correlationId: res.headers()['x-correlation-id'] ?? '' }
+}
+
+/** The variant's price as `GET /api/products/:slug` serves it. */
+async function servedPrice(request: APIRequestContext, product: OwnProduct): Promise<number> {
+  const res = await request.get(`${API_URL}/api/products/${product.slug}`)
+  const body = (await res.json()) as {
+    data: { variants: Array<{ id: string; priceMinor: number }> }
+  }
+  return body.data.variants.find((v) => v.id === product.variantId)!.priceMinor
+}
+
 test.describe('back-in-stock alerts', () => {
-  test('AC-9: an out-of-stock product page carries the notify-me form in its server HTML and once hydrated exactly when the store reports email.delivers, and a restock and reload remove it @capabilities', async ({
+  test('AC-9: an out-of-stock product page carries the notify-me form in its server HTML and once hydrated exactly when the store reports email.delivers, and after a restock and reload it shows the price-drop form there instead @capabilities', async ({
     page,
     request,
   }, testInfo) => {
@@ -118,7 +167,9 @@ test.describe('back-in-stock alerts', () => {
     await adjustStock(request, token, product.variantId, 3, `alerts-ac9-${randomUUID()}`)
     await page.reload()
     await hydrated(page)
-    await expect.poll(() => formsShown(page), { timeout: 15_000 }).toEqual([])
+    await expect
+      .poll(() => formsShown(page), { timeout: 15_000 })
+      .toEqual(delivering ? ['price_drop'] : [])
   })
 
   test('AC-10: on the Mailpit store, a confirmed subscriber is mailed once when the variant comes back, at the storefront’s origin; an unsubscribed one and an unconfirmed address are not; a second restock mails only the newly confirmed; the log has the restock; a registered address answers as a fresh one @capabilities', async ({
@@ -285,6 +336,185 @@ test.describe('back-in-stock alerts', () => {
     await mail.waitFor(marker, 1)
 
     expect([twice, entered].map((who) => posted.filter((e) => e === who).length)).toEqual([1, 1])
+    const confirmations = await Promise.all(
+      [twice, entered].map(async (who) => (await mail.messages(who)).filter(isConfirmation).length),
+    )
+    expect(confirmations).toEqual([1, 1])
+  })
+})
+
+test.describe('price-drop alerts', () => {
+  test('AC-6: on the Mailpit store, a price lowered in the admin’s product page (after Add Variant) saves, is served and logged with both prices, and mails each confirmed price-drop subscriber once naming both prices; the confirmation and confirm page name the price drop, never back in stock; an unsubscribed address, a rise and a return to the last alerted price mail nothing @capabilities', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(240_000)
+    const caps = await storeCapabilities(request)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+
+    if (!delivering) {
+      await page.goto(`/product/${product.slug}`)
+      await hydrated(page)
+      expect(await formsShown(page)).toEqual([])
+      expect(await page.locator(TAG).count()).toBe(0)
+      return
+    }
+
+    const origin = storefrontOrigin(testInfo)
+    const mail = await mailbox()
+    const tag = randomUUID().slice(0, 8)
+    const [a, b] = ['pd-a', 'pd-b'].map((role) => address(role, tag)) as [string, string]
+    const start = await servedPrice(request, product)
+
+    // A through the in-stock product page's price-drop form.
+    await page.goto(`/product/${product.slug}`)
+    await hydrated(page)
+    expect(await formsShown(page), 'the in-stock product page').toEqual(['price_drop'])
+    await subscribeFromPage(page, product, a)
+    const aConfirmation = await confirmation(mail, a)
+    expect(`${aConfirmation.subject}\n${aConfirmation.text}`).toMatch(/price/i)
+    expect(`${aConfirmation.subject}\n${aConfirmation.text}`).not.toMatch(/back in stock/i)
+    await page.goto(linkTo(aConfirmation, '/alerts/confirm').href)
+    const confirmed = page.getByTestId('alert-confirmed')
+    await expect(confirmed).toHaveAttribute('data-kind', 'price_drop')
+    await expect(confirmed).toContainText(`the price of ${product.name} drops`)
+    await expect(confirmed).not.toContainText(/back in stock/i)
+
+    // B, the control, through the API.
+    await confirmedThroughApi(request, mail, origin, b, product, 'price_drop')
+
+    // The admin on the custom API: a row added, the existing variant's price lowered, saved.
+    const admin = await page.context().newPage()
+    await signInAsAdmin(admin, ADMIN_BASE)
+    const lower = start - 400
+    const first = await saveAdminPrice(admin, product, lower, { addRow: true })
+    expect(first.status, 'the save’s PATCH').toBe(200)
+
+    await mail.waitFor(a, 2)
+    await mail.waitFor(b, 2)
+    for (const who of [a, b]) {
+      const drops = await priceDropsTo(mail, who, product.slug)
+      expect(drops.length, `price-drop emails to ${who}`).toBe(1)
+      expect(drops[0]!.text).toContain(pounds(start))
+      expect(drops[0]!.text).toContain(pounds(lower))
+      expect(`${drops[0]!.subject}\n${drops[0]!.text}`).not.toMatch(/back in stock/i)
+      expect(linkTo(drops[0]!, `/product/${product.slug}`).origin).toBe(origin)
+    }
+
+    await admin.goto(new URL(`products/${product.slug}`, ADMIN_BASE).href)
+    await admin.getByTestId('admin-product-tab-variants').click()
+    await expect(admin.getByTestId(`admin-product-variant-price-${product.variantId}`)).toHaveValue(
+      (lower / 100).toFixed(2),
+    )
+    expect(await servedPrice(request, product), 'the storefront API').toBe(lower)
+
+    const logged = await customStoreEvents(first.correlationId, 'product.*')
+    expect(
+      logged
+        .filter((e) => e.type === 'product.variant_price_changed.v1')
+        .map((e) => [
+          e.payload?.['variantId'],
+          e.payload?.['previousPriceMinor'],
+          e.payload?.['priceMinor'],
+        ]),
+    ).toEqual([[product.variantId, start, lower]])
+
+    const [aAlert] = await priceDropsTo(mail, a, product.slug)
+    await page.goto(linkTo(aAlert!, '/alerts/unsubscribe').href)
+    await expect(page.getByTestId('alert-unsubscribed')).toHaveCount(1)
+
+    // A second, lower price: B is mailed, and only then is A's mailbox read.
+    const second = lower - 300
+    expect((await saveAdminPrice(admin, product, second)).status).toBe(200)
+    await mail.waitFor(b, 3)
+    expect((await priceDropsTo(mail, a, product.slug)).length, 'alerts to the unsubscribed A').toBe(
+      1,
+    )
+
+    // A rise, then back to B's last alerted price: nothing; read after a third, lower price mails B.
+    const raised = second + 200
+    expect((await saveAdminPrice(admin, product, raised)).status).toBe(200)
+    expect((await saveAdminPrice(admin, product, second)).status).toBe(200)
+    const third = second - 100
+    expect((await saveAdminPrice(admin, product, third)).status).toBe(200)
+    await mail.waitFor(b, 4)
+    const toB = await priceDropsTo(mail, b, product.slug)
+    expect(toB.length, 'price-drop emails to B').toBe(3)
+    expect(
+      toB.filter((m) => m.text.includes(pounds(raised))),
+      'an alert about the rise',
+    ).toEqual([])
+    expect(toB.filter((m) => m.text.includes(pounds(third))).length).toBe(1)
+    await admin.close()
+  })
+
+  test('AC-7: in the price-drop state, a double-click on notify-me-submit, and Enter then a click, each send one subscribe and put one confirmation in Mailpit @capabilities', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const caps = await storeCapabilities(request)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 5)
+
+    if (!delivering) {
+      await page.goto(`/product/${product.slug}`)
+      await hydrated(page)
+      expect(await page.locator(TAG).count()).toBe(0)
+      return
+    }
+
+    const mail = await mailbox()
+    const tag = randomUUID().slice(0, 8)
+    const posted: Array<{ email: string; kind: string }> = []
+    page.on('request', (req) => {
+      if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/alerts/subscribe') {
+        const body = req.postDataJSON() as { email?: string; kind?: string } | null
+        posted.push({ email: String(body?.email ?? ''), kind: String(body?.kind ?? '') })
+      }
+    })
+
+    const twice = address('pd-dblclick', tag)
+    await page.goto(`/product/${product.slug}`)
+    await hydrated(page)
+    expect(await formsShown(page), 'the in-stock product page').toEqual(['price_drop'])
+    await page.locator(TAG).getByTestId('notify-me-email').fill(twice)
+    await page.locator(TAG).getByTestId('notify-me-submit').dblclick()
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
+      'Check your inbox to confirm.',
+    )
+
+    const entered = address('pd-enter', tag)
+    await page.goto(`/product/${product.slug}`)
+    await hydrated(page)
+    const field = page.locator(TAG).getByTestId('notify-me-email')
+    await field.fill(entered)
+    await field.press('Enter')
+    await page.locator(TAG).getByTestId('notify-me-submit').click({ force: true })
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
+      'Check your inbox to confirm.',
+    )
+
+    // A marker's confirmation, sent after both, has arrived: any second confirmation to either would be there too.
+    const marker = address('pd-marker', tag)
+    const sub = await subscribeThroughApi(
+      request,
+      storefrontOrigin(testInfo),
+      marker,
+      product.variantId,
+      'price_drop',
+    )
+    expect(sub.status, sub.text).toBe(202)
+    await mail.waitFor(marker, 1)
+
+    expect(
+      [twice, entered].map((who) => posted.filter((p) => p.email === who).map((p) => p.kind)),
+    ).toEqual([['price_drop'], ['price_drop']])
     const confirmations = await Promise.all(
       [twice, entered].map(async (who) => (await mail.messages(who)).filter(isConfirmation).length),
     )
