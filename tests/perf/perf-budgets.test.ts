@@ -17,6 +17,8 @@ import { astroWithHeavyHome, heavyScriptGzipBytes } from './fixtures/heavy-home'
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const REPORT = join(REPO, 'reports/perf-budgets.json')
 const RUN_TIMEOUT_MS = 20 * 60_000
+// CI's job adds its own arguments here (`--runs 5`); a local run measures as perf:budgets does by default.
+const FROM_ENV = (process.env.NYMBAL_PERF_BUDGETS_ARGS ?? '').split(/\s+/).filter(Boolean)
 const baseline = JSON.parse(
   readFileSync(
     fileURLToPath(new URL('./fixtures/astro-home-606e5aa.json', import.meta.url)),
@@ -77,7 +79,7 @@ function perfBudgets(args: string[]): Promise<Run> {
   rmSync(REPORT, { force: true })
   return new Promise((resolve) => {
     const chunks: string[] = []
-    const child = spawn('pnpm', ['perf:budgets', ...args], {
+    const child = spawn('pnpm', ['perf:budgets', ...args, ...FROM_ENV], {
       cwd: REPO,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],

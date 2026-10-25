@@ -537,8 +537,9 @@ function commitOf(root: string, ref: string): string | undefined {
 /**
  * `--base`, else the merge base with origin/dev, else with origin/main. A `--base` in CI's shape that names no commit
  * here (a full sha a force-push removed, or forty zeros on a branch's first push) falls back to HEAD's first parent,
- * and on a root commit to the empty tree, which narrows nothing; `log` gets one line saying which. Anything else that
- * does not resolve (a ref name, a short sha) is a mistake and refused: falling back would check less than was asked.
+ * and on a root commit to the empty tree, which narrows nothing; `log` gets one line saying which. So does a `HEAD~n`
+ * or `HEAD^` on a root commit, outside a shallow clone. Anything else that does not resolve (a ref name, a short sha)
+ * is a mistake and refused: falling back would check less than was asked.
  * The empty tree itself is taken as given: it is what the gate hands its own steps on a root commit.
  */
 export function resolveBase(
@@ -553,6 +554,19 @@ export function resolveBase(
     const found = zeros ? undefined : commitOf(root, requested)
     if (found !== undefined) return found
     if (!zeros && !/^[0-9a-f]{40}$/i.test(requested)) {
+      // `HEAD~1` on a root commit (the nightly's base when main's head is one) has nothing before it to narrow by.
+      // A shallow clone's oldest commit only looks like a root, and taking it for one would judge nothing as new.
+      if (/^HEAD(?:[~^]\d*)+$/.test(requested) && commitOf(root, 'HEAD') !== undefined) {
+        if (git(root, ['rev-parse', '--is-shallow-repository']).trim() === 'true') {
+          throw new Error(
+            `--base ${requested} names no commit in this shallow clone: fetch the history (fetch-depth: 0)`,
+          )
+        }
+        log(
+          `base: --base ${requested} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+        )
+        return tree
+      }
       throw new Error(`--base ${requested} names no commit: pass a ref or sha that resolves here`)
     }
     const why = zeros

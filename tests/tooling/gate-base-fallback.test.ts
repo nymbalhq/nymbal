@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   cleanupScratch,
@@ -119,5 +120,42 @@ describe('gate: a --base that names no commit on a root commit narrows nothing',
         .sort(),
     )
     expect(fallbackLines(run.output), run.output).toHaveLength(1)
+  })
+})
+
+describe('gate: --base HEAD~1 (the nightly’s) on a root commit narrows nothing', () => {
+  it('runs every test, judges no test file as changed, and one line says so', async () => {
+    const repo = scratchRepo(FILES)
+    expect(git(repo.root, 'rev-list', '--count', 'HEAD')).toBe('1')
+
+    const run = await gateCli(repo, ['--base', 'HEAD~1', '--json'])
+
+    expect(run.code, run.output).toBe(0)
+    expect(changedRef(repo), run.output).toBeNull()
+    expect(run.steps.find((s) => s.name === 'census trend')?.status, run.output).toBe('ok')
+    const lines = fallbackLines(run.output)
+    expect(lines, run.output).toHaveLength(1)
+    expect(lines[0]).toContain('--base HEAD~1')
+    expect(lines[0]).toContain('root commit')
+  })
+
+  it('in a shallow clone, where HEAD only looks like a root, it is refused and runs no step', async () => {
+    const repo = childRepo()
+    const clone = `${repo.root}-shallow`
+    git(repo.root, 'clone', '-q', '--depth', '1', `file://${repo.root}`, clone)
+    expect(git(clone, 'rev-parse', '--is-shallow-repository')).toBe('true')
+    const shallow: Scratch = { ...repo, root: clone }
+
+    try {
+      const run = await gateCli(shallow, ['--base', 'HEAD~1', '--json'])
+
+      expect(run.code, run.output).not.toBe(0)
+      expect(run.output).toContain('--base HEAD~1')
+      expect(run.output).toContain('shallow')
+      expect(fallbackLines(run.output), run.output).toEqual([])
+      expect(repo.calls(), run.output).toEqual([])
+    } finally {
+      rmSync(clone, { recursive: true, force: true })
+    }
   })
 })

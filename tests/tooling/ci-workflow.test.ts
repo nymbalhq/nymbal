@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
-import { HARNESS_PROJECTS, type PlanInput, plan, stepModes } from '../../scripts/gate'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  emptyTree,
+  HARNESS_PROJECTS,
+  type PlanInput,
+  plan,
+  resolveBase,
+  stepModes,
+} from '../../scripts/gate'
+import { cleanupScratch, git, scratchRepo } from './scratch-gate'
 import { leftOut } from './vitest-filters'
 
 // AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
@@ -734,6 +742,31 @@ describe('AC-7: CI passes the right base to every gate.ts call', () => {
   )
 })
 
+describe('nightly.yml: every gate call has a base that resolves on the commit it checks out', () => {
+  afterEach(cleanupScratch)
+
+  // A release can put a root commit at main's head, and the schedule runs on main: there `HEAD~1` names nothing.
+  it.each(NIGHTLY_EVENTS)(
+    'on $label, every gate call resolves its base on a root commit, to the empty tree',
+    ({ github }) => {
+      const nightly = loadWorkflow(NIGHTLY)
+      const calls = gateCalls(nightly, github)
+      expect(calls.length, 'gate calls that run').toBeGreaterThan(0)
+      expect(shallowGateJobs(nightly, calls), 'gate jobs without fetch-depth: 0').toEqual([])
+      const repo = scratchRepo({ 'src/a.ts': 'export const a = 1\n' })
+      expect(git(repo.root, 'rev-list', '--count', 'HEAD')).toBe('1')
+      const resolved = calls.map((c) => {
+        try {
+          return `${c.job}: ${resolveBase(repo.root, c.base, () => {})}`
+        } catch (error) {
+          return `${c.job}: ${(error as Error).message}`
+        }
+      })
+      expect(resolved).toEqual(calls.map((c) => `${c.job}: ${emptyTree(repo.root)}`))
+    },
+  )
+})
+
 describe('CI runs on pushes to main and dev only', () => {
   it('ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
     const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as {
@@ -1045,6 +1078,62 @@ describe('AC-18: tests-fail-on-base in CI has the Mailpit the kit tests need', (
 
 // The harness's own Vitest projects run in a gate only when a harness path changed; the push to dev is where they
 // always run, so the job that runs the tests step asks for them.
+const RELEASE = fileURLToPath(new URL('../../.github/workflows/release.yml', import.meta.url))
+const PERF_SUITE = fileURLToPath(new URL('../perf/perf-budgets.test.ts', import.meta.url))
+
+type PerfCall = { where: string; args: string[] }
+
+/**
+ * Every `perf:budgets` a workflow runs: a direct call, with its arguments, or the tests/perf suite, which spawns
+ * `pnpm perf:budgets` with the words of NYMBAL_PERF_BUDGETS_ARGS from the env its step sees.
+ */
+function perfCalls(workflow: Workflow, github: Ctx): PerfCall[] {
+  const calls: PerfCall[] = []
+  for (const run of execute(workflow, github)) {
+    for (const m of run.script.matchAll(
+      /(?:\bpnpm\s+(?:run\s+)?perf:budgets|scripts\/perf-budgets\.ts)([^\n;&|]*)/g,
+    )) {
+      calls.push({ where: run.job, args: words(m[1] ?? '').map((w) => expand(w, run, m.index)) })
+    }
+    if (/tests\/perf\/vitest\.config\.ts/.test(run.script)) {
+      calls.push({
+        where: `${run.job} (tests/perf)`,
+        args: words(run.env.NYMBAL_PERF_BUDGETS_ARGS ?? ''),
+      })
+    }
+  }
+  return calls
+}
+
+describe('perf:budgets takes the median of at least five Lighthouse runs a page', () => {
+  it('the tests/perf suite passes NYMBAL_PERF_BUDGETS_ARGS to every perf:budgets it spawns', () => {
+    const source = readFileSync(PERF_SUITE, 'utf8')
+    const spawns = [...source.matchAll(/spawn\('pnpm', \[([^\]]*)\]/g)].map((m) => m[1])
+    expect(spawns).toEqual(["'perf:budgets', ...args, ...FROM_ENV"])
+    expect(source).toMatch(/^const FROM_ENV = .*process\.env\.NYMBAL_PERF_BUDGETS_ARGS\b/m)
+  })
+
+  it.each([
+    { label: 'ci.yml on a push to dev', file: WORKFLOW, github: DEV_PUSH },
+    ...NIGHTLY_EVENTS.map((e) => ({
+      label: `nightly.yml on ${e.label}`,
+      file: NIGHTLY,
+      github: e.github,
+    })),
+  ])('$label: every perf:budgets call passes --runs 5 or more', ({ file, github }) => {
+    const calls = perfCalls(loadWorkflow(file), github)
+    expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
+    const short = calls
+      .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
+      .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
+    expect(short).toEqual([])
+  })
+
+  it('release.yml runs no perf:budgets, so it has no runs to set', () => {
+    expect(readFileSync(RELEASE, 'utf8')).not.toMatch(/perf:budgets|perf-budgets\.ts|tests\/perf\//)
+  })
+})
+
 describe('dev CI runs the harness projects whatever changed', () => {
   it('the gate.ts call whose --only names tests passes --harness all, and its plan negates no harness project', () => {
     const calls = gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) =>
