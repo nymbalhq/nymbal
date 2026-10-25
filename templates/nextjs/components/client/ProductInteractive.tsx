@@ -9,11 +9,14 @@ import {
   ProductPrice,
   QuantitySelector,
   StockBadge,
+  NotifyMe,
 } from '@nymbalhq/react'
 import styles from '@/styles/pages/pdp.module.css'
 
 interface ProductInteractiveProps {
   product: DenormalisedProduct
+  /** The store's email delivers, so the page offers a back-in-stock alert (GET /api/capabilities). */
+  offersAlerts?: boolean
   /** The server's render of each element, for the product's first variant (app/product/[slug]/page.tsx). */
   serverHtml?: {
     price: string
@@ -21,10 +24,15 @@ interface ProductInteractiveProps {
     variantSelector: string
     quantity: string
     addToCart: string
+    notifyMe?: string | undefined
   }
 }
 
-export function ProductInteractive({ product, serverHtml }: ProductInteractiveProps) {
+export function ProductInteractive({
+  product,
+  offersAlerts = false,
+  serverHtml,
+}: ProductInteractiveProps) {
   const { selectedVariant } = useProduct(product.slug)
 
   const variant = selectedVariant ?? product.variants?.[0]
@@ -92,6 +100,15 @@ export function ProductInteractive({ product, serverHtml }: ProductInteractivePr
           serverHtml={serverHtml?.addToCart}
         />
       </div>
+
+      {offersAlerts && first !== undefined && (
+        <NotifyMe
+          productId={product.id}
+          variantId={first.id}
+          stock={first.stock ?? 0}
+          serverHtml={serverHtml?.notifyMe}
+        />
+      )}
     </div>
   )
 }

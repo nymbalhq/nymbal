@@ -1,6 +1,7 @@
 import { NymbalAddToCart } from '@nymbalhq/web-components/elements/nymbal-add-to-cart'
 import { NymbalBreadcrumb } from '@nymbalhq/web-components/elements/nymbal-breadcrumb'
 import { NymbalImageGallery } from '@nymbalhq/web-components/elements/nymbal-image-gallery'
+import { NymbalNotifyMe } from '@nymbalhq/web-components/elements/nymbal-notify-me'
 import { NymbalProductGrid } from '@nymbalhq/web-components/elements/nymbal-product-grid'
 import { NymbalProductPrice } from '@nymbalhq/web-components/elements/nymbal-product-price'
 import { NymbalQuantitySelector } from '@nymbalhq/web-components/elements/nymbal-quantity-selector'
@@ -21,6 +22,8 @@ NymbalReviewList.define()
 NymbalReviewForm.define()
 // The related grid is there only when the product has relations.
 if (document.querySelector('nymbal-product-grid') !== null) NymbalProductGrid.define()
+// The back-in-stock form is there only when the store's email delivers.
+if (document.querySelector('nymbal-notify-me') !== null) NymbalNotifyMe.define()
 
 const slug = document.querySelector<HTMLElement>('[data-product-slug]')?.dataset.productSlug
 const addRow = document.querySelector<HTMLElement>('.pdp-add-row')

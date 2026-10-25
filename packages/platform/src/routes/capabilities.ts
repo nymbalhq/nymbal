@@ -1,11 +1,13 @@
 import {
   DEFAULT_PRODUCT_SORT,
   PRODUCT_SORT_KEYS,
+  type EmailAdapter,
   type HttpAdapter,
   type PaymentsAdapter,
   type SearchAdapter,
   type StoreCapabilities,
 } from '@nymbalhq/types'
+import { emailDelivers } from '../services/index.js'
 import { ok, renderError } from './envelope.js'
 
 /**
@@ -15,6 +17,7 @@ import { ok, renderError } from './envelope.js'
 function storeCapabilities(adapters: {
   payments: PaymentsAdapter
   search: SearchAdapter
+  email: EmailAdapter
 }): StoreCapabilities {
   const client = adapters.payments.client?.() ?? null
   return {
@@ -25,12 +28,13 @@ function storeCapabilities(adapters: {
     search: { capabilities: [...adapters.search.capabilities()] },
     // The document store runs the listing's sort, so these are the catalogue's keys, not the search adapter's.
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
+    email: { delivers: emailDelivers(adapters.email) },
   }
 }
 
 export function registerCapabilitiesRoute(
   adapter: HttpAdapter,
-  adapters: { payments: PaymentsAdapter; search: SearchAdapter },
+  adapters: { payments: PaymentsAdapter; search: SearchAdapter; email: EmailAdapter },
 ): void {
   adapter.registerRoute('GET', '/api/capabilities', async () => {
     try {

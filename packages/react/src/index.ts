@@ -51,6 +51,7 @@ export {
   ReviewForm,
   OrderSummary,
   OrderTimeline,
+  NotifyMe,
 } from './generated/wrappers.js'
 
 export type {
@@ -85,4 +86,5 @@ export type {
   ReviewFormProps,
   OrderSummaryProps,
   OrderTimelineProps,
+  NotifyMeProps,
 } from './generated/wrappers.js'

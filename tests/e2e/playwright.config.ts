@@ -108,6 +108,14 @@ const apiServer = {
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
+/**
+ * The Mailpit the fixture store sends its mail to: CI's service, which NYMBAL_TEST_MAILPIT_SMTP (`host:port`) names,
+ * else the stack slot's compose Mailpit, so a worktree's store never mails slot 0's.
+ */
+const mailpitSmtpPort = process.env.NYMBAL_TEST_MAILPIT_SMTP
+  ? new URL(`smtp://${process.env.NYMBAL_TEST_MAILPIT_SMTP}`).port
+  : String(block.mailpitSmtp)
+
 /** The fixture store: `nymbal dev --api-only` from the fixture directory, so its nymbal.config.ts is the one loaded. */
 const customApiServer = {
   command: `node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only --port ${block.customApi}`,
@@ -118,6 +126,7 @@ const customApiServer = {
   env: {
     NYMBAL_SQLITE_PATH: customSqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL, nextjsCustomURL),
+    NYMBAL_E2E_SMTP_PORT: mailpitSmtpPort,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }

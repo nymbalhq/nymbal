@@ -22,10 +22,11 @@ import { timelineEntries } from './__fixtures__/server-data.js'
 // steps as a shopper does, with the payment element as its `payment`-slotted child.
 //
 // The catalogue and page elements (grid, price, stock badge, breadcrumb, gallery, header, footer, category nav,
-// reviews, order summary, order timeline) render exactly their schema's parts across their states (an empty and a
-// filled grid with and without the product-list store, a gallery of none, one and several images, a review form
-// submitted once with its call held, refused and answered, an order with and without a discount, a timeline with no
-// entry and with several), style them on `--nymbal-*` tokens, have
+// reviews, order summary, order timeline, notify-me) render exactly their schema's parts across their states (an
+// empty and a filled grid with and without the product-list store, a gallery of none, one and several images, a review
+// form and an out-of-stock notify-me form each submitted once with its call held, refused and answered, an in-stock
+// notify-me with no form, an order with and without a discount, a timeline with no entry and with several), style
+// them on `--nymbal-*` tokens, have
 // their `src/elements/<tag>.ts` entry, and carry the interface the templates call them by.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -64,6 +65,7 @@ const TAGS = [
   'nymbal-review-form',
   'nymbal-order-summary',
   'nymbal-order-timeline',
+  'nymbal-notify-me',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -153,9 +155,19 @@ function installAccount(client: Record<string, unknown>, s: State): void {
   }
 }
 
-/** The reviews SDK the review form submits through (`client.adapter.reviews`), answering as `s.phase` says. */
+/**
+ * The SDK adapter calls the forms make: the review form's `reviews.submit` and the notify-me form's
+ * `alerts.subscribe`, each answering as `s.phase` says.
+ */
 function installReviews(client: Record<string, unknown>, s: State): void {
   client['adapter'] = {
+    alerts: {
+      subscribe: async () => {
+        if (s.phase === 'pending') await new Promise<never>(() => undefined)
+        if (s.phase === 'failed') throw new Error('Refused by the AC-1 fake.')
+        return { status: 'pending' }
+      },
+    },
     reviews: {
       getForProduct: async () => ({ items: [], nextCursor: null }),
       submit: async (review: Record<string, unknown>) => {
@@ -923,6 +935,17 @@ const FIXED: Record<Tag, State[]> = {
     }),
   ],
   'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
+  // Out of stock (the form), submitted held, refused and accepted; in stock (nothing); and following the store.
+  'nymbal-notify-me': [
+    ...formStates({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '0' } }),
+    state({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '4' } }),
+    state({
+      attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '0' },
+      stores: {
+        product: { product: productOf([[]]), selectedVariant: productOf([[]]).variants[0] },
+      },
+    }),
+  ],
   'nymbal-order-summary': [
     state(),
     state({
@@ -1229,6 +1252,24 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
   'nymbal-review-form': fc
     .option(fc.constantFrom(...PHASES))
     .map((phase) => state({ attrs: { 'product-id': 'p1' }, phase })),
+  'nymbal-notify-me': fc
+    .record({
+      stock: fc.integer({ min: -2, max: 6 }),
+      same: fc.boolean(),
+      phase: fc.option(fc.constantFrom(...PHASES)),
+    })
+    .map(({ stock, same, phase }) => {
+      const product = productOf([[]])
+      return state({
+        attrs: {
+          'product-id': same ? product.id : 'other',
+          'variant-id': product.variants[0]!.id,
+          stock: String(stock),
+        },
+        stores: { product: { product, selectedVariant: product.variants[0] } },
+        phase,
+      })
+    }),
   'nymbal-order-summary': fc
     .record({
       lines: fc.array(
@@ -1485,6 +1526,16 @@ const INTERFACE: Array<{
     attributes: [{ name: 'product-id', type: 'string' }],
   },
   {
+    tag: 'nymbal-notify-me',
+    reactName: 'NotifyMe',
+    events: [{ name: 'nymbal:alert:requested', prop: 'onRequested' }],
+    attributes: [
+      { name: 'product-id', type: 'string' },
+      { name: 'variant-id', type: 'string' },
+      { name: 'stock', type: 'number' },
+    ],
+  },
+  {
     tag: 'nymbal-order-summary',
     reactName: 'OrderSummary',
     events: [],
@@ -1624,9 +1675,9 @@ describe('AC-1: nymbal-checkout meets the foundation', () => {
 const CATALOGUE_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-describe('AC-1: the twelve elements meet the element conventions', () => {
-  it('AC-1: each of the twelve styles itself with var(--nymbal-*) tokens', () => {
-    expect(CATALOGUE_TAGS).toHaveLength(12)
+describe('AC-1: the thirteen catalogue and page elements meet the element conventions', () => {
+  it('AC-1: each of the thirteen styles itself with var(--nymbal-*) tokens', () => {
+    expect(CATALOGUE_TAGS).toHaveLength(13)
     for (const tag of CATALOGUE_TAGS) {
       const ctor = customElements.get(tag) as
         | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })
@@ -1666,6 +1717,30 @@ describe('AC-1: the twelve elements meet the element conventions', () => {
       const exported = Object.values(entry).filter((v) => schemaOf(v)?.tag === tag)
       expect(exported, `${tag}: the class its entry exports`).toEqual([customElements.get(tag)])
     }
+  })
+
+  it('AC-8: nymbal-notify-me fires nymbal:alert:requested as onRequested with { kind: AlertKind; variantId: string }, has no slots, passes no children, and lists exactly its parts', () => {
+    const schema = schemaOf(customElements.get('nymbal-notify-me'))
+    expect(schema, 'nymbal-notify-me is defined with a static schema').toBeDefined()
+    expect({
+      events: schema?.events,
+      slots: schema?.slots,
+      children: schema?.children,
+      parts: [...(schema?.parts ?? [])].sort(),
+      attributes: schema?.attributes.map((a) => a.prop),
+    }).toEqual({
+      events: [
+        {
+          name: 'nymbal:alert:requested',
+          prop: 'onRequested',
+          detail: '{ kind: AlertKind; variantId: string }',
+        },
+      ],
+      slots: [],
+      children: false,
+      parts: ['error', 'field', 'form', 'heading', 'input', 'label', 'notice', 'submit'],
+      attributes: ['productId', 'variantId', 'stock'],
+    })
   })
 
   it('AC-1: nymbal-review-form fires nymbal:review:submitted as onSubmitted with { reviewId: string }; nymbal-site-header has the search and cart slots', () => {

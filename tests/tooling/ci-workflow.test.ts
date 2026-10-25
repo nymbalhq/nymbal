@@ -772,6 +772,7 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
         ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
         services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
         postgresUrl: run?.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+        mailpitUrl: run?.env.NYMBAL_TEST_MAILPIT_URL || undefined,
         noBuild: call.args.includes('--no-build'),
         artefactPresent: true,
       }).steps
@@ -783,6 +784,71 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
     }
     expect(e2eSteps).toBeGreaterThanOrEqual(e2eJobs.length)
     expect(failures).toEqual([])
+  })
+})
+
+// AC-13: the custom-providers store mails through Mailpit, so its two E2E jobs run CI's Mailpit service, pass its
+// URLs, and call gate.ts with --services external, under which that URL meets the steps' `mailpit up`.
+const MAILPIT_E2E_JOBS: Record<string, string> = {
+  'e2e-astro-custom': 'e2e astro-custom',
+  'e2e-nextjs-custom': 'e2e nextjs-custom',
+}
+
+describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read', () => {
+  it('AC-13: each custom-store E2E job runs a Mailpit service, gives its gate.ts call --services external with NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_MAILPIT_SMTP at the service’s published 8025 and 1025, and its e2e step is planned to run', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const problems: string[] = []
+    let planned = 0
+    for (const [id, stepName] of Object.entries(MAILPIT_E2E_JOBS)) {
+      const job = ci.jobs[id]
+      if (job === undefined) {
+        problems.push(`ci.yml has no ${id} job`)
+        continue
+      }
+      const mailpit = Object.values(job.services ?? {}).find((svc) =>
+        (svc?.image ?? '').startsWith('axllent/mailpit'),
+      )
+      const published = publishedPorts(mailpit)
+      if (mailpit === undefined) problems.push(`${id}: no Mailpit service`)
+      for (const call of gateCalls(ci, DEV_PUSH).filter((c) => c.job === id)) {
+        const run = execute(ci, DEV_PUSH).find((r) => r.job === id)!
+        const api = run.env.NYMBAL_TEST_MAILPIT_URL
+        const smtp = run.env.NYMBAL_TEST_MAILPIT_SMTP
+        if (flag(call.args, '--services') !== 'external')
+          problems.push(`${id}: not --services external`)
+        if (!api || portOf(api) !== published.get('8025')) {
+          problems.push(
+            `${id}: NYMBAL_TEST_MAILPIT_URL ${api ?? 'unset'} is not the service's 8025`,
+          )
+        }
+        if (!smtp || portOf(smtp) !== published.get('1025')) {
+          problems.push(
+            `${id}: NYMBAL_TEST_MAILPIT_SMTP ${smtp ?? 'unset'} is not the service's 1025`,
+          )
+        }
+        const only = flag(call.args, '--only')
+        const steps = plan({
+          full: true,
+          base: 'HEAD',
+          changed: [],
+          mutated: [],
+          ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+          services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+          postgresUrl: run.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+          mailpitUrl: api || undefined,
+          noBuild: call.args.includes('--no-build'),
+          artefactPresent: true,
+        } as PlanInput).steps
+        const step = steps.find((s) => s.name === stepName)
+        if (step === undefined || step.skip !== undefined) {
+          problems.push(
+            `${id}: "${stepName}" ${step === undefined ? 'is not planned' : `is skipped: ${step.skip}`}`,
+          )
+        } else planned += 1
+      }
+    }
+    expect(problems).toEqual([])
+    expect(planned).toBe(Object.keys(MAILPIT_E2E_JOBS).length)
   })
 })
 

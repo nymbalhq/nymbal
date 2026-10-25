@@ -99,6 +99,13 @@
       "when": 1792918142785,
       "tag": "0013_order_access_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792919479403,
+      "tag": "0014_alert_subscriptions",
+      "breakpoints": true
     }
   ]
 }

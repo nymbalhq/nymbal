@@ -2,6 +2,7 @@ import type { DocumentStoreAdapter, EventBusAdapter, Logger } from '@nymbalhq/ty
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
+import type { AlertService } from '../services/alert-service.js'
 import { registerCategoryProjection } from './projections/category-projection.js'
 import { registerProductProjection } from './projections/product-projection.js'
 import { registerOrderProjection } from './projections/order-projection.js'
@@ -10,6 +11,7 @@ import { registerInventoryProjection } from './projections/inventory-projection.
 import { registerEmailHandler } from './side-effects/email-handler.js'
 import { registerSearchHandler } from './side-effects/search-handler.js'
 import { registerReviewsHandler } from './side-effects/reviews-handler.js'
+import { registerAlertHandler } from './side-effects/alert-handler.js'
 
 export interface RegisterHandlersDeps {
   config: NymbalConfig
@@ -17,11 +19,13 @@ export interface RegisterHandlersDeps {
   documentStore: DocumentStoreAdapter
   repos: Repositories
   adapters: AdapterRegistry
+  /** Records each alert's send: the row fired and `alert.sent.v1` published. */
+  alerts: AlertService
   logger: Logger
 }
 
 export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void> {
-  const { config, eventBus, documentStore, repos, adapters, logger } = deps
+  const { config, eventBus, documentStore, repos, adapters, alerts, logger } = deps
   const handlerLogger = logger.child({ component: 'handlers' })
 
   await registerCategoryProjection({
@@ -71,6 +75,14 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     orderAccessKeyRepo: repos.orderAccessKey,
     storeName: config.store.name,
     ...(config.store.url !== undefined && { storeUrl: config.store.url }),
+  })
+  await registerAlertHandler({
+    eventBus,
+    email: adapters.email,
+    logger: handlerLogger.child({ handler: 'alert' }),
+    repos,
+    alerts,
+    storeName: config.store.name,
   })
   await registerSearchHandler({
     eventBus,

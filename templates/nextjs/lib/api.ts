@@ -8,6 +8,7 @@ import type {
 } from '@nymbalhq/sdk'
 import { DEFAULT_PRODUCT_SORT, ORDER_KEY_HEADER, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 import type {
+  AlertKind,
   Cart,
   Category,
   ProductSortKey,
@@ -211,4 +212,34 @@ export async function fetchSearch(
     console.error('[api] fetchSearch failed', err)
     return null
   }
+}
+
+/** An alert link's token posted to the API from this server; null when the API refuses the link (404, or 400). */
+async function postAlertToken<T>(path: string, token: string): Promise<T | null> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ token }),
+    cache: 'no-store',
+  })
+  if (res.status === 404 || res.status === 400) return null
+  if (!res.ok) throw new Error(`[api] POST ${path} answered ${res.status}`)
+  return ((await res.json()) as { data: T }).data
+}
+
+export interface AlertConfirmation {
+  kind: AlertKind
+  product: { name: string; slug: string }
+}
+
+/** Confirms the alert a confirmation email's link names; null when the link is not valid; rejects when the API fails. */
+export function confirmAlert(token: string): Promise<AlertConfirmation | null> {
+  return postAlertToken<AlertConfirmation>('/api/alerts/confirm', token)
+}
+
+/** Stops the alert an email's unsubscribe link names; false when the link is not valid; rejects when the API fails. */
+export async function unsubscribeAlert(token: string): Promise<boolean> {
+  return (
+    (await postAlertToken<{ status: 'unsubscribed' }>('/api/alerts/unsubscribe', token)) !== null
+  )
 }

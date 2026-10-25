@@ -89,11 +89,13 @@ export async function createKernel(
     configure?: (config: NymbalConfig) => NymbalConfig
     /** More createApp options, beside the storage and logger the harness passes, e.g. injected adapters. */
     appOptions?: Omit<CreateAppOptions, 'sqlitePath' | 'postgresUrl' | 'logger'>
+    /** The kernel's logger, for a test that reads what it logs; errors only by default. */
+    logger?: Kernel['logger']
   },
 ): Promise<Kernel> {
   const base = kernelConfig(opts.dialect)
   const config = opts.configure === undefined ? base : opts.configure(base)
-  const logger = createLogger({ pretty: false, level: 'error' })
+  const logger = opts.logger ?? createLogger({ pretty: false, level: 'error' })
   const ownedPath = opts.dialect === 'sqlite' ? opts.sqlitePath : undefined
   const dir =
     opts.dialect === 'sqlite' && ownedPath === undefined

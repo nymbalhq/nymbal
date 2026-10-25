@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { preload } from 'react-dom'
-import { fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
+import { fetchCapabilities, fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { productJsonLd } from '@/lib/seo'
 import {
@@ -46,9 +46,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   if (!product) notFound()
 
-  const [{ items: reviews }, { items: relatedProducts }] = await Promise.all([
+  const [{ items: reviews }, { items: relatedProducts }, capabilities] = await Promise.all([
     fetchReviews(product.id),
     fetchProducts({ limit: 4 }),
+    fetchCapabilities(),
   ])
 
   const related = relatedProducts
@@ -58,6 +59,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   // The product's elements as the server renders them for its first variant, which ProductInteractive shows first.
   const variant = product.variants?.[0]
+  // The back-in-stock form only where the store's email reaches a mailbox (an API older than the report says nothing);
+  // it shows itself only for a variant out of stock, and follows the selected variant once hydrated.
+  const offersAlerts = capabilities?.email?.delivers === true && variant !== undefined
   const serverHtml = {
     price: renderNymbal('nymbal-product-price', {
       'product-id': product.id,
@@ -76,6 +80,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
       qty: '1',
       ...((variant?.stock ?? 0) <= 0 && { disabled: '' }),
     }).__html,
+    notifyMe: offersAlerts
+      ? renderNymbal('nymbal-notify-me', {
+          'product-id': product.id,
+          'variant-id': variant.id,
+          stock: String(variant.stock ?? 0),
+        }).__html
+      : undefined,
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
@@ -122,7 +133,11 @@ export default async function ProductPage({ params }: ProductPageProps) {
           />
 
           <div className={styles.info}>
-            <ProductInteractive product={product} serverHtml={serverHtml} />
+            <ProductInteractive
+              product={product}
+              offersAlerts={offersAlerts}
+              serverHtml={serverHtml}
+            />
 
             {product.description && (
               <div className={styles.description}>

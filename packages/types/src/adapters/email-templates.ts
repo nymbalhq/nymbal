@@ -38,6 +38,15 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "Don't forget your cart at {{storeName}}",
     body: `Hi,\n\nYou left items in your cart. Pick up where you left off: {{resumeUrl}}`,
   },
+  // Each link on a line of its own, so a mail client never runs the next word into it.
+  'alert-confirm': {
+    subject: 'Confirm your alert for {{productName}}',
+    body: `Hi,\n\nYou asked {{storeName}} to email you when {{productName}} is back in stock. Confirm by following this link:\n\n{{confirmUrl}}\n\nIf you did not ask, ignore this email and you will hear nothing more.\n\nStop this alert:\n{{unsubscribeUrl}}`,
+  },
+  'alert-back-in-stock': {
+    subject: '{{productName}} is back in stock',
+    body: `Hi,\n\n{{productName}} is back in stock at {{storeName}}:\n\n{{productUrl}}\n\nThis was a one-time alert. Stop it:\n{{unsubscribeUrl}}`,
+  },
 }
 
 export function renderEmailTemplate(

@@ -3,6 +3,7 @@
   "command": "pnpm mutation --force",
   "total": 55.7,
   "files": {
+    "packages/platform/src/repositories/alert-subscription.ts": 0,
     "packages/platform/src/repositories/audit-entry.ts": 30,
     "packages/platform/src/repositories/cart.ts": 45.24,
     "packages/platform/src/repositories/category.ts": 67.14,
@@ -26,6 +27,8 @@
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
     "packages/platform/src/repositories/tx-required.test-d.ts": 0,
     "packages/platform/src/repositories/variant.ts": 42.2,
+    "packages/platform/src/services/alert-service.ts": 0,
+    "packages/platform/src/services/alert-token.ts": 100,
     "packages/platform/src/services/auth-service.ts": 52.28,
     "packages/platform/src/services/cart-service.ts": 79.59,
     "packages/platform/src/services/category-service.ts": 83.33,

@@ -1165,6 +1165,9 @@ function settle(steps: StepSpec[], input: PlanInput): StepSpec[] {
   if (external) {
     if (input.postgresUrl !== undefined && input.postgresUrl !== '') met.add('compose up')
     else unmet.set('compose up', 'NYMBAL_TEST_POSTGRES_URL is not set (--services external)')
+    // A need of its own: the Mailpit URL alone must not mark the Postgres steps' `compose up` met.
+    if (input.mailpitUrl !== undefined && input.mailpitUrl !== '') met.add('mailpit up')
+    else unmet.set('mailpit up', 'NYMBAL_TEST_MAILPIT_URL is not set (--services external)')
   }
   if (input.noBuild === true) {
     if (input.artefactPresent === true) met.add('build')
@@ -1460,9 +1463,21 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // changes, so they run on the default set only. Each target is its own invocation after the others: nextjs-custom,
   // nextjs-nosearch and nextjs-override serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
+    // The custom store's email is SMTP into Mailpit, which its alert journeys read. Locally the compose step brings the
+    // slot's Mailpit up (`--wait`), so this step only carries that outcome under a name of its own; under --services
+    // external NYMBAL_TEST_MAILPIT_URL meets the need instead (settle).
+    const mailpitNeeds = [...e2eNeeds, 'mailpit up']
     steps.push(
-      { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
-      { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
+      external
+        ? {
+            name: 'mailpit up',
+            command: 'true',
+            skip: 'services are external (--services external)',
+            idle: true,
+          }
+        : { name: 'mailpit up', command: 'true', needs: ['compose up'] },
+      { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: mailpitNeeds },
+      { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: mailpitNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },

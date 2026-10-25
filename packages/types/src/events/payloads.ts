@@ -3,6 +3,7 @@ import type { CustomerAddress } from '../domain/customer.js'
 import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
+import type { AlertKind } from '../alerts.js'
 
 export interface ProductSnapshot extends Product {
   variants: Variant[]
@@ -26,6 +27,12 @@ export interface ProductPublishedV1Payload {
 export interface ProductUnpublishedV1Payload {
   productId: string
   slug: string
+}
+export interface ProductRestockedV1Payload {
+  productId: string
+  variantId: string
+  previousQty: number
+  newQty: number
 }
 
 export interface CategoryCreatedV1Payload {
@@ -185,6 +192,26 @@ export interface PaymentRefundedV1Payload {
   refundId: string
   amountMinor: number
   currency: string
+}
+
+// No alert event carries the subscriber's address or a token.
+export interface AlertRequestedV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  variantId: string
+  productId: string
+}
+export interface AlertConfirmedV1Payload {
+  subscriptionId: string
+}
+export interface AlertUnsubscribedV1Payload {
+  subscriptionId: string
+}
+export interface AlertSentV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  /** The event the alert answered: a product.restocked.v1 for a back-in-stock alert. */
+  triggerEventId: string
 }
 
 export interface AdapterErrorV1Payload {

@@ -58,6 +58,8 @@ const CONFIG_ENV = [
   'NYMBAL_STACK_SLOT',
   'NYMBAL_API_URL',
   'NYMBAL_CORS_ORIGINS',
+  'NYMBAL_TEST_MAILPIT_SMTP',
+  'NYMBAL_TEST_MAILPIT_URL',
 ]
 
 function cleanEnv(): NodeJS.ProcessEnv {
@@ -198,6 +200,10 @@ const SLOTS = [2, 0]
 const evaluated = new Map<string, Evaluated>()
 const key = (slot: number, target: Target): string => `${slot}/${target.name}`
 const typoKey = (typo: string): string => `typo/${typo}`
+/** CI's Mailpit service SMTP address, outside every slot block. */
+const CI_MAILPIT_SMTP = 'localhost:12525'
+const smtpKey = (target: Target): string => `smtp/${target.name}`
+const CUSTOM_TARGET_NAMES = ['astro-custom', 'nextjs-custom']
 const origins = new Map<string, unknown>()
 
 beforeAll(async () => {
@@ -211,6 +217,15 @@ beforeAll(async () => {
     ...TYPOS.map((typo) => ({
       key: typoKey(typo),
       env: { CI: '1', NYMBAL_STACK_SLOT: '0', NYMBAL_E2E_TARGET: typo },
+    })),
+    ...CUSTOM_TARGET_NAMES.map((name) => ({
+      key: smtpKey(targetNamed(name)),
+      env: {
+        CI: '1',
+        NYMBAL_STACK_SLOT: '2',
+        NYMBAL_TEST_MAILPIT_SMTP: CI_MAILPIT_SMTP,
+        ...targetNamed(name).env,
+      },
     })),
   ]
   const stores = STORE_CONFIGS.flatMap(({ path }) => [
@@ -408,6 +423,38 @@ describe.each(SLOTS)('AC-4: the Playwright config in stack slot %i', (slot) => {
   )
 })
 
+// AC-13: the custom-providers store sends its mail by SMTP to the slot's Mailpit, so a worktree's custom store never
+// mails slot 0's; CI's Mailpit service, named by NYMBAL_TEST_MAILPIT_SMTP, wins when it is set.
+describe.each(SLOTS)('AC-13: the custom store’s API mails its slot’s Mailpit (slot %i)', (slot) => {
+  const block: ExpectedBlock = expectedBlock(slot)
+
+  it.each(CUSTOM_TARGET_NAMES)(
+    'AC-13: %s: the API server’s NYMBAL_E2E_SMTP_PORT is the block’s mailpitSmtp, a port inside the block',
+    (name) => {
+      const api = serversOf(slot, targetNamed(name)).filter(isApi)
+      expect(api.length).toBe(1)
+      const port = api[0]!.env?.NYMBAL_E2E_SMTP_PORT
+      expect(port).toBe(String(block.mailpitSmtp))
+      expect(PORT_FIELDS.map((f) => String(block[f]))).toContain(port)
+    },
+  )
+})
+
+describe('AC-13: NYMBAL_TEST_MAILPIT_SMTP names the custom store’s SMTP port when it is set', () => {
+  it.each(CUSTOM_TARGET_NAMES)(
+    'AC-13: %s with NYMBAL_TEST_MAILPIT_SMTP=localhost:12525: the API server’s NYMBAL_E2E_SMTP_PORT is 12525',
+    (name) => {
+      const result = evaluated.get(smtpKey(targetNamed(name))) ?? {}
+      expect(result.error, result.error).toBeUndefined()
+      const servers = result.webServer ?? []
+      const api = (Array.isArray(servers) ? servers : [servers]).filter(isApi)
+      expect(api.map((s) => s.env?.NYMBAL_E2E_SMTP_PORT)).toEqual([
+        new URL(`smtp://${CI_MAILPIT_SMTP}`).port,
+      ])
+    },
+  )
+})
+
 describe('AC-5: each E2E store config takes its CORS origins from NYMBAL_CORS_ORIGINS', () => {
   it.each(STORE_CONFIGS)(
     'AC-5: $path with NYMBAL_CORS_ORIGINS=http://localhost:4521,http://localhost:3200 allows exactly those origins',
@@ -435,6 +482,9 @@ const CUSTOM_OF: Record<string, string> = { astro: 'astro-custom', nextjs: 'next
 
 /** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 has two tests. */
 const CAPABILITY_JOURNEYS = [
+  'alerts.spec.ts AC-9',
+  'alerts.spec.ts AC-10',
+  'alerts.spec.ts AC-11',
   'browse-sort.spec.ts AC-4',
   'browse-sort.spec.ts AC-7',
   'browse.spec.ts AC-3',

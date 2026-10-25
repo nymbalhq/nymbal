@@ -1,5 +1,6 @@
 import {
   ORDER_KEY_HEADER,
+  type AlertKind,
   type Cart,
   type Customer,
   type CustomerAddress,
@@ -158,6 +159,12 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       },
       submit(review: { productId: string; rating: number; title: string; body: string }) {
         return fetchClient.request<ReviewResult>('POST', '/api/reviews', review)
+      },
+    },
+
+    alerts: {
+      subscribe(request: { email: string; variantId: string; kind: AlertKind }) {
+        return fetchClient.request<{ status: 'pending' }>('POST', '/api/alerts/subscribe', request)
       },
     },
   }

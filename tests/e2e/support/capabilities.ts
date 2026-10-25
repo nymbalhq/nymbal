@@ -12,6 +12,8 @@ export interface StoreCapabilities {
   }
   search: { capabilities: string[] }
   catalog: { sortKeys: string[]; defaultSort: string }
+  /** Whether the store's email adapter delivers mail (`smtp` or a custom one), not only logs it (`native`). */
+  email: { delivers: boolean }
 }
 
 /** The store's report; a store without the route fails the journey here, naming the answer it gave. */

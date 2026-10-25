@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-25T07:57:52.279Z",
-  "sourceHash": "12789252331ecbd5",
+  "generatedAt": "2026-10-25T09:11:46.450Z",
+  "sourceHash": "21b241c392a5d1f0",
   "components": [
     "AddToCart",
     "AddressBook",
@@ -13,6 +13,7 @@
     "ImageGallery",
     "LoginForm",
     "MiniCart",
+    "NotifyMe",
     "OrderSummary",
     "OrderTimeline",
     "PaymentElement",

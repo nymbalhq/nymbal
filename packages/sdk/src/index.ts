@@ -71,4 +71,5 @@ export type {
   ProductSortKey,
   ReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,
+  AlertKind,
 } from '@nymbalhq/types'

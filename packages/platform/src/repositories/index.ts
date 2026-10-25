@@ -31,6 +31,10 @@ import { createEventLogRepository, type EventLogRepository } from './event-log.j
 import { createCartRepository, type CartRepository } from './cart.js'
 import { createSettingsRepository, type SettingsRepository } from './settings.js'
 import { createAuditEntryRepository, type AuditEntryRepository } from './audit-entry.js'
+import {
+  createAlertSubscriptionRepository,
+  type AlertSubscriptionRepository,
+} from './alert-subscription.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -51,6 +55,7 @@ export * from './event-log.js'
 export * from './cart.js'
 export * from './settings.js'
 export * from './audit-entry.js'
+export * from './alert-subscription.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -73,6 +78,7 @@ export interface Repositories {
   cart: CartRepository
   settings: SettingsRepository
   auditEntry: AuditEntryRepository
+  alertSubscription: AlertSubscriptionRepository
 }
 
 export function buildRepositories(
@@ -100,5 +106,6 @@ export function buildRepositories(
     cart: createCartRepository(commandStore),
     settings: createSettingsRepository(commandStore),
     auditEntry: createAuditEntryRepository(commandStore),
+    alertSubscription: createAlertSubscriptionRepository(commandStore),
   }
 }

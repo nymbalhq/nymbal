@@ -212,6 +212,7 @@ export async function createApp(
       logger: logger.child({ layer: 'service' }),
       payments: adapters.payments,
       searchAdapter: adapters.search,
+      email: adapters.email,
     })
 
     await registerHandlers({
@@ -220,6 +221,7 @@ export async function createApp(
       documentStore: platform.documentStore,
       repos,
       adapters,
+      alerts: services.alert,
       logger,
     })
 

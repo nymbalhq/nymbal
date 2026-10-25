@@ -1,4 +1,4 @@
-import type { Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
+import type { EmailAdapter, Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
@@ -17,6 +17,7 @@ import {
 } from './checkout-service.js'
 import { createSearchService, type SearchService } from './search-service.js'
 import { createRefundService, type RefundService } from './refund-service.js'
+import { createAlertService, type AlertService } from './alert-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -28,6 +29,13 @@ export * from './inventory-service.js'
 export * from './checkout-service.js'
 export * from './search-service.js'
 export * from './refund-service.js'
+export * from './alert-service.js'
+export { newAlertToken } from './alert-token.js'
+
+/** A `native` email adapter only logs; any other (`smtp`, a project's own) is taken to reach a mailbox. */
+export function emailDelivers(email: EmailAdapter): boolean {
+  return email.providerName !== 'native'
+}
 
 export interface ServiceRegistry {
   product: ProductService
@@ -40,6 +48,7 @@ export interface ServiceRegistry {
   checkout: CheckoutService & ManualPayments
   refund: RefundService
   search: SearchService
+  alert: AlertService
 }
 
 export interface BuildServicesDeps {
@@ -50,10 +59,11 @@ export interface BuildServicesDeps {
   logger: Logger
   payments: PaymentsAdapter
   searchAdapter: SearchAdapter
+  email: EmailAdapter
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, publisher, logger, payments, searchAdapter } = deps
+  const { config, store, repos, publisher, logger, payments, searchAdapter, email } = deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -125,6 +135,13 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     search: createSearchService({
       adapter: searchAdapter,
       logger: logger.child({ service: 'search' }),
+    }),
+    alert: createAlertService({
+      store,
+      repos,
+      publisher,
+      allowedOrigins: config.http.cors.allowedOrigins,
+      delivers: () => emailDelivers(email),
     }),
   }
 }

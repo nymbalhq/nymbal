@@ -406,6 +406,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -423,13 +438,28 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Astro on custom providers (functional, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --services external --no-build --base "$GATE_BASE"
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -447,7 +477,7 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Next.js on custom providers (functional, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --services external --no-build --base "$GATE_BASE"
 
   # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
   # journeys tagged @nosearch run there.

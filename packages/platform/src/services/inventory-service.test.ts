@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import {
   AdapterError,
@@ -22,6 +24,7 @@ import { createLogger } from '../logger.js'
 import { runAsActor } from '../audit/actor.js'
 import { auditedCommand } from '../audit/audit.js'
 import { listAuditEntries } from '../repositories/audit-entry.js'
+import { runWithCorrelation } from '../events/correlation.js'
 import type { CommandStore } from '../db/command-store.js'
 
 async function setup() {
@@ -307,4 +310,190 @@ describe('InventoryService: audit notes', () => {
     ])
     await commandStore.close()
   })
+})
+
+// A restock is stock going from 0 to above 0 on a variant, by an adjustment or by a released reservation. Each step
+// runs under a correlation id of its own, and its events are the log rows it appended. No handler is registered here,
+// so an event that only a subscriber publishes (outside the stock transaction) never reaches the log.
+const RESTOCKED = 'product.restocked.v1'
+const CHANGED = 'inventory.changed.v1'
+
+type StockOp =
+  | { kind: 'adjust'; delta: number }
+  | { kind: 'reserve'; qty: number }
+  | { kind: 'release'; pick: number }
+
+const arbStockOp: fc.Arbitrary<StockOp> = fc.oneof(
+  fc
+    .integer({ min: -3, max: 4 })
+    .filter((delta) => delta !== 0)
+    .map((delta) => ({ kind: 'adjust' as const, delta })),
+  fc.integer({ min: 1, max: 3 }).map((qty) => ({ kind: 'reserve' as const, qty })),
+  fc.nat({ max: 5 }).map((pick) => ({ kind: 'release' as const, pick })),
+)
+
+interface LoggedStep {
+  type: string
+  correlationId: string
+  payload: Record<string, unknown>
+}
+
+async function appendedAfter(
+  commandStore: CommandStore,
+  repos: Awaited<ReturnType<typeof setup>>['repos'],
+  seq: number,
+): Promise<LoggedStep[]> {
+  const all = await commandStore.read((tx) => repos.eventLog.listAll(tx))
+  return all
+    .filter((logged) => logged.seq > seq)
+    .map((logged) => ({
+      type: logged.event.type,
+      correlationId: logged.event.correlationId,
+      payload: logged.event.payload as Record<string, unknown>,
+    }))
+}
+
+async function lastSeq(
+  commandStore: CommandStore,
+  repos: Awaited<ReturnType<typeof setup>>['repos'],
+): Promise<number> {
+  return commandStore.read((tx) => repos.eventLog.maxSeq(tx))
+}
+
+describe('InventoryService: a restock is an event', () => {
+  it('AC-1: property: over random adjust, reserve and release sequences, product.restocked.v1 is in the log exactly at each step taking stock from 0 to above 0, equal to that step’s inventory.changed.v1 and under its correlation id; a refused step leaves neither', async () => {
+    const seen = { adjustRestocks: 0, releaseRestocks: 0 }
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 3 }),
+        fc.array(arbStockOp, { minLength: 1, maxLength: 12 }),
+        async (initial, ops) => {
+          const { commandStore, product, inventory, repos } = await setup()
+          try {
+            const variant = await createTestVariant(product, initial)
+            const owner = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
+            const productId = owner!.productId
+            const held: Array<{ id: string; qty: number }> = []
+            let stock = initial
+
+            for (const op of ops) {
+              const correlationId = `restock-${randomUUID()}`
+              const before = await lastSeq(commandStore, repos)
+              // The model: what the step does to the stock, and the error it is refused with.
+              let next = stock
+              let expectedRefusal: string | null = null
+              if (op.kind === 'adjust') {
+                if (stock + op.delta < 0) expectedRefusal = 'ValidationError'
+                else next = stock + op.delta
+              } else if (op.kind === 'reserve') {
+                if (op.qty > stock) expectedRefusal = 'AdapterError'
+                else next = stock - op.qty
+              } else if (held.length > 0) {
+                next = stock + held[op.pick % held.length]!.qty
+              }
+              const refused = expectedRefusal !== null
+
+              let refusal: string | null = null
+              let answered: number | null = null
+              await runWithCorrelation(correlationId, async () => {
+                try {
+                  if (op.kind === 'adjust') {
+                    answered = (
+                      await inventory.adjustStock(variant.id, op.delta, 'manual', 'admin')
+                    ).newQty
+                  } else if (op.kind === 'reserve') {
+                    const { reservationId } = await inventory.reserveStock(variant.id, op.qty)
+                    held.push({ id: reservationId, qty: op.qty })
+                  } else if (held.length > 0) {
+                    const [released] = held.splice(op.pick % held.length, 1)
+                    await inventory.releaseReservation(released!.id, 'expired')
+                  }
+                } catch (err) {
+                  refusal =
+                    err instanceof ValidationError
+                      ? 'ValidationError'
+                      : err instanceof AdapterError
+                        ? 'AdapterError'
+                        : String(err)
+                }
+              })
+              expect([refusal, answered ?? next], JSON.stringify(op)).toEqual([
+                expectedRefusal,
+                next,
+              ])
+
+              const step = await appendedAfter(commandStore, repos, before)
+              const changed = step.filter((e) => e.type === CHANGED)
+              const restocked = step.filter((e) => e.type === RESTOCKED)
+              const isRestock = !refused && stock <= 0 && next > 0
+              const label = `${JSON.stringify(op)} from ${stock}`
+
+              expect(
+                restocked.map((e) => e.payload),
+                label,
+              ).toEqual(
+                isRestock
+                  ? [{ productId, variantId: variant.id, previousQty: stock, newQty: next }]
+                  : [],
+              )
+              // The restock carries exactly what the step's own inventory.changed says, under the step's correlation.
+              expect(
+                restocked.map((e) => e.payload),
+                label,
+              ).toEqual(
+                changed
+                  .filter(
+                    (e) => Number(e.payload['previousQty']) <= 0 && Number(e.payload['newQty']) > 0,
+                  )
+                  .map((e) => ({
+                    productId,
+                    variantId: e.payload['variantId'],
+                    previousQty: e.payload['previousQty'],
+                    newQty: e.payload['newQty'],
+                  })),
+              )
+              expect(
+                restocked.map((e) => e.correlationId),
+                label,
+              ).toEqual(restocked.map(() => correlationId))
+              // A refused step appends neither event.
+              expect(
+                refused ? step.filter((e) => e.type === CHANGED || e.type === RESTOCKED) : [],
+                label,
+              ).toEqual([])
+              if (isRestock) seen[op.kind === 'adjust' ? 'adjustRestocks' : 'releaseRestocks'] += 1
+              stock = next
+            }
+
+            const fresh = await commandStore.read((tx) => repos.variant.findById(tx, variant.id))
+            expect(fresh?.stock).toBe(stock)
+          } finally {
+            await commandStore.close()
+          }
+        },
+      ),
+      {
+        numRuns: 40,
+        // A restock by adjustment and one by a released reservation lead the generated runs.
+        examples: [
+          [0, [{ kind: 'adjust', delta: 2 }]],
+          [
+            1,
+            [
+              { kind: 'reserve', qty: 1 },
+              { kind: 'release', pick: 0 },
+            ],
+          ],
+          [
+            0,
+            [
+              { kind: 'adjust', delta: -1 },
+              { kind: 'reserve', qty: 1 },
+            ],
+          ],
+        ],
+      },
+    )
+    expect(Math.min(seen.adjustRestocks, seen.releaseRestocks)).toBeGreaterThan(0)
+  }, 120_000)
 })

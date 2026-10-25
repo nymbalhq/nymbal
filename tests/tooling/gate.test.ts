@@ -767,20 +767,25 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
       return fullPlan.filter((s) => s.name.startsWith('e2e')).map((s) => s.name)
     }
 
-    it('AC-18: the E2E steps run iff build is ok, whatever compose up does; a red build skips each, naming build', async () => {
+    // The custom-providers store mails through Mailpit, so its two steps also need `mailpit up`, which compose meets.
+    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom']
+
+    it('AC-18: the E2E steps run iff build is ok, whatever compose up does, but for the Mailpit store’s, which also need compose; a red build skips each, naming build', async () => {
       expect(e2eSteps().length).toBeGreaterThanOrEqual(2)
       for (const red of [[], ['compose up'], ['build'], ['build', 'compose up']]) {
         const cwd = scratch()
         const result = await run(rehearse(red), { cwd, budgetMs: 600_000 })
         const ran = fullPlan.filter((_, i) => existsSync(join(cwd, `e2e-ran-${i}`)))
         const buildOk = !red.includes('build')
+        const runs = (name: string): boolean =>
+          buildOk && (!MAILPIT_E2E.includes(name) || !red.includes('compose up'))
         expect(
           ran.map((s) => s.name),
           `red: ${red.join(', ')}`,
-        ).toEqual(buildOk ? e2eSteps() : [])
+        ).toEqual(e2eSteps().filter(runs))
         for (const name of e2eSteps()) {
           const step = result.steps.find((s) => s.name === name)
-          expect(step?.status, name).toBe(buildOk ? 'ok' : 'skipped')
+          expect(step?.status, name).toBe(runs(name) ? 'ok' : 'skipped')
           expect(
             buildOk || (step?.detail ?? '').includes('build'),
             `${name}: "${step?.detail}"`,

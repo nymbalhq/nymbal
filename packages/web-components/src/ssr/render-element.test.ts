@@ -37,8 +37,8 @@ import { renderElement } from './index.js'
 // server's nodes.
 //
 // The catalogue and page elements (the product grid, price, stock badge, breadcrumb, image gallery, site header and
-// footer, category nav, review list and form, order summary, order timeline) meet the same three cases, 30 elements
-// in all. Each
+// footer, category nav, review list and form, order summary, order timeline, notify-me) meet the same three cases, 31
+// elements in all. Each
 // renders from its attributes alone: the data it is given is in its server render.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -324,10 +324,11 @@ const CATALOGUE_ELEMENTS = [
   'nymbal-review-form',
   'nymbal-order-summary',
   'nymbal-order-timeline',
+  'nymbal-notify-me',
 ]
 
 describe('AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 30 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
+  it('AC-1: the package has 31 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
     expect(CATALOGUE_ELEMENTS.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual(
       [],

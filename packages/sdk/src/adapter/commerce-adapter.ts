@@ -1,4 +1,5 @@
 import type {
+  AlertKind,
   Cart,
   Customer,
   CustomerAddress,
@@ -68,5 +69,16 @@ export interface CommerceAdapter {
       title: string
       body: string
     }): Promise<ReviewResult>
+  }
+  alerts: {
+    /**
+     * Asks to be emailed when a variant is back; the store mails a confirmation first. The answer is `pending` whether
+     * or not the address has an account or an alert already.
+     */
+    subscribe(request: {
+      email: string
+      variantId: string
+      kind: AlertKind
+    }): Promise<{ status: 'pending' }>
   }
 }

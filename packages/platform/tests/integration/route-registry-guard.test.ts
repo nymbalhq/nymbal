@@ -28,8 +28,15 @@ function fill(path: string, id: string): string {
   return path.replace(/:[A-Za-z_]\w*/g, encodeURIComponent(id))
 }
 
+/**
+ * Registered with `csrf: false`: the token in the body is the credential, and the storefront pages call them from
+ * their servers, which hold no CSRF cookie.
+ */
+const ALERT_LINKS = ['POST /api/alerts/confirm', 'POST /api/alerts/unsubscribe']
+const ALERT_SUBSCRIBE = 'POST /api/alerts/subscribe'
+
 const unsafeKeys = Object.keys(routeSchemas).filter(
-  (key) => UNSAFE.has(split(key).method) && key !== STRIPE_WEBHOOK,
+  (key) => UNSAFE.has(split(key).method) && key !== STRIPE_WEBHOOK && !ALERT_LINKS.includes(key),
 )
 const bodyKeys = Object.entries(routeSchemas)
   .filter(([key, schema]) => schema.body !== undefined && key !== STRIPE_WEBHOOK)
@@ -67,7 +74,7 @@ describe('the guard and the parser over every registered route', () => {
     await served?.stop()
   })
 
-  it('AC-1: every POST/PUT/PATCH/DELETE route but the Stripe webhook answers 403 csrf.invalid to a request with no CSRF cookie or header, admin routes included, and writes nothing', async () => {
+  it('AC-1: every POST/PUT/PATCH/DELETE route but the Stripe webhook and the alert confirm and unsubscribe links answers 403 csrf.invalid to a request with no CSRF cookie or header, admin routes included, and writes nothing', async () => {
     expect(unsafeKeys).toContain('POST /api/cart/items')
     expect(unsafeKeys.filter((key) => key.includes(' /api/admin/')).length).toBeGreaterThan(0)
     const cartsBefore = await raw.count('carts')
@@ -91,6 +98,53 @@ describe('the guard and the parser over every registered route', () => {
     }
 
     expect(await raw.count('carts')).toBe(cartsBefore)
+    expect(await raw.count('events')).toBe(eventsBefore)
+  })
+
+  it('AC-12: the alert confirm and unsubscribe routes accept a POST with no CSRF cookie or header, answering an unknown token 404 alerts.link_invalid; subscribe refuses one with 403 csrf.invalid and writes nothing', async () => {
+    expect(
+      Object.fromEntries(
+        [ALERT_SUBSCRIBE, ...ALERT_LINKS].map((key) => [key, routeSchemas[key]?.command]),
+      ),
+    ).toEqual({
+      [ALERT_SUBSCRIBE]: 'alert.subscribe',
+      'POST /api/alerts/confirm': 'alert.confirm',
+      'POST /api/alerts/unsubscribe': 'alert.unsubscribe',
+    })
+    const eventsBefore = await raw.count('events')
+
+    const bare = async (key: string, body: unknown) => {
+      const res = await fetch(new URL(split(key).path, served.baseUrl), {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          origin: 'http://localhost:4321',
+        },
+        body: JSON.stringify(body),
+      })
+      const answer = (await res.json()) as { error?: { code: string } }
+      return [key, res.status, answer.error?.code]
+    }
+    const answers = [
+      ...(await Promise.all(
+        ALERT_LINKS.map((key) =>
+          bare(key, {
+            token: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'),
+          }),
+        ),
+      )),
+      await bare(ALERT_SUBSCRIBE, {
+        email: 'csrf@alerts.test',
+        variantId: crypto.randomUUID(),
+        kind: 'back_in_stock',
+      }),
+    ]
+
+    expect(answers).toEqual([
+      ...ALERT_LINKS.map((key) => [key, 404, 'alerts.link_invalid']),
+      [ALERT_SUBSCRIBE, 403, 'csrf.invalid'],
+    ])
     expect(await raw.count('events')).toBe(eventsBefore)
   })
 
@@ -134,7 +188,8 @@ describe('the guard and the parser over every registered route', () => {
     for (const key of customerKeys) {
       const { method, path } = split(key)
       const schema = routeSchemas[key]!.body
-      const body = schema && CANDIDATE_BODIES.find((candidate) => schema.safeParse(candidate).success)
+      const body =
+        schema && CANDIDATE_BODIES.find((candidate) => schema.safeParse(candidate).success)
       if (schema !== undefined && body === undefined) {
         throw new Error(`${key}: no candidate body its schema accepts; add one to CANDIDATE_BODIES`)
       }

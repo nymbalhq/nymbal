@@ -7,6 +7,7 @@ export interface NymbalEventMap {
   [C.EVT_PRODUCT_DELETED]: P.ProductDeletedV1Payload
   [C.EVT_PRODUCT_PUBLISHED]: P.ProductPublishedV1Payload
   [C.EVT_PRODUCT_UNPUBLISHED]: P.ProductUnpublishedV1Payload
+  [C.EVT_PRODUCT_RESTOCKED]: P.ProductRestockedV1Payload
 
   [C.EVT_CATEGORY_CREATED]: P.CategoryCreatedV1Payload
   [C.EVT_CATEGORY_UPDATED]: P.CategoryUpdatedV1Payload
@@ -43,6 +44,11 @@ export interface NymbalEventMap {
   [C.EVT_PAYMENT_CAPTURED]: P.PaymentCapturedV1Payload
   [C.EVT_PAYMENT_FAILED]: P.PaymentFailedV1Payload
   [C.EVT_PAYMENT_REFUNDED]: P.PaymentRefundedV1Payload
+
+  [C.EVT_ALERT_REQUESTED]: P.AlertRequestedV1Payload
+  [C.EVT_ALERT_CONFIRMED]: P.AlertConfirmedV1Payload
+  [C.EVT_ALERT_UNSUBSCRIBED]: P.AlertUnsubscribedV1Payload
+  [C.EVT_ALERT_SENT]: P.AlertSentV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload

@@ -36,6 +36,7 @@ import { registerStripeWebhookRoute } from './webhooks-stripe.js'
 import { validatedAdapter } from './validated-adapter.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
+import { registerAlertRoutes } from './alerts.js'
 
 export interface RegisterAllRoutesDeps {
   config: NymbalConfig
@@ -169,6 +170,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     variantRepo: repos.variant,
   })
   registerCheckoutRoutes(adapter, services.checkout)
+  registerAlertRoutes(adapter, { alerts: services.alert })
   registerOrderRoutes(adapter, services.order, documentStore)
   registerCustomerRoutes(adapter, services.customer)
   registerAdminRoutes(adapter, {

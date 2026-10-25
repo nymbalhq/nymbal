@@ -1125,6 +1125,9 @@ importers:
       '@axe-core/playwright':
         specifier: ^4.10.0
         version: 4.11.2(playwright-core@1.64.0)
+      '@nymbalhq/proof-kit':
+        specifier: workspace:*
+        version: link:../../packages/proof-kit
       '@nymbalhq/web-components':
         specifier: workspace:*
         version: link:../../packages/web-components

@@ -313,3 +313,91 @@ describe('AC-3: GET /api/products sends facets only when search can facet', () =
     expect(Math.min(seen.with, seen.without)).toBeGreaterThan(0)
   }, 180_000)
 })
+
+// AC-7: the report says whether the store's email delivers: false for the `native` adapter, which only logs, and true
+// for `smtp` and for any custom adapter, whatever its name. The answer names no provider.
+describe('AC-7: GET /api/capabilities reports whether email delivers', () => {
+  const opened: ServedKernel[] = []
+
+  afterEach(async () => {
+    for (const s of opened.splice(0)) await s.stop()
+  })
+
+  /** An email adapter of the project's own, under a generated provider name. */
+  function injectedEmail(providerName: string) {
+    return {
+      kind: 'email' as const,
+      providerName,
+      capabilities: () => ['transactional'],
+      producesEvents: [],
+      consumesEvents: [],
+      initialize: async () => undefined,
+      healthCheck: async () => ({ status: 'healthy' as const }),
+      sendTransactional: async () => ({ messageId: null, accepted: true }),
+      syncCustomerToList: async () => undefined,
+      removeCustomerFromList: async () => undefined,
+    }
+  }
+
+  async function emailReport(served: ServedKernel): Promise<{ email?: { delivers?: unknown } }> {
+    opened.push(served)
+    return (await capabilitiesOf(served)) as Report & { email?: { delivers?: unknown } }
+  }
+
+  it('AC-7: the native email store reports email.delivers false; an smtp store reports true; neither names its provider', async () => {
+    const native = await emailReport(await serveKernel(await createKernel({ dialect: 'sqlite' })))
+    const smtp = await emailReport(
+      await serveKernel(
+        await createKernel({
+          dialect: 'sqlite',
+          configure: (config) => ({
+            ...config,
+            commerce: {
+              ...config.commerce,
+              email: {
+                provider: 'smtp',
+                config: { from: 'store@alerts.test', smtp: { host: '127.0.0.1', port: 2525 } },
+              },
+            },
+          }),
+        }),
+      ),
+    )
+
+    expect([native.email?.delivers, smtp.email?.delivers]).toEqual([false, true])
+    for (const report of [native, smtp]) {
+      const { keys, strings } = walk(report)
+      expect(keys.filter((k) => FORBIDDEN_KEYS.includes(k))).toEqual([])
+      expect(strings.filter((s) => s === 'native' || s === 'smtp')).toEqual([])
+    }
+  }, 60_000)
+
+  it('AC-7: property: over generated provider names other than native, a custom email adapter reports email.delivers true and the name appears nowhere in the report', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        // Prefixed, so a generated name never equals a capability or sort key the report rightly holds.
+        fc.stringMatching(/^mailer-[a-z0-9-]{1,12}$/),
+        async (providerName) => {
+          const report = await emailReport(
+            await serveKernel(
+              await createKernel({
+                dialect: 'sqlite',
+                configure: (config) => ({
+                  ...config,
+                  commerce: { ...config.commerce, email: { provider: 'custom' } },
+                }),
+                appOptions: { adapters: { email: injectedEmail(providerName) } },
+              }),
+            ),
+          )
+          expect(report.email?.delivers, providerName).toBe(true)
+          const { keys, strings } = walk(report)
+          expect(keys.filter((k) => FORBIDDEN_KEYS.includes(k))).toEqual([])
+          expect(strings.filter((s) => s === providerName)).toEqual([])
+          await opened.pop()!.stop()
+        },
+      ),
+      { numRuns: 10 },
+    )
+  }, 180_000)
+})

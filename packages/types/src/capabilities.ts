@@ -10,4 +10,6 @@ export interface StoreCapabilities {
   search: { capabilities: string[] }
   /** The listing orders GET /api/products accepts, in display order, and the one it uses when none is asked. */
   catalog: { sortKeys: ProductSortKey[]; defaultSort: ProductSortKey }
+  /** Whether the store's email reaches a mailbox: false when its adapter only logs (`native`). */
+  email: { delivers: boolean }
 }

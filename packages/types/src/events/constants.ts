@@ -4,6 +4,8 @@ export const EVT_PRODUCT_UPDATED = 'product.updated.v1'
 export const EVT_PRODUCT_DELETED = 'product.deleted.v1'
 export const EVT_PRODUCT_PUBLISHED = 'product.published.v1'
 export const EVT_PRODUCT_UNPUBLISHED = 'product.unpublished.v1'
+/** A variant's stock went from 0 to above 0, in the transaction of the inventory.changed.v1 it accompanies. */
+export const EVT_PRODUCT_RESTOCKED = 'product.restocked.v1'
 
 // Category
 export const EVT_CATEGORY_CREATED = 'category.created.v1'
@@ -49,6 +51,12 @@ export const EVT_PAYMENT_CAPTURED = 'payment.captured.v1'
 export const EVT_PAYMENT_FAILED = 'payment.failed.v1'
 export const EVT_PAYMENT_REFUNDED = 'payment.refunded.v1'
 
+// Alerts
+export const EVT_ALERT_REQUESTED = 'alert.requested.v1'
+export const EVT_ALERT_CONFIRMED = 'alert.confirmed.v1'
+export const EVT_ALERT_UNSUBSCRIBED = 'alert.unsubscribed.v1'
+export const EVT_ALERT_SENT = 'alert.sent.v1'
+
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
 export const EVT_SETTINGS_CHANGED = 'settings.changed.v1'
@@ -59,6 +67,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_PUBLISHED,
   EVT_PRODUCT_UNPUBLISHED,
+  EVT_PRODUCT_RESTOCKED,
   EVT_CATEGORY_CREATED,
   EVT_CATEGORY_UPDATED,
   EVT_CATEGORY_DELETED,
@@ -89,6 +98,10 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PAYMENT_CAPTURED,
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,
+  EVT_ALERT_REQUESTED,
+  EVT_ALERT_CONFIRMED,
+  EVT_ALERT_UNSUBSCRIBED,
+  EVT_ALERT_SENT,
   EVT_ADAPTER_ERROR,
   EVT_SETTINGS_CHANGED,
 ] as const

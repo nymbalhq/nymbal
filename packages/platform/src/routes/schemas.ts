@@ -125,7 +125,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/capabilities': {
     name: 'capabilities.get',
     description:
-      'What the store can do, for a storefront: payments client half, search capabilities and sort keys.',
+      'What the store can do, for a storefront: payments client half, search capabilities, sort keys and whether email delivers.',
   },
 
   // Catalogue
@@ -160,6 +160,31 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'List the published reviews of a product.',
     params: idParams,
     query: z.object({ limit: queryValue, cursor: queryValue }),
+  },
+
+  // Back-in-stock alerts
+  'POST /api/alerts/subscribe': {
+    name: 'alerts.subscribe',
+    command: 'alert.subscribe',
+    description:
+      'Ask to be emailed when a variant is back in stock; a confirmation email is sent first.',
+    body: z.object({
+      email: z.string().trim().max(254).email(),
+      variantId: id,
+      kind: z.enum(['back_in_stock']),
+    }),
+  },
+  'POST /api/alerts/confirm': {
+    name: 'alerts.confirm',
+    command: 'alert.confirm',
+    description: 'Confirm an alert subscription with the token from its confirmation email.',
+    body: z.object({ token: z.string().min(1) }),
+  },
+  'POST /api/alerts/unsubscribe': {
+    name: 'alerts.unsubscribe',
+    command: 'alert.unsubscribe',
+    description: 'Stop an alert with the unsubscribe token from any of its emails.',
+    body: z.object({ token: z.string().min(1) }),
   },
 
   // Cart

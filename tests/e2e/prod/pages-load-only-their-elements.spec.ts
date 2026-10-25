@@ -20,8 +20,9 @@ const PRODUCT = seedProducts[0]!.slug
 /**
  * The five pages. The cart and checkout are seen with one line in the cart. `mayRender` is what the page renders for
  * some data and not for this: the product page renders a variant selector only for a product with a variant choice,
- * which the first seeded product is not, and Next's checkout renders the payment element at the payment step, after
- * the one this test sees. Defining those there is allowed and not required.
+ * which the first seeded product is not, and the notify-me form only for a store whose email delivers, which the prod
+ * build's store does not (Next's ProductInteractive imports its wrapper, which defines it); Next's checkout renders
+ * the payment element at the payment step, after the one this test sees. Defining those there is allowed and not required.
  */
 const CATEGORY = seedCategories[0]!.slug
 const LAYOUT = ['nymbal-site-header', 'nymbal-site-footer']
@@ -54,7 +55,7 @@ const PAGES: Array<{
     name: 'product',
     path: `/product/${PRODUCT}`,
     line: false,
-    mayRender: ['nymbal-variant-selector'],
+    mayRender: ['nymbal-variant-selector', 'nymbal-notify-me'],
     renders: [
       ...LAYOUT,
       'nymbal-product-price',
