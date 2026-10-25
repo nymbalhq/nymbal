@@ -77,6 +77,7 @@ interface Placed {
   productSlug: string
   orderId: string
   orderNumber: string
+  orderKey: string
   customerId: string
 }
 
@@ -128,12 +129,17 @@ async function placeAndRegister(store: TestStore, sink: MailSink): Promise<Place
     productSlug: product.slug,
     orderId: checkout.orderId,
     orderNumber: checkout.orderNumber,
+    orderKey: checkout.orderKey,
     customerId: customer.id,
   }
 }
 
-async function getData(baseUrl: string, path: string): Promise<{ status: number; id?: string }> {
-  const res = await fetch(`${baseUrl}${path}`)
+async function getData(
+  baseUrl: string,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; id?: string }> {
+  const res = await fetch(`${baseUrl}${path}`, { headers })
   const body = (await res.json()) as { data?: { id?: string } }
   return { status: res.status, ...(body.data?.id !== undefined && { id: body.data.id }) }
 }
@@ -146,7 +152,9 @@ async function served(store: TestStore, placed: Placed) {
   )
   return {
     product: await getData(store.baseUrl, `/api/products/${placed.productSlug}`),
-    order: await getData(store.baseUrl, `/api/orders/${placed.orderNumber}`),
+    order: await getData(store.baseUrl, `/api/orders/${placed.orderNumber}`, {
+      'x-nymbal-order-key': placed.orderKey,
+    }),
     customer: profile?.customerId ?? null,
   }
 }

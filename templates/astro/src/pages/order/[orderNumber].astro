@@ -5,8 +5,14 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchOrder } from '../../lib/api'
 import { isPaid, orderHeading } from '../../lib/order-status'
 
+// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header
+// and the meta tag below. The rewrite to /404 drops the header, so the not-found page sets its own.
+Astro.response.headers.set('Referrer-Policy', 'no-referrer')
+
 const { orderNumber } = Astro.params
-const order = await fetchOrder(orderNumber!)
+const key = Astro.url.searchParams.get('key') ?? undefined
+// Rejects when the API fails, so a failed read is a 500 and never a 404 for an order the shopper has.
+const order = await fetchOrder(orderNumber!, key)
 
 if (!order) return Astro.rewrite('/404')
 
@@ -33,6 +39,7 @@ const paid = isPaid(order.status)
 ---
 
 <BaseLayout title={`${heading} | Nymbal`} description="Your order with Nymbal.">
+  <meta slot="head" name="referrer" content="no-referrer" />
   <div class="container section">
     <div class="confirmation-page" data-order-number={order.orderNumber} data-order-status={order.status}>
       {paid && (

@@ -28,6 +28,7 @@ interface CheckoutAnswer {
   totalMinor: number
   orderStatus: string
   payment: { status: 'succeeded' | 'requires_action' | 'failed'; reason?: string }
+  orderKey: string
 }
 
 const arbLines = fc.array(
@@ -102,6 +103,8 @@ describe('a checkout that completes (sqlite)', () => {
             const read = await shop.call<{ status: string }>(
               'GET',
               `/api/orders/${answer.orderNumber}`,
+              undefined,
+              { headers: { 'x-nymbal-order-key': answer.orderKey } },
             )
             expect(read.body.data?.status).toBe('confirmed')
           },

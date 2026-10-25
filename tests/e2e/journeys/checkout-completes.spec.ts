@@ -3,6 +3,8 @@ import { API_URL } from '../support/csrf'
 import {
   adminToken,
   openCheckout,
+  ORDER_KEY_HEADER,
+  orderKeyOf,
   orderNumberOf,
   ordersFor,
   ownProduct,
@@ -45,7 +47,9 @@ test.describe('A checkout that completes', () => {
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)
 
-    const res = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
+    const res = await page.request.get(`${API_URL}/api/orders/${orderNumber}`, {
+      headers: { [ORDER_KEY_HEADER]: orderKeyOf(page) },
+    })
     expect(res.status(), `GET /api/orders/${orderNumber}: ${await res.text()}`).toBe(200)
     const order = ((await res.json()) as { data: PlacedOrder }).data
     expect(order.status).toBe('confirmed')
@@ -143,7 +147,9 @@ test.describe('A checkout that completes', () => {
     const orderNumber = orderNumberOf(page)
 
     await expect(page.getByTestId('order-number')).toHaveText(orderNumber, { timeout: 15_000 })
-    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
+    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`, {
+      headers: { [ORDER_KEY_HEADER]: orderKeyOf(page) },
+    })
     const status = ((await order.json()) as { data: { status: string } }).data.status
     expect(status).toBe('pending')
     expect(await saidConfirmed(page), 'the page said "Order confirmed" for a pending order').toBe(

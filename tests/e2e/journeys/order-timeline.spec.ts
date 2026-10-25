@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import {
   adminToken,
+  keyedOrderPath,
   openCheckout,
+  ORDER_KEY_HEADER,
+  orderKeyOf,
   orderNumberOf,
   ownProduct,
   walkToPayment,
@@ -60,6 +63,9 @@ async function apiOrder(
   expect(res.status(), `GET /api/orders/${orderNumber}: ${await res.text()}`).toBe(200)
   return ((await res.json()) as { data: ApiOrder }).data
 }
+
+/** A guest's read of its own order: the key the confirmation page's URL carries. */
+const keyHeader = (key: string) => ({ [ORDER_KEY_HEADER]: key })
 
 /** One admin command on the order, through the admin API. */
 async function adminPost(
@@ -123,7 +129,7 @@ async function placeThroughCheckout(page: Page, product: OwnProduct, buyer: stri
   await walkToPayment(page, buyer)
   await page.getByTestId('place-order').click()
   await page.waitForURL(/\/order\//, { timeout: 20_000 })
-  return orderNumberOf(page)
+  return { orderNumber: orderNumberOf(page), key: orderKeyOf(page) }
 }
 
 test.describe('The order timeline', () => {
@@ -136,8 +142,8 @@ test.describe('The order timeline', () => {
     test.setTimeout(120_000)
     const token = await adminToken(request)
     const product = await ownProduct(request, token, 5)
-    const orderNumber = await placeThroughCheckout(page, product, email('ac4'))
-    const placed = await apiOrder(request, orderNumber)
+    const { orderNumber, key } = await placeThroughCheckout(page, product, email('ac4'))
+    const placed = await apiOrder(request, orderNumber, keyHeader(key))
     expect(placed.status, 'the stub captured the payment at checkout').toBe('confirmed')
 
     await adminPost(request, token, placed.id, 'process')
@@ -156,12 +162,12 @@ test.describe('The order timeline', () => {
     // timeline reads the read side, which has caught up once it has an entry for each lifecycle event in the log.
     const lifecycle = await lifecycleKinds(request, token, placed.id)
     await expect
-      .poll(async () => (await apiOrder(request, orderNumber)).timeline?.length, {
+      .poll(async () => (await apiOrder(request, orderNumber, keyHeader(key))).timeline?.length, {
         timeout: 10_000,
       })
       .toBe(lifecycle.length)
 
-    await page.goto(`/order/${encodeURIComponent(orderNumber)}`)
+    await page.goto(keyedOrderPath(orderNumber, key))
     const entries = page.getByTestId('timeline-entry')
     await expect(entries).toHaveCount(7, { timeout: 15_000 })
     const kinds = [
@@ -177,7 +183,7 @@ test.describe('The order timeline', () => {
     expect(shown.map((e) => e.kind)).toEqual(kinds)
     expect(shown.map((e) => e.label)).toEqual(kinds.map((k) => LABELS[k]))
 
-    const served = await apiOrder(request, orderNumber)
+    const served = await apiOrder(request, orderNumber, keyHeader(key))
     expect(
       shown.map((e) => e.at),
       'datetime of each entry',
@@ -198,17 +204,21 @@ test.describe('The order timeline', () => {
     // Everything slow comes first, so the page's 10 s poll is spent waiting for the payment alone.
     const token = await adminToken(request)
     const product = await ownProduct(request, token, 5)
-    const orderNumber = await placeThroughCheckout(page, product, email('ac5', '+stub-pending'))
+    const { orderNumber, key } = await placeThroughCheckout(
+      page,
+      product,
+      email('ac5', '+stub-pending'),
+    )
 
     const labels = page.getByTestId('timeline-entry').locator('[part~="label"]')
     await expect(labels).toHaveText(['Order placed'], { timeout: 5_000 })
-    const pending = await apiOrder(request, orderNumber)
+    const pending = await apiOrder(request, orderNumber, keyHeader(key))
     expect(pending.status).toBe('pending')
 
     await adminPost(request, token, pending.id, 'mark-paid')
     await expect(labels).toHaveText(['Order placed', 'Payment received'], { timeout: 10_000 })
     await expect(page.getByTestId('order-heading')).toHaveText(/order confirmed/i)
-    const served = await apiOrder(request, orderNumber)
+    const served = await apiOrder(request, orderNumber, keyHeader(key))
     expect(
       (await shownEntries(page)).map((e) => e.at),
       'datetime of each entry',

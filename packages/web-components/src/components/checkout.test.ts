@@ -839,3 +839,68 @@ describe('a step change never moves what is under the cursor', () => {
     }
   })
 })
+
+// ─── AC-6 ───────────────────────────────────────────────────────────────────
+
+// AC-6: `nymbal:checkout:placed` carries the key the server answered with the order, so the page it opens can read the
+// order: from a success's result, or from the context of a 409 that names the order. An answer with no key gives a
+// detail with no orderKey property at all.
+describe('AC-6: the placed event carries the order key', () => {
+  const placedKey = fc.option(fc.stringMatching(/^[A-Za-z0-9_-]{43}$/), { nil: undefined })
+
+  it('AC-6: property: on a success (paid, or awaiting the driver) and on a 409 naming an order, nymbal:checkout:placed’s detail is { orderNumber, orderKey } from that answer, and { orderNumber } alone when the answer has no key', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom<'succeeded' | 'unconfirmed' | 'placed409'>(
+          'succeeded',
+          'unconfirmed',
+          'placed409',
+        ),
+        placedKey,
+        fc.stringMatching(/^NYM-[0-9]{4}$/),
+        async (outcome, orderKey, orderNumber) => {
+          document.body.innerHTML = ''
+          const details: unknown[] = []
+          const onPlaced = (event: Event) => details.push((event as CustomEvent).detail)
+          document.addEventListener('nymbal:checkout:placed', onPlaced)
+          listeners.push(() => document.removeEventListener('nymbal:checkout:placed', onPlaced))
+
+          const r = await rig()
+          const withKey = orderKey === undefined ? {} : { orderKey }
+          if (outcome === 'placed409') {
+            r.answerCreate(() =>
+              Promise.reject(
+                new NymbalApiError(
+                  'checkout.cart_empty',
+                  `This cart is already order ${orderNumber}`,
+                  409,
+                  { orderNumber, ...withKey },
+                ),
+              ),
+            )
+          } else {
+            const answer = result(
+              orderNumber,
+              outcome === 'succeeded' ? 'succeeded' : 'requires_action',
+            )
+            r.answerCreate(() => Promise.resolve({ ...answer, ...withKey }))
+            r.answerConfirm({ ok: true, confirmed: false })
+          }
+          await walkToPayment(r, SHOPPER)
+          await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+          await nextFrame()
+          click(byTestId<HTMLButtonElement>(r.el, 'place-order'), 1)
+          await vi.waitFor(() =>
+            expect(details.length, `${outcome}: placed`).toBeGreaterThanOrEqual(1),
+          )
+
+          expect(
+            details,
+            `${outcome}, ${orderKey === undefined ? 'no key' : 'a key'}`,
+          ).toStrictEqual([{ orderNumber, ...withKey }])
+        },
+      ),
+      { numRuns: 16 },
+    )
+  }, 90_000)
+})

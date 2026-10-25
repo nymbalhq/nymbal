@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import type { APIResponse, BrowserContext, Page } from '@playwright/test'
 import {
   adminToken,
+  keyedOrderPath,
   openCheckout,
+  orderKeyOf,
   orderNumberOf,
   ownProduct,
   walkToPayment,
@@ -171,7 +173,7 @@ test.describe('AC-5: the shopper pages stay live (production build)', () => {
     for (const path of [
       '/cart',
       '/checkout',
-      `/order/${encodeURIComponent(orderNumber)}`,
+      keyedOrderPath(orderNumber, orderKeyOf(page)),
       '/account',
     ]) {
       for (const [who, client] of [

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { PaymentsAdapter, Refund } from '@nymbalhq/types'
+import { ORDER_KEY_HEADER, type PaymentsAdapter, type Refund } from '@nymbalhq/types'
 import { rebuild } from '../../src/read-models/index.js'
 import { serveKernel, type ServedKernel } from '../support/http.js'
 import { checkoutOf, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
@@ -112,9 +112,11 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
     await served?.stop()
   })
 
-  async function servedOrder(orderNumber: string): Promise<ServedOrder> {
+  /** The order as its guest reads it, with the key checkout gave. */
+  async function servedOrder(orderNumber: string, orderKey: string): Promise<ServedOrder> {
     const res = await fetch(
       new URL(`/api/orders/${encodeURIComponent(orderNumber)}`, served.baseUrl),
+      { headers: { [ORDER_KEY_HEADER]: orderKey } },
     )
     const body = (await res.json()) as { data?: ServedOrder }
     if (res.status !== 200 || body.data === undefined) {
@@ -124,7 +126,11 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
   }
 
   /** Waits until the stored document holds every history row the order has, so it reflects the last command. */
-  async function caughtUp(orderId: string, orderNumber: string): Promise<ServedOrder> {
+  async function caughtUp(
+    orderId: string,
+    orderNumber: string,
+    orderKey: string,
+  ): Promise<ServedOrder> {
     await k.app.relay.drain()
     const rows = await raw.count('order_history', 'order_id = ?', [orderId])
     await vi.waitFor(
@@ -135,7 +141,7 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
       },
       { timeout: 10_000, interval: 25 },
     )
-    return servedOrder(orderNumber)
+    return servedOrder(orderNumber, orderKey)
   }
 
   /** The order's events in seq order, with their time, from the event log. */
@@ -198,17 +204,17 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
         const seeded = await seedVariant(k, 2, { priceMinor })
         const email = `timeline-${randomUUID()}${pending ? '+stub-pending' : ''}@timeline.test`
         const order = await checkoutOf(k, seeded, 1, email)
-        await caughtUp(order.orderId, order.orderNumber)
+        await caughtUp(order.orderId, order.orderNumber, order.orderKey)
 
         for (const [pick, pct] of steps) {
           const read = await adminOrder(admin, order.orderNumber)
           const refundable = read.payment?.refundableMinor ?? 0
           const legal = legalAt(read.status, refundable)
           await run(legal[pick % legal.length]!, order, refundable, pct)
-          await caughtUp(order.orderId, order.orderNumber)
+          await caughtUp(order.orderId, order.orderNumber, order.orderKey)
         }
 
-        const doc = await caughtUp(order.orderId, order.orderNumber)
+        const doc = await caughtUp(order.orderId, order.orderNumber, order.orderKey)
         const events = await eventsOf(order.orderId)
         const lifecycle = events.filter((e) => LIFECYCLE[e.type] !== undefined)
 
@@ -224,9 +230,10 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
         }
 
         await rebuild(['orders'], rebuildDeps(k))
-        expect((await servedOrder(order.orderNumber)).timeline, 'after rebuild([orders])').toEqual(
-          doc.timeline,
-        )
+        expect(
+          (await servedOrder(order.orderNumber, order.orderKey)).timeline,
+          'after rebuild([orders])',
+        ).toEqual(doc.timeline)
       }),
       { numRuns: 25 },
     )

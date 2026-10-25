@@ -115,13 +115,19 @@ function freePort(): Promise<number> {
 function apiClient() {
   const csrf = randomBytes(32).toString('hex')
   const jar = new Map<string, string>([['nymbal.csrf', csrf]])
-  return async function call<T>(method: string, path: string, body?: unknown) {
+  return async function call<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ) {
     const res = await fetch(new URL(path, base), {
       method,
       headers: {
         cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
         'x-csrf-token': csrf,
         ...(body !== undefined && { 'content-type': 'application/json' }),
+        ...headers,
       },
       ...(body !== undefined && { body: JSON.stringify(body) }),
     })
@@ -262,7 +268,7 @@ describe('AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => 
       qty: 1,
     })
     expect(added.status, JSON.stringify(added.data)).toBe(200)
-    const checkout = await call<{ orderNumber: string; orderStatus: string }>(
+    const checkout = await call<{ orderNumber: string; orderStatus: string; orderKey: string }>(
       'POST',
       '/api/checkout',
       {
@@ -280,6 +286,8 @@ describe('AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => 
         const order = await call<{ status: string }>(
           'GET',
           `/api/orders/${checkout.data.orderNumber}`,
+          undefined,
+          { 'x-nymbal-order-key': checkout.data.orderKey },
         )
         expect(order.data?.status).toBe(checkout.data.orderStatus)
         const doc = (await documentsUnderPrefix()).get(checkout.data.orderNumber) ?? ''

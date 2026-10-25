@@ -18,6 +18,11 @@ export interface FetchClientOptions {
   onUnauthorized?: () => Promise<void>
 }
 
+/** Per request: headers sent beside the client's own. */
+export interface RequestOptions {
+  headers?: Record<string, string>
+}
+
 const CSRF_HEADER = 'x-csrf-token'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -45,8 +50,13 @@ export class FetchClient {
     this.onUnauthorized = options.onUnauthorized
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    return (await this.requestWithMeta<T>(method, path, body)).data
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    return (await this.requestWithMeta<T>(method, path, body, options)).data
   }
 
   /** Like `request`, keeping the envelope's `meta` (pagination cursors live there). */
@@ -54,13 +64,14 @@ export class FetchClient {
     method: string,
     path: string,
     body?: unknown,
+    options: RequestOptions = {},
   ): Promise<{ data: T; meta: Record<string, unknown> }> {
-    let response = await this.doFetch(method, path, body)
+    let response = await this.doFetch(method, path, body, options)
 
     // A stale token (the cookie was replaced or expired) is fetched again once; a second refusal is thrown.
     if (await this.isCsrfRejection(response)) {
       this.csrfToken = null
-      response = await this.doFetch(method, path, body)
+      response = await this.doFetch(method, path, body, options)
     }
 
     if (response.status === 401 && this.onUnauthorized && !this.handlingUnauthorized) {
@@ -70,7 +81,7 @@ export class FetchClient {
       } finally {
         this.handlingUnauthorized = false
       }
-      const retry = await this.doFetch(method, path, body)
+      const retry = await this.doFetch(method, path, body, options)
       return this.parseResponse<T>(retry)
     }
 
@@ -104,8 +115,13 @@ export class FetchClient {
     }
   }
 
-  private async doFetch(method: string, path: string, body?: unknown): Promise<Response> {
-    const headers: Record<string, string> = {}
+  private async doFetch(
+    method: string,
+    path: string,
+    body: unknown,
+    options: RequestOptions,
+  ): Promise<Response> {
+    const headers: Record<string, string> = { ...options.headers }
     const cookies: string[] = []
 
     if (UNSAFE_METHODS.has(method.toUpperCase())) {

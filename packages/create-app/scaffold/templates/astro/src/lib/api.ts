@@ -4,7 +4,7 @@ import type {
   ProductSearchResult,
   ReviewsListResult,
 } from '@nymbalhq/sdk'
-import { DEFAULT_PRODUCT_SORT, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import { DEFAULT_PRODUCT_SORT, ORDER_KEY_HEADER, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 import type {
   Cart,
   Category,
@@ -104,16 +104,21 @@ export async function fetchCategories(): Promise<Category[]> {
   }
 }
 
-export async function fetchOrder(orderNumber: string): Promise<ShopperOrder | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`)
-    if (!res.ok) return null
-    const envelope = (await res.json()) as { data: ShopperOrder }
-    return envelope.data ?? null
-  } catch (err) {
-    console.error('[api] fetchOrder failed', err)
-    return null
-  }
+/**
+ * The order its key opens, `key` being the confirmation URL's `?key=`. Null on a 404, which the API answers alike for
+ * an unknown number and for an order read without its key; rejects when the API fails, so a failed read is a 500 and
+ * never a not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
+ */
+export async function fetchOrder(orderNumber: string, key?: string): Promise<ShopperOrder | null> {
+  const path = `/api/orders/${encodeURIComponent(orderNumber)}`
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: key ? { [ORDER_KEY_HEADER]: key } : {},
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new ApiUnavailableError(`GET ${path} answered ${res.status}`)
+  const envelope = (await res.json()) as { data?: ShopperOrder | null }
+  if (!envelope.data) throw new ApiUnavailableError(`GET ${path} answered no data`)
+  return envelope.data
 }
 
 export async function fetchReviews(productId: string): Promise<ReviewsListResult> {

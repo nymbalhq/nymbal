@@ -11,6 +11,7 @@
     "packages/platform/src/repositories/index.ts": 100,
     "packages/platform/src/repositories/inventory-reservation.ts": 54.9,
     "packages/platform/src/repositories/json.ts": 51.85,
+    "packages/platform/src/repositories/order-access-key.ts": 30.77,
     "packages/platform/src/repositories/order-history.ts": 76.92,
     "packages/platform/src/repositories/order-refund.ts": 78.57,
     "packages/platform/src/repositories/order-sequence.ts": 52,

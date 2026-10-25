@@ -54,7 +54,8 @@ export interface CommerceAdapter {
     addAddress(address: NewAddress): Promise<CustomerAddress>
     removeAddress(id: string): Promise<void>
     listOrders(params?: { cursor?: string }): Promise<OrderPage>
-    getOrder(orderNumber: string): Promise<ShopperOrder>
+    /** `key` is the order's key from its checkout, for a reader with no session. */
+    getOrder(orderNumber: string, options?: { key?: string }): Promise<ShopperOrder>
   }
   reviews: {
     getForProduct(

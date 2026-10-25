@@ -23,7 +23,8 @@ function render(template: string, vars: Record<string, unknown>): string {
 const TEMPLATES: Record<string, { subject: string; body: string }> = {
   'order-placed': {
     subject: 'Order {{orderNumber}} confirmed',
-    body: `Hi {{customerName}},\n\nThank you for your order {{orderNumber}}. Total: {{totalFormatted}}.\n\nWe'll let you know when it ships.`,
+    // `orderLink` is the whole "View your order" paragraph, absent when the store has no URL to link from.
+    body: `Hi {{customerName}},\n\nThank you for your order {{orderNumber}}. Total: {{totalFormatted}}.\n\nWe'll let you know when it ships.{{orderLink}}`,
   },
   'order-shipped': {
     subject: 'Order {{orderNumber}} is on its way',

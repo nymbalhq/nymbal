@@ -1,12 +1,13 @@
-import type {
-  Cart,
-  Customer,
-  CustomerAddress,
-  Order,
-  ReviewsResult,
-  ReviewResult,
-  ShopperOrder,
-  StoreCapabilities,
+import {
+  ORDER_KEY_HEADER,
+  type Cart,
+  type Customer,
+  type CustomerAddress,
+  type Order,
+  type ReviewsResult,
+  type ReviewResult,
+  type ShopperOrder,
+  type StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
@@ -133,10 +134,13 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         const nextCursor = typeof meta.nextCursor === 'string' ? meta.nextCursor : null
         return { items: data ?? [], nextCursor }
       },
-      getOrder(orderNumber: string) {
+      getOrder(orderNumber: string, options: { key?: string } = {}) {
+        const { key } = options
         return fetchClient.request<ShopperOrder>(
           'GET',
           `/api/orders/${encodeURIComponent(orderNumber)}`,
+          undefined,
+          key === undefined ? {} : { headers: { [ORDER_KEY_HEADER]: key } },
         )
       },
     },

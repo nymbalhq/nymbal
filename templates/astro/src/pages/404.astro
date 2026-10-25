@@ -1,6 +1,9 @@
 ---
 import '../styles/pages/error.css'
 import BaseLayout from '../layouts/BaseLayout.astro'
+
+// An order page's not-found render, at a URL that may carry a key: the rewrite drops that page's own headers.
+if (Astro.originPathname.startsWith('/order/')) Astro.response.headers.set('Referrer-Policy', 'no-referrer')
 ---
 
 <BaseLayout title="Page Not Found | Nymbal" description="The page you're looking for doesn't exist.">

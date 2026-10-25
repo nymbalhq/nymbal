@@ -210,7 +210,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/orders/:orderNumber': {
     name: 'orders.get',
-    description: 'Get one order by its number.',
+    description:
+      "Get one order by its number, with a key that opens it in the x-nymbal-order-key header or as the order's signed-in customer.",
     params: orderNumberParams,
   },
 

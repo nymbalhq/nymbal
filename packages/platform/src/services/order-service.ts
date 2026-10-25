@@ -21,6 +21,7 @@ import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { hashOrderKey, isOrderKey } from '../order-access-key.js'
 
 export interface OrderCreateDraftInput {
   orderId: string
@@ -57,6 +58,8 @@ export interface OrderService {
   getById(id: string): Promise<Order>
   getByOrderNumber(orderNumber: string): Promise<Order>
   listByCustomer(customerId: string): Promise<Order[]>
+  /** Whether `key` opens the order: one of its own keys, well formed. Another order's key opens nothing. */
+  keyOpens(orderId: string, key: string): Promise<boolean>
   updateStatus(id: string, toStatus: OrderStatus, actor: string, note?: string): Promise<Order>
   markShipped(id: string, trackingNumber: string, carrier: string, actor: string): Promise<Order>
   markDelivered(id: string, actor: string): Promise<Order>
@@ -159,6 +162,10 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     },
     async listByCustomer(customerId) {
       return store.read((tx) => repos.order.listByCustomer(tx, customerId))
+    },
+    async keyOpens(orderId, key) {
+      if (!isOrderKey(key)) return false
+      return store.read((tx) => repos.orderAccessKey.opens(tx, orderId, hashOrderKey(key)))
     },
     async updateStatus(id, toStatus, actor, note = '') {
       return store.transaction(async (tx) => {

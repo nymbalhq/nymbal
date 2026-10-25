@@ -3,6 +3,8 @@ import { isCustomProject, storeCapabilities } from '../support/capabilities'
 import {
   adminToken,
   openCheckout,
+  ORDER_KEY_HEADER,
+  orderKeyOf,
   orderNumberOf,
   ownProduct,
   walkToPayment,
@@ -61,7 +63,9 @@ test.describe('The payment step follows the payments adapter', () => {
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)
 
-    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
+    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`, {
+      headers: { [ORDER_KEY_HEADER]: orderKeyOf(page) },
+    })
     expect(order.status()).toBe(200)
     expect(((await order.json()) as { data: { status: string } }).data.status).toBe('confirmed')
     await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i, { timeout: 15_000 })

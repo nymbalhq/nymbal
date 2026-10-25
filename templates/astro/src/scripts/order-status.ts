@@ -8,12 +8,14 @@ const POLL_FOR_MS = 10_000
 const root = document.querySelector<HTMLElement>('[data-order-number][data-order-status]')
 const orderNumber = root?.dataset.orderNumber
 const shown = root?.dataset.orderStatus
+// The page's own key, from its URL: the API answers a guest's order to its key only.
+const key = new URLSearchParams(window.location.search).get('key')
 
 if (orderNumber && shown === 'pending') {
   const until = Date.now() + POLL_FOR_MS
   const poll = async (): Promise<void> => {
     try {
-      const order = await client.customer.orders.get(orderNumber)
+      const order = await client.customer.orders.get(orderNumber, key ? { key } : {})
       if (order.status !== shown) {
         window.location.reload()
         return

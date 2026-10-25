@@ -8,6 +8,7 @@ export default {
     currency: 'GBP',
     locale: 'en-GB',
     timezone: 'Europe/London',
+    url: env('NYMBAL_STOREFRONT_URL', 'http://localhost:4321'),
   },
   template: 'astro',
   infrastructure: {

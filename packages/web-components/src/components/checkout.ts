@@ -18,7 +18,7 @@ const SCHEMA: ElementSchema = {
     {
       name: 'nymbal:checkout:placed',
       prop: 'onPlaced',
-      detail: '{ orderNumber: string }',
+      detail: '{ orderNumber: string; orderKey?: string }',
     },
   ],
   parts: [
@@ -446,8 +446,8 @@ export class NymbalCheckout extends NymbalElement {
       const result = await checkout.submitPayment()
       if (result === null) {
         // A resubmit of a cart that already became an order (Back, then Place Order) goes to that order.
-        const { placedOrderNumber, error } = checkout.getState()
-        if (placedOrderNumber) return this.leaveFor(placedOrderNumber)
+        const { placedOrderNumber, placedOrderKey, error } = checkout.getState()
+        if (placedOrderNumber) return this.leaveFor(placedOrderNumber, placedOrderKey ?? undefined)
         return this.stay(error ?? PAYMENT_FAILED)
       }
       if (result.payment.status === 'failed') {
@@ -463,7 +463,7 @@ export class NymbalCheckout extends NymbalElement {
         if (!confirmation.ok) return this.stay(confirmation.error)
         if (confirmation.confirmed) checkout.markConfirmed()
       }
-      this.leaveFor(result.orderNumber)
+      this.leaveFor(result.orderNumber, result.orderKey)
     } catch (err) {
       this.stay(err instanceof Error && err.message !== '' ? err.message : PAYMENT_FAILED)
     }
@@ -481,8 +481,11 @@ export class NymbalCheckout extends NymbalElement {
     this.showError(message)
   }
 
-  /** Place Order stays disabled from here through the page's navigation. */
-  private leaveFor(orderNumber: string): void {
+  /**
+   * Place Order stays disabled from here through the page's navigation. `orderKey`, when the answer carried one, lets
+   * the order's page read it with no session.
+   */
+  private leaveFor(orderNumber: string, orderKey: string | undefined): void {
     this.client.checkout.reset()
     this.placing = false
     this.placed = true
@@ -491,7 +494,7 @@ export class NymbalCheckout extends NymbalElement {
       new CustomEvent('nymbal:checkout:placed', {
         bubbles: true,
         composed: true,
-        detail: { orderNumber },
+        detail: { orderNumber, ...(orderKey !== undefined && { orderKey }) },
       }),
     )
   }

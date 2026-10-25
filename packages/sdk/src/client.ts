@@ -28,7 +28,8 @@ export interface CustomerAccount {
   }
   orders: {
     list(opts?: { cursor?: string }): Promise<OrderPage>
-    get(orderNumber: string): Promise<ShopperOrder>
+    /** `key`, the order's key from its checkout, reads it with no session; without one, only its owner can. */
+    get(orderNumber: string, options?: { key?: string }): Promise<ShopperOrder>
   }
 }
 
@@ -94,7 +95,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
     orders: {
       list: (opts) => adapter.customers.listOrders(opts),
-      get: (orderNumber) => adapter.customers.getOrder(orderNumber),
+      get: (orderNumber, options) => adapter.customers.getOrder(orderNumber, options),
     },
   }
 

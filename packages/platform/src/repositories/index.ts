@@ -14,6 +14,10 @@ import { createOrderHistoryRepository, type OrderHistoryRepository } from './ord
 import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
 import {
+  createOrderAccessKeyRepository,
+  type OrderAccessKeyRepository,
+} from './order-access-key.js'
+import {
   createInventoryReservationRepository,
   type InventoryReservationRepository,
 } from './inventory-reservation.js'
@@ -38,6 +42,7 @@ export * from './order.js'
 export * from './order-history.js'
 export * from './order-refund.js'
 export * from './order-sequence.js'
+export * from './order-access-key.js'
 export * from './inventory-reservation.js'
 export * from './stock-adjustment.js'
 export * from './review.js'
@@ -59,6 +64,7 @@ export interface Repositories {
   orderHistory: OrderHistoryRepository
   orderRefund: OrderRefundRepository
   orderSequence: OrderSequenceRepository
+  orderAccessKey: OrderAccessKeyRepository
   inventoryReservation: InventoryReservationRepository
   stockAdjustment: StockAdjustmentRepository
   review: ReviewRepository
@@ -85,6 +91,7 @@ export function buildRepositories(
     orderHistory: createOrderHistoryRepository(commandStore),
     orderRefund: createOrderRefundRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
+    orderAccessKey: createOrderAccessKeyRepository(commandStore),
     inventoryReservation: createInventoryReservationRepository(commandStore),
     stockAdjustment: createStockAdjustmentRepository(commandStore),
     review: createReviewRepository(commandStore),

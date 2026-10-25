@@ -20,7 +20,7 @@ function useDefine(element: { define(): void }): void {
 
 interface CheckoutOwnProps {
   cart?: unknown
-  onPlaced?: (event: CustomEvent<{ orderNumber: string }>) => void
+  onPlaced?: (event: CustomEvent<{ orderNumber: string; orderKey?: string }>) => void
   className?: string
   style?: React.CSSProperties
   slot?: string

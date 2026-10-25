@@ -248,6 +248,22 @@ export const orderSequences = sqliteTable('order_sequences', {
   nextValue: integer('next_value').notNull(),
 })
 
+// The keys that open an order to a shopper with no session: the sha256 hex of each, never the key.
+export const orderAccessKeys = sqliteTable(
+  'order_access_keys',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id').notNull(),
+    keyHash: text('key_hash').notNull(),
+    purpose: text('purpose', { enum: ['checkout', 'email'] }).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    keyHashIdx: uniqueIndex('order_access_keys_key_hash_idx').on(t.keyHash),
+    orderIdx: index('order_access_keys_order_idx').on(t.orderId),
+  }),
+)
+
 // --- Inventory -------------------------------------------------------------
 
 export const inventoryReservations = sqliteTable(
@@ -448,6 +464,7 @@ export const schema = {
   orders,
   orderHistory,
   orderSequences,
+  orderAccessKeys,
   inventoryReservations,
   stockAdjustments,
   reviews,

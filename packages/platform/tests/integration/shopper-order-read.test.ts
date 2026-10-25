@@ -7,12 +7,16 @@ import { adminClient, type AdminClient } from '../support/money.js'
 import { primedShopper } from '../support/security.js'
 
 // Orders placed over HTTP, by a guest and by a signed-in customer, left pending or paid: the cart token each checkout
-// records on its order is read back by no shopper route, by its owner or by anyone else. The admin read keeps it.
+// records on its order is read back by no shopper route, by its owner or with the order's key. A stranger with no key
+// is not told the order exists. The admin read keeps the token.
+
+const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 
 const CART_COOKIE = 'nymbal.cart'
 
 interface Placed {
   orderNumber: string
+  orderKey: string
   cartToken: string
   bearer?: string
 }
@@ -44,7 +48,7 @@ async function place(opts: { signedIn: boolean; pending: boolean }): Promise<Pla
   expect(added.status, JSON.stringify(added.body)).toBe(200)
   const cartToken = shop.jar.get(CART_COOKIE)
   expect(cartToken, 'the cart cookie').toBeDefined()
-  const checkout = await shop.call<{ orderNumber: string; orderStatus: string }>(
+  const checkout = await shop.call<{ orderNumber: string; orderStatus: string; orderKey: string }>(
     'POST',
     '/api/checkout',
     {
@@ -58,6 +62,7 @@ async function place(opts: { signedIn: boolean; pending: boolean }): Promise<Pla
   expect(checkout.body.data!.orderStatus).toBe(opts.pending ? 'pending' : 'confirmed')
   return {
     orderNumber: checkout.body.data!.orderNumber,
+    orderKey: checkout.body.data!.orderKey,
     cartToken: cartToken!,
     ...(bearer !== undefined && { bearer }),
   }
@@ -77,23 +82,29 @@ afterAll(async () => {
   await served?.stop()
 })
 
-async function text(path: string, bearer?: string): Promise<{ status: number; text: string }> {
+async function text(
+  path: string,
+  bearer?: string,
+  key?: string,
+): Promise<{ status: number; text: string }> {
   const res = await fetch(new URL(path, served.baseUrl), {
     headers: {
       accept: 'application/json',
       ...(bearer !== undefined && { authorization: `Bearer ${bearer}` }),
+      ...(key !== undefined && { [ORDER_KEY_HEADER]: key }),
     },
   })
   return { status: res.status, text: await res.text() }
 }
 
 describe('a placed order’s cart token', () => {
-  it('is in no shopper response: not GET /api/orders/:orderNumber read by a stranger or by its owner, nor GET /api/orders; the admin order read still carries it', async () => {
-    const reads: Array<{ label: string; path: string; bearer?: string }> = []
+  it('is in no shopper response: not GET /api/orders/:orderNumber read with its key or by its owner, nor GET /api/orders; a stranger with no key gets the not-found answer of a number no order has; the admin order read still carries it', async () => {
+    const reads: Array<{ label: string; path: string; bearer?: string; key?: string }> = []
     for (const o of placed) {
       reads.push({
-        label: `a stranger reads ${o.orderNumber}`,
+        label: `${o.orderNumber} read with its key`,
         path: `/api/orders/${o.orderNumber}`,
+        key: o.orderKey,
       })
       if (o.bearer !== undefined) {
         reads.push(
@@ -107,11 +118,20 @@ describe('a placed order’s cart token', () => {
       }
     }
     const tokens = placed.map((o) => o.cartToken)
-    for (const { label, path, bearer } of reads) {
-      const answer = await text(path, bearer)
+    for (const { label, path, bearer, key } of reads) {
+      const answer = await text(path, bearer, key)
       expect(answer.status, `${label}: ${answer.text}`).toBe(200)
       for (const token of tokens)
         expect(answer.text.includes(token), `${label} carries a cart token`).toBe(false)
+    }
+    for (const o of placed) {
+      const unknown = `NONE-${randomUUID().slice(0, 8)}`
+      const missing = await text(`/api/orders/${unknown}`)
+      const stranger = await text(`/api/orders/${o.orderNumber}`)
+      expect(stranger.status, `a stranger reads ${o.orderNumber}`).toBe(missing.status)
+      expect(JSON.parse(stranger.text), `a stranger reads ${o.orderNumber}`).toEqual(
+        JSON.parse(missing.text.replaceAll(unknown, o.orderNumber)),
+      )
     }
     const listed = await Promise.all(
       placed

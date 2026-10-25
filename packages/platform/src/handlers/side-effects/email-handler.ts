@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_CART_ABANDONED,
   EVT_CUSTOMER_CREATED,
@@ -9,11 +10,14 @@ import {
   type EventBusAdapter,
   type EventHandler,
   type Logger,
+  type Order,
   type OrderPaidV1Payload,
   type OrderShippedV1Payload,
 } from '@nymbalhq/types'
 import { formatMoney } from '../../money.js'
+import { mintOrderKey } from '../../order-access-key.js'
 import { withIdempotency } from '../idempotency.js'
+import type { OrderAccessKeyRepository } from '../../repositories/order-access-key.js'
 import type { OrderRepository } from '../../repositories/order.js'
 import type { ProcessedEventRepository } from '../../repositories/processed-event.js'
 
@@ -26,11 +30,37 @@ export interface RegisterEmailHandlerDeps {
   logger: Logger
   processedEventRepo: ProcessedEventRepository
   orderRepo: OrderRepository
+  orderAccessKeyRepo: OrderAccessKeyRepository
   storeName: string
+  /** The storefront's URL, with no trailing `/`; with none, the order-placed email links nowhere and mints no key. */
+  storeUrl?: string
 }
 
 export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Promise<void> {
-  const { eventBus, email, logger, processedEventRepo, orderRepo, storeName } = deps
+  const { eventBus, email, logger, processedEventRepo, orderRepo, orderAccessKeyRepo } = deps
+  const { storeName, storeUrl } = deps
+
+  /**
+   * The order page's link, with a key of the email's own: only the hash of the checkout's key is stored, so the
+   * handler never has it.
+   */
+  async function orderLink(
+    base: string,
+    order: Order,
+  ): Promise<{ orderUrl: string; orderLink: string }> {
+    const { key, hash } = mintOrderKey()
+    await orderAccessKeyRepo.store.transaction((tx) =>
+      orderAccessKeyRepo.insert(tx, {
+        id: uuidv7(),
+        orderId: order.id,
+        keyHash: hash,
+        purpose: 'email',
+        createdAt: new Date(),
+      }),
+    )
+    const orderUrl = `${base}/order/${encodeURIComponent(order.orderNumber)}?key=${key}`
+    return { orderUrl, orderLink: `\n\nView your order: ${orderUrl}` }
+  }
 
   // Sent on payment, never at placement: an unpaid order (or an imported one) emails nobody. Keyed per order, so a
   // second order.paid for the order (a redelivered or replayed event) sends nothing more.
@@ -50,6 +80,7 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
         orderNumber: order.orderNumber,
         customerName: order.billingAddress.firstName,
         totalFormatted: formatMoney(order.totalMinor, order.currency),
+        ...(storeUrl !== undefined && (await orderLink(storeUrl, order))),
       },
     })
     await store.transaction((tx) =>

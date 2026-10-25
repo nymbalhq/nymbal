@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { APIRequestContext, Page } from '@playwright/test'
-import { adminToken, ownProduct } from '../support/checkout'
+import { adminToken, ORDER_KEY_HEADER, ownProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
@@ -63,8 +63,12 @@ async function replay(to: string): Promise<{ code: number; out: string }> {
   }
 }
 
-async function data<T>(request: APIRequestContext, path: string): Promise<T> {
-  const res = await request.get(`${API_URL}${path}`)
+async function data<T>(
+  request: APIRequestContext,
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  const res = await request.get(`${API_URL}${path}`, { headers })
   expect(res.status(), `GET ${path}`).toBe(200)
   return ((await res.json()) as { data: T }).data
 }
@@ -116,7 +120,9 @@ test.describe('Through a rebuild @rebuild', () => {
       },
     })
     expect(placed.ok(), `POST /api/checkout: ${await placed.text()}`).toBe(true)
-    const { orderNumber } = ((await placed.json()) as { data: { orderNumber: string } }).data
+    const { orderNumber, orderKey } = (
+      (await placed.json()) as { data: { orderNumber: string; orderKey: string } }
+    ).data
     const query = encodeURIComponent(product.name)
 
     const reads = async () => ({
@@ -130,6 +136,7 @@ test.describe('Through a rebuild @rebuild', () => {
       order: await data<{ orderNumber: string; status: string }>(
         request,
         `/api/orders/${orderNumber}`,
+        { [ORDER_KEY_HEADER]: orderKey },
       ),
     })
     const before = await reads()

@@ -114,6 +114,24 @@ export function orderNumberOf(page: Page): string {
   return decodeURIComponent(match[1]!)
 }
 
+/** The request header an order's key goes to the API in. */
+export const ORDER_KEY_HEADER = 'x-nymbal-order-key'
+
+/**
+ * The key of the `/order/<n>?key=<k>` page the browser is on: what the confirmation URL and the order email's link
+ * carry, and what reads the order from the API in `x-nymbal-order-key`.
+ */
+export function orderKeyOf(page: Page): string {
+  const key = new URL(page.url()).searchParams.get('key')
+  if (key === null || key === '') throw new Error(`no ?key= on the order page: ${page.url()}`)
+  return key
+}
+
+/** The order page's URL with its key, as the confirmation redirect and the email link give it. */
+export function keyedOrderPath(orderNumber: string, key: string): string {
+  return `/order/${encodeURIComponent(orderNumber)}?key=${encodeURIComponent(key)}`
+}
+
 /**
  * Flags, in `window`, any moment the page (its title, its body or any shadow root in it) says "Order confirmed", even
  * briefly. A document `MutationObserver` never sees a mutation inside a shadow tree, and the body's `textContent`

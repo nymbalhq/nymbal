@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import fc from 'fast-check'
 import { createCheckoutStore } from './checkout-store.js'
+import { NymbalApiError } from '../adapter/fetch-client.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
 import type { Address } from '@nymbalhq/types'
 
@@ -174,5 +175,80 @@ describe('AC-5: CheckoutStore follows the server payment status', () => {
     expect(await missing.submitPayment()).toBeNull()
     expect(await rejected.submitPayment()).toBeNull()
     expect(rejected.getState().paymentStatus).toBe('failed')
+  })
+})
+
+// AC-6: the order's key reaches the page that shows the order. A placed order's key is in the result submitPayment
+// resolves to; a refusal that names the order (409 checkout.cart_empty or checkout.payment_in_progress) leaves its
+// key in placedOrderKey beside placedOrderNumber, and a refusal with no key leaves none from an earlier answer.
+describe('AC-6: CheckoutStore keeps the order key', () => {
+  type Answer =
+    | { kind: 'placed'; orderNumber: string; orderKey: string | undefined }
+    | { kind: 'refused'; code: string; orderNumber: string; orderKey: string | undefined }
+
+  const orderNumber = fc.stringMatching(/^NYM-[0-9]{4}$/)
+  const orderKey = fc.option(fc.stringMatching(/^[A-Za-z0-9_-]{43}$/), { nil: undefined })
+  const answer: fc.Arbitrary<Answer> = fc.oneof(
+    fc.record({ kind: fc.constant('placed' as const), orderNumber, orderKey }),
+    fc.record({
+      kind: fc.constant('refused' as const),
+      code: fc.constantFrom('checkout.cart_empty', 'checkout.payment_in_progress'),
+      orderNumber,
+      orderKey,
+    }),
+  )
+
+  it('AC-6: property: over sequences of checkout answers, a placed order resolves with the answer’s orderKey; a 409 naming an order sets placedOrderNumber and placedOrderKey from its context, null when the context has no key', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.array(answer, { minLength: 1, maxLength: 4 }), async (answers) => {
+        let next: () => Promise<unknown> = () => Promise.reject(new Error('no answer staged'))
+        const adapter = { checkout: { create: () => next() } } as unknown as CommerceAdapter
+        const store = createCheckoutStore(adapter)
+        store.setEmail('buyer@example.com')
+        store.setShippingAddress(addr)
+        store.setBillingAddress(addr)
+
+        for (const [i, a] of answers.entries()) {
+          const label = `answer ${i} (${a.kind}, ${a.orderKey === undefined ? 'no key' : 'a key'})`
+          next =
+            a.kind === 'placed'
+              ? () =>
+                  Promise.resolve({
+                    ...orderResult,
+                    orderNumber: a.orderNumber,
+                    orderStatus: 'confirmed',
+                    payment: { status: 'succeeded' },
+                    ...(a.orderKey !== undefined && { orderKey: a.orderKey }),
+                  })
+              : () =>
+                  Promise.reject(
+                    new NymbalApiError(a.code, `This cart is already order ${a.orderNumber}`, 409, {
+                      orderNumber: a.orderNumber,
+                      ...(a.orderKey !== undefined && { orderKey: a.orderKey }),
+                    }),
+                  )
+          const result = await store.submitPayment()
+          const state = store.getState()
+          const seen =
+            a.kind === 'placed'
+              ? { orderNumber: result?.orderNumber, orderKey: result?.orderKey }
+              : {
+                  result,
+                  placedOrderNumber: state.placedOrderNumber,
+                  placedOrderKey: state.placedOrderKey,
+                }
+          const want =
+            a.kind === 'placed'
+              ? { orderNumber: a.orderNumber, orderKey: a.orderKey }
+              : {
+                  result: null,
+                  placedOrderNumber: a.orderNumber,
+                  placedOrderKey: a.orderKey ?? null,
+                }
+          expect(seen, label).toStrictEqual(want)
+        }
+      }),
+      { numRuns: 50 },
+    )
   })
 })

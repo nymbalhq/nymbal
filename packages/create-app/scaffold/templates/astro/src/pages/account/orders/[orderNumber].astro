@@ -13,6 +13,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 </AccountLayout>
 
 <script>
+  import { NymbalApiError } from '@nymbalhq/sdk'
   import { client } from '../../../lib/client.js'
   import { escapeHtml, formatPrice, formatDate } from '../../../lib/format.js'
   import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'
@@ -98,11 +99,13 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 
         <a href="/account/orders" class="btn btn-secondary" style="margin-top: var(--nymbal-spacing-md, 1rem);">Back to Orders</a>
       `
-    } catch {
+    } catch (err) {
+      // The API answers another shopper's order as it answers a number no order has: a 404 is not found, not a failure.
+      const notFound = err instanceof NymbalApiError && err.status === 404
       container.innerHTML = `
         <div class="account-empty">
-          <h2 class="account-empty-title">Unable to load order</h2>
-          <p class="account-empty-text">Please try again later.</p>
+          <h2 class="account-empty-title">${notFound ? 'Order Not Found' : 'Unable to load order'}</h2>
+          <p class="account-empty-text">${notFound ? 'This order could not be found.' : 'Please try again later.'}</p>
           <a href="/account/orders" class="btn btn-secondary">Back to Orders</a>
         </div>
       `

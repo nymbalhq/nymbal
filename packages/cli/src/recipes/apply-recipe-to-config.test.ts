@@ -488,12 +488,14 @@ describe('AC-2: applyRecipeToConfig on generated scaffold configs', () => {
       template: 'astro',
       seedDemo: false,
     })
-    const head = "import { defineConfig } from '@nymbalhq/config'\n"
+    const head = "import { defineConfig, env } from '@nymbalhq/config'\n"
     expect(plain.startsWith(head), 'the scaffold config starts with its config import').toBe(true)
+    // The config's import without its env, so each source binds `env` only to the foreign one.
+    const bare = "import { defineConfig } from '@nymbalhq/config'\n"
     const foreign = [
-      plain.replace(head, `${head}import { env } from './env'\n`),
-      plain.replace(head, `${head}import env from './env'\n`),
-      plain.replace(head, `${head}const env = (name: string) => process.env[name] ?? ''\n`),
+      plain.replace(head, `${bare}import { env } from './env'\n`),
+      plain.replace(head, `${bare}import env from './env'\n`),
+      plain.replace(head, `${bare}const env = (name: string) => process.env[name] ?? ''\n`),
     ]
     // No shipped recipe writes env() (Stripe's declared fields are settings), so the guard is exercised by generated
     // recipes that do, at slot and infrastructure paths the scaffold leaves at their defaults, with and without a
