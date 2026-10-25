@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import type { APIRequestContext, Browser, BrowserContext, Page, TestInfo } from '@playwright/test'
+import type {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  Page,
+  Response,
+  TestInfo,
+} from '@playwright/test'
 import { adminToken, ownProduct, type OwnProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { cardSlugs } from '../support/elements'
 import { expect, test } from '../support/fixtures'
+import { signIn } from '../support/sign-in'
 
 // Recently viewed on both templates (the astro and nextjs projects run this file), driven through the product only:
 // product pages and `/` in the browser, the storefront's sign-in form and sign-out control, and the admin API. The
@@ -54,15 +62,33 @@ async function firstRead(page: Page): Promise<string[]> {
 const host = (page: Page) => page.getByTestId('recently-viewed')
 const shown = (page: Page): Promise<string[]> => cardSlugs(host(page))
 
-/** Opens a product's page and waits for its view to be captured (the POST's 204) and the list read after it. */
+/**
+ * Opens a product's page and waits for its view to be captured (a POST's 204) and the list read after it. A fresh
+ * browser's first POST can be refused for its CSRF token and sent again by the SDK, so only a 403 may come before it.
+ */
 async function view(page: Page, product: Viewed): Promise<string[]> {
-  const captured = page.waitForResponse(
-    (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/recently-viewed',
-    { timeout: 15_000 },
-  )
-  await page.goto(`/product/${product.slug}`)
-  await expect(host(page), `${product.slug}'s page holds the element`).toHaveCount(1)
-  expect((await captured).status(), `the view of ${product.slug}`).toBe(204)
+  const posts: number[] = []
+  const record = (r: Response): void => {
+    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/recently-viewed') {
+      posts.push(r.status())
+    }
+  }
+  page.on('response', record)
+  try {
+    await page.goto(`/product/${product.slug}`)
+    await expect(host(page), `${product.slug}'s page holds the element`).toHaveCount(1)
+    // Polls the statuses themselves, so a view never captured fails showing what the POSTs answered.
+    await expect
+      .poll(() => [...posts], { message: `the view of ${product.slug}`, timeout: 15_000 })
+      .toContain(204)
+    const before = posts.slice(0, posts.indexOf(204))
+    expect(
+      before.filter((s) => s !== 403),
+      `POSTs before the view of ${product.slug}`,
+    ).toEqual([])
+  } finally {
+    page.off('response', record)
+  }
   return firstRead(page)
 }
 
@@ -79,11 +105,8 @@ async function visitorCookie(context: BrowserContext) {
   return (await context.cookies(API_URL)).find((c) => c.name === VISITOR)
 }
 
-async function signIn(page: Page, email: string): Promise<void> {
-  await page.goto('/account/login')
-  await page.getByTestId('login-email').fill(email)
-  await page.getByTestId('login-password').fill(PASSWORD)
-  await page.getByTestId('login-submit').click()
+async function signInAs(page: Page, email: string): Promise<void> {
+  await signIn(page, email, PASSWORD)
   await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
     timeout: 15_000,
   })
@@ -167,7 +190,7 @@ test.describe('Recently viewed', () => {
       data: { email, password: PASSWORD, firstName: 'Recent', lastName: 'Viewer' },
     })
     expect(registered.status(), `POST /api/auth/register: ${await registered.text()}`).toBe(201)
-    await signIn(page, email)
+    await signInAs(page, email)
     await page.goto('/')
     await expect.poll(() => shown(page), { timeout: 10_000 }).toEqual([a.slug, b.slug])
     expect(await visitorCookie(page.context()), 'nymbal.visitor after sign-in').toBeUndefined()
@@ -178,7 +201,7 @@ test.describe('Recently viewed', () => {
 
     // The same customer in a second browser: the list is the server's, not this browser's.
     const elsewhere = await freshPage(browser, testInfo, contexts)
-    await signIn(elsewhere, email)
+    await signInAs(elsewhere, email)
     await elsewhere.goto('/')
     await expect.poll(() => shown(elsewhere), { timeout: 10_000 }).toEqual([a.slug, b.slug])
 
@@ -213,7 +236,7 @@ test.describe('Recently viewed', () => {
     expect(await firstRead(page), '/ signed out').toEqual([])
     await expect(host(page).locator('nymbal-product-card')).toHaveCount(0)
     expect(await apiList(page.request), 'the API from the signed-out browser').toEqual([])
-    await signIn(page, email)
+    await signInAs(page, email)
     await page.goto('/')
     await expect.poll(() => shown(page), { timeout: 10_000 }).toEqual([a.slug])
   })

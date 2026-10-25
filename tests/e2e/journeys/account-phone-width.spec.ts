@@ -3,6 +3,7 @@ import { devices, request as playwrightRequest, type APIRequestContext } from '@
 import { expect, test } from '../support/fixtures'
 import { API_URL, csrf } from '../support/csrf'
 import { adminToken, ownProduct } from '../support/checkout'
+import { signIn } from '../support/sign-in'
 
 // AC-1: at Pixel 7 (412 px) a signed-in shopper's account pages are no wider than the viewport. On Astro the account
 // grid's one `1fr` column would take the sidebar's min-content width (its nav is a row of `nowrap` links) without
@@ -68,10 +69,7 @@ test.describe('Account at Pixel 7', () => {
     test.setTimeout(90_000)
     const shopper = await shopperWithOrder(request)
 
-    await page.goto('/account/login')
-    await page.getByTestId('login-email').fill(shopper.email)
-    await page.getByTestId('login-password').fill(PASSWORD)
-    await page.getByTestId('login-submit').click()
+    await signIn(page, shopper.email, PASSWORD)
     await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
       timeout: 15_000,
     })

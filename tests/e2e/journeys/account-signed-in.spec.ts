@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
 import { adminToken, orderNumberOf, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
+import { formReady, signIn, submitSignInForm } from '../support/sign-in'
 
 // AC-5, AC-6 and AC-7: a shopper who signs in sees their own account on either storefront, and signing out really
 // signs them out. Both template projects run this file. Selectors are the data-testid contract both templates share
@@ -33,6 +34,7 @@ const onLogin = (url: URL): boolean => url.pathname.replace(/\/$/, '') === '/acc
 /** Registers through the storefront's own form, so the token is wherever that template keeps it. */
 async function register(page: Page, shopper: Shopper): Promise<void> {
   await page.goto('/account/register')
+  await formReady(page, 'nymbal-register-form')
   const form = page.getByTestId('register-form')
   // Both register forms label their name fields alike; neither shares a test id for them today.
   await form.getByLabel('First Name', { exact: true }).fill(shopper.firstName)
@@ -181,11 +183,8 @@ test.describe('Signed-in account', () => {
     expect(refusal.status()).toBe(401)
     const { message } = ((await refusal.json()) as { error: { message: string } }).error
 
-    await page.goto('/account/login')
+    await signIn(page, credentials.email, credentials.password)
     const form = page.locator('nymbal-login-form')
-    await form.getByTestId('login-email').fill(credentials.email)
-    await form.getByTestId('login-password').fill(credentials.password)
-    await form.getByTestId('login-submit').click()
 
     await expect(form.getByRole('alert')).toHaveText(message, { timeout: 10_000 })
     const refresh = await page.request.post(`${API}/api/auth/refresh`, {
@@ -254,6 +253,7 @@ test.describe('Account views are elements', () => {
     // Register through nymbal-register-form.
     await page.goto('/account/register')
     await expect.poll(() => inShadowOf(page, 'nymbal-register-form', 'register-submit')).toBe(true)
+    await formReady(page, 'nymbal-register-form')
     const register = page.locator('nymbal-register-form')
     await register.getByTestId('register-firstName').fill(shopper.firstName)
     await register.getByTestId('register-lastName').fill(shopper.lastName)
@@ -279,10 +279,7 @@ test.describe('Account views are elements', () => {
     })
     await page.goto('/account/login?redirect=%2Faccount%2Fprofile')
     await expect.poll(() => inShadowOf(page, 'nymbal-login-form', 'login-submit')).toBe(true)
-    const login = page.locator('nymbal-login-form')
-    await login.getByTestId('login-email').fill(shopper.email)
-    await login.getByTestId('login-password').fill(shopper.password)
-    await login.getByTestId('login-submit').click()
+    await submitSignInForm(page, shopper.email, shopper.password)
     await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account/profile', {
       timeout: 15_000,
     })

@@ -10,8 +10,9 @@ import { astroWithHeavyHome, heavyScriptGzipBytes } from './fixtures/heavy-home'
 // the real run (both templates, as committed), which is the last to write reports/perf-budgets.json, so the report
 // is the real one.
 // - AC-2: the fixture run fails on its page alone, and scriptBytes is the gzip sum of the page's scripts.
-// - AC-4: every page is in the run and within budget, and per-page loading saves bytes on Astro `/` against 606e5aa
-//   (tests/perf/fixtures/astro-home-606e5aa.json).
+// - AC-4: every page is in the run and within budget, and Astro `/` ships no more script bytes than at 75989c8
+//   (tests/perf/fixtures/astro-home-75989c8.json).
+// The maintainers accepted the recently viewed list's bytes on `/`: the reference was 606e5aa (26,413 B) before it.
 // Without Chrome the tests skip and say so (Lighthouse cannot run), except under CI, where they fail.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
@@ -21,7 +22,7 @@ const RUN_TIMEOUT_MS = 20 * 60_000
 const FROM_ENV = (process.env.NYMBAL_PERF_BUDGETS_ARGS ?? '').split(/\s+/).filter(Boolean)
 const baseline = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('./fixtures/astro-home-606e5aa.json', import.meta.url)),
+    fileURLToPath(new URL('./fixtures/astro-home-75989c8.json', import.meta.url)),
     'utf8',
   ),
 ) as { commit: string; scriptBytes: number }
@@ -177,10 +178,10 @@ describe('AC-4: the budgets hold', () => {
     }
   })
 
-  it('AC-4: Astro / ships fewer script bytes than at 606e5aa', (ctx) => {
+  it('AC-4: Astro / ships no more script bytes than at 75989c8', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     const home = row(real, 'astro', 'home')
     expect(home, tail(real.output)).toBeDefined()
-    expect(home!.measured.scriptBytes).toBeLessThan(baseline.scriptBytes)
+    expect(home!.measured.scriptBytes).toBeLessThanOrEqual(baseline.scriptBytes)
   })
 })

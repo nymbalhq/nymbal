@@ -13,6 +13,7 @@ import {
 } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
+import { signIn } from '../support/sign-in'
 
 // The order timeline on both templates (the astro and nextjs projects run this file), driven only through the
 // product: the storefront's checkout and the admin API's commands. The guest confirmation page `/order/<n>` and the
@@ -273,10 +274,7 @@ test.describe('The order timeline', () => {
         .poll(async () => (await apiOrder(shopper, orderNumber, auth)).status, { timeout: 10_000 })
         .toBe('cancelled')
 
-      await page.goto('/account/login')
-      await page.getByTestId('login-email').fill(buyer)
-      await page.getByTestId('login-password').fill(password)
-      await page.getByTestId('login-submit').click()
+      await signIn(page, buyer, password)
       await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {
         timeout: 15_000,
       })
