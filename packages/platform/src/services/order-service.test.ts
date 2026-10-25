@@ -22,6 +22,7 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createOrderService } from './order-service.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
+import { hashOrderKey, isOrderKey, mintOrderKey } from '../order-access-key.js'
 import { v7 as uuidv7 } from 'uuid'
 import type { Address, OrderLineItem } from '@nymbalhq/types'
 
@@ -650,6 +651,93 @@ describe('OrderService: cancel of a paid order and imported captures', () => {
     expect(bare.notes).toBe('')
     expect(bare.paymentIntentId).toBeNull()
     expect(bare.metadata).toEqual({})
+    await env.commandStore.close()
+  })
+})
+
+describe('OrderService.keyOpens', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function storeHash(env: Env, orderId: string, keyHash: string) {
+    await env.commandStore.transaction((tx) =>
+      env.repos.orderAccessKey.insert(tx, {
+        id: uuidv7(),
+        orderId,
+        keyHash,
+        purpose: 'checkout',
+        createdAt: new Date(),
+      }),
+    )
+  }
+
+  it('a minted key opens its own order and no other', async () => {
+    const env = await setup()
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (orders) => {
+        const ids = Array.from({ length: orders + 1 }, () => uuidv7())
+        const keys = ids.map(() => mintOrderKey())
+        for (const [i, id] of ids.entries()) await storeHash(env, id, keys[i]!.hash)
+        for (const [i, id] of ids.entries()) {
+          for (const [j, k] of keys.entries()) {
+            expect(await env.orderService.keyOpens(id, k.key)).toBe(i === j)
+          }
+        }
+      }),
+      { numRuns: 10 },
+    )
+    await env.commandStore.close()
+  })
+
+  it('a well-formed key that was never minted opens nothing', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const minted = mintOrderKey()
+    await storeHash(env, orderId, minted.hash)
+    await fc.assert(
+      fc.asyncProperty(
+        fc.stringMatching(/^[A-Za-z0-9_-]{43}$/).filter((k) => k !== minted.key),
+        async (key) => {
+          expect(isOrderKey(key)).toBe(true)
+          expect(await env.orderService.keyOpens(orderId, key)).toBe(false)
+        },
+      ),
+      { numRuns: 50 },
+    )
+    expect(await env.orderService.keyOpens(orderId, minted.key)).toBe(true)
+    await env.commandStore.close()
+  })
+
+  // The store holds the hash of each malformed key for this order, so only the shape check stands between it and true.
+  it('a malformed key is false without a read, even when its hash is stored for the order', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const good = mintOrderKey().key
+    const malformed = [
+      '',
+      good.slice(0, 42),
+      `${good}A`,
+      `${good.slice(0, 42)}=`,
+      `${good.slice(0, 42)}+`,
+      `${good.slice(0, 42)}/`,
+      ` ${good.slice(1)}`,
+      `${good.slice(0, 42)}\n`,
+    ]
+    for (const key of malformed) {
+      expect(isOrderKey(key)).toBe(false)
+      await storeHash(env, orderId, hashOrderKey(key))
+    }
+    const opens = env.repos.orderAccessKey.opens
+    let reads = 0
+    env.repos.orderAccessKey.opens = (...args) => {
+      reads++
+      return opens(...args)
+    }
+    for (const key of malformed) {
+      expect(await env.orderService.keyOpens(orderId, key)).toBe(false)
+    }
+    expect(reads).toBe(0)
+    expect(await env.orderService.keyOpens(orderId, good)).toBe(false)
+    expect(reads).toBe(1)
     await env.commandStore.close()
   })
 })
