@@ -1,5 +1,13 @@
 import { execFile, execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -175,7 +183,7 @@ const hasTwoDecimals = (x: number): boolean => Math.abs(x * 100 - Math.round(x *
 // ---------------------------------------------------------------------------------------------------------------
 
 describe('AC-1: scoreByFile', () => {
-  it('AC-1: property: each file scores (killed+timeout)/(killed+timeout+survived+noCoverage)x100 to two decimals, other statuses ignored, no valid mutants means absent', async () => {
+  it('AC-1: property: each file scores (killed+timeout)/(killed+timeout+survived+noCoverage)x100 to two decimals, other statuses ignored, no valid mutants means absent; timeouts with no kill score 0', async () => {
     const { scoreByFile } = await ratchetModule()
     const statuses = fc.array(fc.constantFrom<Status>(...VALID, ...OTHER), { maxLength: 40 })
     fc.assert(
@@ -185,7 +193,9 @@ describe('AC-1: scoreByFile', () => {
         expect(Object.keys(scores).sort()).toEqual([...scored].sort())
         for (const path of scored) {
           const s = files[path]!
-          const exact = (count(s, 'Killed', 'Timeout') * 100) / count(s, ...VALID)
+          // Detected mutants that all timed out prove nothing: such a file is unmeasured and scores 0 (2026-10-25).
+          const unmeasured = count(s, 'Killed') === 0 && count(s, 'Timeout') > 0
+          const exact = unmeasured ? 0 : (count(s, 'Killed', 'Timeout') * 100) / count(s, ...VALID)
           const score = scores[path]!
           expect(Number.isFinite(score), path).toBe(true)
           expect(Math.abs(score - exact), `${path}: ${score} vs ${exact}`).toBeLessThanOrEqual(
@@ -622,15 +632,21 @@ describe('AC-5b: the ratchet follows the mutate set', () => {
       total: 50,
       files,
     })
-    const { code, output } = await cli(['check', '--static', '--ratchet', ratchetFile])
+    const { code, output } = await cliIn(REPO, ['check', '--static', '--ratchet', ratchetFile])
     expect(code, output).toBe(1)
-    expect(named(output, set), output).toEqual(missing)
-    expect(named(output, GONE), output).toEqual([stale])
+    // The entry lines; the line naming the files with no unit test file names others.
+    const entries = output
+      .split('\n')
+      .filter((l) => !l.startsWith('no unit test file'))
+      .join('\n')
+    expect(named(entries, set), output).toEqual(missing)
+    expect(named(entries, GONE), output).toEqual([stale])
     expect(output, 'the hint names --files when an entry is missing').toMatch(/--files/)
   })
 
   it('audit 2026-10-22: check --static passes on the committed ratchet', async () => {
-    const { code, output } = await cli(['check', '--static'])
+    // No base: the range rule is the gate's, over its own diff; here only the entries are judged.
+    const { code, output } = await cliIn(REPO, ['check', '--static'])
     expect(code, output).toBe(0)
     expect(output).toMatch(new RegExp(`\\b${(await mutateSet()).length} entries\\b`))
   })
@@ -653,5 +669,219 @@ describe('AC-5b: the ratchet follows the mutate set', () => {
     const { output } = await cli(['check', '--report', reportFile, '--ratchet', ratchetFile])
     expect(named(output, set), output).toEqual(missing)
     expect(output, 'the hint to run update').toMatch(/\bupdate\b/)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// Three amendments from 2026-10-25. A file whose detected mutants all timed out was scored 100: nothing proved a
+// test saw any of them, so it scores 0 as unmeasured. The static check names the mutate-set files with no unit test
+// file beside them (the ones only integration tests reach). And, given a base, it refuses a change to a measured
+// mutate-set file whose unit test file did not change: new code in order-service.ts with no unit test passed every
+// local gate and failed the incremental Stryker run in CI.
+// ---------------------------------------------------------------------------------------------------------------
+
+type Amended = RatchetModule & { unmeasuredFiles: (report: unknown) => string[] }
+
+async function cliIn(
+  cwd: string,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number; output: string }> {
+  try {
+    const { stdout, stderr } = await exec(TSX, [SCRIPT, ...args], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GATE_BASE: '', ...env },
+    })
+    return { code: 0, output: `${stdout}\n${stderr}`.trim() }
+  } catch (error) {
+    const e = error as { code?: number | string; stdout?: string; stderr?: string }
+    return {
+      code: typeof e.code === 'number' ? e.code : -1,
+      output: `${e.stdout ?? ''}\n${e.stderr ?? ''}`.trim(),
+    }
+  }
+}
+
+const unitTestOf = (path: string): string => path.replace(/\.ts$/, '.test.ts')
+const whole = (output: string, path: string): boolean =>
+  new RegExp(`(?<![\\w./-])${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w./-])`).test(output)
+
+describe('an all-Timeout file is unmeasured', () => {
+  it('scoreByFile: detected mutants that are all Timeout score 0 and unmeasuredFiles names the file; a Killed beside them scores as before; Timeouts beside a survivor alone are unmeasured too', async () => {
+    const { scoreByFile, unmeasuredFiles } = (await ratchetModule()) as Amended
+    const rep = report({
+      [pathOf(1)]: ['Timeout', 'Timeout', 'Timeout'],
+      [pathOf(2)]: ['Timeout', 'Killed'],
+      [pathOf(3)]: ['Timeout', 'Survived'],
+      [pathOf(4)]: ['Timeout', 'Timeout', 'Ignored'],
+    })
+    expect(scoreByFile(rep)).toEqual({
+      [pathOf(1)]: 0,
+      [pathOf(2)]: 100,
+      [pathOf(3)]: 0,
+      [pathOf(4)]: 0,
+    })
+    expect(unmeasuredFiles(rep)).toEqual([pathOf(1), pathOf(3), pathOf(4)])
+  })
+
+  it('update records 0 for an all-Timeout file, lowering an entry that was never a measurement, and says so; check names it unmeasured and below its entry', async () => {
+    const set = await mutateSet()
+    const [timedOut, measured] = [set[0]!, set[1]!]
+    const rep = report({ [timedOut]: ['Timeout', 'Timeout'], [measured]: exactFile(2, 4, 0) })
+    const dir = scratch()
+    const before: Ratchet = {
+      measuredAt: '2026-10-01T00:00:00.000Z',
+      command: 'fixture',
+      total: 50,
+      files: { [timedOut]: 100, [measured]: 10 },
+    }
+    const ratchetFile = writeJson(dir, 'mutation-ratchet.json', before)
+    const reportFile = writeJson(dir, 'mutation.json', rep)
+    const checked = await cli(['check', '--report', reportFile, '--ratchet', ratchetFile])
+    expect(checked.code, checked.output).toBe(1)
+    expect(checked.output).toMatch(/unmeasured/)
+    expect(whole(checked.output, timedOut), checked.output).toBe(true)
+    const updated = await cli([
+      'update',
+      '--report',
+      reportFile,
+      '--ratchet',
+      ratchetFile,
+      '--files',
+      `${timedOut},${measured}`,
+    ])
+    expect(updated.code, updated.output).toBe(0)
+    expect(updated.output).toMatch(/unmeasured/)
+    const after = readRatchet(ratchetFile)
+    expect(after.files[timedOut], 'recorded 0, below the 100 that was never measured').toBe(0)
+    expect(after.files[measured], 'a measured file still only rises').toBe(50)
+  })
+})
+
+describe('check --static: unit test files beside the mutate set', () => {
+  it('names exactly the mutate-set files that have no unit test file beside them', async () => {
+    const set = await mutateSet()
+    const expected = set.filter((p) => !existsSync(join(REPO, unitTestOf(p))))
+    const { output } = await cliIn(REPO, ['check', '--static'])
+    const line = output.split('\n').find((l) => l.startsWith('no unit test file'))
+    expect(line, output).toBeDefined()
+    expect(set.filter((p) => whole(line!, p))).toEqual(expected)
+  })
+
+  /** A git repository holding a small mutate set: two services with unit tests, one repository without. */
+  function gitScratch(entries: Scores): string {
+    const dir = scratch()
+    const files: Record<string, string> = {
+      'stryker.config.mjs':
+        "export default { mutate: ['packages/platform/src/services/**/*.ts', 'packages/platform/src/repositories/**/*.ts', '!**/*.test.ts'] }\n",
+      'packages/platform/src/services/x-service.ts':
+        'export const x = (a: number): number => a + 1\n',
+      'packages/platform/src/services/x-service.test.ts': "it('x', () => {})\n",
+      'packages/platform/src/services/y-service.ts':
+        'export const y = (a: number): number => a + 2\n',
+      'packages/platform/src/services/y-service.test.ts': "it('y', () => {})\n",
+      'packages/platform/src/repositories/r.ts': 'export const r = (a: number): number => a + 3\n',
+      'mutation-ratchet.json': `${JSON.stringify({ measuredAt: '2026-10-01T00:00:00.000Z', command: 'fixture', total: 40, files: entries }, null, 2)}\n`,
+    }
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(join(dir, path, '..'), { recursive: true })
+      writeFileSync(join(dir, path), text)
+    }
+    const git = (...args: string[]): void => {
+      execFileSync(
+        'git',
+        ['-c', 'user.name=f', '-c', 'user.email=f@x', '-c', 'commit.gpgsign=false', ...args],
+        { cwd: dir, stdio: 'ignore' },
+      )
+    }
+    git('init', '--quiet')
+    git('add', '-A')
+    git('commit', '--quiet', '-m', 'base')
+    return dir
+  }
+  const X = 'packages/platform/src/services/x-service.ts'
+  const Y = 'packages/platform/src/services/y-service.ts'
+  const R = 'packages/platform/src/repositories/r.ts'
+  const ENTRIES: Scores = { [X]: 50, [Y]: 0, [R]: 40 }
+  const touch = (dir: string, path: string): void => {
+    writeFileSync(join(dir, path), `${readFileSync(join(dir, path), 'utf8')}// changed\n`)
+  }
+
+  // Replayed over 15 dev commits the refusal hit 4 of the 5 that touched a measured file (one real drop), a
+  // comment-only change among them: the case warns, for the gate's output and the reviewer, and never fails the check.
+  const warnings = (output: string): string[] =>
+    output.split('\n').filter((l) => l.startsWith('warning:'))
+
+  it('--base warns, exit 0, on a measured file changed with its unit test file unchanged, naming both; no warning with the test changed too, for a zero entry, or for a file with no unit test file', async () => {
+    const alone = gitScratch(ENTRIES)
+    touch(alone, X)
+    const warned = await cliIn(alone, ['check', '--static', '--base', 'HEAD'])
+    expect(warned.code, warned.output).toBe(0)
+    expect(warnings(warned.output), warned.output).toHaveLength(1)
+    expect(whole(warnings(warned.output)[0]!, X), warned.output).toBe(true)
+    expect(whole(warnings(warned.output)[0]!, unitTestOf(X)), warned.output).toBe(true)
+
+    const withTest = gitScratch(ENTRIES)
+    touch(withTest, X)
+    touch(withTest, unitTestOf(X))
+    const both = await cliIn(withTest, ['check', '--static', '--base', 'HEAD'])
+    expect(both.code, both.output).toBe(0)
+    expect(warnings(both.output), both.output).toEqual([])
+
+    const zero = gitScratch(ENTRIES)
+    touch(zero, Y)
+    const unmeasured = await cliIn(zero, ['check', '--static', '--base', 'HEAD'])
+    expect(unmeasured.code, unmeasured.output).toBe(0)
+    expect(warnings(unmeasured.output), unmeasured.output).toEqual([])
+
+    const noUnit = gitScratch(ENTRIES)
+    touch(noUnit, R)
+    const named = await cliIn(noUnit, ['check', '--static', '--base', 'HEAD'])
+    expect(named.code, named.output).toBe(0)
+    expect(warnings(named.output), named.output).toEqual([])
+    const line = named.output.split('\n').find((l) => l.startsWith('no unit test file')) ?? ''
+    expect(whole(line, R), named.output).toBe(true)
+  })
+
+  it('a missing entry still fails the static check beside the warning', async () => {
+    const dir = gitScratch({ [X]: 50, [R]: 40 }) // y-service.ts has no entry
+    touch(dir, X)
+    const r = await cliIn(dir, ['check', '--static', '--base', 'HEAD'])
+    expect(r.code, r.output).toBe(1)
+    expect(warnings(r.output), r.output).toHaveLength(1)
+    expect(whole(r.output, Y), r.output).toBe(true)
+  })
+
+  it('a new unit test file not yet added to git counts as the change beside its file', async () => {
+    const dir = gitScratch(ENTRIES)
+    rmSync(join(dir, unitTestOf(X)))
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=f',
+        '-c',
+        'user.email=f@x',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '--quiet',
+        '-am',
+        'drop the test',
+      ],
+      { cwd: dir, stdio: 'ignore' },
+    )
+    touch(dir, X)
+    writeFileSync(join(dir, unitTestOf(X)), "it('x again', () => {})\n")
+    const r = await cliIn(dir, ['check', '--static', '--base', 'HEAD'])
+    expect(r.code, r.output).toBe(0)
+  })
+
+  it('without a base the range rule does not run: a changed file with its test untouched still passes', async () => {
+    const dir = gitScratch(ENTRIES)
+    touch(dir, X)
+    const r = await cliIn(dir, ['check', '--static'])
+    expect(r.code, r.output).toBe(0)
   })
 })

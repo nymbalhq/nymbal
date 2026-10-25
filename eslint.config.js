@@ -4,6 +4,21 @@ import prettier from 'eslint-config-prettier'
 import vitest from '@vitest/eslint-plugin'
 import playwright from 'eslint-plugin-playwright'
 
+// A test server bound to `localhost` listens on ::1 or 127.0.0.1 by the resolver's answer, and a client told
+// `localhost` may take the other: a test red at two commits in two checkouts over this was rerun green each time.
+// Tests bind an address and point their clients at it.
+const LISTEN_LOCALHOST = [
+  {
+    selector: "CallExpression[callee.property.name='listen'] > Literal[value='localhost']",
+    message: "Tests listen on 127.0.0.1 (or ::1) and name that address, not 'localhost'.",
+  },
+  {
+    selector:
+      "CallExpression[callee.property.name='listen'] > ObjectExpression > Property[key.name='host'] > Literal[value='localhost']",
+    message: "Tests listen on 127.0.0.1 (or ::1) and name that address, not 'localhost'.",
+  },
+]
+
 export default [
   {
     ignores: [
@@ -82,7 +97,28 @@ export default [
           selector: 'TemplateElement[value.raw=/\\u002Fapi\\u002Fwebhooks\\u002F/]',
           message: 'E2E and scaffold tests do not call /api/webhooks/; drive the product instead.',
         },
+        ...LISTEN_LOCALHOST,
       ],
+    },
+  },
+  // Every other test path (the hooks' notion of one: a test file, or anything under tests/, fixtures/, __tests__/,
+  // journeys/ or sentinels/); the E2E and scaffold block above carries the same selectors beside its own.
+  {
+    files: [
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/*.spec.ts',
+      '**/*.test-d.ts',
+      'tests/**/*.ts',
+      '**/__tests__/**/*.ts',
+      '**/__fixtures__/**/*.ts',
+      '**/fixtures/**/*.ts',
+      '**/journeys/**/*.ts',
+      '**/sentinels/**/*.ts',
+    ],
+    ignores: ['tests/e2e/**', 'tests/scaffold/**'],
+    rules: {
+      'no-restricted-syntax': ['error', ...LISTEN_LOCALHOST],
     },
   },
   prettier,

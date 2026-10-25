@@ -312,3 +312,66 @@ describe('AC-4b: a change set with a Stryker input and no mutate-set file still 
     )
   }, 120_000)
 })
+
+// The plain gate's ratchet step hands the gate's base to `check --static`, so a change to a measured mutate-set file
+// whose unit test file did not change is red before anything slow runs (2026-10-25). Resolved through the real runner:
+// the step `plan` makes, run by the gate's runner in a git scratch holding the real scripts, with the ratchet holding
+// only the file the scratch has.
+describe('the ratchet step warns of a measured file changed without its unit test', () => {
+  const ratchetStep = (): StepSpec => {
+    const step = plan({ full: false, base: 'HEAD', changed: [FILE], mutated: [FILE] }).steps.find(
+      (s) => s.name === 'ratchet',
+    )
+    if (step === undefined || step.skip !== undefined)
+      throw new Error('the plain gate plans a ratchet step')
+    return step
+  }
+  // The warning is the whole effect: the step stays ok (a refusal hit 4 of 5 good changes when replayed over dev),
+  // and the gate's log carries the line for the builder and the reviewer.
+  const CASES = [
+    { name: 'the service alone', entry: 50, test: false, status: 'ok', warns: true },
+    { name: 'the service and its unit test', entry: 50, test: true, status: 'ok', warns: false },
+    {
+      name: 'the service alone, entry 0 (unmeasured)',
+      entry: 0,
+      test: false,
+      status: 'ok',
+      warns: false,
+    },
+  ]
+
+  it('ok in every case; the gate log carries the warning naming the unit test only when the service changed alone', async () => {
+    const step = ratchetStep()
+    const results = await Promise.all(
+      CASES.map(async (c) => {
+        const dir = await repoScratch(c.entry)
+        writeFileSync(
+          join(dir, 'mutation-ratchet.json'),
+          `${JSON.stringify({ measuredAt: '2026-10-01T00:00:00.000Z', command: 'fixture', total: c.entry, files: { [FILE]: c.entry } }, null, 2)}\n`,
+        )
+        git(dir, ['commit', '--quiet', '-am', 'ratchet'])
+        appendFileSync(join(dir, FILE), '// changed\n')
+        if (c.test)
+          appendFileSync(join(dir, TEST), "it('adds zero', () => expect(total(0, 0)).toBe(0))\n")
+        const logs: string[] = []
+        const { steps } = await run([step], {
+          cwd: dir,
+          budgetMs: 120_000,
+          log: (t) => logs.push(t),
+        })
+        return { name: c.name, status: steps[0]?.status, log: logs.join('') }
+      }),
+    )
+    const detail = results.map((r) => `--- ${r.name}: ${r.status}\n${r.log}`).join('\n')
+    expect(
+      results.map((r) => `${r.name}: ${r.status}`),
+      `step command: ${step.command}\n${detail}`,
+    ).toEqual(CASES.map((c) => `${c.name}: ${c.status}`))
+    const warned = (log: string): boolean =>
+      log.split('\n').some((l) => /warning:/.test(l) && l.includes(TEST))
+    expect(
+      results.map((r) => `${r.name}: ${warned(r.log) ? 'warns' : 'quiet'}`),
+      detail,
+    ).toEqual(CASES.map((c) => `${c.name}: ${c.warns ? 'warns' : 'quiet'}`))
+  }, 120_000)
+})

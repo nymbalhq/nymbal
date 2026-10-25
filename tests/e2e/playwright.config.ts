@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 import { stack } from '../../scripts/stack'
+import { e2eReporters } from './support/reporters'
 
 const isCI = !!process.env.CI
 const target = process.env.NYMBAL_E2E_TARGET
@@ -252,7 +253,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
-  reporter: isCI ? 'github' : 'list',
+  // With retries a test that passes only on a retry leaves the exit status green; the JSON report per target is
+  // where it shows (support/reporters.ts).
+  reporter: e2eReporters(isCI, target),
   globalTimeout,
   snapshotPathTemplate: '{testDir}/{testFileDir}/snapshots/{arg}-{projectName}{ext}',
   use: {

@@ -490,6 +490,10 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
     const detail = details.length === 0 ? {} : { detail: details.join('; ') }
     if (code === 0) {
       results.push({ name: spec.name, status: 'ok', ms, ...detail })
+      // A green step's `warning:` lines are for the reader (the ratchet's measured-file-without-a-test-change).
+      for (const line of output.split('\n')) {
+        if (line.startsWith('warning:')) log(`${spec.name}: ${line}\n`)
+      }
     } else {
       results.push({ name: spec.name, status: 'red', ms, ...detail })
       log(`${tail(output)}\n`)
@@ -1317,8 +1321,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
-    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22).
-    { name: 'ratchet', command: 'pnpm --silent mutation:ratchet check --static' },
+    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22). With the base,
+    // a measured file changed without a change to its unit test is refused here, not by CI's Stryker after the merge.
+    {
+      name: 'ratchet',
+      command: `pnpm --silent mutation:ratchet check --static${input.noBase === true ? '' : ` --base ${base}`}`,
+    },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,
