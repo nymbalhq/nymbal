@@ -9,7 +9,8 @@ import { primedShopper } from '../support/security.js'
 // AC-1 and AC-15 as properties over the schema registry, against a served kernel (SQLite). AC-1: every
 // state-changing route but the Stripe webhook refuses a request without a CSRF pair with 403, before auth (admin
 // routes answer 403, not 401) and before anything is written. AC-15: every route with a body schema answers a body
-// it rejects with 400 `validation.failed`, never 500.
+// it rejects with 400 `validation.failed`, never 500. And every signed-in customer route refuses a request with no
+// token, so a customer route registered without its auth guard is caught.
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 /** Registered with `csrf: false`; its body schema is `z.unknown()` and its own signature check answers bad input. */
@@ -33,6 +34,22 @@ const unsafeKeys = Object.keys(routeSchemas).filter(
 const bodyKeys = Object.entries(routeSchemas)
   .filter(([key, schema]) => schema.body !== undefined && key !== STRIPE_WEBHOOK)
   .map(([key]) => key)
+const customerKeys = Object.keys(routeSchemas).filter((key) =>
+  split(key).path.startsWith('/api/customers/me'),
+)
+/** Each customer route is sent the first of these its body schema accepts, so only the auth guard can stop it. */
+const CANDIDATE_BODIES: unknown[] = [
+  {},
+  {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    addressLine1: '1 Analytical Way',
+    city: 'London',
+    region: 'LDN',
+    postalCode: 'N1 1AA',
+    country: 'GB',
+  },
+]
 
 describe('the guard and the parser over every registered route', () => {
   let k: Kernel
@@ -106,5 +123,26 @@ describe('the guard and the parser over every registered route', () => {
         { numRuns: 4 },
       )
     }
+  })
+
+  it('every /api/customers/me* route answers 401 auth.unauthorized to a request with a CSRF pair and no token: the set of 401 routes equals the registered customer routes', async () => {
+    expect(customerKeys).toContain('GET /api/customers/me')
+    const shop = await primedShopper(served.baseUrl)
+    const refused: string[] = []
+    const seen: string[] = []
+
+    for (const key of customerKeys) {
+      const { method, path } = split(key)
+      const schema = routeSchemas[key]!.body
+      const body = schema && CANDIDATE_BODIES.find((candidate) => schema.safeParse(candidate).success)
+      if (schema !== undefined && body === undefined) {
+        throw new Error(`${key}: no candidate body its schema accepts; add one to CANDIDATE_BODIES`)
+      }
+      const res = await shop.call(method, fill(path, crypto.randomUUID()), body)
+      seen.push(`${key} → ${res.status} ${res.body.error?.code ?? ''}`)
+      if (res.status === 401 && res.body.error?.code === 'auth.unauthorized') refused.push(key)
+    }
+
+    expect(refused.sort(), seen.join('\n')).toEqual(customerKeys.toSorted())
   })
 })

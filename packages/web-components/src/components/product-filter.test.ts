@@ -50,16 +50,6 @@ async function check(el: HTMLElement, value: string, checked: boolean): Promise<
 }
 
 describe('nymbal-product-filter', () => {
-  it('renders without error', async () => {
-    const el = await mount()
-    expect(el).toBeTruthy()
-  })
-
-  it('disconnects cleanly without throwing', async () => {
-    const el = await mount()
-    expect(() => document.body.removeChild(el)).not.toThrow()
-  })
-
   it('renders filter checkboxes from facets attribute', async () => {
     const el = await mount(JSON.stringify(sampleFacets))
     const checkboxes = shadow(el).querySelectorAll('input[type="checkbox"]')
@@ -67,15 +57,19 @@ describe('nymbal-product-filter', () => {
     expect(checkboxes).toHaveLength(sampleFacets.flatMap((f) => f.values).length)
   })
 
-  it('calls applyFilter on the product list store when a checkbox is checked', async () => {
+  it('checking a box applies its facet value as the product list’s filter', async () => {
     const mock = createMockClient()
-    vi.spyOn(mock.productList, 'applyFilter').mockResolvedValue(undefined)
+    const store = mock.productList as unknown as ReturnType<typeof createMockStore>
+    mock.productList.applyFilter = async (name: string, value: string | string[]) =>
+      store.setState({ filters: { ...mock.productList.getState().filters, [name]: value } })
     registerClient(mock)
 
     const el = await mount(JSON.stringify(sampleFacets))
+    const before = mock.productList.getState().filters
     await check(el, 'books', true)
 
-    expect(mock.productList.applyFilter).toHaveBeenCalledWith('category', 'books')
+    expect(before).toEqual({})
+    expect(mock.productList.getState().filters).toEqual({ category: 'books' })
   })
 
   it('emits nymbal:filter:changed event when a checkbox is checked', async () => {
@@ -96,18 +90,23 @@ describe('nymbal-product-filter', () => {
     expect(filterEvents[0]!.detail).toMatchObject({ name: 'category', value: 'books' })
   })
 
-  it('calls removeFilter when unchecking the only active filter', async () => {
+  it('unchecking the only active filter removes it from the product list', async () => {
     const mock = createMockClient()
-    vi.spyOn(mock.productList, 'removeFilter').mockResolvedValue(undefined)
-    ;(mock.productList as unknown as ReturnType<typeof createMockStore>).setState({
-      filters: { category: 'books' },
-    })
+    const store = mock.productList as unknown as ReturnType<typeof createMockStore>
+    store.setState({ filters: { category: 'books' } })
+    mock.productList.removeFilter = async (name: string) => {
+      const { [name]: _removed, ...rest } = mock.productList.getState().filters as Record<
+        string,
+        string
+      >
+      store.setState({ filters: rest })
+    }
     registerClient(mock)
 
     const el = await mount(JSON.stringify(sampleFacets))
     await check(el, 'books', false)
 
-    expect(mock.productList.removeFilter).toHaveBeenCalledWith('category')
+    expect(mock.productList.getState().filters).toEqual({})
   })
 
   it('renders no checkboxes when facets attribute is absent', async () => {

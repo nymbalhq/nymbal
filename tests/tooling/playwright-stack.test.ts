@@ -5,9 +5,14 @@ import { promisify } from 'node:util'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type ExpectedBlock, expectedBlock, PORT_FIELDS, type PortField } from './stack-table'
 
-// AC-4: the Playwright config takes every port from the stack slot. The config is evaluated in a child process with
-// the environment a gate:full E2E step gives it (CI=1, a target, NYMBAL_STACK_SLOT), as
-// tests/tooling/playwright-target.test.ts does, so the environment is read exactly as Playwright reads it.
+// The E2E configuration, each config evaluated once in a child process with the environment a CI job or a gate:full
+// E2E step gives it, so the environment is read exactly as Playwright and `nymbal dev` read it, at import time:
+// - AC-3: with NYMBAL_E2E_TARGET set, the Playwright config starts only that target's servers and the API, none built;
+// - AC-1: the admin target starts the API alone, and the admin projects' baseURL is the API's /admin/;
+// - AC-9: the astro storefront command passes --ignore-lock after dev, the nextjs one does not;
+// - AC-10: an unknown NYMBAL_E2E_TARGET makes the config throw, naming every allowed target;
+// - AC-4: the Playwright config takes every port from the stack slot;
+// - AC-5: each E2E store config takes its CORS origins from NYMBAL_CORS_ORIGINS.
 
 const exec = promisify(execFile)
 
@@ -15,7 +20,9 @@ const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
 const E2E_DIR = join(REPO, 'tests/e2e')
 const CONFIG_URL = pathToFileURL(join(E2E_DIR, 'playwright.config.ts')).href
+const SCHEMA_URL = pathToFileURL(join(REPO, 'node_modules/@nymbalhq/config/dist/index.js')).href
 
+// The evaluation prints only an error's message, so a name in a stack frame or a code frame cannot satisfy AC-10.
 const PRINT_CONFIG = `import(process.env.NYMBAL_TEST_CONFIG_URL).then(
   (m) => {
     const config = m.default
@@ -26,7 +33,14 @@ const PRINT_CONFIG = `import(process.env.NYMBAL_TEST_CONFIG_URL).then(
   (e) => process.stdout.write('\\n' + JSON.stringify({ error: String(e && e.message !== undefined ? e.message : e) }) + '\\n'),
 )`
 
-type WebServer = { command: string; url?: string; env?: Record<string, string> }
+const PRINT_ORIGINS = `Promise.all([import(process.env.NYMBAL_TEST_SCHEMA_URL), import(process.env.NYMBAL_TEST_CONFIG_URL)])
+  .then(([c, m]) => c.nymbalConfigSchema.parse(m.default).http.cors.allowedOrigins)
+  .then(
+    (origins) => process.stdout.write('\\n' + JSON.stringify(origins) + '\\n'),
+    (e) => process.stdout.write('\\n' + JSON.stringify({ error: String(e && e.message !== undefined ? e.message : e) }) + '\\n'),
+  )`
+
+type WebServer = { command: string; url?: string; port?: number; env?: Record<string, string> }
 type Evaluated = {
   error?: string
   webServer?: WebServer | WebServer[] | null
@@ -34,7 +48,7 @@ type Evaluated = {
   apiUrl?: string | null
 }
 
-/** Every variable the config reads, cleared, so the shell that runs the tests cannot leak a value into the evaluation. */
+/** Every variable the configs read, cleared, so the shell that runs the tests cannot leak a value into them. */
 const CONFIG_ENV = [
   'CI',
   'NYMBAL_E2E_TARGET',
@@ -46,17 +60,34 @@ const CONFIG_ENV = [
   'NYMBAL_CORS_ORIGINS',
 ]
 
-async function evaluate(env: Record<string, string>): Promise<Evaluated> {
+function cleanEnv(): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = { ...process.env }
   for (const key of CONFIG_ENV) delete base[key]
+  return base
+}
+
+async function evaluate(env: Record<string, string>): Promise<Evaluated> {
   const { stdout } = await exec(TSX, ['--eval', PRINT_CONFIG], {
     cwd: E2E_DIR,
-    env: { ...base, ...env, NYMBAL_TEST_CONFIG_URL: CONFIG_URL },
+    env: { ...cleanEnv(), ...env, NYMBAL_TEST_CONFIG_URL: CONFIG_URL },
   })
   return JSON.parse(stdout.trimEnd().split('\n').pop() ?? '{}') as Evaluated
 }
 
-/** The three stores the E2E suite runs: each API and the two storefronts that call it. */
+async function allowedOrigins(path: string, cors: string | undefined): Promise<unknown> {
+  const { stdout } = await exec(TSX, ['--eval', PRINT_ORIGINS], {
+    cwd: REPO,
+    env: {
+      ...cleanEnv(),
+      ...(cors === undefined ? {} : { NYMBAL_CORS_ORIGINS: cors }),
+      NYMBAL_TEST_SCHEMA_URL: SCHEMA_URL,
+      NYMBAL_TEST_CONFIG_URL: pathToFileURL(join(REPO, path)).href,
+    },
+  })
+  return JSON.parse(stdout.trimEnd().split('\n').pop() ?? 'null')
+}
+
+/** The stores the E2E suite runs: each API and the two storefronts that call it. */
 const STORES = {
   native: { api: 'api', storefronts: ['astro', 'nextjs'] },
   custom: { api: 'customApi', storefronts: ['astroCustom', 'nextjsCustom'] },
@@ -72,7 +103,7 @@ type Target = {
   storefronts: PortField[]
 }
 
-/** The nine runs: no target (both templates), each NYMBAL_E2E_TARGET, and NYMBAL_E2E_ADMIN. */
+/** The runs: no target (both templates), each NYMBAL_E2E_TARGET, and NYMBAL_E2E_ADMIN. */
 const TARGETS: Target[] = [
   { name: 'no target', env: {}, store: 'native', storefronts: ['astro', 'nextjs'] },
   { name: 'astro', env: { NYMBAL_E2E_TARGET: 'astro' }, store: 'native', storefronts: ['astro'] },
@@ -126,6 +157,7 @@ const TARGETS: Target[] = [
     storefronts: ['nextjsOverride'],
   },
 ]
+const targetNamed = (name: string): Target => TARGETS.find((t) => t.name === name)!
 
 /** Each Playwright project's baseURL, by the block field it is served on (`admin` is the API's /admin/). */
 const PROJECT_FIELDS: Record<string, PortField | 'admin'> = {
@@ -143,20 +175,54 @@ const PROJECT_FIELDS: Record<string, PortField | 'admin'> = {
   'admin-mobile': 'admin',
 }
 
+const TYPOS = ['astr0', 'Astro', 'next', 'astro-mobile']
+const ALLOWED_TARGETS = ['astro', 'nextjs', 'admin']
+
+/** Each E2E store config and the origins it allows today, with NYMBAL_CORS_ORIGINS unset. */
+const STORE_CONFIGS = [
+  { path: 'nymbal.config.ts', today: ['http://localhost:3000', 'http://localhost:4321'] },
+  {
+    path: 'tests/e2e/fixtures/custom-providers/nymbal.config.ts',
+    today: ['http://localhost:4331', 'http://localhost:3010'],
+  },
+  {
+    path: 'tests/e2e/fixtures/no-search/nymbal.config.ts',
+    today: ['http://localhost:4341', 'http://localhost:3020'],
+  },
+]
+const MOVED = 'http://localhost:4521,http://localhost:3200'
+
 const origin = (port: number): string => `http://localhost:${port}`
 
 const SLOTS = [2, 0]
 const evaluated = new Map<string, Evaluated>()
 const key = (slot: number, target: Target): string => `${slot}/${target.name}`
+const typoKey = (typo: string): string => `typo/${typo}`
+const origins = new Map<string, unknown>()
 
 beforeAll(async () => {
-  const runs = SLOTS.flatMap((slot) => TARGETS.map((target) => ({ slot, target })))
-  const results = await Promise.all(
-    runs.map(({ slot, target }) =>
-      evaluate({ CI: '1', NYMBAL_STACK_SLOT: String(slot), ...target.env }),
+  const runs = [
+    ...SLOTS.flatMap((slot) =>
+      TARGETS.map((target) => ({
+        key: key(slot, target),
+        env: { CI: '1', NYMBAL_STACK_SLOT: String(slot), ...target.env },
+      })),
     ),
-  )
-  runs.forEach(({ slot, target }, i) => evaluated.set(key(slot, target), results[i]!))
+    ...TYPOS.map((typo) => ({
+      key: typoKey(typo),
+      env: { CI: '1', NYMBAL_STACK_SLOT: '0', NYMBAL_E2E_TARGET: typo },
+    })),
+  ]
+  const stores = STORE_CONFIGS.flatMap(({ path }) => [
+    { key: `${path} moved`, path, cors: MOVED },
+    { key: `${path} unset`, path, cors: undefined },
+  ])
+  const [configs, allowed] = await Promise.all([
+    Promise.all(runs.map((run) => evaluate(run.env))),
+    Promise.all(stores.map(({ path, cors }) => allowedOrigins(path, cors))),
+  ])
+  runs.forEach((run, i) => evaluated.set(run.key, configs[i]!))
+  stores.forEach((store, i) => origins.set(store.key, allowed[i]))
 }, 120_000)
 
 function serversOf(slot: number, target: Target): WebServer[] {
@@ -167,6 +233,94 @@ function serversOf(slot: number, target: Target): WebServer[] {
 }
 
 const isApi = (server: WebServer): boolean => /--api-only\b/.test(server.command)
+
+/** Which server an entry is, from its command, URL and port. Package names may carry the @nymbalhq scope. */
+const KINDS: Record<string, RegExp> = {
+  api: /--api-only|:3001\b/,
+  astro: /template-astro\b|templates\/astro\b|:4321\b/,
+  nextjs: /template-nextjs\b|templates\/nextjs\b|:3000\b/,
+  admin: /@nymbal(?:hq)?\/admin\b|apps\/admin\b|:5174\b/,
+}
+
+function kindsOf(server: WebServer): string[] {
+  const text = `${server.command} ${server.url ?? ''} ${server.port === undefined ? '' : `:${server.port}`}`
+  return Object.keys(KINDS).filter((kind) => KINDS[kind]!.test(text))
+}
+
+/** A build in a server command: the E2E jobs serve the downloaded artefact, they do not rebuild it (AC-4). */
+const BUILD =
+  /\bpnpm\s+(?:(?:-r|--recursive|(?:--filter|-F)(?:=|\s+)\S+)\s+)*(?:run\s+)?build(?::templates)?\b|\b(?:vite|astro|next|tsup)\s+build\b/
+
+describe('AC-3: NYMBAL_E2E_TARGET starts only that target and the API', () => {
+  it.each(['astro', 'nextjs'])(
+    'AC-3: with CI=1 and NYMBAL_E2E_TARGET=%s, the webServer list is the API and that target, once each, none built',
+    (target) => {
+      const servers = serversOf(0, targetNamed(target))
+      const kinds = servers.map((server) => {
+        const kind = kindsOf(server)
+        expect(kind, `${server.command} (${server.url ?? server.port})`).toHaveLength(1)
+        return kind[0]
+      })
+      expect([...kinds].sort(), JSON.stringify(servers.map((s) => s.command))).toEqual(
+        ['api', target].sort(),
+      )
+      for (const server of servers) expect(server.command).not.toMatch(BUILD)
+    },
+  )
+})
+
+// AC-1: the admin is served by `nymbal dev --api-only` at <api>/admin/, so the admin target starts the API alone (no
+// Vite server), and both admin projects default their baseURL to the API's /admin/.
+describe('the admin E2E runs against the admin the API serves', () => {
+  it.each(['admin', 'NYMBAL_E2E_ADMIN=true'])(
+    'AC-1: with CI=1 and %s, the webServer list is the API alone, not built, and the admin baseURL is the API’s /admin/',
+    (name) => {
+      const servers = serversOf(0, targetNamed(name))
+      expect(servers.map(kindsOf), JSON.stringify(servers.map((s) => s.command))).toEqual([['api']])
+      for (const server of servers) expect(server.command).not.toMatch(BUILD)
+
+      const urls = (evaluated.get(key(0, targetNamed(name)))?.projects ?? [])
+        .filter((p) => p.name.startsWith('admin'))
+        .map((p) => p.baseURL ?? '')
+      expect(urls.length).toBeGreaterThan(0)
+      const api = servers[0]!.url ?? ''
+      for (const url of urls) {
+        expect(new URL(url).origin).toBe(new URL(api).origin)
+        expect(new URL(url).pathname).toBe('/admin/')
+      }
+    },
+  )
+})
+
+describe('AC-9: the Playwright astro webServer keeps astro dev in the foreground under an agent', () => {
+  it('AC-9: with CI=1 and NYMBAL_E2E_TARGET=astro, the astro command passes --ignore-lock after dev; the nextjs command does not', () => {
+    const storefront = (name: string): string[] => {
+      const servers = serversOf(0, targetNamed(name)).filter((s) => !isApi(s))
+      expect(servers, JSON.stringify(servers)).toHaveLength(1)
+      return servers[0]!.command.split(/\s+/)
+    }
+    const astro = storefront('astro')
+    const nextjs = storefront('nextjs')
+
+    expect(astro, astro.join(' ')).toContain('--ignore-lock')
+    expect(astro.indexOf('--ignore-lock')).toBeGreaterThan(astro.indexOf('dev'))
+    expect(nextjs, nextjs.join(' ')).not.toContain('--ignore-lock')
+  })
+})
+
+describe('AC-10: an unknown NYMBAL_E2E_TARGET makes the Playwright config throw', () => {
+  it.each(TYPOS)(
+    'AC-10: with CI=1 and NYMBAL_E2E_TARGET=%s, evaluating the config throws naming every allowed target',
+    (typo) => {
+      const result = evaluated.get(typoKey(typo)) ?? {}
+      const servers = result.webServer ?? []
+      const booted = (Array.isArray(servers) ? servers : [servers]).map((s) => s.command)
+      expect(result.error, `no error; it would boot: ${booted.join(' | ')}`).toBeDefined()
+      const unnamed = ALLOWED_TARGETS.filter((t) => !(result.error ?? '').includes(t))
+      expect(unnamed, result.error).toEqual([])
+    },
+  )
+})
 
 /** The port a storefront command binds: its --port/-p, or 3000 for the Next.js template's own `dev` script. */
 function boundPort(command: string): string | undefined {
@@ -227,8 +381,8 @@ describe.each(SLOTS)('AC-4: the Playwright config in stack slot %i', (slot) => {
     (target) => {
       const api = serversOf(slot, target).filter(isApi)
       expect(api.length).toBe(1)
-      const origins = (api[0]!.env?.NYMBAL_CORS_ORIGINS ?? '').split(',').map((o) => o.trim())
-      expect(origins.sort()).toEqual(
+      const listed = (api[0]!.env?.NYMBAL_CORS_ORIGINS ?? '').split(',').map((o) => o.trim())
+      expect(listed.sort()).toEqual(
         STORES[target.store].storefronts.map((f) => origin(block[f])).sort(),
       )
     },
@@ -250,6 +404,109 @@ describe.each(SLOTS)('AC-4: the Playwright config in stack slot %i', (slot) => {
     'AC-4 (e): $name: process.env.NYMBAL_API_URL after import is the run’s API',
     (target) => {
       expect(evaluated.get(key(slot, target))?.apiUrl).toBe(origin(block[STORES[target.store].api]))
+    },
+  )
+})
+
+describe('AC-5: each E2E store config takes its CORS origins from NYMBAL_CORS_ORIGINS', () => {
+  it.each(STORE_CONFIGS)(
+    'AC-5: $path with NYMBAL_CORS_ORIGINS=http://localhost:4521,http://localhost:3200 allows exactly those origins',
+    ({ path }) => {
+      expect(origins.get(`${path} moved`)).toEqual(MOVED.split(','))
+    },
+  )
+
+  it.each(STORE_CONFIGS)(
+    "AC-5: $path with NYMBAL_CORS_ORIGINS unset allows today's origins",
+    ({ path, today }) => {
+      const allowed = origins.get(`${path} unset`)
+      expect(Array.isArray(allowed) ? [...(allowed as string[])].sort() : allowed).toEqual(
+        [...today].sort(),
+      )
+    },
+  )
+})
+
+// The custom-store projects run only the journeys tagged @capabilities: the ones whose assertions branch on what
+// GET /api/capabilities reports, which is what the custom providers change. Everything else runs on the native store
+// alone, so the default projects still list every tagged journey among the rest.
+const PLAYWRIGHT = join(E2E_DIR, 'node_modules/.bin/playwright')
+const CUSTOM_OF: Record<string, string> = { astro: 'astro-custom', nextjs: 'nextjs-custom' }
+
+/** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 has two tests. */
+const CAPABILITY_JOURNEYS = [
+  'browse-sort.spec.ts AC-4',
+  'browse-sort.spec.ts AC-7',
+  'browse.spec.ts AC-3',
+  'payment-step.spec.ts AC-5',
+  'payment-step.spec.ts AC-5',
+  'search-pages.spec.ts AC-8',
+  'search.spec.ts AC-3',
+]
+
+type Listed = { file: string; title: string; tags: string[]; project: string }
+type Suite = { file?: string; specs?: Spec[]; suites?: Suite[] }
+type Spec = { title: string; tags?: string[]; tests?: Array<{ projectName: string }> }
+
+/** `playwright test --list` over the named projects, one row per test per project. */
+async function listTests(projects: string[]): Promise<Listed[]> {
+  const { stdout } = await exec(
+    PLAYWRIGHT,
+    ['test', '--list', '--reporter=json', ...projects.flatMap((p) => ['--project', p])],
+    {
+      cwd: E2E_DIR,
+      env: { ...cleanEnv(), CI: '1', NYMBAL_STACK_SLOT: '0' },
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  )
+  const report = JSON.parse(stdout.slice(stdout.indexOf('{'))) as { suites?: Suite[] }
+  const rows: Listed[] = []
+  const walk = (suite: Suite, file: string | undefined): void => {
+    const own = file ?? suite.file
+    for (const spec of suite.specs ?? []) {
+      for (const test of spec.tests ?? []) {
+        rows.push({
+          file: own ?? '?',
+          title: spec.title,
+          tags: spec.tags ?? [],
+          project: test.projectName,
+        })
+      }
+    }
+    for (const child of suite.suites ?? []) walk(child, own)
+  }
+  for (const suite of report.suites ?? []) walk(suite, undefined)
+  return rows
+}
+
+const journeyKey = (row: Listed): string =>
+  `${row.file} ${/^AC-\d+/.exec(row.title)?.[0] ?? row.title}`
+
+describe('the custom-store projects run only the journeys tagged @capabilities', () => {
+  const listed = new Map<string, Listed[]>()
+
+  beforeAll(async () => {
+    const projects = [...Object.keys(CUSTOM_OF), ...Object.values(CUSTOM_OF)]
+    for (const row of await listTests(projects)) {
+      listed.set(row.project, [...(listed.get(row.project) ?? []), row])
+    }
+  }, 60_000)
+
+  it.each(Object.values(CUSTOM_OF))('%s lists exactly the tagged journeys', (project) => {
+    const rows = listed.get(project) ?? []
+    expect(rows.map(journeyKey).sort()).toEqual([...CAPABILITY_JOURNEYS].sort())
+    expect(rows.filter((row) => !row.tags.includes('capabilities'))).toEqual([])
+  })
+
+  it.each(Object.keys(CUSTOM_OF))(
+    '%s still lists every tagged journey, among the untagged ones',
+    (project) => {
+      const rows = listed.get(project) ?? []
+      const tagged = rows.filter((row) => row.tags.includes('capabilities'))
+      expect(tagged.map(journeyKey).sort()).toEqual(
+        (listed.get(CUSTOM_OF[project]!) ?? []).map(journeyKey).sort(),
+      )
+      expect(rows.length).toBeGreaterThan(tagged.length)
     },
   )
 })

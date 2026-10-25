@@ -33,7 +33,10 @@
   }
 }
 
+/* A `1fr` track is at least its content's min-content width: without `min-width: 0` and `overflow-wrap`, a long
+   email (one unbreakable word) widens its card past a phone's viewport. */
 .account-stat-card {
+  min-width: 0;
   padding: var(--nymbal-spacing-md, 1rem);
   background-color: #fafafa;
   border: 1px solid var(--nymbal-color-border, #e4e4e7);
@@ -49,6 +52,7 @@
 }
 
 .account-stat-value {
+  overflow-wrap: anywhere;
   font-size: 1.25rem;
   font-weight: var(--nymbal-font-weight-bold, 700);
   color: var(--nymbal-color-primary, #18181b);

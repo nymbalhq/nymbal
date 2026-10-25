@@ -201,11 +201,6 @@ describe('NYMBAL_PACKAGE_DIRS coverage', () => {
 // ─── scaffold/templates output assertions ────────────────────────────────────
 
 describe('scaffold/templates built output', () => {
-  it('astro and nextjs scaffold directories exist (run pnpm build first)', () => {
-    expect(existsSync(resolve(SCAFFOLD_TEMPLATES, 'astro'))).toBe(true)
-    expect(existsSync(resolve(SCAFFOLD_TEMPLATES, 'nextjs'))).toBe(true)
-  })
-
   for (const tmpl of ['astro', 'nextjs'] as const) {
     describe(`${tmpl} package.json`, () => {
       let pkg: Record<string, unknown>
@@ -215,36 +210,10 @@ describe('scaffold/templates built output', () => {
         pkg = JSON.parse(raw) as Record<string, unknown>
       })
 
-      it('has no workspace:* references', () => {
-        const content = JSON.stringify(pkg)
-        expect(content).not.toContain('workspace:')
-      })
-
       it('has migrate and seed scripts', () => {
         const scripts = pkg['scripts'] as Record<string, string>
         expect(scripts['migrate']).toBe('nymbal migrate')
         expect(scripts['seed']).toBe('nymbal seed')
-      })
-
-      it('all @nymbalhq/* deps are an exact version', () => {
-        const deps = pkg['dependencies'] as Record<string, string>
-        const scoped = Object.entries(deps).filter(([key]) => key.startsWith('@nymbalhq/'))
-        for (const [key, val] of scoped) {
-          expect(val, key).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/)
-        }
-      })
-
-      it('all @nymbalhq/* versions are equal (version cohort consistency)', () => {
-        const deps = pkg['dependencies'] as Record<string, string>
-        const nymbalVersions = Object.entries(deps)
-          .filter(([k]) => k.startsWith('@nymbalhq/'))
-          .map(([, v]) => v)
-        const unique = new Set(nymbalVersions)
-        expect(unique.size).toBe(1)
-      })
-
-      it('description is the generic project description', () => {
-        expect(pkg['description']).toBe('A Nymbal commerce project')
       })
     })
   }

@@ -18,13 +18,19 @@ import { expect, test } from '../support/fixtures'
 // product, so its stock moves only by what the test does. The order is read back through the API, never confirmed by
 // the test.
 
+interface PlacedOrder {
+  status: string
+  subtotalMinor: number
+  lineItems: Array<{ variantId: string; qty: number; lineSubtotalMinor: number }>
+}
+
 const email = (tag: string, trigger = '') =>
   `e2e-checkout-${tag}-${randomUUID().slice(0, 8)}${trigger}@e2e.test`
 
 test.describe('A checkout that completes', () => {
-  // Kills: a confirmation page that says confirmed for a pending order, a cart left full after payment, and stock
-  // moved twice or not at all.
-  test('AC-7: a guest checkout ends on /order/<n> headed "Order confirmed" with status confirmed; the API says confirmed, the cart is empty and the stock fell by the one unit bought', async ({
+  // Kills: a confirmation page that says confirmed for a pending order, an order holding other lines than the cart's
+  // or a subtotal that is not the sum of its lines, a cart left full after payment, and stock moved twice or not at all.
+  test('AC-7: a guest checkout ends on /order/<n> headed "Order confirmed" with status confirmed; the API says confirmed, holds the one unit bought at a subtotal equal to its lines, the cart is empty and the stock fell by that unit', async ({
     page,
     request,
   }) => {
@@ -39,8 +45,17 @@ test.describe('A checkout that completes', () => {
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)
 
-    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
-    expect(((await order.json()) as { data: { status: string } }).data.status).toBe('confirmed')
+    const res = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
+    expect(res.status(), `GET /api/orders/${orderNumber}: ${await res.text()}`).toBe(200)
+    const order = ((await res.json()) as { data: PlacedOrder }).data
+    expect(order.status).toBe('confirmed')
+    // The order holds the one unit bought, and its subtotal is the sum of its lines.
+    expect(order.lineItems.map((line) => [line.variantId, line.qty])).toEqual([
+      [product.variantId, 1],
+    ])
+    expect(order.subtotalMinor).toBe(
+      order.lineItems.reduce((sum, line) => sum + line.lineSubtotalMinor, 0),
+    )
     const cart = await page.request.get(`${API_URL}/api/cart`)
     expect(((await cart.json()) as { data: { items: unknown[] } }).data.items).toHaveLength(0)
     await expect.poll(() => servedStock(request, product), { timeout: 10_000 }).toBe(before - 1)

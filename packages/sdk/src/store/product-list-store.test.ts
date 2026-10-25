@@ -34,12 +34,6 @@ function makeAdapter(nextCursor: string | null = null, items = [emptyItem]): Com
 }
 
 describe('ProductListStore', () => {
-  it('initial state is empty', () => {
-    const store = createProductListStore(makeAdapter())
-    expect(store.getState().products).toHaveLength(0)
-    expect(store.getState().loading).toBe(false)
-  })
-
   it('load fetches products and sets state', async () => {
     const store = createProductListStore(makeAdapter())
     await store.load()
@@ -70,11 +64,17 @@ describe('ProductListStore', () => {
     expect(store.getState().pagination.hasMore).toBe(false)
   })
 
-  it('loadMore does nothing when hasMore is false', async () => {
+  it('loadMore does nothing when hasMore is false: the products stay the first page', async () => {
     const adapter = makeAdapter(null)
     const store = createProductListStore(adapter)
     await store.load()
+    const firstPage = store.getState().products.map((p) => p.id)
+    vi.mocked(adapter.products.list).mockResolvedValueOnce({
+      items: [{ ...emptyItem, id: 'p2', slug: 'p2' }],
+      nextCursor: null,
+    })
     await store.loadMore()
+    expect(store.getState().products.map((p) => p.id)).toEqual(firstPage)
     expect(adapter.products.list).toHaveBeenCalledTimes(1)
   })
 
@@ -123,11 +123,6 @@ describe('ProductListStore', () => {
       field: 'category',
       values: [{ value: 'apparel', count: 2 }],
     })
-  })
-
-  it('initial state has error null', () => {
-    const store = createProductListStore(makeAdapter())
-    expect(store.getState().error).toBeNull()
   })
 
   it('applyFilter preserves previous products while filtered load is in flight', async () => {

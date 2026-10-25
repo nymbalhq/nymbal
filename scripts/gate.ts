@@ -33,7 +33,10 @@ import {
   EXCLUDED_PREFIXES,
   type FileCensus,
   journeyViolations,
+  refusalMessage,
+  refusedTests,
   TEST_FILE,
+  testKeys,
   type Totals,
 } from './test-census'
 
@@ -699,6 +702,45 @@ function judgedTestFiles(root: string, base: string): string[] {
   })
 }
 
+/**
+ * The refused shapes (`test-census.ts`, R1 to R3) among the tests the change adds or rewrites in the judged files.
+ * A test whose body is in the base version of its file (or of the file it moved from) is old and not judged, so a
+ * file can gain a test without first paying off its debt. A presence-only test the journey rule has already named
+ * is not named twice.
+ */
+function refusedViolations(
+  root: string,
+  base: string,
+  judged: string[],
+  named: string[],
+): string[] {
+  const moves = moveSources(git(root, ['diff', '--name-status', '-M', base]))
+  const basePathOf = (path: string): string | null =>
+    moves.has(path) ? (moves.get(path) ?? null) : path
+  const basePaths = judged.map(basePathOf).filter((p): p is string => p !== null)
+  const blobs = basePaths.length > 0 ? blobsAt(root, base, basePaths) : new Map<string, string>()
+  const violations: string[] = []
+  for (const path of judged) {
+    const absolute = resolve(root, path)
+    if (!existsSync(absolute)) continue
+    const basePath = basePathOf(path)
+    const baseSource = basePath === null ? undefined : blobs.get(basePath)
+    const old = new Set(
+      baseSource === undefined || basePath === null ? [] : testKeys(baseSource, basePath),
+    )
+    for (const test of refusedTests(readFileSync(absolute, 'utf8'), path)) {
+      if (old.has(test.key)) continue
+      if (
+        test.kind === 'R1' &&
+        named.some((line) => line.startsWith(`${path}: test "${test.name}": `))
+      )
+        continue
+      violations.push(refusalMessage(path, test))
+    }
+  }
+  return violations
+}
+
 function censusTrendStep(root: string, base: string): number {
   // Against the empty tree every test file would be new, and old debt in each would fail a change that made none.
   if (base === emptyTree(root)) {
@@ -712,6 +754,7 @@ function censusTrendStep(root: string, base: string): number {
     if (existsSync(absolute))
       violations.push(...journeyViolations(readFileSync(absolute, 'utf8'), path, root))
   }
+  violations.push(...refusedViolations(root, base, touched, violations))
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
   process.stdout.write(
     `census trend against ${base.slice(0, 9)}: ${touched.length} test file(s) touched\n` +

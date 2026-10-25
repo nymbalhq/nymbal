@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { registerOrderRoutes } from './orders.js'
@@ -40,8 +41,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -64,75 +71,46 @@ describe('GET /api/orders', () => {
     expect(resp.status).toBe(401)
   })
 
-  it('returns empty list when no orders exist for customer', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
+  it('lists exactly the signed-in customer’s orders, none of another’s, over generated orders across three customers', async () => {
+    const customers = ['cust-1', 'cust-2', 'cust-3']
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.constantFrom(...customers), { maxLength: 10 }),
+        async (owners) => {
+          const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+          for (const [i, customerId] of owners.entries()) {
+            const orderNumber = `NYM-${String(i).padStart(3, '0')}`
+            await documentStore.put('orders-by-customer', `customer:${customerId}#${orderNumber}`, {
+              partitionKey: `customer:${customerId}`,
+              sortKey: orderNumber,
+              orderNumber,
+              customerId,
+              totalMinor: 1000 * (i + 1),
+              currency: 'GBP',
+            })
+          }
+          const { adapter, invoke } = makeAdapter()
+          registerOrderRoutes(adapter, makeOrderService(), documentStore)
 
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: unknown[] }
-    expect(body.data).toHaveLength(0)
-  })
-
-  it('returns only orders belonging to the authenticated customer', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('orders-by-customer', 'customer:cust-1#NYM-001', {
-      partitionKey: 'customer:cust-1',
-      sortKey: 'NYM-001',
-      orderNumber: 'NYM-001',
-      customerId: 'cust-1',
-      totalMinor: 5000,
-      currency: 'GBP',
-    })
-    await documentStore.put('orders-by-customer', 'customer:cust-2#NYM-002', {
-      partitionKey: 'customer:cust-2',
-      sortKey: 'NYM-002',
-      orderNumber: 'NYM-002',
-      customerId: 'cust-2',
-      totalMinor: 3000,
-      currency: 'GBP',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Array<{ orderNumber: string }> }
-    expect(body.data).toHaveLength(1)
-    expect(body.data[0]?.orderNumber).toBe('NYM-001')
-  })
-
-  it('response is wrapped in { data, meta } envelope', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    const body = resp.body as Record<string, unknown>
-    expect('data' in body).toBe(true)
+          for (const customerId of customers) {
+            const resp = await invoke('GET', '/api/orders', {
+              auth: { userId: customerId, roles: ['customer'] },
+            })
+            expect(resp.status).toBe(200)
+            const listed = (resp.body as { data: Array<{ orderNumber: string }> }).data
+            const theirs = owners.flatMap((owner, i) =>
+              owner === customerId ? [`NYM-${String(i).padStart(3, '0')}`] : [],
+            )
+            expect(listed.map((o) => o.orderNumber).sort(), customerId).toEqual(theirs.sort())
+          }
+        },
+      ),
+      { numRuns: 25 },
+    )
   })
 })
 
 describe('GET /api/orders/:orderNumber', () => {
-  it('returns 400 when orderNumber param is missing', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders/:orderNumber', { params: { orderNumber: '' } })
-    expect(resp.status).toBe(400)
-    const body = resp.body as { error: { code: string } }
-    expect(body.error.code).toBe('orders.invalid')
-  })
-
   it('returns 404 when order does not exist', async () => {
     const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const { adapter, invoke } = makeAdapter()

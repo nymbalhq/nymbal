@@ -14,7 +14,7 @@ const block = stack(fileURLToPath(new URL('.', import.meta.url)))
 process.env.NYMBAL_STACK_SLOT = String(block.slot)
 const local = (port: number): string => `http://localhost:${port}`
 
-// The swap: `astro-custom` and `nextjs-custom` run the same journeys against the fixture store in
+// The swap: `astro-custom` and `nextjs-custom` run the journeys tagged @capabilities against the fixture store in
 // tests/e2e/fixtures/custom-providers (search and payments `custom`, injected through its `adapters` export), on an API
 // of its own (3011 in slot 0) and a storefront of their own, so a custom run never reaches the native store. Each is
 // its own invocation (NYMBAL_E2E_TARGET), as gate.ts runs one per target.
@@ -270,12 +270,13 @@ export default defineConfig({
         baseURL: nextjsURL,
       },
     },
-    // The same journey files on the fixture store. Visual snapshots are keyed by project and shot on the native
-    // store, so the custom runs leave them out, and the rebuild journey (@rebuild) replays the native store's own.
+    // The fixture store with custom providers: only the journeys tagged @capabilities, whose assertions branch on
+    // what GET /api/capabilities reports, which is what the providers change. Every other journey runs on the native
+    // store alone.
     {
       name: 'astro-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch|@rebuild|@override/,
+      grep: /@capabilities/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
@@ -284,7 +285,7 @@ export default defineConfig({
     {
       name: 'nextjs-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch|@rebuild|@override/,
+      grep: /@capabilities/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,

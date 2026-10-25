@@ -177,7 +177,7 @@ test.describe('Browse: sort', () => {
     await expect(page.getByTestId('sort-dropdown')).toHaveValue(defaultSort)
   })
 
-  test('AC-4: the dropdown offers exactly catalog.sortKeys from GET /api/capabilities, in that order, on /products and on a category page', async ({
+  test('AC-4: the dropdown offers exactly catalog.sortKeys from GET /api/capabilities, in that order, on /products and on a category page @capabilities', async ({
     page,
     request,
   }) => {
@@ -222,7 +222,7 @@ test.describe('Browse: sort', () => {
     }).toPass({ timeout: GRID_TIMEOUT })
   })
 
-  test('AC-7: choosing each key catalog.sortKeys offers renders the grid in the order GET /api/products?sort=<key> returns', async ({
+  test('AC-7: choosing each key catalog.sortKeys offers renders the grid in the order GET /api/products?sort=<key> returns @capabilities', async ({
     page,
     request,
   }) => {
@@ -301,7 +301,8 @@ test.describe('Browse: sort', () => {
     const res = await request.get(`${API_URL}/api/categories`)
     expect(res.status()).toBe(200)
     const categories = ((await res.json()) as { data: Array<{ slug: string }> }).data
-    const total = (await knownSlugs(request)).size
+    const known = await knownSlugs(request)
+    const total = known.size
     // The largest category that is still a strict part of the catalogue, so leaving it shows.
     let chosen: { slug: string; size: number } | null = null
     for (const { slug } of categories) {
@@ -319,13 +320,18 @@ test.describe('Browse: sort', () => {
       await expect(async () => {
         const grid = await gridSlugs(page)
         const inCategory = await apiOrder(request, { category, sort: key })
+        // Only the products that existed when the test began are compared: another journey's product can change
+        // the category between the grid's read and this one.
         expect(
-          grid.filter((slug) => !inCategory.includes(slug)),
+          grid.filter((slug) => known.has(slug) && !inCategory.includes(slug)),
           key,
         ).toEqual([])
-        expect(grid.length, key).toBe(Math.min(PAGE, inCategory.length))
+        const knownInCategory = inCategory.filter((slug) => known.has(slug))
+        expect(grid.length, key).toBeLessThanOrEqual(PAGE)
+        expect(grid.length, key).toBeGreaterThanOrEqual(Math.min(PAGE, knownInCategory.length))
         // The sorted grid, not the page as first rendered.
-        expect(grid, key).toEqual(inCategory.slice(0, grid.length))
+        const { shown, expected } = knownPrefix(grid, inCategory, known)
+        expect(shown, key).toEqual(expected)
       }).toPass({ timeout: GRID_TIMEOUT })
     }
   })

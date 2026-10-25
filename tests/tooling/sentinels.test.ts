@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   appendFileSync,
@@ -19,7 +19,7 @@ import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseSentinel, run, touchedPaths } from '../../scripts/sentinels'
 
-// The sentinel runner: AC-12 to AC-19, AC-22 to AC-24 and AC-27.
+// The sentinel runner: AC-6, AC-8, AC-12 to AC-19, AC-22 to AC-24 and AC-27.
 // AC-19 is anchored by content (no line numbers asserted), and tests check against a fixture.
 // AC-13 to AC-18 build a throwaway git repo per test: a tiny module, a `node --test` suite that appends to a log
 // outside the repo every time it runs, and sentinel files committed under `sentinels/`.
@@ -924,5 +924,107 @@ describe('AC-27: paths a patch touches', () => {
 
     expect(existsSync(join(repo.root, 'notes.txt')), 'untracked notes.txt survives').toBe(true)
     expect(readFileSync(join(repo.root, 'db/schema.sql'), 'utf8')).toBe(SQL)
+  })
+})
+
+// The CLI's exit status (AC-6) and its --only list (AC-15), on the same throwaway repo the cases above build: I001
+// breaks `add`, which the suite tests (caught); I002 changes `untested`, which no test reads (missed).
+
+async function cli(
+  repo: TempRepo,
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      join(REPO, 'node_modules/.bin/tsx'),
+      ['scripts/sentinels.ts', '--root', repo.root, '--dir', repo.dir, '--suite', SUITE, ...args],
+      { cwd: REPO, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        const code = error === null ? 0 : typeof error.code === 'number' ? error.code : -1
+        resolve({ code, stdout, stderr })
+      },
+    )
+  })
+}
+
+/** I001 (caught), and I002 (missed) when asked; the control is red when the suite expects the wrong sum. */
+function exitRepo(opts: { missed: boolean; controlRed?: boolean }): TempRepo {
+  const repo = makeRepo({ green: opts.controlRed !== true })
+  writeSentinel(repo, { id: 'I001', kind: 'injected', patch: breakAdd(repo) })
+  if (opts.missed)
+    writeSentinel(repo, { id: 'I002', kind: 'injected', patch: changeUntested(repo) })
+  commitAll(repo.root, 'sentinels')
+  return repo
+}
+
+const suiteRuns = (repo: TempRepo): number => readLog(repo).split('\n').filter(Boolean).length
+
+describe('AC-6: a missed sentinel fails the run', () => {
+  it('AC-6: a missed injected sentinel exits 1 after printing the report, as text and as --json', async () => {
+    const [text, json] = await Promise.all([
+      cli(exitRepo({ missed: true }), []),
+      cli(exitRepo({ missed: true }), ['--json']),
+    ])
+
+    expect(text.stdout, text.stderr).toMatch(/\| I002 \| injected \| missed \|/)
+    expect(text.stdout).toContain('Injected: 1/2 caught')
+    expect(text.code, `${text.stdout}\n${text.stderr}`).toBe(1)
+
+    const report = JSON.parse(json.stdout) as Report
+    const missed = report.sentinels.filter((s) => s.status === 'missed').map((s) => s.id)
+    expect(missed).toEqual(['I002'])
+    expect(report.summary.injected.caught).toBeLessThan(report.summary.injected.total)
+    expect(json.code, json.stdout).toBe(1)
+  })
+
+  it('AC-6: the exit status is 0 iff the control is green and every injected sentinel is caught', async () => {
+    const CASES = [
+      { name: 'every injected sentinel caught', missed: false },
+      { name: 'one injected sentinel missed', missed: true },
+      { name: 'the control red', missed: false, controlRed: true },
+    ]
+    const results = await Promise.all(CASES.map((c) => cli(exitRepo(c), [])))
+    const detail = results
+      .map((r, i) => `${CASES[i]!.name}: exit ${r.code}\n${r.stdout}${r.stderr}`)
+      .join('\n')
+
+    expect(results[0]!.stdout, 'the all-caught run prints its report').toContain(
+      'Injected: 1/1 caught',
+    )
+    expect(
+      results.map((r) => r.code === 0),
+      detail,
+    ).toEqual(CASES.map((c) => c.controlRed !== true && !c.missed))
+    for (const [i, r] of results.entries()) {
+      expect([0, 1], `${CASES[i]!.name} exits 0 or 1, never a crash code`).toContain(r.code)
+    }
+  })
+})
+
+describe('AC-15: sentinels.ts --only takes a list', () => {
+  /** Three sentinels that each break `add`, so each would run the suite once if selected. */
+  function threeRepo(): TempRepo {
+    const repo = makeRepo({ green: true })
+    for (const id of ['I101', 'S001', 'I102']) {
+      writeSentinel(repo, { id, kind: 'injected', patch: breakAdd(repo) })
+    }
+    commitAll(repo.root, 'sentinels')
+    return repo
+  }
+
+  it('AC-15: --only I101,S001 runs exactly those two; --only I101,NOPE exits 1 naming NOPE and runs nothing', async () => {
+    const listed = threeRepo()
+    const ran = await cli(listed, ['--only', 'I101,S001', '--json'])
+    expect(ran.code, ran.stderr).toBe(0)
+    const report = JSON.parse(ran.stdout) as Report
+    expect(report.sentinels.map((s) => s.id).sort()).toEqual(['I101', 'S001'])
+    // The control plus one suite run per selected sentinel: I102's patch was never applied.
+    expect(suiteRuns(listed)).toBe(report.sentinels.length + 1)
+
+    const typo = threeRepo()
+    const bad = await cli(typo, ['--only', 'I101,NOPE', '--json'])
+    expect(bad.code).toBe(1)
+    expect(bad.stderr).toMatch(/\bNOPE\b/)
+    expect(suiteRuns(typo)).toBe(0)
   })
 })

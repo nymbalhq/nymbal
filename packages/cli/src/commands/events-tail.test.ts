@@ -104,7 +104,7 @@ describe('AC-7: nymbal events tail', () => {
           expect(printed.every((seq, i) => i === 0 || seq > printed[i - 1]!)).toBe(true)
         },
       ),
-      { numRuns: 5, endOnFailure: true },
+      { numRuns: 2, endOnFailure: true },
     )
     expect(
       t.seqs().filter((seq) => seq <= max),

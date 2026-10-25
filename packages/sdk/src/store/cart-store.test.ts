@@ -5,8 +5,14 @@ import type { Cart } from '@nymbalhq/types'
 
 function makeCart(overrides?: Partial<Cart>): Cart {
   return {
-    token: 'cart-1', customerId: null, items: [], subtotalMinor: 0,
-    currency: 'GBP', expiresAt: '', createdAt: '', updatedAt: '',
+    token: 'cart-1',
+    customerId: null,
+    items: [],
+    subtotalMinor: 0,
+    currency: 'GBP',
+    expiresAt: '',
+    createdAt: '',
+    updatedAt: '',
     ...overrides,
   }
 }
@@ -14,7 +20,23 @@ function makeCart(overrides?: Partial<Cart>): Cart {
 function makeAdapter(overrides?: Partial<CommerceAdapter['cart']>): CommerceAdapter {
   const cart: CommerceAdapter['cart'] = {
     get: vi.fn().mockResolvedValue(makeCart()),
-    addItem: vi.fn().mockResolvedValue(makeCart({ items: [{ variantId: 'v1', productId: 'p1', productName: 'P', variantName: 'D', priceMinor: 1000, qty: 1, imageUrl: '' }], subtotalMinor: 1000, itemCount: 1 } as unknown as Partial<Cart>)),
+    addItem: vi.fn().mockResolvedValue(
+      makeCart({
+        items: [
+          {
+            variantId: 'v1',
+            productId: 'p1',
+            productName: 'P',
+            variantName: 'D',
+            priceMinor: 1000,
+            qty: 1,
+            imageUrl: '',
+          },
+        ],
+        subtotalMinor: 1000,
+        itemCount: 1,
+      } as unknown as Partial<Cart>),
+    ),
     removeItem: vi.fn().mockResolvedValue(makeCart()),
     updateQuantity: vi.fn().mockResolvedValue(makeCart()),
     clear: vi.fn().mockResolvedValue(makeCart()),
@@ -24,18 +46,24 @@ function makeAdapter(overrides?: Partial<CommerceAdapter['cart']>): CommerceAdap
 }
 
 describe('CartStore', () => {
-  it('initial state has empty items', () => {
-    const store = createCartStore(makeAdapter())
-    expect(store.getState().items).toEqual([])
-    expect(store.getState().itemCount).toBe(0)
-  })
-
   it('load calls adapter.cart.get and updates state', async () => {
     const adapter = makeAdapter({
-      get: vi.fn().mockResolvedValue(makeCart({
-        items: [{ variantId: 'v1', productId: 'p1', productName: 'P', variantName: 'D', priceMinor: 1000, qty: 2, imageUrl: '' }],
-        subtotalMinor: 2000,
-      })),
+      get: vi.fn().mockResolvedValue(
+        makeCart({
+          items: [
+            {
+              variantId: 'v1',
+              productId: 'p1',
+              productName: 'P',
+              variantName: 'D',
+              priceMinor: 1000,
+              qty: 2,
+              imageUrl: '',
+            },
+          ],
+          subtotalMinor: 2000,
+        }),
+      ),
     })
     const store = createCartStore(adapter)
     await store.load()
@@ -72,18 +100,57 @@ describe('CartStore', () => {
     expect(store.getState().error).toBe('out of stock')
   })
 
-  it('removeItem calls adapter and updates state', async () => {
-    const adapter = makeAdapter()
+  it('removeItem leaves the cart the adapter answers, one line fewer, with the item count of its lines', async () => {
+    const line = (variantId: string, qty: number) => ({
+      variantId,
+      productId: 'p1',
+      productName: 'P',
+      variantName: 'D',
+      priceMinor: 1000,
+      qty,
+      imageUrl: '',
+    })
+    const adapter = makeAdapter({
+      get: vi.fn().mockResolvedValue(makeCart({ items: [line('v1', 1), line('v2', 2)] })),
+      removeItem: vi.fn(async (variantId: string) =>
+        makeCart({
+          items: [line('v1', 1), line('v2', 2)].filter((l) => l.variantId !== variantId),
+        }),
+      ),
+    })
     const store = createCartStore(adapter)
+    await store.load()
+    const before = store.getState().items.length
     await store.removeItem('v1')
-    expect(adapter.cart.removeItem).toHaveBeenCalledWith('v1')
+    expect(store.getState().items.map((l) => l.variantId)).toEqual(['v2'])
+    expect(store.getState().items.length).toBe(before - 1)
+    expect(store.getState().itemCount).toBe(2)
   })
 
-  it('updateQuantity calls adapter', async () => {
-    const adapter = makeAdapter()
+  it('updateQuantity leaves the line at the quantity the adapter answers, and the item count follows it', async () => {
+    const adapter = makeAdapter({
+      updateQuantity: vi.fn(async (variantId: string, qty: number) =>
+        makeCart({
+          items: [
+            {
+              variantId,
+              productId: 'p1',
+              productName: 'P',
+              variantName: 'D',
+              priceMinor: 1000,
+              qty,
+              imageUrl: '',
+            },
+          ],
+        }),
+      ),
+    })
     const store = createCartStore(adapter)
     await store.updateQuantity('v1', 3)
-    expect(adapter.cart.updateQuantity).toHaveBeenCalledWith('v1', 3)
+    expect(store.getState().items.map((l) => [l.variantId, l.qty])).toEqual([['v1', 3]])
+    expect(store.getState().itemCount).toBe(
+      store.getState().items.reduce((sum, l) => sum + l.qty, 0),
+    )
   })
 
   it('clear calls adapter and resets items', async () => {
@@ -94,19 +161,46 @@ describe('CartStore', () => {
     expect(store.getState().items).toHaveLength(0)
   })
 
-  it('subscribe listener is notified on state change', async () => {
-    const adapter = makeAdapter()
+  it('a subscriber reads the loaded cart when it is notified', async () => {
+    const adapter = makeAdapter({
+      get: vi.fn().mockResolvedValue(
+        makeCart({
+          items: [
+            {
+              variantId: 'v1',
+              productId: 'p1',
+              productName: 'P',
+              variantName: 'D',
+              priceMinor: 1000,
+              qty: 2,
+              imageUrl: '',
+            },
+          ],
+          subtotalMinor: 2000,
+        }),
+      ),
+    })
     const store = createCartStore(adapter)
-    const listener = vi.fn()
-    store.subscribe(listener)
+    const seen: number[] = []
+    store.subscribe(() => seen.push(store.getState().itemCount))
     await store.load()
-    expect(listener).toHaveBeenCalled()
+    expect(seen[seen.length - 1]).toBe(2)
     store.destroy()
   })
 
   it('round-trip: addItem then removeItem returns cart to empty state', async () => {
     const cartWithItem = makeCart({
-      items: [{ variantId: 'v1', productId: 'p1', productName: 'P', variantName: 'D', priceMinor: 1000, qty: 1, imageUrl: '' }],
+      items: [
+        {
+          variantId: 'v1',
+          productId: 'p1',
+          productName: 'P',
+          variantName: 'D',
+          priceMinor: 1000,
+          qty: 1,
+          imageUrl: '',
+        },
+      ],
       subtotalMinor: 1000,
     })
     const emptyCart = makeCart({ items: [], subtotalMinor: 0 })

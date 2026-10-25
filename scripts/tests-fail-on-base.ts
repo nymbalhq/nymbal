@@ -205,7 +205,7 @@ function runCommand(cwd: string, command: string, session: Session): Promise<Sui
 }
 
 /** The verdict a base run gives: no test executed is no judgement, else its exit code decides. */
-function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
+export function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
   // A shell reports a child killed by signal n as 128 + n.
   const bySignal = run.signal !== null || (run.status !== null && run.status > 128)
   if (bySignal) {

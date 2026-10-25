@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
 import { cliEnv, closedPort, runCli, type CliRun } from '../../../../tests/support/doctor.js'
@@ -163,40 +162,31 @@ describe('AC-7: nymbal security:*', () => {
     ).toEqual([])
   }, 60_000)
 
-  it('AC-7: over generated tokens, no command prints the token in stdout or stderr, whether it succeeds, is refused (401), cannot reach the API or fails validation', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.stringMatching(/^[A-Za-z0-9_-]{40}$/), async (token) => {
-        const dead = `http://127.0.0.1:${await closedPort()}/client/v4`
-        const outcomes = [
-          project({ apiBase: fake.url, zoneId: zone('pro', token), token }),
-          project({ apiBase: fake.url, zoneId: zone('pro', `${token}-other`), token }),
-          project({ apiBase: dead, zoneId: zone('pro', token), token }),
-          project({
-            apiBase: fake.url,
-            zoneId: zone('free', token),
-            token,
-            rateLimit: {
-              '/api/auth/login': { requests: 10, window: '1m', action: 'throttle' },
-              '/api/auth/register': { requests: 10, window: '1m', action: 'block' },
-            },
-          }),
-        ]
-        const runs = await Promise.all(
-          outcomes.flatMap((p) => COMMANDS.map((args) => cli(p, args))),
-        )
-        expect(runs).toHaveLength(outcomes.length * COMMANDS.length)
-        for (const run of runs) {
-          expect(run.stdout).not.toContain(token)
-          expect(run.stderr).not.toContain(token)
-        }
-        // Each outcome really happened: the refused and unreachable projects never exit 0, and the invalid one's
-        // apply is refused as a config error.
-        const n = COMMANDS.length
-        expect(runs.slice(n, 3 * n).filter((r) => r.code === 0)).toEqual([])
-        expect(runs[3 * n + COMMANDS.findIndex(([c]) => c === 'security:apply')]?.code).toBe(2)
+  it('AC-7: no command prints a distinctive token in stdout or stderr, whether it succeeds, is refused (401), cannot reach the API or fails validation', async () => {
+    // 40 characters of the token alphabet, unlike anything the CLI prints on its own.
+    const token = 'cf-Tok_Zq81Hv-Wm4Ps7Nx2Lb9Rc5Ty3Ka6Jd0Fg'
+    const dead = `http://127.0.0.1:${await closedPort()}/client/v4`
+    const outcomes = [
+      project({ apiBase: fake.url, zoneId: zone('pro', token), token }),
+      project({ apiBase: fake.url, zoneId: zone('pro', `${token}-other`), token }),
+      project({ apiBase: dead, zoneId: zone('pro', token), token }),
+      project({
+        apiBase: fake.url,
+        zoneId: zone('free', token),
+        token,
+        rateLimit: {
+          '/api/auth/login': { requests: 10, window: '1m', action: 'throttle' },
+          '/api/auth/register': { requests: 10, window: '1m', action: 'block' },
+        },
       }),
-      // Each run spawns the CLI 24 times; a shrink of the token would only repeat that.
-      { numRuns: 2, endOnFailure: true },
-    )
-  }, 120_000)
+    ]
+    const runs = await Promise.all(outcomes.flatMap((p) => COMMANDS.map((args) => cli(p, args))))
+    expect(runs).toHaveLength(outcomes.length * COMMANDS.length)
+    expect(runs.filter((run) => `${run.stdout}\n${run.stderr}`.includes(token))).toEqual([])
+    // Each outcome really happened: the refused and unreachable projects never exit 0, and the invalid one's apply
+    // is refused as a config error.
+    const n = COMMANDS.length
+    expect(runs.slice(n, 3 * n).filter((r) => r.code === 0)).toEqual([])
+    expect(runs[3 * n + COMMANDS.findIndex(([c]) => c === 'security:apply')]?.code).toBe(2)
+  }, 60_000)
 })

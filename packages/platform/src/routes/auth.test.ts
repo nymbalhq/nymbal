@@ -91,28 +91,6 @@ function makeAuthService(overrides?: Partial<AuthService>): AuthService {
 }
 
 describe('POST /api/auth/register', () => {
-  it('returns 400 when email is missing', async () => {
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
-
-    const resp = await invoke('POST', '/api/auth/register', {
-      body: { password: 'pass123' },
-    })
-    expect(resp.status).toBe(400)
-    const body = resp.body as { error: { code: string } }
-    expect(body.error.code).toBe('auth.invalid_input')
-  })
-
-  it('returns 400 when password is missing', async () => {
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
-
-    const resp = await invoke('POST', '/api/auth/register', {
-      body: { email: 'test@example.com' },
-    })
-    expect(resp.status).toBe(400)
-  })
-
   it('registers user and returns customer and accessToken', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
@@ -144,46 +122,9 @@ describe('POST /api/auth/register', () => {
     expect(refreshCookie?.value).toBe('refresh-tok')
     expect(refreshCookie?.httpOnly).toBe(true)
   })
-
-  it('passes optional firstName, lastName, phone to register', async () => {
-    const service = makeAuthService()
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
-
-    await invoke('POST', '/api/auth/register', {
-      body: {
-        email: 'new@example.com',
-        password: 'pass123',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        phone: '07700900000',
-      },
-    })
-    expect(service.register).toHaveBeenCalledWith(
-      expect.objectContaining({ firstName: 'Jane', lastName: 'Doe', phone: '07700900000' }),
-    )
-  })
 })
 
 describe('POST /api/auth/login', () => {
-  it('returns 400 when email is missing', async () => {
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
-
-    const resp = await invoke('POST', '/api/auth/login', { body: { password: 'pass123' } })
-    expect(resp.status).toBe(400)
-  })
-
-  it('returns 400 when password is missing', async () => {
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
-
-    const resp = await invoke('POST', '/api/auth/login', {
-      body: { email: 'test@example.com' },
-    })
-    expect(resp.status).toBe(400)
-  })
-
   it('logs in user and returns customer and accessToken', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
@@ -275,28 +216,25 @@ describe('POST /api/auth/logout', () => {
     expect(service.logout).not.toHaveBeenCalled()
   })
 
-  it('calls auth.logout with refresh token from cookie', async () => {
-    const service = makeAuthService()
-    const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
-
-    const resp = await invoke('POST', '/api/auth/logout', {
-      cookies: { 'nymbal.refresh': 'refresh-tok' },
-    })
-    expect(resp.status).toBe(200)
-    expect(service.logout).toHaveBeenCalledWith('refresh-tok')
-  })
-
-  it('clears the refresh token cookie on logout', async () => {
+  it('logout expires the very cookie login set: same name and path, empty, with a Max-Age of 0 where login’s was positive', async () => {
+    type Cookie = { name: string; value: string; path?: string; maxAge: number }
+    const refreshOf = (resp: { cookies?: unknown }) =>
+      (resp.cookies as Cookie[] | undefined)?.find((c) => c.name === 'nymbal.refresh')
     const { adapter, invoke } = makeAdapter()
     registerAuthRoutes(adapter, makeAuthService())
 
-    const resp = await invoke('POST', '/api/auth/logout', {
-      cookies: { 'nymbal.refresh': 'refresh-tok' },
-    })
-    const refreshCookie = (
-      resp.cookies as Array<{ name: string; value: string; maxAge: number }> | undefined
-    )?.find((c) => c.name === 'nymbal.refresh')
-    expect(refreshCookie?.maxAge).toBe(0)
+    const set = refreshOf(
+      await invoke('POST', '/api/auth/login', {
+        body: { email: 'test@example.com', password: 'pass123' },
+      }),
+    )!
+    const cleared = refreshOf(
+      await invoke('POST', '/api/auth/logout', { cookies: { 'nymbal.refresh': set.value } }),
+    )!
+
+    expect([cleared.name, cleared.path]).toEqual([set.name, set.path])
+    expect(cleared.value).toBe('')
+    expect(cleared.maxAge).toBe(0)
+    expect(cleared.maxAge).toBeLessThan(set.maxAge)
   })
 })

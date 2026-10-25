@@ -1,4 +1,4 @@
-import { type ExecFileException, execFile, execFileSync } from 'node:child_process'
+import { type ExecFileException, execFile, execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   mkdirSync,
@@ -15,6 +15,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
+import { verdictOf } from '../../scripts/tests-fail-on-base'
 
 // AC-6 and AC-13 to AC-15: `scripts/tests-fail-on-base.ts <base> --root <repo> --suite <command>`. Each test builds a
 // throwaway git repo: a tiny module, tests, a base commit and a change that adds tests. The script runs
@@ -24,7 +25,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
 const SCRIPT = join(REPO, 'scripts/tests-fail-on-base.ts')
-const VITEST = join(REPO, 'node_modules/.bin/vitest')
 const SUITE = 'node --test'
 
 const created: string[] = []
@@ -351,85 +351,54 @@ describe('AC-13: tests-fail-on-base resolves workspace packages from the base co
 })
 
 describe('AC-14: a base run that executes no test is "not judged"', () => {
-  function vitestTest(name: string, assertion: string): string {
-    return [
-      "import { expect, test } from 'vitest'",
-      `import { ${name} } from '../src/math.js'`,
-      '',
-      `test('${name}', () => {`,
-      `  ${assertion}`,
-      '})',
-      '',
-    ].join('\n')
-  }
+  // The verdict is a pure function of a run's exit status, signal and output, so the two Vitest shapes are judged from
+  // Vitest 3.2.4's own words, captured once from a repository whose only project collects test/**. The signal shape
+  // below runs the script for real.
+  const NO_FILE_COLLECTED = [
+    ' RUN  v3.2.4 /tmp/repo',
+    '',
+    'No test files found, exiting with code 1',
+    '',
+    'filter: spec/multiply-spec.test.js',
+    '',
+    '|unit| ',
+    '',
+    'include: test/**/*.test.js',
+    'exclude:  **/node_modules/**, **/dist/**',
+    '',
+  ].join('\n')
+  const NO_SUCH_PROJECT = [
+    '',
+    '⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯',
+    'Error: No projects matched the filter "specs".',
+    '    at Vitest._setServer (file:///tmp/repo/node_modules/vitest/dist/chunks/cli-api.js:9336:22)',
+    '',
+  ].join('\n')
+  const RED_SUMMARY = ' Test Files  1 failed (1)\n      Tests  1 failed (1)\n'
 
-  function vitestConfig(projects: Array<{ name: string; include: string }>): string {
-    const rows = projects.map(
-      (p) => `    { test: { name: '${p.name}', include: ['${p.include}'] } },`,
+  it('AC-14: a run that collected no file ("No test files found") is not judged, whatever its exit status', () => {
+    expect(verdictOf({ status: 1, signal: null, output: NO_FILE_COLLECTED })).toEqual({
+      verdict: 'not judged',
+      note: 'the base configuration collects no such test file',
+    })
+    // The same words below a run that did execute tests are a test's own message: the exit status decides, as for a
+    // run that never printed them.
+    const quoted = `${NO_FILE_COLLECTED}\n${RED_SUMMARY}`
+    expect(verdictOf({ status: 1, signal: null, output: quoted })).toEqual(
+      verdictOf({ status: 1, signal: null, output: RED_SUMMARY }),
     )
-    return [
-      'export default {',
-      '  test: {',
-      '    projects: [',
-      ...rows,
-      '    ],',
-      '  },',
-      '}',
-      '',
-    ].join('\n')
-  }
-
-  /** A repo tested by Vitest with one project, `unit`, over test/. */
-  function makeVitestRepo(): { root: string; base: string } {
-    const root = emptyRepo()
-    write(root, '.gitignore', 'node_modules/\n')
-    write(root, 'package.json', json({ name: 'tfob-vitest', private: true, type: 'module' }))
-    write(root, 'vitest.config.mjs', vitestConfig([{ name: 'unit', include: 'test/**/*.test.js' }]))
-    write(root, 'src/math.js', BASE_MATH)
-    write(root, 'test/add.test.js', vitestTest('add', 'expect(add(2, 3)).toBe(5)'))
-    const base = commitAll(root, 'base')
-    return { root, base }
-  }
-
-  function headWithSpecsProject(root: string): void {
-    write(root, 'src/math.js', HEAD_MATH)
-    write(
-      root,
-      'vitest.config.mjs',
-      vitestConfig([
-        { name: 'unit', include: 'test/**/*.test.js' },
-        { name: 'specs', include: 'spec/**/*.test.js' },
-      ]),
-    )
-    write(
-      root,
-      'spec/multiply-spec.test.js',
-      vitestTest('multiply', 'expect(multiply(2, 3)).toBe(6)'),
-    )
-  }
-
-  it('AC-14: a file the base configuration does not collect ("No test files found") is not judged and listed apart from the judged ones', async () => {
-    const { root, base } = makeVitestRepo()
-    headWithSpecsProject(root)
-    write(root, 'test/multiply.test.js', vitestTest('multiply', 'expect(multiply(2, 3)).toBe(6)'))
-    commitAll(root, 'head: a specs project and two tests')
-    await expectExit0(root, VITEST, ['run'])
-
-    const { out } = await runScript(root, base, `${VITEST} run`)
-
-    expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
-    expect(verdictsOf(out, 'test/multiply.test.js'), out).toEqual(['fails on base'])
+    expect(verdictOf({ status: 0, signal: null, output: quoted }).verdict).toBe('PASSES ON BASE')
   })
 
-  it('AC-14: a suite naming a project that does not exist at base is not judged', async () => {
-    const { root, base } = makeVitestRepo()
-    headWithSpecsProject(root)
-    commitAll(root, 'head: a specs project')
-    await expectExit0(root, VITEST, ['run', '--project', 'specs', 'spec/multiply-spec.test.js'])
-
-    const { out } = await runScript(root, base, `${VITEST} run --project specs`)
-
-    expect(verdictsOf(out, 'spec/multiply-spec.test.js'), out).toEqual(['not judged'])
+  it('AC-14: a suite naming a project the base does not have is not judged, through its colours', () => {
+    expect(verdictOf({ status: 1, signal: null, output: NO_SUCH_PROJECT })).toEqual({
+      verdict: 'not judged',
+      note: 'the suite names a project the base does not have',
+    })
+    const coloured = NO_SUCH_PROJECT.replace('Error:', '\x1b[31mError:\x1b[39m')
+    expect(verdictOf({ status: 1, signal: null, output: coloured })).toEqual(
+      verdictOf({ status: 1, signal: null, output: NO_SUCH_PROJECT }),
+    )
   })
 
   it('AC-14: a base run that ends by a signal is not judged', async () => {
@@ -672,6 +641,240 @@ describe('AC-23 (revised): a base that cannot install or build fails the step cl
       )
     }
     expect(status, out).not.toBe(0)
+    expect(state(root)).toEqual(before)
+  })
+})
+
+// AC-13, sentinels: rule 8 counts a sentinel. A new test file that passes on the base and is named in the `# suite:`
+// of an injected sentinel under `tests/sentinels/` is run once more, alone, with that sentinel's patch applied to the
+// head source in the temporary worktree. Failing there is the verdict `fails under sentinel <id>` and no violation;
+// passing there, or being named by no sentinel, stays PASSES ON BASE.
+
+function gitEnv(cwd: string, args: string[], env: NodeJS.ProcessEnv): string {
+  return execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+  })
+}
+
+/** Imports only what it uses: importing `multiply` from the base's math.js would fail the file on base by itself. */
+function sentinelTestFile(name: string, assertion: string, importName = 'add'): string {
+  return [
+    "import { test } from 'node:test'",
+    "import assert from 'node:assert/strict'",
+    `import { ${importName} } from '../src/math.js'`,
+    '',
+    `test('${name}', () => {`,
+    `  ${assertion}`,
+    '})',
+    '',
+  ].join('\n')
+}
+
+/** Fails on base: base has no `multiply`. */
+const MULTIPLY_TEST = 'test/multiply.test.js'
+/** Case 1: passes on base, named by I901 whose patch (add off by one) makes it fail. */
+const CAUGHT = 'test/add-zero.test.js'
+/** Case 2: passes on base, named by I902 whose patch (multiply off by one) it does not catch. */
+const NOT_CAUGHT = 'test/add-one.test.js'
+/** Case 3: passes on base, named by no sentinel (I901's patch would catch it, but I901 does not name it). */
+const UNNAMED = 'test/add-two.test.js'
+
+const CAUGHT_BY = 'I901'
+const MISSED_BY = 'I902'
+
+function sentinel(opts: { id: string; defect: string; suite: string; patch: string }): string {
+  return [
+    `# id: ${opts.id}`,
+    '# kind: injected',
+    `# defect: ${opts.defect}`,
+    '# where: src/math.js',
+    '# killed-by: the sentinel fixture',
+    `# suite: ${opts.suite}`,
+    opts.patch,
+  ].join('\n')
+}
+
+/** The patch that turns head's src/math.js into `patched`, taken from git so it applies to head exactly. */
+function patchOf(root: string, patched: string): string {
+  write(root, 'src/math.js', patched)
+  const patch = git(root, 'diff', '--', 'src/math.js')
+  git(root, 'checkout', '--', 'src/math.js')
+  return patch
+}
+
+/**
+ * A repo whose base has `add`; head adds `multiply`, its test, the given new add tests and two injected sentinels:
+ * I901 (add off by one) naming CAUGHT, I902 (multiply off by one) naming NOT_CAUGHT. Returns root, base and patches.
+ */
+function makeSentinelRepo(addTests: string[]): {
+  root: string
+  base: string
+  patches: Record<string, string>
+} {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-tfob-sentinel-')))
+  created.push(dir)
+  const root = join(dir, 'repo')
+  mkdirSync(root)
+  write(
+    root,
+    'package.json',
+    `${JSON.stringify({ name: 'tfob-sentinel-fixture', private: true, type: 'module' }, null, 2)}\n`,
+  )
+  write(root, 'src/math.js', BASE_MATH)
+  write(root, 'test/add.test.js', sentinelTestFile('add', 'assert.equal(add(2, 3), 5)'))
+  git(root, 'init', '-q', '-b', 'main')
+  git(root, 'config', 'user.email', 'tfob@example.test')
+  git(root, 'config', 'user.name', 'TFOB Test')
+  const base = commitAll(root, 'base')
+
+  write(root, 'src/math.js', HEAD_MATH)
+  commitAll(root, 'head: multiply')
+  const patches = {
+    [CAUGHT_BY]: patchOf(root, HEAD_MATH.replace('return a + b', 'return a + b + 1')),
+    [MISSED_BY]: patchOf(root, HEAD_MATH.replace('return a * b', 'return a * b + 1')),
+  }
+  write(
+    root,
+    `tests/sentinels/${CAUGHT_BY}-add-off-by-one.patch`,
+    sentinel({
+      id: CAUGHT_BY,
+      defect: 'add returns one too many',
+      suite: `${SUITE} ${CAUGHT}`,
+      patch: patches[CAUGHT_BY],
+    }),
+  )
+  write(
+    root,
+    `tests/sentinels/${MISSED_BY}-multiply-off-by-one.patch`,
+    sentinel({
+      id: MISSED_BY,
+      defect: 'multiply returns one too many',
+      suite: `${SUITE} ${NOT_CAUGHT}`,
+      patch: patches[MISSED_BY],
+    }),
+  )
+  write(
+    root,
+    MULTIPLY_TEST,
+    sentinelTestFile('multiply', 'assert.equal(multiply(2, 3), 6)', 'multiply'),
+  )
+  const bodies: Record<string, string> = {
+    [CAUGHT]: 'assert.equal(add(0, 7), 7)',
+    [NOT_CAUGHT]: 'assert.equal(add(1, 1), 2)',
+    [UNNAMED]: 'assert.equal(add(2, 5), 7)',
+  }
+  for (const file of addTests) write(root, file, sentinelTestFile(file, bodies[file] ?? ''))
+  commitAll(root, 'head: sentinels and new tests')
+  return { root, base, patches }
+}
+
+async function passes(root: string, files: string[]): Promise<boolean> {
+  return (await run('node', ['--test', ...files], { cwd: root })).status === 0
+}
+
+/**
+ * Guards the fixture: every head test is green at head; I901's patch fails CAUGHT, and would fail NOT_CAUGHT and
+ * UNNAMED too, so only the sentinel that names a file may judge it; I902's patch leaves NOT_CAUGHT green; and I901's
+ * patch does not apply to the base's src/math.js, so only a run on the head source can be caught by it.
+ */
+async function expectFixture(
+  root: string,
+  base: string,
+  patches: Record<string, string>,
+  added: string[],
+): Promise<void> {
+  expect(await passes(root, []), 'head is green').toBe(true)
+  const under = async (id: string, files: string[]): Promise<boolean> => {
+    const file = join(root, '..', `${id}.diff`)
+    writeFileSync(file, patches[id] ?? '')
+    git(root, 'apply', file)
+    try {
+      return await passes(root, files)
+    } finally {
+      git(root, 'apply', '-R', file)
+      rmSync(file)
+    }
+  }
+  expect(await under(CAUGHT_BY, [CAUGHT]), `${CAUGHT} catches ${CAUGHT_BY}`).toBe(false)
+  if (added.includes(UNNAMED)) {
+    expect(await under(CAUGHT_BY, [UNNAMED]), `${UNNAMED} would catch ${CAUGHT_BY}`).toBe(false)
+  }
+  if (added.includes(NOT_CAUGHT)) {
+    expect(await under(CAUGHT_BY, [NOT_CAUGHT]), `${NOT_CAUGHT} would catch ${CAUGHT_BY}`).toBe(
+      false,
+    )
+    expect(await under(MISSED_BY, [NOT_CAUGHT]), `${NOT_CAUGHT} misses ${MISSED_BY}`).toBe(true)
+  }
+  const index = join(root, '..', 'base.index')
+  const env = { GIT_INDEX_FILE: index }
+  gitEnv(root, ['read-tree', base], env)
+  const patchFile = join(root, '..', 'base-check.diff')
+  writeFileSync(patchFile, patches[CAUGHT_BY] ?? '')
+  const onBase = spawnSync('git', ['apply', '--cached', '--check', patchFile], {
+    cwd: root,
+    env: { ...process.env, ...env },
+  })
+  rmSync(index)
+  rmSync(patchFile)
+  expect(onBase.status, `${CAUGHT_BY} must not apply to the base source`).not.toBe(0)
+}
+
+const SENTINEL_VERDICT = /fails under sentinel (\S+)/
+
+/** Every verdict on the lines naming `file`, a sentinel verdict with its id; a file judged once has exactly one. */
+function sentinelVerdictsOf(out: string, file: string): string[] {
+  const found = new Set<string>()
+  for (const line of out.split('\n')) {
+    if (!line.includes(file)) continue
+    for (const verdict of ['not judged', 'fails on base', 'PASSES ON BASE']) {
+      if (line.includes(verdict)) found.add(verdict)
+    }
+    const sentinelVerdict = SENTINEL_VERDICT.exec(line)
+    if (sentinelVerdict !== null)
+      found.add(`fails under sentinel ${sentinelVerdict[1]?.replace(/:$/, '')}`)
+  }
+  return [...found]
+}
+
+/** The added test files whose line carries PASSES ON BASE: the violations. */
+function violations(out: string, files: string[]): string[] {
+  return files.filter((file) => sentinelVerdictsOf(out, file).includes('PASSES ON BASE')).sort()
+}
+
+describe('AC-13: rule 8 counts a sentinel', () => {
+  it('AC-13: a new test that passes on base but fails under the injected sentinel naming it is "fails under sentinel <id>", and the step exits 0', async () => {
+    const { root, base, patches } = makeSentinelRepo([CAUGHT])
+    await expectFixture(root, base, patches, [CAUGHT])
+    const before = state(root)
+
+    const { status, out } = await runScript(root, base)
+
+    expect(sentinelVerdictsOf(out, CAUGHT), out).toEqual([`fails under sentinel ${CAUGHT_BY}`])
+    expect(sentinelVerdictsOf(out, MULTIPLY_TEST), out).toEqual(['fails on base'])
+    expect(violations(out, [CAUGHT, MULTIPLY_TEST]), out).toEqual([])
+    expect(status, out).toBe(0)
+    // The patch goes to the temporary worktree only: the checkout is left exactly as it was.
+    expect(state(root)).toEqual(before)
+  })
+
+  it('AC-13: of three files passing on base, only the one its naming sentinel catches is spared; the one its sentinel misses and the one no sentinel names are PASSES ON BASE, exit 1', async () => {
+    const added = [CAUGHT, NOT_CAUGHT, UNNAMED]
+    const { root, base, patches } = makeSentinelRepo(added)
+    await expectFixture(root, base, patches, added)
+    const before = state(root)
+
+    const { status, out } = await runScript(root, base)
+
+    expect(sentinelVerdictsOf(out, CAUGHT), out).toEqual([`fails under sentinel ${CAUGHT_BY}`])
+    // The violations are exactly the file whose sentinel misses it and the file no sentinel names.
+    expect(violations(out, [...added, MULTIPLY_TEST]), out).toEqual([NOT_CAUGHT, UNNAMED].sort())
+    for (const file of [NOT_CAUGHT, UNNAMED]) {
+      expect(sentinelVerdictsOf(out, file), out).toEqual(['PASSES ON BASE'])
+    }
+    expect(sentinelVerdictsOf(out, MULTIPLY_TEST), out).toEqual(['fails on base'])
+    expect(status, out).toBe(1)
     expect(state(root)).toEqual(before)
   })
 })

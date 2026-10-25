@@ -1,7 +1,8 @@
+import fc from 'fast-check'
 import { describe, it, expect, vi } from 'vitest'
 import { createAuthStore } from './auth-store.js'
 import type { CommerceAdapter } from '../adapter/commerce-adapter.js'
-import type { TokenManager } from '../auth/token-manager.js'
+import { createTokenManager, type TokenManager } from '../auth/token-manager.js'
 import type { Customer } from '@nymbalhq/types'
 
 const testCustomer: Customer = {
@@ -51,20 +52,30 @@ function makeTokenManager(): TokenManager {
 }
 
 describe('AuthStore', () => {
-  it('initial state is unauthenticated', () => {
-    const store = createAuthStore(makeAdapter(), makeTokenManager())
-    expect(store.getState().isAuthenticated).toBe(false)
-    expect(store.getState().customer).toBeNull()
-  })
-
-  it('login sets authenticated state and calls tokenManager.setTokens', async () => {
-    const adapter = makeAdapter()
-    const tokenManager = makeTokenManager()
-    const store = createAuthStore(adapter, tokenManager)
-    await store.login('test@example.com', 'pass123')
-    expect(store.getState().isAuthenticated).toBe(true)
-    expect(store.getState().customer?.email).toBe('test@example.com')
-    expect(tokenManager.setTokens).toHaveBeenCalledWith('tok', 900)
+  it('property: login leaves the store signed in as the customer the adapter answers, and the token manager holding its token', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.emailAddress(),
+        fc.string({ minLength: 1 }),
+        async (email, accessToken) => {
+          const adapter = makeAdapter()
+          const customer = { ...testCustomer, email }
+          vi.mocked(adapter.customers.login).mockResolvedValueOnce({
+            ...testAuthResult,
+            customer,
+            accessToken,
+          })
+          const tokenManager = createTokenManager({ storage: 'memory' })
+          const store = createAuthStore(adapter, tokenManager)
+          await store.login(email, 'pass123')
+          expect(store.getState().isAuthenticated).toBe(true)
+          expect(store.getState().customer).toEqual(customer)
+          expect(tokenManager.getAccessToken()).toBe(accessToken)
+          tokenManager.destroy()
+        },
+      ),
+      { numRuns: 20 },
+    )
   })
 
   it('login on failure sets error state and rethrows', async () => {
@@ -117,11 +128,13 @@ describe('AuthStore', () => {
     expect(store.getState().customer?.firstName).toBe('Updated')
   })
 
-  it('refreshToken calls adapter.customers.refresh and updates token', async () => {
+  it('refreshToken leaves the token manager holding the token the adapter refreshed', async () => {
     const adapter = makeAdapter()
-    const tokenManager = makeTokenManager()
+    const tokenManager = createTokenManager({ storage: 'memory' })
+    tokenManager.setTokens('old-tok', 900)
     const store = createAuthStore(adapter, tokenManager)
     await store.refreshToken()
-    expect(tokenManager.setTokens).toHaveBeenCalledWith('new-tok', 900)
+    expect(tokenManager.getAccessToken()).toBe('new-tok')
+    tokenManager.destroy()
   })
 })

@@ -170,30 +170,8 @@ test.describe('Browse catalog', () => {
     }
   })
 
-  test('product listing shows at least 4 products', async ({ page }) => {
-    await page.goto('/products')
-    const cards = page.locator('[data-testid^="product-card-"]')
-    await expect(cards.first()).toBeVisible({ timeout: 15000 })
-    const count = await cards.count()
-    expect(count).toBeGreaterThanOrEqual(4)
-  })
-
-  // AC-3: the filter tests take the branch the listing's facets name: with facets, the filter works; without (a search
-  // adapter with no `facet`), there is no filter to use.
-  test('product filters are clickable and do not crash', async ({ page }) => {
-    const { cards, facets } = await openListing(page)
-    if (facets.length === 0) return expectNoFilter(page)
-    const option = page
-      .locator('[data-testid^="filter-group-"] [data-testid^="filter-option-"]')
-      .first()
-    const expected = Math.min(await facetCount(option), await cards.count())
-    const checkbox = option.locator('input[type="checkbox"]')
-    await checkbox.click()
-    // The listing reloads to the filtered set, and the filter shows itself applied.
-    await expect(cards).toHaveCount(expected)
-    await expect(checkbox).toBeChecked()
-  })
-
+  // AC-3: the filter round-trip takes the branch the listing's facets name: with facets, the filter works; without (a
+  // search adapter with no `facet`), there is no filter to use.
   test('filter round-trip: apply filter then remove restores original product count and all filter groups remain visible', async ({
     page,
   }) => {
@@ -225,29 +203,10 @@ test.describe('Browse catalog', () => {
     await expect(filterGroups).toHaveCount(filterGroupCount)
   })
 
-  test('clicking filter keeps all category options visible', async ({ page }) => {
-    const { cards, facets } = await openListing(page)
-    if (facets.length === 0) return expectNoFilter(page)
-
-    const filterOptions = page.locator('[data-testid^="filter-option-"]')
-    // At least two options, so that one stays unselected
-    await expect(filterOptions.nth(1)).toBeVisible()
-    const countBefore = await filterOptions.count()
-    const first = filterOptions.first()
-    const expected = Math.min(await facetCount(first), await cards.count())
-
-    // Click first filter option and wait for the filtered listing
-    await first.click()
-    await expect(cards).toHaveCount(expected)
-
-    // All filter options still visible (count must not decrease)
-    await expect(filterOptions).toHaveCount(countBefore)
-  })
-
   // AC-3: the filter is present iff the listing response has facets, rendered from those facets only, and the listing
   // has facets iff the store's search reports `facet`. Both templates are held to the same API answer, so on the native
   // store Astro and Next show the same groups and options.
-  test('AC-3: /products shows exactly the listing facets as filter groups and options, and the listing has facets iff search reports facet', async ({
+  test('AC-3: /products shows exactly the listing facets as filter groups and options, and the listing has facets iff search reports facet @capabilities', async ({
     page,
     request,
   }) => {

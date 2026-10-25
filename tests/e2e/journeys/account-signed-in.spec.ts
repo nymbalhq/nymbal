@@ -170,6 +170,32 @@ test.describe('Signed-in account', () => {
     expect(after.status()).not.toBe(before.status())
   })
 
+  test('a wrong password shows the API’s refusal in the sign-in form’s alert, and the browser stays signed out', async ({
+    page,
+  }) => {
+    const credentials = { email: `nobody-${randomUUID().slice(0, 8)}@e2e.test`, password: 'wrong' }
+    const refusal = await page.request.post(`${API}/api/auth/login`, {
+      headers: await csrf(page.request, API),
+      data: credentials,
+    })
+    expect(refusal.status()).toBe(401)
+    const { message } = ((await refusal.json()) as { error: { message: string } }).error
+
+    await page.goto('/account/login')
+    const form = page.locator('nymbal-login-form')
+    await form.getByTestId('login-email').fill(credentials.email)
+    await form.getByTestId('login-password').fill(credentials.password)
+    await form.getByTestId('login-submit').click()
+
+    await expect(form.getByRole('alert')).toHaveText(message, { timeout: 10_000 })
+    const refresh = await page.request.post(`${API}/api/auth/refresh`, {
+      headers: await csrf(page.request, API),
+    })
+    expect(refresh.status(), 'the failed sign-in minted a session').toBe(401)
+    await page.goto('/account')
+    await page.waitForURL(onLogin, { timeout: 10_000 })
+  })
+
   test('AC-7: a signed-in shopper who reloads /account still sees their dashboard with their email', async ({
     page,
   }) => {

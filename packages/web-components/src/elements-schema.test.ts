@@ -259,11 +259,16 @@ function schemaOf(ctor: unknown): ElementSchema | undefined {
 }
 
 /** Creates the element in `s`, connected, once its render has settled. */
-async function mount(tag: Tag, s: State): Promise<HTMLElement> {
+async function mount(
+  tag: Tag,
+  s: State,
+  onClient?: (client: Record<string, unknown>) => void,
+): Promise<HTMLElement> {
   const client = setupMockClient() as unknown as Record<
     StoreName,
     { setState(partial: Record<string, unknown>): void }
   >
+  onClient?.(client as unknown as Record<string, unknown>)
   installAccount(client as unknown as Record<string, unknown>, s)
   installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
@@ -282,6 +287,27 @@ async function mount(tag: Tag, s: State): Promise<HTMLElement> {
   if (s.phase !== null) await submitOnce(el)
   if (s.walk !== undefined) await s.walk(el)
   return el
+}
+
+/** Counts the live subscriptions across every store of a mock client, from the moment it is installed. */
+function liveSubscriptions(client: Record<string, unknown>): () => number {
+  let live = 0
+  for (const store of Object.values(client)) {
+    const s = store as { subscribe?: (fn: () => void) => () => void } | null
+    if (typeof s?.subscribe !== 'function') continue
+    const subscribe = s.subscribe.bind(s)
+    s.subscribe = (fn) => {
+      const unsubscribe = subscribe(fn)
+      live += 1
+      let done = false
+      return () => {
+        if (!done) live -= 1
+        done = true
+        unsubscribe()
+      }
+    }
+  }
+  return () => live
 }
 
 async function settled(el: HTMLElement): Promise<void> {
@@ -1257,6 +1283,32 @@ describe('AC-1: elements are Lit, in an open shadow root, with the parts their s
       }
       expect([...seen].sort(), `${tag}: rendered parts`).toEqual([...(schema?.parts ?? [])].sort())
     }
+  })
+
+  it('every element that subscribes to a store when it connects drops each subscription when it is removed: live subscriptions after removal equal those before connection', async () => {
+    const subscribing: string[] = []
+    for (const tag of TAGS) {
+      let live: () => number = () => 0
+      let before = 0
+      const el = await mount(tag, state(), (client) => {
+        live = liveSubscriptions(client)
+        before = live()
+      })
+      if (live() > before) subscribing.push(tag)
+      el.remove()
+      expect(live(), `${tag}: live subscriptions after removal`).toBe(before)
+      document.body.innerHTML = ''
+    }
+    // The elements that render a store's state; a refactor that stops one subscribing would make this case vacuous for it.
+    expect(subscribing).toEqual(
+      expect.arrayContaining([
+        'nymbal-add-to-cart',
+        'nymbal-cart-drawer',
+        'nymbal-mini-cart',
+        'nymbal-search-bar',
+        'nymbal-product-filter',
+      ]),
+    )
   })
 
   it('AC-1: property: no element renders a part its schema does not list, over generated store states', async () => {

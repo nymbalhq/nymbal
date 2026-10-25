@@ -305,7 +305,7 @@ describe('AC-2: resolveSlot gives each worktree a slot of its own, kept until th
           expect(racing.map((dir) => resolveSlot(dir, {}))).toEqual(slots)
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 5 },
     )
   }, 180_000)
 

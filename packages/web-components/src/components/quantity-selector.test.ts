@@ -31,13 +31,6 @@ const part = <T extends Element>(el: HTMLElement, testid: string): T =>
   shadow(el).querySelector(`[data-testid="${testid}"]`) as T
 
 describe('nymbal-quantity-selector', () => {
-  it('renders decrement, input, and increment controls', async () => {
-    const el = await createElement({ 'variant-id': 'v1', value: '2' })
-    expect(part(el, 'qty-decrement')).toBeTruthy()
-    expect(part(el, 'qty-input')).toBeTruthy()
-    expect(part(el, 'qty-increment')).toBeTruthy()
-  })
-
   it('displays the correct initial value', async () => {
     const el = await createElement({ 'variant-id': 'v1', value: '3' })
     const input = part<HTMLInputElement>(el, 'qty-input')

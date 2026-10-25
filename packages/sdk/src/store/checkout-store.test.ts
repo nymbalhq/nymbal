@@ -37,11 +37,6 @@ function makeAdapter(): CommerceAdapter {
 }
 
 describe('CheckoutStore', () => {
-  it('initial step is contact', () => {
-    const store = createCheckoutStore(makeAdapter())
-    expect(store.getState().step).toBe('contact')
-  })
-
   it('setEmail advances step to shipping', () => {
     const store = createCheckoutStore(makeAdapter())
     store.setEmail('user@example.com')

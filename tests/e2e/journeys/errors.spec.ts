@@ -1,19 +1,26 @@
+import { API_URL } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
 test.describe('Error pages', () => {
-  test('404 page shows branded error page with header', async ({ page }) => {
-    await page.goto('/this-page-does-not-exist-404-test')
-    // Should show a branded error page, not a blank screen
-    await expect(page.locator('[data-testid="site-header"]')).toBeVisible({ timeout: 10000 })
-    // Some form of 404 message
-    const body = await page.textContent('body')
-    expect(body).toMatch(/404|not found|page not found/i)
-  })
+  // Kills: an unknown page answered 200 (a soft 404 a crawler indexes), a blank error page, and one with no way home.
+  test('an unknown path and a product the API does not know answer 404 with the branded page: the site header, a not-found message and a link home that loads', async ({
+    page,
+    request,
+  }) => {
+    const slug = 'this-product-does-not-exist-404-test'
+    const api = await request.get(`${API_URL}/api/products/${slug}`)
+    expect(api.status(), 'the API knows no such product').toBe(404)
 
-  test('404 page has navigation back to home', async ({ page }) => {
-    await page.goto('/nonexistent-page-xyz')
-    await page.waitForLoadState('domcontentloaded')
-    const links = page.locator('a[href="/"]')
-    await expect(links.first()).toBeVisible({ timeout: 10000 })
+    for (const path of ['/this-page-does-not-exist-404-test', `/product/${slug}`]) {
+      const missing = await page.goto(path)
+      expect(missing?.status(), path).toBe(api.status())
+      await expect(page.getByTestId('site-header'), path).toBeVisible({ timeout: 10_000 })
+      await expect(page.locator('body'), path).toContainText(/404|not found/i)
+    }
+
+    await page.locator('a[href="/"]').first().click()
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 10_000 })
+    const home = await page.request.get('/')
+    expect(home.status()).toBeLessThan(400)
   })
 })

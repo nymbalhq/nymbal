@@ -44,21 +44,17 @@ function makeWrapper(client: NymbalClient) {
 }
 
 describe('useSearch', () => {
-  it('initial state has empty results', () => {
-    const { result } = renderHook(() => useSearch(), { wrapper: makeWrapper(makeClient()) })
-    expect(result.current.results).toHaveLength(0)
-    expect(result.current.query).toBe('')
-  })
-
-  it('exposes search function', async () => {
-    const searchStore = makeSearchStore()
+  it('mounts with the store’s current query and results, not a default', () => {
+    const searchStore = makeSearchStore({
+      query: 'mug',
+      results: [{ id: 'p1' } as never],
+      total: 1,
+    })
     const { result } = renderHook(() => useSearch(), {
       wrapper: makeWrapper(makeClient(searchStore)),
     })
-    await act(async () => {
-      await result.current.search('widget')
-    })
-    expect(searchStore.search).toHaveBeenCalledWith('widget')
+    expect(result.current.query).toBe(searchStore.getState().query)
+    expect(result.current.results).toEqual(searchStore.getState().results)
   })
 
   it('re-renders when results change', () => {

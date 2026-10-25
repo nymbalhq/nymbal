@@ -4,10 +4,12 @@ import { expect, test } from '../support/fixtures'
 import { API_URL, csrf } from '../support/csrf'
 import { adminToken, ownProduct } from '../support/checkout'
 
-// AC-1: at Pixel 7 (412 px) a signed-in shopper's Astro account pages are no wider than the viewport. The account
+// AC-1: at Pixel 7 (412 px) a signed-in shopper's account pages are no wider than the viewport. On Astro the account
 // grid's one `1fr` column would take the sidebar's min-content width (its nav is a row of `nowrap` links) without
-// `min-width: 0` on `.account-sidebar`. Runs on the astro project. The viewport is set here, not by the `@visual`-only
-// astro-mobile project. `defaultBrowserType` cannot be set per describe; the project's chromium is the same browser.
+// `min-width: 0` on `.account-sidebar`, and the dashboard's Email card would take the width of an email that does not
+// break. The shopper's email is long and has no break opportunity in its local part for that reason. Runs on both
+// template projects. The viewport is set here, not by the `@visual`-only mobile projects. `defaultBrowserType` cannot
+// be set per describe; the project's chromium is the same browser.
 const { defaultBrowserType: _browser, ...pixel7 } = devices['Pixel 7']
 
 const PASSWORD = 'TestPassword123!'
@@ -18,7 +20,8 @@ async function shopperWithOrder(
 ): Promise<{ email: string; firstName: string; orderNumber: string }> {
   const product = await ownProduct(request, await adminToken(request), 5)
   const tag = randomUUID().slice(0, 8)
-  const email = `phone-${tag}@e2e.test`
+  // 34 characters with an unbroken local part: a 28-character one already ran past the viewport on the dashboard.
+  const email = `phonewidthshopper${tag}@e2e.test`
   const firstName = `Ada${tag}`
   const shopper = await playwrightRequest.newContext()
   try {
@@ -55,17 +58,13 @@ async function shopperWithOrder(
   }
 }
 
-test.describe('Astro account at Pixel 7', () => {
+test.describe('Account at Pixel 7', () => {
   test.use(pixel7)
 
   test('AC-1: signed in, /account, profile, addresses, orders and an order’s detail are each no wider than the viewport', async ({
     page,
     request,
-  }, testInfo) => {
-    test.skip(
-      testInfo.project.name !== 'astro',
-      'the Astro defect; standing.phone-width-nextjs already holds on Next',
-    )
+  }) => {
     test.setTimeout(90_000)
     const shopper = await shopperWithOrder(request)
 

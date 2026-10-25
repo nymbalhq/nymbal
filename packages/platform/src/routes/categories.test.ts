@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { registerCategoryRoutes } from './categories.js'
@@ -30,8 +31,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -40,71 +47,40 @@ function makeAdapter() {
 }
 
 describe('GET /api/categories', () => {
-  it('returns an empty array when no categories exist', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerCategoryRoutes(adapter, documentStore, 'test-store')
+  it('returns exactly the store’s categories, positions non-decreasing, over generated positions and a second store', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.record({ position: fc.integer({ min: -5, max: 50 }), mine: fc.boolean() }), {
+          maxLength: 12,
+        }),
+        async (seeds) => {
+          const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+          for (const [i, seed] of seeds.entries()) {
+            await documentStore.put('categories', `cat-${i}`, {
+              id: `cat-${i}`,
+              storeId: seed.mine ? 'test-store' : 'other-store',
+              parentId: null,
+              slug: `cat-${i}`,
+              name: `Category ${i}`,
+              description: '',
+              position: seed.position,
+              createdAt: '2024-01-01T00:00:00Z',
+            })
+          }
+          const { adapter, invoke } = makeAdapter()
+          registerCategoryRoutes(adapter, documentStore, 'test-store')
 
-    const resp = await invoke('GET', '/api/categories')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Category[] }
-    expect(body.data).toEqual([])
-  })
-
-  it('returns categories belonging to the store, sorted by position', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('categories', 'electronics', {
-      id: 'c2', storeId: 'test-store', parentId: null,
-      slug: 'electronics', name: 'Electronics', description: '', position: 1, createdAt: '2024-01-01T00:00:00Z',
-    })
-    await documentStore.put('categories', 'apparel', {
-      id: 'c1', storeId: 'test-store', parentId: null,
-      slug: 'apparel', name: 'Apparel', description: '', position: 0, createdAt: '2024-01-01T00:00:00Z',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerCategoryRoutes(adapter, documentStore, 'test-store')
-
-    const resp = await invoke('GET', '/api/categories')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Category[] }
-    expect(body.data).toHaveLength(2)
-    expect(body.data[0]?.slug).toBe('apparel')
-    expect(body.data[1]?.slug).toBe('electronics')
-  })
-
-  it('response includes all Category fields including parentId', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('categories', 'mens', {
-      id: 'c3', storeId: 'test-store', parentId: 'c1',
-      slug: 'mens', name: 'Mens', description: 'Mens clothing', position: 0, createdAt: '2024-01-01T00:00:00Z',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerCategoryRoutes(adapter, documentStore, 'test-store')
-
-    const resp = await invoke('GET', '/api/categories')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Category[] }
-    const cat = body.data[0]!
-    expect(cat).toMatchObject({
-      id: 'c3',
-      parentId: 'c1',
-      slug: 'mens',
-      name: 'Mens',
-      description: 'Mens clothing',
-      position: 0,
-    })
-  })
-
-  it('wraps response in the { data } envelope', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerCategoryRoutes(adapter, documentStore, 'test-store')
-
-    const resp = await invoke('GET', '/api/categories')
-    const body = resp.body as Record<string, unknown>
-    expect('data' in body).toBe(true)
-    expect('error' in body).toBe(false)
+          const resp = await invoke('GET', '/api/categories')
+          expect(resp.status).toBe(200)
+          const listed = (resp.body as { data: Category[] }).data
+          const positions = listed.map((c) => c.position)
+          expect(positions.every((p, i) => i === 0 || positions[i - 1]! <= p)).toBe(true)
+          expect(listed.map((c) => c.id).sort()).toEqual(
+            seeds.flatMap((seed, i) => (seed.mine ? [`cat-${i}`] : [])).sort(),
+          )
+        },
+      ),
+      { numRuns: 30 },
+    )
   })
 })

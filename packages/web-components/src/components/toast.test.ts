@@ -33,11 +33,6 @@ async function show(
 const items = (el: NymbalToast) => shadow(el).querySelectorAll('.nymbal-toast-item')
 
 describe('nymbal-toast', () => {
-  it('connectedCallback sets data-testid', async () => {
-    const el = await createToast()
-    expect(el.getAttribute('data-testid')).toBe('toast')
-  })
-
   it('show adds a toast item with correct type', async () => {
     const el = await createToast()
     await show(el, 'Hello', 'success')
@@ -45,14 +40,6 @@ describe('nymbal-toast', () => {
     expect(item).toBeTruthy()
     expect(item?.getAttribute('data-type')).toBe('success')
     expect(item?.textContent).toContain('Hello')
-  })
-
-  it('show adds close button with aria-label', async () => {
-    const el = await createToast()
-    await show(el, 'Test message', 'info')
-    const closeBtn = shadow(el).querySelector('.nymbal-toast-close') as HTMLButtonElement
-    expect(closeBtn).toBeTruthy()
-    expect(closeBtn.getAttribute('aria-label')).toBe('Dismiss')
   })
 
   it('close button dismisses the toast', async () => {
@@ -80,11 +67,17 @@ describe('nymbal-toast', () => {
     }
   })
 
-  it('showGlobal creates element if none exists', () => {
+  it('showGlobal creates one toast element when none exists and reuses it after: every message shows in it', async () => {
     document.body.innerHTML = ''
     NymbalToast.showGlobal('Global toast', 'info')
-    const toast = document.querySelector('nymbal-toast')
-    expect(toast).toBeTruthy()
+    NymbalToast.showGlobal('Second toast', 'success')
+    const hosts = document.querySelectorAll('nymbal-toast')
+    expect(hosts).toHaveLength(1)
+    const el = hosts[0] as NymbalToast
+    await settled(el)
+    expect(items(el)).toHaveLength(2)
+    expect(shadow(el).textContent).toContain('Global toast')
+    expect(shadow(el).textContent).toContain('Second toast')
   })
 
   it('shows multiple toasts stacked', async () => {
