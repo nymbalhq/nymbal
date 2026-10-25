@@ -1215,13 +1215,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
   // changed, the plain gate leaves them out and gate:full leaves out `tooling`; dev CI asks for all of them with
-  // `--harness all`.
+  // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
+  // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
   const harnessApart =
     input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
       ? ''
-      : (full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS)
-          .map((name) => ` --project ${shellWord(`!${name}`)}`)
-          .join('')
+      : `NYMBAL_VITEST_SKIP_PROJECTS=${(full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS).join(',')} `
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1246,13 +1245,13 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           ? {
               name: 'tests',
               command:
-                `pnpm run test --changed ${base} --passWithNoTests${perfApart}${harnessApart} ${VITEST_JSON}` +
+                `${harnessApart}pnpm run test --changed ${base} --passWithNoTests${perfApart} ${VITEST_JSON}` +
                 (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
               ...buildNeeds,
             }
           : {
               name: 'tests',
-              command: `pnpm run test${perfApart}${harnessApart} ${VITEST_JSON}`,
+              command: `${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
               ...buildNeeds,
             }
   const steps: StepSpec[] = [

@@ -15,6 +15,7 @@ import {
   type StepSpec,
 } from '../../scripts/gate'
 import { aggregate, type Counts, type FileCensus, type Totals } from '../../scripts/test-census'
+import { leftOut } from './vitest-filters'
 
 // The gate: AC-1 to AC-5, AC-7 and AC-18.
 // AC-7 drives the exported runner with fake steps that are real shell commands, so the verdict under test comes
@@ -154,9 +155,8 @@ describe('the tooling projects run in the plain gate only when the tooling chang
     plan({ full, base: 'abc1234', changed, mutated: [] }).steps
   const testsStep = (changed: string[], full = false): StepSpec =>
     planned(changed, full).find((s) => s.name === 'tests') as StepSpec
-  /** The projects a tests command negates (`--project '!name'`). */
-  const negated = (command: string): string[] =>
-    [...command.matchAll(/--project '!([\w-]+)'/g)].map((m) => m[1] as string).sort()
+  /** The harness projects a tests command leaves out (`leftOut`). */
+  const negated = (command: string): string[] => leftOut(command, HARNESS_PROJECTS)
   const HARNESS = [
     'scripts/gate.ts',
     'tests/tooling/gate.test.ts',

@@ -9,6 +9,7 @@ import {
   buildInputsStamp,
   buildIsCurrent,
   checkoutInUse,
+  FULL_GATE_HARNESS_PROJECTS,
   HARNESS_PROJECTS,
   markInUse,
   plan,
@@ -17,6 +18,7 @@ import {
   type PlanInput,
   type StepSpec,
 } from '../../scripts/gate'
+import { leftOut, listedProjects, vitestFilters } from './vitest-filters'
 
 // What a local run of the full gate leaves to dev CI, and what it refuses to do: the sentinels and Stryker run only
 // when asked (`--sentinels`, `--stryker`, or `--only` naming them), the harness's own projects only when a harness
@@ -116,10 +118,8 @@ describe('the stryker step: off locally, advisory on request, blocking in CI', (
 })
 
 describe('the harness projects run only when a harness path changed; gate:full runs architecture always', () => {
-  const apart = HARNESS_PROJECTS.map((name) => `--project '!${name}'`)
-  /** The projects a tests command negates (`--project '!name'`). */
-  const negated = (command: string): string[] =>
-    [...command.matchAll(/--project '!([\w-]+)'/g)].map((m) => m[1] as string).sort()
+  /** The harness projects a tests command leaves out (`leftOut`). */
+  const negated = (command: string): string[] => leftOut(command, HARNESS_PROJECTS)
   const KERNEL = 'packages/platform/src/services/cart-service.ts'
   // Every kind of path the harness projects read besides their own files and scripts/.
   const HARNESS_INPUTS = [
@@ -160,9 +160,9 @@ describe('the harness projects run only when a harness path changed; gate:full r
       changed: ['packages/platform/src/services/cart-service.ts'],
       harness: 'all',
     })
-    for (const flag of apart) expect(step(ci, 'tests').command).not.toContain(flag)
+    expect(negated(step(ci, 'tests').command)).toEqual([])
     const root = fullPlan({ changed: [], noBase: true })
-    for (const flag of apart) expect(step(root, 'tests').command).not.toContain(flag)
+    expect(negated(step(root, 'tests').command)).toEqual([])
   })
 
   it('property: every harness project runs iff harness is all, there is no base, or a harness path changed; else the plain gate leaves both out and gate:full tooling', () => {
@@ -206,6 +206,53 @@ describe('the harness projects run only when a harness path changed; gate:full r
       ),
     )
   })
+})
+
+describe('the tests step runs the projects it means, as Vitest resolves its filters', () => {
+  const KERNEL = 'packages/platform/src/services/cart-service.ts'
+  const withServices = (name: string): boolean =>
+    name.startsWith('integration-') || name === 'proof-kit-services'
+
+  it('a product change runs every project but the service-backed ones and the harness projects each gate leaves out, in the plain gate and gate:full; a configuration change (the whole suite) leaves out only the service-backed ones', async () => {
+    const cases = [
+      { label: 'plain gate, product change', steps: plainPlan([KERNEL]), apart: HARNESS_PROJECTS },
+      {
+        label: 'gate:full, product change',
+        steps: fullPlan({ changed: [KERNEL] }),
+        apart: FULL_GATE_HARNESS_PROJECTS,
+      },
+      {
+        label: 'plain gate, configuration change',
+        steps: plainPlan(['vitest.config.ts']),
+        apart: [],
+      },
+      {
+        label: 'gate:full, configuration change',
+        steps: fullPlan({ changed: ['vitest.config.ts'] }),
+        apart: [],
+      },
+    ]
+    const every = await listedProjects([])
+    expect(every).toEqual(
+      expect.arrayContaining([...HARNESS_PROJECTS, 'integration-postgres', 'proof-kit-services']),
+    )
+    const runs = await Promise.all(
+      cases.map(async ({ label, steps, apart }) => {
+        const { env, projects, excludes } = vitestFilters(step(steps, 'tests').command)
+        const excluded = excludes.flatMap((path) => ['--exclude', path])
+        const [selected, reachable] = await Promise.all([
+          listedProjects([...projects.flatMap((name) => ['--project', name]), ...excluded], env),
+          listedProjects(excluded),
+        ])
+        const expected = reachable.filter((name) => !withServices(name) && !apart.includes(name))
+        return { label, selected, expected }
+      }),
+    )
+    for (const { label, selected, expected } of runs) {
+      expect(expected.length, label).toBeGreaterThan(0)
+      expect(selected, label).toEqual(expected)
+    }
+  }, 60_000)
 })
 
 describe('the plain gate builds when the build output is older than HEAD, and every build stamps', () => {

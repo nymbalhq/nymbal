@@ -84,6 +84,20 @@ function scaled<P extends { test: { testTimeout?: number; hookTimeout?: number }
   }))
 }
 
+// Set by the gate to leave projects out (scripts/gate.ts). Vitest ORs repeated `--project` filters, so a negation added
+// to `pnpm test`'s `!integration-*` would select every project that one keeps; this list applies before any filter.
+const skipProjects = (process.env['NYMBAL_VITEST_SKIP_PROJECTS'] ?? '')
+  .split(',')
+  .filter((name) => name !== '')
+type Named = { test: { name: string } }
+function kept(project: Named, index: number, all: Named[]): boolean {
+  const unknown = skipProjects.filter((name) => !all.some((p) => p.test.name === name))
+  if (index === 0 && unknown.length > 0) {
+    throw new Error(`NYMBAL_VITEST_SKIP_PROJECTS names no project: ${unknown.join(', ')}`)
+  }
+  return !skipProjects.includes(project.test.name)
+}
+
 export default defineConfig({
   test: {
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
@@ -324,7 +338,7 @@ export default defineConfig({
           testTimeout: 60000,
         },
       },
-    ]),
+    ]).filter(kept),
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**'],

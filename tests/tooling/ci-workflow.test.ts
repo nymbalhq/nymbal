@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type PlanInput, plan, stepModes } from '../../scripts/gate'
+import { HARNESS_PROJECTS, type PlanInput, plan, stepModes } from '../../scripts/gate'
+import { leftOut } from './vitest-filters'
 
 // AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
 // (directly, or through a gate.ts plan that would).
@@ -997,7 +998,7 @@ describe('dev CI runs the harness projects whatever changed', () => {
         only: (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim()),
         harness: 'all',
       }).steps.find((s) => s.name === 'tests')
-      expect(tests?.command ?? '').not.toMatch(/--project '!/)
+      expect(leftOut(tests?.command ?? '', HARNESS_PROJECTS)).toEqual([])
     }
   })
 })
