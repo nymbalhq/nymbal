@@ -873,6 +873,58 @@ describe('AC-24: a sentinel with its own suite', () => {
   })
 })
 
+describe('the suite runs with scaled test timeouts', () => {
+  /** A suite that logs the timeout scale it was given and is green while `add` is. */
+  function scaleRepo(): { repo: TempRepo; suite: string; scales: () => string[] } {
+    const repo = makeRepo({ green: true })
+    commitFile(
+      repo,
+      'scale-suite.mjs',
+      [
+        "import { appendFileSync } from 'node:fs'",
+        "import { add } from './src/math.js'",
+        `appendFileSync(${JSON.stringify(repo.log)}, \`scale=\${process.env.NYMBAL_TEST_TIMEOUT_SCALE}\\n\`)`,
+        'process.exit(add(2, 3) === 5 ? 0 : 1)',
+        '',
+      ].join('\n'),
+    )
+    writeSentinel(repo, { id: 'I001', kind: 'injected', patch: breakAdd(repo) })
+    commitAll(repo.root, 'sentinels')
+    const scales = () =>
+      readLog(repo)
+        .split('\n')
+        .filter((l) => l.startsWith('scale='))
+        .map((l) => l.slice('scale='.length))
+    return { repo, suite: 'node scale-suite.mjs', scales }
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('the control and every sentinel run get the same scale above 1, so a loaded runner does not turn the control red or a sentinel falsely caught', async () => {
+    vi.stubEnv('NYMBAL_TEST_TIMEOUT_SCALE', undefined)
+    const { repo, suite, scales } = scaleRepo()
+
+    const report = await run({ root: repo.root, dir: repo.dir, suite })
+
+    expect(statuses(report)).toEqual({ I001: 'caught' })
+    const seen = scales()
+    expect(seen.length, 'one control run and one sentinel run').toBe(2)
+    expect(new Set(seen).size, `every run gets one scale: ${seen.join(', ')}`).toBe(1)
+    expect(Number(seen[0])).toBeGreaterThan(1)
+  })
+
+  it('a scale already set by the caller is passed through unchanged', async () => {
+    vi.stubEnv('NYMBAL_TEST_TIMEOUT_SCALE', '7')
+    const { repo, suite, scales } = scaleRepo()
+
+    await run({ root: repo.root, dir: repo.dir, suite })
+
+    expect(scales()).toEqual(['7', '7'])
+  })
+})
+
 describe('AC-27: paths a patch touches', () => {
   /** A tracked SQL file whose first line, once removed, reads `--- notes.txt` inside the hunk. */
   const SQL = '-- notes.txt\nselect 1;\n'

@@ -127,6 +127,11 @@ function stopSuite(child: ChildProcess, signal: NodeJS.Signals): void {
   }
 }
 
+// The control and each sentinel run nearly the whole suite at once, where spawn-heavy tests outlast Vitest's 5 s
+// default: a timeout from load alone turns the control red, or makes a sentinel look caught. Every project's timeouts
+// are multiplied (vitest.config.ts); a hung test still fails, at the longer bound. A caller's own scale is kept.
+const SUITE_TIMEOUT_SCALE = '3'
+
 function runSuite(root: string, command: string, session: Session): Promise<Exec> {
   return new Promise((resolvePromise, rejectPromise) => {
     if (session.signal !== undefined) {
@@ -135,6 +140,10 @@ function runSuite(root: string, command: string, session: Session): Promise<Exec
     }
     const child = spawn(command, {
       cwd: root,
+      env: {
+        ...process.env,
+        NYMBAL_TEST_TIMEOUT_SCALE: process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? SUITE_TIMEOUT_SCALE,
+      },
       shell: true,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],

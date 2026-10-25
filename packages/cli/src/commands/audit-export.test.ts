@@ -125,7 +125,8 @@ function exportAudit(args: string[]) {
 
 const parsedLines = (stdout: string) => stdoutLines(stdout).map((l) => JSON.parse(l) as Entry)
 
-describe('AC-6: nymbal audit export', () => {
+// Each case spawns the built CLI, once or twice, and outlasts the 5 s default when other spawning suites run beside it.
+describe('AC-6: nymbal audit export', { timeout: 20_000 }, () => {
   it('AC-6: --since <t> prints, as NDJSON in `at` order, exactly the entries the activity API lists from t on, equal to them, and leaves the store untouched', async () => {
     const hashBefore = hashOf(dbPath)
     const run = await exportAudit(['--since', since])
