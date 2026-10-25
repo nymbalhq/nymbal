@@ -7,6 +7,7 @@ export {
   CategoryNav,
   ImageGallery,
   OrderSummary,
+  OrderTimeline,
   ProductGrid,
   ReviewForm,
   ReviewList,

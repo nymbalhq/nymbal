@@ -30,6 +30,7 @@ import { NymbalCategoryNav } from './components/category-nav.js'
 import { NymbalReviewList } from './components/review-list.js'
 import { NymbalReviewForm } from './components/review-form.js'
 import { NymbalOrderSummary } from './components/order-summary.js'
+import { NymbalOrderTimeline } from './components/order-timeline.js'
 
 /** Every element the package defines. */
 export const ELEMENTS = [
@@ -63,6 +64,7 @@ export const ELEMENTS = [
   NymbalReviewList,
   NymbalReviewForm,
   NymbalOrderSummary,
+  NymbalOrderTimeline,
 ]
 
 /**

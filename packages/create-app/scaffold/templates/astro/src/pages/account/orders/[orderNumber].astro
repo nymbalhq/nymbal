@@ -15,6 +15,9 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 <script>
   import { client } from '../../../lib/client.js'
   import { escapeHtml, formatPrice, formatDate } from '../../../lib/format.js'
+  import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'
+
+  NymbalOrderTimeline.define()
 
   const container = document.getElementById('order-detail-container')
   const orderNumber = container?.dataset.orderNumber
@@ -34,6 +37,8 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
           </div>
           <span class="order-status status-${escapeHtml(order.status)}">${escapeHtml(order.status)}</span>
         </div>
+
+        ${order.timeline?.length ? `<nymbal-order-timeline style="display: block; margin-bottom: var(--nymbal-spacing-lg, 1.5rem);" entries="${escapeHtml(JSON.stringify(order.timeline))}"></nymbal-order-timeline>` : ''}
 
         <div class="confirmation-card">
           <h2 class="confirmation-card-title">Items</h2>

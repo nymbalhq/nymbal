@@ -75,6 +75,8 @@ const paid = isPaid(order.status)
         </dl>
       </div>
 
+      <NymbalElement tag="nymbal-order-timeline" attributes={{ class: 'confirmation-summary', entries: JSON.stringify(order.timeline ?? []) }} />
+
       <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
 
       {shippingAddress && (
@@ -100,6 +102,8 @@ const paid = isPaid(order.status)
 <script>
   import '../../scripts/order-status.js'
   import { NymbalOrderSummary } from '@nymbalhq/web-components/elements/nymbal-order-summary'
+  import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'
 
   NymbalOrderSummary.define()
+  NymbalOrderTimeline.define()
 </script>

@@ -50,6 +50,7 @@ export {
   ReviewList,
   ReviewForm,
   OrderSummary,
+  OrderTimeline,
 } from './generated/wrappers.js'
 
 export type {
@@ -83,4 +84,5 @@ export type {
   ReviewListProps,
   ReviewFormProps,
   OrderSummaryProps,
+  OrderTimelineProps,
 } from './generated/wrappers.js'

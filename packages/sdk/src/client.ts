@@ -8,7 +8,7 @@ import { createProductListStore, type ProductListStore } from './store/product-l
 import { createSearchStore, type SearchStore } from './store/search-store.js'
 import { createCheckoutStore, type CheckoutStore } from './store/checkout-store.js'
 import { createAuthStore, type AuthStore } from './store/auth-store.js'
-import type { CustomerAddress, Order, StoreCapabilities } from '@nymbalhq/types'
+import type { CustomerAddress, ShopperOrder, StoreCapabilities } from '@nymbalhq/types'
 import type { NewAddress, OrderPage } from './types.js'
 
 export interface NymbalClientOptions {
@@ -28,7 +28,7 @@ export interface CustomerAccount {
   }
   orders: {
     list(opts?: { cursor?: string }): Promise<OrderPage>
-    get(orderNumber: string): Promise<Order>
+    get(orderNumber: string): Promise<ShopperOrder>
   }
 }
 

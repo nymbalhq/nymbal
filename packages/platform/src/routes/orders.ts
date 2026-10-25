@@ -6,18 +6,13 @@ import { requireAuth } from './role-middleware.js'
 
 /**
  * An order as a shopper reads it. The stored document keeps checkout's cart and stock bookkeeping, import provenance,
- * the merchant's notes, the provider's intent id and which staff member moved the order; the admin routes read all of
- * it, a shopper none. Blanked rather than dropped, so the `Order` shape the SDK declares still holds.
+ * the merchant's notes, the provider's intent id and the status history with its staff actors and free-text notes;
+ * the admin routes read all of it, a shopper none and `timeline` in place of the history. `metadata`, `notes` and
+ * `paymentIntentId` are blanked rather than dropped, so the `Order` shape the SDK declares still holds.
  */
 export function shopperOrder(doc: OrderDoc) {
-  const { partitionKey: _partitionKey, sortKey: _sortKey, history, ...order } = doc
-  return {
-    ...order,
-    metadata: {},
-    notes: '',
-    paymentIntentId: null,
-    ...(history !== undefined && { history: history.map(({ actor: _actor, ...entry }) => entry) }),
-  }
+  const { partitionKey: _partitionKey, sortKey: _sortKey, history: _history, ...order } = doc
+  return { ...order, metadata: {}, notes: '', paymentIntentId: null }
 }
 
 export function registerOrderRoutes(

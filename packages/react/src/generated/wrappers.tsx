@@ -11,6 +11,7 @@ export { ImageGallery, type ImageGalleryProps } from './wrappers/ImageGallery.js
 export { LoginForm, type LoginFormProps } from './wrappers/LoginForm.js'
 export { MiniCart, type MiniCartProps } from './wrappers/MiniCart.js'
 export { OrderSummary, type OrderSummaryProps } from './wrappers/OrderSummary.js'
+export { OrderTimeline, type OrderTimelineProps } from './wrappers/OrderTimeline.js'
 export { PaymentElement, type PaymentElementProps } from './wrappers/PaymentElement.js'
 export { ProductCard, type ProductCardProps } from './wrappers/ProductCard.js'
 export { ProductFilter, type ProductFilterProps } from './wrappers/ProductFilter.js'

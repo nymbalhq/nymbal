@@ -2,9 +2,9 @@ import type {
   Cart,
   Customer,
   CustomerAddress,
-  Order,
   ReviewsResult,
   ReviewResult,
+  ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
 import type {
@@ -54,7 +54,7 @@ export interface CommerceAdapter {
     addAddress(address: NewAddress): Promise<CustomerAddress>
     removeAddress(id: string): Promise<void>
     listOrders(params?: { cursor?: string }): Promise<OrderPage>
-    getOrder(orderNumber: string): Promise<Order>
+    getOrder(orderNumber: string): Promise<ShopperOrder>
   }
   reviews: {
     getForProduct(

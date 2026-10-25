@@ -5,7 +5,13 @@ import type {
   ReviewsListResult,
 } from '@nymbalhq/sdk'
 import { DEFAULT_PRODUCT_SORT, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
-import type { Cart, Category, Order, ProductSortKey, StoreCapabilities } from '@nymbalhq/types'
+import type {
+  Cart,
+  Category,
+  ProductSortKey,
+  ShopperOrder,
+  StoreCapabilities,
+} from '@nymbalhq/types'
 
 const API_URL = import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
@@ -98,11 +104,11 @@ export async function fetchCategories(): Promise<Category[]> {
   }
 }
 
-export async function fetchOrder(orderNumber: string): Promise<Order | null> {
+export async function fetchOrder(orderNumber: string): Promise<ShopperOrder | null> {
   try {
     const res = await fetch(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`)
     if (!res.ok) return null
-    const envelope = (await res.json()) as { data: Order }
+    const envelope = (await res.json()) as { data: ShopperOrder }
     return envelope.data ?? null
   } catch (err) {
     console.error('[api] fetchOrder failed', err)

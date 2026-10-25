@@ -16,9 +16,12 @@ import {
   formatMoney,
   images,
   links,
+  renderableEntries,
   reviews,
   SORT_KEYS,
   summaryLines,
+  TIMELINE_LABELS,
+  timelineEntries,
   variantProduct,
   word,
 } from '../__fixtures__/server-data.js'
@@ -34,7 +37,8 @@ import { renderElement } from './index.js'
 // server's nodes.
 //
 // The catalogue and page elements (the product grid, price, stock badge, breadcrumb, image gallery, site header and
-// footer, category nav, review list and form, order summary) meet the same three cases, 29 elements in all. Each
+// footer, category nav, review list and form, order summary, order timeline) meet the same three cases, 30 elements
+// in all. Each
 // renders from its attributes alone: the data it is given is in its server render.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -65,6 +69,7 @@ const JSON_VALUES: Record<string, fc.Arbitrary<unknown>> = {
   'nymbal-category-nav categories': categories('p-'),
   'nymbal-review-list reviews': reviews('p-'),
   'nymbal-order-summary items': summaryLines('p-'),
+  'nymbal-order-timeline entries': timelineEntries(),
 }
 
 /** String attributes whose value is one of a few words; any other string attribute takes a generated word. */
@@ -78,6 +83,7 @@ const STRING_VALUES: Record<string, fc.Arbitrary<string>> = {
   'nymbal-product-price currency': fc.constantFrom('GBP', 'EUR'),
   'nymbal-order-summary currency': fc.constantFrom('GBP', 'EUR'),
   'nymbal-site-header account-href': fc.constant('/account'),
+  'nymbal-order-timeline time-zone': fc.constantFrom('UTC', 'Europe/London', 'America/New_York'),
 }
 
 /** One attribute's value as the HTML carries it, or undefined to leave it off. */
@@ -258,6 +264,13 @@ function shownFrom(
       const list = json('items') as Array<{ name: string }> | undefined
       return { text: list?.map((l) => l.name) ?? [], cards: null }
     }
+    case 'nymbal-order-timeline': {
+      const list = json('entries') as Array<{ kind: string; at: string }> | undefined
+      return {
+        text: renderableEntries(list ?? []).map((e) => TIMELINE_LABELS[e.kind]),
+        cards: null,
+      }
+    }
     case 'nymbal-product-filter': {
       const list = json('facets') as
         | Array<{ field: string; values: Array<{ label: string }> }>
@@ -310,10 +323,11 @@ const CATALOGUE_ELEMENTS = [
   'nymbal-review-list',
   'nymbal-review-form',
   'nymbal-order-summary',
+  'nymbal-order-timeline',
 ]
 
 describe('AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 29 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
+  it('AC-1: the package has 30 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
     expect(CATALOGUE_ELEMENTS.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual(
       [],

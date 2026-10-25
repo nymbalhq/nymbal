@@ -6,10 +6,12 @@ import type {
   Order,
   OrderHistoryEntry,
   OrderStatus,
+  OrderTimelineEntry,
   ProductSnapshot,
   SearchDocument,
   VariantOption,
 } from '@nymbalhq/types'
+import { orderTimeline } from './order-timeline.js'
 
 // One pure builder per read-model document. The live projections and the rebuilders both call these, on the entity
 // rows as the command store holds them, so a document has one definition and a rebuild equals what live delivery
@@ -79,6 +81,7 @@ export interface OrderDoc extends Order {
     note: string
     timestamp: string
   }>
+  timeline: OrderTimelineEntry[]
   partitionKey?: string
   sortKey?: string
 }
@@ -189,16 +192,14 @@ function customerSortKey(o: Order): string {
 }
 
 export function buildOrderDoc(order: Order, history: OrderHistoryEntry[]): OrderDoc {
-  return {
-    ...order,
-    history: history.map((h) => ({
-      fromStatus: h.fromStatus,
-      toStatus: h.toStatus,
-      actor: h.actor,
-      note: h.note,
-      timestamp: String(h.timestamp),
-    })),
-  }
+  const rows = history.map((h) => ({
+    fromStatus: h.fromStatus,
+    toStatus: h.toStatus,
+    actor: h.actor,
+    note: h.note,
+    timestamp: String(h.timestamp),
+  }))
+  return { ...order, history: rows, timeline: orderTimeline(rows) }
 }
 
 /** The order's document, and its entry under its customer when it has one. */

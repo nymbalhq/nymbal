@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { fetchOrder } from '@/lib/api'
-import { OrderSummary } from '@/components/client/elements'
+import { OrderSummary, OrderTimeline } from '@/components/client/elements'
 import { renderNymbal } from '@/lib/render'
 import { OrderStatusRefresh } from '@/components/client/OrderStatusRefresh'
 import { isPaid, orderHeading } from '@/lib/order-status'
@@ -75,6 +75,7 @@ export default async function OrderPage({ params }: OrderPageProps) {
     'total-minor': String(order.totalMinor),
     currency: order.currency,
   }
+  const timeline = order.timeline ?? []
 
   return (
     <div className={`container ${styles.page}`}>
@@ -111,6 +112,14 @@ export default async function OrderPage({ params }: OrderPageProps) {
             .{order.status === 'pending' && ' We will confirm it once the payment arrives.'}
           </p>
         </div>
+
+        <OrderTimeline
+          className={styles.summary}
+          entries={timeline}
+          serverHtml={
+            renderNymbal('nymbal-order-timeline', { entries: JSON.stringify(timeline) }).__html
+          }
+        />
 
         <OrderSummary
           className={styles.summary}

@@ -5,6 +5,7 @@ import type {
   Order,
   ReviewsResult,
   ReviewResult,
+  ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
@@ -133,7 +134,10 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         return { items: data ?? [], nextCursor }
       },
       getOrder(orderNumber: string) {
-        return fetchClient.request<Order>('GET', `/api/orders/${encodeURIComponent(orderNumber)}`)
+        return fetchClient.request<ShopperOrder>(
+          'GET',
+          `/api/orders/${encodeURIComponent(orderNumber)}`,
+        )
       },
     },
 

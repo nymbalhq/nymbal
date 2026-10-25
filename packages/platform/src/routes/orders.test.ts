@@ -221,8 +221,8 @@ const STATUSES: OrderStatus[] = [
   'refunded',
   'partially_refunded',
 ]
-
-/** Paths a shopper's order never carries: checkout's cart and stock bookkeeping, import provenance, store keys. */
+/** Paths a shopper's order never carries: cart and stock bookkeeping, import provenance, store keys, status history. */
+/** Paths a shopper's order never carries: checkout's cart and stock bookkeeping, import provenance, store keys, the status history. */
 const INTERNAL_PATHS = [
   'metadata.cartToken',
   'metadata.reservationIds',
@@ -230,6 +230,7 @@ const INTERNAL_PATHS = [
   'metadata.woocommerce',
   'partitionKey',
   'sortKey',
+  'history',
 ] as const
 
 /** Every order field the storefront templates and elements read. */
@@ -272,6 +273,7 @@ const placed = fc.record({
   intent: fc.option(fc.uuid(), { nil: null }),
   staff: fc.uuid(),
   staffNote: fc.uuid(),
+  reason: fc.uuid(),
   totalMinor: fc.integer({ min: 1, max: 100_000 }),
 })
 
@@ -287,6 +289,7 @@ function orderOf(p: Placed, i: number): { doc: OrderDoc; secrets: string[] } {
   const paymentIntentId = p.intent === null ? null : `pi_${p.intent}`
   const staff = `admin:${p.staff}`
   const staffNote = `note-${p.staffNote}`
+  const reason = `reason-${p.reason}`
   const order: Order = {
     id: p.id,
     orderNumber,
@@ -351,12 +354,13 @@ function orderOf(p: Placed, i: number): { doc: OrderDoc; secrets: string[] } {
             fromStatus: 'pending' as const,
             toStatus: p.status,
             actor: staff,
-            note: 'Shipped via royal-mail: TRK-1',
+            note: reason,
             timestamp: CREATED,
           },
         ]),
   ]
   const secrets = [cartToken, ...reservationIds, staff, staffNote]
+  if (p.status !== 'pending') secrets.push(reason)
   if (correlationId !== undefined) secrets.push(correlationId)
   if (paymentIntentId !== null) secrets.push(paymentIntentId)
   return { doc: buildOrderDoc(order, history), secrets }
@@ -418,18 +422,10 @@ describe('shopper order responses', () => {
           for (const path of INTERNAL_PATHS)
             expect(documentValueAt(order, path), `${label}: ${path}`).toBeUndefined()
           const o = order as OrderDoc
-          expect(
-            o.history.filter((h) => 'actor' in h),
-            `${label}: history actors`,
-          ).toEqual([])
-
           const source = orders.find((x) => x.doc.orderNumber === o.orderNumber)!.doc
           for (const field of READ_FIELDS)
             expect(o[field], `${label}: ${field}`).toEqual(source[field])
-          expect(
-            o.history.map((h) => [h.toStatus, h.note]),
-            `${label}: history`,
-          ).toEqual(source.history.map((h) => [h.toStatus, h.note]))
+          expect(o.timeline, label).toEqual(source.timeline)
         }
 
         // The stored document keeps everything: the admin reads it in full.

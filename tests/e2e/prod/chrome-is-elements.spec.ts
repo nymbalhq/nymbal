@@ -345,3 +345,47 @@ test.describe('AC-4: the chrome is elements (production build)', () => {
     )
   })
 })
+
+test.describe('AC-7: the order timeline is server-rendered (production build)', () => {
+  // Kills: a guest page that renders the timeline in the browser only (no NymbalElement on Astro, no serverHtml on
+  // Next), so with JavaScript off it holds no entries.
+  test('AC-7: theming.server-rendered: with JS off, /order/<n> for an order placed and paid through the checkout holds nymbal-order-timeline’s entries in its declarative shadow root, equal in kind and datetime to GET /api/orders/:n’s timeline', async ({
+    browser,
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    await blockExternalRequests(page)
+    const product = await ownProduct(request, await adminToken(request), 5)
+    await openCheckout(page, product)
+    await walkToPayment(page, `e2e-timeline-${randomUUID().slice(0, 8)}@e2e.test`)
+    await page.getByTestId('place-order').click()
+    await page.waitForURL(/\/order\//, { timeout: 20_000 })
+    const orderNumber = orderNumberOf(page)
+
+    const off = await scriptOff(browser, testInfo, page.context(), `/order/${orderNumber}`)
+    const host = off.locator('nymbal-order-timeline')
+    await expect(host).toHaveCount(1)
+    const shown = await host.evaluate((el) =>
+      Array.from(el.shadowRoot?.querySelectorAll('[part]') ?? [])
+        .filter((n) => (n.getAttribute('part') ?? '').split(/\s+/).includes('entry'))
+        .map((li) => ({
+          kind: li.getAttribute('data-kind') ?? '',
+          at: li.querySelector('time')?.getAttribute('datetime') ?? '',
+        })),
+    )
+
+    const res = await page.request.get(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`)
+    expect(res.status(), `GET /api/orders/${orderNumber}`).toBe(200)
+    const order = (
+      (await res.json()) as {
+        data: { status: string; timeline?: Array<{ kind: string; at: string }> }
+      }
+    ).data
+    expect(order.status, 'placed and paid').toBe('confirmed')
+    expect(shown, 'the server-rendered entries against the API’s timeline').toEqual(
+      order.timeline ?? [],
+    )
+    expect(shown.map((e) => e.kind)).toEqual(['placed', 'paid'])
+  })
+})

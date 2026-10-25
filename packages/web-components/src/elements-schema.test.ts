@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import * as wc from './index.js'
 import type { ElementSchema } from './index.js'
 import { setupMockClient } from './testing/index.js'
+import { timelineEntries } from './__fixtures__/server-data.js'
 
 // AC-1: every element `registerComponents()` defines (tests/setup.ts calls it) is a LitElement whose static `schema`
 // names the tag it is defined under; every one but `nymbal-payment-element` renders in an open shadow root; and the
@@ -21,9 +22,10 @@ import { setupMockClient } from './testing/index.js'
 // steps as a shopper does, with the payment element as its `payment`-slotted child.
 //
 // The catalogue and page elements (grid, price, stock badge, breadcrumb, gallery, header, footer, category nav,
-// reviews, order summary) render exactly their schema's parts across their states (an empty and a filled grid with and
-// without the product-list store, a gallery of none, one and several images, a review form submitted once with its
-// call held, refused and answered, an order with and without a discount), style them on `--nymbal-*` tokens, have
+// reviews, order summary, order timeline) render exactly their schema's parts across their states (an empty and a
+// filled grid with and without the product-list store, a gallery of none, one and several images, a review form
+// submitted once with its call held, refused and answered, an order with and without a discount, a timeline with no
+// entry and with several), style them on `--nymbal-*` tokens, have
 // their `src/elements/<tag>.ts` entry, and carry the interface the templates call them by.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -61,6 +63,7 @@ const TAGS = [
   'nymbal-review-list',
   'nymbal-review-form',
   'nymbal-order-summary',
+  'nymbal-order-timeline',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -950,6 +953,19 @@ const FIXED: Record<Tag, State[]> = {
       },
     }),
   ],
+  'nymbal-order-timeline': [
+    state(),
+    state({
+      attrs: {
+        entries: JSON.stringify([
+          { kind: 'placed', at: '2026-10-25T09:00:00.000Z' },
+          { kind: 'paid', at: '2026-10-25T09:00:02.000Z' },
+          { kind: 'shipped', at: '2026-10-26T14:30:00.000Z' },
+        ]),
+        'time-zone': 'Europe/London',
+      },
+    }),
+  ],
 }
 
 const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
@@ -1242,6 +1258,21 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
         },
       })
     }),
+  'nymbal-order-timeline': fc
+    .record({
+      entries: timelineEntries(),
+      zone: fc.option(fc.constantFrom('UTC', 'Europe/London', 'Asia/Kolkata', 'Not/AZone'), {
+        nil: undefined,
+      }),
+    })
+    .map(({ entries, zone }) =>
+      state({
+        attrs: {
+          entries: JSON.stringify(entries),
+          ...(zone !== undefined && { 'time-zone': zone }),
+        },
+      }),
+    ),
 }
 
 describe('AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
@@ -1467,6 +1498,15 @@ const INTERFACE: Array<{
       { name: 'currency', type: 'string' },
     ],
   },
+  {
+    tag: 'nymbal-order-timeline',
+    reactName: 'OrderTimeline',
+    events: [],
+    attributes: [
+      { name: 'entries', type: 'json' },
+      { name: 'time-zone', type: 'string' },
+    ],
+  },
 ]
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name)
@@ -1584,9 +1624,9 @@ describe('AC-1: nymbal-checkout meets the foundation', () => {
 const CATALOGUE_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-describe('AC-1: the eleven elements meet the element conventions', () => {
-  it('AC-1: each of the eleven styles itself with var(--nymbal-*) tokens', () => {
-    expect(CATALOGUE_TAGS).toHaveLength(11)
+describe('AC-1: the twelve elements meet the element conventions', () => {
+  it('AC-1: each of the twelve styles itself with var(--nymbal-*) tokens', () => {
+    expect(CATALOGUE_TAGS).toHaveLength(12)
     for (const tag of CATALOGUE_TAGS) {
       const ctor = customElements.get(tag) as
         | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })
