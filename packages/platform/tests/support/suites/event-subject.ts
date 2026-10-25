@@ -42,6 +42,7 @@ function samplesFor(id: string): Sample[] {
     { type: 'product.updated.v1', payload: { product: { id, slug: 's' } }, subject: product },
     { type: 'product.deleted.v1', payload: { productId: id, slug: 's' }, subject: product },
     { type: 'product.published.v1', payload: { productId: id, slug: 's' }, subject: product },
+    { type: 'product.unpublished.v1', payload: { productId: id, slug: 's' }, subject: product },
     { type: 'order.placed.v1', payload: { order: { id, orderNumber: 'N' } }, subject: order },
     { type: 'order.paid.v1', payload: { orderId: id, amountMinor: 1 }, subject: order },
     {
@@ -79,6 +80,26 @@ function samplesFor(id: string): Sample[] {
     { type: 'cart.updated.v1', payload: { cartId: id, itemCount: 0 }, subject: null },
     { type: 'category.created.v1', payload: { category: { id } }, subject: null },
     { type: 'review.created.v1', payload: { reviewId: id, productId: id }, subject: null },
+  ]
+}
+
+/**
+ * Shapes no row held before migration 0012, so its backfill never meets them: a view is no product's history (one rule
+ * ahead of the `product.` prefix), and a visitor merge is about no record of the subject table.
+ */
+function samplesSince0012(id: string): Sample[] {
+  return [
+    {
+      type: 'product.viewed.v1',
+      payload: { productId: id, viewer: { kind: 'visitor', id } },
+      subject: null,
+    },
+    {
+      type: 'product.viewed.v1',
+      payload: { productId: id, viewer: { kind: 'customer', id } },
+      subject: null,
+    },
+    { type: 'visitor.merged.v1', payload: { visitorId: id, customerId: id }, subject: null },
   ]
 }
 
@@ -277,9 +298,9 @@ export function eventSubjectSuite(
         ;({ store, repos } = await open(target))
       }, 60_000)
 
-      it('AC-4: append sets subject_type and subject_id for every row of the subject table, null for anything else, and subjectOf agrees', async () => {
+      it('AC-4: append sets subject_type and subject_id for every row of the subject table, null for anything else (a product view and a visitor merge included), and subjectOf agrees', async () => {
         const id = randomUUID()
-        const samples = samplesFor(id)
+        const samples = [...samplesFor(id), ...samplesSince0012(id)]
         const envelopes = samples.map(envelopeOf)
         await store.transaction((tx) => repos.eventLog.append(tx, envelopes))
 

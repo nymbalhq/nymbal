@@ -240,6 +240,18 @@ export const routeSchemas: Record<string, RouteSchema> = {
     params: orderNumberParams,
   },
 
+  // Recently viewed: the viewer is the bearer's customer or the visitor cookie's, never one the request names.
+  'POST /api/recently-viewed': {
+    name: 'recentlyViewed.record',
+    command: null,
+    description: 'Record that the shopper viewed a product.',
+    body: z.object({ productId: id }),
+  },
+  'GET /api/recently-viewed': {
+    name: 'recentlyViewed.list',
+    description: "List the shopper's recently viewed products, newest first.",
+  },
+
   // Customer account
   'GET /api/customers/me': {
     name: 'customers.me',

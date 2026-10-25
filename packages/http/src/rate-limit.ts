@@ -23,6 +23,8 @@ type RateLimitRules = Record<string, { requests: number; window: string; action:
 export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/auth/login': { requests: 10, window: '15m', action: 'block' },
   '/api/auth/register': { requests: 10, window: '1h', action: 'block' },
+  // A record and a list per page view: 300 page views a minute, so shoppers behind one NAT keep their views.
+  '/api/recently-viewed': { requests: 600, window: '1m', action: 'block' },
   // Each accepted subscribe mails a confirmation: the bound on how much mail one IP can make the store send.
   '/api/alerts/subscribe': { requests: 10, window: '1h', action: 'block' },
 }

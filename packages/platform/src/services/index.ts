@@ -17,6 +17,10 @@ import {
 } from './checkout-service.js'
 import { createSearchService, type SearchService } from './search-service.js'
 import { createRefundService, type RefundService } from './refund-service.js'
+import {
+  createRecentlyViewedService,
+  type RecentlyViewedService,
+} from './recently-viewed-service.js'
 import { createAlertService, type AlertService } from './alert-service.js'
 
 export * from './product-service.js'
@@ -29,6 +33,7 @@ export * from './inventory-service.js'
 export * from './checkout-service.js'
 export * from './search-service.js'
 export * from './refund-service.js'
+export * from './recently-viewed-service.js'
 export * from './alert-service.js'
 export { newAlertToken } from './alert-token.js'
 
@@ -48,6 +53,7 @@ export interface ServiceRegistry {
   checkout: CheckoutService & ManualPayments
   refund: RefundService
   search: SearchService
+  recentlyViewed: RecentlyViewedService
   alert: AlertService
 }
 
@@ -135,6 +141,12 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     search: createSearchService({
       adapter: searchAdapter,
       logger: logger.child({ service: 'search' }),
+    }),
+    recentlyViewed: createRecentlyViewedService({
+      store,
+      repos,
+      publisher,
+      logger: logger.child({ service: 'recently-viewed' }),
     }),
     alert: createAlertService({
       store,

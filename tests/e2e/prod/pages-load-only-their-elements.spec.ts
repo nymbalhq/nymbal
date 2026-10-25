@@ -22,11 +22,14 @@ const PRODUCT = seedProducts[0]!.slug
  * some data and not for this: the product page renders a variant selector only for a product with a variant choice,
  * which the first seeded product is not, and the notify-me form only for a store whose email delivers, which the prod
  * build's store does not (Next's ProductInteractive imports its wrapper, which defines it); Next's checkout renders
- * the payment element at the payment step, after the one this test sees. Defining those there is allowed and not required.
+ * the payment element at the payment step, after the one this test sees. Defining those there is allowed and not
+ * required. `/` and the product page define `nymbal-recently-viewed`, and through it the card, whatever the browser
+ * has viewed; neither is server-rendered.
  */
 const CATEGORY = seedCategories[0]!.slug
 const LAYOUT = ['nymbal-site-header', 'nymbal-site-footer']
 const GRID = ['nymbal-product-grid', 'nymbal-product-card']
+const RECENTLY_VIEWED = ['nymbal-recently-viewed', 'nymbal-product-card']
 
 const PAGES: Array<{
   name: string
@@ -40,7 +43,7 @@ const PAGES: Array<{
     name: 'home',
     path: '/',
     line: false,
-    mayRender: [],
+    mayRender: RECENTLY_VIEWED,
     renders: [...LAYOUT, ...GRID, 'nymbal-category-nav'],
   },
   { name: 'listing', path: '/products', line: false, mayRender: [], renders: [...LAYOUT, ...GRID] },
@@ -55,7 +58,7 @@ const PAGES: Array<{
     name: 'product',
     path: `/product/${PRODUCT}`,
     line: false,
-    mayRender: ['nymbal-variant-selector', 'nymbal-notify-me'],
+    mayRender: ['nymbal-variant-selector', 'nymbal-notify-me', ...RECENTLY_VIEWED],
     renders: [
       ...LAYOUT,
       'nymbal-product-price',

@@ -8,6 +8,7 @@ import {
   Breadcrumb,
   ImageGallery,
   ProductGrid,
+  RecentlyViewed,
   ReviewForm,
   ReviewList,
 } from '@/components/client/elements'
@@ -191,6 +192,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
             />
           </section>
         )}
+
+        {/* The shopper's own list, read in the browser: never in this cached page's HTML. */}
+        <RecentlyViewed current={product.id} data-testid="recently-viewed" />
       </div>
     </>
   )

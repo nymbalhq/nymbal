@@ -20,6 +20,7 @@ import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
 import { NymbalCheckout } from './components/checkout.js'
 import { NymbalProductGrid } from './components/product-grid.js'
+import { NymbalRecentlyViewed } from './components/recently-viewed.js'
 import { NymbalProductPrice } from './components/product-price.js'
 import { NymbalStockBadge } from './components/stock-badge.js'
 import { NymbalBreadcrumb } from './components/breadcrumb.js'
@@ -55,6 +56,7 @@ export const ELEMENTS = [
   NymbalAddressBook,
   NymbalCheckout,
   NymbalProductGrid,
+  NymbalRecentlyViewed,
   NymbalProductPrice,
   NymbalStockBadge,
   NymbalBreadcrumb,

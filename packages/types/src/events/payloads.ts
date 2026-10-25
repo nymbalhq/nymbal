@@ -35,6 +35,17 @@ export interface ProductRestockedV1Payload {
   newQty: number
 }
 
+/** Whose view it is: an anonymous visitor (the `nymbal.visitor` cookie) or a signed-in customer. */
+export interface RecentViewer {
+  kind: 'visitor' | 'customer'
+  id: string
+}
+
+export interface ProductViewedV1Payload {
+  productId: string
+  viewer: RecentViewer
+}
+
 export interface CategoryCreatedV1Payload {
   category: Category
 }
@@ -140,6 +151,12 @@ export interface CustomerUpdatedV1Payload {
   customer?: CustomerSnapshot
 }
 export interface CustomerDeletedV1Payload {
+  customerId: string
+}
+
+/** A visitor's views now belong to the customer who signed in carrying its cookie. */
+export interface VisitorMergedV1Payload {
+  visitorId: string
   customerId: string
 }
 

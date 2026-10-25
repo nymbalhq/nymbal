@@ -3,6 +3,7 @@ export type {
   NymbalClient,
   NymbalClientOptions,
   CustomerAccount,
+  RecentlyViewed,
   StoreCapabilitiesReader,
 } from './client.js'
 

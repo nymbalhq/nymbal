@@ -36,10 +36,10 @@ import { renderElement } from './index.js'
 // (tests/setup.ts imports the package's index, whose first import it must be), or the client render appends to the
 // server's nodes.
 //
-// The catalogue and page elements (the product grid, price, stock badge, breadcrumb, image gallery, site header and
-// footer, category nav, review list and form, order summary, order timeline, notify-me) meet the same three cases, 31
-// elements in all. Each
-// renders from its attributes alone: the data it is given is in its server render.
+// The catalogue and page elements (the product grid, recently viewed, price, stock badge, breadcrumb, image gallery,
+// site header and footer, category nav, review list and form, order summary, order timeline, notify-me) meet the same
+// three cases, 32 elements in all. Each renders from its attributes alone: the data it is given is in its server
+// render. Recently viewed is given none: its list is the browser's own shopper's, so its server render holds no card.
 
 const PAYMENT = 'nymbal-payment-element'
 
@@ -209,6 +209,8 @@ function shownFrom(
       return { text: product === undefined ? [] : [product.name], cards: null }
     }
     // Catalogue and page elements
+    case 'nymbal-recently-viewed':
+      return { text: [], cards: 0 }
     case 'nymbal-product-grid': {
       const products = json('products') as unknown[] | undefined
       return { text: [], cards: products === undefined ? null : products.length }
@@ -313,6 +315,7 @@ beforeEach(() => {
 
 const CATALOGUE_ELEMENTS = [
   'nymbal-product-grid',
+  'nymbal-recently-viewed',
   'nymbal-product-price',
   'nymbal-stock-badge',
   'nymbal-breadcrumb',
@@ -328,7 +331,7 @@ const CATALOGUE_ELEMENTS = [
 ]
 
 describe('AC-1: renderElement renders every element', () => {
-  it('AC-1: the package has 31 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
+  it('AC-1: the package has 32 server-rendered elements, every one but the payment element, the catalogue and page elements among them', () => {
     expect(SERVER_RENDERED.length).toBe(SCHEMAS.length - 1)
     expect(CATALOGUE_ELEMENTS.filter((tag) => !SERVER_RENDERED.some((s) => s.tag === tag))).toEqual(
       [],

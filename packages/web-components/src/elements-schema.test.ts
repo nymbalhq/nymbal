@@ -22,11 +22,12 @@ import { timelineEntries } from './__fixtures__/server-data.js'
 // steps as a shopper does, with the payment element as its `payment`-slotted child.
 //
 // The catalogue and page elements (grid, price, stock badge, breadcrumb, gallery, header, footer, category nav,
-// reviews, order summary, order timeline, notify-me) render exactly their schema's parts across their states (an
-// empty and a filled grid with and without the product-list store, a gallery of none, one and several images, a review
-// form and an out-of-stock notify-me form each submitted once with its call held, refused and answered, an in-stock
-// notify-me with no form, an order with and without a discount, a timeline with no entry and with several), style
-// them on `--nymbal-*` tokens, have
+// reviews, order summary, order timeline, recently viewed, notify-me) render exactly their schema's parts across their
+// states (an empty and a filled grid with and without the product-list store, a gallery of none, one and several
+// images, a review form and an out-of-stock notify-me form each submitted once with its call held, refused and
+// answered, an in-stock notify-me with no form, an order with and without a discount, a timeline with no entry and with
+// several, a recently-viewed list empty, filled, limited, left empty by its current product and failed), style them on
+// `--nymbal-*` tokens, have
 // their `src/elements/<tag>.ts` entry, and carry the interface the templates call them by.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -54,6 +55,7 @@ const TAGS = [
   'nymbal-checkout',
   // Catalogue and page elements
   'nymbal-product-grid',
+  'nymbal-recently-viewed',
   'nymbal-product-price',
   'nymbal-stock-badge',
   'nymbal-breadcrumb',
@@ -89,6 +91,8 @@ interface State {
   walk?: (el: HTMLElement) => Promise<void>
   /** What the checkout store's `submitPayment()` does: never answers, refuses, or places an order. */
   placeOrder?: Phase
+  /** What `client.recentlyViewed.list()` answers, or `'fail'` when it rejects. */
+  recent?: unknown[] | 'fail'
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -190,6 +194,25 @@ function installReviews(client: Record<string, unknown>, s: State): void {
   }
 }
 
+/** The recently-viewed SDK the element records and lists through, answering as `s.recent` says. */
+function installRecentlyViewed(client: Record<string, unknown>, s: State): void {
+  client['recentlyViewed'] = {
+    record: async () => undefined,
+    list: async () => {
+      if (s.recent === 'fail') throw new Error('Unavailable')
+      return { items: s.recent ?? [] }
+    },
+  }
+}
+
+/** Lets an element that reads after its first update finish its read and render what it got. */
+async function readSettled(el: HTMLElement): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
+  }
+}
+
 /** The checkout SDK the checkout drives: its setters keep what they are given; `submitPayment()` answers as `phase` says. */
 function installCheckout(client: Record<string, unknown>, phase: Phase): void {
   const checkout = client['checkout'] as Record<string, unknown> & {
@@ -287,6 +310,7 @@ async function mount(
   installAccount(client as unknown as Record<string, unknown>, s)
   installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
+  installRecentlyViewed(client as unknown as Record<string, unknown>, s)
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
@@ -808,6 +832,20 @@ const FIXED: Record<Tag, State[]> = {
       stores: { productList: { products: [], pagination: { cursor: null, hasMore: false } } },
     }),
   ],
+  'nymbal-recently-viewed': [
+    state({ walk: readSettled }),
+    state({
+      recent: [card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })],
+      walk: readSettled,
+    }),
+    state({
+      attrs: { current: 'p-mug', limit: '1' },
+      recent: [card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })],
+      walk: readSettled,
+    }),
+    state({ attrs: { current: 'p-mug' }, recent: [card()], walk: readSettled }),
+    state({ recent: 'fail', walk: readSettled }),
+  ],
   'nymbal-product-price': [
     state(),
     state({ attrs: { 'price-minor': '1200', currency: 'GBP' } }),
@@ -1130,6 +1168,26 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
         },
       }),
     ),
+  'nymbal-recently-viewed': fc
+    .record({
+      recent: fc.oneof(
+        fc.uniqueArray(cardProduct, { maxLength: 6, selector: (p) => p.slug }),
+        fc.constant('fail' as const),
+      ),
+      current: fc.option(fc.nat({ max: 5 }), { nil: undefined }),
+      limit: fc.option(fc.integer({ min: -1, max: 6 }), { nil: undefined }),
+    })
+    .map(({ recent, current, limit }) => {
+      const currentId = recent === 'fail' || current === undefined ? undefined : recent[current]
+      return state({
+        attrs: {
+          ...(currentId !== undefined && { current: String((currentId as { id: string }).id) }),
+          ...(limit !== undefined && { limit: String(limit) }),
+        },
+        recent,
+        walk: readSettled,
+      })
+    }),
   'nymbal-product-price': fc
     .record({
       price: fc.option(fc.integer({ min: 0, max: 100_000 })),
@@ -1449,6 +1507,15 @@ const INTERFACE: Array<{
   },
   // Catalogue and page elements
   {
+    tag: 'nymbal-recently-viewed',
+    reactName: 'RecentlyViewed',
+    events: [{ name: 'nymbal:recently-viewed:loaded', prop: 'onLoaded' }],
+    attributes: [
+      { name: 'current', type: 'string' },
+      { name: 'limit', type: 'number' },
+    ],
+  },
+  {
     tag: 'nymbal-product-grid',
     reactName: 'ProductGrid',
     events: [],
@@ -1675,9 +1742,9 @@ describe('AC-1: nymbal-checkout meets the foundation', () => {
 const CATALOGUE_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-describe('AC-1: the thirteen catalogue and page elements meet the element conventions', () => {
-  it('AC-1: each of the thirteen styles itself with var(--nymbal-*) tokens', () => {
-    expect(CATALOGUE_TAGS).toHaveLength(13)
+describe('AC-1: the fourteen catalogue and page elements meet the element conventions', () => {
+  it('AC-1: each of the fourteen styles itself with var(--nymbal-*) tokens', () => {
+    expect(CATALOGUE_TAGS).toHaveLength(14)
     for (const tag of CATALOGUE_TAGS) {
       const ctor = customElements.get(tag) as
         | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })

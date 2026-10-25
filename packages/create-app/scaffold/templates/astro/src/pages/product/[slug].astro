@@ -129,6 +129,9 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
         />
       </section>
     )}
+
+    <!-- The shopper's own list, read in the browser: a bare tag, so no shopper's list is in the page's HTML. -->
+    <nymbal-recently-viewed data-testid="recently-viewed" current={product.id}></nymbal-recently-viewed>
   </div>
 </BaseLayout>
 

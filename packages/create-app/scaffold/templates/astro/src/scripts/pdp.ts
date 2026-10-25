@@ -5,6 +5,7 @@ import { NymbalNotifyMe } from '@nymbalhq/web-components/elements/nymbal-notify-
 import { NymbalProductGrid } from '@nymbalhq/web-components/elements/nymbal-product-grid'
 import { NymbalProductPrice } from '@nymbalhq/web-components/elements/nymbal-product-price'
 import { NymbalQuantitySelector } from '@nymbalhq/web-components/elements/nymbal-quantity-selector'
+import { NymbalRecentlyViewed } from '@nymbalhq/web-components/elements/nymbal-recently-viewed'
 import { NymbalReviewForm } from '@nymbalhq/web-components/elements/nymbal-review-form'
 import { NymbalReviewList } from '@nymbalhq/web-components/elements/nymbal-review-list'
 import { NymbalStockBadge } from '@nymbalhq/web-components/elements/nymbal-stock-badge'
@@ -20,6 +21,7 @@ NymbalQuantitySelector.define()
 NymbalAddToCart.define()
 NymbalReviewList.define()
 NymbalReviewForm.define()
+NymbalRecentlyViewed.define()
 // The related grid is there only when the product has relations.
 if (document.querySelector('nymbal-product-grid') !== null) NymbalProductGrid.define()
 // The back-in-stock form is there only when the store's email delivers.

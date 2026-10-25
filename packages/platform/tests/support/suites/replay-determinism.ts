@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
+import { v7 as uuidv7 } from 'uuid'
 import { describe, expect, it } from 'vitest'
 import { AdapterError, ConfigError, NymbalError } from '@nymbalhq/types'
 import { READ_MODELS } from '../../../src/read-models/index.js'
-import { address, type Kernel } from '../kernel.js'
+import { serveKernel, type ServedKernel } from '../http.js'
+import { address, createKernel, type Kernel } from '../kernel.js'
+import { login, primedShopper } from '../security.js'
 import {
   DOCUMENT_COLLECTIONS,
   DOCUMENT_MODELS,
@@ -28,6 +31,23 @@ interface World {
   products: Array<{ id: string; variants: Array<{ id: string; priceMinor: number }> }>
   orders: Array<{ id: string; totalMinor: number }>
   customers: string[]
+  /** Each customer's email, by the customer's index. */
+  emails: string[]
+  /** The run's guest visitors: fresh ids, as the capture route mints them. */
+  visitors: string[]
+}
+
+const PASSWORD = 'correct-horse-battery'
+
+function emptyWorld(): World {
+  return {
+    categories: [],
+    products: [],
+    orders: [],
+    customers: [],
+    emails: [],
+    visitors: [uuidv7(), uuidv7(), uuidv7()],
+  }
 }
 
 type Op =
@@ -61,6 +81,11 @@ type Op =
   | { kind: 'order.refund'; pick: number; half: boolean }
   | { kind: 'customer.register'; word: string }
   | { kind: 'customer.update'; pick: number; word: string }
+  | { kind: 'view.guest'; visitor: number; pick: number }
+  | { kind: 'view.customer'; customer: number; pick: number }
+  | { kind: 'sign-in.fold'; visitor: number; customer: number }
+  | { kind: 'product.unpublish'; pick: number }
+  | { kind: 'product.publish'; pick: number }
 
 const word = fc.constantFrom(...WORDS)
 const pick = fc.nat({ max: 50 })
@@ -107,6 +132,15 @@ const op: fc.Arbitrary<Op> = fc.oneof(
   fc.record({ kind: fc.constant('order.refund' as const), pick, half: fc.boolean() }),
   fc.record({ kind: fc.constant('customer.register' as const), word }),
   fc.record({ kind: fc.constant('customer.update' as const), pick, word }),
+  fc.record({ kind: fc.constant('view.guest' as const), visitor: fc.nat({ max: 2 }), pick }),
+  fc.record({ kind: fc.constant('view.customer' as const), customer: fc.nat({ max: 5 }), pick }),
+  fc.record({
+    kind: fc.constant('sign-in.fold' as const),
+    visitor: fc.nat({ max: 2 }),
+    customer: fc.nat({ max: 5 }),
+  }),
+  fc.record({ kind: fc.constant('product.unpublish' as const), pick }),
+  fc.record({ kind: fc.constant('product.publish' as const), pick }),
 )
 
 /**
@@ -157,6 +191,17 @@ const TOUR: Op[] = [
     status: 'active',
   },
   { kind: 'product.delete', pick: 2 },
+  // Recently viewed: a guest's views, a customer's, the guest signing in, a second guest, and a viewed product
+  // unpublished and published again.
+  { kind: 'view.guest', visitor: 0, pick: 0 },
+  { kind: 'view.customer', customer: 0, pick: 1 },
+  { kind: 'view.guest', visitor: 0, pick: 1 },
+  { kind: 'sign-in.fold', visitor: 0, customer: 0 },
+  { kind: 'view.guest', visitor: 1, pick: 0 },
+  { kind: 'view.guest', visitor: 1, pick: 1 },
+  { kind: 'product.unpublish', pick: 1 },
+  { kind: 'product.publish', pick: 1 },
+  { kind: 'product.unpublish', pick: 0 },
 ]
 
 const at = <T>(list: T[], i: number): T | undefined =>
@@ -308,18 +353,49 @@ async function apply(k: Kernel, world: World, o: Op): Promise<boolean> {
         return true
       }
       case 'customer.register': {
+        const email = `${o.word}-${tag}@replay.test`
         const { customer } = await s.auth.register({
-          email: `${o.word}-${tag}@replay.test`,
-          password: 'correct-horse-battery',
+          email,
+          password: PASSWORD,
           firstName: o.word,
         })
         world.customers.push(customer.id)
+        world.emails.push(email)
         return true
       }
       case 'customer.update': {
         const id = at(world.customers, o.pick)
         if (id === undefined) return false
         await s.customer.updateProfile(id, { firstName: o.word, phone: `0700 ${tag}` })
+        return true
+      }
+      case 'view.guest': {
+        const p = at(world.products, o.pick)
+        if (p === undefined) return false
+        return s.recentlyViewed.record({ kind: 'visitor', id: world.visitors[o.visitor]! }, p.id)
+      }
+      case 'view.customer': {
+        const p = at(world.products, o.pick)
+        const id = at(world.customers, o.customer)
+        if (p === undefined || id === undefined) return false
+        return s.recentlyViewed.record({ kind: 'customer', id }, p.id)
+      }
+      case 'sign-in.fold': {
+        const id = at(world.customers, o.customer)
+        if (id === undefined) return false
+        await s.recentlyViewed.fold(world.visitors[o.visitor]!, id)
+        return true
+      }
+      case 'product.unpublish': {
+        const p = at(world.products, o.pick)
+        if (p === undefined) return false
+        await s.product.unpublish(p.id)
+        return true
+      }
+      case 'product.publish': {
+        const p = at(world.products, o.pick)
+        if (p === undefined) return false
+        await s.product.publish(p.id)
         return true
       }
     }
@@ -338,9 +414,11 @@ export interface DeterminismOptions {
 
 export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: DeterminismOptions): void {
   describe(`AC-2: a rebuild equals the live read models (${dialect})`, () => {
-    it('AC-2: READ_MODELS names catalogue, orders, customers and search, and the three document models own exactly their collections', () => {
+    it('AC-9: READ_MODELS names catalogue, orders, customers, search and recently-viewed, and the four document models own exactly their collections', () => {
       const byName = new Map(READ_MODELS.map((m) => [m.name, [...m.collections].sort()]))
-      expect([...byName.keys()].sort()).toEqual(['catalogue', 'customers', 'orders', 'search'])
+      expect([...byName.keys()].sort()).toEqual(
+        ['catalogue', 'customers', 'orders', 'recently-viewed', 'search'].sort(),
+      )
       for (const [name, collections] of Object.entries(DOCUMENT_MODELS)) {
         expect(byName.get(name as keyof typeof DOCUMENT_MODELS), name).toEqual(
           [...collections].sort(),
@@ -348,12 +426,12 @@ export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: Determi
       }
     })
 
-    it('AC-2: over generated command sequences through the services (a fixed tour of the four live defects, then a generated tail), rebuild(all) into a fresh document store and index equals every live collection document by document, in key order, and the live native index document by document; the report counts what it wrote', async () => {
+    it('AC-9: over generated command sequences through the services (a fixed tour of the four live defects and of guest and customer views, a sign-in with a visitor cookie, an unpublish and a publish, then a generated tail of the same and the rest), rebuild(all) into a fresh document store and index equals every live collection document by document, in key order, and the live native index document by document; the report counts what it wrote', async () => {
       await fc.assert(
         fc.asyncProperty(fc.array(op, { minLength: 3, maxLength: 18 }), async (tail) => {
           const { kernel: k, drop } = await opts.fresh()
           try {
-            const world: World = { categories: [], products: [], orders: [], customers: [] }
+            const world = emptyWorld()
             let toured = 0
             for (const o of TOUR) if (await apply(k, world, o)) toured += 1
             expect(toured, 'a tour command was refused, so the run proves less than it says').toBe(
@@ -365,6 +443,11 @@ export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: Determi
             const live = await documentModelsOf(k.documentStore)
             const liveIndex = await nativeSearchDocuments(k)
             const rebuilt = await rebuildFresh(k)
+            // The tour's views leave lists, so an equality of two empty recently-viewed collections proves nothing.
+            expect(
+              live['recently-viewed']?.length ?? 0,
+              'live recently-viewed lists',
+            ).toBeGreaterThan(0)
 
             for (const name of DOCUMENT_COLLECTIONS) {
               expect(rebuilt.documents[name], `collection ${name}`).toEqual(live[name])
@@ -382,7 +465,7 @@ export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: Determi
               )
             }
             expect(rebuilt.report.map((e) => e.model).sort()).toEqual(
-              ['catalogue', 'customers', 'orders', 'search'].sort(),
+              ['catalogue', 'customers', 'orders', 'recently-viewed', 'search'].sort(),
             )
           } finally {
             await k.close()
@@ -392,5 +475,67 @@ export function replayDeterminismSuite(dialect: Kernel['dialect'], opts: Determi
         { numRuns: opts.runs, endOnFailure: true },
       )
     }, 600_000)
+
+    it('AC-9: after the tour, a second app over the same database with an empty in-memory document store serves every visitor and customer the GET /api/recently-viewed list the first served', async () => {
+      const { kernel: k, drop } = await opts.fresh()
+      let first: ServedKernel | undefined
+      let second: ServedKernel | undefined
+      let firstClosed = false
+      try {
+        const world = emptyWorld()
+        let toured = 0
+        for (const o of TOUR) if (await apply(k, world, o)) toured += 1
+        expect(toured, 'a tour command was refused').toBe(TOUR.length)
+
+        first = await serveKernel(k)
+        const before = await servedLists(first, world)
+        firstClosed = true
+        await first.stop()
+
+        const reopened = await createKernel(
+          dialect === 'sqlite'
+            ? { dialect: 'sqlite', sqlitePath: k.target }
+            : { dialect: 'postgres', postgresUrl: k.target },
+        )
+        second = await serveKernel(reopened)
+        const after = await servedLists(second, world)
+
+        expect(
+          Object.values(before).some((ids) => ids.length > 0),
+          'some list to compare',
+        ).toBe(true)
+        expect(after).toEqual(before)
+      } finally {
+        if (!firstClosed) await (first?.stop() ?? k.close())
+        await second?.stop()
+        await drop()
+      }
+    }, 120_000)
   })
+}
+
+/** What `GET /api/recently-viewed` serves each of the world's visitors (by cookie) and customers (by bearer), by viewer. */
+async function servedLists(s: ServedKernel, world: World): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {}
+  async function read(label: string, headers: Record<string, string>, jar?: Map<string, string>) {
+    const shop = await primedShopper(s.baseUrl, jar)
+    const res = await shop.call<{ items: Array<{ id: string }> }>(
+      'GET',
+      '/api/recently-viewed',
+      undefined,
+      { headers },
+    )
+    expect(res.status, `${label}: ${JSON.stringify(res.body)}`).toBe(200)
+    out[label] = (res.body.data?.items ?? []).map((p) => p.id)
+  }
+  for (const id of world.visitors) {
+    await read(`visitor:${id}`, {}, new Map([['nymbal.visitor', id]]))
+  }
+  for (const [i, id] of world.customers.entries()) {
+    const shop = await primedShopper(s.baseUrl)
+    const answer = await login(s.baseUrl, shop.jar, { email: world.emails[i]!, password: PASSWORD })
+    expect(answer.status, `login ${world.emails[i]}`).toBe(200)
+    await read(`customer:${id}`, { authorization: `Bearer ${answer.body.data!.accessToken}` })
+  }
+  return out
 }

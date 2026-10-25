@@ -108,6 +108,8 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         return fetchClient.request<{ accessToken: string; expiresIn: number }>(
           'POST',
           '/api/auth/refresh',
+          undefined,
+          { authRefresh: true },
         )
       },
       getProfile() {
@@ -143,6 +145,15 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
           undefined,
           key === undefined ? {} : { headers: { [ORDER_KEY_HEADER]: key } },
         )
+      },
+    },
+
+    recentlyViewed: {
+      async record(productId: string) {
+        await fetchClient.request<void>('POST', '/api/recently-viewed', { productId })
+      },
+      list() {
+        return fetchClient.request<{ items: DenormalisedProduct[] }>('GET', '/api/recently-viewed')
       },
     },
 

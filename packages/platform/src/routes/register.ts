@@ -36,6 +36,7 @@ import { registerStripeWebhookRoute } from './webhooks-stripe.js'
 import { validatedAdapter } from './validated-adapter.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
+import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
 import { registerAlertRoutes } from './alerts.js'
 
 export interface RegisterAllRoutesDeps {
@@ -152,7 +153,9 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
-  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl)
+  // The cart merge, when it is wired, is one more hook here.
+  const afterSignIn = [foldViewsOnSignIn(services.recentlyViewed)]
+  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn)
   registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
@@ -168,6 +171,12 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     cart: services.cart,
     productRepo: repos.product,
     variantRepo: repos.variant,
+  })
+  registerRecentlyViewedRoutes(adapter, {
+    recentlyViewed: services.recentlyViewed,
+    documentStore,
+    productRepo: repos.product,
+    retentionDays: config.events.retentionDays,
   })
   registerCheckoutRoutes(adapter, services.checkout)
   registerAlertRoutes(adapter, { alerts: services.alert })

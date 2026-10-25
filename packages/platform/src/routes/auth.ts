@@ -1,11 +1,16 @@
 import {
   AuthError,
   type HttpAdapter,
+  type RequestContext,
   type ResponseEnvelope,
   type ResponseCookie,
 } from '@nymbalhq/types'
 import { parseDurationToMs, type AuthService } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
+import { expiredVisitorCookie } from './recently-viewed.js'
+
+/** Runs once a login or register has succeeded; the cookies it answers join the response. */
+export type AfterSignIn = (ctx: RequestContext, customerId: string) => Promise<ResponseCookie[]>
 
 interface RegisterBody {
   email?: string
@@ -38,15 +43,40 @@ function refreshCookies(token: string, maxAgeSeconds: number): ResponseCookie[] 
   ]
 }
 
+/** Logout ends the browser's visitor too, so the next person on a shared device starts with no list. */
 function expiredCookies(): ResponseCookie[] {
-  return [{ name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true }]
+  return [
+    { name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true },
+    expiredVisitorCookie(),
+  ]
 }
 
-/** `refreshTtl` is the config's `security.auth.refreshTtl`: the cookie lives as long as the token it carries. */
+/** Each hook in order; one that throws is logged and skipped, and the sign-in stands. */
+async function runAfterSignIn(
+  hooks: readonly AfterSignIn[],
+  ctx: RequestContext,
+  customerId: string,
+): Promise<ResponseCookie[]> {
+  const cookies: ResponseCookie[] = []
+  for (const hook of hooks) {
+    try {
+      cookies.push(...(await hook(ctx, customerId)))
+    } catch (err) {
+      ctx.logger.warn({ err, customerId }, 'an after-sign-in hook failed; the sign-in stands')
+    }
+  }
+  return cookies
+}
+
+/**
+ * `refreshTtl` is the config's `security.auth.refreshTtl`: the cookie lives as long as the token it carries.
+ * `afterSignIn` runs after every successful login and register.
+ */
 export function registerAuthRoutes(
   adapter: HttpAdapter,
   auth: AuthService,
   refreshTtl: string,
+  afterSignIn: readonly AfterSignIn[] = [],
 ): void {
   const refreshMaxAge = Math.floor(parseDurationToMs(refreshTtl) / 1000)
   adapter.registerRoute('POST', '/api/auth/register', async (ctx) => {
@@ -72,7 +102,10 @@ export function registerAuthRoutes(
         undefined,
         201,
       )
-      envelope.cookies = refreshCookies(result.tokens.refreshToken, refreshMaxAge)
+      envelope.cookies = [
+        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge),
+        ...(await runAfterSignIn(afterSignIn, ctx, result.customer.id)),
+      ]
       return envelope as ResponseEnvelope
     } catch (err) {
       return renderError(err)
@@ -91,7 +124,10 @@ export function registerAuthRoutes(
         accessToken: result.tokens.accessToken,
         expiresIn: result.tokens.expiresIn,
       })
-      envelope.cookies = refreshCookies(result.tokens.refreshToken, refreshMaxAge)
+      envelope.cookies = [
+        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge),
+        ...(await runAfterSignIn(afterSignIn, ctx, result.customer.id)),
+      ]
       return envelope as ResponseEnvelope
     } catch (err) {
       return renderError(err)

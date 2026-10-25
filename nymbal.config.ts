@@ -19,10 +19,12 @@ export default {
   },
   security: {
     adapter: 'middleware',
-    // The E2E suite registers and logs in many times from 127.0.0.1; the built-in limits would refuse it.
+    // The E2E suite registers, logs in and views products many times from 127.0.0.1; the built-in limits would
+    // refuse it.
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      '/api/recently-viewed': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {

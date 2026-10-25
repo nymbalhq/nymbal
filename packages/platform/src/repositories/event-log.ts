@@ -190,6 +190,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
     return where
   }
 
+  /** Only the columns a LoggedEvent maps: a boot rebuild reads the log on a store not yet migrated past 0007. */
   async function select(
     tx: ReadTx,
     where: { sqlite: SQL[]; postgres: SQL[] },
@@ -197,7 +198,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
   ): Promise<LoggedEvent[]> {
     if (tx.kind === 'sqlite') {
       return sqliteDb(tx)
-        .select()
+        .select(sqliteLogged)
         .from(s)
         .where(and(...where.sqlite))
         .orderBy(asc(s.seq))
@@ -206,7 +207,7 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         .map(rowToLogged)
     }
     const rows = await postgresDb(tx)
-      .select()
+      .select(postgresLogged)
       .from(p)
       .where(and(...where.postgres))
       .orderBy(asc(p.seq))

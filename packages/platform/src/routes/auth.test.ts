@@ -1,8 +1,33 @@
 import fc from 'fast-check'
 import { describe, it, expect, vi } from 'vitest'
-import { registerAuthRoutes } from './auth.js'
-import type { HttpAdapter, RouteHandler, Customer } from '@nymbalhq/types'
+import { registerAuthRoutes, type AfterSignIn } from './auth.js'
+import {
+  AuthError,
+  type HttpAdapter,
+  type Logger,
+  type RouteHandler,
+  type Customer,
+  type ResponseCookie,
+} from '@nymbalhq/types'
 import type { AuthService, AuthTokens } from '../services/auth-service.js'
+
+/** A logger that keeps each record's level, so a test can read what a route logged. */
+function recordingLogger(records: Array<{ level: string }>): Logger {
+  const at =
+    (level: string) =>
+    (..._args: unknown[]): void => {
+      records.push({ level })
+    }
+  const logger = {
+    trace: at('trace'),
+    debug: at('debug'),
+    info: at('info'),
+    warn: at('warn'),
+    error: at('error'),
+    child: () => logger,
+  }
+  return logger as unknown as Logger
+}
 
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()
@@ -23,6 +48,7 @@ function makeAdapter() {
     options: {
       body?: unknown
       cookies?: Record<string, string>
+      logger?: Logger
     } = {},
   ) {
     const handler = routes.get(`${method}:${path}`)
@@ -38,7 +64,7 @@ function makeAdapter() {
       cookies: options.cookies ?? {},
       requestId: 'test-req',
       correlationId: 'test-corr',
-      logger: {
+      logger: options.logger ?? {
         trace() {},
         debug() {},
         info() {},
@@ -271,5 +297,82 @@ describe('POST /api/auth/logout', () => {
     expect(cleared.value).toBe('')
     expect(cleared.maxAge).toBe(0)
     expect(cleared.maxAge).toBeLessThan(set.maxAge)
+  })
+})
+
+describe('AC-6: the after-sign-in hooks', () => {
+  const credentials = { email: 'test@example.com', password: 'pass123' }
+  const SIGN_INS = [
+    { path: '/api/auth/login', status: 200 },
+    { path: '/api/auth/register', status: 201 },
+  ] as const
+
+  /** Hooks that record their run and answer one cookie each, or throw where `fails` says. */
+  function hooksOf(fails: boolean[]) {
+    const ran: string[] = []
+    const cookieOf = (i: number, customerId: string): ResponseCookie => ({
+      name: `hook.${i}`,
+      value: customerId,
+      path: '/',
+    })
+    const hooks: AfterSignIn[] = fails.map((fail, i) => async (_ctx, customerId) => {
+      ran.push(`${i}:${customerId}`)
+      if (fail) throw new Error(`hook ${i} refused`)
+      return [cookieOf(i, customerId)]
+    })
+    return { hooks, ran, cookieOf }
+  }
+
+  const byName = (a: ResponseCookie, b: ResponseCookie) => a.name.localeCompare(b.name)
+
+  it('AC-6: property: login and register run every hook in order with the signed-in customer, send each succeeding hook’s cookies beside the refresh cookie, log each throwing hook at warn, and still answer their success status', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.boolean(), { maxLength: 5 }),
+        fc.constantFrom(...SIGN_INS),
+        async (fails, signIn) => {
+          const { hooks, ran, cookieOf } = hooksOf(fails)
+          const records: Array<{ level: string }> = []
+          const { adapter, invoke } = makeAdapter()
+          registerAuthRoutes(adapter, makeAuthService(), '7d', hooks)
+
+          const resp = await invoke('POST', signIn.path, {
+            body: credentials,
+            logger: recordingLogger(records),
+          })
+
+          expect(resp.status).toBe(signIn.status)
+          expect(ran).toEqual(fails.map((_, i) => `${i}:${testCustomer.id}`))
+          const cookies = (resp.cookies ?? []) as ResponseCookie[]
+          expect(cookies.find((c) => c.name === 'nymbal.refresh')?.value).toBe('refresh-tok')
+          expect(cookies.filter((c) => c.name !== 'nymbal.refresh').sort(byName)).toEqual(
+            fails.flatMap((fail, i) => (fail ? [] : [cookieOf(i, testCustomer.id)])).sort(byName),
+          )
+          expect(records.filter((r) => r.level === 'warn').length).toBe(
+            fails.filter(Boolean).length,
+          )
+        },
+      ),
+      { numRuns: 60 },
+    )
+  })
+
+  it('AC-6: a login that succeeds runs the hooks; a refused one after it runs none and sends no hook’s cookie', async () => {
+    const { hooks, ran } = hooksOf([false, false])
+    const login = vi
+      .fn()
+      .mockResolvedValueOnce({ customer: testCustomer, tokens: testTokens })
+      .mockRejectedValueOnce(new AuthError('invalid_credentials', 'Invalid email or password'))
+    const { adapter, invoke } = makeAdapter()
+    registerAuthRoutes(adapter, makeAuthService({ login }), '7d', hooks)
+
+    const accepted = await invoke('POST', '/api/auth/login', { body: credentials })
+    const ranAfterSuccess = [...ran]
+    const refused = await invoke('POST', '/api/auth/login', { body: credentials })
+
+    expect([accepted.status, refused.status]).toEqual([200, 401])
+    expect(ranAfterSuccess).toEqual([`0:${testCustomer.id}`, `1:${testCustomer.id}`])
+    expect(ran, 'hooks run by the refused login').toEqual(ranAfterSuccess)
+    expect(((refused.cookies ?? []) as ResponseCookie[]).map((c) => c.name)).toEqual([])
   })
 })

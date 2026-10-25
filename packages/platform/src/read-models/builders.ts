@@ -23,6 +23,7 @@ export const PRODUCTS_BY_CATEGORY = 'products-by-category'
 export const ORDERS = 'orders'
 export const ORDERS_BY_CUSTOMER = 'orders-by-customer'
 export const CUSTOMER_PROFILES = 'customer-profiles'
+export const RECENTLY_VIEWED = 'recently-viewed'
 
 /** A document of a collection, under its key. */
 export interface DocumentWrite {
@@ -249,6 +250,7 @@ export const KEY_OF: Readonly<Record<string, (doc: unknown) => string>> = {
   [ORDERS]: (doc) => String((doc as OrderDoc).orderNumber),
   [ORDERS_BY_CUSTOMER]: partitioned,
   [CUSTOMER_PROFILES]: (doc) => String((doc as CustomerProfile).customerId),
+  [RECENTLY_VIEWED]: (doc) => String((doc as { viewer: string }).viewer),
 }
 
 export function buildSearchDoc(p: ProductSnapshot): SearchDocument {

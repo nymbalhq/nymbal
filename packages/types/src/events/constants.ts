@@ -4,6 +4,7 @@ export const EVT_PRODUCT_UPDATED = 'product.updated.v1'
 export const EVT_PRODUCT_DELETED = 'product.deleted.v1'
 export const EVT_PRODUCT_PUBLISHED = 'product.published.v1'
 export const EVT_PRODUCT_UNPUBLISHED = 'product.unpublished.v1'
+export const EVT_PRODUCT_VIEWED = 'product.viewed.v1'
 /** A variant's stock went from 0 to above 0, in the transaction of the inventory.changed.v1 it accompanies. */
 export const EVT_PRODUCT_RESTOCKED = 'product.restocked.v1'
 
@@ -37,6 +38,9 @@ export const EVT_CUSTOMER_DELETED = 'customer.deleted.v1'
 // Legacy alias (kept so Prompt 1 seed code continues to compile).
 export const EVT_CUSTOMER_REGISTERED = EVT_CUSTOMER_CREATED
 
+// Visitor
+export const EVT_VISITOR_MERGED = 'visitor.merged.v1'
+
 // Cart
 export const EVT_CART_CREATED = 'cart.created.v1'
 export const EVT_CART_ITEM_ADDED = 'cart.item_added.v1'
@@ -67,6 +71,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PRODUCT_DELETED,
   EVT_PRODUCT_PUBLISHED,
   EVT_PRODUCT_UNPUBLISHED,
+  EVT_PRODUCT_VIEWED,
   EVT_PRODUCT_RESTOCKED,
   EVT_CATEGORY_CREATED,
   EVT_CATEGORY_UPDATED,
@@ -88,6 +93,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_CUSTOMER_CREATED,
   EVT_CUSTOMER_UPDATED,
   EVT_CUSTOMER_DELETED,
+  EVT_VISITOR_MERGED,
   EVT_CART_CREATED,
   EVT_CART_ITEM_ADDED,
   EVT_CART_ITEM_REMOVED,

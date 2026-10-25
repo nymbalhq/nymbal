@@ -9,6 +9,7 @@ export {
   OrderSummary,
   OrderTimeline,
   ProductGrid,
+  RecentlyViewed,
   ReviewForm,
   ReviewList,
   SiteFooter,

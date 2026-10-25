@@ -3,9 +3,10 @@ import type { DocumentStoreAdapter, Logger, SearchAdapter } from '@nymbalhq/type
 import type { CommandStore, ReadTx } from '../db/command-store.js'
 import type { DerivedHandler } from '../handlers/derived.js'
 import type { KeysetPage, Repositories } from '../repositories/index.js'
+import type { LoggedEvent } from '../repositories/event-log.js'
 import type { DocumentWrite } from './builders.js'
 
-export type ReadModelName = 'catalogue' | 'orders' | 'customers' | 'search'
+export type ReadModelName = 'catalogue' | 'orders' | 'customers' | 'search' | 'recently-viewed'
 
 /** The pseudo-collection a search model's writes go to: the search adapter, not the document store. */
 export const SEARCH_INDEX = 'index'
@@ -32,6 +33,13 @@ export interface RebuildContext {
     table: string,
     read: (tx: ReadTx, page: KeysetPage) => Promise<T[]>,
   ): AsyncIterable<T[]>
+  /**
+   * The logged events of `types`, in seq pages, each page a read of its own (`onPage` names the table `events`). A model
+   * that reads them is caught up only with events above the last one it read: re-applying one it already folded
+   * would fold it twice. The bound is per model, not per collection: a model that reads both `pages()` and `events()`
+   * would skip catch-up for the collections it builds from tables.
+   */
+  events(types: readonly string[]): AsyncIterable<LoggedEvent[]>
 }
 
 export interface ReadModel {

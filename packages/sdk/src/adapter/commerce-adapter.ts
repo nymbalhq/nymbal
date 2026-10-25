@@ -27,6 +27,11 @@ export interface CommerceAdapter {
   capabilities?: {
     get(): Promise<StoreCapabilities>
   }
+  /** The shopper's recently viewed products; an adapter without it shows none. */
+  recentlyViewed?: {
+    record(productId: string): Promise<void>
+    list(): Promise<{ items: DenormalisedProduct[] }>
+  }
   cart: {
     get(): Promise<Cart>
     addItem(variantId: string, qty: number): Promise<Cart>
