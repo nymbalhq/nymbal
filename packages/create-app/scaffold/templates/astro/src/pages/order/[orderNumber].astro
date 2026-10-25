@@ -8,7 +8,7 @@ import { isPaid, orderHeading } from '../../lib/order-status'
 const { orderNumber } = Astro.params
 const order = await fetchOrder(orderNumber!)
 
-if (!order) return Astro.redirect('/404')
+if (!order) return Astro.rewrite('/404')
 
 const summary = {
   items: JSON.stringify(

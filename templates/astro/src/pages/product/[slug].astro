@@ -3,13 +3,14 @@ import '../../styles/pages/pdp.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import { cardProductOf } from '@nymbalhq/web-components/ssr'
-import { fetchProduct, fetchReviews, fetchProducts } from '../../lib/api'
+import { loadProduct, fetchReviews, fetchProducts } from '../../lib/api'
 import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
 
 const { slug } = Astro.params
 
-const product = await fetchProduct(slug!)
-if (!product) return Astro.redirect('/404')
+// Rejects when the API fails, so a failed read is a 500 and never a 404 for a product the store has.
+const product = await loadProduct(slug!)
+if (!product) return Astro.rewrite('/404')
 
 const [reviewsResult, relatedResult] = await Promise.all([
   fetchReviews(product.id),

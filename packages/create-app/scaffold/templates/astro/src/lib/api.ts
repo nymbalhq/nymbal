@@ -78,15 +78,6 @@ export async function loadProduct(slug: string): Promise<DenormalisedProduct | n
   return apiData<DenormalisedProduct>(`/api/products/${encodeURIComponent(slug)}`)
 }
 
-export async function fetchProduct(slug: string): Promise<DenormalisedProduct | null> {
-  try {
-    return await loadProduct(slug)
-  } catch (err) {
-    console.error('[api] fetchProduct failed', err)
-    return null
-  }
-}
-
 /** The store's categories as the API sent them; rejects when the API fails. */
 export async function loadCategories(): Promise<Category[]> {
   const categories = await apiData<Category[]>('/api/categories')

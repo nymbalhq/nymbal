@@ -68,7 +68,7 @@ export interface CreateAuthServiceDeps {
   issuer?: string
 }
 
-function parseDurationToMs(s: string): number {
+export function parseDurationToMs(s: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(s)
   if (!match) throw new ValidationError(`invalid duration: ${s}`)
   const qty = Number(match[1])

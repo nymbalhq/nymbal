@@ -1,5 +1,4 @@
 import type { Slot } from '@nymbalhq/types'
-import { runAiContract } from './ai.js'
 import { runAnalyticsContract } from './analytics.js'
 import type { Build } from './common.js'
 import { runDocumentStoreContract } from './document-store.js'
@@ -23,11 +22,15 @@ export { runPaymentsContract, type PaymentsContractOptions } from './payments.js
 export { runEmailContract } from './email.js'
 export { runReviewsContract } from './reviews.js'
 export { runSearchContract, type SearchContractOptions } from './search.js'
-export { matchesQuery, searchTerms, toSearchDocument, type ContractProduct } from './search-oracle.js'
+export {
+  matchesQuery,
+  searchTerms,
+  toSearchDocument,
+  type ContractProduct,
+} from './search-oracle.js'
 export { runAnalyticsContract } from './analytics.js'
 export { runShippingContract } from './shipping.js'
 export { runTaxContract } from './tax.js'
-export { runAiContract } from './ai.js'
 export { runSecurityContract } from './security.js'
 export { runProjectionContract } from './projection.js'
 export type { ProjectionContractOptions } from './projection.js'
@@ -57,14 +60,17 @@ const suites = {
   analytics: runAnalyticsContract as ContractSuite,
   shipping: runShippingContract as ContractSuite,
   tax: runTaxContract as ContractSuite,
-  ai: runAiContract as ContractSuite,
   documentStore: runDocumentStoreContract as ContractSuite,
   eventBus: runEventBusContract as ContractSuite,
   media: (name, build, options = {}) =>
-    runMediaStorageContract(name, build as Parameters<typeof runMediaStorageContract>[1], {
-      fetchUrl: fetchOverHttp,
-      ...options,
-    } as MediaStorageContractOptions),
+    runMediaStorageContract(
+      name,
+      build as Parameters<typeof runMediaStorageContract>[1],
+      {
+        fetchUrl: fetchOverHttp,
+        ...options,
+      } as MediaStorageContractOptions,
+    ),
 } satisfies Record<(typeof CONTRACT_KINDS)[number], ContractSuite>
 
 /** Each kind's suite, one for every kind in CONTRACT_KINDS. Each is typed here, at the CLI's boundary. */

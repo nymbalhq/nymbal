@@ -4,7 +4,7 @@ import {
   type ResponseEnvelope,
   type ResponseCookie,
 } from '@nymbalhq/types'
-import type { AuthService } from '../services/auth-service.js'
+import { parseDurationToMs, type AuthService } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 
 interface RegisterBody {
@@ -42,7 +42,13 @@ function expiredCookies(): ResponseCookie[] {
   return [{ name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true }]
 }
 
-export function registerAuthRoutes(adapter: HttpAdapter, auth: AuthService): void {
+/** `refreshTtl` is the config's `security.auth.refreshTtl`: the cookie lives as long as the token it carries. */
+export function registerAuthRoutes(
+  adapter: HttpAdapter,
+  auth: AuthService,
+  refreshTtl: string,
+): void {
+  const refreshMaxAge = Math.floor(parseDurationToMs(refreshTtl) / 1000)
   adapter.registerRoute('POST', '/api/auth/register', async (ctx) => {
     try {
       const body = ctx.body as RegisterBody | undefined
@@ -58,11 +64,15 @@ export function registerAuthRoutes(adapter: HttpAdapter, auth: AuthService): voi
       }
       const result = await auth.register(registerInput)
       const envelope = ok(
-        { customer: result.customer, accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn },
+        {
+          customer: result.customer,
+          accessToken: result.tokens.accessToken,
+          expiresIn: result.tokens.expiresIn,
+        },
         undefined,
         201,
       )
-      envelope.cookies = refreshCookies(result.tokens.refreshToken, 60 * 60 * 24 * 7)
+      envelope.cookies = refreshCookies(result.tokens.refreshToken, refreshMaxAge)
       return envelope as ResponseEnvelope
     } catch (err) {
       return renderError(err)
@@ -81,7 +91,7 @@ export function registerAuthRoutes(adapter: HttpAdapter, auth: AuthService): voi
         accessToken: result.tokens.accessToken,
         expiresIn: result.tokens.expiresIn,
       })
-      envelope.cookies = refreshCookies(result.tokens.refreshToken, 60 * 60 * 24 * 7)
+      envelope.cookies = refreshCookies(result.tokens.refreshToken, refreshMaxAge)
       return envelope as ResponseEnvelope
     } catch (err) {
       return renderError(err)
@@ -95,7 +105,7 @@ export function registerAuthRoutes(adapter: HttpAdapter, auth: AuthService): voi
       if (!refreshToken) throw new AuthError('token_invalid', 'refresh token missing')
       const tokens = await auth.refresh(refreshToken)
       const envelope = ok({ accessToken: tokens.accessToken, expiresIn: tokens.expiresIn })
-      envelope.cookies = refreshCookies(tokens.refreshToken, 60 * 60 * 24 * 7)
+      envelope.cookies = refreshCookies(tokens.refreshToken, refreshMaxAge)
       return envelope as ResponseEnvelope
     } catch (err) {
       return renderError(err)

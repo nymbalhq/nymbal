@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, it, expect, vi } from 'vitest'
 import { registerAuthRoutes } from './auth.js'
 import type { HttpAdapter, RouteHandler, Customer } from '@nymbalhq/types'
@@ -94,7 +95,7 @@ describe('POST /api/auth/register', () => {
   it('registers user and returns customer and accessToken', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/register', {
       body: { email: 'new@example.com', password: 'pass123' },
@@ -110,7 +111,7 @@ describe('POST /api/auth/register', () => {
 
   it('sets refresh token cookie on register', async () => {
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
+    registerAuthRoutes(adapter, makeAuthService(), '7d')
 
     const resp = await invoke('POST', '/api/auth/register', {
       body: { email: 'new@example.com', password: 'pass123' },
@@ -128,7 +129,7 @@ describe('POST /api/auth/login', () => {
   it('logs in user and returns customer and accessToken', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/login', {
       body: { email: 'test@example.com', password: 'pass123' },
@@ -144,7 +145,7 @@ describe('POST /api/auth/login', () => {
 
   it('sets refresh token cookie on login', async () => {
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
+    registerAuthRoutes(adapter, makeAuthService(), '7d')
 
     const resp = await invoke('POST', '/api/auth/login', {
       body: { email: 'test@example.com', password: 'pass123' },
@@ -160,7 +161,7 @@ describe('POST /api/auth/login', () => {
       login: vi.fn().mockRejectedValue(new Error('invalid credentials')),
     })
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/login', {
       body: { email: 'bad@example.com', password: 'wrong' },
@@ -172,7 +173,7 @@ describe('POST /api/auth/login', () => {
 describe('POST /api/auth/refresh', () => {
   it('returns 401 when no refresh token is provided', async () => {
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
+    registerAuthRoutes(adapter, makeAuthService(), '7d')
 
     const resp = await invoke('POST', '/api/auth/refresh', { body: {} })
     expect(resp.status).toBe(401)
@@ -181,7 +182,7 @@ describe('POST /api/auth/refresh', () => {
   it('refreshes token using cookie', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/refresh', {
       cookies: { 'nymbal.refresh': 'refresh-tok' },
@@ -195,7 +196,7 @@ describe('POST /api/auth/refresh', () => {
   it('refreshes token using body refreshToken', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/refresh', {
       body: { refreshToken: 'refresh-tok' },
@@ -205,11 +206,45 @@ describe('POST /api/auth/refresh', () => {
   })
 })
 
+describe('the refresh cookie', () => {
+  const SECONDS_PER_UNIT = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 } as const
+
+  // Kills: a Max-Age that ignores the configured refresh TTL, so the cookie outlives (or dies before) the token it carries.
+  it('lives exactly the configured refresh TTL, in seconds, on register, login and refresh', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 90 }),
+        fc.constantFrom(...(Object.keys(SECONDS_PER_UNIT) as (keyof typeof SECONDS_PER_UNIT)[])),
+        async (qty, unit) => {
+          const { adapter, invoke } = makeAdapter()
+          registerAuthRoutes(adapter, makeAuthService(), `${qty}${unit}`)
+          const credentials = { email: 'test@example.com', password: 'pass123' }
+          const responses = [
+            await invoke('POST', '/api/auth/register', { body: credentials }),
+            await invoke('POST', '/api/auth/login', { body: credentials }),
+            await invoke('POST', '/api/auth/refresh', {
+              cookies: { 'nymbal.refresh': 'refresh-tok' },
+            }),
+          ]
+          const maxAges = responses.map(
+            (resp) =>
+              (resp.cookies as { name: string; maxAge: number }[] | undefined)?.find(
+                (c) => c.name === 'nymbal.refresh',
+              )?.maxAge,
+          )
+          const ttlSeconds = qty * SECONDS_PER_UNIT[unit]
+          expect(maxAges).toEqual([ttlSeconds, ttlSeconds, ttlSeconds])
+        },
+      ),
+    )
+  })
+})
+
 describe('POST /api/auth/logout', () => {
   it('succeeds even with no refresh token (cookie or body)', async () => {
     const service = makeAuthService()
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, service)
+    registerAuthRoutes(adapter, service, '7d')
 
     const resp = await invoke('POST', '/api/auth/logout', { body: {} })
     expect(resp.status).toBe(200)
@@ -221,7 +256,7 @@ describe('POST /api/auth/logout', () => {
     const refreshOf = (resp: { cookies?: unknown }) =>
       (resp.cookies as Cookie[] | undefined)?.find((c) => c.name === 'nymbal.refresh')
     const { adapter, invoke } = makeAdapter()
-    registerAuthRoutes(adapter, makeAuthService())
+    registerAuthRoutes(adapter, makeAuthService(), '7d')
 
     const set = refreshOf(
       await invoke('POST', '/api/auth/login', {

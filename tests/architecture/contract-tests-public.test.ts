@@ -9,7 +9,7 @@ import { REPO_ROOT, type Manifest } from './workspace-manifests'
 // publishConfig (public) and repository, depends on fast-check (the property suites need it at runtime) and peers
 // vitest without depending on it (two vitests in a project would break); it is in the changesets fixed group the
 // kernel is in, at the kernel's version. `npm pack` holds dist/index.js and its declarations, and that build exports
-// `contractSuites` with a suite for every kind that has a contract (the eight commerce slots, documentStore,
+// `contractSuites` with a suite for every kind that has a contract (the seven commerce slots, documentStore,
 // eventBus, media) and the search oracle the runners use. PUBLISHED_DIRS (workspace-names.test.ts) lists it too.
 // Needs `pnpm build`.
 
@@ -26,7 +26,6 @@ const KINDS = [
   'analytics',
   'shipping',
   'tax',
-  'ai',
   'documentStore',
   'eventBus',
   'media',

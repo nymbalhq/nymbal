@@ -4,7 +4,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import { cardImageOf, cardProductOf } from '@nymbalhq/web-components/ssr'
 import { PRODUCT_SORT_LABELS } from '@nymbalhq/types'
-import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
+import { fetchProducts, loadCategories, fetchCapabilities, sortFromUrl } from '../../lib/api'
 
 const { slug } = Astro.params
 const capabilities = await fetchCapabilities()
@@ -13,21 +13,23 @@ const sort = sortFromUrl(Astro.url, capabilities?.catalog)
 
 const [productResult, categories] = await Promise.all([
   fetchProducts({ limit: 24, category: slug, sort }),
-  fetchCategories(),
+  // Rejects when the API fails, so a failed read is a 500 and never a 404 for a category the store has.
+  loadCategories(),
 ])
+const category = categories.find((c) => c.slug === slug)
+if (!category) return Astro.rewrite('/404')
 
 const products = productResult.items.map(cardProductOf)
 // The first card's image is the page's LCP, and the preload scanner never reaches it inside the grid's shadow root:
 // the head starts it.
 const firstImage = products[0] === undefined ? null : cardImageOf(products[0]).url
-const category = categories.find((c) => c.slug === slug)
-const categoryName = category?.name ?? slug ?? 'Category'
+const categoryName = category.name
 const facets = productResult.facets ?? []
 ---
 
 <BaseLayout
   title={`${categoryName} | Nymbal`}
-  description={category?.description ?? `Browse ${categoryName} products.`}
+  description={category.description ?? `Browse ${categoryName} products.`}
 >
   {firstImage && <link slot="head" rel="preload" as="image" href={firstImage} fetchpriority="high" />}
   <div class="container section">
@@ -35,7 +37,7 @@ const facets = productResult.facets ?? []
 
     <div class="plp-header">
       <h1 class="plp-title">{categoryName}</h1>
-      {category?.description && (
+      {category.description && (
         <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); margin-bottom: var(--nymbal-spacing-sm, 0.5rem);">
           {category.description}
         </p>

@@ -16,7 +16,6 @@ import {
   createOrderService,
   createNativeStubPaymentsAdapter,
   createNativeReviewsAdapter,
-  createNativeAiAdapter,
   createNativeSearchAdapter,
   createLogger,
   createLocalFsMediaStorage,
@@ -111,7 +110,6 @@ async function buildTestEnv() {
   ).publisher
   const _payments = createNativeStubPaymentsAdapter({ logger })
   const reviews = createNativeReviewsAdapter({ repos, logger })
-  const ai = createNativeAiAdapter(logger)
   // The native search adapter is SQL over the command store's own database.
   const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
 
@@ -135,7 +133,7 @@ async function buildTestEnv() {
   })
 
   const services = { product, category, auth, order, search } as unknown as ServiceRegistry
-  const adapters = { ai, reviews }
+  const adapters = { ai: null, reviews }
 
   return { commandStore, documentStore, repos, services, adapters } as const
 }
@@ -310,16 +308,28 @@ describe('WooCommerce importer integration', () => {
 
   it('skips AI enrichment when ai=false', async () => {
     const env = await buildTestEnv()
-    const aiComplete = vi.fn()
-    const mockAi: AiAdapter = { ...env.adapters.ai, complete: aiComplete }
+    const aiComplete = vi.fn(async () => 'an enriched description')
+    const mockAi: AiAdapter = {
+      kind: 'ai',
+      providerName: 'fake',
+      capabilities: () => ['complete'],
+      producesEvents: [],
+      consumesEvents: [],
+      initialize: async () => {},
+      healthCheck: async () => ({ status: 'healthy' }),
+      embed: async (texts) => texts.map(() => [0]),
+      complete: aiComplete,
+    }
 
-    await runWooCommerceImport(opts({ entities: ['products'], ai: false }), {
+    const report = await runWooCommerceImport(opts({ entities: ['products'], ai: false }), {
       services: env.services,
       repos: env.repos,
       adapters: { ...env.adapters, ai: mockAi },
       media: localMedia(),
     })
 
+    expect(report.imported.products).toBe(2)
+    expect(report.enriched).toEqual({ enriched: 0, skipped: 0, failed: 0 })
     expect(aiComplete).not.toHaveBeenCalled()
   })
 })

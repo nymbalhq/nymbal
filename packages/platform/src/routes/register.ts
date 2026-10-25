@@ -151,7 +151,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
-  registerAuthRoutes(adapter, services.auth)
+  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl)
   registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
