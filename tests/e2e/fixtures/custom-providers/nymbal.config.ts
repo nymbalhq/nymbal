@@ -48,7 +48,9 @@ export default {
       provider: 'smtp',
       config: {
         from: 'store@nymbal.dev',
-        smtp: { host: 'localhost', port: Number(env('NYMBAL_E2E_SMTP_PORT', '11025')) },
+        // An address, not `localhost`: nodemailer resolves a name IPv4 first, while a server listening on `localhost`
+        // takes the system's first answer, which may be ::1.
+        smtp: { host: '127.0.0.1', port: Number(env('NYMBAL_E2E_SMTP_PORT', '11025')) },
       },
     },
     reviews: { provider: 'native' },

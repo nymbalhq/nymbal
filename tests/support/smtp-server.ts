@@ -10,8 +10,8 @@ export interface FakeSmtpServer {
   close(): Promise<void>
 }
 
-/** `host` is where it listens: `localhost` for a client configured with that name, which may resolve to `::1`. */
-export async function fakeSmtpServer(host = '127.0.0.1'): Promise<FakeSmtpServer> {
+/** Listens on 127.0.0.1: point the client at that address, not `localhost`, whose answer differs by resolver. */
+export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
   const sockets = new Set<Socket>()
   const messages: string[] = []
   const server = createServer((socket) => {
@@ -54,7 +54,10 @@ export async function fakeSmtpServer(host = '127.0.0.1'): Promise<FakeSmtpServer
       }
     })
   })
-  await new Promise<void>((resolve) => server.listen(0, host, () => resolve()))
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
   return {
     port: (server.address() as { port: number }).port,
     messages,

@@ -47,8 +47,7 @@ let smtp: FakeSmtpServer | undefined
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-'))
-  // The fixture's SMTP host is `localhost`.
-  smtp = await fakeSmtpServer('localhost')
+  smtp = await fakeSmtpServer()
   for (const [i, project] of PROJECTS.entries()) {
     const sqlitePath = join(dir, `run-${i + 1}.db`)
     await migratedSqlite(sqlitePath)
