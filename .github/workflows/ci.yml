@@ -60,7 +60,7 @@ jobs:
         with:
           name: build-output
       - name: Gate
-        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --harness all --no-build --base "$GATE_BASE"
 
   perf-budgets:
     name: Performance budgets — both templates, five pages

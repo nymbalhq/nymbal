@@ -227,12 +227,24 @@ function servers() {
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
 }
 
+// A whole run is bounded: each target is its own invocation, and one that hangs (the admin project once ran 389 s
+// against a 9.5 s median) is red at the bound instead of holding everything behind it. GitHub's runners get twice
+// the local bound; NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
+const globalTimeout = process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS
+  ? Number(process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS)
+  : isCI
+    ? process.env.GITHUB_ACTIONS
+      ? 10 * 60_000
+      : 5 * 60_000
+    : 0
+
 export default defineConfig({
   testDir: './journeys',
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
   reporter: isCI ? 'github' : 'list',
+  globalTimeout,
   snapshotPathTemplate: '{testDir}/{testFileDir}/snapshots/{arg}-{projectName}{ext}',
   use: {
     trace: 'on-first-retry',

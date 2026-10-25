@@ -161,6 +161,13 @@ describe('the tooling projects run in the plain gate only when the tooling chang
     'scripts/gate.ts',
     'tests/tooling/gate.test.ts',
     'tests/architecture/guard.test.ts',
+    '.github/workflows/ci.yml',
+    'tests/e2e/playwright.config.ts',
+    'package.json',
+    'pnpm-lock.yaml',
+    'vitest.config.ts',
+    'tsconfig.base.json',
+    'packages/sdk/package.json',
   ]
   const PRODUCT = [
     'packages/sdk/src/client.ts',
@@ -168,36 +175,45 @@ describe('the tooling projects run in the plain gate only when the tooling chang
     'templates/astro/src/pages/index.astro',
   ]
 
-  it('isHarnessPath: scripts/, tests/tooling/ and tests/architecture/ are the harness; product paths are not', () => {
+  it('isHarnessPath: scripts/, the harness projects, .github/, the Playwright configs and configuration are the harness; product paths are not', () => {
     for (const path of HARNESS) expect(isHarnessPath(path), path).toBe(true)
-    for (const path of [...PRODUCT, 'scripts.ts', 'packages/cli/scripts/x.ts']) {
+    for (const path of [
+      ...PRODUCT,
+      'scripts.ts',
+      'packages/cli/scripts/x.ts',
+      'tests/e2e/fixtures/custom/nymbal.config.ts',
+      'tests/e2e/journeys/playwright.config.ts',
+      'templates/astro/package.json',
+    ]) {
       expect(isHarnessPath(path), path).toBe(false)
     }
   })
 
-  it('a product change, changed or all mode, negates every harness project; a harness change negates none', () => {
+  it('a product change negates every harness project in the plain gate; a harness change, configuration included, negates none', () => {
     expect(negated(testsStep(PRODUCT).command)).toEqual([...HARNESS_PROJECTS].sort())
-    expect(negated(testsStep([...PRODUCT, 'package.json']).command)).toEqual(
-      [...HARNESS_PROJECTS].sort(),
-    )
-    for (const path of HARNESS) expect(negated(testsStep([...PRODUCT, path]).command)).toEqual([])
+    for (const path of HARNESS) {
+      expect(negated(testsStep([...PRODUCT, path]).command), path).toEqual([])
+    }
   })
 
-  it('gate:full never negates them, whatever changed', () => {
-    expect(negated(testsStep(PRODUCT, true).command)).toEqual([])
-    expect(negated(testsStep([...PRODUCT, 'package.json'], true).command)).toEqual([])
+  it('gate:full negates only tooling for a product change, so architecture runs on every change; dev CI asks for both with harness: all', () => {
+    expect(negated(testsStep(PRODUCT, true).command)).toEqual(['tooling'])
+    for (const path of HARNESS) {
+      expect(negated(testsStep([...PRODUCT, path], true).command), path).toEqual([])
+    }
+    const ci = plan({ full: true, base: 'abc1234', changed: PRODUCT, mutated: [], harness: 'all' })
+    expect(negated((ci.steps.find((s) => s.name === 'tests') as StepSpec).command)).toEqual([])
   })
 
-  it('property: the harness projects are negated iff the plain gate has no harness path in its change set', () => {
-    const path = fc.oneof(
-      fc.constantFrom(...PRODUCT, 'package.json', 'README.md'),
-      fc.constantFrom(...HARNESS),
-    )
+  it('property: the plain gate negates every harness project iff its change set has no harness path', () => {
+    const path = fc.oneof(fc.constantFrom(...PRODUCT, 'README.md'), fc.constantFrom(...HARNESS))
     fc.assert(
       fc.property(fc.array(path, { minLength: 1, maxLength: 6 }), (changed) => {
         const step = testsStep(changed)
         if (step.skip !== undefined) return
-        const expected = changed.some(isHarnessPath) ? [] : [...HARNESS_PROJECTS].sort()
+        const expected = changed.some((p) => HARNESS.includes(p))
+          ? []
+          : [...HARNESS_PROJECTS].sort()
         expect(negated(step.command)).toEqual(expected)
       }),
     )

@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
@@ -146,14 +147,28 @@ function isDocumentation(path: string): boolean {
 
 /**
  * The harness's own Vitest projects: 63 files and most of the suite's file time (tooling 378 s of 512 s measured on
- * 2026-10-22), moved only by the harness. The plain gate leaves them out unless the change touches the harness;
- * gate:full and dev CI run them whatever changed.
+ * 2026-10-22). The plain gate leaves them out unless a harness path changed; dev CI runs them whatever changed
+ * (`--harness all`).
  */
 export const HARNESS_PROJECTS = ['tooling', 'architecture']
 
-/** A change to the harness: its scripts, or its own test projects. */
+/**
+ * The harness projects gate:full leaves out when no harness path changed. `architecture` is not one: it guards
+ * product code (no Stripe import in the kernel, the framework-agnostic guard), so gate:full runs it on every change.
+ */
+export const FULL_GATE_HARNESS_PROJECTS = ['tooling']
+
+/**
+ * A change the harness projects read: the scripts, those projects themselves, the CI workflows, the Playwright
+ * configs, or the configuration `isConfiguration` names. A workflow edit is one: dropping `--harness all` there must
+ * run the test that says it is required.
+ */
 export function isHarnessPath(path: string): boolean {
-  return /^(?:scripts|tests\/tooling|tests\/architecture)\//.test(path)
+  return (
+    /^(?:scripts|tests\/tooling|tests\/architecture|\.github)\//.test(path) ||
+    /^tests\/e2e\/playwright[^/]*\.config\.ts$/.test(path) ||
+    isConfiguration(path)
+  )
 }
 
 /** Which tests a change set needs: all when configuration moved, none for documentation only, else the changed ones. */
@@ -969,8 +984,29 @@ export type PlanInput = {
   proofKitPackages?: string[] | undefined
   /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
   perfPackages?: string[] | undefined
-  /** The sentinels gate:full runs: every one, or a selection (`selectSentinels`). Every one when not given. */
-  sentinels?: 'all' | Set<string> | undefined
+  /**
+   * The sentinels gate:full runs: every one, a selection (`selectSentinels`), or `none`, which leaves them to dev CI
+   * and the release run. Every one when not given.
+   */
+  sentinels?: 'all' | 'none' | Set<string> | undefined
+  /**
+   * The stryker step: `blocking` fails on a file below its ratchet (CI, and the default when not given), `advisory`
+   * runs it and prints the ratchet's verdict without failing on it, `off` leaves it to dev CI. Locally a run is
+   * `off` unless `--stryker` asks for the advisory run: six fix rounds in seven tasks lifted entries for files the
+   * task never changed (audit 2026-10-25).
+   */
+  stryker?: 'off' | 'advisory' | 'blocking' | undefined
+  /**
+   * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
+   * the default, leaves them out when no harness path changed: all of them in the plain gate, `tooling` alone in
+   * gate:full (`FULL_GATE_HARNESS_PROJECTS`).
+   */
+  harness?: 'all' | 'changed' | undefined
+  /**
+   * The plain gate builds although no package build input changed: the build output is older than HEAD's package
+   * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
+   */
+  buildStale?: boolean | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
   rerun?: { tests: RedTest[] } | undefined
 }
@@ -1143,8 +1179,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       ? { mode: 'all' as const, reason: 'no base commit to diff against' }
       : selectTests(changed)
   // Tests and typecheck read other packages through their `dist`: gate:full always builds first, the plain gate when
-  // a package's build input changed (a warm build is about 7 s).
+  // a package's build input changed (a warm build is about 7 s) or when `dist` is older than HEAD's package inputs
+  // (`buildStale`: a merge of dev brings inputs the diff against dev does not show). A build that succeeds stamps
+  // the inputs it was built from (`build-stamp`), which is what the next plain gate compares against.
   const buildInputs = changed.filter(isBuildInput)
+  const stamp = `${SCRIPT} build-stamp`
+  const builds = buildInputs.length > 0 || input.buildStale === true
   const build: StepSpec = full
     ? input.noBuild === true
       ? {
@@ -1154,11 +1194,16 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : // `pnpm build` covers packages/** only; the admin E2E serves apps/admin/dist, which a fresh checkout lacks.
-        { name: 'build', command: 'pnpm build && pnpm --filter @nymbalhq/admin build' }
-    : buildInputs.length === 0
-      ? { name: 'build', command: 'true', skip: 'no package build input changed', idle: true }
-      : { name: 'build', command: 'pnpm build' }
-  const buildNeeds = full || buildInputs.length > 0 ? { needs: ['build'] } : {}
+        { name: 'build', command: `pnpm build && pnpm --filter @nymbalhq/admin build && ${stamp}` }
+    : builds
+      ? { name: 'build', command: `pnpm build && ${stamp}` }
+      : {
+          name: 'build',
+          command: 'true',
+          skip: 'no package build input changed, and the build output matches HEAD',
+          idle: true,
+        }
+  const buildNeeds = full || builds ? { needs: ['build'] } : {}
   // `--changed` follows imports, and an import of `dist` leads to no changed file, so a change to the kit or to what it
   // imports runs the kit's own tests as well.
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
@@ -1168,10 +1213,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
+  // changed, the plain gate leaves them out and gate:full leaves out `tooling`; dev CI asks for all of them with
+  // `--harness all`.
   const harnessApart =
-    full || changed.some(isHarnessPath)
+    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
       ? ''
-      : HARNESS_PROJECTS.map((name) => ` --project ${shellWord(`!${name}`)}`).join('')
+      : (full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS)
+          .map((name) => ` --project ${shellWord(`!${name}`)}`)
+          .join('')
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1271,16 +1321,51 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const sentinels: StepSpec =
     chosen === 'all'
       ? { name: 'sentinels', command: `${postgres} pnpm sentinels` }
-      : chosen.size === 0
+      : chosen === 'none'
         ? {
             name: 'sentinels',
             command: 'true',
-            skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
+            skip: 'left to dev CI and the release run (--sentinels impacted or all runs them here)',
+            idle: true,
+          }
+        : chosen.size === 0
+          ? {
+              name: 'sentinels',
+              command: 'true',
+              skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
+              idle: true,
+            }
+          : {
+              name: 'sentinels',
+              command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+            }
+  // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell. Advisory, the verdict prints
+  // and the step stays green: dev CI blocks on it.
+  const strykerMode = input.stryker ?? 'blocking'
+  const ratchetCheck =
+    'pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json'
+  const stryker: StepSpec =
+    strykerMode === 'off'
+      ? {
+          name: 'stryker',
+          command: 'true',
+          skip: 'left to dev CI (--stryker runs it here, with the ratchet advisory)',
+          idle: true,
+        }
+      : mutated.length === 0
+        ? {
+            name: 'stryker',
+            command: 'true',
+            skip: "no changed file in Stryker's mutate set, its platform tests or its configs",
             idle: true,
           }
         : {
-            name: 'sentinels',
-            command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+            name: 'stryker',
+            command:
+              `${prune}pnpm exec stryker run${input.noBase === true ? ' --force' : ''} --mutate ${shellWord(mutated.join(','))} && ` +
+              (strykerMode === 'advisory'
+                ? `{ ${ratchetCheck} || echo 'ratchet: below the ratchet here (advisory; dev CI blocks on it)'; }`
+                : ratchetCheck),
           }
   steps.push(
     external
@@ -1313,18 +1398,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores`,
       needs: ['compose up', 'build'],
     },
-    mutated.length === 0
-      ? {
-          name: 'stryker',
-          command: 'true',
-          skip: "no changed file in Stryker's mutate set, its platform tests or its configs",
-          idle: true,
-        }
-      : {
-          // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
-          name: 'stryker',
-          command: `${prune}pnpm exec stryker run${input.noBase === true ? ' --force' : ''} --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
-        },
+    stryker,
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     sentinels,
     {
@@ -1359,24 +1433,164 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
 const APP_OUTPUTS = ['templates/astro/dist', 'templates/nextjs/.next', 'apps/admin/dist']
 
-/**
- * Whether the whole build output is in the work tree (a downloaded CI artefact, or a build): the `dist` of every
- * package that has a build script, and every entry of `APP_OUTPUTS`.
- */
-export function artefactPresent(root: string): boolean {
+/** The `packages/<name>` directories whose manifest has a build script. */
+function buildingPackages(root: string): string[] {
   const packages = resolve(root, 'packages')
-  if (!existsSync(packages)) return false
-  const builders = readdirSync(packages).filter((name) => {
+  if (!existsSync(packages)) return []
+  return readdirSync(packages).filter((name) => {
     const manifest = resolve(packages, name, 'package.json')
     if (!existsSync(manifest)) return false
     const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { scripts?: { build?: string } }
     return typeof pkg.scripts?.build === 'string'
   })
+}
+
+/** Whether every package that has a build script has its `dist`, and at least one does. */
+export function packagesBuilt(root: string): boolean {
+  const builders = buildingPackages(root)
   return (
     builders.length > 0 &&
-    builders.every((name) => existsSync(resolve(packages, name, 'dist'))) &&
-    APP_OUTPUTS.every((path) => existsSync(resolve(root, path)))
+    builders.every((name) => existsSync(resolve(root, 'packages', name, 'dist')))
   )
+}
+
+/**
+ * Whether the whole build output is in the work tree (a downloaded CI artefact, or a build): the `dist` of every
+ * package that has a build script, and every entry of `APP_OUTPUTS`.
+ */
+export function artefactPresent(root: string): boolean {
+  return packagesBuilt(root) && APP_OUTPUTS.every((path) => existsSync(resolve(root, path)))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The build stamp: what the packages were last built from
+// ---------------------------------------------------------------------------------------------------------------
+
+const BUILD_STAMP = 'reports/build-stamp.json'
+
+/**
+ * A hash of the package build inputs (`isBuildInput`) in the work tree: each blob's id and path. A clean input is
+ * HEAD's blob; a modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id
+ * committing them records, so output built from a dirty tree still matches once that tree is committed.
+ */
+export function buildInputsStamp(root: string): string {
+  const blobs = new Map<string, string>()
+  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', 'packages']))) {
+    const [meta, path] = line.split('\t')
+    if (path !== undefined && isBuildInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
+  }
+  const dirty = [
+    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', 'packages'])),
+    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', 'packages'])),
+  ].filter(isBuildInput)
+  const present = dirty.filter((path) => existsSync(resolve(root, path)))
+  for (const path of dirty) blobs.delete(path)
+  if (present.length > 0) {
+    const ids = lines(git(root, ['hash-object', '--', ...present]))
+    present.forEach((path, i) => blobs.set(path, ids[i] ?? ''))
+  }
+  const hash = createHash('sha256')
+  for (const path of [...blobs.keys()].sort()) hash.update(`${blobs.get(path)} ${path}\n`)
+  return hash.digest('hex')
+}
+
+/** Records the build inputs the packages were just built from (the build step's last command). */
+export function writeBuildStamp(root: string): void {
+  const inputs = buildInputsStamp(root)
+  const target = resolve(root, BUILD_STAMP)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, `${JSON.stringify({ inputs, at: new Date().toISOString() }, null, 2)}\n`)
+}
+
+/**
+ * Whether the packages' build output can stand for the work tree: every `dist` is there and the stamp names the
+ * build inputs as they are now. A missing stamp, or one from other inputs, means a build. A tree with no package to
+ * build has nothing stale.
+ */
+export function buildIsCurrent(root: string): boolean {
+  if (buildingPackages(root).length === 0) return true
+  if (!packagesBuilt(root)) return false
+  const path = resolve(root, BUILD_STAMP)
+  if (!existsSync(path)) return false
+  const stamp = JSON.parse(readFileSync(path, 'utf8')) as { inputs?: string | null }
+  return stamp.inputs === buildInputsStamp(root)
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A checkout in use: servers or a build another process runs here, which a gate would break
+// ---------------------------------------------------------------------------------------------------------------
+
+const IN_USE = 'reports/in-use.json'
+/** How long the holder process `in-use start` leaves behind lives at most: a use that forgot to stop ends by itself. */
+const IN_USE_MAX_MS = 3 * 60 * 60 * 1000
+
+export type InUse = { pid: number; what: string; since: string }
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * The live use of this checkout, if any: `IN_USE` names a process (`in-use start` wrote it) that is still running.
+ * A record whose process is gone is stale and removed: it never blocks a gate.
+ */
+export function checkoutInUse(root: string): InUse | undefined {
+  const path = resolve(root, IN_USE)
+  if (!existsSync(path)) return undefined
+  let record: InUse
+  try {
+    record = JSON.parse(readFileSync(path, 'utf8')) as InUse
+  } catch {
+    rmSync(path, { force: true })
+    return undefined
+  }
+  if (typeof record.pid !== 'number' || !alive(record.pid)) {
+    rmSync(path, { force: true })
+    return undefined
+  }
+  return record
+}
+
+/**
+ * Marks the checkout in use for the life of a detached holder process (at most `IN_USE_MAX_MS`), and returns the
+ * record. `pid` names an existing process to bind to instead, such as a server already started.
+ */
+export function markInUse(root: string, what: string, pid?: number): InUse {
+  let holder = pid
+  if (holder === undefined) {
+    const child = spawn(process.execPath, ['-e', `setTimeout(() => {}, ${IN_USE_MAX_MS})`], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.unref()
+    holder = child.pid
+  }
+  if (holder === undefined) throw new Error('in-use: the holder process did not start')
+  const record: InUse = { pid: holder, what, since: new Date().toISOString() }
+  const target = resolve(root, IN_USE)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  return record
+}
+
+/** Ends the use: stops the holder `in-use start` left (never a process it was only bound to) and removes the record. */
+export function releaseInUse(root: string, stopHolder = true): InUse | undefined {
+  const record = checkoutInUse(root)
+  if (record === undefined) return undefined
+  if (stopHolder) {
+    try {
+      process.kill(record.pid)
+    } catch {
+      // already gone
+    }
+  }
+  rmSync(resolve(root, IN_USE), { force: true })
+  return record
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1496,6 +1710,30 @@ function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: 
   return 1
 }
 
+/**
+ * What the command line asks of the sentinels and stryker steps. They run here only when asked: dev CI runs every
+ * sentinel and the mutation job on every push, and the release run passes `--sentinels all`. `--only` naming a step
+ * is asking for it, and `--only stryker` (CI's mutation job) blocks on the ratchet; `--stryker` alone is advisory.
+ */
+export function stepModes(flags: {
+  only?: string[] | undefined
+  sentinels?: string | undefined
+  stryker?: boolean | undefined
+}): { sentinels: 'all' | 'impacted' | 'none'; stryker: 'off' | 'advisory' | 'blocking' } {
+  const sentinels =
+    flags.sentinels ?? (flags.only?.includes('sentinels') === true ? 'impacted' : 'none')
+  if (sentinels !== 'all' && sentinels !== 'impacted' && sentinels !== 'none') {
+    throw new Error(`--sentinels takes all, impacted or none, not "${flags.sentinels}"`)
+  }
+  const stryker =
+    flags.only?.includes('stryker') === true
+      ? 'blocking'
+      : flags.stryker === true
+        ? 'advisory'
+        : 'off'
+  return { sentinels, stryker }
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -1508,7 +1746,10 @@ async function main(argv: string[]): Promise<number> {
       only: { type: 'string' },
       services: { type: 'string', default: 'compose' },
       'no-build': { type: 'boolean', default: false },
-      sentinels: { type: 'string', default: 'impacted' },
+      sentinels: { type: 'string' },
+      stryker: { type: 'boolean', default: false },
+      harness: { type: 'string', default: 'changed' },
+      check: { type: 'boolean', default: false },
       stores: { type: 'string' },
       'rerun-red': { type: 'boolean', default: false },
     },
@@ -1519,6 +1760,51 @@ async function main(argv: string[]): Promise<number> {
     if (subBase === undefined) throw new Error('usage: gate.ts incremental-prune <file,…>')
     await pruneIncremental(root, subBase.split(','))
     return 0
+  }
+  if (subcommand === 'build-stamp') {
+    // `--check` answers whether the packages' build output stands for HEAD, for whoever would otherwise rebuild.
+    if (!values.check) {
+      writeBuildStamp(root)
+      return 0
+    }
+    const current = buildIsCurrent(root)
+    process.stdout.write(
+      current
+        ? 'build: the package build output matches HEAD\n'
+        : 'build: the package build output is stale or unstamped; run pnpm build\n',
+    )
+    return current ? 0 : 1
+  }
+  if (subcommand === 'in-use') {
+    // `in-use start <what>` holds the checkout until `in-use stop` or the holder's own end; a gate meanwhile refuses.
+    const [, action, ...what] = positionals
+    if (action === 'start') {
+      if (what.length === 0) throw new Error('usage: gate.ts in-use start <what>')
+      const record = markInUse(root, what.join(' '))
+      process.stdout.write(
+        `in-use: ${root} held by pid ${record.pid} (${record.what}); gate.ts in-use stop releases it\n`,
+      )
+      return 0
+    }
+    if (action === 'stop') {
+      const record = releaseInUse(root)
+      process.stdout.write(
+        record === undefined
+          ? 'in-use: nothing held\n'
+          : `in-use: released pid ${record.pid} (${record.what})\n`,
+      )
+      return 0
+    }
+    if (action === 'status') {
+      const record = checkoutInUse(root)
+      process.stdout.write(
+        record === undefined
+          ? 'in-use: free\n'
+          : `in-use: pid ${record.pid} (${record.what}, since ${record.since})\n`,
+      )
+      return record === undefined ? 0 : 1
+    }
+    throw new Error('usage: gate.ts in-use start <what> | stop | status')
   }
   if (subcommand !== undefined) {
     // A step judges against the base the gate passed it, never one looked up again from origin/*.
@@ -1538,20 +1824,35 @@ async function main(argv: string[]): Promise<number> {
   if (only !== undefined && !values.full) throw new Error('--only needs --full')
   const stores = values.stores === undefined ? undefined : storeSet(values.stores)
   if (stores !== undefined && !values.full) throw new Error('--stores needs --full')
-  if (values.sentinels !== 'all' && values.sentinels !== 'impacted') {
-    throw new Error(`--sentinels takes all or impacted, not "${values.sentinels}"`)
+  const { sentinels: sentinelsFlag, stryker: strykerMode } = stepModes({
+    only,
+    sentinels: values.sentinels,
+    stryker: values.stryker,
+  })
+  if (values.harness !== 'all' && values.harness !== 'changed') {
+    throw new Error(`--harness takes all or changed, not "${values.harness}"`)
   }
   const rerun = values['rerun-red']
   if (rerun && only !== undefined)
     throw new Error('--rerun-red runs what was red; it takes no --only')
+  const inUse = checkoutInUse(root)
+  if (inUse !== undefined) {
+    process.stderr.write(
+      `gate: ${root} is in use by pid ${inUse.pid} (${inUse.what}, since ${inUse.since}): a gate here would rebuild under it. ` +
+        'Wait for it to finish (gate.ts in-use status), or stop it by that pid, then run the gate again.\n',
+    )
+    return 1
+  }
   const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
   const noBase = base === emptyTree(root)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
-  const moved = values.full ? ratchetChangesSince(root, base) : []
-  const mutated = values.full ? await strykerTargets(root, changed, moved) : []
+  const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
+  const mutated =
+    values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
   const remeasured = moved.filter((path) => mutated.includes(path))
+  const buildStale = !values.full && !buildIsCurrent(root)
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
@@ -1562,9 +1863,11 @@ async function main(argv: string[]): Promise<number> {
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
-    values.sentinels === 'all' || noBase || allSentinels.length === 0
-      ? ('all' as const)
-      : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
+    sentinelsFlag === 'none'
+      ? ('none' as const)
+      : sentinelsFlag === 'all' || noBase || allSentinels.length === 0
+        ? ('all' as const)
+        : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
   const planned = plan({
     full: values.full,
     base,
@@ -1586,6 +1889,9 @@ async function main(argv: string[]): Promise<number> {
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
     perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
+    stryker: strykerMode,
+    harness: values.harness,
+    buildStale,
     ...(last === undefined
       ? {}
       : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
@@ -1605,10 +1911,12 @@ async function main(argv: string[]): Promise<number> {
   if (steps.some((s) => s.name === 'sentinels' && s.skip === undefined)) {
     log(
       sentinels === 'all'
-        ? `sentinels: all (${values.sentinels === 'all' ? '--sentinels all' : noBase ? 'no base commit to select by' : 'no tests/sentinels/ to select from'})\n`
-        : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
+        ? `sentinels: all (${sentinelsFlag === 'all' ? '--sentinels all' : noBase ? 'no base commit to select by' : 'no tests/sentinels/ to select from'})\n`
+        : sentinels === 'none'
+          ? ''
+          : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
     )
-  } else if (sentinels !== 'all' && steps.some((s) => s.name === 'sentinels')) {
+  } else if (sentinels instanceof Set && steps.some((s) => s.name === 'sentinels')) {
     log(`sentinels: --sentinels impacted selects none of ${allSentinels.length}\n`)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })

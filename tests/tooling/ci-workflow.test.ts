@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { type PlanInput, plan } from '../../scripts/gate'
+import { type PlanInput, plan, stepModes } from '../../scripts/gate'
 
 // AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
 // (directly, or through a gate.ts plan that would).
@@ -973,5 +973,103 @@ describe('AC-18: tests-fail-on-base in CI has the Mailpit the kit tests need', (
     }
     expect(runsBase, 'CI gate.ts calls that run tests-fail-on-base').toBeGreaterThan(0)
     expect(problems).toEqual([])
+  })
+})
+
+// The harness's own Vitest projects run in a gate only when a harness path changed; the push to dev is where they
+// always run, so the job that runs the tests step asks for them.
+describe('dev CI runs the harness projects whatever changed', () => {
+  it('the gate.ts call whose --only names tests passes --harness all, and its plan negates no harness project', () => {
+    const calls = gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) =>
+      (flag(c.args, '--only') ?? '')
+        .split(',')
+        .map((n) => n.trim())
+        .includes('tests'),
+    )
+    expect(calls.length, 'a job runs the tests step').toBeGreaterThan(0)
+    for (const call of calls) {
+      expect(flag(call.args, '--harness'), call.job).toBe('all')
+      const tests = plan({
+        full: true,
+        base: 'HEAD',
+        changed: ['packages/sdk/src/client.ts'],
+        mutated: [],
+        only: (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim()),
+        harness: 'all',
+      }).steps.find((s) => s.name === 'tests')
+      expect(tests?.command ?? '').not.toMatch(/--project '!/)
+    }
+  })
+})
+
+// The command line alone decides whether CI's sentinels and mutation jobs run their step, and whether the ratchet
+// blocks: a gate.ts call naming either step must plan it to run, and the mutation step must block.
+describe('dev CI asks for the sentinels and stryker steps it names, and the mutation job blocks', () => {
+  const named = (call: GateCall): string[] =>
+    (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim())
+
+  const modesOf = (call: GateCall): ReturnType<typeof stepModes> =>
+    stepModes({
+      only: named(call),
+      sentinels: flag(call.args, '--sentinels'),
+      stryker: call.args.includes('--stryker'),
+    })
+  const naming = (step: string): GateCall[] =>
+    gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) => named(c).includes(step))
+
+  it('the calls naming stryker block on the ratchet, and those naming sentinels run them', () => {
+    const stryker = naming('stryker')
+    const sentinels = naming('sentinels')
+    expect(stryker.length, 'ci.yml runs stryker on a push to dev').toBeGreaterThan(0)
+    expect(sentinels.length, 'ci.yml runs the sentinels on a push to dev').toBeGreaterThan(0)
+    expect(stryker.map((c) => [c.job, modesOf(c).stryker])).toEqual(
+      stryker.map((c) => [c.job, 'blocking']),
+    )
+    expect(sentinels.filter((c) => modesOf(c).sentinels === 'none').map((c) => c.job)).toEqual([])
+  })
+
+  it('every gate.ts call whose --only names sentinels or stryker plans that step to run, the ratchet chained', () => {
+    const calls = [...naming('sentinels'), ...naming('stryker')]
+    for (const call of calls) {
+      const modes = modesOf(call)
+      const planned = plan({
+        full: true,
+        base: 'HEAD',
+        changed: ['packages/platform/src/services/cart-service.ts'],
+        mutated: ['packages/platform/src/services/cart-service.ts'],
+        only: named(call),
+        services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+        postgresUrl: 'postgres://ci@localhost:5432/ci',
+        mailpitUrl: 'http://localhost:8025',
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+        sentinels:
+          modes.sentinels === 'impacted'
+            ? new Set(['S001'])
+            : modes.sentinels === 'all'
+              ? 'all'
+              : 'none',
+        stryker: modes.stryker,
+      }).steps
+      for (const name of named(call).filter((n) => n === 'sentinels' || n === 'stryker')) {
+        const found = planned.find((s) => s.name === name)
+        expect(found, `${call.job}: ${name} is planned`).toBeDefined()
+        expect(found?.skip, `${call.job}: ${name} runs`).toBeUndefined()
+      }
+    }
+    for (const call of naming('stryker')) {
+      const command =
+        plan({
+          full: true,
+          base: 'HEAD',
+          changed: ['packages/platform/src/services/cart-service.ts'],
+          mutated: ['packages/platform/src/services/cart-service.ts'],
+          only: named(call),
+          stryker: modesOf(call).stryker,
+        }).steps.find((s) => s.name === 'stryker')?.command ?? ''
+      expect(command, `${call.job}: the ratchet blocks`).toMatch(
+        /&& pnpm --silent mutation:ratchet check --report \S+$/,
+      )
+    }
   })
 })
