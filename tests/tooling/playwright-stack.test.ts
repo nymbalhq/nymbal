@@ -135,6 +135,12 @@ const TARGETS: Target[] = [
     storefronts: ['nextjsCustom'],
   },
   {
+    name: 'mail-outage',
+    env: { NYMBAL_E2E_TARGET: 'mail-outage' },
+    store: 'custom',
+    storefronts: [],
+  },
+  {
     name: 'astro-nosearch',
     env: { NYMBAL_E2E_TARGET: 'astro-nosearch' },
     store: 'nosearch',
@@ -167,6 +173,7 @@ const PROJECT_FIELDS: Record<string, PortField | 'admin'> = {
   nextjs: 'nextjs',
   'astro-custom': 'astroCustom',
   'nextjs-custom': 'nextjsCustom',
+  'mail-outage': 'astroCustom',
   'astro-nosearch': 'astroNoSearch',
   'nextjs-nosearch': 'nextjsNoSearch',
   'astro-override': 'astroOverride',
@@ -203,7 +210,7 @@ const typoKey = (typo: string): string => `typo/${typo}`
 /** CI's Mailpit service SMTP address, outside every slot block. */
 const CI_MAILPIT_SMTP = 'localhost:12525'
 const smtpKey = (target: Target): string => `smtp/${target.name}`
-const CUSTOM_TARGET_NAMES = ['astro-custom', 'nextjs-custom']
+const CUSTOM_TARGET_NAMES = ['astro-custom', 'nextjs-custom', 'mail-outage']
 const origins = new Map<string, unknown>()
 
 beforeAll(async () => {
@@ -561,4 +568,31 @@ describe('the custom-store projects run only the journeys tagged @capabilities',
       expect(rows.length).toBeGreaterThan(tagged.length)
     },
   )
+})
+
+// The mail outage journey stops Mailpit for every store on the stack, so only its own project may run it.
+describe('the mail outage journey runs on the mail-outage project alone', () => {
+  const NATIVE = ['astro', 'nextjs']
+  const listed = new Map<string, Listed[]>()
+
+  beforeAll(async () => {
+    for (const row of await listTests(['mail-outage', ...NATIVE])) {
+      listed.set(row.project, [...(listed.get(row.project) ?? []), row])
+    }
+  }, 60_000)
+
+  it('mail-outage lists exactly the one @mail-outage journey', () => {
+    const rows = listed.get('mail-outage') ?? []
+    expect(rows.map((row) => [row.file, journeyKey(row), row.tags.includes('mail-outage')])).toEqual(
+      [['mail-outage.spec.ts', 'mail-outage.spec.ts AC-11', true]],
+    )
+  })
+
+  it.each(NATIVE)('%s lists journeys, none of them tagged mail-outage', (project) => {
+    const rows = listed.get(project) ?? []
+    expect(rows.length).toBeGreaterThan(0)
+    expect(
+      rows.filter((row) => row.tags.includes('mail-outage') || row.file === 'mail-outage.spec.ts'),
+    ).toEqual([])
+  })
 })

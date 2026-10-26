@@ -70,19 +70,18 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
   }
 
   // Each row is mailed and recorded on its own: one refused address neither stops nor repeats another's alert, and keeps
-  // its status (and a price-drop row its baseline) for the next trigger.
+  // its status (and a price-drop row its baseline). Any refused row fails the delivery, so the event is retried; the
+  // retry finds the mailed rows' keys and mails only the refused ones.
   async function fanOut(
     event: NymbalEvent<unknown>,
     rows: AlertSubscription[],
     what: { alert: string; next: string },
     message: (row: AlertSubscription) => Omit<TransactionalEmail, 'to'>,
   ): Promise<void> {
-    let attempted = 0
-    let failed = 0
+    const failed: string[] = []
     for (const row of rows) {
       const key = `${event.id}:${row.id}`
       if (await store.read((tx) => repos.processedEvent.seen(tx, HANDLER, key))) continue
-      attempted += 1
       try {
         await email.sendTransactional({ ...message(row), to: row.email })
         await store.transaction(async (tx) => {
@@ -90,15 +89,17 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
           await alerts.recordSent(tx, row, event)
         })
       } catch (err) {
-        failed += 1
+        failed.push(row.id)
         logger.warn(
           { err, subscriptionId: row.id, eventId: event.id },
-          `${what.alert} alert failed; the subscription stays active for the next ${what.next}`,
+          `${what.alert} alert failed; the subscription stays active until a retry or the next ${what.next}`,
         )
       }
     }
-    if (attempted > 0 && failed === attempted) {
-      throw new Error(`every ${what.alert} alert for event ${event.id} failed`)
+    if (failed.length > 0) {
+      throw new Error(
+        `${what.alert} alerts for event ${event.id} failed for subscriptions ${failed.join(', ')}`,
+      )
     }
   }
 

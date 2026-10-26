@@ -1142,6 +1142,8 @@ const E2E_SERVES: Record<string, string[]> = {
   // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
   'astro-custom': [],
   'nextjs-custom': [],
+  // The custom store's API alone, for the mail outage journey.
+  'mail-outage': [],
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
   'astro-nosearch': [],
   'nextjs-nosearch': [],
@@ -1486,8 +1488,9 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // nextjs-nosearch and nextjs-override serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
     // The custom store's email is SMTP into Mailpit, which its alert journeys read. Locally the compose step brings the
-    // slot's Mailpit up (`--wait`), so this step only carries that outcome under a name of its own; under --services
-    // external NYMBAL_TEST_MAILPIT_URL meets the need instead (settle).
+    // slot's Mailpit up (`--wait`), and this step turns its Chaos off: a mail-outage run cut off at its bound leaves it
+    // on in the reused container. Under --services external NYMBAL_TEST_MAILPIT_URL meets the need instead (settle),
+    // and CI's Mailpit is fresh each job.
     const mailpitNeeds = [...e2eNeeds, 'mailpit up']
     steps.push(
       external
@@ -1497,9 +1500,14 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
             skip: 'services are external (--services external)',
             idle: true,
           }
-        : { name: 'mailpit up', command: 'true', needs: ['compose up'] },
+        : {
+            name: 'mailpit up',
+            command: `${mailpit} node_modules/.bin/tsx scripts/gate.ts chaos-off`,
+            needs: ['compose up'],
+          },
       { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: mailpitNeeds },
       { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: mailpitNeeds },
+      { name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
@@ -1813,6 +1821,21 @@ export function stepModes(flags: {
   return { sentinels, stryker }
 }
 
+/** Sets every Mailpit Chaos trigger's probability to 0, so the Mailpit refuses nothing. */
+async function mailpitChaosOff(url: string): Promise<void> {
+  const res = await fetch(new URL('/api/v1/chaos', url), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      Sender: { ErrorCode: 451, Probability: 0 },
+      Recipient: { ErrorCode: 451, Probability: 0 },
+      Authentication: { ErrorCode: 535, Probability: 0 },
+    }),
+  })
+  if (!res.ok)
+    throw new Error(`PUT ${url}/api/v1/chaos answered ${res.status}: ${await res.text()}`)
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -1853,6 +1876,10 @@ async function main(argv: string[]): Promise<number> {
         : 'build: the package build output is stale or unstamped; run pnpm build\n',
     )
     return current ? 0 : 1
+  }
+  if (subcommand === 'chaos-off') {
+    await mailpitChaosOff(process.env.NYMBAL_TEST_MAILPIT_URL ?? MAILPIT_URL)
+    return 0
   }
   if (subcommand === 'in-use') {
     // `in-use start <what>` holds the checkout until `in-use stop` or the holder's own end; a gate meanwhile refuses.

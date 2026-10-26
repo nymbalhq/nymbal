@@ -130,6 +130,10 @@ export async function adjustStock(
 export interface LoggedEvent {
   type: string
   payload?: Record<string, unknown>
+  /** Where the event is in its delivery, as `events query --json` prints it. */
+  deliveredAt?: string | null
+  attempts?: number
+  deadAt?: string | null
 }
 
 /** `nymbal events query --correlation <id> --type <glob> --json --payload` against the custom store's database. */
@@ -154,4 +158,30 @@ export async function customStoreEvents(
     .split('\n')
     .filter((line) => line.trim().startsWith('{'))
     .map((line) => JSON.parse(line) as LoggedEvent)
+}
+
+/**
+ * Mailpit's Chaos (v1.22.0 and later, started with MP_ENABLE_CHAOS): `on` refuses every recipient with 451, as a mail
+ * host in an outage does; `off` sets every trigger's probability back to 0. It applies to the whole Mailpit instance.
+ */
+export async function mailChaos(state: 'on' | 'off'): Promise<void> {
+  const body =
+    state === 'on'
+      ? { Recipient: { ErrorCode: 451, Probability: 100 } }
+      : {
+          Sender: { ErrorCode: 451, Probability: 0 },
+          Recipient: { ErrorCode: 451, Probability: 0 },
+          Authentication: { ErrorCode: 535, Probability: 0 },
+        }
+  const res = await fetch(new URL('/api/v1/chaos', mailpitUrl()), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const text = await res.text()
+  expect(res.status, `PUT /api/v1/chaos (${state}) on ${mailpitUrl()}: ${text}`).toBe(200)
+  const set = JSON.parse(text) as { Recipient?: { Probability?: number } }
+  expect(set.Recipient?.Probability, `Mailpit's Recipient trigger after chaos ${state}`).toBe(
+    state === 'on' ? 100 : 0,
+  )
 }

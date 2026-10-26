@@ -370,6 +370,8 @@ export const events = pgTable(
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
     deadAt: timestamp('dead_at', { withTimezone: true }),
+    /** A failed event is not handed to the bus again before this. */
+    retryAt: timestamp('retry_at', { withTimezone: true }),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),

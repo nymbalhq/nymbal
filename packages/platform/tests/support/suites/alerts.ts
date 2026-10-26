@@ -36,7 +36,10 @@ import { primedShopper } from '../security.js'
 
 export interface OpenKernel {
   configure: (config: NymbalConfig) => NymbalConfig
-  appOptions: { adapters?: { email: EmailAdapter } }
+  appOptions: {
+    adapters?: { email: EmailAdapter }
+    relay?: { retryDelayMs?: number; now?: () => Date }
+  }
   logger: Kernel['logger']
 }
 
@@ -136,15 +139,29 @@ interface Store {
   base: string
   /** The CSRF pair a browser on the storefront holds. */
   csrf: Record<string, string>
+  /** How far the relay's clock runs ahead of real time: moved past a retry's wait to let it run. */
+  clock: { offset: number }
   close(): Promise<void>
 }
 
+/** The relay's wait before a retry, in a store opened with `retry`: a failed first delivery stays failed until the clock moves. */
+const RETRY_DELAY_MS = 60_000
+const DAY_MS = 24 * 60 * 60_000
+/** The relay's default. */
+const MAX_ATTEMPTS = 5
+
 async function openStore(
   options: AlertsSuiteOptions,
-  opts: { email?: 'custom' | 'native'; origins?: string[]; currency?: string } = {},
+  opts: {
+    email?: 'custom' | 'native'
+    origins?: string[]
+    currency?: string
+    retry?: boolean
+  } = {},
 ): Promise<Store> {
   const mail = capture()
   const logs: string[] = []
+  const clock = { offset: 0 }
   const logger = createLogger({
     pretty: false,
     level: 'warn',
@@ -153,7 +170,15 @@ async function openStore(
   const email = opts.email ?? 'custom'
   const k = await options.open({
     configure: alertsConfig(email, opts.origins ?? ORIGINS, opts.currency),
-    appOptions: email === 'custom' ? { adapters: { email: mail.adapter } } : {},
+    appOptions: {
+      ...(email === 'custom' && { adapters: { email: mail.adapter } }),
+      ...(opts.retry === true && {
+        relay: {
+          retryDelayMs: RETRY_DELAY_MS,
+          now: () => new Date(Date.now() + clock.offset),
+        },
+      }),
+    },
     logger,
   })
   const served = await serveKernel(k)
@@ -168,6 +193,7 @@ async function openStore(
     logs,
     base: served.baseUrl,
     csrf: { cookie: `nymbal.csrf=${token}`, 'x-csrf-token': token },
+    clock,
     async close() {
       await raw.close()
       await served.stop()
@@ -348,6 +374,48 @@ async function delivered(s: Store): Promise<void> {
     },
     { timeout: 10_000, interval: 20 },
   )
+}
+
+/** The pass in flight and the one it asked for have finished; an event waiting out its retry delay is still waiting. */
+async function settled(s: Store): Promise<void> {
+  await s.k.app.relay.drain()
+  await s.k.app.relay.drain()
+}
+
+/** The relay's clock moved past every wait, then a drain: each failed event is tried once more. */
+async function retried(s: Store): Promise<void> {
+  s.clock.offset += DAY_MS
+  await settled(s)
+}
+
+/** The one event of `type` for the variant appended since `afterSeq`; the test depends on it. */
+async function triggerOf(s: Store, type: string, variantId: string, afterSeq: number) {
+  const rows = (await eventRows(s.raw, 'seq > ? AND type = ?', [afterSeq, type])).filter(
+    (e) => (e.envelope.payload as { variantId?: string }).variantId === variantId,
+  )
+  expect(rows.length, `${type} events for ${variantId}`).toBe(1)
+  return rows[0]!
+}
+
+/** Where an event is in its delivery: [attempts, delivered, dead]. */
+async function deliveryOf(s: Store, id: string): Promise<[number, boolean, boolean]> {
+  const [row] = await eventRows(s.raw, 'id = ?', [id])
+  return [row!.attempts, row!.deliveredAt != null, row!.deadAt != null]
+}
+
+/** How many alert.sent.v1 events name each row and the trigger. */
+async function sentPerRow(s: Store, rowIds: string[], triggerId: string): Promise<number[]> {
+  const sent = (await eventRows(s.raw, 'type = ?', ['alert.sent.v1'])).map(
+    (e) => e.envelope.payload as { subscriptionId?: string; triggerEventId?: string },
+  )
+  return rowIds.map(
+    (id) => sent.filter((p) => p.subscriptionId === id && p.triggerEventId === triggerId).length,
+  )
+}
+
+async function lastSeq(s: Store): Promise<number> {
+  const [row] = await s.raw.rows<{ n: number | string | null }>('SELECT max(seq) AS n FROM events')
+  return Number(row?.n ?? 0)
 }
 
 const mailsTo = (s: Store, email: string, template?: string): TransactionalEmail[] =>
@@ -1237,7 +1305,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
     const twice = { on: true }
 
     beforeAll(async () => {
-      s = await openStore(options)
+      s = await openStore(options, { retry: true })
       // At-least-once: while `twice.on`, the bus hands every event to the subscribers twice.
       const bus = s.k.eventBus
       const publish = bus.publish.bind(bus)
@@ -1336,81 +1404,123 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       )
     }, 300_000)
 
-    it('AC-6: when the adapter refuses one address, every other active row is mailed once and fired, the restock is delivered, the refused row is tried once and stays active, and a warn log names its subscription and the event', async () => {
+    it('AC-8: when the adapter refuses one address once, the first delivery mails and fires the other two active rows and leaves the restock undelivered with attempts 1; the retry mails the refused row once and the others nothing more, delivers the restock, and each row has one alert.sent.v1 for it', async () => {
       twice.on = false
       const p = await seedProduct(s.k, 0)
-      const a = freshEmail('ac6-a')
-      const bad = freshEmail('ac6-bad')
-      const c = freshEmail('ac6-c')
-      for (const email of [a, bad, c]) await activate(s, email, p.variantId)
-      const badRow = await rowOf(s, bad, p.variantId)
-      s.mail.refuse.set(norm(bad), Number.POSITIVE_INFINITY)
-
-      await restock(s, p.variantId, 1)
-      await delivered(s)
-
+      const emails = ['ac8-a', 'ac8-bad', 'ac8-c'].map(freshEmail)
+      const bad = emails[1]!
+      for (const email of emails) await activate(s, email, p.variantId)
+      const rowIds = await Promise.all(emails.map(async (e) => (await rowOf(s, e, p.variantId)).id))
       const tried = (email: string) =>
         s.mail.attempts.filter((m) => m.to === norm(email) && m.template === ALERT_MAIL).length
-      expect([a, bad, c].map((e) => mailsTo(s, e, ALERT_MAIL).length)).toEqual([1, 0, 1])
-      expect(tried(bad)).toBe(1)
-      const statuses = await Promise.all(
-        [a, bad, c].map(async (e) => (await rowOf(s, e, p.variantId)).status),
-      )
-      expect(statuses).toEqual(['fired', 'active', 'fired'])
+      const alerted = () => emails.map((e) => mailsTo(s, e, ALERT_MAIL).length)
+      const statuses = () =>
+        Promise.all(emails.map(async (e) => (await rowOf(s, e, p.variantId)).status))
+      s.mail.refuse.set(norm(bad), 1)
+      const before = await lastSeq(s)
 
-      const [event] = (await eventRows(s.raw, 'type = ?', ['product.restocked.v1'])).filter(
-        (e) => (e.envelope.payload as { variantId: string }).variantId === p.variantId,
-      )
-      expect(event, 'the restock is in the log').toBeDefined()
-      expect([event!.deliveredAt != null, event!.attempts]).toEqual([true, 0])
+      await restock(s, p.variantId, 1)
+      await settled(s)
 
-      const warned = s.logs
-        .map((line) => JSON.parse(line) as { level: number })
-        .filter((entry) => entry.level === 40)
-        .map((entry) => JSON.stringify(entry))
-        .filter((text) => text.includes(badRow.id) && text.includes(event!.id))
-      expect(warned.length, 'warn lines naming the refused subscription and the restock').toBe(1)
+      const event = await triggerOf(s, 'product.restocked.v1', p.variantId, before)
+      expect(alerted(), 'alerts after the first delivery').toEqual([1, 0, 1])
+      expect(await statuses()).toEqual(['fired', 'active', 'fired'])
+      expect(await deliveryOf(s, event.id), 'the restock after the first delivery').toEqual([
+        1,
+        false,
+        false,
+      ])
+
+      await retried(s)
+
+      expect(alerted(), 'alerts after the retry').toEqual([1, 1, 1])
+      expect(tried(bad)).toBe(2)
+      expect(await statuses()).toEqual(['fired', 'fired', 'fired'])
+      expect(await deliveryOf(s, event.id), 'the restock after the retry').toEqual([1, true, false])
+      expect(await sentPerRow(s, rowIds, event.id)).toEqual(alerted())
     })
 
-    it('AC-6: when every attempted row fails, the handler throws (the bus logs it at error, naming the restock), every row stays active, and the next restock mails each of them once', async () => {
+    it('AC-8: when every attempted row is refused once, the first delivery mails nothing and leaves both rows active and the restock undelivered with attempts 1; the retry mails each row once, fires both and delivers the restock', async () => {
       twice.on = false
       const p = await seedProduct(s.k, 0)
-      const x = freshEmail('ac6-x')
-      const y = freshEmail('ac6-y')
-      for (const email of [x, y]) await activate(s, email, p.variantId)
-      s.mail.refuse.set(norm(x), 1)
-      s.mail.refuse.set(norm(y), 1)
-      const tried = (email: string) =>
-        s.mail.attempts.filter((m) => m.to === norm(email) && m.template === ALERT_MAIL).length
+      const emails = ['ac8-x', 'ac8-y'].map(freshEmail)
+      for (const email of emails) await activate(s, email, p.variantId)
+      for (const email of emails) s.mail.refuse.set(norm(email), 1)
+      const alerted = () => emails.map((e) => mailsTo(s, e, ALERT_MAIL).length)
       const statuses = () =>
-        Promise.all([x, y].map(async (e) => (await rowOf(s, e, p.variantId)).status))
-      const alerted = () => [x, y].map((e) => mailsTo(s, e, ALERT_MAIL).length)
+        Promise.all(emails.map(async (e) => (await rowOf(s, e, p.variantId)).status))
+      const before = await lastSeq(s)
 
       await restock(s, p.variantId, 1)
-      await delivered(s)
-      const [first] = (await eventRows(s.raw, 'type = ?', ['product.restocked.v1'])).filter(
-        (e) => (e.envelope.payload as { variantId: string }).variantId === p.variantId,
-      )
-      expect([tried(x), tried(y)]).toEqual([1, 1])
+      await settled(s)
+
+      const event = await triggerOf(s, 'product.restocked.v1', p.variantId, before)
       expect(alerted()).toEqual([0, 0])
       expect(await statuses()).toEqual(['active', 'active'])
-      const thrown = s.logs
-        .map((line) => JSON.parse(line) as { level: number })
-        .filter((entry) => entry.level >= 50)
-        .map((entry) => JSON.stringify(entry))
-        .filter((text) => first !== undefined && text.includes(first.id))
-      expect(
-        thrown.length,
-        'error lines naming the restock every row failed on',
-      ).toBeGreaterThanOrEqual(1)
+      expect(await deliveryOf(s, event.id)).toEqual([1, false, false])
 
-      // Sold out and back again: a second restock, which the refusals no longer meet.
-      await restock(s, p.variantId, -1)
-      await restock(s, p.variantId, 1)
-      await delivered(s)
+      await retried(s)
 
       expect(alerted()).toEqual([1, 1])
       expect(await statuses()).toEqual(['fired', 'fired'])
+      expect(await deliveryOf(s, event.id)).toEqual([1, true, false])
+    })
+
+    it(`AC-8: when the adapter refuses one address on every attempt, the other two are mailed once; the refused row is tried ${MAX_ATTEMPTS} times (maxAttempts) and stays active, the restock is dead and is tried no more; once the refusals end, the next restock mails that row once and the others nothing`, async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 0)
+      const emails = ['ac8-p', 'ac8-refused', 'ac8-q'].map(freshEmail)
+      const bad = emails[1]!
+      for (const email of emails) await activate(s, email, p.variantId)
+      s.mail.refuse.set(norm(bad), Number.POSITIVE_INFINITY)
+      const tried = (email: string) =>
+        s.mail.attempts.filter((m) => m.to === norm(email) && m.template === ALERT_MAIL).length
+      const alerted = () => emails.map((e) => mailsTo(s, e, ALERT_MAIL).length)
+      const before = await lastSeq(s)
+
+      await restock(s, p.variantId, 1)
+      await settled(s)
+      const event = await triggerOf(s, 'product.restocked.v1', p.variantId, before)
+      for (let attempt = 2; attempt <= MAX_ATTEMPTS + 2; attempt += 1) await retried(s)
+
+      expect(tried(bad), 'sends to the refused address').toBe(MAX_ATTEMPTS)
+      expect(alerted()).toEqual([1, 0, 1])
+      expect((await rowOf(s, bad, p.variantId)).status).toBe('active')
+      expect(await deliveryOf(s, event.id)).toEqual([MAX_ATTEMPTS, false, true])
+
+      // Sold out and back again once the refusals have ended.
+      s.mail.refuse.delete(norm(bad))
+      await restock(s, p.variantId, -1)
+      await restock(s, p.variantId, 1)
+      await settled(s)
+
+      expect(alerted()).toEqual([1, 1, 1])
+      expect(tried(bad)).toBe(MAX_ATTEMPTS + 1)
+      expect((await rowOf(s, bad, p.variantId)).status).toBe('fired')
+    })
+
+    it('AC-8: a confirmation the adapter refuses once is not sent by the first delivery, which leaves alert.requested.v1 undelivered with attempts 1, and is sent once by the retry, which delivers the event', async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 0)
+      const email = freshEmail('ac8-confirm')
+      s.mail.refuse.set(norm(email), 1)
+      const before = await lastSeq(s)
+
+      await subscribed(s, email, p.variantId)
+      await settled(s)
+
+      const [requested] = await eventRows(s.raw, 'seq > ? AND type = ?', [
+        before,
+        'alert.requested.v1',
+      ])
+      expect(mailsTo(s, email, CONFIRM_MAIL).length, 'confirmations after the refusal').toBe(0)
+      expect(await deliveryOf(s, requested!.id)).toEqual([1, false, false])
+
+      await retried(s)
+      await retried(s)
+
+      expect(mailsTo(s, email, CONFIRM_MAIL).length, 'confirmations after the retry').toBe(1)
+      expect(await deliveryOf(s, requested!.id)).toEqual([1, true, false])
     })
   })
 
@@ -1542,7 +1652,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
     const twice = { on: true }
 
     beforeAll(async () => {
-      s = await openStore(options, { currency: PRICE_CURRENCY })
+      s = await openStore(options, { currency: PRICE_CURRENCY, retry: true })
       // At-least-once: while `twice.on`, the bus hands every event to the subscribers twice.
       const bus = s.k.eventBus
       const publish = bus.publish.bind(bus)
@@ -1710,17 +1820,68 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
       ).toEqual([[money(1500, s.k.config.store.currency), money(1234, s.k.config.store.currency)]])
     })
 
-    it('AC-4: when the adapter refuses one address, the other active rows are mailed once and their baselines move, the refused row is tried once and stays active with its baseline unmoved, and the next drop below its baseline mails it alone', async () => {
+    it('AC-8: when the adapter refuses one address once, the first price drop mails the other two and moves their baselines, leaves the refused row active at its baseline and the price event undelivered with attempts 1; the retry mails the refused row once and the others nothing more, moves its baseline, delivers the event, and each row has one alert.sent.v1 for it', async () => {
       twice.on = false
       const p = await seedProduct(s.k, 4)
-      const a = freshEmail('ac4-a')
-      const bad = freshEmail('ac4-bad')
-      const c = freshEmail('ac4-c')
-      for (const email of [a, bad, c]) await activatePriceDrop(s, email, p.variantId)
-      s.mail.refuse.set(norm(bad), Number.POSITIVE_INFINITY)
+      const emails = ['ac8-pa', 'ac8-pbad', 'ac8-pc'].map(freshEmail)
+      const bad = emails[1]!
+      for (const email of emails) await activatePriceDrop(s, email, p.variantId)
+      const rowIds = await Promise.all(
+        emails.map(async (e) => (await rowOf(s, e, p.variantId, PRICE_DROP)).id),
+      )
+      const tried = (email: string) =>
+        s.mail.attempts.filter((m) => m.to === norm(email) && m.template === PRICE_ALERT_MAIL)
+          .length
+      const alerted = () => emails.map((e) => mailsTo(s, e, PRICE_ALERT_MAIL).length)
+      const state = () =>
+        Promise.all(
+          emails.map(async (e) => {
+            const row = await rowOf(s, e, p.variantId, PRICE_DROP)
+            return [row.status, baselineOf(row)]
+          }),
+        )
+      s.mail.refuse.set(norm(bad), 1)
+      const before = await lastSeq(s)
 
       await reprice(s, p, 1200)
-      await delivered(s)
+      await settled(s)
+
+      const event = await triggerOf(s, PRICE_CHANGED, p.variantId, before)
+      expect(alerted(), 'alerts after the first delivery').toEqual([1, 0, 1])
+      expect(await state()).toEqual([
+        ['active', 1200],
+        ['active', 1500],
+        ['active', 1200],
+      ])
+      expect(await deliveryOf(s, event.id)).toEqual([1, false, false])
+
+      await retried(s)
+
+      expect(alerted(), 'alerts after the retry').toEqual([1, 1, 1])
+      expect(tried(bad)).toBe(2)
+      expect(await state()).toEqual([
+        ['active', 1200],
+        ['active', 1200],
+        ['active', 1200],
+      ])
+      expect(await deliveryOf(s, event.id)).toEqual([1, true, false])
+      expect(await sentPerRow(s, rowIds, event.id)).toEqual(alerted())
+    })
+
+    it(`AC-8: when the adapter refuses one address on every attempt, the other active rows are mailed once and their baselines move; the refused row is tried ${MAX_ATTEMPTS} times (maxAttempts) and stays active with its baseline unmoved, the price event is dead before the refusals end, and the next drop below its baseline mails it alone`, async () => {
+      twice.on = false
+      const p = await seedProduct(s.k, 4)
+      const a = freshEmail('ac8-pd-a')
+      const bad = freshEmail('ac8-pd-bad')
+      const c = freshEmail('ac8-pd-c')
+      for (const email of [a, bad, c]) await activatePriceDrop(s, email, p.variantId)
+      s.mail.refuse.set(norm(bad), Number.POSITIVE_INFINITY)
+      const before = await lastSeq(s)
+
+      await reprice(s, p, 1200)
+      await settled(s)
+      const event = await triggerOf(s, PRICE_CHANGED, p.variantId, before)
+      for (let attempt = 2; attempt <= MAX_ATTEMPTS + 2; attempt += 1) await retried(s)
 
       const tried = (email: string) =>
         s.mail.attempts.filter((m) => m.to === norm(email) && m.template === PRICE_ALERT_MAIL)
@@ -1734,19 +1895,20 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
           }),
         )
       expect(alerted()).toEqual([1, 0, 1])
-      expect(tried(bad)).toBe(1)
+      expect(tried(bad), 'sends to the refused address').toBe(MAX_ATTEMPTS)
       expect(await state()).toEqual([
         ['active', 1200],
         ['active', 1500],
         ['active', 1200],
       ])
+      expect(await deliveryOf(s, event.id)).toEqual([MAX_ATTEMPTS, false, true])
 
       // The refusals end; a rise, then a drop below the refused row's baseline but not the others'.
       s.mail.refuse.delete(norm(bad))
       await reprice(s, p, 1400)
-      await delivered(s)
+      await settled(s)
       await reprice(s, p, 1300)
-      await delivered(s)
+      await settled(s)
 
       expect(alerted()).toEqual([1, 1, 1])
       expect(await state()).toEqual([

@@ -113,7 +113,9 @@ export async function createKernel(
     await migrateStore.close()
   }
 
-  const app = await createApp(config, { ...opts.appOptions, ...storage, logger })
+  // No wait before a retry unless a test asks for one, so a test that drains by hand after a failure retries at once.
+  const relay = { retryDelayMs: 0, ...opts.appOptions?.relay }
+  const app = await createApp(config, { ...opts.appOptions, relay, ...storage, logger })
   return {
     dialect: opts.dialect,
     config,

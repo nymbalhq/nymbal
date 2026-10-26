@@ -768,7 +768,7 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
     }
 
     // The custom-providers store mails through Mailpit, so its two steps also need `mailpit up`, which compose meets.
-    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom']
+    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
 
     it('AC-18: the E2E steps run iff build is ok, whatever compose up does, but for the Mailpit store’s, which also need compose; a red build skips each, naming build', async () => {
       expect(e2eSteps().length).toBeGreaterThanOrEqual(2)

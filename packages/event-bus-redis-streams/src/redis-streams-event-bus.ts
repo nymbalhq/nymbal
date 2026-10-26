@@ -4,10 +4,12 @@ import {
   AdapterError,
   boundedHealthCheck,
   connectionSecrets,
+  handlerFailedError,
   HEALTH_CHECK_TIMEOUT_MS,
   ValidationError,
   type EventBusAdapter,
   type EventHandler,
+  type HandlerFailure,
   type HealthReport,
   type Logger,
   type NymbalEvent,
@@ -58,6 +60,8 @@ interface Wait {
   entryId: string | null
   /** `g:<group>` for a named group, `s:<subscription>` for an unnamed subscription of this instance. */
   targets: Set<string>
+  /** The groups whose handler threw: the wait rejects with them once its last target has settled. */
+  failed: HandlerFailure[]
   startedAt: number
   resolve(): void
   reject(error: unknown): void
@@ -126,6 +130,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
   readonly #cmd: Redis
   readonly #reader: Redis
   readonly #url: string
+  readonly #prefix: string
   readonly #stream: string
   readonly #consumer = randomUUID()
   readonly #logger: Logger | undefined
@@ -146,6 +151,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
     this.#cmd = cmd
     this.#reader = reader
     this.#url = options.url
+    this.#prefix = options.prefix
     this.#stream = `${options.prefix}:events`
     this.#logger = options.logger
     this.#ackTimeoutMs = options.ackTimeoutMs ?? 15_000
@@ -206,7 +212,10 @@ export class RedisStreamsEventBus implements EventBusAdapter {
     })
     this.#signalGroups()
     this.#schedulePoll()
-    await Promise.all(waits.map((w) => w.promise))
+    // Every event is handed out before the batch rejects, with the first event that failed.
+    const outcomes = await Promise.allSettled(waits.map((w) => w.promise))
+    const rejected = outcomes.find((o) => o.status === 'rejected')
+    if (rejected !== undefined) throw rejected.reason
   }
 
   async replay(events: NymbalEvent<unknown>[]): Promise<void> {
@@ -346,6 +355,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       event,
       entryId: null,
       targets,
+      failed: [],
       startedAt: Date.now(),
       resolve,
       reject,
@@ -393,9 +403,12 @@ export class RedisStreamsEventBus implements EventBusAdapter {
     return true
   }
 
-  /** `target` has finished with `eventId`: a wait left with nothing to wait on resolves. */
-  #settle(eventId: string, target: string): void {
-    for (const wait of [...(this.#waits.get(eventId) ?? [])]) this.#remove(wait, target)
+  /**
+   * `target` has finished with `eventId`, having failed when `failure` is given: a wait left with nothing to wait on
+   * resolves, or rejects when any of its targets failed.
+   */
+  #settle(eventId: string, target: string, failure?: HandlerFailure): void {
+    for (const wait of [...(this.#waits.get(eventId) ?? [])]) this.#remove(wait, target, failure)
   }
 
   #settleEverywhere(target: string): void {
@@ -404,14 +417,24 @@ export class RedisStreamsEventBus implements EventBusAdapter {
     }
   }
 
-  #remove(wait: Wait, target: string): void {
-    if (!wait.targets.delete(target) || wait.targets.size > 0) return
-    if (this.#drop(wait)) wait.resolve()
+  #remove(wait: Wait, target: string, failure?: HandlerFailure): void {
+    if (!wait.targets.delete(target)) return
+    if (failure !== undefined) wait.failed.push(failure)
+    if (wait.targets.size > 0 || !this.#drop(wait)) return
+    if (wait.failed.length > 0) wait.reject(handlerFailedError(wait.event, wait.failed))
+    else wait.resolve()
+  }
+
+  /** Where a group's consumer leaves a handler failure for a publisher on another instance to read. */
+  #failedKey(entryId: string, group: string): string {
+    return `${this.#prefix}:failed:${entryId}:${group}`
   }
 
   /**
    * A group's entry may be handled by another instance's consumer: asks Redis, for each wait still on a group, whether
-   * the group has delivered the entry and holds it pending no more.
+   * the group has delivered the entry and holds it pending no more, and whether its handler failed. The failure key is
+   * read after the pending list: the consumer sets it before it acknowledges, so an entry seen acknowledged here has its
+   * failure, if any, seen too.
    */
   #schedulePoll(): void {
     if (this.#poll !== null || this.#closed || this.#waits.size === 0) return
@@ -437,6 +460,7 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       const pipeline = this.#cmd.pipeline().xinfo('GROUPS', this.#stream)
       for (const { wait, group } of due) {
         pipeline.xpending(this.#stream, group, wait.entryId!, wait.entryId!, 1)
+        pipeline.get(this.#failedKey(wait.entryId!, group))
       }
       const replies = (await pipeline.exec()) ?? []
       const delivered = new Map<string, string>()
@@ -449,11 +473,14 @@ export class RedisStreamsEventBus implements EventBusAdapter {
         }
       }
       due.forEach(({ wait, group }, i) => {
-        const [error, pending] = replies[i + 1] ?? [null, null]
+        const [error, pending] = replies[2 * i + 1] ?? [null, null]
+        const [keyError, message] = replies[2 * i + 2] ?? [null, null]
         const last = delivered.get(group)
-        if (error !== null || last === undefined || !Array.isArray(pending)) return
+        if (error !== null || keyError !== null || last === undefined || !Array.isArray(pending))
+          return
         if (pending.length === 0 && compareIds(last, wait.entryId!) >= 0) {
-          this.#remove(wait, `g:${group}`)
+          const failure = typeof message === 'string' ? { subscription: group, message } : undefined
+          this.#remove(wait, `g:${group}`, failure)
         }
       })
     } catch (err) {
@@ -656,22 +683,39 @@ export class RedisStreamsEventBus implements EventBusAdapter {
         skipped.push(entry.id)
         continue
       }
-      await Promise.all(subs.map((s) => this.#run(s, event)))
+      const errors = (await Promise.all(subs.map((s) => this.#run(s, event)))).filter(
+        (e) => e !== null,
+      )
+      // Acknowledged even when a handler threw: the store publishes the event again, and that is the one retry path.
+      const failure =
+        errors.length === 0
+          ? undefined
+          : { subscription: group.name, message: errors.map(messageOf).join('; ') }
+      if (failure !== undefined) {
+        await this.#cmd.set(
+          this.#failedKey(entry.id, group.name),
+          failure.message,
+          'PX',
+          this.#ackTimeoutMs,
+        )
+      }
       await this.#cmd.xack(this.#stream, group.name, entry.id)
-      this.#settle(event.id, `g:${group.name}`)
+      this.#settle(event.id, `g:${group.name}`, failure)
     }
     if (skipped.length > 0) await this.#cmd.xack(this.#stream, group.name, ...skipped)
   }
 
-  /** Runs one handler; an error is logged and acknowledged like a success, as the in-process bus does. */
-  async #run(sub: Sub, event: NymbalEvent): Promise<void> {
+  /** Runs one handler; an error is logged and returned. */
+  async #run(sub: Sub, event: NymbalEvent): Promise<unknown> {
     try {
       await sub.handler(event)
+      return null
     } catch (err) {
       this.#logger?.error(
         { err, subscriptionId: sub.id, eventType: event.type, eventId: event.id },
         'Event handler failed',
       )
+      return err ?? new Error('handler threw nothing')
     }
   }
 
@@ -722,6 +766,10 @@ export class RedisStreamsEventBus implements EventBusAdapter {
       throw new AdapterError('closed', 'the redis streams event bus is closed')
     }
   }
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 function matches(sub: Sub, type: string): boolean {

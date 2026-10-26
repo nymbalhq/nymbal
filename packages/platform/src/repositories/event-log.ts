@@ -49,11 +49,22 @@ export interface EventLogFilter {
 export interface EventLogRepository extends StoreRepository {
   /** Appends in array order, so `seq` follows publish order. */
   append(tx: Tx, events: NymbalEvent<unknown>[]): Promise<void>
-  /** Neither delivered nor dead, by `seq`; `afterSeq` pages through one pass without re-reading rows it just tried. */
-  listUndelivered(tx: ReadTx, limit: number, afterSeq?: number): Promise<LoggedEvent[]>
+  /**
+   * Neither delivered nor dead, by `seq`; `afterSeq` pages through one pass without re-reading rows it just tried.
+   * Given `now`, a row whose `retry_at` is after it is left out.
+   */
+  listUndelivered(tx: ReadTx, limit: number, afterSeq?: number, now?: Date): Promise<LoggedEvent[]>
   markDelivered(tx: Tx, ids: string[], at: Date): Promise<void>
-  /** One more failed attempt; the event is dead (`dead_at = at`) once its attempts reach `maxAttempts`. */
-  recordFailure(tx: Tx, id: string, at: Date, maxAttempts: number): Promise<void>
+  /**
+   * One more failed attempt; the event is dead (`dead_at = at`) once its attempts reach `maxAttempts`. `retryAt`, when
+   * given, is the earliest the next attempt may be made.
+   */
+  recordFailure(tx: Tx, id: string, at: Date, maxAttempts: number, retryAt?: Date): Promise<void>
+  countDead(tx: ReadTx): Promise<number>
+  /** Dead events, oldest first. */
+  listDead(tx: ReadTx, limit: number): Promise<LoggedEvent[]>
+  /** Neither delivered nor dead, with at least one failed attempt. */
+  countRetrying(tx: ReadTx): Promise<number>
   /** Deletes delivered events delivered before `at`; returns how many. Undelivered and dead events are never deleted. */
   deleteDeliveredBefore(tx: Tx, at: Date): Promise<number>
   listAll(tx: ReadTx): Promise<LoggedEvent[]>
@@ -98,6 +109,8 @@ export interface EventLogRepository extends StoreRepository {
 // SQLite's bound-parameter limit is per statement; seven columns a row keep a chunk well under it.
 const APPEND_CHUNK = 100
 const DELETE_CHUNK = 500
+const APPEND_INTO =
+  'INSERT INTO events (id, type, envelope, correlation_id, subject_type, subject_id, created_at) VALUES'
 /** The page `listForCatchUp` reads when it is given none. */
 const CATCH_UP_LIMIT = 10_000
 
@@ -217,58 +230,52 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
 
   return {
     store,
+    // The columns are named, not taken from the schema: a store a migration behind, before a later column of the log
+    // (retry_at), still takes appends.
     async append(tx, events) {
       const now = new Date()
       for (let i = 0; i < events.length; i += APPEND_CHUNK) {
         const chunk = events.slice(i, i + APPEND_CHUNK)
+        const rows = (row: (e: NymbalEvent<unknown>) => SQL) => sql.join(chunk.map(row), sql`, `)
         if (tx.kind === 'sqlite') {
-          sqliteDb(tx)
-            .insert(s)
-            .values(
-              chunk.map((e) => ({
-                id: e.id,
-                type: e.type,
-                envelope: JSON.stringify(e),
-                correlationId: e.correlationId,
-                ...subjectColumns(e),
-                createdAt: now.toISOString(),
-              })),
-            )
-            .run()
+          const at = now.toISOString()
+          sqliteDb(tx).run(
+            sql`${sql.raw(APPEND_INTO)} ${rows((e) => {
+              const { subjectType, subjectId } = subjectColumns(e)
+              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}, ${e.correlationId}, ${subjectType}, ${subjectId}, ${at})`
+            })}`,
+          )
         } else {
-          await postgresDb(tx)
-            .insert(p)
-            .values(
-              chunk.map((e) => ({
-                id: e.id,
-                type: e.type,
-                envelope: e,
-                correlationId: e.correlationId,
-                ...subjectColumns(e),
-                createdAt: now,
-              })),
-            )
+          await postgresDb(tx).execute(
+            sql`${sql.raw(APPEND_INTO)} ${rows((e) => {
+              const { subjectType, subjectId } = subjectColumns(e)
+              return sql`(${e.id}, ${e.type}, ${JSON.stringify(e)}::jsonb, ${e.correlationId}, ${subjectType}, ${subjectId}, ${now.toISOString()}::timestamptz)`
+            })}`,
+          )
         }
       }
     },
-    async listUndelivered(tx, limit, afterSeq = 0) {
-      if (tx.kind === 'sqlite') {
-        return sqliteDb(tx)
-          .select()
-          .from(s)
-          .where(and(isNull(s.deliveredAt), isNull(s.deadAt), gt(s.seq, afterSeq)))
-          .orderBy(asc(s.seq))
-          .limit(limit)
-          .all()
-          .map(rowToLogged)
-      }
-      const rows = await postgresDb(tx)
-        .select()
-        .from(p)
-        .where(and(isNull(p.deliveredAt), isNull(p.deadAt), gt(p.seq, afterSeq)))
-        .orderBy(asc(p.seq))
-        .limit(limit)
-      return rows.map(rowToLogged)
+    listUndelivered(tx, limit, afterSeq = 0, now) {
+      return select(
+        tx,
+        {
+          sqlite: [
+            isNull(s.deliveredAt),
+            isNull(s.deadAt),
+            gt(s.seq, afterSeq),
+            ...(now === undefined
+              ? []
+              : [or(isNull(s.retryAt), lte(s.retryAt, now.toISOString()))!]),
+          ],
+          postgres: [
+            isNull(p.deliveredAt),
+            isNull(p.deadAt),
+            gt(p.seq, afterSeq),
+            ...(now === undefined ? [] : [or(isNull(p.retryAt), lte(p.retryAt, now))!]),
+          ],
+        },
+        limit,
+      )
     },
     async markDelivered(tx, ids, at) {
       if (ids.length === 0) return
@@ -282,13 +289,14 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
       }
       await postgresDb(tx).update(p).set({ deliveredAt: at }).where(inArray(p.id, ids))
     },
-    async recordFailure(tx, id, at, maxAttempts) {
+    async recordFailure(tx, id, at, maxAttempts, retryAt) {
       if (tx.kind === 'sqlite') {
         sqliteDb(tx)
           .update(s)
           .set({
             attempts: sql`${s.attempts} + 1`,
             deadAt: sql`CASE WHEN ${s.attempts} + 1 >= ${maxAttempts} THEN ${at.toISOString()} ELSE ${s.deadAt} END`,
+            ...(retryAt !== undefined && { retryAt: retryAt.toISOString() }),
           })
           .where(eq(s.id, id))
           .run()
@@ -299,8 +307,42 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
         .set({
           attempts: sql`${p.attempts} + 1`,
           deadAt: sql`CASE WHEN ${p.attempts} + 1 >= ${maxAttempts} THEN ${at.toISOString()}::timestamptz ELSE ${p.deadAt} END`,
+          ...(retryAt !== undefined && { retryAt }),
         })
         .where(eq(p.id, id))
+    },
+    async countDead(tx) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ n: sql<number>`count(*)` })
+          .from(s)
+          .where(isNotNull(s.deadAt))
+          .get()
+        return Number(row?.n ?? 0)
+      }
+      const [row] = await postgresDb(tx)
+        .select({ n: sql<string>`count(*)` })
+        .from(p)
+        .where(isNotNull(p.deadAt))
+      return Number(row?.n ?? 0)
+    },
+    listDead(tx, limit) {
+      return select(tx, { sqlite: [isNotNull(s.deadAt)], postgres: [isNotNull(p.deadAt)] }, limit)
+    },
+    async countRetrying(tx) {
+      if (tx.kind === 'sqlite') {
+        const row = sqliteDb(tx)
+          .select({ n: sql<number>`count(*)` })
+          .from(s)
+          .where(and(isNull(s.deliveredAt), isNull(s.deadAt), gt(s.attempts, 0)))
+          .get()
+        return Number(row?.n ?? 0)
+      }
+      const [row] = await postgresDb(tx)
+        .select({ n: sql<string>`count(*)` })
+        .from(p)
+        .where(and(isNull(p.deliveredAt), isNull(p.deadAt), gt(p.attempts, 0)))
+      return Number(row?.n ?? 0)
     },
     async deleteDeliveredBefore(tx, at) {
       if (tx.kind === 'sqlite') {
@@ -317,9 +359,9 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
     },
     async listAll(tx) {
       if (tx.kind === 'sqlite') {
-        return sqliteDb(tx).select().from(s).orderBy(asc(s.seq)).all().map(rowToLogged)
+        return sqliteDb(tx).select(sqliteLogged).from(s).orderBy(asc(s.seq)).all().map(rowToLogged)
       }
-      const rows = await postgresDb(tx).select().from(p).orderBy(asc(p.seq))
+      const rows = await postgresDb(tx).select(postgresLogged).from(p).orderBy(asc(p.seq))
       return rows.map(rowToLogged)
     },
     queryByCorrelation(tx, correlationId, filter) {

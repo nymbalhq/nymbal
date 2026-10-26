@@ -46,7 +46,7 @@ const NEED_FREE = fullPlan()
   .map((s) => s.name)
 const E2E_NAMES = DEFAULT_NAMES.filter((n) => n.startsWith('e2e'))
 /** The custom-providers store's E2E steps: its email is SMTP into Mailpit, so they need `mailpit up` beside the build. */
-const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom']
+const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
 /** Every other E2E step, which needs the build alone. */
 const BUILD_ONLY_E2E = E2E_NAMES.filter((n) => !MAILPIT_E2E.includes(n))
 

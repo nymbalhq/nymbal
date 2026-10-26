@@ -20,7 +20,10 @@ const local = (port: number): string => `http://localhost:${port}`
 // of its own (3011 in slot 0) and a storefront of their own, so a custom run never reaches the native store. Each is
 // its own invocation (NYMBAL_E2E_TARGET), as gate.ts runs one per target.
 const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
-const isCustom = target !== undefined && CUSTOM_TARGETS.includes(target)
+// The mail outage journey (@mail-outage) on the custom store's API alone: Chaos applies to the whole Mailpit, so it is
+// a target of its own, run after the custom ones, and no other project runs it.
+const MAIL_OUTAGE = 'mail-outage'
+const isCustom = target !== undefined && [...CUSTOM_TARGETS, MAIL_OUTAGE].includes(target)
 const CUSTOM_API = local(block.customApi)
 const NATIVE_API = local(block.api)
 // The no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of its own, with
@@ -209,6 +212,7 @@ function servers() {
     'nextjs',
     'admin',
     ...CUSTOM_TARGETS,
+    MAIL_OUTAGE,
     ...NOSEARCH_TARGETS,
     ...OVERRIDE_TARGETS,
   ]
@@ -221,6 +225,7 @@ function servers() {
   if (target === 'nextjs-custom') {
     return [customApiServer, nextjsServer(nextjsCustomURL, CUSTOM_API)]
   }
+  if (target === MAIL_OUTAGE) return [customApiServer]
   if (target === 'astro-nosearch') {
     return [noSearchApiServer, astroServer(astroNoSearchURL, NOSEARCH_API)]
   }
@@ -267,7 +272,7 @@ export default defineConfig({
     {
       name: 'astro',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override/,
+      grepInvert: /@nosearch|@override|@mail-outage/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -276,7 +281,7 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override/,
+      grepInvert: /@nosearch|@override|@mail-outage/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -301,6 +306,15 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,
+      },
+    },
+    // The custom store's API, with no storefront: its origin is one the API accepts, as a browser on it would send.
+    {
+      name: MAIL_OUTAGE,
+      testMatch: ['**/journeys/mail-outage.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: astroCustomURL,
       },
     },
     // The no-search store: only the journeys tagged @nosearch, which no other project runs.

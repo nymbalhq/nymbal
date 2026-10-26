@@ -14,6 +14,7 @@ const TARGETS = [
   'admin',
   'astro-custom',
   'nextjs-custom',
+  'mail-outage',
   'astro-nosearch',
   'nextjs-nosearch',
   'astro-override',

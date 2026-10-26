@@ -138,7 +138,9 @@ jobs:
           --health-timeout 3s
           --health-retries 30
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -235,7 +237,9 @@ jobs:
           --health-timeout 3s
           --health-retries 30
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -415,7 +419,9 @@ jobs:
       NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
     services:
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -454,7 +460,9 @@ jobs:
       NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
     services:
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -479,8 +487,9 @@ jobs:
           name: build-output
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Next.js on custom providers (functional, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --services external --no-build --base "$GATE_BASE"
+      # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
+      - name: Next.js on custom providers (functional, a11y), then a mail outage
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
 
   # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
   # journeys tagged @nosearch run there.

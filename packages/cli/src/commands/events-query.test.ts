@@ -188,7 +188,7 @@ describe('AC-6: nymbal events query', { timeout: 30_000 }, () => {
     expect(lines.length).toBe(expected.length)
     lines.forEach((line, i) => {
       const row = expected[i]!
-      const { seq, deliveredAt, ...envelope } = line
+      const { seq, deliveredAt, attempts: _attempts, deadAt: _deadAt, ...envelope } = line
       const { payload: _payload, ...stored } = row.envelope
       expect('payload' in line, 'payload printed without --payload').toBe(false)
       expect(envelope).toEqual(stored)

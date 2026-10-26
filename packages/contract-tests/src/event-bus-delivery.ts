@@ -6,8 +6,8 @@ import type { Build } from './common.js'
 
 // The event bus delivery contract. With `second` (another instance on the same streams as the bus `make` returned
 // last) and `timing` (the bus's own knobs, set small) it adds the cases only a shared bus has. Kills: a publish that
-// resolves before its handlers ran (a read straight after a command misses its projection), a throwing handler that
-// rejects publish or starves another, replay reaching side effects, batch order lost, two instances double-handling a
+// resolves before its handlers ran (a read straight after a command misses its projection), a throwing named handler
+// that is swallowed or starves another, replay reaching side effects, batch order lost, two instances double-handling a
 // named event, an instance missing an unnamed (admin tab) event, and a dead instance or consumer stalling every
 // publish (every checkout) until the timeout.
 
@@ -94,7 +94,7 @@ export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: Delive
     )
 
     it(
-      'a throwing handler leaves publish resolved and every other matching handler called, event after event',
+      'a throwing named handler rejects publish with handler_failed naming it, and every other matching handler is called, event after event',
       async () => {
         const bus = await make()
         await closingAll([bus], async () => {
@@ -109,9 +109,18 @@ export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: Delive
           await bus.subscribe('contract.boom.v1', async (e) => {
             received.push(e.id)
           })
-          const events = [event('contract.boom.v1'), event('contract.boom.v1'), event('contract.boom.v1')]
+          const events = [
+            event('contract.boom.v1'),
+            event('contract.boom.v1'),
+            event('contract.boom.v1'),
+          ]
 
-          for (const e of events) await expect(bus.publish(e)).resolves.toBeUndefined()
+          for (const e of events) {
+            await expect(bus.publish(e)).rejects.toMatchObject({
+              code: 'adapter.handler_failed',
+              context: { eventId: e.id, failed: [{ subscription: 'contract-throws' }] },
+            })
+          }
 
           expect(received).toEqual(events.map((e) => e.id))
         })
@@ -165,7 +174,10 @@ export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: Delive
                 const fence = event('contract.fence.v1')
                 const subs = [
                   { patterns: ['order.*', fence.type], name: undefined },
-                  { patterns: ['cart.updated.v1', 'order.paid.v1', fence.type], name: 'contract-arr' },
+                  {
+                    patterns: ['cart.updated.v1', 'order.paid.v1', fence.type],
+                    name: 'contract-arr',
+                  },
                   { patterns: ['order.created.v1', fence.type], name: 'contract-one' },
                 ]
                 const seen = subs.map(() => [] as string[])
@@ -299,7 +311,9 @@ export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: Delive
             const onB: string[] = []
             await a.subscribe('contract.fanout.*', async (e) => void onA.push(e.id))
             await b.subscribe('contract.fanout.*', async (e) => void onB.push(e.id))
-            const events = Array.from({ length: N }, (_, seq) => event('contract.fanout.x', { seq }))
+            const events = Array.from({ length: N }, (_, seq) =>
+              event('contract.fanout.x', { seq }),
+            )
 
             for (const e of events) await a.publish(e)
             const fenceB = event('contract.fanout.fence')
@@ -360,7 +374,9 @@ export function eventBusDeliveryCases(make: Build<EventBusAdapter>, opts: Delive
           const a = await make()
           const b = await second()
           await closingAll([a], async () => {
-            await b.subscribe('contract.left.*', async () => undefined, { name: 'contract-left-behind' })
+            await b.subscribe('contract.left.*', async () => undefined, {
+              name: 'contract-left-behind',
+            })
             await b.subscribe('contract.left.*', async () => undefined)
             await b.close()
             const handled: string[] = []

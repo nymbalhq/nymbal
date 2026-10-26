@@ -368,6 +368,8 @@ export const events = sqliteTable(
     deliveredAt: text('delivered_at'),
     attempts: integer('attempts').notNull().default(0),
     deadAt: text('dead_at'),
+    /** A failed event is not handed to the bus again before this. */
+    retryAt: text('retry_at'),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),

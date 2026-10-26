@@ -146,7 +146,7 @@ export const TEXT_STATUS: Record<DoctorJsonCheck['status'], LineStatus> = {
 
 export const PRIMITIVES = ['documentStore', 'eventBus', 'media'] as const
 
-/** The check order: config, packages, command store, migrations, slots, primitives. */
+/** The check order: config, packages, command store, migrations, slots, primitives, the event log. */
 export function categoryOf(name: string): number {
   if (name === 'config') return 0
   if (name.startsWith('package ')) return 1
@@ -154,6 +154,7 @@ export function categoryOf(name: string): number {
   if (name === 'migrations') return 3
   if (name.startsWith('slot ')) return 4
   if (name.startsWith('primitive ')) return 5
+  if (name === 'events') return 6
   return 99
 }
 
@@ -166,11 +167,11 @@ export function commerceSlots(config: NymbalConfig): Array<{ slot: string; provi
 /**
  * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
  * provider has a package (PROVIDER_PACKAGES), `command store`, `migrations`, `slot <name>` per commerce slot,
- * `slot security` (with `package security` when `security.adapter` has a package) and `primitive <name>` per
- * primitive.
+ * `slot security` (with `package security` when `security.adapter` has a package), `primitive <name>` per
+ * primitive, and `events` (the event log's dead and retrying events).
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
-  const names = ['config', 'command store', 'migrations']
+  const names = ['config', 'command store', 'migrations', 'events']
   for (const { slot, provider } of commerceSlots(config)) {
     names.push(`slot ${slot}`)
     if (

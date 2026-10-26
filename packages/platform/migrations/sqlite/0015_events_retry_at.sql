@@ -1,0 +1,1 @@
+ALTER TABLE `events` ADD `retry_at` text;

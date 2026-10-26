@@ -31,6 +31,10 @@ export interface CreateRelayOptions {
   /** Failed bus publishes after which an event is dead and never handed to the bus again. */
   maxAttempts?: number
   intervalMs?: number
+  /** The wait before the first retry of a failed event (default `intervalMs`); each later wait doubles it. */
+  retryDelayMs?: number
+  /** The clock failures and retry waits are read from. */
+  now?: () => Date
 }
 
 const PAGE_SIZE = 100
@@ -48,10 +52,18 @@ function deferred(): Deferred {
   return { promise, resolve }
 }
 
+/** The subscriptions a bus's `handler_failed` rejection names, for the relay's log lines. */
+function failedOf(err: unknown): { failed?: unknown[] } {
+  const failed = (err as { context?: { failed?: unknown } } | null)?.context?.failed
+  return Array.isArray(failed) ? { failed } : {}
+}
+
 export function createRelay(opts: CreateRelayOptions): Relay {
   const { store, eventLog } = opts
   const maxAttempts = opts.maxAttempts ?? 5
   const intervalMs = opts.intervalMs ?? 10_000
+  const retryDelayMs = opts.retryDelayMs ?? intervalMs
+  const now = opts.now ?? (() => new Date())
   const logger = opts.logger.child({ component: 'event-relay' })
   // Set around each bus publish and each subscribed handler: a drain asked for by a subscriber (one that ran a
   // command) must not wait for the drain that is delivering to it.
@@ -69,13 +81,27 @@ export function createRelay(opts: CreateRelayOptions): Relay {
       // Looked up on every call: a wrapper installed on the bus instance after construction must see the event.
       await delivering.run(true, () => opts.eventBus.publish(event))
     } catch (err) {
-      const at = new Date()
-      await store.transaction((tx) => eventLog.recordFailure(tx, event.id, at, maxAttempts))
-      const context = { err, eventId: event.id, eventType: event.type, attempts: attempts + 1 }
-      if (attempts + 1 >= maxAttempts) {
+      const at = now()
+      const failures = attempts + 1
+      // Backed off in the log, not in memory: every drain in between (each commit asks for one) and a restart see it.
+      const retryAt = new Date(at.getTime() + retryDelayMs * 2 ** (failures - 1))
+      await store.transaction((tx) =>
+        eventLog.recordFailure(tx, event.id, at, maxAttempts, retryAt),
+      )
+      const context = {
+        err,
+        eventId: event.id,
+        eventType: event.type,
+        attempts: failures,
+        ...failedOf(err),
+      }
+      if (failures >= maxAttempts) {
         logger.error(context, 'event delivery failed for the last time; the event is dead')
       } else {
-        logger.warn(context, 'event delivery failed; the event stays in the log for a later drain')
+        logger.warn(
+          { ...context, retryAt: retryAt.toISOString() },
+          'event delivery failed; the event stays in the log and is tried again from retryAt',
+        )
       }
       return
     }
@@ -89,7 +115,9 @@ export function createRelay(opts: CreateRelayOptions): Relay {
       let afterSeq = 0
       for (;;) {
         if (stopped) return
-        const page = await store.read((tx) => eventLog.listUndelivered(tx, PAGE_SIZE, afterSeq))
+        const page = await store.read((tx) =>
+          eventLog.listUndelivered(tx, PAGE_SIZE, afterSeq, now()),
+        )
         for (const logged of page) {
           if (stopped) return
           afterSeq = logged.seq
