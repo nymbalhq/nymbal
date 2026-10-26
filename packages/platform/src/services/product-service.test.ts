@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   EVT_PRODUCT_CREATED,
   EVT_PRODUCT_PUBLISHED,
+  EVT_PRODUCT_UPDATED,
+  EVT_PRODUCT_VARIANT_PRICE_CHANGED,
+  HttpError,
   NotFoundError,
   ValidationError,
+  type Variant,
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
@@ -323,6 +327,136 @@ describe('ProductService', () => {
     expect(updated.name).toBe('Updated')
     expect(updated.seoTitle).toBe('New SEO')
     expect(updated.metadata).toMatchObject({ updated: true })
+    await commandStore.close()
+  })
+})
+
+describe('ProductService.update: variant prices', () => {
+  async function priced() {
+    const ctx = await setup()
+    const created = await ctx.service.create({
+      slug: 'priced',
+      name: 'Priced',
+      variants: [
+        { sku: 'P-1', name: 'One', priceMinor: 1000, compareAtPriceMinor: 1500, stock: 1, options: [] },
+        { sku: 'P-2', name: 'Two', priceMinor: 2000, compareAtPriceMinor: 2500, stock: 1, options: [] },
+      ],
+    })
+    const [one, two] = created.variants as [Variant, Variant]
+    const events: Array<{ type: string; payload: unknown }> = []
+    await ctx.eventBus.subscribe([EVT_PRODUCT_VARIANT_PRICE_CHANGED, EVT_PRODUCT_UPDATED], (event) => {
+      events.push({ type: event.type, payload: event.payload })
+    })
+    const stored = async () =>
+      (await ctx.service.getById(created.id)).variants.map((v) => ({
+        id: v.id,
+        priceMinor: v.priceMinor,
+        compareAtPriceMinor: v.compareAtPriceMinor,
+      }))
+    return { ...ctx, created, one, two, events, stored }
+  }
+
+  it('an unknown variant id rejects with 400 product.variant_unknown and writes nothing', async () => {
+    const { service, commandStore, created, one, events, stored } = await priced()
+    const before = await stored()
+    const refusal = await service
+      .update(created.id, {
+        name: 'Renamed',
+        variants: [
+          { id: one.id, priceMinor: 900 },
+          { id: 'not-a-variant', priceMinor: 1 },
+        ],
+      })
+      .catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(HttpError)
+    expect(refusal).toMatchObject({ status: 400, code: 'product.variant_unknown' })
+    expect(await stored()).toEqual(before)
+    expect((await service.getById(created.id)).name).toBe(created.name)
+    expect(events).toEqual([])
+    await commandStore.close()
+  })
+
+  it('a changed price is written and publishes one price event with both prices and the currency, before product.updated', async () => {
+    const { service, commandStore, created, one, two, events, stored } = await priced()
+    const snap = await service.update(created.id, {
+      variants: [
+        { id: one.id, priceMinor: one.priceMinor - 200 },
+        { id: two.id, priceMinor: two.priceMinor },
+      ],
+    })
+    const expected = [
+      { id: one.id, priceMinor: one.priceMinor - 200, compareAtPriceMinor: one.compareAtPriceMinor },
+      { id: two.id, priceMinor: two.priceMinor, compareAtPriceMinor: two.compareAtPriceMinor },
+    ]
+    expect(await stored()).toEqual(expected)
+    expect(
+      snap.variants.map((v) => ({
+        id: v.id,
+        priceMinor: v.priceMinor,
+        compareAtPriceMinor: v.compareAtPriceMinor,
+      })),
+    ).toEqual(expected)
+    expect(events).toEqual([
+      {
+        type: EVT_PRODUCT_VARIANT_PRICE_CHANGED,
+        payload: {
+          productId: created.id,
+          variantId: one.id,
+          previousPriceMinor: one.priceMinor,
+          priceMinor: one.priceMinor - 200,
+          previousCompareAtPriceMinor: one.compareAtPriceMinor,
+          compareAtPriceMinor: one.compareAtPriceMinor,
+          currency: 'GBP',
+        },
+      },
+      { type: EVT_PRODUCT_UPDATED, payload: { product: snap } },
+    ])
+    await commandStore.close()
+  })
+
+  it('unchanged prices publish no price event and leave the stored prices as they were', async () => {
+    const { service, commandStore, created, one, two, events, stored } = await priced()
+    const before = await stored()
+    await service.update(created.id, {
+      variants: [
+        { id: one.id, priceMinor: one.priceMinor },
+        { id: two.id, priceMinor: two.priceMinor, compareAtPriceMinor: two.compareAtPriceMinor },
+      ],
+    })
+    expect(await stored()).toEqual(before)
+    expect(events.map((e) => e.type)).toEqual([EVT_PRODUCT_UPDATED])
+    await commandStore.close()
+  })
+
+  it('an omitted compareAtPriceMinor keeps the stored one, null clears it, and a compare-at change alone publishes', async () => {
+    const { service, commandStore, created, one, two, events, stored } = await priced()
+    await service.update(created.id, {
+      variants: [
+        { id: one.id, priceMinor: one.priceMinor + 100 },
+        { id: two.id, priceMinor: two.priceMinor, compareAtPriceMinor: null },
+      ],
+    })
+    expect(await stored()).toEqual([
+      { id: one.id, priceMinor: one.priceMinor + 100, compareAtPriceMinor: one.compareAtPriceMinor },
+      { id: two.id, priceMinor: two.priceMinor, compareAtPriceMinor: null },
+    ])
+    const priceEvents = events.filter((e) => e.type === EVT_PRODUCT_VARIANT_PRICE_CHANGED)
+    expect(priceEvents.map((e) => e.payload)).toEqual([
+      expect.objectContaining({
+        variantId: one.id,
+        previousCompareAtPriceMinor: one.compareAtPriceMinor,
+        compareAtPriceMinor: one.compareAtPriceMinor,
+      }),
+      expect.objectContaining({
+        variantId: two.id,
+        previousPriceMinor: two.priceMinor,
+        priceMinor: two.priceMinor,
+        previousCompareAtPriceMinor: two.compareAtPriceMinor,
+        compareAtPriceMinor: null,
+      }),
+    ])
+    expect(events.at(-1)?.type).toBe(EVT_PRODUCT_UPDATED)
+    expect(events).toHaveLength(priceEvents.length + 1)
     await commandStore.close()
   })
 })

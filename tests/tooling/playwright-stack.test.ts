@@ -482,6 +482,8 @@ const CUSTOM_OF: Record<string, string> = { astro: 'astro-custom', nextjs: 'next
 
 /** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 has two tests. */
 const CAPABILITY_JOURNEYS = [
+  'alerts.spec.ts AC-6',
+  'alerts.spec.ts AC-7',
   'alerts.spec.ts AC-9',
   'alerts.spec.ts AC-10',
   'alerts.spec.ts AC-11',
