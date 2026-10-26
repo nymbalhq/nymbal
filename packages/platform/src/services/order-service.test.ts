@@ -5,6 +5,7 @@ import {
   EVT_ORDER_SHIPPED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
+  EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   NotFoundError,
   OrderConflictError,
   StatusTransitionError,
@@ -744,6 +745,102 @@ describe('OrderService.keyOpens', () => {
     expect(reads).toBe(0)
     expect(await env.orderService.keyOpens(orderId, good)).toBe(false)
     expect(reads).toBe(1)
+    await env.commandStore.close()
+  })
+})
+
+describe('OrderService.resendConfirmation', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function importIn(env: Env, status: OrderStatus) {
+    const totalMinor = 2500
+    const paid = status !== 'pending' && status !== 'cancelled'
+    const refundedMinor =
+      status === 'refunded' ? totalMinor : status === 'partially_refunded' ? 1000 : 0
+    const line = await createLine(totalMinor, 1)
+    return env.orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: `WC-${uuidv7().slice(-12)}`,
+      status,
+      customerId: null,
+      email: 'resend@example.com',
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: totalMinor,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor,
+      currency: 'GBP',
+      createdAt: new Date('2024-03-01T09:30:00Z'),
+      ...(paid && { capturedMinor: totalMinor, refundedMinor, captureMethod: 'manual' as const }),
+    })
+  }
+
+  async function resendEvents(env: Env) {
+    const all = await env.commandStore.read((tx) => env.repos.eventLog.listAll(tx))
+    return all
+      .filter((l) => l.event.type === EVT_ORDER_CONFIRMATION_RESEND_REQUESTED)
+      .map((l) => l.event.payload)
+  }
+
+  const due: OrderStatus[] = [
+    'confirmed',
+    'processing',
+    'shipped',
+    'delivered',
+    'partially_refunded',
+    'refunded',
+  ]
+
+  // Defect: a status a confirmation is due for is refused, the event is not published or names the wrong order, or the
+  // order is changed by the resend.
+  it.each(due)(
+    'AC-6: a %s order is returned unchanged and one resend event names it',
+    async (status) => {
+      const env = await setup()
+      const order = await importIn(env, status)
+      const before = await env.orderService.getById(order.id)
+      const returned = await env.orderService.resendConfirmation(order.id)
+      expect(returned).toEqual(before)
+      expect(await env.orderService.getById(order.id)).toEqual(before)
+      expect(await resendEvents(env)).toEqual([{ orderId: order.id }])
+      await env.commandStore.close()
+    },
+  )
+
+  // Defect: a pending or cancelled order, never paid, is mailed a confirmation, or the refusal says the wrong thing.
+  it.each(['pending', 'cancelled'] as const)(
+    'AC-6: a %s order is refused order.unpaid and nothing is published',
+    async (status) => {
+      const env = await setup()
+      const order = await importIn(env, status)
+      const before = await env.orderService.getById(order.id)
+      const error = await env.orderService.resendConfirmation(order.id).then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(error).toBeInstanceOf(OrderConflictError)
+      const conflict = error as OrderConflictError
+      expect(conflict.code).toBe('order.unpaid')
+      expect(conflict.message).toBe(
+        `Order ${order.orderNumber} is ${status}: no confirmation is due`,
+      )
+      expect(conflict.context).toEqual({ status })
+      expect(await resendEvents(env)).toEqual([])
+      expect(await env.orderService.getById(order.id)).toEqual(before)
+      await env.commandStore.close()
+    },
+  )
+
+  // Defect: a missing order falls through to a TypeError on `order.status` instead of a 404.
+  it('AC-6: a resend for an unknown order is NotFoundError and publishes nothing', async () => {
+    const env = await setup()
+    await expect(env.orderService.resendConfirmation(uuidv7())).rejects.toBeInstanceOf(
+      NotFoundError,
+    )
+    expect(await resendEvents(env)).toEqual([])
     await env.commandStore.close()
   })
 })

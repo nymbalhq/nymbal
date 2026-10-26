@@ -401,7 +401,9 @@ export function registerAdminOrdersRoutes(
       try {
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
-        return ok({ sent: true, orderId: id })
+        // Queued, not yet sent: the email handler sends it, and the relay retries a refused send.
+        const queued = await order.resendConfirmation(id)
+        return ok({ orderId: queued.id, orderNumber: queued.orderNumber, email: queued.email })
       } catch (err) {
         return renderError(err)
       }

@@ -499,6 +499,8 @@ const CAPABILITY_JOURNEYS = [
   'browse.spec.ts AC-3',
   'payment-step.spec.ts AC-5',
   'payment-step.spec.ts AC-5',
+  'resend-confirmation.spec.ts AC-10',
+  'resend-confirmation.spec.ts AC-11',
   'search-pages.spec.ts AC-8',
   'search.spec.ts AC-3',
 ]

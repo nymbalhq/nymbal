@@ -18,6 +18,9 @@ export default {
     currency: 'GBP',
     locale: 'en-GB',
     timezone: 'Europe/London',
+    // The order email links here. One API serves both custom storefronts, so a journey opens the mailed link's path
+    // and query on its own storefront: the key belongs to the API, not to an origin.
+    url: env('NYMBAL_STOREFRONT_URL', 'http://localhost:4331'),
   },
   template: 'astro',
   infrastructure: {

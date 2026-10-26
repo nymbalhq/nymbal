@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_CART_ABANDONED,
   EVT_CUSTOMER_CREATED,
+  EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   EVT_ORDER_PAID,
   EVT_ORDER_SHIPPED,
   type CartAbandonedV1Payload,
@@ -11,6 +12,7 @@ import {
   type EventHandler,
   type Logger,
   type Order,
+  type OrderConfirmationResendRequestedV1Payload,
   type OrderPaidV1Payload,
   type OrderShippedV1Payload,
 } from '@nymbalhq/types'
@@ -62,6 +64,20 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
     return { orderUrl, orderLink: `\n\nView your order: ${orderUrl}` }
   }
 
+  /** The order-placed email, with a link carrying a key minted for this send when the store has a URL. */
+  async function sendOrderPlaced(order: Order): Promise<void> {
+    await email.sendTransactional({
+      template: 'order-placed',
+      to: order.email,
+      vars: {
+        orderNumber: order.orderNumber,
+        customerName: order.billingAddress.firstName,
+        totalFormatted: formatMoney(order.totalMinor, order.currency),
+        ...(storeUrl !== undefined && (await orderLink(storeUrl, order))),
+      },
+    })
+  }
+
   // Sent on payment, never at placement: an unpaid order (or an imported one) emails nobody. Keyed per order, so a
   // second order.paid for the order (a redelivered or replayed event) sends nothing more.
   const onOrderPaid: EventHandler<OrderPaidV1Payload> = async (event) => {
@@ -73,19 +89,23 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
       logger.warn({ orderId, eventId: event.id }, 'email handler: paid order not found')
       return
     }
-    await email.sendTransactional({
-      template: 'order-placed',
-      to: order.email,
-      vars: {
-        orderNumber: order.orderNumber,
-        customerName: order.billingAddress.firstName,
-        totalFormatted: formatMoney(order.totalMinor, order.currency),
-        ...(storeUrl !== undefined && (await orderLink(storeUrl, order))),
-      },
-    })
+    await sendOrderPlaced(order)
     await store.transaction((tx) =>
       processedEventRepo.markProcessed(tx, ORDER_PAID_EMAIL, orderId, new Date()),
     )
+  }
+
+  // An admin's resend: once per resend event, never per order, so it sends whatever became of order.paid's email.
+  const onConfirmationResendRequested: EventHandler<
+    OrderConfirmationResendRequestedV1Payload
+  > = async (event) => {
+    const { orderId } = event.payload
+    const order = await orderRepo.store.read((tx) => orderRepo.findById(tx, orderId))
+    if (order === null) {
+      logger.warn({ orderId, eventId: event.id }, 'email handler: resent order not found')
+      return
+    }
+    await sendOrderPlaced(order)
   }
 
   const onOrderShipped: EventHandler<OrderShippedV1Payload> = async (event) => {
@@ -108,6 +128,15 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
   await eventBus.subscribe(EVT_ORDER_PAID, onOrderPaid as EventHandler, {
     name: 'email-order-paid',
   })
+  await eventBus.subscribe(
+    EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
+    withIdempotency(
+      'email:order-confirmation-resend',
+      onConfirmationResendRequested as EventHandler,
+      { repo: processedEventRepo, logger },
+    ),
+    { name: 'email-order-confirmation-resend' },
+  )
   await eventBus.subscribe(
     EVT_ORDER_SHIPPED,
     withIdempotency('email:order-shipped', onOrderShipped as EventHandler, {

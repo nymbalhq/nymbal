@@ -18,6 +18,8 @@ function getTickerLabel(event: DomainEvent): string {
       return `Order shipped (${event.payload.carrier})`
     case 'order.delivered.v1':
       return 'Order delivered'
+    case 'order.confirmation_resend_requested.v1':
+      return 'Confirmation resend queued'
     case 'inventory.low_stock.v1':
       return `Low stock: ${event.payload.currentQty} left`
     case 'inventory.out_of_stock.v1':

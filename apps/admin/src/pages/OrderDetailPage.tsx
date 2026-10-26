@@ -35,12 +35,16 @@ import {
   useCancelOrder,
   useMarkDeliveredOrder,
   useShipOrder,
+  useResendConfirmation,
 } from '@/hooks/useOrders'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { CaptureMethod, Order, OrderPayment, OrderRefund } from '@nymbalhq/types'
+import type { CaptureMethod, Order, OrderPayment, OrderRefund, OrderStatus } from '@nymbalhq/types'
+
+/** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
+const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
 
 const PAYMENT_STATE_LABELS: Record<OrderPayment['state'], string> = {
   unpaid: 'Unpaid',
@@ -171,6 +175,7 @@ export function OrderDetailPage() {
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
   const shipOrder = useShipOrder()
+  const resend = useResendConfirmation()
 
   if (isLoading) {
     return (
@@ -230,6 +235,12 @@ export function OrderDetailPage() {
   }
 
   const primary = primaryAction()
+  const resendDisabled = NO_CONFIRMATION_DUE.includes(order.status) || resend.isPending
+  const resendResult = resend.isError
+    ? resend.error.message
+    : resend.data
+      ? `Confirmation queued to ${resend.data.email}`
+      : null
 
   return (
     <div className="space-y-4" data-testid={tid('order', 'detail')}>
@@ -248,6 +259,15 @@ export function OrderDetailPage() {
           <OrderStatusBadge status={order.status} data-testid={tid('order', 'status-badge')} />
         </div>
         <div className="flex items-center gap-2">
+          {resendResult !== null && (
+            <span
+              role="status"
+              className="text-xs text-zinc-500"
+              data-testid={tid('order', 'resend-result')}
+            >
+              {resendResult}
+            </span>
+          )}
           {primary && (
             <Button size="sm" onClick={primary.action} className="gap-1.5">
               <primary.icon className="h-4 w-4" />
@@ -261,7 +281,14 @@ export function OrderDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem className="gap-2">
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (!resendDisabled) resend.mutate({ orderId: order.id })
+                }}
+                className="gap-2"
+                disabled={resendDisabled}
+                data-testid={tid('order', 'action', 'resend-confirmation')}
+              >
                 <Mail className="h-4 w-4" />
                 Resend confirmation
               </DropdownMenuItem>

@@ -111,6 +111,10 @@ export interface OrderStatusChangedV1Payload {
   from: OrderStatus
   to: OrderStatus
 }
+/** An admin asked for the order's confirmation email again; the email's key is minted when it is sent. */
+export interface OrderConfirmationResendRequestedV1Payload {
+  orderId: string
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string

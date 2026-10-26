@@ -427,7 +427,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/resend-confirmation': {
     name: 'admin.orders.resendConfirmation',
-    command: null,
+    command: 'order.resendConfirmation',
     description: "Resend an order's confirmation email.",
     params: orderIdParams,
   },
