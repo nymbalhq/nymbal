@@ -1,3 +1,4 @@
+// Reads: pnpm-workspace.yaml, **/package.json
 import { describe, expect, it } from 'vitest'
 import { workspaceMembers, type Manifest } from './workspace-manifests'
 

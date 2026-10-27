@@ -1,3 +1,4 @@
+// Reads: templates/**, packages/create-app/scaffold/**, packages/web-components/src/**
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'

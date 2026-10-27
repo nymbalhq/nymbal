@@ -1,3 +1,4 @@
+// Reads: packages/platform/tests/postgres/**, vitest.config.ts
 import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'

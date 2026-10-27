@@ -1,3 +1,4 @@
+// Reads: scripts/test-census.ts, tests/tooling/fixtures/census/**, tests/sentinels/fixtures/**
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

@@ -1,3 +1,4 @@
+// Reads: packages/contract-tests/**, packages/platform/package.json, .changeset/config.json
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

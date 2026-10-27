@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { availableParallelism } from 'node:os'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, matchesGlob, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -159,17 +159,73 @@ function isDocumentation(path: string): boolean {
 }
 
 /**
- * The harness's own Vitest projects: 63 files and most of the suite's file time (tooling 378 s of 512 s measured on
- * 2026-10-22). The plain gate leaves them out unless a harness path changed; dev CI runs them whatever changed
- * (`--harness all`).
+ * The harness's own Vitest projects: most of the suite's file time (tooling 378 s of 512 s measured on
+ * 2026-10-22). The plain gate leaves them out unless a harness path changed or one of their tests reads a changed
+ * file (`harnessInputTests`); dev CI runs them whatever changed (`--harness all`).
  */
 export const HARNESS_PROJECTS = ['tooling', 'architecture']
+
+/**
+ * The harness tests that run the real Vitest over copies of the work tree, about 100 s: the plain gate never runs
+ * them, gate:full runs them where it runs `tooling`, and dev CI always.
+ */
+export const SLOW_HARNESS_PROJECTS = ['tooling-slow']
 
 /**
  * The harness projects gate:full leaves out when no harness path changed. `architecture` is not one: it guards
  * product code (no Stripe import in the kernel, the framework-agnostic guard), so gate:full runs it on every change.
  */
-export const FULL_GATE_HARNESS_PROJECTS = ['tooling']
+export const FULL_GATE_HARNESS_PROJECTS = ['tooling', ...SLOW_HARNESS_PROJECTS]
+
+/** The harness projects' test files (vitest.config.ts `include`); those under a `fixtures/` directory are not tests. */
+export const HARNESS_TEST_GLOBS: readonly string[] = [
+  'tests/tooling/**/*.test.ts',
+  'tests/architecture/**/*.test.ts',
+]
+
+/**
+ * The globs a harness test file declares on its `// Reads:` lines (column 0, comma-separated, unioned): the checkout
+ * files it reads or runs outside its imports. `[]` for `nothing`, undefined with no such line.
+ */
+export function declaredReads(source: string): string[] | undefined {
+  const declared = [...source.matchAll(/^\/\/ Reads: (.*)$/gm)].flatMap((m) =>
+    (m[1] ?? '')
+      .split(',')
+      .map((glob) => glob.trim())
+      .filter(Boolean),
+  )
+  if (declared.length === 0) return undefined
+  const globs = [...new Set(declared.filter((glob) => glob !== 'nothing'))]
+  if (globs.length > 0 && globs.length < new Set(declared).size) {
+    throw new Error(`// Reads: nothing cannot stand beside globs (${globs.join(', ')})`)
+  }
+  return globs
+}
+
+/**
+ * How a `// Reads:` glob matches a path: `path.matchesGlob`, but with `*` and `**` taking dot-directories and dotfiles
+ * too, so `**` covers `.github/` and `.node-version`.
+ */
+export function matchesReadGlob(path: string, glob: string): boolean {
+  const undot = (text: string): string => text.replace(/(^|\/)\./g, '$1\u0001')
+  return matchesGlob(undot(path), undot(glob))
+}
+
+/**
+ * The harness test files in the work tree, tracked or not, with a declared glob matching a changed path: repo-relative,
+ * sorted and unique.
+ */
+export function harnessInputTests(root: string, changed: string[]): string[] {
+  const files = lines(git(root, ['ls-files', '--cached', '--others', '--exclude-standard']))
+  const readers = new Set<string>()
+  for (const file of files) {
+    if (!HARNESS_TEST_GLOBS.some((glob) => matchesGlob(file, glob))) continue
+    if (matchesGlob(file, '**/fixtures/**') || !existsSync(resolve(root, file))) continue
+    const globs = declaredReads(readFileSync(resolve(root, file), 'utf8')) ?? []
+    if (changed.some((path) => globs.some((glob) => matchesReadGlob(path, glob)))) readers.add(file)
+  }
+  return [...readers].sort()
+}
 
 /**
  * A change the harness projects read: the scripts, those projects themselves, the CI workflows, the Playwright
@@ -610,9 +666,20 @@ export function resolveBase(
 /**
  * Paths that differ between the base and the work tree, committed, staged or not, deletions included, plus untracked
  * files, each once. A deleted path is a change: removing a configuration file must still select every test.
+ * `renames: false` lists both sides of a rename, committed or not, so a reader of the old path sees it move.
  */
-export function changedFiles(root: string, base: string): string[] {
-  const tracked = lines(git(root, ['diff', '--name-only', base]))
+export function changedFiles(
+  root: string,
+  base: string,
+  opts: { renames?: boolean } = {},
+): string[] {
+  const tracked =
+    opts.renames === false
+      ? [
+          ...lines(git(root, ['diff', '--name-only', '--no-renames', base, 'HEAD'])),
+          ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD'])),
+        ]
+      : lines(git(root, ['diff', '--name-only', base]))
   const untracked = lines(git(root, ['ls-files', '--others', '--exclude-standard']))
   return [...new Set([...tracked, ...untracked])].sort()
 }
@@ -1081,10 +1148,17 @@ export type PlanInput = {
   stryker?: 'off' | 'advisory' | 'blocking' | undefined
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
-   * the default, leaves them out when no harness path changed: all of them in the plain gate, `tooling` alone in
+   * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
    * gate:full (`FULL_GATE_HARNESS_PROJECTS`).
    */
   harness?: 'all' | 'changed' | undefined
+  /**
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
+   * `changed` run takes them beside the changed paths and keeps their projects. None when not given.
+   */
+  inputReaders?: string[] | undefined
+  /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
+  relatedPaths?: string[] | undefined
   /**
    * The plain gate builds although no package build input changed: the build output is older than HEAD's package
    * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
@@ -1127,6 +1201,8 @@ function rerunTestsCommand(red: RedTest[]): string {
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+/** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
+const TEST_SCRIPT_FILTERS = "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
 /** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 /** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
@@ -1302,13 +1378,32 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
-  // changed, the plain gate leaves them out and gate:full leaves out `tooling`; dev CI asks for all of them with
+  // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
   // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
-  const harnessApart =
-    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
-      ? ''
-      : `NYMBAL_VITEST_SKIP_PROJECTS=${(full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS).join(',')} `
+  const harnessKept = input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+  const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
+  const skipEnv = (projects: string[]): string =>
+    projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
+  // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
+  const plainApart = (projects: string[]): string[] =>
+    full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
+  const harnessApart = skipEnv(plainApart(harnessSkipped))
+  // A harness test that reads a changed file keeps its project, and `vitest related` is handed the test itself.
+  const readers = input.inputReaders ?? []
+  const readerProjects = new Set<string>(
+    readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
+  )
+  const changedApart = skipEnv(
+    plainApart(harnessSkipped.filter((project) => !readerProjects.has(project))),
+  )
+  // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
+  // own base the same way, so a script that reads it fails here as it would there.
+  const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
+  const related = [...new Set([...(input.relatedPaths ?? changed), ...readers])]
+    .sort()
+    .map(shellWord)
+    .join(' ')
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1326,20 +1421,21 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       }
   const tests: StepSpec =
     red.length > 0
-      ? { name: 'tests', command: rerunTestsCommand(red), ...buildNeeds }
+      ? { name: 'tests', command: `${baseEnv}${rerunTestsCommand(red)}`, ...buildNeeds }
       : selection.mode === 'none'
         ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
         : selection.mode === 'changed'
           ? {
               name: 'tests',
+              // One process and one report: the changed paths' related tests and the harness tests reading them.
               command:
-                `${harnessApart}pnpm run test --changed ${base} --passWithNoTests${perfApart} ${VITEST_JSON}` +
-                (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
+                `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
+                (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
               ...buildNeeds,
             }
           : {
               name: 'tests',
-              command: `${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
+              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
               ...buildNeeds,
             }
   const steps: StepSpec[] = [
@@ -1980,6 +2076,8 @@ async function main(argv: string[]): Promise<number> {
   const noBase = base === emptyTree(root)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
+  const relatedPaths = changedFiles(root, base, { renames: false })
+  const inputReaders = values.full ? [] : harnessInputTests(root, relatedPaths)
   const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
   const mutated =
     values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
@@ -2023,6 +2121,8 @@ async function main(argv: string[]): Promise<number> {
     sentinels,
     stryker: strykerMode,
     harness: values.harness,
+    inputReaders,
+    relatedPaths,
     buildStale,
     ...(last === undefined
       ? {}

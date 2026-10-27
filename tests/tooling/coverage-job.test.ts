@@ -1,3 +1,4 @@
+// Reads: .github/workflows/ci.yml, package.json, vitest.config.ts, tests/tooling/fixtures/coverage-job/**
 import { spawn } from 'node:child_process'
 import {
   copyFileSync,

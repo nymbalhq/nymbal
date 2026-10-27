@@ -1,3 +1,5 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
+// Reads: .github/workflows/nightly.yml, .github/workflows/ci.yml, nymbal.config.ts
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'

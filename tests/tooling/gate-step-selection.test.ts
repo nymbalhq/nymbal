@@ -1,3 +1,5 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts, package.json
+// Reads: vitest.config.ts
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -117,7 +119,7 @@ describe('the stryker step: off locally, advisory on request, blocking in CI', (
   })
 })
 
-describe('the harness projects run only when a harness path changed; gate:full runs architecture always', () => {
+describe('the harness projects run only when a harness path or an input one of their tests declares changed; gate:full runs architecture always', () => {
   /** The harness projects a tests command leaves out (`leftOut`). */
   const negated = (command: string): string[] => leftOut(command, HARNESS_PROJECTS)
   const KERNEL = 'packages/platform/src/services/cart-service.ts'
@@ -213,9 +215,13 @@ describe('the tests step runs the projects it means, as Vitest resolves its filt
   const withServices = (name: string): boolean =>
     name.startsWith('integration-') || name === 'proof-kit-services'
 
-  it('a product change runs every project but the service-backed ones and the harness projects each gate leaves out, in the plain gate and gate:full; a configuration change (the whole suite) leaves out only the service-backed ones', async () => {
+  it('a product change runs every project but the service-backed ones and the harness projects each gate leaves out, in the plain gate and gate:full; a configuration change (the whole suite) leaves out only the service-backed ones, and in the plain gate tooling-slow', async () => {
     const cases = [
-      { label: 'plain gate, product change', steps: plainPlan([KERNEL]), apart: HARNESS_PROJECTS },
+      {
+        label: 'plain gate, product change',
+        steps: plainPlan([KERNEL]),
+        apart: [...HARNESS_PROJECTS, 'tooling-slow'],
+      },
       {
         label: 'gate:full, product change',
         steps: fullPlan({ changed: [KERNEL] }),
@@ -224,7 +230,7 @@ describe('the tests step runs the projects it means, as Vitest resolves its filt
       {
         label: 'plain gate, configuration change',
         steps: plainPlan(['vitest.config.ts']),
-        apart: [],
+        apart: ['tooling-slow'],
       },
       {
         label: 'gate:full, configuration change',

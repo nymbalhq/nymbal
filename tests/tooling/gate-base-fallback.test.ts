@@ -1,3 +1,4 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { rmSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -41,11 +42,11 @@ function childRepo(): Scratch {
 const fallbackLines = (output: string): string[] =>
   output.split('\n').filter((line) => line.startsWith('base: '))
 
-/** The ref the tests step handed `vitest --changed`, or null when it ran every test. */
+/** The base the tests step's Vitest run was handed as GATE_BASE, or null when it ran every test with none. */
 const changedRef = (repo: Scratch): string | null | undefined => {
-  const call = repo.calls().find((c) => /\brun test\b/.test(c))
+  const call = repo.calls().find((c) => /\bvitest related\b|\brun test\b/.test(c))
   if (call === undefined) return undefined
-  return /--changed (\S+)/.exec(call)?.[1] ?? null
+  return /^GATE_BASE=(\S+) /.exec(call)?.[1] ?? null
 }
 
 describe('gate: a --base that names no commit falls back to HEAD’s parent', () => {

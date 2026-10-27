@@ -1,3 +1,4 @@
+// Reads: tests/e2e/fixtures/flaky-report/**, tests/e2e/playwright.config.ts
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

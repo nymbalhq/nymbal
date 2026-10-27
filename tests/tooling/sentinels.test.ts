@@ -1,3 +1,4 @@
+// Reads: scripts/sentinels.ts, tests/sentinels/**
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {

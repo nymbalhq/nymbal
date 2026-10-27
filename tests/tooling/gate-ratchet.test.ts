@@ -1,3 +1,4 @@
+// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, package.json
 import { execFile, execFileSync } from 'node:child_process'
 import {
   appendFileSync,

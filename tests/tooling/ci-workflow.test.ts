@@ -1,3 +1,6 @@
+// Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
+// Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
+// Reads: tests/perf/perf-budgets.test.ts
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

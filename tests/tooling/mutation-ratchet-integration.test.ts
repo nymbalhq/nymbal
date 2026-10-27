@@ -1,3 +1,4 @@
+// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, stryker.integration.config.mjs, vitest.config.ts
 import { execFile, execFileSync } from 'node:child_process'
 import {
   globSync,

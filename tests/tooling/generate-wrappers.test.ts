@@ -1,3 +1,4 @@
+// Reads: packages/react/scripts/**, packages/react/package.json
 import { spawnSync } from 'node:child_process'
 import {
   appendFileSync,

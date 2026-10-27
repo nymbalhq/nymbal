@@ -1,3 +1,6 @@
+// Reads: packages/doc-store-redis/**, packages/doc-store-postgres-jsonb/**, packages/event-bus-redis-streams/**
+// Reads: packages/media-s3/**, packages/platform/package.json, packages/platform/src/**
+// Reads: packages/create-app/scripts/sync-scaffold.mjs, .changeset/config.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

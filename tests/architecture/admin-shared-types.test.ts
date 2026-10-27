@@ -1,3 +1,4 @@
+// Reads: apps/admin/src/**, apps/admin/package.json, packages/types/src/**
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import ts from 'typescript'

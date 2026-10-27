@@ -17,10 +17,11 @@ import { fileURLToPath } from 'node:url'
 import type { Step } from '../../scripts/gate'
 
 // Scratch repositories the real scripts/gate.ts runs in. `pnpm` on the PATH and `node_modules/.bin/playwright` are
-// stand-ins that log their arguments, one call per line, to `<scratch>/calls.log` and exit 0; a Playwright stand-in
-// writes `reports/e2e-shutdown.json` when FAKE_SHUTDOWN_COMMAND is set, as the E2E wrapper does when a server
-// outlives its shutdown. `scripts/` links to this checkout's scripts, and `node_modules/.bin/tsx` runs this
-// checkout's tsx, so a step that calls either works as it does here.
+// stand-ins that log their arguments, after `GATE_BASE=<base>` when that is set, one call per line, to
+// `<scratch>/calls.log` and exit 0; a Playwright stand-in writes `reports/e2e-shutdown.json` when
+// FAKE_SHUTDOWN_COMMAND is set, as the E2E wrapper does when a server outlives its shutdown. `scripts/` links to
+// this checkout's scripts, and `node_modules/.bin/tsx` runs this checkout's tsx, so a step that calls either works as
+// it does here.
 
 export const REPO = fileURLToPath(new URL('../../', import.meta.url))
 export const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -41,6 +42,8 @@ export function childEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv 
   const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.NYMBAL_TEST_POSTGRES_URL
   delete env.CI
+  // The scratch gate is handed its base; CI's own, which resolves nowhere here, must not reach what it runs.
+  delete env.GATE_BASE
   for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key]
   return { ...env, ...extra }
 }
@@ -54,7 +57,7 @@ export function git(cwd: string, ...args: string[]): string {
 }
 
 const STAND_IN = `#!/usr/bin/env bash
-echo "$NAME $*" >>"$SCRATCH/calls.log"
+echo "\${GATE_BASE:+GATE_BASE=$GATE_BASE }$NAME $*" >>"$SCRATCH/calls.log"
 case " $* " in
   *" playwright "*|*"playwright test"*|"playwright "*) PW=1 ;;
 esac

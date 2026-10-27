@@ -1,3 +1,4 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,

@@ -1,3 +1,4 @@
+// Reads: tests/e2e/playwright*.config.ts
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'

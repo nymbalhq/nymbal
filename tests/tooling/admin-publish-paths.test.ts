@@ -1,3 +1,5 @@
+// Reads: package.json, scripts/scaffold-clean.sh, apps/admin/package.json, .github/workflows/release.yml
+// Reads: .github/workflows/canary.yml
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

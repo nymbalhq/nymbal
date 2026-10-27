@@ -1,3 +1,5 @@
+// Reads: stryker.integration.config.mjs, vitest.stryker.integration.config.ts, mutation-ratchet.integration.json
+// Reads: stryker.config.mjs, vitest.config.ts, tests/tooling/mutation-ratchet-integration.test.ts
 import { execFile, execFileSync } from 'node:child_process'
 import {
   appendFileSync,

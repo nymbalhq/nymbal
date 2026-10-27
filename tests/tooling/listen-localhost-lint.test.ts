@@ -1,3 +1,4 @@
+// Reads: eslint.config.js, tests/tooling/fixtures/lint/listen-localhost.ts.fixture
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

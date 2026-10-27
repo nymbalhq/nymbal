@@ -1,3 +1,4 @@
+// Reads: nothing
 import { describe, expect, it } from 'vitest'
 import { plan, type StepSpec } from '../../scripts/gate'
 

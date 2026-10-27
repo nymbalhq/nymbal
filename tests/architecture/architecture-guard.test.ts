@@ -1,3 +1,7 @@
+// Reads: packages/platform/src/**, packages/sdk/src/**, packages/types/src/**, packages/config/src/**
+// Reads: packages/http/src/**, packages/adapter-stripe/src/**, packages/adapter-anthropic/src/**
+// Reads: packages/adapter-smtp/src/**, packages/doc-store-redis/src/**, packages/doc-store-postgres-jsonb/src/**
+// Reads: packages/event-bus-redis-streams/src/**, packages/media-s3/src/**, packages/security-cloudflare/src/**
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'

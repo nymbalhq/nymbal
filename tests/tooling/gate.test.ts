@@ -1,3 +1,4 @@
+// Reads: package.json
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -150,7 +151,7 @@ describe('AC-1: selectTests picks all, changed or none', () => {
 // The plain gate inside 60 s
 // ---------------------------------------------------------------------------------------------------------------
 
-describe('the tooling projects run in the plain gate only when the tooling changed; the ratchet is checked statically first', () => {
+describe('the tooling projects run in the plain gate only when the tooling or an input a tooling test declares changed; the ratchet is checked statically first', () => {
   const planned = (changed: string[], full = false): StepSpec[] =>
     plan({ full, base: 'abc1234', changed, mutated: [] }).steps
   const testsStep = (changed: string[], full = false): StepSpec =>

@@ -8,6 +8,13 @@ const NESTED_VITEST_RUNS = [
   'tests/contracts/contract-breakers.test.ts',
 ]
 
+// Each runs the real Vitest over copies of the work tree, about 100 s together: the plain gate never runs them
+// (scripts/gate.ts), gate:full and dev CI do.
+const SLOW_TOOLING = [
+  'tests/tooling/harness-input-selection.test.ts',
+  'tests/tooling/gate-base-env.test.ts',
+]
+
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
 // (scripts/stack.ts), apart from every other suite on the machine.
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
@@ -335,6 +342,15 @@ export default defineConfig({
           name: 'tooling',
           environment: 'node',
           include: ['tests/tooling/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...SLOW_TOOLING],
+          testTimeout: 60000,
+        },
+      },
+      {
+        test: {
+          name: 'tooling-slow',
+          environment: 'node',
+          include: SLOW_TOOLING,
           testTimeout: 60000,
         },
       },

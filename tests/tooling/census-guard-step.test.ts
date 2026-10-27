@@ -1,3 +1,4 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanupScratch, gateCli, git, type Scratch, scratchRepo, write } from './scratch-gate'
 

@@ -1,3 +1,4 @@
+// Reads: pnpm-workspace.yaml, **/package.json, **/src/**
 import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'

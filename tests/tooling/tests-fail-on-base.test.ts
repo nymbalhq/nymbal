@@ -1,3 +1,4 @@
+// Reads: scripts/tests-fail-on-base.ts
 import { type ExecFileException, execFile, execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {

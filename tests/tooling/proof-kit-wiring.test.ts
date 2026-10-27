@@ -1,3 +1,4 @@
+// Reads: compose.yaml, package.json, vitest.config.ts, packages/proof-kit/tests/**
 import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
