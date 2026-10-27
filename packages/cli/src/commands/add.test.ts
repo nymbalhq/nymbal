@@ -204,9 +204,10 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
         "import { defineConfig, env } from '@nymbalhq/config'",
       )
       .replace("xFrameOptions: 'deny'", "xFrameOptions: env('RECIPES_X_FRAME_OPTIONS', 'deny')")
-    expect(edited.match(/env\(/g), 'the scaffold config has the import and the field').toHaveLength(
-      1,
-    )
+    expect(
+      edited.match(/env\(/g)?.length,
+      'the edited config has one env() read more than the scaffold: the field',
+    ).toBe((original.match(/env\(/g)?.length ?? 0) + 1)
     expect(edited).toContain('import { defineConfig, env }')
     writeFileSync(path, edited)
     expect(cleanEnv()['RECIPES_X_FRAME_OPTIONS']).toBeUndefined()
@@ -221,15 +222,17 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
   it("AC-4: with an enum field read as env('X', <valid default>) and an invalid X in .env, `nymbal add postgres` exits 1 and leaves the config byte-identical: .env applies as `nymbal dev` loads it", async () => {
     const dir = project('env-default-dotenv')
     const path = join(dir, 'nymbal.config.ts')
-    const edited = readFileSync(path, 'utf8')
+    const original = readFileSync(path, 'utf8')
+    const edited = original
       .replace(
         "import { defineConfig } from '@nymbalhq/config'",
         "import { defineConfig, env } from '@nymbalhq/config'",
       )
       .replace("xFrameOptions: 'deny'", "xFrameOptions: env('RECIPES_X_FRAME_OPTIONS', 'deny')")
-    expect(edited.match(/env\(/g), 'the scaffold config has the import and the field').toHaveLength(
-      1,
-    )
+    expect(
+      edited.match(/env\(/g)?.length,
+      'the edited config has one env() read more than the scaffold: the field',
+    ).toBe((original.match(/env\(/g)?.length ?? 0) + 1)
     expect(edited).toContain('import { defineConfig, env }')
     writeFileSync(path, edited)
     writeFileSync(join(dir, '.env'), 'RECIPES_X_FRAME_OPTIONS=not-a-frame-option\n')
