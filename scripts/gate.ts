@@ -136,6 +136,16 @@ const ROOT_CONFIG_FILES = new Set([
   'vitest.stryker.config.ts',
 ])
 
+/**
+ * The integration mutation run's config, test set and ratchet: only the tooling tests read them, and they import each
+ * one, so a change selects those tests and no others. The unit Stryker run does not read them.
+ */
+const INTEGRATION_MUTATION_FILES = new Set([
+  'stryker.integration.config.mjs',
+  'vitest.stryker.integration.config.ts',
+  'mutation-ratchet.integration.json',
+])
+
 function isConfiguration(path: string): boolean {
   return (
     ROOT_CONFIG_FILES.has(path) ||
@@ -169,6 +179,7 @@ export const FULL_GATE_HARNESS_PROJECTS = ['tooling']
 export function isHarnessPath(path: string): boolean {
   return (
     /^(?:scripts|tests\/tooling|tests\/architecture|\.github)\//.test(path) ||
+    INTEGRATION_MUTATION_FILES.has(path) ||
     /^tests\/e2e\/playwright[^/]*\.config\.ts$/.test(path) ||
     isConfiguration(path)
   )
@@ -909,18 +920,29 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`)
 }
 
-type StrykerConfig = { mutate: string[]; incrementalFile?: string }
-
-async function strykerConfig(root: string): Promise<StrykerConfig> {
-  const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
-    default: StrykerConfig
-  }
-  return config.default
+type StrykerConfig = {
+  mutate: string[]
+  incrementalFile?: string
+  jsonReporter?: { fileName?: string }
 }
 
-/** The paths that fall inside Stryker's `mutate` set (its own config is the source of that set). */
-export async function mutateSet(root: string, changed: string[]): Promise<string[]> {
-  const { mutate } = await strykerConfig(root)
+export async function strykerConfig(
+  root: string,
+  config = 'stryker.config.mjs',
+): Promise<StrykerConfig> {
+  const loaded = (await import(pathToFileURL(resolve(root, config)).href)) as {
+    default: StrykerConfig
+  }
+  return loaded.default
+}
+
+/** The paths that fall inside a Stryker config's `mutate` set (the config is the source of that set). */
+export async function mutateSet(
+  root: string,
+  changed: string[],
+  config = 'stryker.config.mjs',
+): Promise<string[]> {
+  const { mutate } = await strykerConfig(root, config)
   const include = mutate.filter((g) => !g.startsWith('!')).map(globToRegExp)
   const exclude = mutate.filter((g) => g.startsWith('!')).map((g) => globToRegExp(g.slice(1)))
   return changed.filter(
@@ -1327,7 +1349,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
     // a measured file changed without a change to its unit test is refused here, not by CI's Stryker after the merge.
     {
       name: 'ratchet',
-      command: `pnpm --silent mutation:ratchet check --static${input.noBase === true ? '' : ` --base ${base}`}`,
+      // The integration ratchet against its own mutate set; its base warning is about unit test files, so no base.
+      command: [
+        `pnpm --silent mutation:ratchet check --static${input.noBase === true ? '' : ` --base ${base}`}`,
+        'pnpm --silent mutation:ratchet check --static --config stryker.integration.config.mjs --ratchet mutation-ratchet.integration.json',
+      ].join(' && '),
     },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },

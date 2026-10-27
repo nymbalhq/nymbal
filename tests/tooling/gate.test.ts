@@ -219,7 +219,11 @@ describe('the tooling projects run in the plain gate only when the tooling chang
     )
   })
 
-  it('the ratchet step runs the static check after lint and before the build and tests, in gate and gate:full', () => {
+  it('the ratchet step runs the static check of the unit ratchet with the base, then of the integration ratchet against its config, after lint and before the build and tests, in the plain and the full gate', () => {
+    const flagOf = (args: string[], name: string): string | undefined => {
+      const at = args.indexOf(name)
+      return at === -1 ? undefined : args[at + 1]
+    }
     for (const full of [false, true]) {
       const names = planned(PRODUCT, full).map((s) => s.name)
       const at = (name: string): number => names.indexOf(name)
@@ -227,8 +231,26 @@ describe('the tooling projects run in the plain gate only when the tooling chang
       expect(at('ratchet')).toBeLessThan(at('build'))
       expect(at('ratchet')).toBeLessThan(at('tests'))
       const step = planned(PRODUCT, full).find((s) => s.name === 'ratchet') as StepSpec
-      expect(step.command).toMatch(/mutation:ratchet check --static\b/)
       expect(step.skip).toBeUndefined()
+      const checks = step.command
+        .split('&&')
+        .map((part) => part.trim().split(/\s+/))
+        .filter((args) => args.join(' ').includes('mutation:ratchet check --static'))
+      expect(
+        checks.map((args) => ({
+          config: flagOf(args, '--config'),
+          ratchet: flagOf(args, '--ratchet'),
+          base: flagOf(args, '--base'),
+        })),
+        step.command,
+      ).toEqual([
+        { config: undefined, ratchet: undefined, base: 'abc1234' },
+        {
+          config: 'stryker.integration.config.mjs',
+          ratchet: 'mutation-ratchet.integration.json',
+          base: undefined,
+        },
+      ])
     }
   })
 })

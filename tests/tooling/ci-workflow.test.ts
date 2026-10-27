@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   emptyTree,
@@ -9,7 +11,7 @@ import {
   resolveBase,
   stepModes,
 } from '../../scripts/gate'
-import { cleanupScratch, git, scratchRepo } from './scratch-gate'
+import { childEnv, cleanupScratch, git, REPO, scratchRepo } from './scratch-gate'
 import { leftOut } from './vitest-filters'
 
 // AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
@@ -1227,5 +1229,196 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
         /&& pnpm --silent mutation:ratchet check --report \S+$/,
       )
     }
+  })
+})
+
+// Each nightly mutation run is held to its own ratchet. The check step's `run`, as the simulated event executes it,
+// runs in a scratch holding the job's Stryker config, its ratchet, and a fixture report where that config writes its
+// report. The other ratchet holds the file at 0, so a check aimed at it never fails.
+
+const MUTATION_JOBS = [
+  {
+    job: 'mutation-full',
+    config: 'stryker.config.mjs',
+    ratchet: 'mutation-ratchet.json',
+    other: 'mutation-ratchet.integration.json',
+    stryker: /\bpnpm mutation --force\b/,
+  },
+  {
+    job: 'mutation-integration',
+    config: 'stryker.integration.config.mjs',
+    ratchet: 'mutation-ratchet.integration.json',
+    other: 'mutation-ratchet.json',
+    stryker: /\bpnpm mutation:integration\b/,
+  },
+]
+type MutationJob = (typeof MUTATION_JOBS)[number]
+
+/** In both mutate sets; the fixture report scores it 50.00 (two of four mutants detected). */
+const SCORED = 'packages/platform/src/services/alert-service.ts'
+const SCORE = 50
+const RATCHET_CHECK = /\bmutation:ratchet\s+check\b/
+
+async function reportPathOf(config: string): Promise<string> {
+  const loaded = (await import(pathToFileURL(join(REPO, config)).href)) as {
+    default: { jsonReporter?: { fileName?: string } }
+  }
+  return loaded.default.jsonReporter?.fileName ?? 'reports/mutation/mutation.json'
+}
+
+function scoredReport(): unknown {
+  const statuses = ['Killed', 'Timeout', 'Survived', 'NoCoverage', 'Ignored']
+  return {
+    schemaVersion: '1.0',
+    thresholds: { high: 80, low: 60 },
+    files: {
+      [SCORED]: {
+        language: 'typescript',
+        source: '',
+        mutants: statuses.map((status, i) => ({
+          id: String(i),
+          mutatorName: 'BlockStatement',
+          replacement: '{}',
+          status,
+          location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+        })),
+      },
+    },
+  }
+}
+
+/** Runs a check step's script as the runner's bash would, in a scratch where the job's ratchet holds SCORED at `entry`. */
+async function runCheck(
+  run: Executed,
+  spec: MutationJob,
+  entry: number,
+): Promise<{ status: number; output: string }> {
+  const ratchet = (score: number): string =>
+    `${JSON.stringify({ measuredAt: '2026-10-01T00:00:00.000Z', command: 'fixture', total: 50, files: { [SCORED]: score } }, null, 2)}\n`
+  const scripts = (
+    JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+  ).scripts
+  const { root } = scratchRepo(
+    {
+      'package.json': JSON.stringify({
+        name: 'nightly-check-scratch',
+        private: true,
+        type: 'module',
+        scripts,
+      }),
+      'stryker.config.mjs': readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'),
+      'stryker.integration.config.mjs': readFileSync(
+        join(REPO, 'stryker.integration.config.mjs'),
+        'utf8',
+      ),
+      [SCORED]: 'export const alert = 1\n',
+      [spec.ratchet]: ratchet(entry),
+      [spec.other]: ratchet(0),
+    },
+    { realModules: true },
+  )
+  // A copy, not the scratch's link: the CLI runs its main only when invoked by its real path.
+  rmSync(join(root, 'scripts'))
+  cpSync(join(REPO, 'scripts'), join(root, 'scripts'), { recursive: true })
+  const reportPath = join(root, await reportPathOf(spec.config))
+  mkdirSync(dirname(reportPath), { recursive: true })
+  writeFileSync(reportPath, JSON.stringify(scoredReport()))
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', run.script], {
+    cwd: root,
+    encoding: 'utf8',
+    env: childEnv({ ...run.env, GATE_BASE: '' }),
+  })
+  return { status: r.status ?? -1, output: `${r.stdout}\n${r.stderr}` }
+}
+
+describe('AC-6: each nightly mutation job fails on a file below its own ratchet', () => {
+  afterEach(cleanupScratch)
+
+  it.each(NIGHTLY_EVENTS)(
+    "AC-6: on $label, each mutation job's ratchet check exits 1 naming a file 0.01 below its entry, and 0 at its entry",
+    async ({ github }) => {
+      const executed = execute(loadWorkflow(NIGHTLY), github)
+      const below = SCORE + 0.01
+      const outcomes = await Promise.all(
+        MUTATION_JOBS.flatMap((spec) => {
+          const checks = executed.filter((r) => r.job === spec.job && RATCHET_CHECK.test(r.script))
+          if (checks.length !== 1) {
+            return [Promise.resolve(`${spec.job}: ${checks.length} ratchet check steps run`)]
+          }
+          return [below, SCORE].map(async (entry) => {
+            const { status, output } = await runCheck(checks[0]!, spec, entry)
+            const names =
+              entry > SCORE ? (output.includes(SCORED) ? ', names it' : ', unnamed') : ''
+            return `${spec.job} at ${entry.toFixed(2)}: exit ${status}${names}`
+          })
+        }),
+      )
+      expect(outcomes).toEqual(
+        MUTATION_JOBS.flatMap((spec) => [
+          `${spec.job} at ${below.toFixed(2)}: exit 1, names it`,
+          `${spec.job} at ${SCORE.toFixed(2)}: exit 0`,
+        ]),
+      )
+    },
+    120_000,
+  )
+
+  it('AC-6: both mutation jobs need build and use its artefact without rebuilding, check after Stryker, never continue on error, and always upload the report their config writes', async () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const problems: string[] = []
+    for (const spec of MUTATION_JOBS) {
+      const job = nightly.jobs[spec.job]
+      if (job === undefined) {
+        problems.push(`${spec.job}: no such job`)
+        continue
+      }
+      const steps = job.steps ?? []
+      if (!needsOf(job).includes('build')) problems.push(`${spec.job}: does not need build`)
+      const download = steps.some(
+        (s) => s.uses?.startsWith('actions/download-artifact@') && s.with?.name === 'build-output',
+      )
+      if (!download) problems.push(`${spec.job}: does not download build-output`)
+      for (const script of runs(job).filter((r) => BUILD.test(r))) {
+        problems.push(`${spec.job}: rebuilds (${script})`)
+      }
+      const at = (re: RegExp): number =>
+        steps.findIndex((s) => typeof s.run === 'string' && re.test(s.run))
+      const stryker = at(spec.stryker)
+      const check = at(RATCHET_CHECK)
+      if (stryker === -1) problems.push(`${spec.job}: runs no ${spec.stryker.source}`)
+      if (check <= stryker) {
+        problems.push(
+          `${spec.job}: the ratchet check (step ${check}) does not follow Stryker (step ${stryker})`,
+        )
+      }
+      for (const [where, value] of [
+        ['the job', job] as const,
+        ...steps.map((s, i) => [`step ${i}`, s] as const),
+      ]) {
+        if (Object.hasOwn(value, 'continue-on-error')) {
+          problems.push(`${spec.job}: ${where} has continue-on-error`)
+        }
+      }
+      let reportDir: string
+      try {
+        reportDir = dirname(await reportPathOf(spec.config))
+      } catch (error) {
+        problems.push(`${spec.job}: ${spec.config} does not load (${String(error)})`)
+        continue
+      }
+      const upload = uploadsOf(job).find((u) =>
+        (u.with?.path ?? '')
+          .split('\n')
+          .map((p) => p.trim())
+          .includes(reportDir),
+      )
+      if (upload === undefined) problems.push(`${spec.job}: uploads no ${reportDir}`)
+      else if ((upload.if ?? '').replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim() !== 'always()') {
+        problems.push(`${spec.job}: the report upload runs ${upload.if ?? 'on success only'}`)
+      }
+    }
+    expect(problems).toEqual([])
   })
 })

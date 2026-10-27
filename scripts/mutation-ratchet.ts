@@ -1,15 +1,16 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { mutateSet } from './gate'
+import { mutateSet, strykerConfig } from './gate'
 
 // The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
 // file below its entry fails. `check` runs in gate:full after Stryker and `check --static` (entries against the
 // mutate set, no report) in the plain gate; `update` raises entries and never lowers one: with `--total` every
 // file, otherwise only the files changed since the base (`--base`, GATE_BASE, origin/dev) or named by `--files`,
-// and files with no entry yet.
+// and files with no entry yet. `--config` names another Stryker config and `--ratchet` its own ratchet file
+// (stryker.integration.config.mjs and mutation-ratchet.integration.json): the mutate set and the remedies follow them.
 // Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100. A file
 // whose detected mutants all timed out, none killed, is unmeasured: nothing shows a test saw any of them, so it
 // scores 0 (it scored 100 before 2026-10-25), and `update` records that 0 over an entry that was never a measurement.
@@ -24,6 +25,35 @@ export type Ratchet = { measuredAt: string; command: string; total: number; file
 type StrykerReport = { files?: Record<string, { mutants?: Array<{ status?: string }> }> }
 
 export const DEFAULT_COMMAND = 'pnpm mutation --force'
+
+const DEFAULT_CONFIG = 'stryker.config.mjs'
+const DEFAULT_RATCHET = 'mutation-ratchet.json'
+const DEFAULT_REPORT = 'reports/mutation/mutation.json'
+
+/** The Stryker config whose mutate set the ratchet follows, and how the printed remedies name it. */
+type Target = {
+  config: string
+  /** `--config` and `--ratchet` as the remedies pass them: empty for the defaults, which print as before. */
+  flags: string
+  /** The report the config's run writes. */
+  report: string
+  /** The Stryker command for that config, ending where `--mutate` follows. */
+  stryker: string
+}
+
+async function target(config: string, ratchet: string): Promise<Target> {
+  const custom = config !== DEFAULT_CONFIG || ratchet !== DEFAULT_RATCHET
+  const report = custom
+    ? ((await strykerConfig(process.cwd(), config)).jsonReporter?.fileName ?? DEFAULT_REPORT)
+    : DEFAULT_REPORT
+  return {
+    config,
+    flags: custom ? ` --config ${config} --ratchet ${ratchet}` : '',
+    report,
+    stryker:
+      config === DEFAULT_CONFIG ? 'pnpm exec stryker run' : `pnpm exec stryker run ${config}`,
+  }
+}
 
 const DETECTED = new Set(['Killed', 'Timeout'])
 const UNDETECTED = new Set(['Survived', 'NoCoverage'])
@@ -152,15 +182,15 @@ function raisable(root: string, files: string | undefined, base: string | undefi
     .filter(Boolean)
 }
 
-/** The tracked files in Stryker's mutate set, or undefined outside a git work tree, where nothing is tracked. */
-async function trackedMutateSet(root: string): Promise<string[] | undefined> {
+/** The tracked files in a Stryker config's mutate set, or undefined outside a git work tree, where nothing is tracked. */
+async function trackedMutateSet(root: string, config: string): Promise<string[] | undefined> {
   const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
     cwd: root,
     encoding: 'utf8',
   })
   if (inside.status !== 0) return undefined
   const tracked = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n')
-  return (await mutateSet(root, tracked.filter(Boolean))).sort()
+  return (await mutateSet(root, tracked.filter(Boolean), config)).sort()
 }
 
 /** A mutate-set file's unit test file: the `.test.ts` beside it. */
@@ -188,11 +218,11 @@ function changedSince(root: string, base: string): string[] {
   ]
 }
 
-async function check(report: unknown, ratchetPath: string): Promise<number> {
+async function check(report: unknown, ratchetPath: string, to: Target): Promise<number> {
   const ratchet = readJson<Ratchet>(ratchetPath)
   const { lower, rose } = compare(ratchet.files, scoreByFile(report))
   // A file with no entry cannot fall, so it does not fail the check; the hint keeps the ratchet following the set.
-  const unheld = ((await trackedMutateSet(process.cwd())) ?? []).filter(
+  const unheld = ((await trackedMutateSet(process.cwd(), to.config)) ?? []).filter(
     (path) => ratchet.files[path] === undefined,
   )
   for (const path of unheld) {
@@ -213,7 +243,7 @@ async function check(report: unknown, ratchetPath: string): Promise<number> {
   }
   if (rose.length > 0 || unheld.length > 0) {
     process.stdout.write(
-      'bring the ratchet up to date with: pnpm mutation:ratchet update --report <mutation.json>\n',
+      `bring the ratchet up to date with: pnpm mutation:ratchet update${to.flags} --report ${to.flags === '' ? '<mutation.json>' : to.report}\n`,
     )
   }
   if (lower.length > 0) {
@@ -231,10 +261,14 @@ async function check(report: unknown, ratchetPath: string): Promise<number> {
  * stays visible. With a base, a measured file (a non-zero entry) changed since it with its unit test file unchanged
  * gets a warning: that code may have no unit test, and the incremental Stryker run in CI says so after the merge.
  */
-async function staticCheck(ratchetPath: string, base: string | undefined): Promise<number> {
+async function staticCheck(
+  ratchetPath: string,
+  base: string | undefined,
+  to: Target,
+): Promise<number> {
   const root = process.cwd()
   const ratchet = readJson<Ratchet>(ratchetPath)
-  const set = await trackedMutateSet(root)
+  const set = await trackedMutateSet(root, to.config)
   if (set === undefined) {
     throw new Error(
       `check --static reads Stryker's mutate set from git: run it inside the repository`,
@@ -247,16 +281,17 @@ async function staticCheck(ratchetPath: string, base: string | undefined): Promi
   for (const path of gone) process.stdout.write(`entry names no file in the mutate set: ${path}\n`)
   if (unheld.length > 0) {
     process.stdout.write(
-      'a new file needs its measured score: pnpm exec stryker run --mutate <file> && pnpm mutation:ratchet update --report reports/mutation/mutation.json --files <file>\n',
+      `a new file needs its measured score: ${to.stryker} --mutate <file> && pnpm mutation:ratchet update${to.flags} --report ${to.report} --files <file>\n`,
     )
   }
   if (gone.length > 0) {
     process.stdout.write(
-      'a stale entry is dropped by: pnpm mutation:ratchet update --report reports/mutation/mutation.json\n',
+      `a stale entry is dropped by: pnpm mutation:ratchet update${to.flags} --report ${to.report}\n`,
     )
   }
   const hasUnitTest = (path: string): boolean => existsSync(resolve(root, unitTestOf(path)))
-  const noUnitTest = set.filter((path) => !hasUnitTest(path))
+  // Every file of another config's set is measured by integration tests by design.
+  const noUnitTest = to.config === DEFAULT_CONFIG ? set.filter((path) => !hasUnitTest(path)) : []
   if (noUnitTest.length > 0) {
     process.stdout.write(
       `no unit test file (${noUnitTest.length}, measured by integration tests alone): ${noUnitTest.join(', ')}\n`,
@@ -295,6 +330,7 @@ async function update(
   total: boolean,
   command: string,
   changed: () => string[],
+  config: string,
 ): Promise<number> {
   const before: Ratchet | undefined = existsSync(ratchetPath)
     ? readJson<Ratchet>(ratchetPath)
@@ -302,7 +338,7 @@ async function update(
   if (before === undefined && !total) {
     throw new Error(`${ratchetPath} does not exist: seed it with update --total from a full run`)
   }
-  const set = await trackedMutateSet(process.cwd())
+  const set = await trackedMutateSet(process.cwd(), config)
   if (set === undefined) {
     throw new Error(`update reads Stryker's mutate set from git: run it inside the repository`)
   }
@@ -367,7 +403,8 @@ async function main(argv: string[]): Promise<number> {
     allowPositionals: true,
     options: {
       report: { type: 'string' },
-      ratchet: { type: 'string', default: 'mutation-ratchet.json' },
+      ratchet: { type: 'string' },
+      config: { type: 'string', default: DEFAULT_CONFIG },
       total: { type: 'boolean', default: false },
       command: { type: 'string', default: DEFAULT_COMMAND },
       static: { type: 'boolean', default: false },
@@ -376,19 +413,36 @@ async function main(argv: string[]): Promise<number> {
     },
   })
   const [subcommand] = positionals
-  const ratchetPath = resolve(values.ratchet)
+  if (values.ratchet === undefined && values.config !== DEFAULT_CONFIG) {
+    // Defaulting here would write another config's scores into the unit ratchet.
+    const paired = basename(values.config).replace(
+      /^stryker\.(.+)\.config\.mjs$/,
+      'mutation-ratchet.$1.json',
+    )
+    throw new Error(
+      `--config ${values.config} needs --ratchet <file>${paired === basename(values.config) ? '' : ` (${paired})`}: only ${DEFAULT_CONFIG} pairs with ${DEFAULT_RATCHET}`,
+    )
+  }
+  const ratchet = values.ratchet ?? DEFAULT_RATCHET
+  const ratchetPath = resolve(ratchet)
   const base = values.base === undefined || values.base === '' ? undefined : values.base
-  if (subcommand === 'check' && values.static) return staticCheck(ratchetPath, base)
+  const to = await target(values.config, ratchet)
+  if (subcommand === 'check' && values.static) return staticCheck(ratchetPath, base, to)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
     throw new Error(
-      'usage: mutation-ratchet.ts check --static [--base <ref>] [--ratchet <file>] | check --report <mutation.json> [--ratchet <file>] | update --report <mutation.json> [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
+      'usage: mutation-ratchet.ts check --static [--base <ref>] [--config <stryker config>] [--ratchet <file>] | check --report <mutation.json> [--config <stryker config>] [--ratchet <file>] | update --report <mutation.json> [--config <stryker config>] [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
     )
   }
   const report = readJson<unknown>(resolve(values.report))
   return subcommand === 'check'
-    ? check(report, ratchetPath)
-    : update(report, ratchetPath, values.total, values.command, () =>
-        raisable(process.cwd(), values.files, base),
+    ? check(report, ratchetPath, to)
+    : update(
+        report,
+        ratchetPath,
+        values.total,
+        values.command,
+        () => raisable(process.cwd(), values.files, base),
+        values.config,
       )
 }
 
