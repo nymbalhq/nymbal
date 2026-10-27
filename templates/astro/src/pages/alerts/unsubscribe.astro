@@ -3,13 +3,26 @@ import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import { unsubscribeAlert } from '../../lib/api'
 
-// The unsubscribe link every alert email carries: the token is posted from this server, which holds no CSRF cookie.
-const token = Astro.url.searchParams.get('token') ?? ''
-const stopped = token === '' ? false : await unsubscribeAlert(token)
+// Opening the link only shows the button, so a mail scanner that fetches it stops nothing. The press posts the token
+// back here, and this server posts it on to the API, which holds no CSRF cookie.
+const pressed = Astro.request.method === 'POST'
+const token = pressed
+  ? String((await Astro.request.formData()).get('token') ?? '')
+  : (Astro.url.searchParams.get('token') ?? '')
+const stopped = pressed && token !== '' ? await unsubscribeAlert(token) : false
 ---
 
 <BaseLayout title="Back-in-stock alert | Nymbal" description="Stop a back-in-stock alert.">
-  {stopped ? (
+  {!pressed && token !== '' ? (
+    <form method="post" class="error-page" data-testid="alert-unsubscribe-form" id="alert-link-form">
+      <h1 class="error-title">Stop this email alert</h1>
+      <p class="error-message">Press the button and we won't email you about this product again.</p>
+      <input type="hidden" name="token" value={token} />
+      <div class="error-actions">
+        <button type="submit" class="btn btn-primary" data-testid="alert-unsubscribe-submit">Unsubscribe</button>
+      </div>
+    </form>
+  ) : stopped ? (
     <div class="error-page" data-testid="alert-unsubscribed">
       <h1 class="error-title">Your alert is off</h1>
       <p class="error-message">We won't email you about this product again.</p>
@@ -27,3 +40,14 @@ const stopped = token === '' ? false : await unsubscribeAlert(token)
     </div>
   )}
 </BaseLayout>
+
+<script>
+  import { submitOnce } from '../../lib/submit-once'
+
+  // The native submit sends the form once; a second click or Enter while it is on its way is ignored.
+  const form = document.getElementById('alert-link-form') as HTMLFormElement | null
+  submitOnce(form, () => {
+    form?.submit()
+    return 'leaving'
+  })
+</script>

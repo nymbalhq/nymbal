@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import type { APIRequestContext } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 import { stackBlock } from '../../../scripts/stack'
 import { API_URL, csrf } from './csrf'
 import { expect } from './fixtures'
@@ -106,6 +106,31 @@ export async function confirmThroughApi(
 ): Promise<ApiAnswer> {
   const res = await request.post(`${API_URL}/api/alerts/confirm`, { data: { token } })
   return { status: res.status(), text: await res.text() }
+}
+
+/** The button each alert page shows for its link, by the page's path. */
+export const ALERT_SUBMIT: Record<string, string> = {
+  '/alerts/confirm': 'alert-confirm-submit',
+  '/alerts/unsubscribe': 'alert-unsubscribe-submit',
+}
+
+/** The submit button's test id on the page an alert link (absolute, or a path under the base URL) opens. */
+export function submitOf(href: string): string {
+  const path = new URL(href, 'http://localhost').pathname
+  const id = ALERT_SUBMIT[path]
+  if (id === undefined) throw new Error(`${href} is not an alert page`)
+  return id
+}
+
+/**
+ * Opens an alert link and presses its button, as the shopper does: once the page has settled (on Next, once its form
+ * has hydrated). The caller asserts what the press shows.
+ */
+export async function openAndPress(page: Page, href: string): Promise<void> {
+  await page.goto(href)
+  await page.waitForLoadState('networkidle')
+  // The page has settled, so a button it lacks will not come: fail on it, not at the journey's timeout.
+  await page.getByTestId(submitOf(href)).click({ timeout: 10_000 })
 }
 
 /** The admin's stock adjustment, under a correlation id the journey chooses. */

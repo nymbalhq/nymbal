@@ -9,6 +9,7 @@ import {
   isPriceDrop,
   linkTo,
   mailbox,
+  openAndPress,
   subscribeThroughApi,
   type Mail,
   type Mailbox,
@@ -211,7 +212,7 @@ test.describe('back-in-stock alerts', () => {
     await subscribeFromPage(page, product, a)
     const aConfirm = linkTo(await confirmation(mail, a), '/alerts/confirm')
     expect(aConfirm.origin).toBe(origin)
-    await page.goto(aConfirm.href)
+    await openAndPress(page, aConfirm.href)
     await expect(
       page.getByTestId('alert-confirmed').locator(`a[href$="/product/${product.slug}"]`),
     ).toHaveCount(1)
@@ -223,9 +224,9 @@ test.describe('back-in-stock alerts', () => {
     const cSub = await subscribeThroughApi(request, origin, c, product.variantId)
     expect(cSub.status, cSub.text).toBe(202)
     const cMail = await confirmation(mail, c)
-    await page.goto(linkTo(cMail, '/alerts/confirm').href)
+    await openAndPress(page, linkTo(cMail, '/alerts/confirm').href)
     await expect(page.getByTestId('alert-confirmed')).toHaveCount(1)
-    await page.goto(linkTo(cMail, '/alerts/unsubscribe').href)
+    await openAndPress(page, linkTo(cMail, '/alerts/unsubscribe').href)
     await expect(page.getByTestId('alert-unsubscribed')).toHaveCount(1)
 
     const first = `alerts-ac10-${randomUUID()}`
@@ -250,7 +251,7 @@ test.describe('back-in-stock alerts', () => {
     ).toEqual([[product.variantId, 0]])
 
     const [aAlert] = await alertsTo(mail, a, product.slug)
-    await page.goto(linkTo(aAlert!, '/alerts/unsubscribe').href)
+    await openAndPress(page, linkTo(aAlert!, '/alerts/unsubscribe').href)
     await expect(page.getByTestId('alert-unsubscribed')).toHaveCount(1)
 
     // A sell-out and a second restock: only D, confirmed after the first, is mailed, and only then are the others read.
@@ -377,7 +378,7 @@ test.describe('price-drop alerts', () => {
     const aConfirmation = await confirmation(mail, a)
     expect(`${aConfirmation.subject}\n${aConfirmation.text}`).toMatch(/price/i)
     expect(`${aConfirmation.subject}\n${aConfirmation.text}`).not.toMatch(/back in stock/i)
-    await page.goto(linkTo(aConfirmation, '/alerts/confirm').href)
+    await openAndPress(page, linkTo(aConfirmation, '/alerts/confirm').href)
     const confirmed = page.getByTestId('alert-confirmed')
     await expect(confirmed).toHaveAttribute('data-kind', 'price_drop')
     await expect(confirmed).toContainText(`the price of ${product.name} drops`)
@@ -423,7 +424,7 @@ test.describe('price-drop alerts', () => {
     ).toEqual([[product.variantId, start, lower]])
 
     const [aAlert] = await priceDropsTo(mail, a, product.slug)
-    await page.goto(linkTo(aAlert!, '/alerts/unsubscribe').href)
+    await openAndPress(page, linkTo(aAlert!, '/alerts/unsubscribe').href)
     await expect(page.getByTestId('alert-unsubscribed')).toHaveCount(1)
 
     // A second, lower price: B is mailed, and only then is A's mailbox read.

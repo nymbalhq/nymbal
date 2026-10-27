@@ -3,13 +3,26 @@ import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import { confirmAlert } from '../../lib/api'
 
-// The link in a confirmation email: the token is posted from this server, so the browser needs no CSRF cookie.
-const token = Astro.url.searchParams.get('token') ?? ''
-const confirmed = token === '' ? null : await confirmAlert(token)
+// Opening the link only shows the button, so a mail scanner that fetches it confirms nothing. The press posts the
+// token back here, and this server posts it on to the API, so the browser needs no CSRF cookie.
+const pressed = Astro.request.method === 'POST'
+const token = pressed
+  ? String((await Astro.request.formData()).get('token') ?? '')
+  : (Astro.url.searchParams.get('token') ?? '')
+const confirmed = pressed && token !== '' ? await confirmAlert(token) : null
 ---
 
 <BaseLayout title="Email alert | Nymbal" description="Confirm your email alert.">
-  {confirmed ? (
+  {!pressed && token !== '' ? (
+    <form method="post" class="error-page" data-testid="alert-confirm-form" id="alert-link-form">
+      <h1 class="error-title">Confirm your email alert</h1>
+      <p class="error-message">Press the button to start the alert this email asked for.</p>
+      <input type="hidden" name="token" value={token} />
+      <div class="error-actions">
+        <button type="submit" class="btn btn-primary" data-testid="alert-confirm-submit">Confirm alert</button>
+      </div>
+    </form>
+  ) : confirmed ? (
     <div class="error-page" data-testid="alert-confirmed" data-kind={confirmed.kind}>
       <h1 class="error-title">Your alert is on</h1>
       {confirmed.kind === 'price_drop' ? (
@@ -33,3 +46,14 @@ const confirmed = token === '' ? null : await confirmAlert(token)
     </div>
   )}
 </BaseLayout>
+
+<script>
+  import { submitOnce } from '../../lib/submit-once'
+
+  // The native submit sends the form once; a second click or Enter while it is on its way is ignored.
+  const form = document.getElementById('alert-link-form') as HTMLFormElement | null
+  submitOnce(form, () => {
+    form?.submit()
+    return 'leaving'
+  })
+</script>

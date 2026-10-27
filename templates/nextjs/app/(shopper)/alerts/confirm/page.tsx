@@ -1,7 +1,5 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
-import { confirmAlert } from '@/lib/api'
-import styles from '@/styles/pages/error.module.css'
+import { AlertLinkForm } from '../AlertLinkForm'
 import { LinkInvalid } from '../LinkInvalid'
 
 export const metadata: Metadata = { title: 'Email alert' }
@@ -10,32 +8,12 @@ interface ConfirmPageProps {
   searchParams: Promise<{ token?: string | string[] }>
 }
 
-// The link in a confirmation email: the token is posted from this server, so the browser needs no CSRF cookie.
+// The link in a confirmation email: it shows the button and calls no API until the button is pressed.
 export default async function ConfirmAlertPage({ searchParams }: ConfirmPageProps) {
   const { token } = await searchParams
   const value = typeof token === 'string' ? token : ''
-  const confirmed = value === '' ? null : await confirmAlert(value)
-
-  if (confirmed === null) {
+  if (value === '') {
     return <LinkInvalid message="It may be from an older email, or the alert has been stopped." />
   }
-  return (
-    <div className={styles.page} data-testid="alert-confirmed" data-kind={confirmed.kind}>
-      <div className={styles.wrapper}>
-        <h1 className={styles.title}>Your alert is on</h1>
-        {confirmed.kind === 'price_drop' ? (
-          <p className={styles.message}>
-            We&apos;ll email you when the price of{' '}
-            <Link href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</Link> drops.
-          </p>
-        ) : (
-          <p className={styles.message}>
-            We&apos;ll email you once when{' '}
-            <Link href={`/product/${confirmed.product.slug}`}>{confirmed.product.name}</Link> is
-            back in stock.
-          </p>
-        )}
-      </div>
-    </div>
-  )
+  return <AlertLinkForm kind="confirm" token={value} />
 }
