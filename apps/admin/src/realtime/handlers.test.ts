@@ -1,10 +1,10 @@
 import fc from 'fast-check'
-import { QueryClient, hashKey } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { QueryClient, QueryObserver, hashKey, type QueryKey } from '@tanstack/react-query'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Shared shapes, read from source: the admin depends on @nymbalhq/types.
 import type { Order, OrderStatus } from '../../../../packages/types/src/index'
 import { useNotifications } from '@/hooks/useNotifications'
-import { createEventHandlers } from './handlers'
+import { createEventHandlers, resyncLiveQueries } from './handlers'
 
 // AC-3 and AC-4: what the realtime handler does with real event payloads (packages/types/src/events/payloads.ts).
 
@@ -335,6 +335,317 @@ describe('AC-4: notifications name what the payload carries', () => {
           expect(latest()!.message).toContain(adapterName)
         },
       ),
+    )
+  })
+})
+
+/** A promise and the function that settles it, for a queryFn the test lets finish when it chooses. */
+function deferred(): { opened: Promise<void>; open: () => void } {
+  let open!: () => void
+  const opened = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { opened, open }
+}
+
+/** Waits, polling every millisecond, until no query in the cache is fetching. */
+async function fetchesSettled(qc: QueryClient): Promise<void> {
+  // A zero-delay yield, not a sleep: the promise chains the act started (a cancel, then the invalidate it settles
+  // into) run first, so the poll cannot catch the idle instant between them.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await vi.waitFor(() => expect(qc.isFetching(), 'queries still fetching').toBe(0), {
+    interval: 1,
+    timeout: 2000,
+  })
+}
+
+describe('AC-3: a reconnect resyncs exactly the queries the live handlers maintain', () => {
+  const LIVE_PREFIXES: QueryKey[] = [
+    ['orders', 'list'],
+    ['orders', 'detail'],
+    ['dashboard'],
+    ['inventory', 'list'],
+  ]
+  const OTHER_PREFIXES: QueryKey[] = [
+    ['products', 'list'],
+    ['products', 'detail'],
+    ['me'],
+    ['settings'],
+    ['orders', 'notes'],
+    ['orders', 'timeline'],
+    ['inventory', 'history'],
+    ['customers', 'list'],
+    ['activity'],
+  ]
+
+  const tailArb = fc.option(
+    fc.oneof(
+      anyFilters.map((f): unknown => f),
+      fc.stringMatching(/^NYM-[0-9]{3,4}$/),
+    ),
+    { nil: undefined },
+  )
+  const entryArb = fc
+    .record({
+      live: fc.boolean(),
+      prefix: fc.nat(),
+      tail: tailArb,
+      active: fc.boolean(),
+    })
+    .map(({ live, prefix, tail, active }) => {
+      const prefixes = live ? LIVE_PREFIXES : OTHER_PREFIXES
+      const base = prefixes[prefix % prefixes.length]!
+      const queryKey: QueryKey = tail === undefined ? [...base] : [...base, tail]
+      return { live, active, queryKey }
+    })
+
+  it('AC-3: resyncLiveQueries refetches every active live query, marks every inactive one stale, refetches a pending first fetch anew rather than joining it, and leaves every other query as it was (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(entryArb, {
+          minLength: 1,
+          maxLength: 10,
+          selector: (e) => hashKey(e.queryKey),
+        }),
+        fc.constantFrom(...LIVE_PREFIXES),
+        async (entries, pendingPrefix) => {
+          const qc = freshClient()
+          const unsubscribes: Array<() => void> = []
+          const calls = new Map<string, number>()
+          const observe = (queryKey: QueryKey, queryFn: () => Promise<unknown>) => {
+            const observer = new QueryObserver(qc, { queryKey, queryFn, staleTime: Infinity })
+            unsubscribes.push(observer.subscribe(() => {}))
+          }
+
+          for (const { queryKey, active } of entries) {
+            const id = hashKey(queryKey)
+            calls.set(id, 0)
+            if (active) {
+              observe(queryKey, async () => {
+                const n = (calls.get(id) ?? 0) + 1
+                calls.set(id, n)
+                return { id, call: n }
+              })
+            } else {
+              qc.setQueryData(queryKey, { id, call: 0 })
+            }
+          }
+          await fetchesSettled(qc)
+
+          // An active live query whose first GET read the rows before a new one was added, and has not answered yet.
+          let rows = ['A']
+          let pendingCalls = 0
+          const firstGet = deferred()
+          const pendingKey: QueryKey = [...pendingPrefix, { firstFetchPending: true }]
+          observe(pendingKey, async () => {
+            pendingCalls += 1
+            const snapshot = [...rows]
+            if (pendingCalls === 1) await firstGet.opened
+            return snapshot
+          })
+          expect(qc.getQueryState(pendingKey)?.fetchStatus, 'first fetch in flight').toBe(
+            'fetching',
+          )
+          rows = ['B', ...rows]
+
+          const before = new Map(
+            entries.map(({ queryKey }) => {
+              const id = hashKey(queryKey)
+              const state = qc.getQueryState(queryKey)!
+              return [
+                id,
+                {
+                  calls: calls.get(id)!,
+                  dataUpdatedAt: state.dataUpdatedAt,
+                  isInvalidated: state.isInvalidated,
+                },
+              ] as const
+            }),
+          )
+
+          await resyncLiveQueries(qc)
+          firstGet.open()
+          await fetchesSettled(qc)
+
+          const ids = (pick: (e: (typeof entries)[number]) => boolean) =>
+            entries.filter(pick).map((e) => hashKey(e.queryKey))
+          for (const id of ids((e) => e.live && e.active)) {
+            expect(calls.get(id)!, `live active ${id}`).toBeGreaterThan(before.get(id)!.calls)
+          }
+          for (const id of ids((e) => e.live && !e.active)) {
+            expect(qc.getQueryCache().get(id)!.state.isInvalidated, `live inactive ${id}`).toBe(
+              true,
+            )
+          }
+          for (const id of ids((e) => !e.live)) {
+            const was = before.get(id)!
+            const state = qc.getQueryCache().get(id)!.state
+            expect(state.dataUpdatedAt, `other ${id}`).toBe(was.dataUpdatedAt)
+            expect(state.isInvalidated, `other ${id}`).toBe(was.isInvalidated)
+            expect(calls.get(id)!, `other ${id}: queryFn calls`).toBe(was.calls)
+          }
+          expect(pendingCalls, 'the pending first fetch was refetched, not joined').toBe(2)
+          expect(qc.getQueryData(pendingKey), 'the second GET, which read the new row').toEqual(
+            rows,
+          )
+
+          unsubscribes.forEach((unsubscribe) => unsubscribe())
+          qc.clear()
+        },
+      ),
+      { numRuns: 60 },
+    )
+  })
+})
+
+describe('AC-4: a placed order is not lost to a list fetch already in flight', () => {
+  const PHASES = ['a refetch of a list with data', 'a first fetch with no data yet'] as const
+
+  it('AC-4: an order placed while an admitting list is fetching is in that list exactly once after the GET that read before it settles; an idle list is still written in place (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...STATUSES),
+        fc.oneof(firstPageFilters, anyFilters),
+        fc.boolean(),
+        fc.constantFrom(...PHASES),
+        fc.uniqueArray(fc.integer({ min: 1, max: 40 }), { maxLength: 8 }),
+        async (status, generated, anyStatus, phase, existing) => {
+          const qc = freshClient()
+          const placed = order('placed', status, 999)
+          const filters: Filters = { ...generated, status: anyStatus ? undefined : status }
+          const key = listKey(filters)
+
+          // The server's page for these filters: an admitting list's page holds the order once it has committed.
+          let committed = existing.map((n) => order(`o-${n}`, status, n))
+          const serverPage = () => committed.slice(0, filters.limit ?? committed.length)
+
+          let calls = 0
+          const gatedCall = phase === PHASES[0] ? 2 : 1
+          const inFlight = deferred()
+          const observer = new QueryObserver<Order[]>(qc, {
+            queryKey: key,
+            staleTime: Infinity,
+            queryFn: async () => {
+              calls += 1
+              const snapshot = serverPage()
+              if (calls === gatedCall) await inFlight.opened
+              return snapshot
+            },
+          })
+          const unsubscribe = observer.subscribe(() => {})
+          if (gatedCall === 2) {
+            await fetchesSettled(qc)
+            void observer.refetch()
+          }
+          expect(calls, `${phase}: the GET has read`).toBe(gatedCall)
+          expect(qc.getQueryState(key)?.fetchStatus, phase).toBe('fetching')
+
+          const idleKey = listKey({ offset: 0, limit: 99 })
+          const idleBefore = existing.map((n) => order(`o-${n}`, status, n))
+          qc.setQueryData(idleKey, idleBefore)
+
+          // The order commits after the in-flight GET read, and its event arrives before that GET answers.
+          committed = [placed, ...committed]
+          createEventHandlers(qc)('order.placed.v1', { order: placed })
+          expect(qc.getQueryData(idleKey), 'the idle list, written in place').toEqual([
+            placed,
+            ...idleBefore,
+          ])
+
+          inFlight.open()
+          await fetchesSettled(qc)
+
+          const final = qc.getQueryData<Order[]>(key) ?? []
+          expect(
+            final.filter((o) => o.id === placed.id).length,
+            `${phase} ${JSON.stringify(filters)}: copies of the placed order`,
+          ).toBe(serverPage().filter((o) => o.id === placed.id).length)
+
+          unsubscribe()
+          qc.clear()
+        },
+      ),
+      { numRuns: 100 },
+    )
+  })
+
+  it('AC-4: in a burst where every order arrives while the list is fetching, each row is in the list right after its event, and once the burst settles every order is in it exactly once (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom(...STATUSES),
+        fc.boolean(),
+        fc.constantFrom(undefined, 'createdAt:desc'),
+        fc.constantFrom(undefined, 0),
+        fc.integer({ min: 2, max: 8 }),
+        fc.uniqueArray(fc.integer({ min: 1, max: 40 }), { maxLength: 5 }),
+        async (status, anyStatus, sort, offset, k, existing) => {
+          const qc = freshClient()
+          // A first page the burst never pushes an order off, so every placed order belongs in it.
+          const filters: Filters = { status: anyStatus ? undefined : status, sort, offset, limit: 50 }
+          const key = listKey(filters)
+          let committed = existing.map((n) => order(`o-${n}`, status, n))
+
+          // The first GET answers at once; every later one is held until the burst is over.
+          let calls = 0
+          const held: Array<() => void> = []
+          const observer = new QueryObserver<Order[]>(qc, {
+            queryKey: key,
+            staleTime: Infinity,
+            queryFn: async () => {
+              calls += 1
+              const snapshot = [...committed]
+              if (calls > 1) {
+                const gate = deferred()
+                held.push(gate.open)
+                await gate.opened
+              }
+              return snapshot
+            },
+          })
+          const unsubscribe = observer.subscribe(() => {})
+          await fetchesSettled(qc)
+          void observer.refetch()
+
+          const handle = createEventHandlers(qc)
+          const placed: Order[] = []
+          for (let i = 0; i < k; i++) {
+            expect(qc.getQueryState(key)?.fetchStatus, `order ${i}: a GET in flight`).toBe(
+              'fetching',
+            )
+            const next = order(`placed-${i}`, status, 1000 + i)
+            committed = [next, ...committed]
+            placed.push(next)
+            handle('order.placed.v1', { order: next })
+
+            const now = qc.getQueryData<Order[]>(key) ?? []
+            expect(now[0]?.id, `order ${i}: heads the list right after its event`).toBe(next.id)
+            for (const p of placed) {
+              expect(
+                now.filter((o) => o.id === p.id).length,
+                `order ${i}: copies of ${p.id}`,
+              ).toBe(1)
+            }
+            // The refetch the event issues once its cancel settles is the GET the next order arrives during.
+            await vi.waitFor(() => expect(qc.getQueryState(key)?.fetchStatus).toBe('fetching'), {
+              interval: 1,
+              timeout: 2000,
+            })
+          }
+
+          held.forEach((open) => open())
+          await fetchesSettled(qc)
+
+          const final = qc.getQueryData<Order[]>(key) ?? []
+          for (const p of placed) {
+            expect(final.filter((o) => o.id === p.id).length, `settled: copies of ${p.id}`).toBe(1)
+          }
+          expect(final, 'settled: the server page').toEqual(committed)
+
+          unsubscribe()
+          qc.clear()
+        },
+      ),
+      { numRuns: 50 },
     )
   })
 })

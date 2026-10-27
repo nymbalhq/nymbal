@@ -6,7 +6,7 @@ import {
   type Page,
 } from '@playwright/test'
 import { expect, test } from '../../support/fixtures'
-import { ADMIN_EMAIL, ADMIN_PASSWORD, signInAsAdmin } from '../../support/admin'
+import { ADMIN_EMAIL, ADMIN_PASSWORD, placeOrder, signInAsAdmin } from '../../support/admin'
 import { API_URL, csrf } from '../../support/csrf'
 import { adminToken, ownProduct, type OwnProduct } from '../../support/checkout'
 
@@ -18,6 +18,8 @@ const { defaultBrowserType: _browser, ...pixel7 } = devices['Pixel 7']
 interface Fixture {
   product: OwnProduct
   orderNumber: string
+  /** Unpaid: its header carries the Record payment button and the status select a paid order lacks. */
+  pendingOrderNumber: string
   customerId: string
   customerEmail: string
 }
@@ -64,7 +66,20 @@ async function seed(request: APIRequestContext): Promise<Fixture> {
     })
     expect(checkout.ok(), `POST /api/checkout: ${await checkout.text()}`).toBe(true)
     const { orderNumber } = ((await checkout.json()) as { data: { orderNumber: string } }).data
-    return { product, orderNumber, customerId: customer.id, customerEmail }
+    // A cart of its own: from the shopper's cart this checkout would supersede the paid order.
+    const guest = await playwrightRequest.newContext()
+    try {
+      const pending = await placeOrder(guest)
+      return {
+        product,
+        orderNumber,
+        pendingOrderNumber: pending.orderNumber,
+        customerId: customer.id,
+        customerEmail,
+      }
+    } finally {
+      await guest.dispose()
+    }
   } finally {
     await shopper.dispose()
   }
@@ -96,7 +111,7 @@ async function widths(page: Page): Promise<{ scrollWidth: number; innerWidth: nu
 test.describe('Admin at Pixel 7', () => {
   test.use(pixel7)
 
-  test('AC-2: dashboard, orders, order detail, products, product detail, new product, inventory, customers and customer detail are each no wider than the viewport', async ({
+  test('AC-2: dashboard, orders, a paid and a pending order detail, products, product detail, new product, inventory, customers and customer detail are each no wider than the viewport', async ({
     page,
     request,
   }) => {
@@ -128,6 +143,14 @@ test.describe('Admin at Pixel 7', () => {
         path: `orders/${encodeURIComponent(seeded.orderNumber)}`,
         ready: () =>
           expect(page.getByTestId('admin-order-detail')).toContainText(seeded.orderNumber),
+      },
+      {
+        name: 'pending order detail',
+        path: `orders/${encodeURIComponent(seeded.pendingOrderNumber)}`,
+        ready: () =>
+          expect(
+            page.getByTestId('admin-order-detail').getByRole('button', { name: 'Record payment' }),
+          ).toBeVisible(),
       },
       {
         name: 'products',

@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isAuthenticated } from '@/lib/auth'
 import { createSseClient } from '@/lib/sse'
-import { createEventHandlers, useEventTicker, type DomainEvent } from '@/realtime/handlers'
+import {
+  createEventHandlers,
+  resyncLiveQueries,
+  useEventTicker,
+  type DomainEvent,
+} from '@/realtime/handlers'
 
 interface RealtimeProviderProps {
   children: React.ReactNode
@@ -41,10 +46,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
     const handleEvent = createEventHandlers(queryClient)
 
-    const sseClient = createSseClient((type, payload) => {
-      handleEvent(type, payload)
-      pushEvent(type, getTickerLabel({ type, payload } as DomainEvent))
-    })
+    const sseClient = createSseClient(
+      (type, payload) => {
+        handleEvent(type, payload)
+        pushEvent(type, getTickerLabel({ type, payload } as DomainEvent))
+      },
+      { onConnected: () => void resyncLiveQueries(queryClient) },
+    )
 
     clientRef.current = sseClient
     sseClient.connect()

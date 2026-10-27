@@ -245,8 +245,8 @@ export function OrderDetailPage() {
   return (
     <div className="space-y-4" data-testid={tid('order', 'detail')}>
       {/* Back + header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             to="/orders"
             className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 transition-colors"
@@ -258,7 +258,7 @@ export function OrderDetailPage() {
           <h1 className="font-mono text-base font-semibold text-zinc-900">#{order.orderNumber}</h1>
           <OrderStatusBadge status={order.status} data-testid={tid('order', 'status-badge')} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {resendResult !== null && (
             <span
               role="status"
@@ -320,7 +320,7 @@ export function OrderDetailPage() {
       </div>
 
       {/* Order date + status select */}
-      <div className="flex items-center gap-4 text-sm text-zinc-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-500">
         <span className="flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5" />
           Placed {formatDate(order.createdAt)}
