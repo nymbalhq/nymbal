@@ -68,12 +68,16 @@ function includeGlobs(): string[] {
 
 const exec = promisify(execFile)
 
-async function cli(cwd: string, args: string[]): Promise<{ code: number; output: string }> {
+async function cli(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<{ code: number; output: string }> {
   try {
     const { stdout, stderr } = await exec(TSX, [SCRIPT, ...args], {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, GATE_BASE: '' },
+      env: { ...process.env, GATE_BASE: '', ...env },
     })
     return { code: 0, output: `${stdout}\n${stderr}`.trim() }
   } catch (error) {
@@ -324,6 +328,21 @@ describe('AC-2: check --static against the integration config and ratchet', () =
     expect(aimedElsewhere(printed), `report at ${REPORT_PATH}`).toEqual([])
     expect(output.split('\n').filter((l) => l.startsWith('no unit test file'))).toEqual([])
     expect(readFileSync(join(dir, UNIT_RATCHET), 'utf8')).toBe(unitBefore)
+  })
+
+  it('AC-2: GATE_BASE in the env is not a base for the integration check: with one that resolves nowhere it exits 0 and prints what it prints with none', async () => {
+    const dir = gitScratch(Object.fromEntries(SET.map((p, i) => [p, 60 + i])))
+    const unset = await cli(dir, ['check', '--static', ...INTEGRATION])
+    const unresolvable = await cli(dir, ['check', '--static', ...INTEGRATION], {
+      GATE_BASE: '0000000000000000000000000000000000000000',
+    })
+    expect(unset.code, unset.output).toBe(0)
+    expect(unresolvable.code, unresolvable.output).toBe(0)
+    expect(unresolvable.output).not.toMatch(/--base .* does not resolve/)
+    // Node's own warnings carry the process id.
+    const own = (output: string): string[] =>
+      output.split('\n').filter((l) => !/^\((node:\d+|Use `node)/.test(l))
+    expect(own(unresolvable.output)).toEqual(own(unset.output))
   })
 })
 

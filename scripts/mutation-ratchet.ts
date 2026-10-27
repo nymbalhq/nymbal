@@ -8,9 +8,10 @@ import { mutateSet, strykerConfig } from './gate'
 // The mutation ratchet: mutation-ratchet.json records each mutated file's best Stryker score, and a run that scores a
 // file below its entry fails. `check` runs in gate:full after Stryker and `check --static` (entries against the
 // mutate set, no report) in the plain gate; `update` raises entries and never lowers one: with `--total` every
-// file, otherwise only the files changed since the base (`--base`, GATE_BASE, origin/dev) or named by `--files`,
-// and files with no entry yet. `--config` names another Stryker config and `--ratchet` its own ratchet file
-// (stryker.integration.config.mjs and mutation-ratchet.integration.json): the mutate set and the remedies follow them.
+// file, otherwise only the files changed since the base (`--base`, GATE_BASE for the default config only,
+// origin/dev) or named by `--files`, and files with no entry yet. `--config` names another Stryker config and
+// `--ratchet` its own ratchet file (stryker.integration.config.mjs and mutation-ratchet.integration.json): the mutate
+// set and the remedies follow them.
 // Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100. A file
 // whose detected mutants all timed out, none killed, is unmeasured: nothing shows a test saw any of them, so it
 // scores 0 (it scored 100 before 2026-10-25), and `update` records that 0 over an entry that was never a measurement.
@@ -409,7 +410,7 @@ async function main(argv: string[]): Promise<number> {
       command: { type: 'string', default: DEFAULT_COMMAND },
       static: { type: 'boolean', default: false },
       files: { type: 'string' },
-      base: { type: 'string', default: process.env['GATE_BASE'] },
+      base: { type: 'string' },
     },
   })
   const [subcommand] = positionals
@@ -425,7 +426,10 @@ async function main(argv: string[]): Promise<number> {
   }
   const ratchet = values.ratchet ?? DEFAULT_RATCHET
   const ratchetPath = resolve(ratchet)
-  const base = values.base === undefined || values.base === '' ? undefined : values.base
+  // GATE_BASE is the unit ratchet's base in CI; another config's run takes a base only as an explicit --base.
+  const given =
+    values.base ?? (values.config === DEFAULT_CONFIG ? process.env['GATE_BASE'] : undefined)
+  const base = given === undefined || given === '' ? undefined : given
   const to = await target(values.config, ratchet)
   if (subcommand === 'check' && values.static) return staticCheck(ratchetPath, base, to)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
