@@ -297,9 +297,12 @@ jobs:
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
       # Instrumented code runs three to four times slower on the runner than in the gate, so every project's own
       # timeouts scale here (vitest.config.ts): a test that only times out under coverage is not a failure.
+      # tooling-slow runs a nested Vitest on a copy of the work tree, so it covers none of the repo's code and needs
+      # the full history this shallow checkout lacks; the gate job runs it.
       - name: Coverage (reported, not a gate)
         env:
           NYMBAL_TEST_TIMEOUT_SCALE: '4'
+          NYMBAL_VITEST_SKIP_PROJECTS: tooling-slow
         run: |
           rm -rf coverage reports/coverage-tests.json
           status=0
