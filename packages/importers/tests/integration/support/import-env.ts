@@ -15,7 +15,6 @@ import {
   createAuthService,
   createOrderService,
   createNativeReviewsAdapter,
-  createNativeAiAdapter,
   createNativeSearchAdapter,
   createLogger,
   rawClients,
@@ -152,10 +151,15 @@ export async function buildImportEnv() {
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
   ).publisher
   const reviews = createNativeReviewsAdapter({ repos, logger })
-  const ai = createNativeAiAdapter(logger)
   // The native search adapter is SQL over the command store's own database.
   const search = createNativeSearchAdapter({ sql: rawClients(commandStore), logger })
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const category = createCategoryService({ repos, publisher, logger })
   const auth = createAuthService({
     repos,
@@ -178,7 +182,7 @@ export async function buildImportEnv() {
     commandStore,
     repos,
     services,
-    adapters: { ai, reviews },
+    adapters: { ai: null, reviews },
     async close() {
       await eventBus.close()
       await documentStore.close()

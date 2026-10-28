@@ -45,6 +45,7 @@ class FakeEventSource {
     for (const listener of this.listeners.get(name) ?? []) listener(event)
     if (name === 'message') this.onmessage?.(event)
     if (name === 'error') this.onerror?.(event)
+    if (name === 'open') this.onopen?.(event)
   }
 }
 
@@ -196,5 +197,90 @@ describe('AC-2: named SSE events decoded', () => {
       },
     ])
     client.disconnect()
+  })
+})
+
+describe('AC-2: onConnected marks each connection the server confirms', () => {
+  /** Steps the backoff clock until the client has opened `n` connections; fails after 60 s. */
+  async function awaitConnection(n: number): Promise<void> {
+    await vi.advanceTimersByTimeAsync(0)
+    let waited = 0
+    while (FakeEventSource.instances.length < n && waited < 60_000) {
+      await vi.advanceTimersByTimeAsync(250)
+      waited += 250
+    }
+    expect(FakeEventSource.instances.length, `connection ${n} within 60 s`).toBe(n)
+  }
+
+  // What the server sends once its subscription is live (packages/platform/src/routes/events-sse.ts).
+  const connectedFrame = () => JSON.stringify({ at: '2026-10-27T10:00:00.000Z' })
+
+  it('AC-2: onConnected runs once per `connected` frame across k reconnects, never on open alone or on a refused ticket, and domain events still reach onEvent unchanged (property)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    // One entry per connection: true, the server confirms it; false, it refuses the ticket with an error frame.
+    const attemptsArb = fc
+      .array(fc.boolean(), { minLength: 3, maxLength: 7 })
+      .filter((a) => a.includes(false) && a.filter(Boolean).length >= 2)
+
+    await fc.assert(
+      fc.asyncProperty(
+        attemptsArb,
+        fc.constantFrom(...STANDARD_EVENT_TYPES),
+        payloadArb,
+        async (attempts, type, payload) => {
+          stubNetwork()
+          let connectedCalls = 0
+          const received: Array<{ type: string; payload: unknown }> = []
+          const client = createSseClient(
+            (t, p) => {
+              received.push({ type: t, payload: p })
+            },
+            {
+              onConnected: () => {
+                connectedCalls += 1
+              },
+            },
+          )
+          client.connect()
+          await awaitConnection(1)
+
+          let confirmed = 0
+          for (const [i, accepted] of attempts.entries()) {
+            const source = FakeEventSource.instances.at(-1)!
+            const last = i === attempts.length - 1
+            source.emit('open', '')
+            expect(connectedCalls, `attempt ${i}: open alone`).toBe(confirmed)
+
+            // The server confirms the subscription, or refuses the ticket with an error frame and closes.
+            source.emit(
+              accepted ? 'connected' : 'error',
+              accepted ? connectedFrame() : JSON.stringify({ code: 'ticket.forbidden' }),
+            )
+            confirmed += accepted ? 1 : 0
+            expect(connectedCalls, `attempt ${i}: ${accepted ? 'confirmed' : 'refused'}`).toBe(
+              confirmed,
+            )
+
+            const before = received.length
+            if (accepted) source.emit(type, frame(type, payload))
+            expect(received.length, `attempt ${i}: domain events`).toBe(before + (accepted ? 1 : 0))
+            expect(connectedCalls, `attempt ${i}: after a domain event`).toBe(confirmed)
+
+            // A confirmed stream drops (the API restarts); either way the client opens a new one.
+            if (accepted && !last) source.emit('error', '')
+            if (!last) await awaitConnection(i + 2)
+          }
+
+          expect(connectedCalls).toBe(attempts.filter(Boolean).length)
+          expect(received).toEqual(
+            attempts
+              .filter(Boolean)
+              .map(() => ({ type, payload: JSON.parse(JSON.stringify(payload)) as unknown })),
+          )
+          client.disconnect()
+        },
+      ),
+      { numRuns: 25 },
+    )
   })
 })

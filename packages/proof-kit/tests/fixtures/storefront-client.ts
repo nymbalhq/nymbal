@@ -16,6 +16,7 @@ export function storefrontClient(baseUrl: string) {
     method: string,
     path: string,
     body?: unknown,
+    extraHeaders: Record<string, string> = {},
   ): Promise<StorefrontResponse<T>> {
     const headers: Record<string, string> = { accept: 'application/json' }
     if (jar.size > 0) {
@@ -24,6 +25,7 @@ export function storefrontClient(baseUrl: string) {
     const csrf = jar.get(CSRF_COOKIE)
     if (csrf !== undefined) headers[CSRF_HEADER] = csrf
     if (body !== undefined) headers['content-type'] = 'application/json'
+    Object.assign(headers, extraHeaders)
     const res = await fetch(new URL(path, baseUrl), {
       method,
       headers,

@@ -1,3 +1,4 @@
+// Reads: packages/**, tests/**, apps/**, templates/**, scripts/**
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -112,12 +113,12 @@ function specifiers(source: string): string[] {
 const scratch = mkdtempSync(join(tmpdir(), 'contracts-runner-counts-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
-/** `vitest list` for one project's files: each file's collected case count, and the run's output when it failed. */
-function collected(
-  project: string,
-  files: string[],
-): { counts: Map<string, number>; output: string } {
-  const out = join(scratch, `${project}.json`)
+/** One `vitest list` over every project's files: each file's collected case count, and the run's output tail. */
+function collected(byProject: Record<string, string[]>): {
+  counts: Map<string, number>
+  output: string
+} {
+  const out = join(scratch, 'list.json')
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     // Collection reaches no service; the store suites only need the variables present to load.
@@ -128,13 +129,13 @@ function collected(
     NYMBAL_TEST_S3_ENDPOINT: process.env['NYMBAL_TEST_S3_ENDPOINT'] ?? 'http://127.0.0.1:1',
   }
   for (const key of Object.keys(env)) if (key.startsWith('VITEST')) delete env[key]
+  const files = Object.values(byProject).flat()
   const run = spawnSync(
     process.execPath,
     [
       join(REPO_ROOT, 'node_modules', 'vitest', 'vitest.mjs'),
       'list',
-      '--project',
-      project,
+      ...Object.keys(byProject).flatMap((project) => ['--project', project]),
       `--json=${out}`,
       ...files,
     ],
@@ -191,22 +192,21 @@ describe('AC-2: the suites live in the package, and every runner runs them', () 
   })
 
   it('AC-2: each runner collects at least as many cases as at 45a48d6', () => {
-    const lower: string[] = []
-    let now = 0
-    let then = 0
-    const outputs: string[] = []
-    for (const [project, files] of Object.entries(BASE_COUNTS)) {
-      const { counts, output } = collected(project, Object.keys(files))
-      outputs.push(output)
-      for (const [file, baseCount] of Object.entries(files)) {
-        const count = counts.get(file) ?? 0
-        now += count
-        then += baseCount
-        if (count < baseCount) lower.push(`${file}: ${count} cases, ${baseCount} at the base`)
-      }
-    }
+    const { counts, output } = collected(
+      Object.fromEntries(
+        Object.entries(BASE_COUNTS).map(([project, files]) => [project, Object.keys(files)]),
+      ),
+    )
+    const base = Object.values(BASE_COUNTS).flatMap((files) => Object.entries(files))
+    const lower = base
+      .filter(([file, baseCount]) => (counts.get(file) ?? 0) < baseCount)
+      .map(
+        ([file, baseCount]) => `${file}: ${counts.get(file) ?? 0} cases, ${baseCount} at the base`,
+      )
 
-    expect(lower, outputs.join('\n')).toEqual([])
-    expect(now).toBeGreaterThanOrEqual(then)
-  }, 180_000)
+    expect(lower, output).toEqual([])
+    expect(base.reduce((sum, [file]) => sum + (counts.get(file) ?? 0), 0)).toBeGreaterThanOrEqual(
+      base.reduce((sum, [, baseCount]) => sum + baseCount, 0),
+    )
+  }, 120_000)
 })

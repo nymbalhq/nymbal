@@ -10,8 +10,33 @@ import type {
 import type { CustomerProfile } from '../domain/customer.js'
 import type { Review, ReviewModerationStatus, AggregateRating } from '../domain/review.js'
 
+/** A webhook request's headers, names lower-cased. */
+export type WebhookHeaders = Record<string, string | string[] | undefined>
+
+/** One event a webhook delivery carries; the kernel builds its envelope (id, source, correlation). */
+export interface WebhookEventDraft {
+  type: string
+  payload: Record<string, unknown>
+}
+
+export interface WebhookDelivery {
+  verified: boolean
+  /** The provider's id for this delivery: what makes a retry of it a replay. */
+  deliveryId: string
+  events: WebhookEventDraft[]
+}
+
 export interface CommerceAdapter extends AdapterBase {
   readonly providerName: string
+  /**
+   * Takes a delivery to `POST /api/webhooks/<providerName>`: verifies its signature over `rawBody` (from whichever
+   * header the provider signs in) and returns its events. The same bytes must give the same `deliveryId` and the same
+   * events, so a provider's retry is processed once. Each event's type is `<providerName>.<event>.v<n>` (lower-case
+   * words, `_` allowed), is listed in `producesEvents`, and its payload is a plain JSON object; a delivery breaking
+   * this is refused whole. A kernel namespace (`order`, `payment`, ...) is never an adapter's. Not called on a
+   * payments adapter, whose deliveries go through `parseWebhook`.
+   */
+  receiveWebhook?(rawBody: Buffer, headers: WebhookHeaders): Promise<WebhookDelivery>
 }
 
 // --- Payments ---------------------------------------------------------------

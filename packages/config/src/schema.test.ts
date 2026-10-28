@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
@@ -82,5 +83,47 @@ describe('nymbalConfigSchema', () => {
     const cfg = nymbalConfigSchema.parse(input)
     expect(cfg.http.cors.allowedOrigins).toEqual(['https://shop.example.com'])
     expect(cfg.http.cors.credentials).toBe(false)
+  })
+})
+
+// AC-5: the storefront's public URL, which the order-placed email links from. Optional, so every existing config still
+// parses; a URL, kept without a trailing slash so a path joined to it never doubles one.
+describe('AC-5: store.url', () => {
+  const label = fc.stringMatching(/^[a-z][a-z0-9-]{0,10}[a-z0-9]$/)
+  const storeUrl = fc
+    .record({
+      scheme: fc.constantFrom('http', 'https'),
+      host: fc
+        .array(label, { minLength: 1, maxLength: 3 })
+        .map((parts) => [...parts, 'test'].join('.')),
+      port: fc.option(fc.integer({ min: 1024, max: 65_535 }), { nil: undefined }),
+      path: fc.array(fc.stringMatching(/^[a-z0-9]{1,8}$/), { maxLength: 2 }),
+    })
+    .map(
+      ({ scheme, host, port, path }) =>
+        `${scheme}://${host}${port === undefined ? '' : `:${port}`}${path.map((p) => `/${p}`).join('')}`,
+    )
+
+  const withStore = (store: Record<string, unknown>): NymbalConfigInput => {
+    const cfg = baseConfig()
+    return { ...cfg, store: { ...cfg.store, ...store } } as NymbalConfigInput
+  }
+
+  it('AC-5: property: a config with no store.url parses with none; one with a URL parses to that URL whether or not it ends in /, and with no trailing /', () => {
+    expect(nymbalConfigSchema.parse(baseConfig()).store.url).toBeUndefined()
+    fc.assert(
+      fc.property(storeUrl, fc.boolean(), (url, slash) => {
+        const parsed = nymbalConfigSchema.parse(withStore({ url: slash ? `${url}/` : url }))
+        expect(parsed.store.url).toBe(url)
+        expect(parsed.store.url?.endsWith('/')).toBe(false)
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it("AC-5: store.url 'shop' is refused, naming store.url", () => {
+    const result = nymbalConfigSchema.safeParse(withStore({ url: 'shop' }))
+    const paths = result.success ? [] : result.error.issues.map((i) => i.path.join('.'))
+    expect([result.success, paths]).toEqual([false, ['store.url']])
   })
 })

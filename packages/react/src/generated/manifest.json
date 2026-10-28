@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-22T22:35:56.356Z",
-  "sourceHash": "82de9bec3e028025",
+  "generatedAt": "2026-10-25T10:08:13.903Z",
+  "sourceHash": "ed3423c312d5e1f6",
   "components": [
     "AddToCart",
     "AddressBook",
@@ -13,7 +13,9 @@
     "ImageGallery",
     "LoginForm",
     "MiniCart",
+    "NotifyMe",
     "OrderSummary",
+    "OrderTimeline",
     "PaymentElement",
     "ProductCard",
     "ProductFilter",
@@ -21,6 +23,7 @@
     "ProductPrice",
     "ProfileForm",
     "QuantitySelector",
+    "RecentlyViewed",
     "RegisterForm",
     "ReviewForm",
     "ReviewList",

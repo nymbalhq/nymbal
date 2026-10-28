@@ -1,10 +1,11 @@
 import type {
+  AlertKind,
   Cart,
   Customer,
   CustomerAddress,
-  Order,
   ReviewsResult,
   ReviewResult,
+  ShopperOrder,
   StoreCapabilities,
 } from '@nymbalhq/types'
 import type {
@@ -25,6 +26,11 @@ export interface CommerceAdapter {
   /** What the store can do (GET /api/capabilities); an adapter without it cannot tell the storefront. */
   capabilities?: {
     get(): Promise<StoreCapabilities>
+  }
+  /** The shopper's recently viewed products; an adapter without it shows none. */
+  recentlyViewed?: {
+    record(productId: string): Promise<void>
+    list(): Promise<{ items: DenormalisedProduct[] }>
   }
   cart: {
     get(): Promise<Cart>
@@ -54,7 +60,8 @@ export interface CommerceAdapter {
     addAddress(address: NewAddress): Promise<CustomerAddress>
     removeAddress(id: string): Promise<void>
     listOrders(params?: { cursor?: string }): Promise<OrderPage>
-    getOrder(orderNumber: string): Promise<Order>
+    /** `key` is the order's key from its checkout, for a reader with no session. */
+    getOrder(orderNumber: string, options?: { key?: string }): Promise<ShopperOrder>
   }
   reviews: {
     getForProduct(
@@ -67,5 +74,16 @@ export interface CommerceAdapter {
       title: string
       body: string
     }): Promise<ReviewResult>
+  }
+  alerts: {
+    /**
+     * Asks to be emailed when a variant is back; the store mails a confirmation first. The answer is `pending` whether
+     * or not the address has an account or an alert already.
+     */
+    subscribe(request: {
+      email: string
+      variantId: string
+      kind: AlertKind
+    }): Promise<{ status: 'pending' }>
   }
 }

@@ -1,3 +1,4 @@
+// Reads: scripts/e2e-server.mjs, tests/e2e/playwright.config.ts
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import {
   copyFileSync,

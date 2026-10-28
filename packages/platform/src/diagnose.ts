@@ -34,6 +34,7 @@ import {
 import { migrationState } from './db/migrate.js'
 import { createLogger } from './logger.js'
 import { buildDocumentStore, buildEventBus, buildMedia, redisUrlOf } from './platform.js'
+import { createEventLogRepository } from './repositories/event-log.js'
 import { buildRepositories, type SettingRow } from './repositories/index.js'
 import { listStoredSettings, settingValues } from './settings/load.js'
 import type { SettingValue } from './settings/resolve.js'
@@ -413,6 +414,13 @@ export async function diagnose(
     }
   }
 
+  const eventsCheck: DiagnosisCheck =
+    commandStore === undefined
+      ? { name: 'events', status: 'down', detail: notChecked('command store') }
+      : migrationsCheck.status !== 'ok'
+        ? { name: 'events', status: 'down', detail: notChecked('migrations') }
+        : await eventLogCheck(commandStore, timeoutMs)
+
   for (const close of closers) {
     const closed = await within(timeoutMs, close)
     if (!closed.ok) logger.debug({ detail: closed.detail }, 'diagnose: a connection did not close')
@@ -428,11 +436,39 @@ export async function diagnose(
     migrationsCheck,
     ...slots,
     ...primitives,
+    eventsCheck,
   ].map((check) => ({
     ...check,
     detail: scrub(secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail)),
   }))
   return { checks }
+}
+
+/** How many events show when some are dead; the rest are counted. */
+const DEAD_SHOWN = 5
+
+/** The event log's dead events, the oldest first, and how many wait for a retry: read only. */
+async function eventLogCheck(store: CommandStore, timeoutMs: number): Promise<DiagnosisCheck> {
+  const eventLog = createEventLogRepository(store)
+  const read = await within(timeoutMs, () =>
+    store.read(async (tx) => ({
+      dead: await eventLog.countDead(tx),
+      shown: await eventLog.listDead(tx, DEAD_SHOWN),
+      waiting: await eventLog.countRetrying(tx),
+    })),
+  )
+  if (!read.ok) return { name: 'events', status: 'down', detail: read.detail }
+  const { dead, shown, waiting } = read.value
+  if (dead === 0) {
+    return { name: 'events', status: 'ok', detail: `none dead, ${waiting} waiting to retry` }
+  }
+  const named = shown.map((e) => `seq ${e.seq} ${e.event.type} ${e.event.id}`)
+  if (dead > shown.length) named.push(`${dead - shown.length} more`)
+  return {
+    name: 'events',
+    status: 'degraded',
+    detail: `${dead} dead: ${named.join(', ')}; ${waiting} waiting to retry`,
+  }
 }
 
 function fromReport(name: string, what: string, report: HealthReport): DiagnosisCheck {

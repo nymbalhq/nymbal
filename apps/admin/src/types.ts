@@ -25,6 +25,13 @@ export interface RefundAnswer {
   refund: OrderRefund
 }
 
+/** POST /api/admin/orders/:id/resend-confirmation: the email is queued, not yet sent. */
+export interface ResendConfirmationAnswer {
+  orderId: string
+  orderNumber: string
+  email: string
+}
+
 export interface CustomerStats {
   orderCount: number
   lifetimeRevenueMinor: number

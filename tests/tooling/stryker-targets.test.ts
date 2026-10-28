@@ -1,3 +1,4 @@
+// Reads: stryker.config.mjs, vitest.stryker.config.ts
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

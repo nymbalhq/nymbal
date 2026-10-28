@@ -1,7 +1,18 @@
+import fc from 'fast-check'
 import { describe, it, expect } from 'vitest'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
+import { buildOrderDoc, orderWrites, type OrderDoc } from '../read-models/builders.js'
 import { registerOrderRoutes } from './orders.js'
-import type { HttpAdapter, RouteHandler, RequestContext } from '@nymbalhq/types'
+import {
+  documentValueAt,
+  type HttpAdapter,
+  type Order,
+  type OrderHistoryEntry,
+  type OrderStatus,
+  type ResponseEnvelope,
+  type RouteHandler,
+  type RequestContext,
+} from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 
 function makeAdapter() {
@@ -23,6 +34,7 @@ function makeAdapter() {
     options: {
       params?: Record<string, string>
       auth?: RequestContext['auth']
+      headers?: Record<string, string>
     } = {},
   ) {
     const handler = routes.get(`${method}:${path}`)
@@ -34,14 +46,20 @@ function makeAdapter() {
       params: options.params ?? {},
       query: {},
       body: null,
-      headers: {},
+      headers: options.headers ?? {},
       cookies: {},
       ...(options.auth !== undefined && { auth: options.auth }),
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -50,8 +68,16 @@ function makeAdapter() {
   return { adapter, invoke }
 }
 
-function makeOrderService(): OrderService {
-  return {} as unknown as OrderService
+/** The keys that open each order, by order id: `keyOpens` answers true for those and nothing else. */
+function makeOrderService(
+  opens: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
+): OrderService {
+  const access: Pick<OrderService, 'keyOpens'> = {
+    async keyOpens(orderId: string, key: string) {
+      return opens.get(orderId)?.has(key) ?? false
+    },
+  }
+  return access as unknown as OrderService
 }
 
 describe('GET /api/orders', () => {
@@ -64,75 +90,46 @@ describe('GET /api/orders', () => {
     expect(resp.status).toBe(401)
   })
 
-  it('returns empty list when no orders exist for customer', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
+  it('lists exactly the signed-in customer’s orders, none of another’s, over generated orders across three customers', async () => {
+    const customers = ['cust-1', 'cust-2', 'cust-3']
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.constantFrom(...customers), { maxLength: 10 }),
+        async (owners) => {
+          const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+          for (const [i, customerId] of owners.entries()) {
+            const orderNumber = `NYM-${String(i).padStart(3, '0')}`
+            await documentStore.put('orders-by-customer', `customer:${customerId}#${orderNumber}`, {
+              partitionKey: `customer:${customerId}`,
+              sortKey: orderNumber,
+              orderNumber,
+              customerId,
+              totalMinor: 1000 * (i + 1),
+              currency: 'GBP',
+            })
+          }
+          const { adapter, invoke } = makeAdapter()
+          registerOrderRoutes(adapter, makeOrderService(), documentStore)
 
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: unknown[] }
-    expect(body.data).toHaveLength(0)
-  })
-
-  it('returns only orders belonging to the authenticated customer', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('orders-by-customer', 'customer:cust-1#NYM-001', {
-      partitionKey: 'customer:cust-1',
-      sortKey: 'NYM-001',
-      orderNumber: 'NYM-001',
-      customerId: 'cust-1',
-      totalMinor: 5000,
-      currency: 'GBP',
-    })
-    await documentStore.put('orders-by-customer', 'customer:cust-2#NYM-002', {
-      partitionKey: 'customer:cust-2',
-      sortKey: 'NYM-002',
-      orderNumber: 'NYM-002',
-      customerId: 'cust-2',
-      totalMinor: 3000,
-      currency: 'GBP',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Array<{ orderNumber: string }> }
-    expect(body.data).toHaveLength(1)
-    expect(body.data[0]?.orderNumber).toBe('NYM-001')
-  })
-
-  it('response is wrapped in { data, meta } envelope', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders', {
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    const body = resp.body as Record<string, unknown>
-    expect('data' in body).toBe(true)
+          for (const customerId of customers) {
+            const resp = await invoke('GET', '/api/orders', {
+              auth: { userId: customerId, roles: ['customer'] },
+            })
+            expect(resp.status).toBe(200)
+            const listed = (resp.body as { data: Array<{ orderNumber: string }> }).data
+            const theirs = owners.flatMap((owner, i) =>
+              owner === customerId ? [`NYM-${String(i).padStart(3, '0')}`] : [],
+            )
+            expect(listed.map((o) => o.orderNumber).sort(), customerId).toEqual(theirs.sort())
+          }
+        },
+      ),
+      { numRuns: 25 },
+    )
   })
 })
 
 describe('GET /api/orders/:orderNumber', () => {
-  it('returns 400 when orderNumber param is missing', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders/:orderNumber', { params: { orderNumber: '' } })
-    expect(resp.status).toBe(400)
-    const body = resp.body as { error: { code: string } }
-    expect(body.error.code).toBe('orders.invalid')
-  })
-
   it('returns 404 when order does not exist', async () => {
     const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
     const { adapter, invoke } = makeAdapter()
@@ -142,46 +139,6 @@ describe('GET /api/orders/:orderNumber', () => {
       params: { orderNumber: 'NYM-MISSING' },
     })
     expect(resp.status).toBe(404)
-  })
-
-  it('returns order document when it exists', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('orders', 'NYM-001', {
-      orderNumber: 'NYM-001',
-      customerId: null,
-      totalMinor: 2000,
-      currency: 'GBP',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders/:orderNumber', {
-      params: { orderNumber: 'NYM-001' },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: { orderNumber: string; totalMinor: number } }
-    expect(body.data.orderNumber).toBe('NYM-001')
-    expect(body.data.totalMinor).toBe(2000)
-  })
-
-  it('returns 403 when authenticated user tries to access another customers order', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('orders', 'NYM-002', {
-      orderNumber: 'NYM-002',
-      customerId: 'cust-2',
-      totalMinor: 3000,
-      currency: 'GBP',
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
-
-    const resp = await invoke('GET', '/api/orders/:orderNumber', {
-      params: { orderNumber: 'NYM-002' },
-      auth: { userId: 'cust-1', roles: ['customer'] },
-    })
-    expect(resp.status).toBe(403)
   })
 
   it('allows authenticated user to access their own order', async () => {
@@ -204,22 +161,368 @@ describe('GET /api/orders/:orderNumber', () => {
     const body = resp.body as { data: { orderNumber: string } }
     expect(body.data.orderNumber).toBe('NYM-003')
   })
+})
 
-  it('allows unauthenticated access for guest orders (no customerId)', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('orders', 'NYM-004', {
-      orderNumber: 'NYM-004',
-      customerId: null,
-      totalMinor: 1500,
-      currency: 'GBP',
-    })
+const STATUSES: OrderStatus[] = [
+  'pending',
+  'confirmed',
+  'processing',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'refunded',
+  'partially_refunded',
+]
+/** Paths a shopper's order never carries: checkout's cart and stock bookkeeping, import provenance, store keys, the status history. */
+const INTERNAL_PATHS = [
+  'metadata.cartToken',
+  'metadata.reservationIds',
+  'metadata.correlationId',
+  'metadata.woocommerce',
+  'partitionKey',
+  'sortKey',
+  'history',
+] as const
 
-    const { adapter, invoke } = makeAdapter()
-    registerOrderRoutes(adapter, makeOrderService(), documentStore)
+/** Every order field the storefront templates and elements read. */
+const READ_FIELDS = [
+  'id',
+  'orderNumber',
+  'status',
+  'email',
+  'createdAt',
+  'currency',
+  'lineItems',
+  'billingAddress',
+  'shippingAddress',
+  'subtotalMinor',
+  'taxTotalMinor',
+  'shippingTotalMinor',
+  'discountTotalMinor',
+  'totalMinor',
+] as const
 
-    const resp = await invoke('GET', '/api/orders/:orderNumber', {
-      params: { orderNumber: 'NYM-004' },
-    })
-    expect(resp.status).toBe(200)
+const CREATED = '2026-10-01T09:00:00.000Z'
+const ADDRESS = {
+  firstName: 'Ada',
+  lastName: 'Buyer',
+  addressLine1: '1 Main St',
+  city: 'London',
+  region: 'England',
+  postalCode: 'E1 6AN',
+  country: 'GB',
+}
+
+const placed = fc.record({
+  id: fc.uuid(),
+  owner: fc.constantFrom(null, 'cust-1', 'cust-2'),
+  status: fc.constantFrom(...STATUSES),
+  cart: fc.uuid(),
+  reservations: fc.array(fc.uuid(), { minLength: 1, maxLength: 3 }),
+  correlation: fc.option(fc.uuid(), { nil: undefined }),
+  imported: fc.boolean(),
+  intent: fc.option(fc.uuid(), { nil: null }),
+  staff: fc.uuid(),
+  staffNote: fc.uuid(),
+  reason: fc.uuid(),
+  totalMinor: fc.integer({ min: 1, max: 100_000 }),
+})
+
+type Placed = typeof placed extends fc.Arbitrary<infer T> ? T : never
+
+/** The order as checkout and the admin leave it, and the internal values in it, each prefixed so no two collide. */
+function orderOf(p: Placed, i: number): { doc: OrderDoc; secrets: string[] } {
+  const orderNumber = `NYM-${String(i).padStart(4, '0')}`
+  const paid = p.status !== 'pending' && p.status !== 'cancelled'
+  const cartToken = `cart-${p.cart}`
+  const reservationIds = p.reservations.map((r) => `res-${r}`)
+  const correlationId = p.correlation === undefined ? undefined : `corr-${p.correlation}`
+  const paymentIntentId = p.intent === null ? null : `pi_${p.intent}`
+  const staff = `admin:${p.staff}`
+  const staffNote = `note-${p.staffNote}`
+  const reason = `reason-${p.reason}`
+  const order: Order = {
+    id: p.id,
+    orderNumber,
+    sequence: i,
+    customerId: p.owner,
+    status: p.status,
+    email: `shopper-${i}@orders.test`,
+    billingAddress: ADDRESS,
+    shippingAddress: ADDRESS,
+    lineItems: [
+      {
+        variantId: 'v-1',
+        productId: 'p-1',
+        productName: 'Widget',
+        variantName: 'Default',
+        sku: 'W-1',
+        qty: 1,
+        unitPriceMinor: p.totalMinor,
+        lineSubtotalMinor: p.totalMinor,
+        lineTaxMinor: 0,
+        lineTotalMinor: p.totalMinor,
+        imageUrl: '',
+      },
+    ],
+    subtotalMinor: p.totalMinor,
+    taxTotalMinor: 0,
+    shippingTotalMinor: 0,
+    discountTotalMinor: 0,
+    totalMinor: p.totalMinor,
+    currency: 'GBP',
+    notes: JSON.stringify([{ body: staffNote, actor: staff, at: CREATED }]),
+    metadata: {
+      cartToken,
+      reservationIds,
+      ...(correlationId !== undefined && { correlationId }),
+      ...(p.imported && { woocommerce: { orderId: 41, paymentMethod: 'cod' } }),
+    },
+    paymentIntentId,
+    capturedMinor: paid ? p.totalMinor : 0,
+    capturedAt: paid ? CREATED : null,
+    refundedMinor: 0,
+    captureMethod: paid ? 'provider' : null,
+    createdAt: CREATED,
+    updatedAt: CREATED,
+  }
+  const history: OrderHistoryEntry[] = [
+    {
+      id: `h-${i}-0`,
+      orderId: p.id,
+      fromStatus: null,
+      toStatus: 'pending',
+      actor: 'system:checkout',
+      note: 'order draft created',
+      timestamp: CREATED,
+    },
+    ...(p.status === 'pending'
+      ? []
+      : [
+          {
+            id: `h-${i}-1`,
+            orderId: p.id,
+            fromStatus: 'pending' as const,
+            toStatus: p.status,
+            actor: staff,
+            note: reason,
+            timestamp: CREATED,
+          },
+        ]),
+  ]
+  const secrets = [cartToken, ...reservationIds, staff, staffNote]
+  if (p.status !== 'pending') secrets.push(reason)
+  if (correlationId !== undefined) secrets.push(correlationId)
+  if (paymentIntentId !== null) secrets.push(paymentIntentId)
+  return { doc: buildOrderDoc(order, history), secrets }
+}
+
+/** The request header a shopper's order key travels in: never a query parameter. */
+const ORDER_KEY_HEADER = 'x-nymbal-order-key'
+const orderKey = fc.stringMatching(/^[A-Za-z0-9_-]{43}$/)
+/** Values that are not an order key: empty, one character short or long, a character outside base64url, prose. */
+const MALFORMED_KEYS = ['', 'a'.repeat(42), 'a'.repeat(44), `${'a'.repeat(42)}=`, 'not a key']
+
+function headerOf(resp: ResponseEnvelope, name: string): string | undefined {
+  return Object.entries(resp.headers ?? {}).find(([k]) => k.toLowerCase() === name)?.[1]
+}
+
+interface Caller {
+  label: string
+  auth?: RequestContext['auth']
+  headers?: Record<string, string>
+}
+
+describe('AC-1: an order is read with a key that opens it or by its owner, and is not found for anyone else', () => {
+  it('AC-1: property: over generated guest and owned orders, GET /api/orders/:orderNumber answers 200 with the order to a key that opens it (with or without a session) and to its owner’s session; no header, a malformed, empty or wrong key, another order’s key, a non-owner’s session, any session on a guest order and an admin session each get 404 with the body of a number no order has; every answer is Cache-Control: no-store', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(placed, { minLength: 2, maxLength: 4, selector: (p) => p.id }),
+        fc.uniqueArray(orderKey, { minLength: 9, maxLength: 9 }),
+        fc.boolean(),
+        async (placements, keys, twoKeys) => {
+          const orders = placements.map(orderOf).map(({ doc }) => doc)
+          // Order i opens with keys[2i] (and keys[2i + 1] when it has two); keys[8] opens nothing.
+          const keysOf = orders.map((_, i) =>
+            twoKeys ? [keys[2 * i]!, keys[2 * i + 1]!] : [keys[2 * i]!],
+          )
+          const strangerKey = keys[8]!
+          const opens = new Map(orders.map((doc, i) => [doc.id, new Set(keysOf[i])]))
+          const service = makeOrderService(opens)
+
+          const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+          for (const doc of orders) {
+            for (const w of orderWrites(doc)) await documentStore.put(w.collection, w.key, w.doc)
+          }
+          const { adapter, invoke } = makeAdapter()
+          registerOrderRoutes(adapter, service, documentStore)
+          // The same route over a store with no orders: what a number no order has gets.
+          const nothing = makeAdapter()
+          registerOrderRoutes(
+            nothing.adapter,
+            service,
+            new InMemoryDocumentStore({ sweepIntervalMs: 0 }),
+          )
+
+          const read = (orderNumber: string, caller: Caller, via = invoke) =>
+            via('GET', '/api/orders/:orderNumber', {
+              params: { orderNumber },
+              ...(caller.auth !== undefined && { auth: caller.auth }),
+              ...(caller.headers !== undefined && { headers: caller.headers }),
+            })
+          const withKey = (key: string) => ({ [ORDER_KEY_HEADER]: key })
+          const admin = { userId: 'admin-1', roles: ['admin'] }
+          const nonOwner = { userId: 'cust-3', roles: ['customer'] }
+
+          for (const [i, doc] of orders.entries()) {
+            const n = doc.orderNumber
+            const owner = doc.customerId
+            const own = keysOf[i]!
+            const otherKeys = keysOf.filter((_, j) => j !== i).flat()
+
+            const denied: Caller[] = [
+              { label: 'no credential' },
+              ...MALFORMED_KEYS.map((key) => ({
+                label: `the malformed key "${key}"`,
+                headers: withKey(key),
+              })),
+              { label: 'a key no order has', headers: withKey(strangerKey) },
+              ...otherKeys.map((key) => ({ label: 'another order’s key', headers: withKey(key) })),
+              owner === null
+                ? {
+                    label: 'a session on a guest order',
+                    auth: { userId: 'cust-1', roles: ['customer'] },
+                  }
+                : { label: 'a signed-in non-owner', auth: nonOwner },
+              { label: 'an admin session', auth: admin },
+            ]
+            const allowed: Caller[] = [
+              ...own.map((key) => ({ label: 'its key', headers: withKey(key) })),
+              ...own.map((key) => ({
+                label: 'its key with a stranger’s session',
+                headers: withKey(key),
+                auth: nonOwner,
+              })),
+              { label: 'its key with an admin session', headers: withKey(own[0]!), auth: admin },
+              ...(owner === null
+                ? []
+                : [{ label: 'its owner’s session', auth: { userId: owner, roles: ['customer'] } }]),
+            ]
+
+            const unknown = await read(n, { label: 'nobody' }, nothing.invoke)
+            expect(unknown.status, `${n}: a number no order has`).toBe(404)
+
+            for (const caller of denied) {
+              const resp = await read(n, caller)
+              const label = `${n} (${owner ?? 'guest'}) read by ${caller.label}`
+              expect(resp.status, label).toBe(404)
+              expect(resp.body, label).toEqual(unknown.body)
+              expect(headerOf(resp, 'cache-control'), label).toBe('no-store')
+            }
+
+            const answers: unknown[] = []
+            for (const caller of allowed) {
+              const resp = await read(n, caller)
+              const label = `${n} (${owner ?? 'guest'}) read by ${caller.label}`
+              expect(resp.status, label).toBe(200)
+              expect(headerOf(resp, 'cache-control'), label).toBe('no-store')
+              const data = (resp.body as { data: OrderDoc }).data
+              expect([data.id, data.orderNumber], label).toEqual([doc.id, n])
+              answers.push(resp.body)
+            }
+            // Whoever is let in reads the same order.
+            for (const body of answers) expect(body, n).toEqual(answers[0])
+            expect(headerOf(unknown, 'cache-control'), `${n}: no order`).toBe('no-store')
+          }
+        },
+      ),
+      { numRuns: 30 },
+    )
+  })
+})
+
+describe('shopper order responses', () => {
+  it('serve no internal field of any order, guest or customer, pending or paid, from GET /api/orders/:orderNumber read with its key or by its owner, or GET /api/orders, and every field the storefront reads unchanged', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uniqueArray(placed, { minLength: 1, maxLength: 6, selector: (p) => p.id }),
+        fc.uniqueArray(orderKey, { minLength: 6, maxLength: 6 }),
+        async (placements, keys) => {
+          const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+          const orders = placements.map(orderOf)
+          for (const { doc } of orders) {
+            for (const w of orderWrites(doc)) await documentStore.put(w.collection, w.key, w.doc)
+          }
+          const { adapter, invoke } = makeAdapter()
+          const opens = new Map(orders.map(({ doc }, i) => [doc.id, new Set([keys[i]!])]))
+          registerOrderRoutes(adapter, makeOrderService(opens), documentStore)
+
+          const served: Array<{ label: string; body: unknown; order: unknown }> = []
+          for (const [i, { doc }] of orders.entries()) {
+            const owner = doc.customerId
+            const reads: Array<{
+              label: string
+              auth?: RequestContext['auth']
+              headers?: Record<string, string>
+            }> = [
+              {
+                label: `${doc.orderNumber} with its key`,
+                headers: { [ORDER_KEY_HEADER]: keys[i]! },
+              },
+              ...(owner === null
+                ? []
+                : [
+                    {
+                      label: `${doc.orderNumber} as ${owner}`,
+                      auth: { userId: owner, roles: ['customer'] },
+                    },
+                  ]),
+            ]
+            for (const { label, auth, headers } of reads) {
+              const resp = await invoke('GET', '/api/orders/:orderNumber', {
+                params: { orderNumber: doc.orderNumber },
+                ...(auth !== undefined && { auth }),
+                ...(headers !== undefined && { headers }),
+              })
+              expect(resp.status, label).toBe(200)
+              served.push({ label, body: resp.body, order: (resp.body as { data: unknown }).data })
+            }
+          }
+          for (const customerId of ['cust-1', 'cust-2']) {
+            const resp = await invoke('GET', '/api/orders', {
+              auth: { userId: customerId, roles: ['customer'] },
+            })
+            expect(resp.status, customerId).toBe(200)
+            const listed = (resp.body as { data: unknown[] }).data
+            expect(listed.length, customerId).toBe(
+              orders.filter((o) => o.doc.customerId === customerId).length,
+            )
+            for (const order of listed)
+              served.push({ label: `GET /api/orders as ${customerId}`, body: resp.body, order })
+          }
+
+          const secrets = orders.flatMap((o) => o.secrets)
+          for (const { label, body, order } of served) {
+            const text = JSON.stringify(body)
+            for (const secret of secrets)
+              expect(text.includes(secret), `${label} carries ${secret}`).toBe(false)
+            for (const path of INTERNAL_PATHS)
+              expect(documentValueAt(order, path), `${label}: ${path}`).toBeUndefined()
+            const o = order as OrderDoc
+            const source = orders.find((x) => x.doc.orderNumber === o.orderNumber)!.doc
+            for (const field of READ_FIELDS)
+              expect(o[field], `${label}: ${field}`).toEqual(source[field])
+            expect(o.timeline, label).toEqual(source.timeline)
+          }
+
+          // The stored document keeps everything: the admin reads it in full.
+          for (const { doc } of orders) {
+            const stored = await documentStore.get<OrderDoc>('orders', doc.orderNumber)
+            expect(stored?.metadata.cartToken).toBe(doc.metadata.cartToken)
+          }
+        },
+      ),
+      { numRuns: 25 },
+    )
   })
 })

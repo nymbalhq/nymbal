@@ -250,6 +250,22 @@ export const orderSequences = pgTable('order_sequences', {
   nextValue: integer('next_value').notNull(),
 })
 
+// The keys that open an order to a shopper with no session: the sha256 hex of each, never the key.
+export const orderAccessKeys = pgTable(
+  'order_access_keys',
+  {
+    id: text('id').primaryKey(),
+    orderId: text('order_id').notNull(),
+    keyHash: text('key_hash').notNull(),
+    purpose: text('purpose', { enum: ['checkout', 'email'] }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    keyHashIdx: uniqueIndex('order_access_keys_key_hash_idx').on(t.keyHash),
+    orderIdx: index('order_access_keys_order_idx').on(t.orderId),
+  }),
+)
+
 // --- Inventory -------------------------------------------------------------
 
 export const inventoryReservations = pgTable(
@@ -354,6 +370,8 @@ export const events = pgTable(
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     attempts: integer('attempts').notNull().default(0),
     deadAt: timestamp('dead_at', { withTimezone: true }),
+    /** A failed event is not handed to the bus again before this. */
+    retryAt: timestamp('retry_at', { withTimezone: true }),
   },
   (t) => ({
     idUnique: uniqueIndex('events_id_unique').on(t.id),
@@ -444,6 +462,48 @@ export const auditEntries = pgTable(
   }),
 )
 
+// --- Alert subscriptions ---------------------------------------------------
+
+/**
+ * One row per address, variant and kind. The confirm token is reissued on each resubscribe; the unsubscribe token is
+ * minted with the row and never changes, so the link in every email ever sent for it keeps working.
+ */
+export const alertSubscriptions = pgTable(
+  'alert_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull(),
+    kind: text('kind').notNull(),
+    variantId: text('variant_id').notNull(),
+    productId: text('product_id').notNull(),
+    status: text('status').notNull(),
+    confirmToken: text('confirm_token').notNull(),
+    unsubscribeToken: text('unsubscribe_token').notNull(),
+    origin: text('origin').notNull(),
+    baselinePriceMinor: integer('baseline_price_minor'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    addressUnique: uniqueIndex('alert_subscriptions_address_unique').on(
+      t.email,
+      t.variantId,
+      t.kind,
+    ),
+    confirmTokenUnique: uniqueIndex('alert_subscriptions_confirm_token_unique').on(t.confirmToken),
+    unsubscribeTokenUnique: uniqueIndex('alert_subscriptions_unsubscribe_token_unique').on(
+      t.unsubscribeToken,
+    ),
+    fanOutIdx: index('alert_subscriptions_fan_out_idx').on(t.variantId, t.kind, t.status),
+    kindCheck: check('alert_subscriptions_kind', sql`${t.kind} IN ('back_in_stock', 'price_drop')`),
+    statusCheck: check(
+      'alert_subscriptions_status',
+      sql`${t.status} IN ('pending', 'active', 'fired', 'unsubscribed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -454,6 +514,7 @@ export const schema = {
   orders,
   orderHistory,
   orderSequences,
+  orderAccessKeys,
   inventoryReservations,
   stockAdjustments,
   reviews,
@@ -462,4 +523,5 @@ export const schema = {
   processedEvents,
   settings,
   auditEntries,
+  alertSubscriptions,
 }

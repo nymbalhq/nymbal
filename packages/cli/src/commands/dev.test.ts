@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseArgs, type ArgsDef } from 'citty'
-import { devCommand, defaultStorefrontPort, preferredStorefrontPort } from './dev.js'
+import fc from 'fast-check'
+import { devCommand, defaultStorefrontPort, devLogLevel, preferredStorefrontPort } from './dev.js'
 
 /**
  * Regression guard for the `nymbal dev --api-only` flag.
@@ -78,6 +79,29 @@ describe('storefront port preference', () => {
     expect(preferredStorefrontPort('astro', undefined, { NYMBAL_STOREFRONT_PORT: '' })).toBe(4321)
     expect(preferredStorefrontPort('astro', undefined, { NYMBAL_STOREFRONT_PORT: 'abc' })).toBe(
       4321,
+    )
+  })
+})
+
+/**
+ * AC-2's level: dev starts at info so it prints the summary and not every projection; `--verbose` asks for debug, and
+ * LOG_LEVEL, when set, wins over both.
+ */
+describe('AC-2: the log level dev starts at', () => {
+  it('AC-2: a non-empty LOG_LEVEL is the level with or without --verbose; with none, --verbose alone picks debug over info', () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.option(fc.oneof(fc.constantFrom('debug', 'trace', 'warn', ''), fc.string()), {
+          nil: undefined,
+        }),
+        (verbose, fromEnv) => {
+          const env = fromEnv === undefined ? {} : { LOG_LEVEL: fromEnv }
+          const expected =
+            fromEnv !== undefined && fromEnv !== '' ? fromEnv : verbose ? 'debug' : 'info'
+          expect(devLogLevel(verbose, env)).toBe(expected)
+        },
+      ),
     )
   })
 })

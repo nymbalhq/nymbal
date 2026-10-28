@@ -63,6 +63,7 @@ function apiClient() {
     method: string,
     path: string,
     body?: unknown,
+    headers: Record<string, string> = {},
   ): Promise<{ status: number; data: T }> {
     const res = await fetch(new URL(path, API_URL), {
       method,
@@ -70,6 +71,7 @@ function apiClient() {
         cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
         'x-csrf-token': csrf,
         ...(body !== undefined && { 'content-type': 'application/json' }),
+        ...headers,
       },
       ...(body !== undefined && { body: JSON.stringify(body) }),
     })
@@ -185,7 +187,7 @@ describe('AC-11: a clean-machine scaffold', () => {
     const added = await api('POST', '/api/cart/items', { variantId, qty })
     expect(added.status, JSON.stringify(added.data)).toBe(200)
 
-    const checkout = await api<{ orderNumber: string }>('POST', '/api/checkout', {
+    const checkout = await api<{ orderNumber: string; orderKey: string }>('POST', '/api/checkout', {
       email: `clean-machine-${randomBytes(4).toString('hex')}@nymbal.dev`,
       billingAddress: address,
       shippingAddress: address,
@@ -198,6 +200,8 @@ describe('AC-11: a clean-machine scaffold', () => {
         const order = await api<{ status: string }>(
           'GET',
           `/api/orders/${checkout.data.orderNumber}`,
+          undefined,
+          { 'x-nymbal-order-key': checkout.data.orderKey },
         )
         expect(order.data?.status).toBe('confirmed')
       },

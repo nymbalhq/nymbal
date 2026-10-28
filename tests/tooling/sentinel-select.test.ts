@@ -1,3 +1,5 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts, tests/sentinels/**
+// Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, packages/*/package.json
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import fc from 'fast-check'

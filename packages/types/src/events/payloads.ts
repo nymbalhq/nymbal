@@ -3,6 +3,7 @@ import type { CustomerAddress } from '../domain/customer.js'
 import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
+import type { AlertKind } from '../alerts.js'
 
 export interface ProductSnapshot extends Product {
   variants: Variant[]
@@ -26,6 +27,33 @@ export interface ProductPublishedV1Payload {
 export interface ProductUnpublishedV1Payload {
   productId: string
   slug: string
+}
+export interface ProductRestockedV1Payload {
+  productId: string
+  variantId: string
+  previousQty: number
+  newQty: number
+}
+/** Prices in `currency`'s minor units; each compare-at price is the stored one, null when the variant has none. */
+export interface ProductVariantPriceChangedV1Payload {
+  productId: string
+  variantId: string
+  previousPriceMinor: number
+  priceMinor: number
+  previousCompareAtPriceMinor: number | null
+  compareAtPriceMinor: number | null
+  currency: string
+}
+
+/** Whose view it is: an anonymous visitor (the `nymbal.visitor` cookie) or a signed-in customer. */
+export interface RecentViewer {
+  kind: 'visitor' | 'customer'
+  id: string
+}
+
+export interface ProductViewedV1Payload {
+  productId: string
+  viewer: RecentViewer
 }
 
 export interface CategoryCreatedV1Payload {
@@ -83,6 +111,10 @@ export interface OrderStatusChangedV1Payload {
   from: OrderStatus
   to: OrderStatus
 }
+/** An admin asked for the order's confirmation email again; the email's key is minted when it is sent. */
+export interface OrderConfirmationResendRequestedV1Payload {
+  orderId: string
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string
@@ -136,6 +168,12 @@ export interface CustomerDeletedV1Payload {
   customerId: string
 }
 
+/** A visitor's views now belong to the customer who signed in carrying its cookie. */
+export interface VisitorMergedV1Payload {
+  visitorId: string
+  customerId: string
+}
+
 export interface CartCreatedV1Payload {
   cartId: string
   token: string
@@ -185,6 +223,29 @@ export interface PaymentRefundedV1Payload {
   refundId: string
   amountMinor: number
   currency: string
+}
+
+// No alert event carries the subscriber's address or a token.
+export interface AlertRequestedV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  variantId: string
+  productId: string
+}
+export interface AlertConfirmedV1Payload {
+  subscriptionId: string
+}
+export interface AlertUnsubscribedV1Payload {
+  subscriptionId: string
+}
+export interface AlertSentV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  /**
+   * The event the alert answered: a product.restocked.v1 for a back-in-stock alert, a
+   * product.variant_price_changed.v1 for a price-drop one.
+   */
+  triggerEventId: string
 }
 
 export interface AdapterErrorV1Payload {

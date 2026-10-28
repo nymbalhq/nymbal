@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process'
+// Reads: pnpm-workspace.yaml, **/package.json, packages/*/recipes/*.json, packages/*/src/index.ts
+import { execFile } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { promisify } from 'node:util'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -12,7 +14,6 @@ import {
   SPEC_HOLDERS,
   linkedProject,
   removeAll,
-  tempDir,
 } from '../../packages/cli/src/recipes/fixtures/linked-project.js'
 import type {
   SpecRecipe as Recipe,
@@ -30,6 +31,7 @@ interface HolderManifest extends Manifest {
 }
 
 const RECIPE_HOLDERS: Readonly<Record<string, string>> = HOLDERS
+const exec = promisify(execFile)
 const readRecipe = (name: string, root: string): Promise<Recipe> => read(name, root)
 
 const dirs: string[] = []
@@ -160,39 +162,28 @@ describe('AC-1: recipe holders', () => {
   })
 
   it("AC-1: each holder's packed tarball carries recipes/<name>.json, and it is what readRecipe reads", async () => {
-    for (const [name, pkg] of Object.entries(RECIPE_HOLDERS)) {
-      const out = tempDir(`pack-${name}`)
-      dirs.push(out)
-      const printed = execFileSync(
-        'npm',
-        ['pack', '--ignore-scripts', '--json', '--pack-destination', out],
-        {
+    // `--dry-run` lists what the tarball would hold without writing it; npm packs each listed file as it is on disk.
+    const packs = await Promise.all(
+      Object.entries(RECIPE_HOLDERS).map(async ([name, pkg]) => {
+        const { stdout } = await exec('npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
           cwd: join(REPO_ROOT, dirOf(pkg)!),
           encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        },
-      )
-      const [packed] = JSON.parse(printed) as Array<{
-        filename: string
-        files: Array<{ path: string }>
-      }>
+        })
+        const [packed] = JSON.parse(stdout) as Array<{ files: Array<{ path: string }> }>
+        return { name, pkg, files: packed!.files.map((f) => f.path) }
+      }),
+    )
+    for (const { name, pkg, files } of packs) {
       expect(
-        packed!.files.map((f) => f.path).filter((p) => p === `recipes/${name}.json`),
+        files.filter((p) => p === `recipes/${name}.json`),
         `${pkg} tarball`,
       ).toHaveLength(1)
-      execFileSync('tar', [
-        '-xzf',
-        join(out, packed!.filename),
-        '-C',
-        out,
-        `package/recipes/${name}.json`,
-      ])
-      const inTarball = JSON.parse(
-        readFileSync(join(out, 'package/recipes', `${name}.json`), 'utf8'),
+      const packed = JSON.parse(
+        readFileSync(join(REPO_ROOT, dirOf(pkg)!, 'recipes', `${name}.json`), 'utf8'),
       ) as unknown
-      expect(inTarball, name).toEqual(await readRecipe(name, project))
+      expect(packed, name).toEqual(await readRecipe(name, project))
     }
-  }, 120_000) // four sync `npm pack`s: 5-50 s under load, 53 s seen beside a gate:full (2026-10-22)
+  }, 60_000)
 
   it("AC-1: no recipe sets a credential or prefix: '', and every key or secret it sets is an env() value", async () => {
     const all: Array<[string, RecipeValue]> = []

@@ -1,3 +1,4 @@
+// Reads: nothing
 import { describe, expect, it } from 'vitest'
 import { plan, type StepSpec } from '../../scripts/gate'
 
@@ -14,6 +15,7 @@ const TARGETS = [
   'admin',
   'astro-custom',
   'nextjs-custom',
+  'mail-outage',
   'astro-nosearch',
   'nextjs-nosearch',
   'astro-override',

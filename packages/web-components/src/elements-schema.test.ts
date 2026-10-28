@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import * as wc from './index.js'
 import type { ElementSchema } from './index.js'
 import { setupMockClient } from './testing/index.js'
+import { timelineEntries } from './__fixtures__/server-data.js'
 
 // AC-1: every element `registerComponents()` defines (tests/setup.ts calls it) is a LitElement whose static `schema`
 // names the tag it is defined under; every one but `nymbal-payment-element` renders in an open shadow root; and the
@@ -21,9 +22,12 @@ import { setupMockClient } from './testing/index.js'
 // steps as a shopper does, with the payment element as its `payment`-slotted child.
 //
 // The catalogue and page elements (grid, price, stock badge, breadcrumb, gallery, header, footer, category nav,
-// reviews, order summary) render exactly their schema's parts across their states (an empty and a filled grid with and
-// without the product-list store, a gallery of none, one and several images, a review form submitted once with its
-// call held, refused and answered, an order with and without a discount), style them on `--nymbal-*` tokens, have
+// reviews, order summary, order timeline, recently viewed, notify-me) render exactly their schema's parts across their
+// states (an empty and a filled grid with and without the product-list store, a gallery of none, one and several
+// images, a review form and an out-of-stock notify-me form each submitted once with its call held, refused and
+// answered, an in-stock notify-me with no form, an order with and without a discount, a timeline with no entry and with
+// several, a recently-viewed list empty, filled, limited, left empty by its current product and failed), style them on
+// `--nymbal-*` tokens, have
 // their `src/elements/<tag>.ts` entry, and carry the interface the templates call them by.
 
 const PAYMENT = 'nymbal-payment-element'
@@ -51,6 +55,7 @@ const TAGS = [
   'nymbal-checkout',
   // Catalogue and page elements
   'nymbal-product-grid',
+  'nymbal-recently-viewed',
   'nymbal-product-price',
   'nymbal-stock-badge',
   'nymbal-breadcrumb',
@@ -61,6 +66,8 @@ const TAGS = [
   'nymbal-review-list',
   'nymbal-review-form',
   'nymbal-order-summary',
+  'nymbal-order-timeline',
+  'nymbal-notify-me',
 ] as const
 type Tag = (typeof TAGS)[number]
 
@@ -84,6 +91,8 @@ interface State {
   walk?: (el: HTMLElement) => Promise<void>
   /** What the checkout store's `submitPayment()` does: never answers, refuses, or places an order. */
   placeOrder?: Phase
+  /** What `client.recentlyViewed.list()` answers, or `'fail'` when it rejects. */
+  recent?: unknown[] | 'fail'
 }
 
 const state = (partial: Partial<State> = {}): State => ({
@@ -150,9 +159,19 @@ function installAccount(client: Record<string, unknown>, s: State): void {
   }
 }
 
-/** The reviews SDK the review form submits through (`client.adapter.reviews`), answering as `s.phase` says. */
+/**
+ * The SDK adapter calls the forms make: the review form's `reviews.submit` and the notify-me form's
+ * `alerts.subscribe`, each answering as `s.phase` says.
+ */
 function installReviews(client: Record<string, unknown>, s: State): void {
   client['adapter'] = {
+    alerts: {
+      subscribe: async () => {
+        if (s.phase === 'pending') await new Promise<never>(() => undefined)
+        if (s.phase === 'failed') throw new Error('Refused by the AC-1 fake.')
+        return { status: 'pending' }
+      },
+    },
     reviews: {
       getForProduct: async () => ({ items: [], nextCursor: null }),
       submit: async (review: Record<string, unknown>) => {
@@ -172,6 +191,25 @@ function installReviews(client: Record<string, unknown>, s: State): void {
         }
       },
     },
+  }
+}
+
+/** The recently-viewed SDK the element records and lists through, answering as `s.recent` says. */
+function installRecentlyViewed(client: Record<string, unknown>, s: State): void {
+  client['recentlyViewed'] = {
+    record: async () => undefined,
+    list: async () => {
+      if (s.recent === 'fail') throw new Error('Unavailable')
+      return { items: s.recent ?? [] }
+    },
+  }
+}
+
+/** Lets an element that reads after its first update finish its read and render what it got. */
+async function readSettled(el: HTMLElement): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
   }
 }
 
@@ -259,14 +297,20 @@ function schemaOf(ctor: unknown): ElementSchema | undefined {
 }
 
 /** Creates the element in `s`, connected, once its render has settled. */
-async function mount(tag: Tag, s: State): Promise<HTMLElement> {
+async function mount(
+  tag: Tag,
+  s: State,
+  onClient?: (client: Record<string, unknown>) => void,
+): Promise<HTMLElement> {
   const client = setupMockClient() as unknown as Record<
     StoreName,
     { setState(partial: Record<string, unknown>): void }
   >
+  onClient?.(client as unknown as Record<string, unknown>)
   installAccount(client as unknown as Record<string, unknown>, s)
   installReviews(client as unknown as Record<string, unknown>, s)
   installCheckout(client as unknown as Record<string, unknown>, s.placeOrder ?? 'succeeded')
+  installRecentlyViewed(client as unknown as Record<string, unknown>, s)
   for (const [name, partial] of Object.entries(s.stores)) {
     client[name as StoreName].setState(partial)
   }
@@ -282,6 +326,27 @@ async function mount(tag: Tag, s: State): Promise<HTMLElement> {
   if (s.phase !== null) await submitOnce(el)
   if (s.walk !== undefined) await s.walk(el)
   return el
+}
+
+/** Counts the live subscriptions across every store of a mock client, from the moment it is installed. */
+function liveSubscriptions(client: Record<string, unknown>): () => number {
+  let live = 0
+  for (const store of Object.values(client)) {
+    const s = store as { subscribe?: (fn: () => void) => () => void } | null
+    if (typeof s?.subscribe !== 'function') continue
+    const subscribe = s.subscribe.bind(s)
+    s.subscribe = (fn) => {
+      const unsubscribe = subscribe(fn)
+      live += 1
+      let done = false
+      return () => {
+        if (!done) live -= 1
+        done = true
+        unsubscribe()
+      }
+    }
+  }
+  return () => live
 }
 
 async function settled(el: HTMLElement): Promise<void> {
@@ -767,6 +832,20 @@ const FIXED: Record<Tag, State[]> = {
       stores: { productList: { products: [], pagination: { cursor: null, hasMore: false } } },
     }),
   ],
+  'nymbal-recently-viewed': [
+    state({ walk: readSettled }),
+    state({
+      recent: [card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })],
+      walk: readSettled,
+    }),
+    state({
+      attrs: { current: 'p-mug', limit: '1' },
+      recent: [card(), card({ id: 'p-cup', slug: 'cup', name: 'Cup' })],
+      walk: readSettled,
+    }),
+    state({ attrs: { current: 'p-mug' }, recent: [card()], walk: readSettled }),
+    state({ recent: 'fail', walk: readSettled }),
+  ],
   'nymbal-product-price': [
     state(),
     state({ attrs: { 'price-minor': '1200', currency: 'GBP' } }),
@@ -894,6 +973,18 @@ const FIXED: Record<Tag, State[]> = {
     }),
   ],
   'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
+  // Out of stock (the back-in-stock form), submitted held, refused and accepted; in stock (the price-drop form); and
+  // following the store.
+  'nymbal-notify-me': [
+    ...formStates({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '0' } }),
+    state({ attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '4' } }),
+    state({
+      attrs: { 'product-id': 'p1', 'variant-id': 'v0', stock: '0' },
+      stores: {
+        product: { product: productOf([[]]), selectedVariant: productOf([[]]).variants[0] },
+      },
+    }),
+  ],
   'nymbal-order-summary': [
     state(),
     state({
@@ -921,6 +1012,19 @@ const FIXED: Record<Tag, State[]> = {
         'tax-minor': '100',
         'total-minor': '1100',
         currency: 'GBP',
+      },
+    }),
+  ],
+  'nymbal-order-timeline': [
+    state(),
+    state({
+      attrs: {
+        entries: JSON.stringify([
+          { kind: 'placed', at: '2026-10-25T09:00:00.000Z' },
+          { kind: 'paid', at: '2026-10-25T09:00:02.000Z' },
+          { kind: 'shipped', at: '2026-10-26T14:30:00.000Z' },
+        ]),
+        'time-zone': 'Europe/London',
       },
     }),
   ],
@@ -1065,6 +1169,26 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
         },
       }),
     ),
+  'nymbal-recently-viewed': fc
+    .record({
+      recent: fc.oneof(
+        fc.uniqueArray(cardProduct, { maxLength: 6, selector: (p) => p.slug }),
+        fc.constant('fail' as const),
+      ),
+      current: fc.option(fc.nat({ max: 5 }), { nil: undefined }),
+      limit: fc.option(fc.integer({ min: -1, max: 6 }), { nil: undefined }),
+    })
+    .map(({ recent, current, limit }) => {
+      const currentId = recent === 'fail' || current === undefined ? undefined : recent[current]
+      return state({
+        attrs: {
+          ...(currentId !== undefined && { current: String((currentId as { id: string }).id) }),
+          ...(limit !== undefined && { limit: String(limit) }),
+        },
+        recent,
+        walk: readSettled,
+      })
+    }),
   'nymbal-product-price': fc
     .record({
       price: fc.option(fc.integer({ min: 0, max: 100_000 })),
@@ -1187,6 +1311,24 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
   'nymbal-review-form': fc
     .option(fc.constantFrom(...PHASES))
     .map((phase) => state({ attrs: { 'product-id': 'p1' }, phase })),
+  'nymbal-notify-me': fc
+    .record({
+      stock: fc.integer({ min: -2, max: 6 }),
+      same: fc.boolean(),
+      phase: fc.option(fc.constantFrom(...PHASES)),
+    })
+    .map(({ stock, same, phase }) => {
+      const product = productOf([[]])
+      return state({
+        attrs: {
+          'product-id': same ? product.id : 'other',
+          'variant-id': product.variants[0]!.id,
+          stock: String(stock),
+        },
+        stores: { product: { product, selectedVariant: product.variants[0] } },
+        phase,
+      })
+    }),
   'nymbal-order-summary': fc
     .record({
       lines: fc.array(
@@ -1216,6 +1358,21 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
         },
       })
     }),
+  'nymbal-order-timeline': fc
+    .record({
+      entries: timelineEntries(),
+      zone: fc.option(fc.constantFrom('UTC', 'Europe/London', 'Asia/Kolkata', 'Not/AZone'), {
+        nil: undefined,
+      }),
+    })
+    .map(({ entries, zone }) =>
+      state({
+        attrs: {
+          entries: JSON.stringify(entries),
+          ...(zone !== undefined && { 'time-zone': zone }),
+        },
+      }),
+    ),
 }
 
 describe('AC-1: elements are Lit, in an open shadow root, with the parts their schema lists', () => {
@@ -1257,6 +1414,32 @@ describe('AC-1: elements are Lit, in an open shadow root, with the parts their s
       }
       expect([...seen].sort(), `${tag}: rendered parts`).toEqual([...(schema?.parts ?? [])].sort())
     }
+  })
+
+  it('every element that subscribes to a store when it connects drops each subscription when it is removed: live subscriptions after removal equal those before connection', async () => {
+    const subscribing: string[] = []
+    for (const tag of TAGS) {
+      let live: () => number = () => 0
+      let before = 0
+      const el = await mount(tag, state(), (client) => {
+        live = liveSubscriptions(client)
+        before = live()
+      })
+      if (live() > before) subscribing.push(tag)
+      el.remove()
+      expect(live(), `${tag}: live subscriptions after removal`).toBe(before)
+      document.body.innerHTML = ''
+    }
+    // The elements that render a store's state; a refactor that stops one subscribing would make this case vacuous for it.
+    expect(subscribing).toEqual(
+      expect.arrayContaining([
+        'nymbal-add-to-cart',
+        'nymbal-cart-drawer',
+        'nymbal-mini-cart',
+        'nymbal-search-bar',
+        'nymbal-product-filter',
+      ]),
+    )
   })
 
   it('AC-1: property: no element renders a part its schema does not list, over generated store states', async () => {
@@ -1324,6 +1507,15 @@ const INTERFACE: Array<{
     events: [{ name: 'nymbal:address-book:changed', prop: 'onChanged' }],
   },
   // Catalogue and page elements
+  {
+    tag: 'nymbal-recently-viewed',
+    reactName: 'RecentlyViewed',
+    events: [{ name: 'nymbal:recently-viewed:loaded', prop: 'onLoaded' }],
+    attributes: [
+      { name: 'current', type: 'string' },
+      { name: 'limit', type: 'number' },
+    ],
+  },
   {
     tag: 'nymbal-product-grid',
     reactName: 'ProductGrid',
@@ -1402,6 +1594,16 @@ const INTERFACE: Array<{
     attributes: [{ name: 'product-id', type: 'string' }],
   },
   {
+    tag: 'nymbal-notify-me',
+    reactName: 'NotifyMe',
+    events: [{ name: 'nymbal:alert:requested', prop: 'onRequested' }],
+    attributes: [
+      { name: 'product-id', type: 'string' },
+      { name: 'variant-id', type: 'string' },
+      { name: 'stock', type: 'number' },
+    ],
+  },
+  {
     tag: 'nymbal-order-summary',
     reactName: 'OrderSummary',
     events: [],
@@ -1413,6 +1615,15 @@ const INTERFACE: Array<{
       { name: 'tax-minor', type: 'number' },
       { name: 'total-minor', type: 'number' },
       { name: 'currency', type: 'string' },
+    ],
+  },
+  {
+    tag: 'nymbal-order-timeline',
+    reactName: 'OrderTimeline',
+    events: [],
+    attributes: [
+      { name: 'entries', type: 'json' },
+      { name: 'time-zone', type: 'string' },
     ],
   },
 ]
@@ -1453,7 +1664,7 @@ describe('AC-1: the moved views carry the interface the templates call them by',
 // submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its summary is
 // built as the cart page's is, with names as text.
 describe('AC-1: nymbal-checkout meets the foundation', () => {
-  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string }, a payment slot, children passed through', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string; orderKey?: string }, a payment slot, children passed through', () => {
     const schema = schemaOf(customElements.get('nymbal-checkout'))
     expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
     expect(schema?.reactName).toBe('Checkout')
@@ -1461,7 +1672,7 @@ describe('AC-1: nymbal-checkout meets the foundation', () => {
     expect(schema?.events).toContainEqual({
       name: 'nymbal:checkout:placed',
       prop: 'onPlaced',
-      detail: '{ orderNumber: string }',
+      detail: '{ orderNumber: string; orderKey?: string }',
     })
     expect(schema?.slots).toContain('payment')
     expect(schema?.children).toBe(true)
@@ -1532,9 +1743,9 @@ describe('AC-1: nymbal-checkout meets the foundation', () => {
 const CATALOGUE_TAGS = TAGS.slice(TAGS.indexOf('nymbal-product-grid'))
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-describe('AC-1: the eleven elements meet the element conventions', () => {
-  it('AC-1: each of the eleven styles itself with var(--nymbal-*) tokens', () => {
-    expect(CATALOGUE_TAGS).toHaveLength(11)
+describe('AC-1: the fourteen catalogue and page elements meet the element conventions', () => {
+  it('AC-1: each of the fourteen styles itself with var(--nymbal-*) tokens', () => {
+    expect(CATALOGUE_TAGS).toHaveLength(14)
     for (const tag of CATALOGUE_TAGS) {
       const ctor = customElements.get(tag) as
         | (CustomElementConstructor & { elementStyles?: Array<{ cssText?: string }> })
@@ -1574,6 +1785,30 @@ describe('AC-1: the eleven elements meet the element conventions', () => {
       const exported = Object.values(entry).filter((v) => schemaOf(v)?.tag === tag)
       expect(exported, `${tag}: the class its entry exports`).toEqual([customElements.get(tag)])
     }
+  })
+
+  it('AC-8: nymbal-notify-me fires nymbal:alert:requested as onRequested with { kind: AlertKind; variantId: string }, has no slots, passes no children, and lists exactly its parts', () => {
+    const schema = schemaOf(customElements.get('nymbal-notify-me'))
+    expect(schema, 'nymbal-notify-me is defined with a static schema').toBeDefined()
+    expect({
+      events: schema?.events,
+      slots: schema?.slots,
+      children: schema?.children,
+      parts: [...(schema?.parts ?? [])].sort(),
+      attributes: schema?.attributes.map((a) => a.prop),
+    }).toEqual({
+      events: [
+        {
+          name: 'nymbal:alert:requested',
+          prop: 'onRequested',
+          detail: '{ kind: AlertKind; variantId: string }',
+        },
+      ],
+      slots: [],
+      children: false,
+      parts: ['error', 'field', 'form', 'heading', 'input', 'label', 'notice', 'submit'],
+      attributes: ['productId', 'variantId', 'stock'],
+    })
   })
 
   it('AC-1: nymbal-review-form fires nymbal:review:submitted as onSubmitted with { reviewId: string }; nymbal-site-header has the search and cart slots', () => {

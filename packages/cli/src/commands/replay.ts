@@ -73,12 +73,12 @@ export const replayCommand = defineCommand({
   meta: {
     name: 'replay',
     description:
-      'Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search or all',
+      'Rebuild a derived read model from the command store and swap it in: catalogue, orders, customers, search, recently-viewed or all',
   },
   args: {
     to: {
       type: 'string',
-      description: 'The read model: catalogue, orders, customers, search or all',
+      description: 'The read model: catalogue, orders, customers, search, recently-viewed or all',
     },
     'dry-run': {
       type: 'boolean',

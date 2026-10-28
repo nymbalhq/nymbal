@@ -1,3 +1,4 @@
+// Reads: packages/*/package.json
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'

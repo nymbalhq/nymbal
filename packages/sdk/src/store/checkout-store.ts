@@ -15,13 +15,23 @@ const INITIAL_STATE: CheckoutState = {
   error: null,
   order: null,
   placedOrderNumber: null,
+  placedOrderKey: null,
 }
 
-/** The order a refused resubmit names (409 `checkout.cart_empty` or `checkout.payment_in_progress`), if any. */
-function namedOrder(err: unknown): string | null {
-  if (!(err instanceof NymbalApiError)) return null
-  const orderNumber = err.context?.['orderNumber']
-  return typeof orderNumber === 'string' ? orderNumber : null
+/**
+ * The order a refused resubmit names (409 `checkout.cart_empty` or `checkout.payment_in_progress`), if any, and the key
+ * the refusal carries to read it.
+ */
+function namedOrder(err: unknown): Pick<CheckoutState, 'placedOrderNumber' | 'placedOrderKey'> {
+  const context = err instanceof NymbalApiError ? err.context : undefined
+  const orderNumber = context?.['orderNumber']
+  const orderKey = context?.['orderKey']
+  return typeof orderNumber === 'string'
+    ? {
+        placedOrderNumber: orderNumber,
+        placedOrderKey: typeof orderKey === 'string' ? orderKey : null,
+      }
+    : { placedOrderNumber: null, placedOrderKey: null }
 }
 
 export interface CheckoutStore {
@@ -68,7 +78,12 @@ export function createCheckoutStore(adapter: CommerceAdapter, cart?: CartStore):
       store.setState({ error: 'Shipping and billing addresses are required' })
       return null
     }
-    store.setState({ paymentStatus: 'processing', error: null, placedOrderNumber: null })
+    store.setState({
+      paymentStatus: 'processing',
+      error: null,
+      placedOrderNumber: null,
+      placedOrderKey: null,
+    })
     try {
       const result = await adapter.checkout.create({
         email: state.email,
@@ -92,14 +107,14 @@ export function createCheckoutStore(adapter: CommerceAdapter, cart?: CartStore):
       await cart?.load()
       return result
     } catch (err) {
-      const placedOrderNumber = namedOrder(err)
+      const placed = namedOrder(err)
       store.setState({
         paymentStatus: 'failed',
         error: err instanceof Error ? err.message : String(err),
-        placedOrderNumber,
+        ...placed,
       })
       // A refusal naming an order: the cart became (or is becoming) that order on the server.
-      if (placedOrderNumber !== null) await cart?.load()
+      if (placed.placedOrderNumber !== null) await cart?.load()
       return null
     }
   }

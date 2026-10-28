@@ -78,3 +78,32 @@ describe('AC-3: native reviews page by cursor (SQLite)', () => {
     )
   })
 })
+
+describe('native reviews moderation (SQLite)', () => {
+  it('a submitted review comes back pending, as submitted, and is listed under pending and not under approved', async () => {
+    const native = adapter!
+    const productId = `prod-pending-${crypto.randomUUID()}`
+    const input = {
+      productId,
+      customerId: null,
+      orderId: null,
+      rating: 5,
+      title: 'Excellent',
+      body: 'Loved it.',
+    }
+
+    const { review } = await native.submitReview(input)
+    const pending = await native.getProductReviews(productId, { status: 'pending' })
+    const approved = await native.getProductReviews(productId, { status: 'approved' })
+
+    expect(review.moderationStatus).toBe('pending')
+    expect([review.productId, review.rating, review.title, review.body]).toEqual([
+      input.productId,
+      input.rating,
+      input.title,
+      input.body,
+    ])
+    expect(pending.items.map((r) => r.id)).toEqual([review.id])
+    expect(approved.items.map((r) => r.id)).toEqual([])
+  })
+})

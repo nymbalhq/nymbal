@@ -134,9 +134,10 @@ describe('AC-5: apply, plan and inspect', () => {
           expect(liveNymbalRefs(z.zoneId)).toEqual(refsOf(allRules(desired(b))))
         },
       ),
-      { numRuns: 25 },
+      // Each run makes real HTTP round trips to the fake: about 7 ms alone, about 140 ms under the full parallel suite.
+      { numRuns: 10 },
     )
-  })
+  }, 20_000)
 
   it('AC-5 (c): inspect().rulesApplied equals the refs desiredRules gives', async () => {
     const z = ownerZone()

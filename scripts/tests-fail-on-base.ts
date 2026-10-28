@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { changedFiles, newTestFiles } from './gate'
+import { changedFiles, emptyTree, newTestFiles, resolveBase } from './gate'
 import { loadSentinels, type Sentinel } from './sentinels'
 import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 
@@ -47,7 +47,8 @@ export type Judgement = { path: string; verdict: Verdict; note?: string; sentine
 /** Why the base could not be judged against: the first error line of the failing command, and its output's tail. */
 export type BaseFailure = { reason: string; tail: string[] }
 
-export type Report = { results: Judgement[]; baseFailure?: BaseFailure }
+/** `noBase`: HEAD is a root commit, so there is no base for an added test to fail on. */
+export type Report = { results: Judgement[]; baseFailure?: BaseFailure; noBase?: true }
 
 /**
  * Playwright journeys and the scaffold check need running servers (the scaffold check a published, scaffolded store
@@ -204,7 +205,7 @@ function runCommand(cwd: string, command: string, session: Session): Promise<Sui
 }
 
 /** The verdict a base run gives: no test executed is no judgement, else its exit code decides. */
-function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
+export function verdictOf(run: SuiteRun): { verdict: Verdict; note?: string } {
   // A shell reports a child killed by signal n as 128 + n.
   const bySignal = run.signal !== null || (run.status !== null && run.status > 128)
   if (bySignal) {
@@ -401,7 +402,8 @@ export async function judge(opts: {
 }): Promise<Report> {
   const root = resolve(opts.root)
   const realRoot = realpathSync(root)
-  const baseSha = git(root, ['rev-parse', '--verify', `${opts.base}^{commit}`]).trim()
+  const baseSha = resolveBase(root, opts.base)
+  if (baseSha === emptyTree(root)) return { results: [], noBase: true }
   const added = addedTestFiles(root, baseSha)
   if (added.length === 0) return { results: [] }
 
@@ -519,7 +521,9 @@ export async function judge(opts: {
   }
 }
 
-export function render({ results, baseFailure }: Report): string {
+export function render({ results, baseFailure, noBase }: Report): string {
+  if (noBase === true)
+    return 'tests-fail-on-base: HEAD is a root commit; no base to judge test files against'
   if (results.length === 0) return 'tests-fail-on-base: the change adds no test files'
   const judged = results.filter((r) => r.verdict !== 'not judged')
   const unjudged = results.filter((r) => r.verdict === 'not judged')

@@ -1,0 +1,16 @@
+import { createServer } from 'node:net'
+import Fastify from 'fastify'
+
+// Lines marked `lint: <rule>` are where the rule must report in a test path, and nowhere else.
+export async function servers(): Promise<void> {
+  const net = createServer()
+  net.listen(0, 'localhost') // lint: no-restricted-syntax
+  net.listen(0, '127.0.0.1')
+  net.listen({ port: 0, host: 'localhost' }) // lint: no-restricted-syntax
+  const app = Fastify()
+  await app.listen({ port: 0, host: 'localhost' }) // lint: no-restricted-syntax
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const host = 'localhost'
+  await fetch(`http://${host}:3001/health`)
+  await fetch('http://localhost:3001/health')
+}

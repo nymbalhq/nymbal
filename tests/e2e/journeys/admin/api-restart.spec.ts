@@ -210,4 +210,104 @@ test.describe('the admin across an API restart', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  test('AC-1: an order placed after the API restarts but before the tab reconnects shows once in the open orders list within 10 s of the reconnect, and the next order still arrives live, each row once, with no reload', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(180_000)
+    const port = await freePort()
+    const base = `http://localhost:${port}`
+    const dir = mkdtempSync(join(tmpdir(), 'nymbal-e2e-catch-up-'))
+    const sqlitePath = join(dir, 'nymbal.db')
+    const apis: Api[] = []
+    const context = await browser.newContext({ baseURL: `${base}/admin/` })
+    let releaseTicket = (): void => {}
+    try {
+      apis.push(await startApi(port, sqlitePath))
+
+      const page = await context.newPage()
+      await watchRealtime(page)
+      await signInAsAdmin(page)
+      const listLoaded = page.waitForResponse(
+        (r) => path(r.url()) === '/api/admin/orders' && r.request().method() === 'GET',
+        { timeout: 15_000 },
+      )
+      await page.getByTestId('admin-nav-orders').click()
+      await listLoaded
+      await realtimeConnected(page)
+      const connectedBefore = await connectedCount(page)
+
+      const listUrl = page.url()
+      let loads = 0
+      page.on('load', () => {
+        loads += 1
+      })
+      const rows = page.locator('[data-testid^="admin-orders-row-"]')
+
+      // The tab's next ticket request is held until the test releases it, so the tab cannot reconnect before the
+      // order is placed. Every later request passes.
+      let ticketsHeld = 0
+      const released = new Promise<void>((resolve) => {
+        releaseTicket = resolve
+      })
+      await page.route('**/api/admin/events/ticket', async (route) => {
+        if (ticketsHeld > 0) return route.continue()
+        ticketsHeld += 1
+        await released
+        return route.continue()
+      })
+
+      const exitMs = await sigtermAndTime(apis[0]!)
+      expect(
+        exitMs,
+        `ms from SIGTERM to exit; output tail:\n${apis[0]!.output().slice(-1500)}`,
+      ).toBeLessThan(EXIT_WITHIN_MS)
+      apis.push(await startApi(port, sqlitePath))
+
+      await expect
+        .poll(() => ticketsHeld, {
+          message: "the tab's reconnect, held at its ticket request",
+          timeout: RECONNECT_WITHIN_MS,
+        })
+        .toBe(1)
+      expect(await connectedCount(page), 'the tab has not reconnected').toBe(connectedBefore)
+
+      const gap = await placeOrderOn(request, base)
+      const gapRow = page.getByTestId(`admin-orders-row-${gap.orderNumber}`)
+      releaseTicket()
+      await expect(
+        gapRow,
+        'the order placed while the tab was disconnected, within 10 s of the release',
+      ).toHaveCount(1, { timeout: ORDER_WITHIN_MS })
+      await expect
+        .poll(() => connectedCount(page), { message: 'the tab reconnected', timeout: 5000 })
+        .toBeGreaterThan(connectedBefore)
+
+      const rowsBefore = await rows.count()
+      const next = await placeOrderOn(request, base)
+      await expect(
+        page.getByTestId(`admin-orders-row-${next.orderNumber}`),
+        'the next order, live',
+      ).toHaveCount(1, { timeout: ORDER_WITHIN_MS })
+      await expect(rows, 'one more row than before the next order').toHaveCount(rowsBefore + 1)
+      await expect(gapRow, 'the gap order, still once').toHaveCount(1)
+      const testIds = await rows.evaluateAll((els) =>
+        els.map((el) => el.getAttribute('data-testid')),
+      )
+      expect(new Set(testIds).size, 'each order has one row').toBe(testIds.length)
+      expect(loads, 'page loads after the list opened').toBe(0)
+      expect(page.url()).toBe(listUrl)
+    } finally {
+      releaseTicket()
+      await context.close()
+      for (const api of apis) {
+        if (!api.isGone()) {
+          api.child.kill('SIGKILL')
+          await api.exited
+        }
+      }
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

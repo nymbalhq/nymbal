@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { EventBusAdapter, NymbalEvent } from '@nymbalhq/types'
 import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
 import { eventBusDeliveryCases } from './event-bus-delivery.js'
+import { eventBusFailureCases } from './event-bus-failure.js'
 
 export interface EventBusContractOptions extends ContractOptions<EventBusAdapter> {
   /** Another instance on the same streams as the bus `make` returned last: only a shared bus passes it. */
@@ -39,10 +40,11 @@ async function using(buses: EventBusAdapter[], body: () => Promise<void>): Promi
 
 /**
  * The event bus contract every implementation runs. `publish` resolves only after every matching subscription's
- * handler has finished (what a read straight after a command relies on); a throwing handler is logged and does not
- * reject it; `replay` reaches `derived` subscriptions only; each subscription takes its events in order. With `second`,
- * a named subscription is handled once across instances and an unnamed one on every instance. Then the delivery
- * contract's cases, and health (and, given `unreachable`, downtime).
+ * handler has finished (what a read straight after a command relies on); a throwing unnamed handler is logged and does
+ * not reject it, and a throwing named one rejects it with `handler_failed` once the rest have finished; `replay`
+ * reaches `derived` subscriptions only; each subscription takes its events in order. With `second`, a named
+ * subscription is handled once across instances and an unnamed one on every instance. Then the delivery contract's
+ * cases, the handler-failure cases, and health (and, given `unreachable`, downtime).
  */
 export function runEventBusContract(
   name: string,
@@ -50,102 +52,127 @@ export function runEventBusContract(
   opts: EventBusContractOptions = {},
 ): void {
   describe(`EventBusAdapter contract: ${name}`, () => {
-    it('publish resolves after the matching handler has finished, and never calls a non-matching one', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const received: unknown[] = []
-        const other: unknown[] = []
-        await bus.subscribe('test.event.v1', async (e) => {
-          await delay(50)
-          received.push(e.payload)
+    it(
+      'publish resolves after the matching handler has finished, and never calls a non-matching one',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const received: unknown[] = []
+          const other: unknown[] = []
+          await bus.subscribe('test.event.v1', async (e) => {
+            await delay(50)
+            received.push(e.payload)
+          })
+          await bus.subscribe('test.other.v1', async (e) => void other.push(e))
+          await bus.publish(makeEvent('test.event.v1', { x: 1 }))
+          expect(received).toEqual([{ x: 1 }])
+          expect(other).toEqual([])
         })
-        await bus.subscribe('test.other.v1', async (e) => void other.push(e))
-        await bus.publish(makeEvent('test.event.v1', { x: 1 }))
-        expect(received).toEqual([{ x: 1 }])
-        expect(other).toEqual([])
-      })
-    }, CASE_MS)
+      },
+      CASE_MS,
+    )
 
-    it('a handler that throws leaves publish resolved and every other handler called', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const results: string[] = []
-        await bus.subscribe('error.test.v1', async () => {
-          throw new Error('boom')
+    it(
+      'a handler that throws leaves publish resolved and every other handler called',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const results: string[] = []
+          await bus.subscribe('error.test.v1', async () => {
+            throw new Error('boom')
+          })
+          await bus.subscribe('error.test.v1', async () => void results.push('ok'))
+          await expect(bus.publish(makeEvent('error.test.v1'))).resolves.toBeUndefined()
+          expect(results).toEqual(['ok'])
         })
-        await bus.subscribe('error.test.v1', async () => void results.push('ok'))
-        await expect(bus.publish(makeEvent('error.test.v1'))).resolves.toBeUndefined()
-        expect(results).toEqual(['ok'])
-      })
-    }, CASE_MS)
+      },
+      CASE_MS,
+    )
 
-    it('replay reaches derived subscriptions only', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const derived: string[] = []
-        const sideEffect: string[] = []
-        await bus.subscribe('replay.test.v1', async (e) => void derived.push(e.id), {
-          name: 'contract-projection',
-          derived: true,
+    it(
+      'replay reaches derived subscriptions only',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const derived: string[] = []
+          const sideEffect: string[] = []
+          await bus.subscribe('replay.test.v1', async (e) => void derived.push(e.id), {
+            name: 'contract-projection',
+            derived: true,
+          })
+          await bus.subscribe('replay.test.v1', async (e) => void sideEffect.push(e.id), {
+            name: 'contract-side-effect',
+          })
+          const events = [makeEvent('replay.test.v1'), makeEvent('replay.test.v1')]
+          await bus.replay(events)
+          expect(derived).toEqual(events.map((e) => e.id))
+          expect(sideEffect).toEqual([])
         })
-        await bus.subscribe('replay.test.v1', async (e) => void sideEffect.push(e.id), {
-          name: 'contract-side-effect',
-        })
-        const events = [makeEvent('replay.test.v1'), makeEvent('replay.test.v1')]
-        await bus.replay(events)
-        expect(derived).toEqual(events.map((e) => e.id))
-        expect(sideEffect).toEqual([])
-      })
-    }, CASE_MS)
+      },
+      CASE_MS,
+    )
 
-    it('publishBatch reaches each subscription in batch order, through wildcards and pattern arrays', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const wildcard: string[] = []
-        const listed: string[] = []
-        await bus.subscribe('batch.*', async (e) => void wildcard.push(e.id))
-        await bus.subscribe(['batch.a.v1', 'batch.c.v1'], async (e) => void listed.push(e.id), {
-          name: 'contract-listed',
+    it(
+      'publishBatch reaches each subscription in batch order, through wildcards and pattern arrays',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const wildcard: string[] = []
+          const listed: string[] = []
+          await bus.subscribe('batch.*', async (e) => void wildcard.push(e.id))
+          await bus.subscribe(['batch.a.v1', 'batch.c.v1'], async (e) => void listed.push(e.id), {
+            name: 'contract-listed',
+          })
+          const events = ['batch.a.v1', 'batch.b.v1', 'batch.c.v1', 'batch.a.v1'].map((t, seq) =>
+            makeEvent(t, { seq }),
+          )
+          await bus.publishBatch(events)
+          expect(wildcard).toEqual(events.map((e) => e.id))
+          expect(listed).toEqual(events.filter((e) => e.type !== 'batch.b.v1').map((e) => e.id))
         })
-        const events = ['batch.a.v1', 'batch.b.v1', 'batch.c.v1', 'batch.a.v1'].map((t, seq) =>
-          makeEvent(t, { seq }),
-        )
-        await bus.publishBatch(events)
-        expect(wildcard).toEqual(events.map((e) => e.id))
-        expect(listed).toEqual(events.filter((e) => e.type !== 'batch.b.v1').map((e) => e.id))
-      })
-    }, CASE_MS)
+      },
+      CASE_MS,
+    )
 
-    it('an unsubscribed handler receives nothing more', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const received: string[] = []
-        const sub = await bus.subscribe('unsub.event.v1', async (e) => void received.push(e.id))
-        const before = makeEvent('unsub.event.v1')
-        await bus.publish(before)
-        await bus.unsubscribe(sub)
-        await bus.publish(makeEvent('unsub.event.v1'))
-        expect(received).toEqual([before.id])
-      })
-    }, CASE_MS)
-
-    it('on one instance, a named and an unnamed subscription each handle every event once', async () => {
-      const bus = await make()
-      await using([bus], async () => {
-        const named: string[] = []
-        const unnamed: string[] = []
-        await bus.subscribe('both.event.v1', async (e) => void named.push(e.id), {
-          name: 'contract-named',
+    it(
+      'an unsubscribed handler receives nothing more',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const received: string[] = []
+          const sub = await bus.subscribe('unsub.event.v1', async (e) => void received.push(e.id))
+          const before = makeEvent('unsub.event.v1')
+          await bus.publish(before)
+          await bus.unsubscribe(sub)
+          await bus.publish(makeEvent('unsub.event.v1'))
+          expect(received).toEqual([before.id])
         })
-        await bus.subscribe('both.event.v1', async (e) => void unnamed.push(e.id))
-        const events = [makeEvent('both.event.v1'), makeEvent('both.event.v1')]
-        for (const e of events) await bus.publish(e)
-        expect(named).toEqual(events.map((e) => e.id))
-        expect(unnamed).toEqual(named)
-      })
-    }, CASE_MS)
+      },
+      CASE_MS,
+    )
+
+    it(
+      'on one instance, a named and an unnamed subscription each handle every event once',
+      async () => {
+        const bus = await make()
+        await using([bus], async () => {
+          const named: string[] = []
+          const unnamed: string[] = []
+          await bus.subscribe('both.event.v1', async (e) => void named.push(e.id), {
+            name: 'contract-named',
+          })
+          await bus.subscribe('both.event.v1', async (e) => void unnamed.push(e.id))
+          const events = [makeEvent('both.event.v1'), makeEvent('both.event.v1')]
+          for (const e of events) await bus.publish(e)
+          expect(named).toEqual(events.map((e) => e.id))
+          expect(unnamed).toEqual(named)
+        })
+      },
+      CASE_MS,
+    )
 
     eventBusDeliveryCases(make, opts)
+    eventBusFailureCases(make, opts)
 
     healthAndDowntime(make, opts.unreachable, 'publish()', (bus) =>
       bus.publish(makeEvent('contract.down.v1')),

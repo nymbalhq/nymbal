@@ -1,3 +1,5 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts, tests/e2e/support/**
+// Reads: tests/e2e/journeys/**
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'

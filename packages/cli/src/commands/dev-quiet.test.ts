@@ -14,8 +14,8 @@ import {
   type DevRun,
 } from '../../../../tests/support/doctor.js'
 
-// AC-2: `nymbal dev --api-only` prints its summary once and no debug lines until `--verbose` or LOG_LEVEL=debug asks
-// for them. Needs `pnpm build`.
+// AC-2: `nymbal dev --api-only` prints its summary once and no debug lines until `--verbose` asks for them. That
+// LOG_LEVEL picks the level as `--verbose` does is dev.test.ts's devLogLevel property. Needs `pnpm build`.
 
 /** The window: the projections a first GET sets off log within it. */
 const AFTER_REQUEST_MS = 2000
@@ -61,33 +61,20 @@ describe('AC-2: nymbal dev starts quietly with one summary', () => {
     expect(out.split('--verbose').length - 1, 'the --verbose hint, once').toBe(1)
   }, 90_000)
 
-  it('AC-2: with --verbose, the run prints the summary and at least one DEBUG line', async () => {
+  it('AC-2: with --verbose, the run adds DEBUG lines and its other lines still hold the summary exactly once', async () => {
     const out = await devOutput(['--verbose'])
+    const quiet = out
+      .split('\n')
+      .filter((l) => !DEBUG_LINE.test(l))
+      .join('\n')
 
     expect(debugLines(out).length, out.slice(-3000)).toBeGreaterThan(0)
     for (const { slot, provider } of SLOTS) {
-      expect(linesNaming(out, slot, provider).length, `${slot} ${provider}`).toBeGreaterThanOrEqual(
-        1,
-      )
+      expect(
+        linesNaming(quiet, slot, provider),
+        `${slot} ${provider}\n${quiet.slice(-3000)}`,
+      ).toHaveLength(1)
     }
-    expect(
-      out.split('--verbose').length - 1,
-      "the summary's --verbose hint",
-    ).toBeGreaterThanOrEqual(1)
-  }, 90_000)
-
-  it('AC-2: with LOG_LEVEL=debug and no flag, the run prints the summary and at least one DEBUG line', async () => {
-    const out = await devOutput([], { LOG_LEVEL: 'debug' })
-
-    expect(debugLines(out).length, out.slice(-3000)).toBeGreaterThan(0)
-    for (const { slot, provider } of SLOTS) {
-      expect(linesNaming(out, slot, provider).length, `${slot} ${provider}`).toBeGreaterThanOrEqual(
-        1,
-      )
-    }
-    expect(
-      out.split('--verbose').length - 1,
-      "the summary's --verbose hint",
-    ).toBeGreaterThanOrEqual(1)
+    expect(quiet.split('--verbose').length - 1, "the summary's --verbose hint, once").toBe(1)
   }, 90_000)
 })

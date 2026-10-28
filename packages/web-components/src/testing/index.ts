@@ -88,6 +88,10 @@ export function createMockClient(): NymbalClient {
       submitPayment: async () => {},
       reset: () => {},
     },
+    recentlyViewed: {
+      record: async () => {},
+      list: async () => ({ items: [] }),
+    },
   } as unknown as NymbalClient
 }
 

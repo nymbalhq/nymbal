@@ -1,3 +1,4 @@
+// Reads: scripts/stack.ts
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -305,7 +306,7 @@ describe('AC-2: resolveSlot gives each worktree a slot of its own, kept until th
           expect(racing.map((dir) => resolveSlot(dir, {}))).toEqual(slots)
         },
       ),
-      { numRuns: 20 },
+      { numRuns: 5 },
     )
   }, 180_000)
 

@@ -24,6 +24,14 @@ export interface EventPublisher {
       }[NymbalEventType]
     >,
   ): Promise<void>
+  /**
+   * Events of types the kernel does not declare (an adapter's own, already checked by the caller), with the same
+   * append and drain as `publish`.
+   */
+  publishUntyped(
+    events: ReadonlyArray<{ type: string; payload: unknown }>,
+    options?: PublishOptions,
+  ): Promise<NymbalEvent<unknown>[]>
   correlated(correlationId: string): EventPublisher
 }
 
@@ -54,11 +62,7 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
     })
   }
 
-  function build<E extends NymbalEventType>(
-    type: E,
-    payload: NymbalEventMap[E],
-    options: PublishOptions = {},
-  ): NymbalEvent<NymbalEventMap[E]> {
+  function build<T>(type: string, payload: T, options: PublishOptions = {}): NymbalEvent<T> {
     // An explicit id, then a correlated() publisher's, then the scope's; with none, the event is its own id.
     const correlationId = options.correlationId ?? opts.correlationId ?? currentCorrelationId()
     return makeEvent(type, payload, {
@@ -75,6 +79,11 @@ export function createEventPublisher(opts: CreatePublisherOptions): EventPublish
     },
     async publishMany(events) {
       await append(events.map((e) => build(e.type, e.payload, e.options ?? {})))
+    },
+    async publishUntyped(events, options) {
+      const built = events.map((e) => build(e.type, e.payload, options ?? {}))
+      await append(built)
+      return built
     },
     correlated(correlationId) {
       return createEventPublisher({ ...opts, correlationId })

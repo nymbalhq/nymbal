@@ -5,6 +5,7 @@ import {
   EVT_ORDER_SHIPPED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_CANCELLED,
+  EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   NotFoundError,
   OrderConflictError,
   StatusTransitionError,
@@ -22,6 +23,7 @@ import { wirePublisher } from '../tests/publisher.js'
 import { createOrderService } from './order-service.js'
 import { createProductService } from './product-service.js'
 import { createLogger } from '../logger.js'
+import { hashOrderKey, isOrderKey, mintOrderKey } from '../order-access-key.js'
 import { v7 as uuidv7 } from 'uuid'
 import type { Address, OrderLineItem } from '@nymbalhq/types'
 
@@ -52,7 +54,13 @@ async function setup() {
     { createEventPublisher, createRelay },
     { store: commandStore, eventLog: repos.eventLog, eventBus, logger },
   ).publisher
-  const product = createProductService({ store: commandStore, repos, publisher, logger })
+  const product = createProductService({
+    store: commandStore,
+    repos,
+    publisher,
+    logger,
+    currency: 'GBP',
+  })
   const orderService = createOrderService({
     store: commandStore,
     repos,
@@ -650,6 +658,189 @@ describe('OrderService: cancel of a paid order and imported captures', () => {
     expect(bare.notes).toBe('')
     expect(bare.paymentIntentId).toBeNull()
     expect(bare.metadata).toEqual({})
+    await env.commandStore.close()
+  })
+})
+
+describe('OrderService.keyOpens', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function storeHash(env: Env, orderId: string, keyHash: string) {
+    await env.commandStore.transaction((tx) =>
+      env.repos.orderAccessKey.insert(tx, {
+        id: uuidv7(),
+        orderId,
+        keyHash,
+        purpose: 'checkout',
+        createdAt: new Date(),
+      }),
+    )
+  }
+
+  it('a minted key opens its own order and no other', async () => {
+    const env = await setup()
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 1, max: 4 }), async (orders) => {
+        const ids = Array.from({ length: orders + 1 }, () => uuidv7())
+        const keys = ids.map(() => mintOrderKey())
+        for (const [i, id] of ids.entries()) await storeHash(env, id, keys[i]!.hash)
+        for (const [i, id] of ids.entries()) {
+          for (const [j, k] of keys.entries()) {
+            expect(await env.orderService.keyOpens(id, k.key)).toBe(i === j)
+          }
+        }
+      }),
+      { numRuns: 10 },
+    )
+    await env.commandStore.close()
+  })
+
+  it('a well-formed key that was never minted opens nothing', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const minted = mintOrderKey()
+    await storeHash(env, orderId, minted.hash)
+    await fc.assert(
+      fc.asyncProperty(
+        fc.stringMatching(/^[A-Za-z0-9_-]{43}$/).filter((k) => k !== minted.key),
+        async (key) => {
+          expect(isOrderKey(key)).toBe(true)
+          expect(await env.orderService.keyOpens(orderId, key)).toBe(false)
+        },
+      ),
+      { numRuns: 50 },
+    )
+    expect(await env.orderService.keyOpens(orderId, minted.key)).toBe(true)
+    await env.commandStore.close()
+  })
+
+  // The store holds the hash of each malformed key for this order, so only the shape check stands between it and true.
+  it('a malformed key is false without a read, even when its hash is stored for the order', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const good = mintOrderKey().key
+    const malformed = [
+      '',
+      good.slice(0, 42),
+      `${good}A`,
+      `${good.slice(0, 42)}=`,
+      `${good.slice(0, 42)}+`,
+      `${good.slice(0, 42)}/`,
+      ` ${good.slice(1)}`,
+      `${good.slice(0, 42)}\n`,
+    ]
+    for (const key of malformed) {
+      expect(isOrderKey(key)).toBe(false)
+      await storeHash(env, orderId, hashOrderKey(key))
+    }
+    const opens = env.repos.orderAccessKey.opens
+    let reads = 0
+    env.repos.orderAccessKey.opens = (...args) => {
+      reads++
+      return opens(...args)
+    }
+    for (const key of malformed) {
+      expect(await env.orderService.keyOpens(orderId, key)).toBe(false)
+    }
+    expect(reads).toBe(0)
+    expect(await env.orderService.keyOpens(orderId, good)).toBe(false)
+    expect(reads).toBe(1)
+    await env.commandStore.close()
+  })
+})
+
+describe('OrderService.resendConfirmation', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function importIn(env: Env, status: OrderStatus) {
+    const totalMinor = 2500
+    const paid = status !== 'pending' && status !== 'cancelled'
+    const refundedMinor =
+      status === 'refunded' ? totalMinor : status === 'partially_refunded' ? 1000 : 0
+    const line = await createLine(totalMinor, 1)
+    return env.orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: `WC-${uuidv7().slice(-12)}`,
+      status,
+      customerId: null,
+      email: 'resend@example.com',
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: totalMinor,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor,
+      currency: 'GBP',
+      createdAt: new Date('2024-03-01T09:30:00Z'),
+      ...(paid && { capturedMinor: totalMinor, refundedMinor, captureMethod: 'manual' as const }),
+    })
+  }
+
+  async function resendEvents(env: Env) {
+    const all = await env.commandStore.read((tx) => env.repos.eventLog.listAll(tx))
+    return all
+      .filter((l) => l.event.type === EVT_ORDER_CONFIRMATION_RESEND_REQUESTED)
+      .map((l) => l.event.payload)
+  }
+
+  const due: OrderStatus[] = [
+    'confirmed',
+    'processing',
+    'shipped',
+    'delivered',
+    'partially_refunded',
+    'refunded',
+  ]
+
+  // Defect: a status a confirmation is due for is refused, the event is not published or names the wrong order, or the
+  // order is changed by the resend.
+  it.each(due)(
+    'AC-6: a %s order is returned unchanged and one resend event names it',
+    async (status) => {
+      const env = await setup()
+      const order = await importIn(env, status)
+      const before = await env.orderService.getById(order.id)
+      const returned = await env.orderService.resendConfirmation(order.id)
+      expect(returned).toEqual(before)
+      expect(await env.orderService.getById(order.id)).toEqual(before)
+      expect(await resendEvents(env)).toEqual([{ orderId: order.id }])
+      await env.commandStore.close()
+    },
+  )
+
+  // Defect: a pending or cancelled order, never paid, is mailed a confirmation, or the refusal says the wrong thing.
+  it.each(['pending', 'cancelled'] as const)(
+    'AC-6: a %s order is refused order.unpaid and nothing is published',
+    async (status) => {
+      const env = await setup()
+      const order = await importIn(env, status)
+      const before = await env.orderService.getById(order.id)
+      const error = await env.orderService.resendConfirmation(order.id).then(
+        () => undefined,
+        (e: unknown) => e,
+      )
+      expect(error).toBeInstanceOf(OrderConflictError)
+      const conflict = error as OrderConflictError
+      expect(conflict.code).toBe('order.unpaid')
+      expect(conflict.message).toBe(
+        `Order ${order.orderNumber} is ${status}: no confirmation is due`,
+      )
+      expect(conflict.context).toEqual({ status })
+      expect(await resendEvents(env)).toEqual([])
+      expect(await env.orderService.getById(order.id)).toEqual(before)
+      await env.commandStore.close()
+    },
+  )
+
+  // Defect: a missing order falls through to a TypeError on `order.status` instead of a 404.
+  it('AC-6: a resend for an unknown order is NotFoundError and publishes nothing', async () => {
+    const env = await setup()
+    await expect(env.orderService.resendConfirmation(uuidv7())).rejects.toBeInstanceOf(
+      NotFoundError,
+    )
+    expect(await resendEvents(env)).toEqual([])
     await env.commandStore.close()
   })
 })

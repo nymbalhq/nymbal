@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { fetchOrder } from '@/lib/api'
-import { OrderSummary } from '@/components/client/elements'
+import { loadOrder } from '@/lib/api'
+import { OrderSummary, OrderTimeline } from '@/components/client/elements'
 import { renderNymbal } from '@/lib/render'
 import { OrderStatusRefresh } from '@/components/client/OrderStatusRefresh'
 import { isPaid, orderHeading } from '@/lib/order-status'
@@ -10,12 +10,16 @@ import styles from '@/styles/pages/confirmation.module.css'
 
 interface OrderPageProps {
   params: Promise<{ orderNumber: string }>
+  searchParams: Promise<{ key?: string | string[] }>
 }
 
+// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: the meta
+// tag here, and the header next.config.mjs sets on every /order/<n> response, the not-found render's too.
 export async function generateMetadata({ params }: OrderPageProps): Promise<Metadata> {
   const { orderNumber } = await params
   return {
     title: `Order ${orderNumber}`,
+    referrer: 'no-referrer',
   }
 }
 
@@ -54,9 +58,12 @@ function AddressBlock({
   )
 }
 
-export default async function OrderPage({ params }: OrderPageProps) {
+export default async function OrderPage({ params, searchParams }: OrderPageProps) {
   const { orderNumber } = await params
-  const order = await fetchOrder(orderNumber)
+  const { key: keyParam } = await searchParams
+  const key = Array.isArray(keyParam) ? keyParam[0] : keyParam
+  // Rejects when the API fails, so a failed read is a 500 and never a 404 for an order the shopper has.
+  const order = await loadOrder(orderNumber, key)
 
   if (!order) notFound()
   const paid = isPaid(order.status)
@@ -75,10 +82,11 @@ export default async function OrderPage({ params }: OrderPageProps) {
     'total-minor': String(order.totalMinor),
     currency: order.currency,
   }
+  const timeline = order.timeline ?? []
 
   return (
     <div className={`container ${styles.page}`}>
-      <OrderStatusRefresh orderNumber={order.orderNumber} status={order.status} />
+      <OrderStatusRefresh orderNumber={order.orderNumber} orderKey={key} status={order.status} />
       <div className={styles.wrapper}>
         <div className={styles.successHeader}>
           {paid && (
@@ -111,6 +119,14 @@ export default async function OrderPage({ params }: OrderPageProps) {
             .{order.status === 'pending' && ' We will confirm it once the payment arrives.'}
           </p>
         </div>
+
+        <OrderTimeline
+          className={styles.summary}
+          entries={timeline}
+          serverHtml={
+            renderNymbal('nymbal-order-timeline', { entries: JSON.stringify(timeline) }).__html
+          }
+        />
 
         <OrderSummary
           className={styles.summary}

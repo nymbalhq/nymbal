@@ -1,3 +1,5 @@
+// Reads: packages/adapter-*/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
+// Reads: .changeset/config.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

@@ -20,6 +20,7 @@ import { NymbalAddressForm } from './components/address-form.js'
 import { NymbalAddressBook } from './components/address-book.js'
 import { NymbalCheckout } from './components/checkout.js'
 import { NymbalProductGrid } from './components/product-grid.js'
+import { NymbalRecentlyViewed } from './components/recently-viewed.js'
 import { NymbalProductPrice } from './components/product-price.js'
 import { NymbalStockBadge } from './components/stock-badge.js'
 import { NymbalBreadcrumb } from './components/breadcrumb.js'
@@ -30,6 +31,8 @@ import { NymbalCategoryNav } from './components/category-nav.js'
 import { NymbalReviewList } from './components/review-list.js'
 import { NymbalReviewForm } from './components/review-form.js'
 import { NymbalOrderSummary } from './components/order-summary.js'
+import { NymbalNotifyMe } from './components/notify-me.js'
+import { NymbalOrderTimeline } from './components/order-timeline.js'
 
 /** Every element the package defines. */
 export const ELEMENTS = [
@@ -53,6 +56,7 @@ export const ELEMENTS = [
   NymbalAddressBook,
   NymbalCheckout,
   NymbalProductGrid,
+  NymbalRecentlyViewed,
   NymbalProductPrice,
   NymbalStockBadge,
   NymbalBreadcrumb,
@@ -63,6 +67,8 @@ export const ELEMENTS = [
   NymbalReviewList,
   NymbalReviewForm,
   NymbalOrderSummary,
+  NymbalNotifyMe,
+  NymbalOrderTimeline,
 ]
 
 /**

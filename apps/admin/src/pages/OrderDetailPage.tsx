@@ -35,12 +35,16 @@ import {
   useCancelOrder,
   useMarkDeliveredOrder,
   useShipOrder,
+  useResendConfirmation,
 } from '@/hooks/useOrders'
 import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { CaptureMethod, Order, OrderPayment, OrderRefund } from '@nymbalhq/types'
+import type { CaptureMethod, Order, OrderPayment, OrderRefund, OrderStatus } from '@nymbalhq/types'
+
+/** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
+const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
 
 const PAYMENT_STATE_LABELS: Record<OrderPayment['state'], string> = {
   unpaid: 'Unpaid',
@@ -171,6 +175,7 @@ export function OrderDetailPage() {
   const cancelOrder = useCancelOrder()
   const markDelivered = useMarkDeliveredOrder()
   const shipOrder = useShipOrder()
+  const resend = useResendConfirmation()
 
   if (isLoading) {
     return (
@@ -230,12 +235,18 @@ export function OrderDetailPage() {
   }
 
   const primary = primaryAction()
+  const resendDisabled = NO_CONFIRMATION_DUE.includes(order.status) || resend.isPending
+  const resendResult = resend.isError
+    ? resend.error.message
+    : resend.data
+      ? `Confirmation queued to ${resend.data.email}`
+      : null
 
   return (
     <div className="space-y-4" data-testid={tid('order', 'detail')}>
       {/* Back + header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             to="/orders"
             className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-700 transition-colors"
@@ -247,7 +258,16 @@ export function OrderDetailPage() {
           <h1 className="font-mono text-base font-semibold text-zinc-900">#{order.orderNumber}</h1>
           <OrderStatusBadge status={order.status} data-testid={tid('order', 'status-badge')} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {resendResult !== null && (
+            <span
+              role="status"
+              className="text-xs text-zinc-500"
+              data-testid={tid('order', 'resend-result')}
+            >
+              {resendResult}
+            </span>
+          )}
           {primary && (
             <Button size="sm" onClick={primary.action} className="gap-1.5">
               <primary.icon className="h-4 w-4" />
@@ -261,7 +281,14 @@ export function OrderDetailPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem className="gap-2">
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (!resendDisabled) resend.mutate({ orderId: order.id })
+                }}
+                className="gap-2"
+                disabled={resendDisabled}
+                data-testid={tid('order', 'action', 'resend-confirmation')}
+              >
                 <Mail className="h-4 w-4" />
                 Resend confirmation
               </DropdownMenuItem>
@@ -293,7 +320,7 @@ export function OrderDetailPage() {
       </div>
 
       {/* Order date + status select */}
-      <div className="flex items-center gap-4 text-sm text-zinc-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-500">
         <span className="flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5" />
           Placed {formatDate(order.createdAt)}
@@ -451,11 +478,13 @@ export function OrderDetailPage() {
               Customer
             </h3>
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-600">
                 {(order.email[0] ?? '?').toUpperCase()}
               </div>
-              <div>
-                <p className="text-sm font-medium text-zinc-800">{order.email}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-800 [overflow-wrap:anywhere]">
+                  {order.email}
+                </p>
                 {order.customerId && (
                   <Link
                     to={`/customers/${order.customerId}`}

@@ -22,6 +22,7 @@
     "clean": "pnpm -r exec rm -rf dist .turbo node_modules/.cache",
     "dev": "pnpm --filter nymbal dev",
     "mutation": "stryker run",
+    "mutation:integration": "stryker run stryker.integration.config.mjs",
     "mutation:ratchet": "tsx scripts/mutation-ratchet.ts",
     "census": "tsx scripts/test-census.ts",
     "sentinels": "tsx scripts/sentinels.ts --suite \"pnpm vitest run --project '!tooling' --exclude 'packages/platform/tests/postgres/**' --exclude 'packages/proof-kit/tests/services/**' --exclude 'packages/doc-store-*/src/**' --exclude 'packages/event-bus-*/src/**' --exclude 'packages/platform/tests/primitives/**' --exclude 'tests/stores/**' --exclude 'packages/platform/tests/integration/search-performance.test.ts'\"",

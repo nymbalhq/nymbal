@@ -23,7 +23,8 @@ function render(template: string, vars: Record<string, unknown>): string {
 const TEMPLATES: Record<string, { subject: string; body: string }> = {
   'order-placed': {
     subject: 'Order {{orderNumber}} confirmed',
-    body: `Hi {{customerName}},\n\nThank you for your order {{orderNumber}}. Total: {{totalFormatted}}.\n\nWe'll let you know when it ships.`,
+    // `orderLink` is the whole "View your order" paragraph, absent when the store has no URL to link from.
+    body: `Hi {{customerName}},\n\nThank you for your order {{orderNumber}}. Total: {{totalFormatted}}.\n\nWe'll let you know when it ships.{{orderLink}}`,
   },
   'order-shipped': {
     subject: 'Order {{orderNumber}} is on its way',
@@ -36,6 +37,23 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   'cart-abandoned': {
     subject: "Don't forget your cart at {{storeName}}",
     body: `Hi,\n\nYou left items in your cart. Pick up where you left off: {{resumeUrl}}`,
+  },
+  // Each link on a line of its own, so a mail client never runs the next word into it.
+  'alert-confirm': {
+    subject: 'Confirm your alert for {{productName}}',
+    body: `Hi,\n\nYou asked {{storeName}} to email you when {{productName}} is back in stock. Confirm by following this link:\n\n{{confirmUrl}}\n\nIf you did not ask, ignore this email and you will hear nothing more.\n\nStop this alert:\n{{unsubscribeUrl}}`,
+  },
+  'alert-back-in-stock': {
+    subject: '{{productName}} is back in stock',
+    body: `Hi,\n\n{{productName}} is back in stock at {{storeName}}:\n\n{{productUrl}}\n\nThis was a one-time alert. Stop it:\n{{unsubscribeUrl}}`,
+  },
+  'alert-confirm-price-drop': {
+    subject: 'Confirm your price alert for {{productName}}',
+    body: `Hi,\n\nYou asked {{storeName}} to email you when the price of {{productName}} drops, each time it falls below the last price we told you. Confirm by following this link:\n\n{{confirmUrl}}\n\nIf you did not ask, ignore this email and you will hear nothing more.\n\nStop this alert:\n{{unsubscribeUrl}}`,
+  },
+  'alert-price-drop': {
+    subject: 'Price drop: {{productName}} is now {{priceFormatted}}',
+    body: `Hi,\n\nThe price of {{productName}} at {{storeName}} has dropped from {{previousPriceFormatted}} to {{priceFormatted}}:\n\n{{productUrl}}\n\nWe'll email you again if it drops below {{priceFormatted}}. Stop this alert:\n{{unsubscribeUrl}}`,
   },
 }
 

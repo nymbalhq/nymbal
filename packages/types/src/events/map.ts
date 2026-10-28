@@ -7,6 +7,9 @@ export interface NymbalEventMap {
   [C.EVT_PRODUCT_DELETED]: P.ProductDeletedV1Payload
   [C.EVT_PRODUCT_PUBLISHED]: P.ProductPublishedV1Payload
   [C.EVT_PRODUCT_UNPUBLISHED]: P.ProductUnpublishedV1Payload
+  [C.EVT_PRODUCT_VIEWED]: P.ProductViewedV1Payload
+  [C.EVT_PRODUCT_RESTOCKED]: P.ProductRestockedV1Payload
+  [C.EVT_PRODUCT_VARIANT_PRICE_CHANGED]: P.ProductVariantPriceChangedV1Payload
 
   [C.EVT_CATEGORY_CREATED]: P.CategoryCreatedV1Payload
   [C.EVT_CATEGORY_UPDATED]: P.CategoryUpdatedV1Payload
@@ -21,6 +24,7 @@ export interface NymbalEventMap {
   [C.EVT_ORDER_REFUNDED]: P.OrderRefundedV1Payload
   [C.EVT_ORDER_PARTIALLY_REFUNDED]: P.OrderPartiallyRefundedV1Payload
   [C.EVT_ORDER_STATUS_CHANGED]: P.OrderStatusChangedV1Payload
+  [C.EVT_ORDER_CONFIRMATION_RESEND_REQUESTED]: P.OrderConfirmationResendRequestedV1Payload
 
   [C.EVT_INVENTORY_CHANGED]: P.InventoryChangedV1Payload
   [C.EVT_INVENTORY_RESERVED]: P.InventoryReservedV1Payload
@@ -31,6 +35,7 @@ export interface NymbalEventMap {
   [C.EVT_CUSTOMER_CREATED]: P.CustomerCreatedV1Payload
   [C.EVT_CUSTOMER_UPDATED]: P.CustomerUpdatedV1Payload
   [C.EVT_CUSTOMER_DELETED]: P.CustomerDeletedV1Payload
+  [C.EVT_VISITOR_MERGED]: P.VisitorMergedV1Payload
 
   [C.EVT_CART_CREATED]: P.CartCreatedV1Payload
   [C.EVT_CART_ITEM_ADDED]: P.CartItemAddedV1Payload
@@ -43,6 +48,11 @@ export interface NymbalEventMap {
   [C.EVT_PAYMENT_CAPTURED]: P.PaymentCapturedV1Payload
   [C.EVT_PAYMENT_FAILED]: P.PaymentFailedV1Payload
   [C.EVT_PAYMENT_REFUNDED]: P.PaymentRefundedV1Payload
+
+  [C.EVT_ALERT_REQUESTED]: P.AlertRequestedV1Payload
+  [C.EVT_ALERT_CONFIRMED]: P.AlertConfirmedV1Payload
+  [C.EVT_ALERT_UNSUBSCRIBED]: P.AlertUnsubscribedV1Payload
+  [C.EVT_ALERT_SENT]: P.AlertSentV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload

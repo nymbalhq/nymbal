@@ -1,3 +1,4 @@
+// Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { execFile, execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,6 +26,8 @@ const TSX = join(REPO, 'node_modules/.bin/tsx')
 const GATE = join(REPO, 'scripts/gate.ts')
 
 const CI_URL = 'postgres://ci:ci@127.0.0.1:5432/nymbal_ci'
+/** CI's Mailpit service API: what the custom-store E2E jobs pass as NYMBAL_TEST_MAILPIT_URL. */
+const CI_MAILPIT_URL = 'http://127.0.0.1:18025'
 
 const BASE_INPUT: PlanInput = {
   full: true,
@@ -43,6 +46,10 @@ const NEED_FREE = fullPlan()
   .filter((s) => (s.needs ?? []).length === 0)
   .map((s) => s.name)
 const E2E_NAMES = DEFAULT_NAMES.filter((n) => n.startsWith('e2e'))
+/** The custom-providers store's E2E steps: its email is SMTP into Mailpit, so they need `mailpit up` beside the build. */
+const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
+/** Every other E2E step, which needs the build alone. */
+const BUILD_ONLY_E2E = E2E_NAMES.filter((n) => !MAILPIT_E2E.includes(n))
 
 function slug(name: string): string {
   return name.replace(/[^A-Za-z0-9]+/g, '-')
@@ -163,6 +170,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
     const { steps, ran } = await rehearsal({
       services: 'external',
       postgresUrl: CI_URL,
+      mailpitUrl: CI_MAILPIT_URL,
       noBuild: true,
       artefactPresent: true,
     })
@@ -176,6 +184,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
     const { steps, ran } = await rehearsal({
       services: 'external',
       postgresUrl: CI_URL,
+      mailpitUrl: CI_MAILPIT_URL,
       noBuild: true,
       artefactPresent: false,
     })
@@ -201,6 +210,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
         only: [e2e],
         services: 'external',
         postgresUrl: CI_URL,
+        mailpitUrl: CI_MAILPIT_URL,
         noBuild: true,
         artefactPresent: true,
       })
@@ -217,6 +227,7 @@ describe('AC-2: --services external and --no-build meet their needs only when th
             const { steps, ran } = await rehearsal({
               services: external ? 'external' : 'compose',
               postgresUrl: urlSet ? CI_URL : undefined,
+              mailpitUrl: urlSet ? CI_MAILPIT_URL : undefined,
               noBuild,
               artefactPresent: artefact,
             })
@@ -234,9 +245,11 @@ describe('AC-2: --services external and --no-build meet their needs only when th
                 `${label}: ${name} skipped with detail "${detail}"`,
               ).toBe(true)
             }
-            // AC-11: the E2E steps need build only, so Postgres does not gate them.
+            // AC-11: the E2E steps need build only, so Postgres does not gate them; the custom store's also need
+            // Mailpit, which the URL set beside Postgres's meets under --services external.
             for (const name of E2E_NAMES) {
-              expect(ran.includes(name), `${label}: ${name}`).toBe(buildMet)
+              const mailpitMet = !MAILPIT_E2E.includes(name) || !external || urlSet
+              expect(ran.includes(name), `${label}: ${name}`).toBe(buildMet && mailpitMet)
               // A step skipped for want of the build names the missing artefact.
               const detail = stepNamed(steps, name)?.detail ?? ''
               expect(
@@ -448,17 +461,18 @@ describe('AC-9: artefactPresent requires every expected build output', () => {
 describe('AC-11: the E2E steps need build only, not compose up', () => {
   const POSTGRES_STEPS = ['integration-postgres', 'tests-fail-on-base']
 
-  it('AC-11: with compose up red, every E2E step still runs while the Postgres steps are skipped', async () => {
+  it('AC-11: with compose up red, every E2E step but the Mailpit store’s still runs while the Postgres steps are skipped', async () => {
     const { steps, ran } = await rehearsal({}, ['compose up'])
     expect(stepNamed(steps, 'compose up')?.status).toBe('red')
     for (const name of POSTGRES_STEPS) expect(ran, name).not.toContain(name)
-    expect(ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+    expect(ran.filter((n) => n.startsWith('e2e'))).toEqual(BUILD_ONLY_E2E)
   })
 
-  it('AC-11: --services external without a URL, over a present artefact, runs every E2E step and skips the Postgres ones', async () => {
+  it('AC-11: --services external without a Postgres URL, over a present artefact, runs every E2E step and skips the Postgres ones', async () => {
     const { steps, ran } = await rehearsal({
       services: 'external',
       postgresUrl: undefined,
+      mailpitUrl: CI_MAILPIT_URL,
       noBuild: true,
       artefactPresent: true,
     })
@@ -468,9 +482,56 @@ describe('AC-11: the E2E steps need build only, not compose up', () => {
     expect(ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
   })
 
-  it('AC-11: --only with build and the E2E steps (compose up left out) runs them all', async () => {
-    const { ran } = await rehearsal({ only: ['build', ...E2E_NAMES] })
+  it('AC-11: --only with build and the E2E steps (compose up left out), under --services external with the Mailpit URL, runs them all', async () => {
+    const { ran } = await rehearsal({
+      only: ['build', ...E2E_NAMES],
+      services: 'external',
+      mailpitUrl: CI_MAILPIT_URL,
+    })
     expect(ran).toEqual(['build', ...E2E_NAMES])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+
+describe('AC-13: the custom store’s E2E steps need mailpit up', () => {
+  it('AC-13: locally, the custom store’s E2E steps run when compose up is ok and are skipped, naming the need, when it is red; every other E2E step runs either way', async () => {
+    expect(MAILPIT_E2E.every((name) => E2E_NAMES.includes(name))).toBe(true)
+    const ok = await rehearsal({})
+    const red = await rehearsal({}, ['compose up'])
+
+    expect(ok.ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+    expect(red.ran.filter((n) => n.startsWith('e2e'))).toEqual(BUILD_ONLY_E2E)
+    for (const name of MAILPIT_E2E) {
+      const step = stepNamed(red.steps, name)
+      expect([step?.status, /mailpit up/.test(step?.detail ?? '')], name).toEqual(['skipped', true])
+    }
+  })
+
+  it('AC-13: under --services external, NYMBAL_TEST_MAILPIT_URL meets mailpit up but not the Postgres steps’ compose up; unset, the custom store’s E2E steps skip naming the variable, and every other E2E step runs', async () => {
+    const met = await rehearsal({
+      services: 'external',
+      postgresUrl: undefined,
+      mailpitUrl: CI_MAILPIT_URL,
+    })
+    const unmet = await rehearsal({ services: 'external', mailpitUrl: undefined })
+
+    expect(met.ran.filter((n) => n.startsWith('e2e'))).toEqual(E2E_NAMES)
+    for (const name of ['integration-postgres', 'tests-fail-on-base']) {
+      const step = stepNamed(met.steps, name)
+      expect(
+        [step?.status, (step?.detail ?? '').includes('NYMBAL_TEST_POSTGRES_URL')],
+        name,
+      ).toEqual(['skipped', true])
+    }
+    expect(unmet.ran.filter((n) => n.startsWith('e2e'))).toEqual(BUILD_ONLY_E2E)
+    for (const name of MAILPIT_E2E) {
+      const step = stepNamed(unmet.steps, name)
+      expect(
+        [step?.status, (step?.detail ?? '').includes('NYMBAL_TEST_MAILPIT_URL')],
+        name,
+      ).toEqual(['skipped', true])
+    }
   })
 })
 

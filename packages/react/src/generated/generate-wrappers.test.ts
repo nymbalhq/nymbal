@@ -12,7 +12,7 @@ import { generateWrappers } from '../../scripts/generate-wrappers.js'
 // schemas and its output is compiled and rendered: every attribute is a prop that sets that attribute, every event an
 // `on…` prop that receives it. Adding an attribute to a copy of a real element's schema adds exactly that one prop to
 // that wrapper and leaves every other wrapper rendering the same attributes. (The real schemas against the committed
-// wrappers.tsx is `check:generated`, in tests/tooling/wrappers-check.test.ts.)
+// wrappers.tsx is `check:generated`, in tests/tooling/generate-wrappers.test.ts.)
 
 type Attribute = ElementSchema['attributes'][number]
 type EventDef = ElementSchema['events'][number]

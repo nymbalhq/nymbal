@@ -1,7 +1,21 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
-import { type PlanInput, plan } from '../../scripts/gate'
+// Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
+// Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
+// Reads: tests/perf/perf-budgets.test.ts
+import { spawnSync } from 'node:child_process'
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  emptyTree,
+  HARNESS_PROJECTS,
+  type PlanInput,
+  plan,
+  resolveBase,
+  stepModes,
+} from '../../scripts/gate'
+import { childEnv, cleanupScratch, git, REPO, scratchRepo } from './scratch-gate'
+import { leftOut } from './vitest-filters'
 
 // AC-4: every CI job except `build` downloads the one artefact `build` uploads, and none of them runs `pnpm build`
 // (directly, or through a gate.ts plan that would).
@@ -733,6 +747,31 @@ describe('AC-7: CI passes the right base to every gate.ts call', () => {
   )
 })
 
+describe('nightly.yml: every gate call has a base that resolves on the commit it checks out', () => {
+  afterEach(cleanupScratch)
+
+  // A release can put a root commit at main's head, and the schedule runs on main: there `HEAD~1` names nothing.
+  it.each(NIGHTLY_EVENTS)(
+    'on $label, every gate call resolves its base on a root commit, to the empty tree',
+    ({ github }) => {
+      const nightly = loadWorkflow(NIGHTLY)
+      const calls = gateCalls(nightly, github)
+      expect(calls.length, 'gate calls that run').toBeGreaterThan(0)
+      expect(shallowGateJobs(nightly, calls), 'gate jobs without fetch-depth: 0').toEqual([])
+      const repo = scratchRepo({ 'src/a.ts': 'export const a = 1\n' })
+      expect(git(repo.root, 'rev-list', '--count', 'HEAD')).toBe('1')
+      const resolved = calls.map((c) => {
+        try {
+          return `${c.job}: ${resolveBase(repo.root, c.base, () => {})}`
+        } catch (error) {
+          return `${c.job}: ${(error as Error).message}`
+        }
+      })
+      expect(resolved).toEqual(calls.map((c) => `${c.job}: ${emptyTree(repo.root)}`))
+    },
+  )
+})
+
 describe('CI runs on pushes to main and dev only', () => {
   it('ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
     const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as {
@@ -771,6 +810,7 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
         ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
         services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
         postgresUrl: run?.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+        mailpitUrl: run?.env.NYMBAL_TEST_MAILPIT_URL || undefined,
         noBuild: call.args.includes('--no-build'),
         artefactPresent: true,
       }).steps
@@ -782,6 +822,71 @@ describe('AC-11: the E2E jobs start no Postgres service, and their gate.ts call 
     }
     expect(e2eSteps).toBeGreaterThanOrEqual(e2eJobs.length)
     expect(failures).toEqual([])
+  })
+})
+
+// AC-13: the custom-providers store mails through Mailpit, so its two E2E jobs run CI's Mailpit service, pass its
+// URLs, and call gate.ts with --services external, under which that URL meets the steps' `mailpit up`.
+const MAILPIT_E2E_JOBS: Record<string, string> = {
+  'e2e-astro-custom': 'e2e astro-custom',
+  'e2e-nextjs-custom': 'e2e nextjs-custom',
+}
+
+describe('AC-13: the custom-store E2E jobs have the Mailpit their journeys read', () => {
+  it('AC-13: each custom-store E2E job runs a Mailpit service, gives its gate.ts call --services external with NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_MAILPIT_SMTP at the service’s published 8025 and 1025, and its e2e step is planned to run', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const problems: string[] = []
+    let planned = 0
+    for (const [id, stepName] of Object.entries(MAILPIT_E2E_JOBS)) {
+      const job = ci.jobs[id]
+      if (job === undefined) {
+        problems.push(`ci.yml has no ${id} job`)
+        continue
+      }
+      const mailpit = Object.values(job.services ?? {}).find((svc) =>
+        (svc?.image ?? '').startsWith('axllent/mailpit'),
+      )
+      const published = publishedPorts(mailpit)
+      if (mailpit === undefined) problems.push(`${id}: no Mailpit service`)
+      for (const call of gateCalls(ci, DEV_PUSH).filter((c) => c.job === id)) {
+        const run = execute(ci, DEV_PUSH).find((r) => r.job === id)!
+        const api = run.env.NYMBAL_TEST_MAILPIT_URL
+        const smtp = run.env.NYMBAL_TEST_MAILPIT_SMTP
+        if (flag(call.args, '--services') !== 'external')
+          problems.push(`${id}: not --services external`)
+        if (!api || portOf(api) !== published.get('8025')) {
+          problems.push(
+            `${id}: NYMBAL_TEST_MAILPIT_URL ${api ?? 'unset'} is not the service's 8025`,
+          )
+        }
+        if (!smtp || portOf(smtp) !== published.get('1025')) {
+          problems.push(
+            `${id}: NYMBAL_TEST_MAILPIT_SMTP ${smtp ?? 'unset'} is not the service's 1025`,
+          )
+        }
+        const only = flag(call.args, '--only')
+        const steps = plan({
+          full: true,
+          base: 'HEAD',
+          changed: [],
+          mutated: [],
+          ...(only === undefined ? {} : { only: only.split(',').map((n) => n.trim()) }),
+          services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+          postgresUrl: run.env.NYMBAL_TEST_POSTGRES_URL || undefined,
+          mailpitUrl: api || undefined,
+          noBuild: call.args.includes('--no-build'),
+          artefactPresent: true,
+        } as PlanInput).steps
+        const step = steps.find((s) => s.name === stepName)
+        if (step === undefined || step.skip !== undefined) {
+          problems.push(
+            `${id}: "${stepName}" ${step === undefined ? 'is not planned' : `is skipped: ${step.skip}`}`,
+          )
+        } else planned += 1
+      }
+    }
+    expect(problems).toEqual([])
+    expect(planned).toBe(Object.keys(MAILPIT_E2E_JOBS).length)
   })
 })
 
@@ -972,6 +1077,351 @@ describe('AC-18: tests-fail-on-base in CI has the Mailpit the kit tests need', (
       }
     }
     expect(runsBase, 'CI gate.ts calls that run tests-fail-on-base').toBeGreaterThan(0)
+    expect(problems).toEqual([])
+  })
+})
+
+// The harness's own Vitest projects run in a gate only when a harness path changed; the push to dev is where they
+// always run, so the job that runs the tests step asks for them.
+const RELEASE = fileURLToPath(new URL('../../.github/workflows/release.yml', import.meta.url))
+const PERF_SUITE = fileURLToPath(new URL('../perf/perf-budgets.test.ts', import.meta.url))
+
+type PerfCall = { where: string; args: string[] }
+
+/**
+ * Every `perf:budgets` a workflow runs: a direct call, with its arguments, or the tests/perf suite, which spawns
+ * `pnpm perf:budgets` with the words of NYMBAL_PERF_BUDGETS_ARGS from the env its step sees.
+ */
+function perfCalls(workflow: Workflow, github: Ctx): PerfCall[] {
+  const calls: PerfCall[] = []
+  for (const run of execute(workflow, github)) {
+    for (const m of run.script.matchAll(
+      /(?:\bpnpm\s+(?:run\s+)?perf:budgets|scripts\/perf-budgets\.ts)([^\n;&|]*)/g,
+    )) {
+      calls.push({ where: run.job, args: words(m[1] ?? '').map((w) => expand(w, run, m.index)) })
+    }
+    if (/tests\/perf\/vitest\.config\.ts/.test(run.script)) {
+      calls.push({
+        where: `${run.job} (tests/perf)`,
+        args: words(run.env.NYMBAL_PERF_BUDGETS_ARGS ?? ''),
+      })
+    }
+  }
+  return calls
+}
+
+describe('perf:budgets takes the median of at least five Lighthouse runs a page', () => {
+  it('the tests/perf suite passes NYMBAL_PERF_BUDGETS_ARGS to every perf:budgets it spawns', () => {
+    const source = readFileSync(PERF_SUITE, 'utf8')
+    const spawns = [...source.matchAll(/spawn\('pnpm', \[([^\]]*)\]/g)].map((m) => m[1])
+    expect(spawns).toEqual(["'perf:budgets', ...args, ...FROM_ENV"])
+    expect(source).toMatch(/^const FROM_ENV = .*process\.env\.NYMBAL_PERF_BUDGETS_ARGS\b/m)
+  })
+
+  it.each([
+    { label: 'ci.yml on a push to dev', file: WORKFLOW, github: DEV_PUSH },
+    ...NIGHTLY_EVENTS.map((e) => ({
+      label: `nightly.yml on ${e.label}`,
+      file: NIGHTLY,
+      github: e.github,
+    })),
+  ])('$label: every perf:budgets call passes --runs 5 or more', ({ file, github }) => {
+    const calls = perfCalls(loadWorkflow(file), github)
+    expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
+    const short = calls
+      .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
+      .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
+    expect(short).toEqual([])
+  })
+
+  it('release.yml runs no perf:budgets, so it has no runs to set', () => {
+    expect(readFileSync(RELEASE, 'utf8')).not.toMatch(/perf:budgets|perf-budgets\.ts|tests\/perf\//)
+  })
+})
+
+describe('dev CI runs the harness projects whatever changed', () => {
+  it('the gate.ts call whose --only names tests passes --harness all, and its plan negates no harness project', () => {
+    const calls = gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) =>
+      (flag(c.args, '--only') ?? '')
+        .split(',')
+        .map((n) => n.trim())
+        .includes('tests'),
+    )
+    expect(calls.length, 'a job runs the tests step').toBeGreaterThan(0)
+    for (const call of calls) {
+      expect(flag(call.args, '--harness'), call.job).toBe('all')
+      const tests = plan({
+        full: true,
+        base: 'HEAD',
+        changed: ['packages/sdk/src/client.ts'],
+        mutated: [],
+        only: (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim()),
+        harness: 'all',
+      }).steps.find((s) => s.name === 'tests')
+      expect(leftOut(tests?.command ?? '', HARNESS_PROJECTS)).toEqual([])
+    }
+  })
+})
+
+// The command line alone decides whether CI's sentinels and mutation jobs run their step, and whether the ratchet
+// blocks: a gate.ts call naming either step must plan it to run, and the mutation step must block.
+describe('dev CI asks for the sentinels and stryker steps it names, and the mutation job blocks', () => {
+  const named = (call: GateCall): string[] =>
+    (flag(call.args, '--only') ?? '').split(',').map((n) => n.trim())
+
+  const modesOf = (call: GateCall): ReturnType<typeof stepModes> =>
+    stepModes({
+      only: named(call),
+      sentinels: flag(call.args, '--sentinels'),
+      stryker: call.args.includes('--stryker'),
+    })
+  const naming = (step: string): GateCall[] =>
+    gateCalls(loadWorkflow(WORKFLOW), DEV_PUSH).filter((c) => named(c).includes(step))
+
+  it('the calls naming stryker block on the ratchet, and those naming sentinels run them', () => {
+    const stryker = naming('stryker')
+    const sentinels = naming('sentinels')
+    expect(stryker.length, 'ci.yml runs stryker on a push to dev').toBeGreaterThan(0)
+    expect(sentinels.length, 'ci.yml runs the sentinels on a push to dev').toBeGreaterThan(0)
+    expect(stryker.map((c) => [c.job, modesOf(c).stryker])).toEqual(
+      stryker.map((c) => [c.job, 'blocking']),
+    )
+    expect(sentinels.filter((c) => modesOf(c).sentinels === 'none').map((c) => c.job)).toEqual([])
+  })
+
+  it('every gate.ts call whose --only names sentinels or stryker plans that step to run, the ratchet chained', () => {
+    const calls = [...naming('sentinels'), ...naming('stryker')]
+    for (const call of calls) {
+      const modes = modesOf(call)
+      const planned = plan({
+        full: true,
+        base: 'HEAD',
+        changed: ['packages/platform/src/services/cart-service.ts'],
+        mutated: ['packages/platform/src/services/cart-service.ts'],
+        only: named(call),
+        services: flag(call.args, '--services') === 'external' ? 'external' : 'compose',
+        postgresUrl: 'postgres://ci@localhost:5432/ci',
+        mailpitUrl: 'http://localhost:8025',
+        noBuild: call.args.includes('--no-build'),
+        artefactPresent: true,
+        sentinels:
+          modes.sentinels === 'impacted'
+            ? new Set(['S001'])
+            : modes.sentinels === 'all'
+              ? 'all'
+              : 'none',
+        stryker: modes.stryker,
+      }).steps
+      for (const name of named(call).filter((n) => n === 'sentinels' || n === 'stryker')) {
+        const found = planned.find((s) => s.name === name)
+        expect(found, `${call.job}: ${name} is planned`).toBeDefined()
+        expect(found?.skip, `${call.job}: ${name} runs`).toBeUndefined()
+      }
+    }
+    for (const call of naming('stryker')) {
+      const command =
+        plan({
+          full: true,
+          base: 'HEAD',
+          changed: ['packages/platform/src/services/cart-service.ts'],
+          mutated: ['packages/platform/src/services/cart-service.ts'],
+          only: named(call),
+          stryker: modesOf(call).stryker,
+        }).steps.find((s) => s.name === 'stryker')?.command ?? ''
+      expect(command, `${call.job}: the ratchet blocks`).toMatch(
+        /&& pnpm --silent mutation:ratchet check --report \S+$/,
+      )
+    }
+  })
+})
+
+// Each nightly mutation run is held to its own ratchet. The check step's `run`, as the simulated event executes it,
+// runs in a scratch holding the job's Stryker config, its ratchet, and a fixture report where that config writes its
+// report. The other ratchet holds the file at 0, so a check aimed at it never fails.
+
+const MUTATION_JOBS = [
+  {
+    job: 'mutation-full',
+    config: 'stryker.config.mjs',
+    ratchet: 'mutation-ratchet.json',
+    other: 'mutation-ratchet.integration.json',
+    stryker: /\bpnpm mutation --force\b/,
+  },
+  {
+    job: 'mutation-integration',
+    config: 'stryker.integration.config.mjs',
+    ratchet: 'mutation-ratchet.integration.json',
+    other: 'mutation-ratchet.json',
+    stryker: /\bpnpm mutation:integration\b/,
+  },
+]
+type MutationJob = (typeof MUTATION_JOBS)[number]
+
+/** In both mutate sets; the fixture report scores it 50.00 (two of four mutants detected). */
+const SCORED = 'packages/platform/src/services/alert-service.ts'
+const SCORE = 50
+const RATCHET_CHECK = /\bmutation:ratchet\s+check\b/
+
+async function reportPathOf(config: string): Promise<string> {
+  const loaded = (await import(pathToFileURL(join(REPO, config)).href)) as {
+    default: { jsonReporter?: { fileName?: string } }
+  }
+  return loaded.default.jsonReporter?.fileName ?? 'reports/mutation/mutation.json'
+}
+
+function scoredReport(): unknown {
+  const statuses = ['Killed', 'Timeout', 'Survived', 'NoCoverage', 'Ignored']
+  return {
+    schemaVersion: '1.0',
+    thresholds: { high: 80, low: 60 },
+    files: {
+      [SCORED]: {
+        language: 'typescript',
+        source: '',
+        mutants: statuses.map((status, i) => ({
+          id: String(i),
+          mutatorName: 'BlockStatement',
+          replacement: '{}',
+          status,
+          location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+        })),
+      },
+    },
+  }
+}
+
+/** Runs a check step's script as the runner's bash would, in a scratch where the job's ratchet holds SCORED at `entry`. */
+async function runCheck(
+  run: Executed,
+  spec: MutationJob,
+  entry: number,
+): Promise<{ status: number; output: string }> {
+  const ratchet = (score: number): string =>
+    `${JSON.stringify({ measuredAt: '2026-10-01T00:00:00.000Z', command: 'fixture', total: 50, files: { [SCORED]: score } }, null, 2)}\n`
+  const scripts = (
+    JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>
+    }
+  ).scripts
+  const { root } = scratchRepo(
+    {
+      'package.json': JSON.stringify({
+        name: 'nightly-check-scratch',
+        private: true,
+        type: 'module',
+        scripts,
+      }),
+      'stryker.config.mjs': readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8'),
+      'stryker.integration.config.mjs': readFileSync(
+        join(REPO, 'stryker.integration.config.mjs'),
+        'utf8',
+      ),
+      [SCORED]: 'export const alert = 1\n',
+      [spec.ratchet]: ratchet(entry),
+      [spec.other]: ratchet(0),
+    },
+    { realModules: true },
+  )
+  // A copy, not the scratch's link: the CLI runs its main only when invoked by its real path.
+  rmSync(join(root, 'scripts'))
+  cpSync(join(REPO, 'scripts'), join(root, 'scripts'), { recursive: true })
+  const reportPath = join(root, await reportPathOf(spec.config))
+  mkdirSync(dirname(reportPath), { recursive: true })
+  writeFileSync(reportPath, JSON.stringify(scoredReport()))
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', run.script], {
+    cwd: root,
+    encoding: 'utf8',
+    env: childEnv({ ...run.env, GATE_BASE: '' }),
+  })
+  return { status: r.status ?? -1, output: `${r.stdout}\n${r.stderr}` }
+}
+
+describe('AC-6: each nightly mutation job fails on a file below its own ratchet', () => {
+  afterEach(cleanupScratch)
+
+  it.each(NIGHTLY_EVENTS)(
+    "AC-6: on $label, each mutation job's ratchet check exits 1 naming a file 0.01 below its entry, and 0 at its entry",
+    async ({ github }) => {
+      const executed = execute(loadWorkflow(NIGHTLY), github)
+      const below = SCORE + 0.01
+      const outcomes = await Promise.all(
+        MUTATION_JOBS.flatMap((spec) => {
+          const checks = executed.filter((r) => r.job === spec.job && RATCHET_CHECK.test(r.script))
+          if (checks.length !== 1) {
+            return [Promise.resolve(`${spec.job}: ${checks.length} ratchet check steps run`)]
+          }
+          return [below, SCORE].map(async (entry) => {
+            const { status, output } = await runCheck(checks[0]!, spec, entry)
+            const names =
+              entry > SCORE ? (output.includes(SCORED) ? ', names it' : ', unnamed') : ''
+            return `${spec.job} at ${entry.toFixed(2)}: exit ${status}${names}`
+          })
+        }),
+      )
+      expect(outcomes).toEqual(
+        MUTATION_JOBS.flatMap((spec) => [
+          `${spec.job} at ${below.toFixed(2)}: exit 1, names it`,
+          `${spec.job} at ${SCORE.toFixed(2)}: exit 0`,
+        ]),
+      )
+    },
+    120_000,
+  )
+
+  it('AC-6: both mutation jobs need build and use its artefact without rebuilding, check after Stryker, never continue on error, and always upload the report their config writes', async () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const problems: string[] = []
+    for (const spec of MUTATION_JOBS) {
+      const job = nightly.jobs[spec.job]
+      if (job === undefined) {
+        problems.push(`${spec.job}: no such job`)
+        continue
+      }
+      const steps = job.steps ?? []
+      if (!needsOf(job).includes('build')) problems.push(`${spec.job}: does not need build`)
+      const download = steps.some(
+        (s) => s.uses?.startsWith('actions/download-artifact@') && s.with?.name === 'build-output',
+      )
+      if (!download) problems.push(`${spec.job}: does not download build-output`)
+      for (const script of runs(job).filter((r) => BUILD.test(r))) {
+        problems.push(`${spec.job}: rebuilds (${script})`)
+      }
+      const at = (re: RegExp): number =>
+        steps.findIndex((s) => typeof s.run === 'string' && re.test(s.run))
+      const stryker = at(spec.stryker)
+      const check = at(RATCHET_CHECK)
+      if (stryker === -1) problems.push(`${spec.job}: runs no ${spec.stryker.source}`)
+      if (check <= stryker) {
+        problems.push(
+          `${spec.job}: the ratchet check (step ${check}) does not follow Stryker (step ${stryker})`,
+        )
+      }
+      for (const [where, value] of [
+        ['the job', job] as const,
+        ...steps.map((s, i) => [`step ${i}`, s] as const),
+      ]) {
+        if (Object.hasOwn(value, 'continue-on-error')) {
+          problems.push(`${spec.job}: ${where} has continue-on-error`)
+        }
+      }
+      let reportDir: string
+      try {
+        reportDir = dirname(await reportPathOf(spec.config))
+      } catch (error) {
+        problems.push(`${spec.job}: ${spec.config} does not load (${String(error)})`)
+        continue
+      }
+      const upload = uploadsOf(job).find((u) =>
+        (u.with?.path ?? '')
+          .split('\n')
+          .map((p) => p.trim())
+          .includes(reportDir),
+      )
+      if (upload === undefined) problems.push(`${spec.job}: uploads no ${reportDir}`)
+      else if ((upload.if ?? '').replace(/^\$\{\{\s*|\s*\}\}$/g, '').trim() !== 'always()') {
+        problems.push(`${spec.job}: the report upload runs ${upload.if ?? 'on success only'}`)
+      }
+    }
     expect(problems).toEqual([])
   })
 })

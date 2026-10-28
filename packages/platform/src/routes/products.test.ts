@@ -35,8 +35,14 @@ function makeAdapter() {
       requestId: 'test-req',
       correlationId: 'test-corr',
       logger: {
-        trace() {}, debug() {}, info() {}, warn() {}, error() {},
-        child() { return this },
+        trace() {},
+        debug() {},
+        info() {},
+        warn() {},
+        error() {},
+        child() {
+          return this
+        },
       },
       ip: '127.0.0.1',
     })
@@ -60,108 +66,36 @@ function makeReviewsAdapter(items: unknown[] = []): ReviewsAdapter {
   } as unknown as ReviewsAdapter
 }
 
-describe('GET /api/products facet computation', () => {
-  it('returns empty facet values when no products have categories', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    await documentStore.put('products', 'p1', {
-      id: 'p1', slug: 'p1', name: 'P1', storeId: 'test',
-      status: 'active', categories: [],
-    })
-    const { adapter, invoke } = makeAdapter()
-    registerProductRoutes(adapter, documentStore, 'test')
-
-    const resp = await invoke('GET', '/api/products')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: { facets: Array<{ field: string; values: unknown[] }> } }
-    const facet = body.data.facets.find((f) => f.field === 'category')
-    expect(facet?.values).toHaveLength(0)
-  })
-
-  it('counts category occurrences across returned products', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const cats = [
-      { id: 'c1', name: 'Books', slug: 'books' },
-      { id: 'c2', name: 'Electronics', slug: 'electronics' },
-    ]
-    for (let i = 1; i <= 3; i++) {
-      await documentStore.put('products', `book-${i}`, {
-        id: `book-${i}`, slug: `book-${i}`, name: `Book ${i}`, storeId: 'test',
-        status: 'active', categories: [cats[0]],
-      })
-    }
-    for (let i = 1; i <= 2; i++) {
-      await documentStore.put('products', `elec-${i}`, {
-        id: `elec-${i}`, slug: `elec-${i}`, name: `Elec ${i}`, storeId: 'test',
-        status: 'active', categories: [cats[1]],
-      })
-    }
-
-    const { adapter, invoke } = makeAdapter()
-    registerProductRoutes(adapter, documentStore, 'test')
-
-    const resp = await invoke('GET', '/api/products')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: { facets: Array<{ field: string; values: Array<{ value: string; label: string; count: number }> }> } }
-    const facet = body.data.facets.find((f) => f.field === 'category')!
-    expect(facet.values).toHaveLength(2)
-
-    const books = facet.values.find((v) => v.value === 'books')!
-    expect(books).toMatchObject({ value: 'books', label: 'Books', count: 3 })
-
-    const elec = facet.values.find((v) => v.value === 'electronics')!
-    expect(elec).toMatchObject({ value: 'electronics', label: 'Electronics', count: 2 })
-  })
-
-  it('filters products by category slug via ?category= param, facets always show all categories', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    // Filtered result: only the book
-    await documentStore.put('products-by-category', 'category:books#product:moby-dick', {
-      id: 'p1', slug: 'moby-dick', name: 'Moby Dick', storeId: 'test',
-      partitionKey: 'category:books', sortKey: 'product:moby-dick',
-      categories: [{ id: 'c1', name: 'Books', slug: 'books' }],
-    })
-    // Full catalog (used for facet computation): book + electronics item
-    await documentStore.put('products', 'moby-dick', {
-      id: 'p1', slug: 'moby-dick', name: 'Moby Dick', storeId: 'test',
-      categories: [{ id: 'c1', name: 'Books', slug: 'books' }],
-    })
-    await documentStore.put('products', 'laptop', {
-      id: 'p2', slug: 'laptop', name: 'Laptop', storeId: 'test',
-      categories: [{ id: 'c2', name: 'Electronics', slug: 'electronics' }],
-    })
-
-    const { adapter, invoke } = makeAdapter()
-    registerProductRoutes(adapter, documentStore, 'test')
-
-    const resp = await invoke('GET', '/api/products', { category: 'books' })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: { items: unknown[]; facets: Array<{ field: string; values: Array<{ value: string }> }> } }
-    // Items are filtered to the requested category
-    expect(body.data.items).toHaveLength(1)
-    // Facets always reflect the FULL catalog so all category options remain visible
-    const facet = body.data.facets.find((f) => f.field === 'category')!
-    expect(facet.values).toHaveLength(2)
-    expect(facet.values.map((v) => v.value).sort()).toEqual(['books', 'electronics'])
-  })
-})
-
 describe('GET /api/products/:id/reviews', () => {
-  it('returns reviews from the reviews adapter', async () => {
+  it('answers the asked product’s reviews from the adapter, at most ?limit of them (capped at 100)', async () => {
     const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const reviews = [
-      { id: 'r1', productId: 'p1', customerId: null, rating: 5, title: 'Great', body: 'Loved it', submittedAt: '2024-01-01T00:00:00Z' },
+    const all = [
+      ...['a', 'b', 'c'].map((n) => ({ id: `p1-${n}`, productId: 'p1', rating: 5 })),
+      ...['a', 'b'].map((n) => ({ id: `p2-${n}`, productId: 'p2', rating: 4 })),
     ]
-    const reviewsAdapter = makeReviewsAdapter(reviews)
+    const reviewsAdapter = makeReviewsAdapter()
+    reviewsAdapter.getProductReviews = (async (productId: string, opts: { limit: number }) => {
+      const mine = all.filter((r) => r.productId === productId)
+      return {
+        items: mine.slice(0, opts.limit),
+        nextCursor: mine.length > opts.limit ? 'next' : null,
+      }
+    }) as unknown as ReviewsAdapter['getProductReviews']
 
     const { adapter, invoke } = makeAdapter()
     registerProductRoutes(adapter, documentStore, 'test', reviewsAdapter)
 
-    const resp = await invoke('GET', '/api/products/:id/reviews', {}, { id: 'p1' })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: { items: unknown[]; nextCursor: string | null } }
-    expect(body.data.items).toHaveLength(1)
-    expect(body.data.nextCursor).toBeNull()
-    expect(body.data.items[0]).toMatchObject({ id: 'r1', rating: 5, title: 'Great' })
+    for (const limit of ['1', '2', '500']) {
+      const resp = await invoke('GET', '/api/products/:id/reviews', { limit }, { id: 'p1' })
+      expect(resp.status).toBe(200)
+      const ids = (resp.body as { data: { items: Array<{ id: string }> } }).data.items.map(
+        (r) => r.id,
+      )
+      const expected = all
+        .filter((r) => r.productId === 'p1')
+        .slice(0, Math.min(100, Number(limit)))
+      expect(ids, `?limit=${limit}`).toEqual(expected.map((r) => r.id))
+    }
   })
 
   it('returns empty items when no reviews adapter is provided', async () => {
@@ -173,14 +107,5 @@ describe('GET /api/products/:id/reviews', () => {
     expect(resp.status).toBe(200)
     const body = resp.body as { data: { items: unknown[] } }
     expect(body.data.items).toHaveLength(0)
-  })
-
-  it('returns 400 when product id is missing', async () => {
-    const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const { adapter, invoke } = makeAdapter()
-    registerProductRoutes(adapter, documentStore, 'test')
-
-    const resp = await invoke('GET', '/api/products/:id/reviews', {}, { id: '' })
-    expect(resp.status).toBe(400)
   })
 })

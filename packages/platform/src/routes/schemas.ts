@@ -72,6 +72,12 @@ const productVariant = z.object({
   options: z.array(z.object({ name: z.string(), value: z.string() })),
   status: z.enum(['active', 'inactive']).optional(),
 })
+/** A variant's prices in a product update: an omitted compare-at price keeps the stored one, null clears it. */
+const variantPrices = z.object({
+  id,
+  priceMinor: money.min(0),
+  compareAtPriceMinor: money.min(0).nullable().optional(),
+})
 const productFields = {
   description: z.string().optional(),
   shortDescription: z.string().optional(),
@@ -125,7 +131,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/capabilities': {
     name: 'capabilities.get',
     description:
-      'What the store can do, for a storefront: payments client half, search capabilities and sort keys.',
+      'What the store can do, for a storefront: payments client half, search capabilities, sort keys and whether email delivers.',
   },
 
   // Catalogue
@@ -160,6 +166,31 @@ export const routeSchemas: Record<string, RouteSchema> = {
     description: 'List the published reviews of a product.',
     params: idParams,
     query: z.object({ limit: queryValue, cursor: queryValue }),
+  },
+
+  // Back-in-stock and price-drop alerts
+  'POST /api/alerts/subscribe': {
+    name: 'alerts.subscribe',
+    command: 'alert.subscribe',
+    description:
+      'Ask to be emailed when a variant is back in stock (`back_in_stock`) or when its price drops (`price_drop`); a confirmation email is sent first.',
+    body: z.object({
+      email: z.string().trim().max(254).email(),
+      variantId: id,
+      kind: z.enum(['back_in_stock', 'price_drop']),
+    }),
+  },
+  'POST /api/alerts/confirm': {
+    name: 'alerts.confirm',
+    command: 'alert.confirm',
+    description: 'Confirm an alert subscription with the token from its confirmation email.',
+    body: z.object({ token: z.string().min(1) }),
+  },
+  'POST /api/alerts/unsubscribe': {
+    name: 'alerts.unsubscribe',
+    command: 'alert.unsubscribe',
+    description: 'Stop an alert with the unsubscribe token from any of its emails.',
+    body: z.object({ token: z.string().min(1) }),
   },
 
   // Cart
@@ -210,8 +241,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/orders/:orderNumber': {
     name: 'orders.get',
-    description: 'Get one order by its number.',
+    description:
+      "Get one order by its number, with a key that opens it in the x-nymbal-order-key header or as the order's signed-in customer.",
     params: orderNumberParams,
+  },
+
+  // Recently viewed: the viewer is the bearer's customer or the visitor cookie's, never one the request names.
+  'POST /api/recently-viewed': {
+    name: 'recentlyViewed.record',
+    command: null,
+    description: 'Record that the shopper viewed a product.',
+    body: z.object({ productId: id }),
+  },
+  'GET /api/recently-viewed': {
+    name: 'recentlyViewed.list',
+    description: "List the shopper's recently viewed products, newest first.",
   },
 
   // Customer account
@@ -383,7 +427,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/orders/:id/resend-confirmation': {
     name: 'admin.orders.resendConfirmation',
-    command: null,
+    command: 'order.resendConfirmation',
     description: "Resend an order's confirmation email.",
     params: orderIdParams,
   },
@@ -421,9 +465,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'PATCH /api/admin/products/:id': {
     name: 'admin.products.update',
     command: 'product.update',
-    description: "Update a product's fields.",
+    description:
+      "Update a product's fields and its variants' prices; a variant left out keeps its prices, and stock moves only through inventory.",
     params: idParams,
-    body: z.object({ name: z.string().optional(), ...productFields }),
+    body: z.object({
+      name: z.string().optional(),
+      ...productFields,
+      variants: z.array(variantPrices).optional(),
+    }),
   },
   'DELETE /api/admin/products/:id': {
     name: 'admin.products.delete',
@@ -575,10 +624,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
 
   // Webhooks
-  'POST /api/webhooks/stripe': {
-    name: 'webhooks.stripe',
-    command: 'payment.finalize',
-    description: 'Receive a signed Stripe event.',
+  'POST /api/webhooks/:adapter': {
+    name: 'webhooks.receive',
+    // The route opens its own audit command: payment.finalize for a payments delivery, webhook.receive otherwise.
+    command: null,
+    description:
+      'Receive a signed delivery from a provider, by its name (stripe always names the payments provider).',
+    params: z.object({ adapter: id }),
     // The signature covers the raw bytes, and a malformed event is answered by the handler itself.
     body: z.unknown(),
   },

@@ -8,6 +8,13 @@ const NESTED_VITEST_RUNS = [
   'tests/contracts/contract-breakers.test.ts',
 ]
 
+// Each runs the real Vitest over copies of the work tree, about 100 s together: the plain gate never runs them
+// (scripts/gate.ts), gate:full and dev CI do.
+const SLOW_TOOLING = [
+  'tests/tooling/harness-input-selection.test.ts',
+  'tests/tooling/gate-base-env.test.ts',
+]
+
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
 // (scripts/stack.ts), apart from every other suite on the machine.
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
@@ -82,6 +89,20 @@ function scaled<P extends { test: { testTimeout?: number; hookTimeout?: number }
       hookTimeout: (p.test.hookTimeout ?? 10000) * timeoutScale,
     },
   }))
+}
+
+// Set by the gate to leave projects out (scripts/gate.ts). Vitest ORs repeated `--project` filters, so a negation added
+// to `pnpm test`'s `!integration-*` would select every project that one keeps; this list applies before any filter.
+const skipProjects = (process.env['NYMBAL_VITEST_SKIP_PROJECTS'] ?? '')
+  .split(',')
+  .filter((name) => name !== '')
+type Named = { test: { name: string } }
+function kept(project: Named, index: number, all: Named[]): boolean {
+  const unknown = skipProjects.filter((name) => !all.some((p) => p.test.name === name))
+  if (index === 0 && unknown.length > 0) {
+    throw new Error(`NYMBAL_VITEST_SKIP_PROJECTS names no project: ${unknown.join(', ')}`)
+  }
+  return !skipProjects.includes(project.test.name)
 }
 
 export default defineConfig({
@@ -321,10 +342,19 @@ export default defineConfig({
           name: 'tooling',
           environment: 'node',
           include: ['tests/tooling/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...SLOW_TOOLING],
           testTimeout: 60000,
         },
       },
-    ]),
+      {
+        test: {
+          name: 'tooling-slow',
+          environment: 'node',
+          include: SLOW_TOOLING,
+          testTimeout: 60000,
+        },
+      },
+    ]).filter(kept),
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**'],

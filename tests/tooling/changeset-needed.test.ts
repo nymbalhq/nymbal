@@ -1,3 +1,4 @@
+// Reads: scripts/changeset-needed.ts, .changeset/config.json
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

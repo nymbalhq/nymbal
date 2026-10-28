@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import type { APIResponse, BrowserContext, Page } from '@playwright/test'
 import {
   adminToken,
+  keyedOrderPath,
   openCheckout,
+  orderKeyOf,
   orderNumberOf,
   ownProduct,
   walkToPayment,
@@ -20,6 +22,9 @@ import { formatPrice } from '../support/variants'
 // cookie, the header's mini-cart has no `count` in the HTML, and with JS on its badge fills to the cart's quantity sum.
 // AC-5 (a regression guard beside AC-4): `/cart`, `/checkout`, `/order/<n>` and `/account` are never a cache HIT and
 // are `private` or `no-store`, and with JS off the header on `/cart` and `/checkout` still shows the cookie's count.
+// AC-14: a shopper's recently-viewed list is never in a cached page: with the shopper's cookies, `/` and a product
+// page are still served from the cache, their HTML holds a bare `nymbal-recently-viewed` (no shadow root, no card),
+// and with JS on the element shows the list `GET /api/recently-viewed` serves that shopper.
 
 const contexts: BrowserContext[] = []
 
@@ -171,7 +176,7 @@ test.describe('AC-5: the shopper pages stay live (production build)', () => {
     for (const path of [
       '/cart',
       '/checkout',
-      `/order/${encodeURIComponent(orderNumber)}`,
+      keyedOrderPath(orderNumber, orderKeyOf(page)),
       '/account',
     ]) {
       for (const [who, client] of [
@@ -204,5 +209,84 @@ test.describe('AC-5: the shopper pages stay live (production build)', () => {
       expect(texts.length, `${path}: header mini-cart badges`).toBeGreaterThan(0)
       expect(texts, path).toEqual(texts.map(() => String(count)))
     }
+  })
+})
+
+/** The markup inside the page's `nymbal-recently-viewed`, or null when the HTML has none. */
+function recentlyViewedIn(html: string): string | null {
+  const match = /<nymbal-recently-viewed\b[^>]*>([\s\S]*?)<\/nymbal-recently-viewed>/.exec(html)
+  return match === null ? null : match[1]!
+}
+
+/** What `GET /api/recently-viewed` serves this context (its cookies), by product slug. */
+async function servedList(context: BrowserContext): Promise<string[]> {
+  const res = await context.request.get(`${API_URL}/api/recently-viewed`)
+  expect(res.status(), 'GET /api/recently-viewed').toBe(200)
+  return ((await res.json()) as { data: { items: Array<{ slug: string }> } }).data.items.map(
+    (p) => p.slug,
+  )
+}
+
+/** Opens a product page with JS on and waits for its view to be captured. */
+async function viewed(context: BrowserContext, slug: string): Promise<Page> {
+  const page = await context.newPage()
+  await blockExternalRequests(page)
+  const captured = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/recently-viewed',
+    { timeout: 15_000 },
+  )
+  const response = await page.goto(`/product/${slug}`)
+  expect(response?.status(), `GET /product/${slug}`).toBe(200)
+  await expect(page.getByTestId('recently-viewed'), `${slug}'s page holds the element`).toHaveCount(
+    1,
+  )
+  expect((await captured).status(), `the view of ${slug}`).toBe(204)
+  return page
+}
+
+test.describe('AC-14: recently viewed stays out of the cached pages (production build)', () => {
+  test('AC-14: recently-viewed.cached-pages-anonymous: with views of A and B, the second GET / and /product/<A> are served from Next’s cache, their nymbal-recently-viewed has no shadow root and no card of A or B, and with JS on it shows the list GET /api/recently-viewed serves (B on A’s page; A then B on /) @nextjs', async ({
+    browser,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const token = await adminToken(request)
+    const a = await ownProduct(request, token, 5)
+    const b = await ownProduct(request, token, 5)
+    const baseURL = testInfo.project.use.baseURL
+    const shopper = await browser.newContext(baseURL === undefined ? {} : { baseURL })
+    contexts.push(shopper)
+    for (const product of [a, b]) await (await viewed(shopper, product.slug)).close()
+    await expect.poll(() => servedList(shopper), { timeout: 10_000 }).toEqual([b.slug, a.slug])
+
+    for (const path of ['/', `/product/${a.slug}`]) {
+      const second = await secondRequest(shopper.request, path)
+      expect(second.status, path).toBe(200)
+      expect(CACHED.has(second.cache ?? ''), `${path}: x-nextjs-cache ${second.cache}`).toBe(true)
+      const html = await (await shopper.request.get(path)).text()
+      const inside = recentlyViewedIn(html)
+      expect(inside, `${path}: nymbal-recently-viewed in the HTML`).not.toBeNull()
+      expect(inside, `${path}: a server-rendered shadow root`).not.toMatch(/shadowrootmode/i)
+      for (const product of [a, b]) {
+        expect(inside, `${path}: ${product.slug}'s card in the cached HTML`).not.toContain(
+          `product-card-${product.slug}`,
+        )
+      }
+    }
+
+    // A's page with JS on records A again and shows the rest of the list; / then shows the list the API serves.
+    const pdp = await viewed(shopper, a.slug)
+    await expect.poll(() => servedList(shopper), { timeout: 10_000 }).toEqual([a.slug, b.slug])
+    const onPdp = (await servedList(shopper)).filter((slug) => slug !== a.slug)
+    await expect
+      .poll(() => cardSlugs(pdp.getByTestId('recently-viewed')), { timeout: 15_000 })
+      .toEqual(onPdp)
+    expect(onPdp).toEqual([b.slug])
+    const home = await open(shopper, '/')
+    const listed = await servedList(shopper)
+    await expect
+      .poll(() => cardSlugs(home.getByTestId('recently-viewed')), { timeout: 15_000 })
+      .toEqual(listed)
+    expect(listed).toEqual([a.slug, b.slug])
   })
 })

@@ -8,6 +8,7 @@ import {
   EVT_INVENTORY_RELEASED,
   EVT_INVENTORY_LOW_STOCK,
   EVT_INVENTORY_OUT_OF_STOCK,
+  EVT_PRODUCT_RESTOCKED,
   type Logger,
   type StockAdjustmentReason,
   type StockStatus,
@@ -86,6 +87,19 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
     }
   }
 
+  /** A rise from 0 makes the variant buyable again: the event back-in-stock alerts answer, in the rise's transaction. */
+  async function emitRestocked(
+    variantId: string,
+    previousQty: number,
+    newQty: number,
+    productIdOf: () => Promise<string>,
+  ): Promise<void> {
+    if (previousQty <= 0 && newQty > 0) {
+      const productId = await productIdOf()
+      await publisher.publish(EVT_PRODUCT_RESTOCKED, { productId, variantId, previousQty, newQty })
+    }
+  }
+
   /** The conditional decrement and its reservation row; `available` instead when the stock is short. */
   async function take(
     variantId: string,
@@ -161,6 +175,7 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
           newQty,
           reason,
         })
+        await emitRestocked(variant.id, previousQty, newQty, async () => variant.productId)
         await emitThresholdEvents(variant.id, newQty, variant.lowStockThreshold)
         logger.debug({ variantId, delta, newQty, reason }, 'stock adjusted')
         return { newQty }
@@ -221,6 +236,11 @@ export function createInventoryService(deps: CreateInventoryServiceDeps): Invent
             previousQty,
             newQty,
             reason: 'reservation-release',
+          })
+          // The increment just succeeded on the variant's row in this transaction, so the row is there.
+          await emitRestocked(reservation.variantId, previousQty, newQty, async () => {
+            const variant = await repos.variant.findById(tx, reservation.variantId)
+            return variant!.productId
           })
         }
         await publisher.publish(EVT_INVENTORY_RELEASED, {

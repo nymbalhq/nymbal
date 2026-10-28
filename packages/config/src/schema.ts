@@ -22,6 +22,12 @@ export const storeSchema = z.object({
   currency: z.string().length(3),
   locale: z.string().min(2),
   timezone: z.string().min(1),
+  /** The storefront's public URL, which the order email links from; with none, the email has no link. */
+  url: z
+    .string()
+    .url()
+    .transform((url) => url.replace(/\/+$/, ''))
+    .optional(),
 })
 
 const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')

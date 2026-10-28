@@ -1,11 +1,14 @@
-import type {
-  Cart,
-  Customer,
-  CustomerAddress,
-  Order,
-  ReviewsResult,
-  ReviewResult,
-  StoreCapabilities,
+import {
+  ORDER_KEY_HEADER,
+  type AlertKind,
+  type Cart,
+  type Customer,
+  type CustomerAddress,
+  type Order,
+  type ReviewsResult,
+  type ReviewResult,
+  type ShopperOrder,
+  type StoreCapabilities,
 } from '@nymbalhq/types'
 import type { CommerceAdapter } from './commerce-adapter.js'
 import type { FetchClient } from './fetch-client.js'
@@ -105,6 +108,8 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         return fetchClient.request<{ accessToken: string; expiresIn: number }>(
           'POST',
           '/api/auth/refresh',
+          undefined,
+          { authRefresh: true },
         )
       },
       getProfile() {
@@ -132,8 +137,23 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         const nextCursor = typeof meta.nextCursor === 'string' ? meta.nextCursor : null
         return { items: data ?? [], nextCursor }
       },
-      getOrder(orderNumber: string) {
-        return fetchClient.request<Order>('GET', `/api/orders/${encodeURIComponent(orderNumber)}`)
+      getOrder(orderNumber: string, options: { key?: string } = {}) {
+        const { key } = options
+        return fetchClient.request<ShopperOrder>(
+          'GET',
+          `/api/orders/${encodeURIComponent(orderNumber)}`,
+          undefined,
+          key === undefined ? {} : { headers: { [ORDER_KEY_HEADER]: key } },
+        )
+      },
+    },
+
+    recentlyViewed: {
+      async record(productId: string) {
+        await fetchClient.request<void>('POST', '/api/recently-viewed', { productId })
+      },
+      list() {
+        return fetchClient.request<{ items: DenormalisedProduct[] }>('GET', '/api/recently-viewed')
       },
     },
 
@@ -150,6 +170,12 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
       },
       submit(review: { productId: string; rating: number; title: string; body: string }) {
         return fetchClient.request<ReviewResult>('POST', '/api/reviews', review)
+      },
+    },
+
+    alerts: {
+      subscribe(request: { email: string; variantId: string; kind: AlertKind }) {
+        return fetchClient.request<{ status: 'pending' }>('POST', '/api/alerts/subscribe', request)
       },
     },
   }

@@ -19,9 +19,11 @@ import {
   TEXT_STATUS,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { fakeSmtpServer, type FakeSmtpServer } from '../../../../tests/support/smtp-server.js'
 
 // AC-4: `nymbal doctor` on a healthy, migrated project exits 0 with one `ok` or `warn` line per check in a fixed
-// order, on the repository's config and on tests/e2e/fixtures/custom-providers (`custom` search and payments).
+// order, on the repository's config and on tests/e2e/fixtures/custom-providers (`custom` search and payments, email
+// SMTP to NYMBAL_E2E_SMTP_PORT, here a fake SMTP server so the store is healthy without Mailpit).
 // Spawns the built CLI (`pnpm build` first), each run on a fresh migrated SQLite file of its own.
 
 interface Project {
@@ -41,20 +43,23 @@ const PROJECTS: Project[] = [
 
 const runs = new Map<string, { text: CliRun; json: CliRun }>()
 let dir = ''
+let smtp: FakeSmtpServer | undefined
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'nymbal-doctor-'))
+  smtp = await fakeSmtpServer()
   for (const [i, project] of PROJECTS.entries()) {
     const sqlitePath = join(dir, `run-${i + 1}.db`)
     await migratedSqlite(sqlitePath)
-    const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath })
+    const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath, NYMBAL_E2E_SMTP_PORT: String(smtp.port) })
     const text = await runCli(['doctor'], { cwd: project.cwd, env })
     const json = await runCli(['doctor', '--json'], { cwd: project.cwd, env })
     runs.set(project.label, { text, json })
   }
 }, 120_000)
 
-afterAll(() => {
+afterAll(async () => {
+  await smtp?.close()
   if (dir !== '') rmSync(dir, { recursive: true, force: true })
 })
 

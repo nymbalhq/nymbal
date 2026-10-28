@@ -18,6 +18,23 @@ export interface FetchClientOptions {
   onUnauthorized?: () => Promise<void>
 }
 
+/** Per request: headers sent beside the client's own. */
+export interface RequestOptions {
+  headers?: Record<string, string>
+  /**
+   * The token refresh itself (what `onUnauthorized` sends through this client): its 401 is thrown, never waited on or
+   * sent again, so a refused refresh cannot wait on itself. An unmarked one that is refused is cut off after
+   * 10 s with the original 401.
+   */
+  authRefresh?: boolean
+}
+
+/**
+ * The longest a refused request waits on a refresh before its 401 is thrown: far beyond one healthy refresh round trip,
+ * and the bound on a refresh that, unmarked, waits on itself.
+ */
+const REFRESH_WAIT_MS = 10_000
+
 const CSRF_HEADER = 'x-csrf-token'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -33,7 +50,8 @@ export class FetchClient {
   private readonly getAccessToken: () => string | null
   private readonly getCartToken: (() => string | null) | undefined
   private readonly onUnauthorized: (() => Promise<void>) | undefined
-  private handlingUnauthorized = false
+  /** The refresh a refused request started, which every request refused meanwhile waits on rather than its own. */
+  private refreshing: Promise<void> | null = null
   /** The token `GET /api/csrf` answered: the API's `nymbal.csrf` cookie, which this origin may not be able to read. */
   private csrfToken: Promise<string> | null = null
 
@@ -45,8 +63,13 @@ export class FetchClient {
     this.onUnauthorized = options.onUnauthorized
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    return (await this.requestWithMeta<T>(method, path, body)).data
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    return (await this.requestWithMeta<T>(method, path, body, options)).data
   }
 
   /** Like `request`, keeping the envelope's `meta` (pagination cursors live there). */
@@ -54,27 +77,59 @@ export class FetchClient {
     method: string,
     path: string,
     body?: unknown,
+    options: RequestOptions = {},
   ): Promise<{ data: T; meta: Record<string, unknown> }> {
-    let response = await this.doFetch(method, path, body)
+    // Read before the first await: the refresh, if any, in flight when this request was sent.
+    const sentDuring = this.refreshing
+    let { response, bearer } = await this.doFetch(method, path, body, options)
 
     // A stale token (the cookie was replaced or expired) is fetched again once; a second refusal is thrown.
     if (await this.isCsrfRejection(response)) {
       this.csrfToken = null
-      response = await this.doFetch(method, path, body)
+      ;({ response, bearer } = await this.doFetch(method, path, body, options))
     }
 
-    if (response.status === 401 && this.onUnauthorized && !this.handlingUnauthorized) {
-      this.handlingUnauthorized = true
-      try {
-        await this.onUnauthorized()
-      } finally {
-        this.handlingUnauthorized = false
+    if (response.status === 401 && this.onUnauthorized && options.authRefresh !== true) {
+      const pending = this.refreshing
+      const retry = async () =>
+        this.parseResponse<T>((await this.doFetch(method, path, body, options)).response)
+      if (pending === null && this.getAccessToken() !== bearer) {
+        // A refresh that ended after this was sent has replaced its token already.
+        return retry()
       }
-      const retry = await this.doFetch(method, path, body)
-      return this.parseResponse<T>(retry)
+      if (pending !== null && pending === sentDuring) {
+        // Sent during the refresh with the token it replaces: sent again once it has, and only if it did.
+        if ((await this.waitFor(pending)) && this.getAccessToken() !== bearer) return retry()
+      } else if (await this.waitFor(pending ?? this.refresh(this.onUnauthorized))) {
+        // Every request refused with the old token waits on the one refresh and is sent again once.
+        return retry()
+      }
     }
 
     return this.parseResponse<T>(response)
+  }
+
+  /** Whether the refresh ended within `REFRESH_WAIT_MS`; a refresh that fails throws here, as it always has. */
+  private async waitFor(refresh: Promise<void>): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const bound = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), REFRESH_WAIT_MS)
+    })
+    try {
+      return await Promise.race([refresh.then(() => true as const), bound])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  private refresh(onUnauthorized: () => Promise<void>): Promise<void> {
+    const refresh = Promise.resolve()
+      .then(onUnauthorized)
+      .finally(() => {
+        this.refreshing = null
+      })
+    this.refreshing = refresh
+    return refresh
   }
 
   private csrf(): Promise<string> {
@@ -104,8 +159,13 @@ export class FetchClient {
     }
   }
 
-  private async doFetch(method: string, path: string, body?: unknown): Promise<Response> {
-    const headers: Record<string, string> = {}
+  private async doFetch(
+    method: string,
+    path: string,
+    body: unknown,
+    options: RequestOptions,
+  ): Promise<{ response: Response; bearer: string | null }> {
+    const headers: Record<string, string> = { ...options.headers }
     const cookies: string[] = []
 
     if (UNSAFE_METHODS.has(method.toUpperCase())) {
@@ -132,12 +192,13 @@ export class FetchClient {
       headers['Cookie'] = cookies.join('; ')
     }
 
-    return globalThis.fetch(`${this.baseUrl}${path}`, {
+    const response = await globalThis.fetch(`${this.baseUrl}${path}`, {
       method,
       headers,
       credentials: this.credentials,
       ...(body !== undefined && { body: JSON.stringify(body) }),
     })
+    return { response, bearer: token }
   }
 
   private async parseResponse<T>(

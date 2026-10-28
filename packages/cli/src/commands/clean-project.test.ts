@@ -132,7 +132,7 @@ describe('nymbal seed in a fresh project', () => {
     expect(after.variants).toBeGreaterThanOrEqual(after.products)
   }, 60_000)
 
-  it('AC-8: a second seed exits 0 and leaves every table count as the first left it', async () => {
+  it('AC-8: on one project, a second seed exits 0 and leaves every table count as the first left it; a seed over a partial demo (categories present, products gone) then exits 0 and duplicates nothing', async () => {
     const dir = await project()
     const db = join(dir, 'nymbal.db')
     // Migrate explicitly, so this test isolates idempotency from AC-7's migrate-first.
@@ -143,23 +143,12 @@ describe('nymbal seed in a fresh project', () => {
     expect(first.status, why(first)).toBe(0)
     const once = counts(db)
     expect(once.products).toBeGreaterThan(0)
+    expect(once.categories).toBeGreaterThan(0)
+    expect(once.customers).toBeGreaterThan(0)
 
     const second = nymbal(dir, ['seed'])
     expect(second.status, why(second)).toBe(0)
     expect(counts(db)).toEqual(once)
-  }, 60_000)
-
-  it('AC-8: a seed over a partial demo (categories present, products gone) exits 0 and duplicates nothing', async () => {
-    const dir = await project()
-    const db = join(dir, 'nymbal.db')
-    const migrate = nymbal(dir, ['migrate'])
-    expect(migrate.status, why(migrate)).toBe(0)
-
-    const first = nymbal(dir, ['seed'])
-    expect(first.status, why(first)).toBe(0)
-    const once = counts(db)
-    expect(once.categories).toBeGreaterThan(0)
-    expect(once.customers).toBeGreaterThan(0)
 
     // As a seed interrupted after the categories, or a merchant who deleted every product, leaves it.
     const writer = new Database(db, { fileMustExist: true })
@@ -178,7 +167,7 @@ describe('nymbal seed in a fresh project', () => {
     for (const table of TABLES) {
       expect(after[table], `${table} after the partial seed`).toBeLessThanOrEqual(once[table])
     }
-  }, 60_000)
+  }, 90_000)
 })
 
 describe('.env', () => {

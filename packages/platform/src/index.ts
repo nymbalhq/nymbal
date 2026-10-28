@@ -62,7 +62,12 @@ export { actorOf, currentActor, runAsActor, type Actor } from './audit/actor.js'
 export { audit, auditedCommand } from './audit/audit.js'
 export { withIdempotency, type IdempotencyOptions } from './handlers/idempotency.js'
 export { registerHandlers, type RegisterHandlersDeps } from './handlers/register.js'
+export {
+  registerAlertHandler,
+  type RegisterAlertHandlerDeps,
+} from './handlers/side-effects/alert-handler.js'
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
+export { registerAlertRoutes, type RegisterAlertRoutesDeps } from './routes/alerts.js'
 export { routeSchemas, type RouteSchema } from './routes/schemas.js'
 export {
   createApp,

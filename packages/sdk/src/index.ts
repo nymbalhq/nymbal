@@ -3,6 +3,7 @@ export type {
   NymbalClient,
   NymbalClientOptions,
   CustomerAccount,
+  RecentlyViewed,
   StoreCapabilitiesReader,
 } from './client.js'
 
@@ -71,4 +72,5 @@ export type {
   ProductSortKey,
   ReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,
+  AlertKind,
 } from '@nymbalhq/types'

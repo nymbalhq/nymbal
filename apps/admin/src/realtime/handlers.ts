@@ -49,14 +49,43 @@ function placeOrder(queryClient: QueryClient, order: Order): void {
   for (const query of queryClient.getQueryCache().findAll({ queryKey: ORDERS_LIST })) {
     const filters = (query.queryKey[2] ?? {}) as OrderListFilters
     if (!statusAdmits(filters, order)) continue
+    const exact = { queryKey: query.queryKey, exact: true }
+    // The GET in flight may have read before this order committed, and its response would replace a write. The
+    // cancel reverts the query to its pre-fetch state at once, so the row is written now to an idle query, and the
+    // refetch starts once the cancelled GET has settled.
+    const cancelled =
+      query.state.fetchStatus === 'fetching' ? queryClient.cancelQueries(exact) : undefined
     const old = queryClient.getQueryData<Order[]>(query.queryKey)
-    if (old && headsList(filters, order)) {
+    const written = old !== undefined && headsList(filters, order)
+    if (written) {
       const next = [order, ...old.filter((o) => o.id !== order.id)]
       queryClient.setQueryData<Order[]>(query.queryKey, next.slice(0, filters.limit ?? next.length))
-    } else {
-      void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true })
     }
+    if (cancelled) void cancelled.then(() => queryClient.invalidateQueries(exact))
+    else if (!written) void queryClient.invalidateQueries(exact)
   }
+}
+
+/** The query groups the live handlers keep fresh. */
+const LIVE_QUERY_PREFIXES: QueryKey[] = [
+  ORDERS_LIST,
+  ['orders', 'detail'],
+  ['dashboard'],
+  ['inventory', 'list'],
+]
+
+/**
+ * Refetches what the live handlers maintain, for events the stream may have missed while disconnected. The cancel
+ * comes first so that a fetch already in flight, which may have read before the stream subscribed, is not joined.
+ * Resolves once the invalidates are issued, without waiting for their refetches.
+ */
+export async function resyncLiveQueries(queryClient: QueryClient): Promise<void> {
+  await Promise.all(
+    LIVE_QUERY_PREFIXES.map(async (queryKey) => {
+      await queryClient.cancelQueries({ queryKey })
+      void queryClient.invalidateQueries({ queryKey })
+    }),
+  )
 }
 
 export function createEventHandlers(queryClient: QueryClient) {

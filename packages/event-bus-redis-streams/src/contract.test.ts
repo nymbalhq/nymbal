@@ -72,6 +72,47 @@ afterAll(async () => {
 
 runEventBusContract('redis-streams', make, opts)
 
+// What the bus logs for an unnamed handler's throw: the contract cannot read an adapter's logger, so this runner does.
+describe('Redis Streams bus: an unnamed handler failure', () => {
+  it('AC-1: a throwing unnamed handler leaves each of two publishes resolved, the named handler beside it handled each event once, and for each exactly one log line names the unnamed subscription and that event', async () => {
+    const logged: unknown[][] = []
+    const keeping: Logger = {
+      trace: (...args) => void logged.push(args),
+      debug: (...args) => void logged.push(args),
+      info: (...args) => void logged.push(args),
+      warn: (...args) => void logged.push(args),
+      error: (...args) => void logged.push(args),
+      child: () => keeping,
+    }
+    const bus = (await createAdapter({
+      ...adapterContext('eventBus', { url, prefix: `${run}-unnamed`, ...TIMING }),
+      logger: keeping,
+    })) as EventBusAdapter
+    try {
+      const type = 'p2.unnamed.failure'
+      const named: string[] = []
+      await bus.subscribe(type, async (e: { id: string }) => void named.push(e.id), {
+        name: 'primitives-unnamed-named',
+      })
+      const tab = await bus.subscribe(type, async () => {
+        throw new Error('contract admin tab refused')
+      })
+      const events = [event(type), event(type)]
+
+      for (const e of events) await expect(bus.publish(e)).resolves.toBeUndefined()
+
+      expect(named).toEqual(events.map((e) => e.id))
+      const lines = logged.map((args) => JSON.stringify(args))
+      for (const e of events) {
+        const naming = lines.filter((text) => text.includes(tab.id) && text.includes(e.id))
+        expect(naming, `log lines naming the unnamed subscription and ${e.id}`).toHaveLength(1)
+      }
+    } finally {
+      await bus.close()
+    }
+  })
+})
+
 function onDb15(): string {
   const u = new URL(url)
   u.pathname = '/15'

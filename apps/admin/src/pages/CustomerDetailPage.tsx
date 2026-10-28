@@ -94,7 +94,9 @@ export function CustomerDetailPage() {
           Customers
         </Link>
         <span className="text-zinc-300">/</span>
-        <span className="text-sm font-medium text-zinc-900">{fullName}</span>
+        <span className="min-w-0 text-sm font-medium text-zinc-900 [overflow-wrap:anywhere]">
+          {fullName}
+        </span>
       </div>
 
       <Tabs defaultValue="overview">

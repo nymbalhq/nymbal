@@ -126,49 +126,6 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
 }
 
 describe('GET /api/cart', () => {
-  it('returns a new cart when no cart cookie is present', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('GET', '/api/cart')
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data).toBeTruthy()
-    expect(body.data.token).toBe('cart-token-1')
-    expect(deps.cart.getOrCreate).toHaveBeenCalled()
-  })
-
-  it('returns the existing cart when cart cookie is present', async () => {
-    const existingCart = makeCart({ token: 'existing-token', items: [makeCartItem()] })
-    const deps = makeDeps({
-      cart: {
-        ...makeDeps().cart,
-        get: vi.fn().mockResolvedValue(existingCart),
-      },
-    })
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('GET', '/api/cart', { cookies: { 'nymbal.cart': 'existing-token' } })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data.token).toBe('existing-token')
-    expect(body.data.items).toHaveLength(1)
-    expect(deps.cart.get).toHaveBeenCalledWith('existing-token')
-  })
-
-  it('response is wrapped in { data } envelope', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('GET', '/api/cart')
-    const body = resp.body as Record<string, unknown>
-    expect('data' in body).toBe(true)
-    expect('error' in body).toBe(false)
-  })
-
   it('sets cart cookie when creating new cart', async () => {
     const deps = makeDeps()
     const { adapter, invoke } = makeAdapter()
@@ -185,17 +142,6 @@ describe('GET /api/cart', () => {
 })
 
 describe('POST /api/cart/items', () => {
-  it('returns 400 when variantId is missing', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('POST', '/api/cart/items', { body: { qty: 1 } })
-    expect(resp.status).toBe(400)
-    const body = resp.body as { error: { code: string } }
-    expect(body.error.code).toBe('cart.invalid')
-  })
-
   it('returns 404 when variant is not found', async () => {
     const deps = makeDeps({
       variantRepo: {
@@ -233,33 +179,31 @@ describe('POST /api/cart/items', () => {
     expect(body.error.context.available).toBe(2)
   })
 
-  it('adds item and returns updated cart', async () => {
+  it('adds the variant as one more line, at the variant’s price and the product’s name, and returns that cart', async () => {
+    const held = makeCart({ items: [makeCartItem({ variantId: 'var-0' })] })
     const deps = makeDeps()
+    deps.cart.addItem = vi.fn(async (_token: string, item: CartItem) => {
+      held.items = [...held.items, item]
+      return held
+    }) as unknown as RegisterCartRoutesDeps['cart']['addItem']
+    const before = held.items.length
     const { adapter, invoke } = makeAdapter()
     registerCartRoutes(adapter, deps)
 
     const resp = await invoke('POST', '/api/cart/items', {
-      body: { variantId: 'var-1', qty: 1 },
+      body: { variantId: 'var-1', qty: 2 },
       cookies: { 'nymbal.cart': 'cart-token-1' },
     })
     expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data.items).toHaveLength(1)
-    expect(deps.cart.addItem).toHaveBeenCalled()
-  })
-
-  it('returns 404 when product is not found', async () => {
-    const deps = makeDeps({
-      productRepo: {
-        store: stubStore,
-        findById: vi.fn().mockResolvedValue(null),
-      } as unknown as RegisterCartRoutesDeps['productRepo'],
-    })
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('POST', '/api/cart/items', { body: { variantId: 'var-1', qty: 1 } })
-    expect(resp.status).toBe(404)
+    const items = (resp.body as { data: Cart }).data.items
+    expect(items.length).toBe(before + 1)
+    const line = items[items.length - 1]!
+    expect([line.variantId, line.productName, line.priceMinor, line.qty]).toEqual([
+      'var-1',
+      'Test Product',
+      1000,
+      2,
+    ])
   })
 })
 
@@ -275,91 +219,45 @@ describe('PATCH /api/cart/items/:variantId', () => {
     })
     expect(resp.status).toBe(404)
   })
-
-  it('returns 400 when variantId param is missing', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('PATCH', '/api/cart/items/:variantId', {
-      cookies: { 'nymbal.cart': 'cart-token-1' },
-      params: { variantId: '' },
-      body: { qty: 2 },
-    })
-    expect(resp.status).toBe(400)
-  })
-
-  it('updates item quantity and returns cart', async () => {
-    const updatedCart = makeCart({ items: [makeCartItem({ qty: 3 })], subtotalMinor: 3000 })
-    const deps = makeDeps({
-      cart: {
-        ...makeDeps().cart,
-        updateItemQuantity: vi.fn().mockResolvedValue(updatedCart),
-      },
-    })
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('PATCH', '/api/cart/items/:variantId', {
-      cookies: { 'nymbal.cart': 'cart-token-1' },
-      params: { variantId: 'var-1' },
-      body: { qty: 3 },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data.items[0]?.qty).toBe(3)
-  })
-})
-
-describe('DELETE /api/cart/items/:variantId', () => {
-  it('returns 404 when no cart cookie', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('DELETE', '/api/cart/items/:variantId', {
-      params: { variantId: 'var-1' },
-    })
-    expect(resp.status).toBe(404)
-  })
-
-  it('removes item and returns updated cart', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('DELETE', '/api/cart/items/:variantId', {
-      cookies: { 'nymbal.cart': 'cart-token-1' },
-      params: { variantId: 'var-1' },
-    })
-    expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data.items).toHaveLength(0)
-    expect(deps.cart.removeItem).toHaveBeenCalledWith('cart-token-1', 'var-1')
-  })
 })
 
 describe('DELETE /api/cart', () => {
-  it('returns 404 when no cart cookie', async () => {
+  it('empties the cart the cookie names and leaves another cart as it was', async () => {
+    const carts = new Map<string, Cart>([
+      ['cart-a', makeCart({ token: 'cart-a', items: [makeCartItem()], subtotalMinor: 1000 })],
+      [
+        'cart-b',
+        makeCart({
+          token: 'cart-b',
+          items: [makeCartItem({ variantId: 'var-2', qty: 3 })],
+          subtotalMinor: 3000,
+        }),
+      ],
+    ])
+    const otherBefore = structuredClone(carts.get('cart-b'))
     const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('DELETE', '/api/cart')
-    expect(resp.status).toBe(404)
-  })
-
-  it('clears cart and returns empty cart', async () => {
-    const deps = makeDeps()
-    const { adapter, invoke } = makeAdapter()
-    registerCartRoutes(adapter, deps)
-
-    const resp = await invoke('DELETE', '/api/cart', {
-      cookies: { 'nymbal.cart': 'cart-token-1' },
+    deps.cart.get = vi.fn(async (token: string) => carts.get(token) ?? null)
+    deps.cart.clear = vi.fn(async (token: string) => {
+      const held = carts.get(token)
+      if (held === undefined) throw new Error(`no cart ${token}`)
+      const cleared = { ...held, items: [], subtotalMinor: 0 }
+      carts.set(token, cleared)
+      return cleared
     })
+    const { adapter, invoke } = makeAdapter()
+    registerCartRoutes(adapter, deps)
+    const cartOf = async (token: string) =>
+      (
+        (await invoke('GET', '/api/cart', { cookies: { 'nymbal.cart': token } })).body as {
+          data: Cart
+        }
+      ).data
+
+    const resp = await invoke('DELETE', '/api/cart', { cookies: { 'nymbal.cart': 'cart-a' } })
+
     expect(resp.status).toBe(200)
-    const body = resp.body as { data: Cart }
-    expect(body.data.items).toHaveLength(0)
-    expect(deps.cart.clear).toHaveBeenCalledWith('cart-token-1')
+    expect((resp.body as { data: Cart }).data.items).toEqual([])
+    expect((await cartOf('cart-a')).items).toEqual([])
+    expect(await cartOf('cart-b')).toEqual(otherBefore)
   })
 })

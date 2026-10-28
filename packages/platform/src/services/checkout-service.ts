@@ -30,6 +30,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { currentCorrelationId } from '../events/correlation.js'
 import { formatMoney } from '../money.js'
+import { mintOrderKey } from '../order-access-key.js'
 import type { InventoryService } from './inventory-service.js'
 import type { OrderService } from './order-service.js'
 import { inOrderScope } from './order-correlation.js'
@@ -59,6 +60,8 @@ export interface BeginCheckoutResult {
   /** The order's status as the checkout answers. */
   orderStatus: OrderStatus
   payment: CheckoutPayment
+  /** A fresh key that reads the order with no session (`ORDER_KEY_HEADER`). Only its hash is stored. */
+  orderKey: string
 }
 
 /** What the payment provider captured. */
@@ -160,11 +163,14 @@ const SUPERSEDE_ATTEMPTS = 3
  */
 const ABANDON_AFTER_MS = 120_000
 
-/** What one pass under the cart lock decided. */
+/** What one pass under the cart lock decided, with the key minted for the order it answers. */
 type Placement =
-  | { kind: 'placed'; order: Order }
-  | { kind: 'existing'; order: Order & { paymentIntentId: string } }
+  | { kind: 'placed'; order: Order; orderKey: string }
+  | { kind: 'existing'; order: Order & { paymentIntentId: string }; orderKey: string }
   | { kind: 'cancel-first'; order: Order & { paymentIntentId: string } }
+
+/** A checkout answer before its order's key is added. */
+type Answer = Omit<BeginCheckoutResult, 'orderKey'>
 
 /** The shopper's view of an intent the provider has just made. */
 function outcomeOf(status: PaymentStatus): CheckoutPayment['status'] {
@@ -191,6 +197,34 @@ export function createCheckoutService(
   deps: CreateCheckoutServiceDeps,
 ): CheckoutService & ManualPayments {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
+
+  /** A new key for the order, its hash written in `tx`; earlier keys keep opening it. */
+  async function mintKey(tx: Tx, orderId: string): Promise<string> {
+    const { key, hash } = mintOrderKey()
+    await repos.orderAccessKey.insert(tx, {
+      id: uuidv7(),
+      orderId,
+      keyHash: hash,
+      purpose: 'checkout',
+      createdAt: new Date(),
+    })
+    return key
+  }
+
+  /**
+   * A refusal that names an order (the cart already became it, or its payment is under way) gets a key to read it.
+   * Minted in its own write once the placement transaction has settled: a row written there before the throw would
+   * roll back with it.
+   */
+  async function withOrderKey(err: unknown): Promise<unknown> {
+    if (!(err instanceof CheckoutError)) return err
+    const orderNumber = err.context['orderNumber']
+    if (typeof orderNumber !== 'string') return err
+    const order = await store.read((tx) => repos.order.findByOrderNumber(tx, orderNumber))
+    if (order === null) return err
+    err.context['orderKey'] = await store.transaction((tx) => mintKey(tx, order.id))
+    return err
+  }
 
   /** An empty cart's refusal, naming the order the cart became when it became one. */
   async function cartEmpty(token: string): Promise<CheckoutError> {
@@ -599,8 +633,10 @@ export function createCheckoutService(
       } else {
         const reason = closed.get(paymentIntentId)
         if (reason === undefined) {
-          if (sameLines(pending, cartDoc))
-            return { kind: 'existing', order: { ...pending, paymentIntentId } }
+          if (sameLines(pending, cartDoc)) {
+            const orderKey = await mintKey(tx, pending.id)
+            return { kind: 'existing', order: { ...pending, paymentIntentId }, orderKey }
+          }
           return { kind: 'cancel-first', order: { ...pending, paymentIntentId } }
         }
         await cancelDraft(pending.id, reason)
@@ -658,7 +694,7 @@ export function createCheckoutService(
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
     })
-    return { kind: 'placed', order }
+    return { kind: 'placed', order, orderKey: await mintKey(tx, order.id) }
   }
 
   /**
@@ -668,7 +704,7 @@ export function createCheckoutService(
    */
   async function answerExisting(
     order: Order & { paymentIntentId: string },
-  ): Promise<BeginCheckoutResult | { closed: string }> {
+  ): Promise<Answer | { closed: string }> {
     const paymentIntent = await payments.getPaymentIntent(order.paymentIntentId)
     if (outcomeOf(paymentIntent.status) === 'failed') {
       return { closed: `payment_${paymentIntent.status}` }
@@ -702,7 +738,7 @@ export function createCheckoutService(
    * The intent, outside any transaction, then T2 under the cart lock: the intent is stored and, by its status, the order
    * is confirmed (in the same transaction), cancelled with its stock released, or left pending for the provider.
    */
-  async function pay(input: BeginCheckoutInput, order: Order): Promise<BeginCheckoutResult> {
+  async function pay(input: BeginCheckoutInput, order: Order): Promise<Answer> {
     const params: Parameters<PaymentsAdapter['createPaymentIntent']>[0] = {
       amountMinor: order.totalMinor,
       currency: order.currency,
@@ -833,24 +869,33 @@ export function createCheckoutService(
     async beginCheckout(input) {
       // Named before the cart is checked, so a refused checkout is the command's; its entry is held once an order is.
       audit.note('checkout.place')
-      await loadValidCart(input.cartToken)
-      // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with the
-      // reason the pending order holding one is cancelled when the next pass finds it under the lock.
-      const closed = new Map<string, string>()
-      for (let attempt = 0; ; attempt += 1) {
-        const placement = await store.transaction((tx) => place(tx, input, closed))
-        if (placement.kind === 'placed') return pay(input, placement.order)
-        if (placement.kind === 'existing') {
-          const answer = await answerExisting(placement.order)
-          if (!('closed' in answer)) return answer
-          closed.set(placement.order.paymentIntentId, answer.closed)
-          continue
+      try {
+        await loadValidCart(input.cartToken)
+        // Intents no longer open with the provider (cancelled by this checkout, or failed or cancelled there), with
+        // the reason the pending order holding one is cancelled when the next pass finds it under the lock.
+        const closed = new Map<string, string>()
+        for (let attempt = 0; ; attempt += 1) {
+          const placement = await store.transaction((tx) => place(tx, input, closed))
+          if (placement.kind === 'placed') {
+            return { ...(await pay(input, placement.order)), orderKey: placement.orderKey }
+          }
+          if (placement.kind === 'existing') {
+            const answer = await answerExisting(placement.order)
+            if (!('closed' in answer)) return { ...answer, orderKey: placement.orderKey }
+            closed.set(placement.order.paymentIntentId, answer.closed)
+            continue
+          }
+          if (attempt === SUPERSEDE_ATTEMPTS) {
+            throw new CheckoutError(
+              'in_progress',
+              'A checkout for this cart is already in progress',
+            )
+          }
+          await cancelIntent(placement.order)
+          closed.set(placement.order.paymentIntentId, 'superseded: the cart changed')
         }
-        if (attempt === SUPERSEDE_ATTEMPTS) {
-          throw new CheckoutError('in_progress', 'A checkout for this cart is already in progress')
-        }
-        await cancelIntent(placement.order)
-        closed.set(placement.order.paymentIntentId, 'superseded: the cart changed')
+      } catch (err) {
+        throw await withOrderKey(err)
       }
     },
 

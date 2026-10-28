@@ -1,3 +1,4 @@
+// Reads: packages/web-components/src/components/variant-selector.ts
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'

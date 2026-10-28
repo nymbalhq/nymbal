@@ -3,7 +3,8 @@ import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adap
 
 // The swap config: the repository root's config with `search` and `payments` set to `custom`, the adapters injected
 // through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
-// reaches the native store on 3001. `nymbal dev --api-only` runs from this directory; the NYMBAL_E2E_TARGET values
+// reaches the native store on 3001. Its email is SMTP into Mailpit, so the alert journeys read what the store sends;
+// tests/e2e/playwright.config.ts passes the stack slot's Mailpit SMTP port as NYMBAL_E2E_SMTP_PORT. `nymbal dev --api-only` runs from this directory; the NYMBAL_E2E_TARGET values
 // astro-custom and nextjs-custom start it (tests/e2e/playwright.config.ts).
 
 export const adapters = {
@@ -17,6 +18,9 @@ export default {
     currency: 'GBP',
     locale: 'en-GB',
     timezone: 'Europe/London',
+    // The order email links here. One API serves both custom storefronts, so a journey opens the mailed link's path
+    // and query on its own storefront: the key belongs to the API, not to an origin.
+    url: env('NYMBAL_STOREFRONT_URL', 'http://localhost:4331'),
   },
   template: 'astro',
   infrastructure: {
@@ -30,6 +34,7 @@ export default {
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      '/api/alerts/subscribe': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {
@@ -42,7 +47,15 @@ export default {
   },
   commerce: {
     payments: { provider: 'custom' },
-    email: { provider: 'native' },
+    email: {
+      provider: 'smtp',
+      config: {
+        from: 'store@nymbal.dev',
+        // An address, not `localhost`: nodemailer resolves a name IPv4 first, while a server listening on `localhost`
+        // takes the system's first answer, which may be ::1.
+        smtp: { host: '127.0.0.1', port: Number(env('NYMBAL_E2E_SMTP_PORT', '11025')) },
+      },
+    },
     reviews: { provider: 'native' },
     search: { provider: 'custom' },
     analytics: { provider: 'native' },

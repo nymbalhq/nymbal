@@ -1,3 +1,4 @@
+import { AdapterError } from '../errors.js'
 import type { NymbalEvent, EventHandler } from '../events/envelope.js'
 import type { HealthReport } from './adapter-base.js'
 
@@ -26,19 +27,44 @@ export interface Subscription {
   unsubscribe(): Promise<void>
 }
 
+/** A named subscription whose handler threw on an event. */
+export interface HandlerFailure {
+  subscription: string
+  message: string
+}
+
+/** What `publish` rejects with when a named subscription's handler threw: code `adapter.handler_failed`. */
+export function handlerFailedError(
+  event: NymbalEvent<unknown>,
+  failed: HandlerFailure[],
+): AdapterError {
+  return new AdapterError(
+    'handler_failed',
+    `${event.type} (${event.id}) failed in ${failed.map((f) => f.subscription).join(', ')}`,
+    { context: { eventId: event.id, eventType: event.type, failed } },
+  )
+}
+
 /**
- * Delivery is at least once: a publish that is retried may reach a handler twice, so every handler is idempotent
- * (projections overwrite their documents, side effects use `withIdempotency`).
+ * Delivery is at least once: a failed delivery is published again, to every matching subscription, so every handler
+ * is idempotent (projections overwrite their documents, side effects use `withIdempotency`). The bus never retries a
+ * failed handler by itself.
  */
 export interface EventBusAdapter {
   capabilities(): readonly string[]
   /**
    * Resolves only after every matching subscription this instance holds has handled the event, so a read straight
-   * after a command sees its projections. A handler that throws is logged, and does not reject the publish.
+   * after a command sees its projections. When a named subscription's handler throws, it rejects with
+   * `handlerFailedError` naming each one that threw, once every matching handler has settled. An unnamed subscription's
+   * throw is logged and does not reject.
    */
   publish<T>(event: NymbalEvent<T>): Promise<void>
+  /** Hands every event out in order, then rejects as `publish` does for the first event a named handler failed. */
   publishBatch(events: NymbalEvent<unknown>[]): Promise<void>
-  /** Delivers to `derived` subscriptions only, so rebuilding derived state never triggers side effects. */
+  /**
+   * Delivers to `derived` subscriptions only, so rebuilding derived state never triggers side effects. A handler's
+   * throw is logged and does not reject.
+   */
   replay(events: NymbalEvent<unknown>[]): Promise<void>
   subscribe(
     eventPattern: string | string[],

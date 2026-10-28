@@ -1,7 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useIntentKey } from '@/hooks/useIntentKey'
 import type { OrderHistoryEntry } from '@nymbalhq/types'
-import type { AdminOrder, OrderWithHistory, NoteEntry, RefundAnswer } from '@/types'
+import type {
+  AdminOrder,
+  OrderWithHistory,
+  NoteEntry,
+  RefundAnswer,
+  ResendConfirmationAnswer,
+} from '@/types'
 
 interface OrderFilters {
   status?: string | undefined
@@ -174,6 +181,23 @@ export function useRefundOrder() {
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ])
     },
+  })
+}
+
+/**
+ * Queues the order's confirmation email again. Every call before the request settles carries one Idempotency-Key,
+ * so a double click queues one email; the next intent gets its own.
+ */
+export function useResendConfirmation() {
+  const [idempotencyKey, renewKey] = useIntentKey()
+  return useMutation({
+    mutationFn: ({ orderId }: { orderId: string }) =>
+      api.post<ResendConfirmationAnswer>(
+        `/api/admin/orders/${orderId}/resend-confirmation`,
+        undefined,
+        { idempotencyKey },
+      ),
+    onSettled: renewKey,
   })
 }
 

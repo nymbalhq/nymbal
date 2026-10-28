@@ -3,20 +3,22 @@ import '../../styles/pages/pdp.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import { cardProductOf } from '@nymbalhq/web-components/ssr'
-import { fetchProduct, fetchReviews, fetchProducts } from '../../lib/api'
+import { loadProduct, fetchReviews, fetchProducts, fetchCapabilities } from '../../lib/api'
 import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
 
 const { slug } = Astro.params
 
-const product = await fetchProduct(slug!)
-if (!product) return Astro.redirect('/404')
+// Rejects when the API fails, so a failed read is a 500 and never a 404 for a product the store has.
+const product = await loadProduct(slug!)
+if (!product) return Astro.rewrite('/404')
 
-const [reviewsResult, relatedResult] = await Promise.all([
+const [reviewsResult, relatedResult, capabilities] = await Promise.all([
   fetchReviews(product.id),
   fetchProducts({
     limit: 4,
     category: product.categories?.[0]?.slug,
   }),
+  fetchCapabilities(),
 ])
 
 const reviews = reviewsResult.items ?? []
@@ -39,6 +41,10 @@ const breadcrumb = breadcrumbJsonLd([
   { name: 'Products', url: `${Astro.url.origin}/products` },
   { name: product.name, url: `${Astro.url.origin}/product/${product.slug}` },
 ])
+
+// The alert form only where the store's email reaches a mailbox (an API older than the report says nothing): back in
+// stock for a variant out of stock, price drop for one in stock.
+const offersAlerts = capabilities?.email?.delivers === true && defaultVariant !== undefined
 
 // The selector derives its option groups from the product's variants.
 const hasVariantChoice = (product.variants?.length ?? 0) > 1
@@ -93,6 +99,13 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
           </div>
         </div>
 
+        {offersAlerts && (
+          <NymbalElement
+            tag="nymbal-notify-me"
+            attributes={{ 'product-id': product.id, 'variant-id': defaultVariant!.id, stock: String(stock) }}
+          />
+        )}
+
         {product.description && (
           <div class="pdp-description" data-testid="product-description">
             <Fragment set:html={product.description} />
@@ -116,6 +129,9 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
         />
       </section>
     )}
+
+    <!-- The shopper's own list, read in the browser: a bare tag, so no shopper's list is in the page's HTML. -->
+    <nymbal-recently-viewed data-testid="recently-viewed" current={product.id}></nymbal-recently-viewed>
   </div>
 </BaseLayout>
 

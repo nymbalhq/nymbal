@@ -31,6 +31,15 @@ const nextConfig = {
       ],
     }
   },
+  // The order page's URL carries the order's key; no request from it, nor from its not-found render, may refer it on.
+  async headers() {
+    return [
+      {
+        source: '/order/:orderNumber',
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      },
+    ]
+  },
   transpilePackages: ['@nymbalhq/sdk', '@nymbalhq/react', '@nymbalhq/web-components'],
   images: {
     remotePatterns: [{ protocol: 'https', hostname: '**' }],

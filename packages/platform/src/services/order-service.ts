@@ -1,6 +1,7 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_ORDER_CANCELLED,
+  EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_PLACED,
   EVT_ORDER_SHIPPED,
@@ -21,6 +22,7 @@ import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
+import { hashOrderKey, isOrderKey } from '../order-access-key.js'
 
 export interface OrderCreateDraftInput {
   orderId: string
@@ -57,12 +59,22 @@ export interface OrderService {
   getById(id: string): Promise<Order>
   getByOrderNumber(orderNumber: string): Promise<Order>
   listByCustomer(customerId: string): Promise<Order[]>
+  /** Whether `key` opens the order: one of its own keys, well formed. Another order's key opens nothing. */
+  keyOpens(orderId: string, key: string): Promise<boolean>
   updateStatus(id: string, toStatus: OrderStatus, actor: string, note?: string): Promise<Order>
   markShipped(id: string, trackingNumber: string, carrier: string, actor: string): Promise<Order>
   markDelivered(id: string, actor: string): Promise<Order>
   /** Refuses with `order.paid` once anything is captured: a paid order is refunded, never cancelled. */
   cancel(id: string, reason: string, actor: string): Promise<Order>
+  /**
+   * Asks for the order's confirmation email again; the email handler sends it. Refuses with `order.unpaid` for an
+   * order no confirmation is due for (pending, or cancelled and so never paid). Changes nothing on the order.
+   */
+  resendConfirmation(id: string): Promise<Order>
 }
+
+/** A cancelled order was never paid (`cancel` refuses once anything is captured), so it has no confirmation either. */
+const NO_CONFIRMATION_DUE: ReadonlySet<OrderStatus> = new Set<OrderStatus>(['pending', 'cancelled'])
 
 export interface CreateOrderServiceDeps {
   store: CommandStore
@@ -160,6 +172,10 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async listByCustomer(customerId) {
       return store.read((tx) => repos.order.listByCustomer(tx, customerId))
     },
+    async keyOpens(orderId, key) {
+      if (!isOrderKey(key)) return false
+      return store.read((tx) => repos.orderAccessKey.opens(tx, orderId, hashOrderKey(key)))
+    },
     async updateStatus(id, toStatus, actor, note = '') {
       return store.transaction(async (tx) => {
         audit.note('order.updateStatus', [{ type: 'order', id }])
@@ -231,6 +247,21 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
         const fresh = await requireOrder(tx, order.id)
         await publisher.publish(EVT_ORDER_CANCELLED, { orderId: fresh.id, reason })
         return fresh
+      })
+    },
+    async resendConfirmation(id) {
+      return store.transaction(async (tx) => {
+        audit.note('order.resendConfirmation', [{ type: 'order', id }])
+        const order = await requireOrder(tx, id)
+        if (NO_CONFIRMATION_DUE.has(order.status)) {
+          throw new OrderConflictError(
+            'order.unpaid',
+            `Order ${order.orderNumber} is ${order.status}: no confirmation is due`,
+            { context: { status: order.status } },
+          )
+        }
+        await publisher.publish(EVT_ORDER_CONFIRMATION_RESEND_REQUESTED, { orderId: order.id })
+        return order
       })
     },
     async importOrder(input) {

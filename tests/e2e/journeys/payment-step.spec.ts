@@ -3,6 +3,8 @@ import { isCustomProject, storeCapabilities } from '../support/capabilities'
 import {
   adminToken,
   openCheckout,
+  ORDER_KEY_HEADER,
+  orderKeyOf,
   orderNumberOf,
   ownProduct,
   walkToPayment,
@@ -17,7 +19,7 @@ import { expect, test } from '../support/fixtures'
 const email = (tag: string) => `e2e-caps-${tag}-${randomUUID().slice(0, 8)}@e2e.test`
 
 test.describe('The payment step follows the payments adapter', () => {
-  test('AC-5: the run reaches the store its project names: the custom runs report search without facet and no payments client, the native runs facet and test-mode, and the storefront calls that same API', async ({
+  test('AC-5: the run reaches the store its project names: the custom runs report search without facet and no payments client, the native runs facet and test-mode, and the storefront calls that same API @capabilities', async ({
     page,
     request,
   }, testInfo) => {
@@ -34,7 +36,7 @@ test.describe('The payment step follows the payments adapter', () => {
     expect(new URL((await listed).url()).origin).toBe(new URL(API_URL).origin)
   })
 
-  test('AC-5: checkout renders the payment UI the store’s client half names (none for a null client), completes, and the API holds the order confirmed', async ({
+  test('AC-5: checkout renders the payment UI the store’s client half names (none for a null client), completes, and the API holds the order confirmed @capabilities', async ({
     page,
     request,
   }) => {
@@ -61,7 +63,9 @@ test.describe('The payment step follows the payments adapter', () => {
     await page.waitForURL(/\/order\//, { timeout: 20_000 })
     const orderNumber = orderNumberOf(page)
 
-    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`)
+    const order = await page.request.get(`${API_URL}/api/orders/${orderNumber}`, {
+      headers: { [ORDER_KEY_HEADER]: orderKeyOf(page) },
+    })
     expect(order.status()).toBe(200)
     expect(((await order.json()) as { data: { status: string } }).data.status).toBe('confirmed')
     await expect(page.getByTestId('order-status')).toHaveText(/confirmed/i, { timeout: 15_000 })

@@ -7,8 +7,12 @@ import type { ReactNode } from 'react'
 
 function makeCartStore(initialState: Partial<CartState> = {}) {
   let state: CartState = {
-    items: [], subtotalMinor: 0, currency: 'GBP',
-    itemCount: 0, loading: false, error: null,
+    items: [],
+    subtotalMinor: 0,
+    currency: 'GBP',
+    itemCount: 0,
+    loading: false,
+    error: null,
     ...initialState,
   }
   const listeners = new Set<() => void>()
@@ -18,7 +22,10 @@ function makeCartStore(initialState: Partial<CartState> = {}) {
       state = { ...state, ...partial }
       for (const l of listeners) l()
     },
-    subscribe: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn) },
+    subscribe: (fn: () => void) => {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
     addItem: vi.fn().mockResolvedValue(undefined),
     removeItem: vi.fn().mockResolvedValue(undefined),
     updateQuantity: vi.fn().mockResolvedValue(undefined),
@@ -39,11 +46,11 @@ function makeWrapper(client: NymbalClient) {
 }
 
 describe('useCart', () => {
-  it('returns initial cart state', () => {
-    const client = makeClient()
-    const { result } = renderHook(() => useCart(), { wrapper: makeWrapper(client) })
-    expect(result.current.items).toEqual([])
-    expect(result.current.itemCount).toBe(0)
+  it('mounts with the store’s current cart, not a default', () => {
+    const cartStore = makeCartStore({ itemCount: 2, subtotalMinor: 2400 })
+    const { result } = renderHook(() => useCart(), { wrapper: makeWrapper(makeClient(cartStore)) })
+    expect(result.current.itemCount).toBe(cartStore.getState().itemCount)
+    expect(result.current.subtotalMinor).toBe(cartStore.getState().subtotalMinor)
   })
 
   it('re-renders when cart state changes', () => {
@@ -54,15 +61,5 @@ describe('useCart', () => {
       cartStore.setState({ itemCount: 3, subtotalMinor: 3000 })
     })
     expect(result.current.itemCount).toBe(3)
-  })
-
-  it('exposes addItem from client', async () => {
-    const cartStore = makeCartStore()
-    const client = makeClient(cartStore)
-    const { result } = renderHook(() => useCart(), { wrapper: makeWrapper(client) })
-    await act(async () => {
-      await result.current.addItem('var-1', 2)
-    })
-    expect(cartStore.addItem).toHaveBeenCalledWith('var-1', 2)
   })
 })

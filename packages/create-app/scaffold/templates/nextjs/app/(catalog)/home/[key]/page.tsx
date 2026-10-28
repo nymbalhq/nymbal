@@ -5,7 +5,7 @@ import { fetchProducts, fetchCategories } from '@/lib/api'
 import { cardImageOf, cardProductOf, renderNymbal } from '@/lib/render'
 import { organizationJsonLd } from '@/lib/seo'
 import { HeroSection } from '@/components/server/HeroSection'
-import { CategoryNav, ProductGrid } from '@/components/client/elements'
+import { CategoryNav, ProductGrid, RecentlyViewed } from '@/components/client/elements'
 import { NewsletterSignup } from '@/components/client/NewsletterSignup'
 import styles from '@/styles/pages/home.module.css'
 
@@ -75,6 +75,11 @@ export default async function HomePage({ params }: HomePageProps) {
       </section>
 
       <NewsletterSignup />
+
+      {/* The shopper's own list, read in the browser: never in this cached page's HTML. */}
+      <div className="container">
+        <RecentlyViewed data-testid="recently-viewed" />
+      </div>
     </>
   )
 }

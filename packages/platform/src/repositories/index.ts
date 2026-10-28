@@ -14,6 +14,10 @@ import { createOrderHistoryRepository, type OrderHistoryRepository } from './ord
 import { createOrderRefundRepository, type OrderRefundRepository } from './order-refund.js'
 import { createOrderSequenceRepository, type OrderSequenceRepository } from './order-sequence.js'
 import {
+  createOrderAccessKeyRepository,
+  type OrderAccessKeyRepository,
+} from './order-access-key.js'
+import {
   createInventoryReservationRepository,
   type InventoryReservationRepository,
 } from './inventory-reservation.js'
@@ -27,6 +31,10 @@ import { createEventLogRepository, type EventLogRepository } from './event-log.j
 import { createCartRepository, type CartRepository } from './cart.js'
 import { createSettingsRepository, type SettingsRepository } from './settings.js'
 import { createAuditEntryRepository, type AuditEntryRepository } from './audit-entry.js'
+import {
+  createAlertSubscriptionRepository,
+  type AlertSubscriptionRepository,
+} from './alert-subscription.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -38,6 +46,7 @@ export * from './order.js'
 export * from './order-history.js'
 export * from './order-refund.js'
 export * from './order-sequence.js'
+export * from './order-access-key.js'
 export * from './inventory-reservation.js'
 export * from './stock-adjustment.js'
 export * from './review.js'
@@ -46,6 +55,7 @@ export * from './event-log.js'
 export * from './cart.js'
 export * from './settings.js'
 export * from './audit-entry.js'
+export * from './alert-subscription.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -59,6 +69,7 @@ export interface Repositories {
   orderHistory: OrderHistoryRepository
   orderRefund: OrderRefundRepository
   orderSequence: OrderSequenceRepository
+  orderAccessKey: OrderAccessKeyRepository
   inventoryReservation: InventoryReservationRepository
   stockAdjustment: StockAdjustmentRepository
   review: ReviewRepository
@@ -67,6 +78,7 @@ export interface Repositories {
   cart: CartRepository
   settings: SettingsRepository
   auditEntry: AuditEntryRepository
+  alertSubscription: AlertSubscriptionRepository
 }
 
 export function buildRepositories(
@@ -85,6 +97,7 @@ export function buildRepositories(
     orderHistory: createOrderHistoryRepository(commandStore),
     orderRefund: createOrderRefundRepository(commandStore),
     orderSequence: createOrderSequenceRepository(commandStore),
+    orderAccessKey: createOrderAccessKeyRepository(commandStore),
     inventoryReservation: createInventoryReservationRepository(commandStore),
     stockAdjustment: createStockAdjustmentRepository(commandStore),
     review: createReviewRepository(commandStore),
@@ -93,5 +106,6 @@ export function buildRepositories(
     cart: createCartRepository(commandStore),
     settings: createSettingsRepository(commandStore),
     auditEntry: createAuditEntryRepository(commandStore),
+    alertSubscription: createAlertSubscriptionRepository(commandStore),
   }
 }

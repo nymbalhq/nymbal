@@ -8,8 +8,8 @@ import { createProductListStore, type ProductListStore } from './store/product-l
 import { createSearchStore, type SearchStore } from './store/search-store.js'
 import { createCheckoutStore, type CheckoutStore } from './store/checkout-store.js'
 import { createAuthStore, type AuthStore } from './store/auth-store.js'
-import type { CustomerAddress, Order, StoreCapabilities } from '@nymbalhq/types'
-import type { NewAddress, OrderPage } from './types.js'
+import type { CustomerAddress, ShopperOrder, StoreCapabilities } from '@nymbalhq/types'
+import type { DenormalisedProduct, NewAddress, OrderPage } from './types.js'
 
 export interface NymbalClientOptions {
   baseUrl: string
@@ -28,7 +28,8 @@ export interface CustomerAccount {
   }
   orders: {
     list(opts?: { cursor?: string }): Promise<OrderPage>
-    get(orderNumber: string): Promise<Order>
+    /** `key`, the order's key from its checkout, reads it with no session; without one, only its owner can. */
+    get(orderNumber: string, options?: { key?: string }): Promise<ShopperOrder>
   }
 }
 
@@ -37,8 +38,17 @@ export interface StoreCapabilitiesReader {
   get(): Promise<StoreCapabilities>
 }
 
+/** The shopper's recently viewed products, kept by the store under the signed-in customer or the browser's visitor. */
+export interface RecentlyViewed {
+  /** Records a view of the product; the store ignores a product that is not active. */
+  record(productId: string): Promise<void>
+  /** The shopper's active products, newest first. */
+  list(): Promise<{ items: DenormalisedProduct[] }>
+}
+
 export interface NymbalClient {
   capabilities: StoreCapabilitiesReader
+  recentlyViewed: RecentlyViewed
   cart: CartStore
   product: ProductStore
   productList: ProductListStore
@@ -94,7 +104,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
     orders: {
       list: (opts) => adapter.customers.listOrders(opts),
-      get: (orderNumber) => adapter.customers.getOrder(orderNumber),
+      get: (orderNumber, options) => adapter.customers.getOrder(orderNumber, options),
     },
   }
 
@@ -116,6 +126,22 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
   }
 
+  const recentlyViewedOf = (): NonNullable<CommerceAdapter['recentlyViewed']> => {
+    const reader = adapter.recentlyViewed
+    if (reader === undefined) {
+      throw new Error('This client’s adapter cannot record or list recently viewed products.')
+    }
+    return reader
+  }
+  const recentlyViewed: RecentlyViewed = {
+    async record(productId) {
+      await recentlyViewedOf().record(productId)
+    },
+    async list() {
+      return recentlyViewedOf().list()
+    },
+  }
+
   tokenManager.scheduleRefresh(() => adapter.customers.refresh())
 
   function destroy(): void {
@@ -130,6 +156,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
 
   return {
     capabilities,
+    recentlyViewed,
     cart,
     product,
     productList,

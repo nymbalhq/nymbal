@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 import { stack } from '../../scripts/stack'
+import { e2eReporters } from './support/reporters'
 
 const isCI = !!process.env.CI
 const target = process.env.NYMBAL_E2E_TARGET
@@ -14,12 +15,15 @@ const block = stack(fileURLToPath(new URL('.', import.meta.url)))
 process.env.NYMBAL_STACK_SLOT = String(block.slot)
 const local = (port: number): string => `http://localhost:${port}`
 
-// The swap: `astro-custom` and `nextjs-custom` run the same journeys against the fixture store in
+// The swap: `astro-custom` and `nextjs-custom` run the journeys tagged @capabilities against the fixture store in
 // tests/e2e/fixtures/custom-providers (search and payments `custom`, injected through its `adapters` export), on an API
 // of its own (3011 in slot 0) and a storefront of their own, so a custom run never reaches the native store. Each is
 // its own invocation (NYMBAL_E2E_TARGET), as gate.ts runs one per target.
 const CUSTOM_TARGETS = ['astro-custom', 'nextjs-custom']
-const isCustom = target !== undefined && CUSTOM_TARGETS.includes(target)
+// The mail outage journey (@mail-outage) on the custom store's API alone: Chaos applies to the whole Mailpit, so it is
+// a target of its own, run after the custom ones, and no other project runs it.
+const MAIL_OUTAGE = 'mail-outage'
+const isCustom = target !== undefined && [...CUSTOM_TARGETS, MAIL_OUTAGE].includes(target)
 const CUSTOM_API = local(block.customApi)
 const NATIVE_API = local(block.api)
 // The no-search store (tests/e2e/fixtures/no-search, search `custom` with no capability) on an API of its own, with
@@ -108,6 +112,14 @@ const apiServer = {
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
 
+/**
+ * The Mailpit the fixture store sends its mail to: CI's service, which NYMBAL_TEST_MAILPIT_SMTP (`host:port`) names,
+ * else the stack slot's compose Mailpit, so a worktree's store never mails slot 0's.
+ */
+const mailpitSmtpPort = process.env.NYMBAL_TEST_MAILPIT_SMTP
+  ? new URL(`smtp://${process.env.NYMBAL_TEST_MAILPIT_SMTP}`).port
+  : String(block.mailpitSmtp)
+
 /** The fixture store: `nymbal dev --api-only` from the fixture directory, so its nymbal.config.ts is the one loaded. */
 const customApiServer = {
   command: `node ../../../../scripts/e2e-server.mjs -- node ../../../../packages/cli/bin/nymbal.mjs dev --api-only --port ${block.customApi}`,
@@ -118,6 +130,7 @@ const customApiServer = {
   env: {
     NYMBAL_SQLITE_PATH: customSqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL, nextjsCustomURL),
+    NYMBAL_E2E_SMTP_PORT: mailpitSmtpPort,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }
@@ -199,6 +212,7 @@ function servers() {
     'nextjs',
     'admin',
     ...CUSTOM_TARGETS,
+    MAIL_OUTAGE,
     ...NOSEARCH_TARGETS,
     ...OVERRIDE_TARGETS,
   ]
@@ -211,6 +225,7 @@ function servers() {
   if (target === 'nextjs-custom') {
     return [customApiServer, nextjsServer(nextjsCustomURL, CUSTOM_API)]
   }
+  if (target === MAIL_OUTAGE) return [customApiServer]
   if (target === 'astro-nosearch') {
     return [noSearchApiServer, astroServer(astroNoSearchURL, NOSEARCH_API)]
   }
@@ -227,12 +242,26 @@ function servers() {
   return [apiServer, astroServer(astroURL, NATIVE_API), nextjsServer(nextjsURL, NATIVE_API)]
 }
 
+// A whole run is bounded: each target is its own invocation, and one that hangs (the admin project once ran 389 s
+// against a 9.5 s median) is red at the bound instead of holding everything behind it. GitHub's runners get twice
+// the local bound; NYMBAL_E2E_GLOBAL_TIMEOUT_MS overrides either. Unbounded when run by hand without CI.
+const globalTimeout = process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS
+  ? Number(process.env.NYMBAL_E2E_GLOBAL_TIMEOUT_MS)
+  : isCI
+    ? process.env.GITHUB_ACTIONS
+      ? 10 * 60_000
+      : 5 * 60_000
+    : 0
+
 export default defineConfig({
   testDir: './journeys',
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
-  reporter: isCI ? 'github' : 'list',
+  // With retries a test that passes only on a retry leaves the exit status green; the JSON report per target is
+  // where it shows (support/reporters.ts).
+  reporter: e2eReporters(isCI, target),
+  globalTimeout,
   snapshotPathTemplate: '{testDir}/{testFileDir}/snapshots/{arg}-{projectName}{ext}',
   use: {
     trace: 'on-first-retry',
@@ -243,7 +272,7 @@ export default defineConfig({
     {
       name: 'astro',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override/,
+      grepInvert: /@nosearch|@override|@mail-outage/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -252,18 +281,19 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override/,
+      grepInvert: /@nosearch|@override|@mail-outage/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
       },
     },
-    // The same journey files on the fixture store. Visual snapshots are keyed by project and shot on the native
-    // store, so the custom runs leave them out, and the rebuild journey (@rebuild) replays the native store's own.
+    // The fixture store with custom providers: only the journeys tagged @capabilities, whose assertions branch on
+    // what GET /api/capabilities reports, which is what the providers change. Every other journey runs on the native
+    // store alone.
     {
       name: 'astro-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch|@rebuild|@override/,
+      grep: /@capabilities/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroCustomURL,
@@ -272,10 +302,19 @@ export default defineConfig({
     {
       name: 'nextjs-custom',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@visual|@nosearch|@rebuild|@override/,
+      grep: /@capabilities/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsCustomURL,
+      },
+    },
+    // The custom store's API, with no storefront: its origin is one the API accepts, as a browser on it would send.
+    {
+      name: MAIL_OUTAGE,
+      testMatch: ['**/journeys/mail-outage.spec.ts'],
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: astroCustomURL,
       },
     },
     // The no-search store: only the journeys tagged @nosearch, which no other project runs.

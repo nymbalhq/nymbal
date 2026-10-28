@@ -95,7 +95,7 @@ export async function openReplica(
   const now = () => opts.clock.now()
   const currency = config.store.currency
 
-  const product = createProductService({ store, repos, publisher, logger })
+  const product = createProductService({ store, repos, publisher, logger, currency: 'GBP' })
   const inventory = createInventoryService({ store, repos, publisher, logger })
   const order = createOrderService({
     store,

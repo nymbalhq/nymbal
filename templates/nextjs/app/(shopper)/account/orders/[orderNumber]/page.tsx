@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useNymbalClient } from '@nymbalhq/react'
-import type { Order } from '@nymbalhq/types'
+import { OrderTimeline, useNymbalClient } from '@nymbalhq/react'
+import type { ShopperOrder } from '@nymbalhq/types'
 import { formatPrice, formatDate } from '@/lib/format'
 import styles from '@/styles/pages/account.module.css'
 import confirmStyles from '@/styles/pages/confirmation.module.css'
@@ -13,7 +13,7 @@ export default function OrderDetailPage() {
   const params = useParams<{ orderNumber: string }>()
   const orderNumber = decodeURIComponent(params.orderNumber ?? '')
   const client = useNymbalClient()
-  const [order, setOrder] = useState<Order | null>(null)
+  const [order, setOrder] = useState<ShopperOrder | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -89,6 +89,13 @@ export default function OrderDetailPage() {
 
       {order.createdAt && (
         <p className="text-sm text-muted mb-md">Placed on {formatDate(order.createdAt)}</p>
+      )}
+
+      {order.timeline !== undefined && order.timeline.length > 0 && (
+        <OrderTimeline
+          entries={order.timeline}
+          style={{ marginBottom: 'var(--nymbal-spacing-lg)' }}
+        />
       )}
 
       <div className={styles.formCard} style={{ marginBottom: 'var(--nymbal-spacing-lg)' }}>

@@ -7,13 +7,18 @@ import { openRaw, type RawReader } from '../support/raw.js'
 import { primedShopper } from '../support/security.js'
 
 // AC-1 and AC-15 as properties over the schema registry, against a served kernel (SQLite). AC-1: every
-// state-changing route but the Stripe webhook refuses a request without a CSRF pair with 403, before auth (admin
+// state-changing route but the inbound webhook refuses a request without a CSRF pair with 403, before auth (admin
 // routes answer 403, not 401) and before anything is written. AC-15: every route with a body schema answers a body
-// it rejects with 400 `validation.failed`, never 500.
+// it rejects with 400 `validation.failed`, never 500. And every signed-in customer route refuses a request with no
+// token, so a customer route registered without its auth guard is caught. AC-8: the inbound webhook is one route,
+// `POST /api/webhooks/:adapter`, and the guard leaves out that route and the alert links and nothing else.
 
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-/** Registered with `csrf: false`; its body schema is `z.unknown()` and its own signature check answers bad input. */
-const STRIPE_WEBHOOK = 'POST /api/webhooks/stripe'
+/**
+ * Every provider's webhook, Stripe's included: registered with `csrf: false`; its body schema is `z.unknown()` and
+ * the provider's own signature check answers bad input.
+ */
+const WEBHOOK = 'POST /api/webhooks/:adapter'
 /** What a route may answer to a body its schema accepts: the handler ran, or auth or a missing resource stopped it. */
 const ACCEPTED = [200, 201, 202, 204, 401, 403, 404]
 
@@ -27,12 +32,35 @@ function fill(path: string, id: string): string {
   return path.replace(/:[A-Za-z_]\w*/g, encodeURIComponent(id))
 }
 
+/**
+ * Registered with `csrf: false`: the token in the body is the credential, and the storefront pages call them from
+ * their servers, which hold no CSRF cookie.
+ */
+const ALERT_LINKS = ['POST /api/alerts/confirm', 'POST /api/alerts/unsubscribe']
+const ALERT_SUBSCRIBE = 'POST /api/alerts/subscribe'
+
 const unsafeKeys = Object.keys(routeSchemas).filter(
-  (key) => UNSAFE.has(split(key).method) && key !== STRIPE_WEBHOOK,
+  (key) => UNSAFE.has(split(key).method) && key !== WEBHOOK && !ALERT_LINKS.includes(key),
 )
 const bodyKeys = Object.entries(routeSchemas)
-  .filter(([key, schema]) => schema.body !== undefined && key !== STRIPE_WEBHOOK)
+  .filter(([key, schema]) => schema.body !== undefined && key !== WEBHOOK)
   .map(([key]) => key)
+const customerKeys = Object.keys(routeSchemas).filter((key) =>
+  split(key).path.startsWith('/api/customers/me'),
+)
+/** Each customer route is sent the first of these its body schema accepts, so only the auth guard can stop it. */
+const CANDIDATE_BODIES: unknown[] = [
+  {},
+  {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    addressLine1: '1 Analytical Way',
+    city: 'London',
+    region: 'LDN',
+    postalCode: 'N1 1AA',
+    country: 'GB',
+  },
+]
 
 describe('the guard and the parser over every registered route', () => {
   let k: Kernel
@@ -50,7 +78,7 @@ describe('the guard and the parser over every registered route', () => {
     await served?.stop()
   })
 
-  it('AC-1: every POST/PUT/PATCH/DELETE route but the Stripe webhook answers 403 csrf.invalid to a request with no CSRF cookie or header, admin routes included, and writes nothing', async () => {
+  it('AC-1: every POST/PUT/PATCH/DELETE route but the inbound webhook and the alert confirm and unsubscribe links answers 403 csrf.invalid to a request with no CSRF cookie or header, admin routes included, and writes nothing', async () => {
     expect(unsafeKeys).toContain('POST /api/cart/items')
     expect(unsafeKeys.filter((key) => key.includes(' /api/admin/')).length).toBeGreaterThan(0)
     const cartsBefore = await raw.count('carts')
@@ -74,6 +102,70 @@ describe('the guard and the parser over every registered route', () => {
     }
 
     expect(await raw.count('carts')).toBe(cartsBefore)
+    expect(await raw.count('events')).toBe(eventsBefore)
+  })
+
+  it('AC-8: the inbound webhook is one schema entry, POST /api/webhooks/:adapter (webhooks.receive), with no Stripe route beside it, and the guard properties leave out exactly it and the alert links', () => {
+    const unsafe = Object.keys(routeSchemas).filter((key) => UNSAFE.has(split(key).method))
+    const withBody = Object.entries(routeSchemas)
+      .filter(([, schema]) => schema.body !== undefined)
+      .map(([key]) => key)
+    const webhookKeys = Object.keys(routeSchemas).filter((key) =>
+      split(key).path.startsWith('/api/webhooks/'),
+    )
+
+    expect(webhookKeys).toEqual([WEBHOOK])
+    expect(routeSchemas[WEBHOOK]?.name).toBe('webhooks.receive')
+    expect(unsafe.filter((key) => !unsafeKeys.includes(key)).sort()).toEqual(
+      [WEBHOOK, ...ALERT_LINKS].sort(),
+    )
+    expect(withBody.filter((key) => !bodyKeys.includes(key))).toEqual([WEBHOOK])
+  })
+
+  it('AC-12: the alert confirm and unsubscribe routes accept a POST with no CSRF cookie or header, answering an unknown token 404 alerts.link_invalid; subscribe refuses one with 403 csrf.invalid and writes nothing', async () => {
+    expect(
+      Object.fromEntries(
+        [ALERT_SUBSCRIBE, ...ALERT_LINKS].map((key) => [key, routeSchemas[key]?.command]),
+      ),
+    ).toEqual({
+      [ALERT_SUBSCRIBE]: 'alert.subscribe',
+      'POST /api/alerts/confirm': 'alert.confirm',
+      'POST /api/alerts/unsubscribe': 'alert.unsubscribe',
+    })
+    const eventsBefore = await raw.count('events')
+
+    const bare = async (key: string, body: unknown) => {
+      const res = await fetch(new URL(split(key).path, served.baseUrl), {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          origin: 'http://localhost:4321',
+        },
+        body: JSON.stringify(body),
+      })
+      const answer = (await res.json()) as { error?: { code: string } }
+      return [key, res.status, answer.error?.code]
+    }
+    const answers = [
+      ...(await Promise.all(
+        ALERT_LINKS.map((key) =>
+          bare(key, {
+            token: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url'),
+          }),
+        ),
+      )),
+      await bare(ALERT_SUBSCRIBE, {
+        email: 'csrf@alerts.test',
+        variantId: crypto.randomUUID(),
+        kind: 'back_in_stock',
+      }),
+    ]
+
+    expect(answers).toEqual([
+      ...ALERT_LINKS.map((key) => [key, 404, 'alerts.link_invalid']),
+      [ALERT_SUBSCRIBE, 403, 'csrf.invalid'],
+    ])
     expect(await raw.count('events')).toBe(eventsBefore)
   })
 
@@ -106,5 +198,27 @@ describe('the guard and the parser over every registered route', () => {
         { numRuns: 4 },
       )
     }
+  })
+
+  it('every /api/customers/me* route answers 401 auth.unauthorized to a request with a CSRF pair and no token: the set of 401 routes equals the registered customer routes', async () => {
+    expect(customerKeys).toContain('GET /api/customers/me')
+    const shop = await primedShopper(served.baseUrl)
+    const refused: string[] = []
+    const seen: string[] = []
+
+    for (const key of customerKeys) {
+      const { method, path } = split(key)
+      const schema = routeSchemas[key]!.body
+      const body =
+        schema && CANDIDATE_BODIES.find((candidate) => schema.safeParse(candidate).success)
+      if (schema !== undefined && body === undefined) {
+        throw new Error(`${key}: no candidate body its schema accepts; add one to CANDIDATE_BODIES`)
+      }
+      const res = await shop.call(method, fill(path, crypto.randomUUID()), body)
+      seen.push(`${key} → ${res.status} ${res.body.error?.code ?? ''}`)
+      if (res.status === 401 && res.body.error?.code === 'auth.unauthorized') refused.push(key)
+    }
+
+    expect(refused.sort(), seen.join('\n')).toEqual(customerKeys.toSorted())
   })
 })

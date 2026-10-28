@@ -20,8 +20,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       # Seeds an API with the store's own images, builds and serves both templates, and holds every page to
-      # perf-budgets.json, as the pull request job does.
-      - run: pnpm perf:budgets
+      # perf-budgets.json, as the pull request job does, on the median of five runs a page.
+      - run: pnpm perf:budgets --runs 5
       - name: Upload the budget report
         if: always()
         uses: actions/upload-artifact@v7
@@ -76,12 +76,43 @@ jobs:
           name: build-output
       - name: Stryker over every mutate target, ignoring the incremental file
         run: pnpm mutation --force
+      - name: No file below its unit ratchet entry
+        run: pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json
       - name: Upload the Stryker report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: stryker-report
           path: reports/mutation
+          if-no-files-found: warn
+
+  mutation-integration:
+    # The files only the platform integration tests reach, mutated under those tests (SQLite), held by their own ratchet.
+    name: Mutation — integration-tested files
+    runs-on: ubuntu-24.04
+    needs: [build]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-output
+      - name: Stryker over the integration-tested files
+        run: pnpm mutation:integration
+      - name: No file below its integration ratchet entry
+        run: pnpm --silent mutation:ratchet check --config stryker.integration.config.mjs --ratchet mutation-ratchet.integration.json --report reports/mutation-integration/mutation.json
+      - name: Upload the Stryker report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stryker-integration-report
+          path: reports/mutation-integration
           if-no-files-found: warn
 
   quarantine:

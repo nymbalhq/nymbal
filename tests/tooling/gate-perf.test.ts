@@ -1,3 +1,4 @@
+// Reads: package.json, vitest.config.ts
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'

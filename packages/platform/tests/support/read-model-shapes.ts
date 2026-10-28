@@ -8,9 +8,10 @@ export const DOCUMENT_MODELS = {
   catalogue: ['categories', 'products', 'products-by-category'],
   orders: ['orders', 'orders-by-customer'],
   customers: ['customer-profiles'],
+  'recently-viewed': ['recently-viewed'],
 } as const
 
-export const ALL_MODELS = ['catalogue', 'orders', 'customers', 'search'] as const
+export const ALL_MODELS = ['catalogue', 'orders', 'customers', 'search', 'recently-viewed'] as const
 
 export const DOCUMENT_COLLECTIONS: readonly string[] = Object.values(DOCUMENT_MODELS).flat()
 

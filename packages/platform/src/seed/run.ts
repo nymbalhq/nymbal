@@ -7,6 +7,7 @@ import type {
   EventBusAdapter,
   Logger,
   MediaStorage,
+  NymbalEvent,
   Role,
   SearchAdapter,
 } from '@nymbalhq/types'
@@ -223,6 +224,10 @@ async function insertCustomer(
   })
 }
 
+function failedOf(err: unknown): unknown {
+  return (err as { context?: { failed?: unknown } }).context?.failed ?? []
+}
+
 export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
   const { config, commandStore, documentStore, eventBus, logger, version } = deps
   const categoryRepo = createCategoryRepository(commandStore)
@@ -402,7 +407,20 @@ export async function runSeed(deps: SeedDeps): Promise<SeedResult> {
       email: adminCustomer.email,
     }),
   ]
-  await eventBus.publishBatch(events)
+  // The seed's events are not in the log, so nothing retries them: a handler that fails on one (a welcome mail the
+  // mail host refuses) is reported and the seed goes on; its rows are committed, and the rebuild below projects them.
+  const failures: Array<{ eventId: string; eventType: string; failed: unknown }> = []
+  for (const event of events as NymbalEvent<unknown>[]) {
+    try {
+      await eventBus.publish(event)
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code !== 'adapter.handler_failed') throw err
+      failures.push({ eventId: event.id, eventType: event.type, failed: failedOf(err) })
+    }
+  }
+  if (failures.length > 0) {
+    logger.warn({ failures }, 'seed events whose handlers failed; they are not retried')
+  }
 
   logger.info({ adminEmail }, 'Admin user seeded')
   if (!process.env['NYMBAL_ADMIN_EMAIL']) {

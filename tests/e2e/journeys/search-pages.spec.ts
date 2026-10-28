@@ -5,13 +5,14 @@ import { adminToken } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// AC-8 on every storefront target: astro, nextjs, and the fixture store's astro-custom and nextjs-custom. The file
-// creates products of its own sharing a unique token term, across two seeded categories, so the expectation is the API
-// read at the moment of the assertion, over products no other journey touches.
+// AC-8 on astro and nextjs; the fixture store's astro-custom and nextjs-custom run only the test tagged @capabilities,
+// the category filter, whose outcome depends on what the store's search reports. The file creates products of its
+// own sharing a unique token term, across two seeded categories, so the expectation is the API read at the moment of
+// the assertion, over products no other journey touches.
 // The admin API cannot create a category, so the two are seeded ones that no other journey needs to hold seeded
 // products only: not `apparel` (the listing screenshot refuses a product created after the seed) and not `books`
 // (the card price journey needs its product on that category's first page).
-// - Every target: /search?q=<token> shows `search-total` with the API's total, and its first page plus
+// - astro and nextjs: /search?q=<token> shows `search-total` with the API's total, and its first page plus
 //   `search-load-more` clicks until the button is gone show exactly the API's full cursor walk.
 // - When GET /api/capabilities reports `facet` for search: choosing `filter-option-<slug>` shows exactly the API's
 //   `category=<slug>` walk and total, writes `?category=` beside `?q`, and a reload of that URL shows the same.
@@ -157,7 +158,7 @@ test.describe('Search pages: total, load more and the category facet', () => {
     expect(api.total).toBe(api.slugs.length)
   })
 
-  test('AC-8: the category filter is there iff search reports facet: choosing an option shows the API’s category walk and total, writes ?category= beside ?q, and a reload shows the same; without facet there is no filter and the API sends facets []', async ({
+  test('AC-8: the category filter is there iff search reports facet: choosing an option shows the API’s category walk and total, writes ?category= beside ?q, and a reload shows the same; without facet there is no filter and the API sends facets [] @capabilities', async ({
     page,
     request,
   }) => {

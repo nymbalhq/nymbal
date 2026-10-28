@@ -12,7 +12,6 @@ export const CONTRACT_KINDS = [
   'analytics',
   'shipping',
   'tax',
-  'ai',
   'documentStore',
   'eventBus',
   'media',

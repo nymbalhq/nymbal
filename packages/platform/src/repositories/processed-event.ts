@@ -15,6 +15,11 @@ export interface ProcessedEventRepository extends StoreRepository {
   seen(tx: ReadTx, handlerName: string, eventId: string): Promise<boolean>
   /** Idempotent on (handlerName, eventId): a second call keeps the first record. */
   markProcessed(tx: Tx, handlerName: string, eventId: string, at: Date): Promise<void>
+  /**
+   * Records (handlerName, eventId) before its work runs: true when this call inserted it, false when it was there.
+   * On Postgres a concurrent claim of the same key waits for this transaction, so only one of them does the work.
+   */
+  claim(tx: Tx, handlerName: string, eventId: string, at: Date): Promise<boolean>
   /** Deletes records processed before `at`; returns how many. */
   deleteBefore(tx: Tx, at: Date): Promise<number>
 }
@@ -53,6 +58,21 @@ export function createProcessedEventRepository(store: CommandStore): ProcessedEv
         .insert(p)
         .values({ handlerName, eventId, processedAt: at })
         .onConflictDoNothing()
+    },
+    async claim(tx, handlerName, eventId, at) {
+      if (tx.kind === 'sqlite') {
+        const result = sqliteDb(tx)
+          .insert(s)
+          .values({ handlerName, eventId, processedAt: at.toISOString() })
+          .onConflictDoNothing()
+          .run()
+        return result.changes > 0
+      }
+      const result = await postgresDb(tx)
+        .insert(p)
+        .values({ handlerName, eventId, processedAt: at })
+        .onConflictDoNothing()
+      return (result.rowCount ?? 0) > 0
     },
     async deleteBefore(tx, at) {
       if (tx.kind === 'sqlite') {

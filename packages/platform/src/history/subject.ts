@@ -1,4 +1,4 @@
-import type { NymbalEvent } from '@nymbalhq/types'
+import { EVT_PRODUCT_VIEWED, type NymbalEvent } from '@nymbalhq/types'
 
 /** The record an event is about: what `events.subject_type` and `events.subject_id` hold. */
 export interface EventSubject {
@@ -27,6 +27,8 @@ export function subjectOf(
   const type = envelope.type
   let subject: EventSubject['type'] | undefined
   let id: string | undefined
+  // A shopper's view is no change to the product, so it is no row of the product's history.
+  if (type === EVT_PRODUCT_VIEWED) return null
   if (type.startsWith('product.')) {
     subject = 'product'
     id = nestedId(payload['product']) ?? text(payload['productId'])

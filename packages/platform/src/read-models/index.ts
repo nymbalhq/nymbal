@@ -14,6 +14,7 @@ import {
   type RebuildDeps,
 } from './model.js'
 import { orders } from './orders.js'
+import { recentlyViewed } from './recently-viewed.js'
 import { search } from './search.js'
 
 export {
@@ -25,7 +26,13 @@ export {
 } from './model.js'
 
 /** Every derived read model, in the order a rebuild of all of them runs. */
-export const READ_MODELS: readonly ReadModel[] = [catalogue, orders, customers, search]
+export const READ_MODELS: readonly ReadModel[] = [
+  catalogue,
+  orders,
+  customers,
+  search,
+  recentlyViewed,
+]
 
 export const READ_MODEL_NAMES: readonly ReadModelName[] = READ_MODELS.map((m) => m.name)
 
@@ -89,10 +96,15 @@ function modelsOf(names: readonly string[]): ReadModel[] {
   })
 }
 
-function contextFor(model: ReadModel, deps: RebuildDeps): RebuildContext {
+/** The context a model rebuilds with, and the highest seq it read from the log (undefined when it reads no log). */
+function contextFor(
+  model: ReadModel,
+  deps: RebuildDeps,
+): { ctx: RebuildContext; logReadThrough: () => number | undefined } {
   const limit = deps.pageSize ?? DEFAULT_PAGE_SIZE
   let page = 0
-  return {
+  let logReadThrough: number | undefined
+  const ctx: RebuildContext = {
     deps,
     async *pages(table, read) {
       let after: string | undefined
@@ -106,7 +118,26 @@ function contextFor(model: ReadModel, deps: RebuildDeps): RebuildContext {
         after = rows[rows.length - 1]!.id
       }
     },
+    async *events(types) {
+      let after = 0
+      logReadThrough ??= 0
+      for (;;) {
+        await deps.onPage?.({ model: model.name, table: 'events', page })
+        page += 1
+        const rows = await deps.store.read((tx) =>
+          deps.repos.eventLog.listAfter(tx, after, { types: [...types], limit }),
+        )
+        if (rows.length > 0) {
+          after = rows[rows.length - 1]!.seq
+          logReadThrough = Math.max(logReadThrough, after)
+          const live = rows.filter((r) => r.deadAt === null)
+          if (live.length > 0) yield live
+        }
+        if (rows.length < limit) return
+      }
+    },
   }
+  return { ctx, logReadThrough: () => logReadThrough }
 }
 
 interface Collected {
@@ -115,6 +146,8 @@ interface Collected {
   startedAt: number
   /** The new contents, by collection (`SEARCH_INDEX` for search), then by key. */
   writes: Map<string, Map<string, unknown>>
+  /** For a model rebuilt from the log, the last seq it read: its catch-up starts above it. */
+  logReadThrough: number | undefined
 }
 
 /** Reads every document of `model` into memory, so a rebuilder that fails part-way leaves nothing half-swapped. */
@@ -122,8 +155,9 @@ async function collect(model: ReadModel, deps: RebuildDeps): Promise<Collected> 
   const startedAt = Date.now()
   const owned = model.target === 'search' ? [SEARCH_INDEX] : model.collections
   const writes = new Map(owned.map((c) => [c, new Map<string, unknown>()]))
+  const { ctx, logReadThrough } = contextFor(model, deps)
   try {
-    for await (const w of model.rebuild(contextFor(model, deps))) {
+    for await (const w of model.rebuild(ctx)) {
       const into = writes.get(w.collection)
       if (into === undefined) throw new Error(`it wrote to ${w.collection}, which it does not own`)
       into.set(w.key, w.doc)
@@ -131,7 +165,7 @@ async function collect(model: ReadModel, deps: RebuildDeps): Promise<Collected> 
   } catch (error) {
     throw new RebuildError(model.name, error)
   }
-  return { model, startedAt, writes }
+  return { model, startedAt, writes, logReadThrough: logReadThrough() }
 }
 
 async function* entries<T>(docs: Map<string, T>): AsyncGenerator<[string, T]> {
@@ -165,11 +199,11 @@ async function catchUp(
   model: ReadModel,
   since: Date,
   deps: RebuildDeps,
+  afterSeq = 0,
 ): Promise<{ applied: number; failures: CatchUpFailure[] }> {
   const handlers = model.handlers(deps)
   const failures: CatchUpFailure[] = []
   let applied = 0
-  let afterSeq = 0
   for (;;) {
     const page = await deps.store.read((tx) =>
       deps.repos.eventLog.listForCatchUp(tx, since, { afterSeq, limit: CATCH_UP_PAGE }),
@@ -215,6 +249,7 @@ export async function rebuild(
       c.model,
       new Date(c.startedAt - CATCH_UP_MARGIN_MS),
       deps,
+      c.logReadThrough,
     )
     const entry: RebuildReportEntry = {
       model: c.model.name,

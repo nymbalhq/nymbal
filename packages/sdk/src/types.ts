@@ -108,6 +108,8 @@ export interface CheckoutState {
   order: { orderId: string; orderNumber: string; paymentIntent: PaymentIntent } | null
   /** The order this cart already became, when the server refused a resubmit and named it. */
   placedOrderNumber: string | null
+  /** That order's key, when the refusal carried one. */
+  placedOrderKey: string | null
 }
 
 export interface AuthState {
@@ -161,6 +163,8 @@ export interface CheckoutResult {
   totalMinor: number
   orderStatus: OrderStatus
   payment: CheckoutPayment
+  /** Reads the order with no session (`customer.orders.get(n, { key })`); absent from an API that mints none. */
+  orderKey?: string
 }
 
 export interface RegisterParams {

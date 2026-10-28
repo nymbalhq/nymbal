@@ -6,11 +6,12 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { availableParallelism } from 'node:os'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, matchesGlob, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -32,7 +33,10 @@ import {
   EXCLUDED_PREFIXES,
   type FileCensus,
   journeyViolations,
+  refusalMessage,
+  refusedTests,
   TEST_FILE,
+  testKeys,
   type Totals,
 } from './test-census'
 
@@ -132,6 +136,16 @@ const ROOT_CONFIG_FILES = new Set([
   'vitest.stryker.config.ts',
 ])
 
+/**
+ * The integration mutation run's config, test set and ratchet: only the tooling tests read them, and they import each
+ * one, so a change selects those tests and no others. The unit Stryker run does not read them.
+ */
+const INTEGRATION_MUTATION_FILES = new Set([
+  'stryker.integration.config.mjs',
+  'vitest.stryker.integration.config.ts',
+  'mutation-ratchet.integration.json',
+])
+
 function isConfiguration(path: string): boolean {
   return (
     ROOT_CONFIG_FILES.has(path) ||
@@ -145,15 +159,86 @@ function isDocumentation(path: string): boolean {
 }
 
 /**
- * The harness's own Vitest projects: 63 files and most of the suite's file time (tooling 378 s of 512 s measured on
- * 2026-10-22), moved only by the harness. The plain gate leaves them out unless the change touches the harness;
- * gate:full and dev CI run them whatever changed.
+ * The harness's own Vitest projects: most of the suite's file time (tooling 378 s of 512 s measured on
+ * 2026-10-22). The plain gate leaves them out unless a harness path changed or one of their tests reads a changed
+ * file (`harnessInputTests`); dev CI runs them whatever changed (`--harness all`).
  */
 export const HARNESS_PROJECTS = ['tooling', 'architecture']
 
-/** A change to the harness: its scripts, or its own test projects. */
+/**
+ * The harness tests that run the real Vitest over copies of the work tree, about 100 s: the plain gate never runs
+ * them, gate:full runs them where it runs `tooling`, and dev CI always.
+ */
+export const SLOW_HARNESS_PROJECTS = ['tooling-slow']
+
+/**
+ * The harness projects gate:full leaves out when no harness path changed. `architecture` is not one: it guards
+ * product code (no Stripe import in the kernel, the framework-agnostic guard), so gate:full runs it on every change.
+ */
+export const FULL_GATE_HARNESS_PROJECTS = ['tooling', ...SLOW_HARNESS_PROJECTS]
+
+/** The harness projects' test files (vitest.config.ts `include`); those under a `fixtures/` directory are not tests. */
+export const HARNESS_TEST_GLOBS: readonly string[] = [
+  'tests/tooling/**/*.test.ts',
+  'tests/architecture/**/*.test.ts',
+]
+
+/**
+ * The globs a harness test file declares on its `// Reads:` lines (column 0, comma-separated, unioned): the checkout
+ * files it reads or runs outside its imports. `[]` for `nothing`, undefined with no such line.
+ */
+export function declaredReads(source: string): string[] | undefined {
+  const declared = [...source.matchAll(/^\/\/ Reads: (.*)$/gm)].flatMap((m) =>
+    (m[1] ?? '')
+      .split(',')
+      .map((glob) => glob.trim())
+      .filter(Boolean),
+  )
+  if (declared.length === 0) return undefined
+  const globs = [...new Set(declared.filter((glob) => glob !== 'nothing'))]
+  if (globs.length > 0 && globs.length < new Set(declared).size) {
+    throw new Error(`// Reads: nothing cannot stand beside globs (${globs.join(', ')})`)
+  }
+  return globs
+}
+
+/**
+ * How a `// Reads:` glob matches a path: `path.matchesGlob`, but with `*` and `**` taking dot-directories and dotfiles
+ * too, so `**` covers `.github/` and `.node-version`.
+ */
+export function matchesReadGlob(path: string, glob: string): boolean {
+  const undot = (text: string): string => text.replace(/(^|\/)\./g, '$1\u0001')
+  return matchesGlob(undot(path), undot(glob))
+}
+
+/**
+ * The harness test files in the work tree, tracked or not, with a declared glob matching a changed path: repo-relative,
+ * sorted and unique.
+ */
+export function harnessInputTests(root: string, changed: string[]): string[] {
+  const files = lines(git(root, ['ls-files', '--cached', '--others', '--exclude-standard']))
+  const readers = new Set<string>()
+  for (const file of files) {
+    if (!HARNESS_TEST_GLOBS.some((glob) => matchesGlob(file, glob))) continue
+    if (matchesGlob(file, '**/fixtures/**') || !existsSync(resolve(root, file))) continue
+    const globs = declaredReads(readFileSync(resolve(root, file), 'utf8')) ?? []
+    if (changed.some((path) => globs.some((glob) => matchesReadGlob(path, glob)))) readers.add(file)
+  }
+  return [...readers].sort()
+}
+
+/**
+ * A change the harness projects read: the scripts, those projects themselves, the CI workflows, the Playwright
+ * configs, or the configuration `isConfiguration` names. A workflow edit is one: dropping `--harness all` there must
+ * run the test that says it is required.
+ */
 export function isHarnessPath(path: string): boolean {
-  return /^(?:scripts|tests\/tooling|tests\/architecture)\//.test(path)
+  return (
+    /^(?:scripts|tests\/tooling|tests\/architecture|\.github)\//.test(path) ||
+    INTEGRATION_MUTATION_FILES.has(path) ||
+    /^tests\/e2e\/playwright[^/]*\.config\.ts$/.test(path) ||
+    isConfiguration(path)
+  )
 }
 
 /** Which tests a change set needs: all when configuration moved, none for documentation only, else the changed ones. */
@@ -472,6 +557,10 @@ export async function run(steps: StepSpec[], opts: RunOptions): Promise<RunResul
     const detail = details.length === 0 ? {} : { detail: details.join('; ') }
     if (code === 0) {
       results.push({ name: spec.name, status: 'ok', ms, ...detail })
+      // A green step's `warning:` lines are for the reader (the ratchet's measured-file-without-a-test-change).
+      for (const line of output.split('\n')) {
+        if (line.startsWith('warning:')) log(`${spec.name}: ${line}\n`)
+      }
     } else {
       results.push({ name: spec.name, status: 'red', ms, ...detail })
       log(`${tail(output)}\n`)
@@ -503,10 +592,66 @@ function repoRoot(): string {
   return git('.', ['rev-parse', '--show-toplevel']).trim()
 }
 
-/** `--base`, else the merge base with origin/dev, else with origin/main. */
-export function resolveBase(root: string, requested: string | undefined): string {
+/** The empty tree: the base of a root commit, against which every file is new. */
+export function emptyTree(root: string): string {
+  return git(root, ['hash-object', '-t', 'tree', '/dev/null']).trim()
+}
+
+function commitOf(root: string, ref: string): string | undefined {
+  try {
+    return git(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * `--base`, else the merge base with origin/dev, else with origin/main. A `--base` in CI's shape that names no commit
+ * here (a full sha a force-push removed, or forty zeros on a branch's first push) falls back to HEAD's first parent,
+ * and on a root commit to the empty tree, which narrows nothing; `log` gets one line saying which. So does a `HEAD~n`
+ * or `HEAD^` on a root commit, outside a shallow clone. Anything else that does not resolve (a ref name, a short sha)
+ * is a mistake and refused: falling back would check less than was asked.
+ * The empty tree itself is taken as given: it is what the gate hands its own steps on a root commit.
+ */
+export function resolveBase(
+  root: string,
+  requested: string | undefined,
+  log: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
+): string {
   if (requested !== undefined) {
-    return git(root, ['rev-parse', '--verify', `${requested}^{commit}`]).trim()
+    const tree = emptyTree(root)
+    if (requested === tree) return tree
+    const zeros = /^0{40}$/.test(requested)
+    const found = zeros ? undefined : commitOf(root, requested)
+    if (found !== undefined) return found
+    if (!zeros && !/^[0-9a-f]{40}$/i.test(requested)) {
+      // `HEAD~1` on a root commit (the nightly's base when main's head is one) has nothing before it to narrow by.
+      // A shallow clone's oldest commit only looks like a root, and taking it for one would judge nothing as new.
+      if (/^HEAD(?:[~^]\d*)+$/.test(requested) && commitOf(root, 'HEAD') !== undefined) {
+        if (git(root, ['rev-parse', '--is-shallow-repository']).trim() === 'true') {
+          throw new Error(
+            `--base ${requested} names no commit in this shallow clone: fetch the history (fetch-depth: 0)`,
+          )
+        }
+        log(
+          `base: --base ${requested} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+        )
+        return tree
+      }
+      throw new Error(`--base ${requested} names no commit: pass a ref or sha that resolves here`)
+    }
+    const why = zeros
+      ? `--base ${requested.slice(0, 9)}… is all zeros (a branch's first push)`
+      : `--base ${requested} names no commit in this clone`
+    const parent = commitOf(root, 'HEAD^')
+    if (parent !== undefined) {
+      log(`base: ${why}; falling back to HEAD's parent ${parent.slice(0, 9)}`)
+      return parent
+    }
+    log(
+      `base: ${why} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+    )
+    return tree
   }
   for (const ref of ['origin/dev', 'origin/main']) {
     try {
@@ -521,9 +666,20 @@ export function resolveBase(root: string, requested: string | undefined): string
 /**
  * Paths that differ between the base and the work tree, committed, staged or not, deletions included, plus untracked
  * files, each once. A deleted path is a change: removing a configuration file must still select every test.
+ * `renames: false` lists both sides of a rename, committed or not, so a reader of the old path sees it move.
  */
-export function changedFiles(root: string, base: string): string[] {
-  const tracked = lines(git(root, ['diff', '--name-only', base]))
+export function changedFiles(
+  root: string,
+  base: string,
+  opts: { renames?: boolean } = {},
+): string[] {
+  const tracked =
+    opts.renames === false
+      ? [
+          ...lines(git(root, ['diff', '--name-only', '--no-renames', base, 'HEAD'])),
+          ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD'])),
+        ]
+      : lines(git(root, ['diff', '--name-only', base]))
   const untracked = lines(git(root, ['ls-files', '--others', '--exclude-standard']))
   return [...new Set([...tracked, ...untracked])].sort()
 }
@@ -642,7 +798,51 @@ function judgedTestFiles(root: string, base: string): string[] {
   })
 }
 
+/**
+ * The refused shapes (`test-census.ts`, R1 to R3) among the tests the change adds or rewrites in the judged files.
+ * A test whose body is in the base version of its file (or of the file it moved from) is old and not judged, so a
+ * file can gain a test without first paying off its debt. A presence-only test the journey rule has already named
+ * is not named twice.
+ */
+function refusedViolations(
+  root: string,
+  base: string,
+  judged: string[],
+  named: string[],
+): string[] {
+  const moves = moveSources(git(root, ['diff', '--name-status', '-M', base]))
+  const basePathOf = (path: string): string | null =>
+    moves.has(path) ? (moves.get(path) ?? null) : path
+  const basePaths = judged.map(basePathOf).filter((p): p is string => p !== null)
+  const blobs = basePaths.length > 0 ? blobsAt(root, base, basePaths) : new Map<string, string>()
+  const violations: string[] = []
+  for (const path of judged) {
+    const absolute = resolve(root, path)
+    if (!existsSync(absolute)) continue
+    const basePath = basePathOf(path)
+    const baseSource = basePath === null ? undefined : blobs.get(basePath)
+    const old = new Set(
+      baseSource === undefined || basePath === null ? [] : testKeys(baseSource, basePath),
+    )
+    for (const test of refusedTests(readFileSync(absolute, 'utf8'), path)) {
+      if (old.has(test.key)) continue
+      if (
+        test.kind === 'R1' &&
+        named.some((line) => line.startsWith(`${path}: test "${test.name}": `))
+      )
+        continue
+      violations.push(refusalMessage(path, test))
+    }
+  }
+  return violations
+}
+
 function censusTrendStep(root: string, base: string): number {
+  // Against the empty tree every test file would be new, and old debt in each would fail a change that made none.
+  if (base === emptyTree(root)) {
+    process.stdout.write('census trend: no base commit (a root commit): 0 test file(s) touched\n')
+    return 0
+  }
   const touched = judgedTestFiles(root, base)
   const { violations, delta } = censusTrend(baseCensus(root, base), headCensus(root), touched)
   for (const path of touched.filter((p) => p.startsWith('tests/e2e/journeys/'))) {
@@ -650,6 +850,7 @@ function censusTrendStep(root: string, base: string): number {
     if (existsSync(absolute))
       violations.push(...journeyViolations(readFileSync(absolute, 'utf8'), path, root))
   }
+  violations.push(...refusedViolations(root, base, touched, violations))
   const signed = (n: number): string => (n > 0 ? `+${n}` : String(n))
   process.stdout.write(
     `census trend against ${base.slice(0, 9)}: ${touched.length} test file(s) touched\n` +
@@ -786,18 +987,29 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`)
 }
 
-type StrykerConfig = { mutate: string[]; incrementalFile?: string }
-
-async function strykerConfig(root: string): Promise<StrykerConfig> {
-  const config = (await import(pathToFileURL(resolve(root, 'stryker.config.mjs')).href)) as {
-    default: StrykerConfig
-  }
-  return config.default
+type StrykerConfig = {
+  mutate: string[]
+  incrementalFile?: string
+  jsonReporter?: { fileName?: string }
 }
 
-/** The paths that fall inside Stryker's `mutate` set (its own config is the source of that set). */
-export async function mutateSet(root: string, changed: string[]): Promise<string[]> {
-  const { mutate } = await strykerConfig(root)
+export async function strykerConfig(
+  root: string,
+  config = 'stryker.config.mjs',
+): Promise<StrykerConfig> {
+  const loaded = (await import(pathToFileURL(resolve(root, config)).href)) as {
+    default: StrykerConfig
+  }
+  return loaded.default
+}
+
+/** The paths that fall inside a Stryker config's `mutate` set (the config is the source of that set). */
+export async function mutateSet(
+  root: string,
+  changed: string[],
+  config = 'stryker.config.mjs',
+): Promise<string[]> {
+  const { mutate } = await strykerConfig(root, config)
   const include = mutate.filter((g) => !g.startsWith('!')).map(globToRegExp)
   const exclude = mutate.filter((g) => g.startsWith('!')).map((g) => globToRegExp(g.slice(1)))
   return changed.filter(
@@ -893,6 +1105,8 @@ async function pruneIncremental(root: string, files: string[]): Promise<void> {
 export type PlanInput = {
   full: boolean
   base: string
+  /** HEAD is a root commit and `base` the empty tree: every test runs, and Stryker ignores its incremental cache. */
+  noBase?: boolean | undefined
   changed: string[]
   mutated: string[]
   /** Files in `mutated` whose cached mutants the stryker step drops first (`ratchetChanges`). None when not given. */
@@ -920,8 +1134,36 @@ export type PlanInput = {
   proofKitPackages?: string[] | undefined
   /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
   perfPackages?: string[] | undefined
-  /** The sentinels gate:full runs: every one, or a selection (`selectSentinels`). Every one when not given. */
-  sentinels?: 'all' | Set<string> | undefined
+  /**
+   * The sentinels gate:full runs: every one, a selection (`selectSentinels`), or `none`, which leaves them to dev CI
+   * and the release run. Every one when not given.
+   */
+  sentinels?: 'all' | 'none' | Set<string> | undefined
+  /**
+   * The stryker step: `blocking` fails on a file below its ratchet (CI, and the default when not given), `advisory`
+   * runs it and prints the ratchet's verdict without failing on it, `off` leaves it to dev CI. Locally a run is
+   * `off` unless `--stryker` asks for the advisory run: six fix rounds in seven tasks lifted entries for files the
+   * task never changed (audit 2026-10-25).
+   */
+  stryker?: 'off' | 'advisory' | 'blocking' | undefined
+  /**
+   * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
+   * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
+   * gate:full (`FULL_GATE_HARNESS_PROJECTS`).
+   */
+  harness?: 'all' | 'changed' | undefined
+  /**
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
+   * `changed` run takes them beside the changed paths and keeps their projects. None when not given.
+   */
+  inputReaders?: string[] | undefined
+  /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
+  relatedPaths?: string[] | undefined
+  /**
+   * The plain gate builds although no package build input changed: the build output is older than HEAD's package
+   * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
+   */
+  buildStale?: boolean | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
   rerun?: { tests: RedTest[] } | undefined
 }
@@ -959,6 +1201,8 @@ function rerunTestsCommand(red: RedTest[]): string {
 }
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
+/** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
+const TEST_SCRIPT_FILTERS = "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
 /** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 /** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
@@ -996,6 +1240,8 @@ const E2E_SERVES: Record<string, string[]> = {
   // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
   'astro-custom': [],
   'nextjs-custom': [],
+  // The custom store's API alone, for the mail outage journey.
+  'mail-outage': [],
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
   'astro-nosearch': [],
   'nextjs-nosearch': [],
@@ -1037,6 +1283,9 @@ function settle(steps: StepSpec[], input: PlanInput): StepSpec[] {
   if (external) {
     if (input.postgresUrl !== undefined && input.postgresUrl !== '') met.add('compose up')
     else unmet.set('compose up', 'NYMBAL_TEST_POSTGRES_URL is not set (--services external)')
+    // A need of its own: the Mailpit URL alone must not mark the Postgres steps' `compose up` met.
+    if (input.mailpitUrl !== undefined && input.mailpitUrl !== '') met.add('mailpit up')
+    else unmet.set('mailpit up', 'NYMBAL_TEST_MAILPIT_URL is not set (--services external)')
   }
   if (input.noBuild === true) {
     if (input.artefactPresent === true) met.add('build')
@@ -1090,10 +1339,16 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       : `${SCRIPT} incremental-prune ${shellWord(remeasured.join(','))} && `
   const selection = full
     ? { mode: 'all' as const, reason: 'gate:full runs every test' }
-    : selectTests(changed)
+    : input.noBase === true
+      ? { mode: 'all' as const, reason: 'no base commit to diff against' }
+      : selectTests(changed)
   // Tests and typecheck read other packages through their `dist`: gate:full always builds first, the plain gate when
-  // a package's build input changed (a warm build is about 7 s).
+  // a package's build input changed (a warm build is about 7 s) or when `dist` is older than HEAD's package inputs
+  // (`buildStale`: a merge of dev brings inputs the diff against dev does not show). A build that succeeds stamps
+  // the inputs it was built from (`build-stamp`), which is what the next plain gate compares against.
   const buildInputs = changed.filter(isBuildInput)
+  const stamp = `${SCRIPT} build-stamp`
+  const builds = buildInputs.length > 0 || input.buildStale === true
   const build: StepSpec = full
     ? input.noBuild === true
       ? {
@@ -1103,11 +1358,16 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : // `pnpm build` covers packages/** only; the admin E2E serves apps/admin/dist, which a fresh checkout lacks.
-        { name: 'build', command: 'pnpm build && pnpm --filter @nymbalhq/admin build' }
-    : buildInputs.length === 0
-      ? { name: 'build', command: 'true', skip: 'no package build input changed', idle: true }
-      : { name: 'build', command: 'pnpm build' }
-  const buildNeeds = full || buildInputs.length > 0 ? { needs: ['build'] } : {}
+        { name: 'build', command: `pnpm build && pnpm --filter @nymbalhq/admin build && ${stamp}` }
+    : builds
+      ? { name: 'build', command: `pnpm build && ${stamp}` }
+      : {
+          name: 'build',
+          command: 'true',
+          skip: 'no package build input changed, and the build output matches HEAD',
+          idle: true,
+        }
+  const buildNeeds = full || builds ? { needs: ['build'] } : {}
   // `--changed` follows imports, and an import of `dist` leads to no changed file, so a change to the kit or to what it
   // imports runs the kit's own tests as well.
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
@@ -1117,10 +1377,33 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
-  const harnessApart =
-    full || changed.some(isHarnessPath)
-      ? ''
-      : HARNESS_PROJECTS.map((name) => ` --project ${shellWord(`!${name}`)}`).join('')
+  // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
+  // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
+  // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
+  // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
+  const harnessKept = input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+  const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
+  const skipEnv = (projects: string[]): string =>
+    projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
+  // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
+  const plainApart = (projects: string[]): string[] =>
+    full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
+  const harnessApart = skipEnv(plainApart(harnessSkipped))
+  // A harness test that reads a changed file keeps its project, and `vitest related` is handed the test itself.
+  const readers = input.inputReaders ?? []
+  const readerProjects = new Set<string>(
+    readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
+  )
+  const changedApart = skipEnv(
+    plainApart(harnessSkipped.filter((project) => !readerProjects.has(project))),
+  )
+  // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
+  // own base the same way, so a script that reads it fails here as it would there.
+  const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
+  const related = [...new Set([...(input.relatedPaths ?? changed), ...readers])]
+    .sort()
+    .map(shellWord)
+    .join(' ')
   const perfPackages = input.perfPackages ?? ['packages/platform']
   const perfReached =
     selection.mode === 'all' ||
@@ -1138,27 +1421,36 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       }
   const tests: StepSpec =
     red.length > 0
-      ? { name: 'tests', command: rerunTestsCommand(red), ...buildNeeds }
+      ? { name: 'tests', command: `${baseEnv}${rerunTestsCommand(red)}`, ...buildNeeds }
       : selection.mode === 'none'
         ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
         : selection.mode === 'changed'
           ? {
               name: 'tests',
+              // One process and one report: the changed paths' related tests and the harness tests reading them.
               command:
-                `pnpm run test --changed ${base} --passWithNoTests${perfApart}${harnessApart} ${VITEST_JSON}` +
-                (kitChanged ? ' && pnpm exec vitest run --project proof-kit' : ''),
+                `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
+                (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
               ...buildNeeds,
             }
           : {
               name: 'tests',
-              command: `pnpm run test${perfApart}${harnessApart} ${VITEST_JSON}`,
+              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
               ...buildNeeds,
             }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
-    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22).
-    { name: 'ratchet', command: 'pnpm --silent mutation:ratchet check --static' },
+    // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22). With the base,
+    // a measured file changed without a change to its unit test is refused here, not by CI's Stryker after the merge.
+    {
+      name: 'ratchet',
+      // The integration ratchet against its own mutate set; its base warning is about unit test files, so no base.
+      command: [
+        `pnpm --silent mutation:ratchet check --static${input.noBase === true ? '' : ` --base ${base}`}`,
+        'pnpm --silent mutation:ratchet check --static --config stryker.integration.config.mjs --ratchet mutation-ratchet.integration.json',
+      ].join(' && '),
+    },
     build,
     { name: 'typecheck', command: 'pnpm typecheck' },
     tests,
@@ -1220,16 +1512,51 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const sentinels: StepSpec =
     chosen === 'all'
       ? { name: 'sentinels', command: `${postgres} pnpm sentinels` }
-      : chosen.size === 0
+      : chosen === 'none'
         ? {
             name: 'sentinels',
             command: 'true',
-            skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
+            skip: 'left to dev CI and the release run (--sentinels impacted or all runs them here)',
+            idle: true,
+          }
+        : chosen.size === 0
+          ? {
+              name: 'sentinels',
+              command: 'true',
+              skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
+              idle: true,
+            }
+          : {
+              name: 'sentinels',
+              command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+            }
+  // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell. Advisory, the verdict prints
+  // and the step stays green: dev CI blocks on it.
+  const strykerMode = input.stryker ?? 'blocking'
+  const ratchetCheck =
+    'pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json'
+  const stryker: StepSpec =
+    strykerMode === 'off'
+      ? {
+          name: 'stryker',
+          command: 'true',
+          skip: 'left to dev CI (--stryker runs it here, with the ratchet advisory)',
+          idle: true,
+        }
+      : mutated.length === 0
+        ? {
+            name: 'stryker',
+            command: 'true',
+            skip: "no changed file in Stryker's mutate set, its platform tests or its configs",
             idle: true,
           }
         : {
-            name: 'sentinels',
-            command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+            name: 'stryker',
+            command:
+              `${prune}pnpm exec stryker run${input.noBase === true ? ' --force' : ''} --mutate ${shellWord(mutated.join(','))} && ` +
+              (strykerMode === 'advisory'
+                ? `{ ${ratchetCheck} || echo 'ratchet: below the ratchet here (advisory; dev CI blocks on it)'; }`
+                : ratchetCheck),
           }
   steps.push(
     external
@@ -1262,18 +1589,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       command: `${postgres} ${redis} ${s3} pnpm exec vitest run --project integration-stores`,
       needs: ['compose up', 'build'],
     },
-    mutated.length === 0
-      ? {
-          name: 'stryker',
-          command: 'true',
-          skip: "no changed file in Stryker's mutate set, its platform tests or its configs",
-          idle: true,
-        }
-      : {
-          // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
-          name: 'stryker',
-          command: `${prune}pnpm exec stryker run --mutate ${shellWord(mutated.join(','))} && pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json`,
-        },
+    stryker,
     // A sentinel whose `# suite:` runs the Postgres project reads the URL from here, not from its header.
     sentinels,
     {
@@ -1293,9 +1609,27 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // changes, so they run on the default set only. Each target is its own invocation after the others: nextjs-custom,
   // nextjs-nosearch and nextjs-override serve the same templates/nextjs as nextjs.
   if (stores === 'sqlite-memory') {
+    // The custom store's email is SMTP into Mailpit, which its alert journeys read. Locally the compose step brings the
+    // slot's Mailpit up (`--wait`), and this step turns its Chaos off: a mail-outage run cut off at its bound leaves it
+    // on in the reused container. Under --services external NYMBAL_TEST_MAILPIT_URL meets the need instead (settle),
+    // and CI's Mailpit is fresh each job.
+    const mailpitNeeds = [...e2eNeeds, 'mailpit up']
     steps.push(
-      { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: e2eNeeds },
-      { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: e2eNeeds },
+      external
+        ? {
+            name: 'mailpit up',
+            command: 'true',
+            skip: 'services are external (--services external)',
+            idle: true,
+          }
+        : {
+            name: 'mailpit up',
+            command: `${mailpit} node_modules/.bin/tsx scripts/gate.ts chaos-off`,
+            needs: ['compose up'],
+          },
+      { name: 'e2e astro-custom', command: e2e('astro-custom'), needs: mailpitNeeds },
+      { name: 'e2e nextjs-custom', command: e2e('nextjs-custom'), needs: mailpitNeeds },
+      { name: 'e2e mail-outage', command: e2e('mail-outage'), needs: mailpitNeeds },
       { name: 'e2e astro-nosearch', command: e2e('astro-nosearch'), needs: e2eNeeds },
       { name: 'e2e nextjs-nosearch', command: e2e('nextjs-nosearch'), needs: e2eNeeds },
       { name: 'e2e astro-override', command: e2e('astro-override'), needs: e2eNeeds },
@@ -1308,24 +1642,164 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
 const APP_OUTPUTS = ['templates/astro/dist', 'templates/nextjs/.next', 'apps/admin/dist']
 
-/**
- * Whether the whole build output is in the work tree (a downloaded CI artefact, or a build): the `dist` of every
- * package that has a build script, and every entry of `APP_OUTPUTS`.
- */
-export function artefactPresent(root: string): boolean {
+/** The `packages/<name>` directories whose manifest has a build script. */
+function buildingPackages(root: string): string[] {
   const packages = resolve(root, 'packages')
-  if (!existsSync(packages)) return false
-  const builders = readdirSync(packages).filter((name) => {
+  if (!existsSync(packages)) return []
+  return readdirSync(packages).filter((name) => {
     const manifest = resolve(packages, name, 'package.json')
     if (!existsSync(manifest)) return false
     const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { scripts?: { build?: string } }
     return typeof pkg.scripts?.build === 'string'
   })
+}
+
+/** Whether every package that has a build script has its `dist`, and at least one does. */
+export function packagesBuilt(root: string): boolean {
+  const builders = buildingPackages(root)
   return (
     builders.length > 0 &&
-    builders.every((name) => existsSync(resolve(packages, name, 'dist'))) &&
-    APP_OUTPUTS.every((path) => existsSync(resolve(root, path)))
+    builders.every((name) => existsSync(resolve(root, 'packages', name, 'dist')))
   )
+}
+
+/**
+ * Whether the whole build output is in the work tree (a downloaded CI artefact, or a build): the `dist` of every
+ * package that has a build script, and every entry of `APP_OUTPUTS`.
+ */
+export function artefactPresent(root: string): boolean {
+  return packagesBuilt(root) && APP_OUTPUTS.every((path) => existsSync(resolve(root, path)))
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The build stamp: what the packages were last built from
+// ---------------------------------------------------------------------------------------------------------------
+
+const BUILD_STAMP = 'reports/build-stamp.json'
+
+/**
+ * A hash of the package build inputs (`isBuildInput`) in the work tree: each blob's id and path. A clean input is
+ * HEAD's blob; a modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id
+ * committing them records, so output built from a dirty tree still matches once that tree is committed.
+ */
+export function buildInputsStamp(root: string): string {
+  const blobs = new Map<string, string>()
+  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', 'packages']))) {
+    const [meta, path] = line.split('\t')
+    if (path !== undefined && isBuildInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
+  }
+  const dirty = [
+    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', 'packages'])),
+    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', 'packages'])),
+  ].filter(isBuildInput)
+  const present = dirty.filter((path) => existsSync(resolve(root, path)))
+  for (const path of dirty) blobs.delete(path)
+  if (present.length > 0) {
+    const ids = lines(git(root, ['hash-object', '--', ...present]))
+    present.forEach((path, i) => blobs.set(path, ids[i] ?? ''))
+  }
+  const hash = createHash('sha256')
+  for (const path of [...blobs.keys()].sort()) hash.update(`${blobs.get(path)} ${path}\n`)
+  return hash.digest('hex')
+}
+
+/** Records the build inputs the packages were just built from (the build step's last command). */
+export function writeBuildStamp(root: string): void {
+  const inputs = buildInputsStamp(root)
+  const target = resolve(root, BUILD_STAMP)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, `${JSON.stringify({ inputs, at: new Date().toISOString() }, null, 2)}\n`)
+}
+
+/**
+ * Whether the packages' build output can stand for the work tree: every `dist` is there and the stamp names the
+ * build inputs as they are now. A missing stamp, or one from other inputs, means a build. A tree with no package to
+ * build has nothing stale.
+ */
+export function buildIsCurrent(root: string): boolean {
+  if (buildingPackages(root).length === 0) return true
+  if (!packagesBuilt(root)) return false
+  const path = resolve(root, BUILD_STAMP)
+  if (!existsSync(path)) return false
+  const stamp = JSON.parse(readFileSync(path, 'utf8')) as { inputs?: string | null }
+  return stamp.inputs === buildInputsStamp(root)
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A checkout in use: servers or a build another process runs here, which a gate would break
+// ---------------------------------------------------------------------------------------------------------------
+
+const IN_USE = 'reports/in-use.json'
+/** How long the holder process `in-use start` leaves behind lives at most: a use that forgot to stop ends by itself. */
+const IN_USE_MAX_MS = 3 * 60 * 60 * 1000
+
+export type InUse = { pid: number; what: string; since: string }
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * The live use of this checkout, if any: `IN_USE` names a process (`in-use start` wrote it) that is still running.
+ * A record whose process is gone is stale and removed: it never blocks a gate.
+ */
+export function checkoutInUse(root: string): InUse | undefined {
+  const path = resolve(root, IN_USE)
+  if (!existsSync(path)) return undefined
+  let record: InUse
+  try {
+    record = JSON.parse(readFileSync(path, 'utf8')) as InUse
+  } catch {
+    rmSync(path, { force: true })
+    return undefined
+  }
+  if (typeof record.pid !== 'number' || !alive(record.pid)) {
+    rmSync(path, { force: true })
+    return undefined
+  }
+  return record
+}
+
+/**
+ * Marks the checkout in use for the life of a detached holder process (at most `IN_USE_MAX_MS`), and returns the
+ * record. `pid` names an existing process to bind to instead, such as a server already started.
+ */
+export function markInUse(root: string, what: string, pid?: number): InUse {
+  let holder = pid
+  if (holder === undefined) {
+    const child = spawn(process.execPath, ['-e', `setTimeout(() => {}, ${IN_USE_MAX_MS})`], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.unref()
+    holder = child.pid
+  }
+  if (holder === undefined) throw new Error('in-use: the holder process did not start')
+  const record: InUse = { pid: holder, what, since: new Date().toISOString() }
+  const target = resolve(root, IN_USE)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`)
+  return record
+}
+
+/** Ends the use: stops the holder `in-use start` left (never a process it was only bound to) and removes the record. */
+export function releaseInUse(root: string, stopHolder = true): InUse | undefined {
+  const record = checkoutInUse(root)
+  if (record === undefined) return undefined
+  if (stopHolder) {
+    try {
+      process.kill(record.pid)
+    } catch {
+      // already gone
+    }
+  }
+  rmSync(resolve(root, IN_USE), { force: true })
+  return record
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1445,6 +1919,45 @@ function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: 
   return 1
 }
 
+/**
+ * What the command line asks of the sentinels and stryker steps. They run here only when asked: dev CI runs every
+ * sentinel and the mutation job on every push, and the release run passes `--sentinels all`. `--only` naming a step
+ * is asking for it, and `--only stryker` (CI's mutation job) blocks on the ratchet; `--stryker` alone is advisory.
+ */
+export function stepModes(flags: {
+  only?: string[] | undefined
+  sentinels?: string | undefined
+  stryker?: boolean | undefined
+}): { sentinels: 'all' | 'impacted' | 'none'; stryker: 'off' | 'advisory' | 'blocking' } {
+  const sentinels =
+    flags.sentinels ?? (flags.only?.includes('sentinels') === true ? 'impacted' : 'none')
+  if (sentinels !== 'all' && sentinels !== 'impacted' && sentinels !== 'none') {
+    throw new Error(`--sentinels takes all, impacted or none, not "${flags.sentinels}"`)
+  }
+  const stryker =
+    flags.only?.includes('stryker') === true
+      ? 'blocking'
+      : flags.stryker === true
+        ? 'advisory'
+        : 'off'
+  return { sentinels, stryker }
+}
+
+/** Sets every Mailpit Chaos trigger's probability to 0, so the Mailpit refuses nothing. */
+async function mailpitChaosOff(url: string): Promise<void> {
+  const res = await fetch(new URL('/api/v1/chaos', url), {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      Sender: { ErrorCode: 451, Probability: 0 },
+      Recipient: { ErrorCode: 451, Probability: 0 },
+      Authentication: { ErrorCode: 535, Probability: 0 },
+    }),
+  })
+  if (!res.ok)
+    throw new Error(`PUT ${url}/api/v1/chaos answered ${res.status}: ${await res.text()}`)
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -1457,7 +1970,10 @@ async function main(argv: string[]): Promise<number> {
       only: { type: 'string' },
       services: { type: 'string', default: 'compose' },
       'no-build': { type: 'boolean', default: false },
-      sentinels: { type: 'string', default: 'impacted' },
+      sentinels: { type: 'string' },
+      stryker: { type: 'boolean', default: false },
+      harness: { type: 'string', default: 'changed' },
+      check: { type: 'boolean', default: false },
       stores: { type: 'string' },
       'rerun-red': { type: 'boolean', default: false },
     },
@@ -1468,6 +1984,55 @@ async function main(argv: string[]): Promise<number> {
     if (subBase === undefined) throw new Error('usage: gate.ts incremental-prune <file,…>')
     await pruneIncremental(root, subBase.split(','))
     return 0
+  }
+  if (subcommand === 'build-stamp') {
+    // `--check` answers whether the packages' build output stands for HEAD, for whoever would otherwise rebuild.
+    if (!values.check) {
+      writeBuildStamp(root)
+      return 0
+    }
+    const current = buildIsCurrent(root)
+    process.stdout.write(
+      current
+        ? 'build: the package build output matches HEAD\n'
+        : 'build: the package build output is stale or unstamped; run pnpm build\n',
+    )
+    return current ? 0 : 1
+  }
+  if (subcommand === 'chaos-off') {
+    await mailpitChaosOff(process.env.NYMBAL_TEST_MAILPIT_URL ?? MAILPIT_URL)
+    return 0
+  }
+  if (subcommand === 'in-use') {
+    // `in-use start <what>` holds the checkout until `in-use stop` or the holder's own end; a gate meanwhile refuses.
+    const [, action, ...what] = positionals
+    if (action === 'start') {
+      if (what.length === 0) throw new Error('usage: gate.ts in-use start <what>')
+      const record = markInUse(root, what.join(' '))
+      process.stdout.write(
+        `in-use: ${root} held by pid ${record.pid} (${record.what}); gate.ts in-use stop releases it\n`,
+      )
+      return 0
+    }
+    if (action === 'stop') {
+      const record = releaseInUse(root)
+      process.stdout.write(
+        record === undefined
+          ? 'in-use: nothing held\n'
+          : `in-use: released pid ${record.pid} (${record.what})\n`,
+      )
+      return 0
+    }
+    if (action === 'status') {
+      const record = checkoutInUse(root)
+      process.stdout.write(
+        record === undefined
+          ? 'in-use: free\n'
+          : `in-use: pid ${record.pid} (${record.what}, since ${record.since})\n`,
+      )
+      return record === undefined ? 0 : 1
+    }
+    throw new Error('usage: gate.ts in-use start <what> | stop | status')
   }
   if (subcommand !== undefined) {
     // A step judges against the base the gate passed it, never one looked up again from origin/*.
@@ -1487,19 +2052,37 @@ async function main(argv: string[]): Promise<number> {
   if (only !== undefined && !values.full) throw new Error('--only needs --full')
   const stores = values.stores === undefined ? undefined : storeSet(values.stores)
   if (stores !== undefined && !values.full) throw new Error('--stores needs --full')
-  if (values.sentinels !== 'all' && values.sentinels !== 'impacted') {
-    throw new Error(`--sentinels takes all or impacted, not "${values.sentinels}"`)
+  const { sentinels: sentinelsFlag, stryker: strykerMode } = stepModes({
+    only,
+    sentinels: values.sentinels,
+    stryker: values.stryker,
+  })
+  if (values.harness !== 'all' && values.harness !== 'changed') {
+    throw new Error(`--harness takes all or changed, not "${values.harness}"`)
   }
   const rerun = values['rerun-red']
   if (rerun && only !== undefined)
     throw new Error('--rerun-red runs what was red; it takes no --only')
+  const inUse = checkoutInUse(root)
+  if (inUse !== undefined) {
+    process.stderr.write(
+      `gate: ${root} is in use by pid ${inUse.pid} (${inUse.what}, since ${inUse.since}): a gate here would rebuild under it. ` +
+        'Wait for it to finish (gate.ts in-use status), or stop it by that pid, then run the gate again.\n',
+    )
+    return 1
+  }
   const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
+  const noBase = base === emptyTree(root)
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
-  const moved = values.full ? ratchetChangesSince(root, base) : []
-  const mutated = values.full ? await strykerTargets(root, changed, moved) : []
+  const relatedPaths = changedFiles(root, base, { renames: false })
+  const inputReaders = values.full ? [] : harnessInputTests(root, relatedPaths)
+  const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
+  const mutated =
+    values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
   const remeasured = moved.filter((path) => mutated.includes(path))
+  const buildStale = !values.full && !buildIsCurrent(root)
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
@@ -1510,12 +2093,15 @@ async function main(argv: string[]): Promise<number> {
   const sentinelsDir = resolve(root, 'tests/sentinels')
   const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
   const sentinels =
-    values.sentinels === 'all' || allSentinels.length === 0
-      ? ('all' as const)
-      : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
+    sentinelsFlag === 'none'
+      ? ('none' as const)
+      : sentinelsFlag === 'all' || noBase || allSentinels.length === 0
+        ? ('all' as const)
+        : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
   const planned = plan({
     full: values.full,
     base,
+    noBase,
     changed,
     mutated,
     remeasured,
@@ -1533,6 +2119,11 @@ async function main(argv: string[]): Promise<number> {
     proofKitPackages: workspaceClosure(root, 'packages/proof-kit'),
     perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
+    stryker: strykerMode,
+    harness: values.harness,
+    inputReaders,
+    relatedPaths,
+    buildStale,
     ...(last === undefined
       ? {}
       : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
@@ -1552,10 +2143,12 @@ async function main(argv: string[]): Promise<number> {
   if (steps.some((s) => s.name === 'sentinels' && s.skip === undefined)) {
     log(
       sentinels === 'all'
-        ? `sentinels: all (${values.sentinels === 'all' ? '--sentinels all' : 'no tests/sentinels/ to select from'})\n`
-        : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
+        ? `sentinels: all (${sentinelsFlag === 'all' ? '--sentinels all' : noBase ? 'no base commit to select by' : 'no tests/sentinels/ to select from'})\n`
+        : sentinels === 'none'
+          ? ''
+          : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
     )
-  } else if (sentinels !== 'all' && steps.some((s) => s.name === 'sentinels')) {
+  } else if (sentinels instanceof Set && steps.some((s) => s.name === 'sentinels')) {
     log(`sentinels: --sentinels impacted selects none of ${allSentinels.length}\n`)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })

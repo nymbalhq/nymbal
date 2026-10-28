@@ -10,7 +10,8 @@ interface CustomerProfileCardProps {
 }
 
 export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProps) {
-  const fullName = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
+  const fullName =
+    [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
 
   return (
     <div className="space-y-4">
@@ -22,9 +23,9 @@ export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProp
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold text-zinc-900 truncate">{fullName}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-zinc-500">
-            <span className="flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5" />
-              {customer.email}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 [overflow-wrap:anywhere]">{customer.email}</span>
             </span>
             {customer.phone && (
               <span className="flex items-center gap-1.5">
@@ -67,9 +68,7 @@ export function CustomerProfileCard({ customer, stats }: CustomerProfileCardProp
       </div>
 
       {stats.lastOrderAt && (
-        <p className="text-xs text-zinc-400">
-          Last order: {formatRelative(stats.lastOrderAt)}
-        </p>
+        <p className="text-xs text-zinc-400">Last order: {formatRelative(stats.lastOrderAt)}</p>
       )}
     </div>
   )

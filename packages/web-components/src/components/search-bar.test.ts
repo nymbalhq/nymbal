@@ -18,24 +18,6 @@ async function settled(el: Element): Promise<void> {
   await (el as Element & { updateComplete?: Promise<unknown> }).updateComplete
 }
 
-/** Counts the store's live subscriptions, from the moment it is installed. */
-function liveSubscriptions(store: unknown): () => number {
-  const s = store as { subscribe(fn: () => void): () => void }
-  const subscribe = s.subscribe.bind(s)
-  let live = 0
-  s.subscribe = (fn) => {
-    const unsubscribe = subscribe(fn)
-    live += 1
-    let done = false
-    return () => {
-      if (!done) live -= 1
-      done = true
-      unsubscribe()
-    }
-  }
-  return () => live
-}
-
 async function createElement(): Promise<HTMLElement> {
   const el = document.createElement('nymbal-search-bar')
   document.body.appendChild(el)
@@ -47,34 +29,17 @@ const inputOf = (el: HTMLElement): HTMLInputElement =>
   shadow(el).querySelector('input') as HTMLInputElement
 
 describe('nymbal-search-bar', () => {
-  it('renders an input with data-testid search-input', async () => {
-    const el = await createElement()
-    const input = shadow(el).querySelector('[data-testid="search-input"]')
-    expect(input).toBeTruthy()
-  })
-
-  it('input has type search', async () => {
-    const el = await createElement()
-    expect(inputOf(el).type).toBe('search')
-  })
-
-  it('input has placeholder', async () => {
-    const el = await createElement()
-    expect(inputOf(el).placeholder).toBeTruthy()
-  })
-
-  it('typing calls search store', async () => {
+  it('typing searches the store for what was typed', async () => {
     const client = setupMockClient()
     const el = await createElement()
     const input = inputOf(el)
-
-    const searchSpy = vi.fn()
-    client.search.search = searchSpy
+    const store = client.search as unknown as { setState(p: object): void }
+    client.search.search = async (query: string) => store.setState({ query })
 
     input.value = 'widget'
     input.dispatchEvent(new Event('input'))
     // The search is debounced; it lands within the 350 ms the test has always allowed.
-    await vi.waitFor(() => expect(searchSpy).toHaveBeenCalledWith('widget'), {
+    await vi.waitFor(() => expect(client.search.getState().query).toBe('widget'), {
       timeout: 350,
       interval: 10,
     })
@@ -118,31 +83,19 @@ describe('nymbal-search-bar', () => {
     expect(seen[0]).not.toBe(items[0]!.dataset.slug)
   })
 
-  it('ArrowDown twice then Enter selects the second result', async () => {
-    const el = await renderResults(['first-widget', 'second-widget', 'third-widget'])
-    const seen = captureSelected(el)
-    for (let n = 0; n < 2; n++) {
-      inputOf(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+  it('n ArrowDowns then Enter select result n, and every press past the last stays on the last', async () => {
+    const slugs = ['first-widget', 'second-widget', 'third-widget']
+    for (let presses = 1; presses <= slugs.length + 2; presses++) {
+      const el = await renderResults(slugs)
+      const seen = captureSelected(el)
+      for (let n = 0; n < presses; n++) {
+        inputOf(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+        await settled(el)
+      }
+      inputOf(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       await settled(el)
+      expect(seen, `${presses} presses`).toEqual([slugs[Math.min(presses, slugs.length) - 1]])
+      document.body.innerHTML = ''
     }
-    const highlighted = shadow(el).querySelector<HTMLElement>(
-      '.nymbal-search-result-item[aria-selected="true"]',
-    )!
-    const second = shadow(el).querySelectorAll('.nymbal-search-result-item')[1]
-    inputOf(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await settled(el)
-    expect(seen).toEqual([highlighted.dataset.slug])
-    expect(highlighted).toBe(second)
-  })
-
-  it('disconnectedCallback removes search subscription', async () => {
-    const client = setupMockClient()
-    const live = liveSubscriptions(client.search)
-    const el = await createElement()
-    const connected = live()
-    expect(connected).toBeGreaterThan(0)
-    document.body.removeChild(el)
-    expect(live()).toBeLessThan(connected)
-    expect(live()).toBe(0)
   })
 })

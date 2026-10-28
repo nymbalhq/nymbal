@@ -60,7 +60,7 @@ jobs:
         with:
           name: build-output
       - name: Gate
-        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --harness all --no-build --base "$GATE_BASE"
 
   perf-budgets:
     name: Performance budgets — both templates, five pages
@@ -81,8 +81,11 @@ jobs:
       # The packages come from the build job. The templates are built again by the run: the store's own seed images
       # go into each template's public directory first, and Astro copies them at build time.
       # The suite runs `pnpm perf:budgets` twice: with a 300 KB script added to Astro's home page (it must fail),
-      # then as committed (it must pass, and writes the report the pull request quotes).
+      # then as committed (it must pass, and writes the report the pull request quotes). Each metric is the median of
+      # five Lighthouse runs a page: of three, one slow run on a shared runner was enough to cross a budget.
       - name: perf:budgets (tests/perf)
+        env:
+          NYMBAL_PERF_BUDGETS_ARGS: --runs 5
         run: pnpm exec vitest run --config tests/perf/vitest.config.ts
       # AC-3 and AC-5: each page loads only its own elements, seen only in a production build (the dev-server E2E
       # jobs cannot): both templates built for this slot's API, then the journeys in tests/e2e/prod.
@@ -135,7 +138,9 @@ jobs:
           --health-timeout 3s
           --health-retries 30
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -232,7 +237,9 @@ jobs:
           --health-timeout 3s
           --health-retries 30
       mailpit:
-        image: axllent/mailpit:v1.21.8
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
         ports:
           - '11025:1025'
           - '18025:8025'
@@ -290,9 +297,12 @@ jobs:
       # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
       # Instrumented code runs three to four times slower on the runner than in the gate, so every project's own
       # timeouts scale here (vitest.config.ts): a test that only times out under coverage is not a failure.
+      # tooling-slow runs a nested Vitest on a copy of the work tree, so it covers none of the repo's code and needs
+      # the full history this shallow checkout lacks; the gate job runs it.
       - name: Coverage (reported, not a gate)
         env:
           NYMBAL_TEST_TIMEOUT_SCALE: '4'
+          NYMBAL_VITEST_SKIP_PROJECTS: tooling-slow
         run: |
           rm -rf coverage reports/coverage-tests.json
           status=0
@@ -406,6 +416,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -423,13 +450,30 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
       - name: Astro on custom providers (functional, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --services external --no-build --base "$GATE_BASE"
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    # The custom store's email is SMTP into this Mailpit, which its alert journeys read.
+    env:
+      NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
+      NYMBAL_TEST_MAILPIT_SMTP: localhost:11025
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.22.0
+        env:
+          MP_ENABLE_CHAOS: 'true'
+        ports:
+          - '11025:1025'
+          - '18025:8025'
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -446,8 +490,9 @@ jobs:
           name: build-output
       - name: Install Playwright browsers
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Next.js on custom providers (functional, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom" --no-build --base "$GATE_BASE"
+      # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
+      - name: Next.js on custom providers (functional, a11y), then a mail outage
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
 
   # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
   # journeys tagged @nosearch run there.

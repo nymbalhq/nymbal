@@ -1,3 +1,4 @@
+// Reads: scripts/stack.ts
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

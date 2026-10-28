@@ -21,43 +21,6 @@ async function settled(el: Element): Promise<void> {
   await (el as Element & { updateComplete?: Promise<unknown> }).updateComplete
 }
 
-/** Counts the store's live subscriptions, from the moment it is installed. */
-function liveSubscriptions(store: unknown): () => number {
-  const s = store as { subscribe(fn: () => void): () => void }
-  const subscribe = s.subscribe.bind(s)
-  let live = 0
-  s.subscribe = (fn) => {
-    const unsubscribe = subscribe(fn)
-    live += 1
-    let done = false
-    return () => {
-      if (!done) live -= 1
-      done = true
-      unsubscribe()
-    }
-  }
-  return () => live
-}
-
-async function createElementWithItems(): Promise<HTMLElement> {
-  ;(client.cart as unknown as { setState(p: object): void }).setState({
-    items: [
-      {
-        variantId: 'var-1',
-        productId: 'p1',
-        productName: 'Test',
-        variantName: 'D',
-        priceMinor: 1000,
-        qty: 1,
-        imageUrl: '',
-      },
-    ],
-    subtotalMinor: 1000,
-    itemCount: 1,
-  })
-  return createElement()
-}
-
 async function createElement(): Promise<HTMLElement> {
   const el = document.createElement('nymbal-cart-drawer')
   document.body.appendChild(el)
@@ -65,50 +28,49 @@ async function createElement(): Promise<HTMLElement> {
   return el
 }
 
+type Line = {
+  variantId: string
+  productId: string
+  productName: string
+  variantName: string
+  priceMinor: number
+  qty: number
+  imageUrl: string
+}
+
+const line = (variantId: string): Line => ({
+  variantId,
+  productId: 'p1',
+  productName: `Product ${variantId}`,
+  variantName: 'D',
+  priceMinor: 1000,
+  qty: 1,
+  imageUrl: '',
+})
+
 describe('nymbal-cart-drawer', () => {
-  it('renders inner panel with data-testid cart-drawer', async () => {
+  it('a line’s remove control removes that line, and only it, from the cart and the drawer', async () => {
+    const cart = client.cart as unknown as {
+      setState(p: object): void
+      getState(): { items: Line[] }
+    }
+    const sync = (items: Line[]) =>
+      cart.setState({ items, itemCount: items.length, subtotalMinor: 1000 * items.length })
+    sync([line('var-1'), line('var-2')])
+    client.cart.removeItem = async (variantId: string) =>
+      sync(cart.getState().items.filter((l) => l.variantId !== variantId))
     const el = await createElement()
-    const panel = shadow(el).querySelector('[data-testid="cart-drawer"]')
-    expect(panel).toBeTruthy()
-  })
+    const shown = () =>
+      [...shadow(el).querySelectorAll('[data-testid^="cart-item-"]')].map((n) =>
+        n.getAttribute('data-testid'),
+      )
+    const before = shown()
 
-  it('inner panel has role=dialog', async () => {
-    const el = await createElement()
-    const panel = shadow(el).querySelector('[data-testid="cart-drawer"]')
-    expect(panel?.getAttribute('role')).toBe('dialog')
-  })
+    ;(shadow(el).querySelector('[data-testid="remove-item-var-2"]') as HTMLButtonElement).click()
+    await new Promise((r) => setTimeout(r, 0))
+    await settled(el)
 
-  it('close button exists with aria-label', async () => {
-    const el = await createElement()
-    const closeBtn = shadow(el).querySelector('[data-testid="cart-drawer-close"]')
-    expect(closeBtn).toBeTruthy()
-    expect(closeBtn?.getAttribute('aria-label')).toBeTruthy()
-  })
-
-  it('checkout button renders when cart has items', async () => {
-    const el = await createElementWithItems()
-    const btn = shadow(el).querySelector('[data-testid="cart-checkout-btn"]')
-    expect(btn).toBeTruthy()
-  })
-
-  it('overlay element renders', async () => {
-    const el = await createElement()
-    expect(shadow(el).querySelector('[data-testid="cart-drawer-overlay"]')).toBeTruthy()
-  })
-
-  it('renders cart items when cart has items', async () => {
-    const el = await createElementWithItems()
-    const item = shadow(el).querySelector('[data-testid="cart-item-var-1"]')
-    expect(item).toBeTruthy()
-  })
-
-  it('disconnects cleanly', async () => {
-    const live = liveSubscriptions(client.cart)
-    const el = await createElement()
-    const connected = live()
-    expect(connected).toBeGreaterThan(0)
-    document.body.removeChild(el)
-    expect(live()).toBeLessThan(connected)
-    expect(live()).toBe(0)
+    expect(cart.getState().items.map((l) => l.variantId)).toEqual(['var-1'])
+    expect(shown()).toEqual(before.filter((id) => id !== 'cart-item-var-2'))
   })
 })

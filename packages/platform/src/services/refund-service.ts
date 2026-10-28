@@ -25,6 +25,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { OrderRefundInsert } from '../repositories/order-refund.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { formatMoney } from '../money.js'
+import { REFUND_NOTE_PREFIX } from '../order-history-notes.js'
 
 /** What the shop tells the provider; the merchant's own words stay on the refund row. */
 export const PROVIDER_REFUND_REASON = 'requested_by_customer'
@@ -243,7 +244,7 @@ export function createRefundService(deps: CreateRefundServiceDeps): RefundServic
   ): Promise<void> {
     const full = refundedMinor >= order.capturedMinor
     const target = full ? 'refunded' : 'partially_refunded'
-    const note = `refund of ${formatMoney(refund.amountMinor, refund.currency)}${refund.reason ? `: ${refund.reason}` : ''}`
+    const note = `${REFUND_NOTE_PREFIX}${formatMoney(refund.amountMinor, refund.currency)}${refund.reason ? `: ${refund.reason}` : ''}`
     let toStatus = order.status
     if (order.status !== target && canTransitionOrder(order.status, target)) {
       await repos.order.setStatus(tx, order.id, target, now)

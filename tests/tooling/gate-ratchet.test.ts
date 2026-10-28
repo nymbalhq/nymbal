@@ -1,3 +1,4 @@
+// Reads: scripts/mutation-ratchet.ts, stryker.config.mjs, package.json
 import { execFile, execFileSync } from 'node:child_process'
 import {
   appendFileSync,
@@ -309,6 +310,211 @@ describe('AC-4b: a change set with a Stryker input and no mutate-set file still 
         const status = !c.input ? 'skipped' : c.ratchet > REPORT_SCORE ? 'red' : 'ok'
         return `${c.name}: ${status}, stryker ${c.input ? 'ran' : 'did not run'}`
       }),
+    )
+  }, 120_000)
+})
+
+const INTEGRATION_CONFIG = 'stryker.integration.config.mjs'
+const INTEGRATION_RATCHET = 'mutation-ratchet.integration.json'
+
+type Mutating = { mutate: string[] } & Record<string, unknown>
+
+async function integrationConfig(): Promise<Mutating> {
+  const loaded = (await import(pathToFileURL(join(REPO, INTEGRATION_CONFIG)).href)) as {
+    default: Mutating
+  }
+  return loaded.default
+}
+
+const integrationSet = async (): Promise<string[]> =>
+  (await integrationConfig()).mutate.filter((glob) => !glob.startsWith('!'))
+
+function writeRatchet(dir: string, name: string, files: Record<string, number>): void {
+  writeFileSync(
+    join(dir, name),
+    `${JSON.stringify({ measuredAt: '2026-10-01T00:00:00.000Z', command: 'fixture', total: 50, files }, null, 2)}\n`,
+  )
+}
+
+/**
+ * Both ratchets in step with both Stryker configs, committed: the integration set's sources, this checkout's
+ * integration config, the unit ratchet holding `unit` and an entry for each integration file, and the integration
+ * ratchet holding each of those.
+ */
+async function inStep(dir: string, unit: Record<string, number>): Promise<string[]> {
+  const set = await integrationSet()
+  for (const path of set) {
+    mkdirSync(join(dir, dirname(path)), { recursive: true })
+    writeFileSync(join(dir, path), 'export const measured = 1\n')
+  }
+  cpSync(join(REPO, INTEGRATION_CONFIG), join(dir, INTEGRATION_CONFIG))
+  writeRatchet(dir, 'mutation-ratchet.json', {
+    ...unit,
+    ...Object.fromEntries(set.map((p) => [p, 0])),
+  })
+  writeRatchet(dir, INTEGRATION_RATCHET, Object.fromEntries(set.map((p) => [p, 60])))
+  git(dir, ['add', '-A'])
+  git(dir, ['commit', '--quiet', '-m', 'both ratchets'])
+  return set
+}
+
+// The plain gate's ratchet step hands the gate's base to `check --static`, so a change to a measured mutate-set file
+// whose unit test file did not change is red before anything slow runs (2026-10-25). Resolved through the real runner:
+// the step `plan` makes, run by the gate's runner in a git scratch holding the real scripts, with both ratchets in
+// step with both Stryker configs and naming only the files the scratch has.
+describe('the ratchet step warns of a measured file changed without its unit test', () => {
+  const ratchetStep = (): StepSpec => {
+    const step = plan({ full: false, base: 'HEAD', changed: [FILE], mutated: [FILE] }).steps.find(
+      (s) => s.name === 'ratchet',
+    )
+    if (step === undefined || step.skip !== undefined)
+      throw new Error('the plain gate plans a ratchet step')
+    return step
+  }
+  // The warning is the whole effect: the step stays ok (a refusal hit 4 of 5 good changes when replayed over dev),
+  // and the gate's log carries the line for the builder and the reviewer.
+  const CASES = [
+    { name: 'the service alone', entry: 50, test: false, status: 'ok', warns: true },
+    { name: 'the service and its unit test', entry: 50, test: true, status: 'ok', warns: false },
+    {
+      name: 'the service alone, entry 0 (unmeasured)',
+      entry: 0,
+      test: false,
+      status: 'ok',
+      warns: false,
+    },
+  ]
+
+  it('ok in every case; the gate log carries the warning naming the unit test only when the service changed alone', async () => {
+    const step = ratchetStep()
+    const results = await Promise.all(
+      CASES.map(async (c) => {
+        const dir = await repoScratch(c.entry)
+        await inStep(dir, { [FILE]: c.entry })
+        appendFileSync(join(dir, FILE), '// changed\n')
+        if (c.test)
+          appendFileSync(join(dir, TEST), "it('adds zero', () => expect(total(0, 0)).toBe(0))\n")
+        const logs: string[] = []
+        const { steps } = await run([step], {
+          cwd: dir,
+          budgetMs: 120_000,
+          log: (t) => logs.push(t),
+        })
+        return { name: c.name, status: steps[0]?.status, log: logs.join('') }
+      }),
+    )
+    const detail = results.map((r) => `--- ${r.name}: ${r.status}\n${r.log}`).join('\n')
+    expect(
+      results.map((r) => `${r.name}: ${r.status}`),
+      `step command: ${step.command}\n${detail}`,
+    ).toEqual(CASES.map((c) => `${c.name}: ${c.status}`))
+    const warned = (log: string): boolean =>
+      log.split('\n').some((l) => /warning:/.test(l) && l.includes(TEST))
+    expect(
+      results.map((r) => `${r.name}: ${warned(r.log) ? 'warns' : 'quiet'}`),
+      detail,
+    ).toEqual(CASES.map((c) => `${c.name}: ${c.warns ? 'warns' : 'quiet'}`))
+  }, 120_000)
+})
+
+// The plain gate's ratchet step holds the integration ratchet to the integration mutate set as well. Without it a
+// renamed or added integration file passes every gate, and the nightly's check skips an entry naming no reported file,
+// so the file goes unmeasured with every check green. Resolved through the real runner, as above: the step `plan`
+// makes, run in a git scratch holding the real scripts, both Stryker configs and both ratchets.
+describe('AC-8: the ratchet step holds the integration ratchet to its own mutate set', () => {
+  const ratchetStep = (full: boolean): StepSpec => {
+    const step = plan({ full, base: 'HEAD', changed: [FILE], mutated: [FILE] }).steps.find(
+      (s) => s.name === 'ratchet',
+    )
+    if (step === undefined || step.skip !== undefined) throw new Error('a ratchet step is planned')
+    return step
+  }
+
+  /** The scratch's integration config with its `mutate` rewritten; every other option as this checkout's. */
+  async function rewriteIntegration(
+    dir: string,
+    mutate: (set: string[]) => string[],
+  ): Promise<void> {
+    const config = await integrationConfig()
+    writeFileSync(
+      join(dir, INTEGRATION_CONFIG),
+      `export default ${JSON.stringify({ ...config, mutate: mutate(config.mutate) }, null, 2)}\n`,
+    )
+  }
+
+  const CHANGES: Array<{
+    name: string
+    status: 'ok' | 'red'
+    /** Makes the change; returns the line a red step's log must carry (a green step logs only its warnings). */
+    change: (dir: string, set: string[]) => Promise<string | undefined>
+  }> = [
+    {
+      name: 'both ratchets in step',
+      status: 'ok',
+      change: async () => undefined,
+    },
+    {
+      name: 'an integration file renamed, the config and the unit entry following, the integration entry not',
+      status: 'red',
+      change: async (dir, set) => {
+        const from = set[0]!
+        const to = from.replace(/\.ts$/, '-renamed.ts')
+        git(dir, ['mv', from, to])
+        await rewriteIntegration(dir, (mutate) => mutate.map((p) => (p === from ? to : p)))
+        const unit = JSON.parse(readFileSync(join(dir, 'mutation-ratchet.json'), 'utf8')) as {
+          files: Record<string, number>
+        }
+        const { [from]: held = 0, ...rest } = unit.files
+        writeRatchet(dir, 'mutation-ratchet.json', { ...rest, [to]: held })
+        return `entry names no file in the mutate set: ${from}`
+      },
+    },
+    {
+      name: 'a unit-set file added to the integration mutate set with no integration entry',
+      status: 'red',
+      change: async (dir) => {
+        await rewriteIntegration(dir, (mutate) => [...mutate, FILE])
+        return `no ratchet entry: ${FILE}`
+      },
+    },
+  ]
+
+  it('AC-8: red on a rename the integration entry did not follow and on an added file with no entry, naming each; ok with both ratchets in step, in the plain and the full gate', async () => {
+    const cases = [false, true].flatMap((full) => CHANGES.map((c) => ({ ...c, full })))
+    const results = await Promise.all(
+      cases.map(async (c) => {
+        const step = ratchetStep(c.full)
+        const dir = await repoScratch(50)
+        const set = await inStep(dir, { [FILE]: 50 })
+        const line = await c.change(dir, set)
+        const logs: string[] = []
+        const { steps } = await run([step], {
+          cwd: dir,
+          budgetMs: 120_000,
+          log: (t) => logs.push(t),
+        })
+        const log = logs.join('')
+        return {
+          label: `${c.name} (${c.full ? 'full' : 'plain'} gate)`,
+          status: steps[0]?.status,
+          logged:
+            line === undefined
+              ? ''
+              : log.split('\n').some((l) => l.includes(line))
+                ? ', logs it'
+                : `, does not log "${line}"`,
+          detail: `--- ${c.name}, ${c.full ? 'full' : 'plain'}: ${steps[0]?.status}\n${step.command}\n${log}`,
+        }
+      }),
+    )
+    expect(
+      results.map((r) => `${r.label}: ${r.status}${r.logged}`),
+      results.map((r) => r.detail).join('\n'),
+    ).toEqual(
+      cases.map(
+        (c) =>
+          `${c.name} (${c.full ? 'full' : 'plain'} gate): ${c.status}${c.status === 'red' ? ', logs it' : ''}`,
+      ),
     )
   }, 120_000)
 })

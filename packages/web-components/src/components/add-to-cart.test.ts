@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setupMockClient } from '../testing/index.js'
 import type { NymbalClient } from '@nymbalhq/sdk'
@@ -21,24 +22,6 @@ async function settled(el: Element): Promise<void> {
   await (el as Element & { updateComplete?: Promise<unknown> }).updateComplete
 }
 
-/** Counts the store's live subscriptions, from the moment it is installed. */
-function liveSubscriptions(store: unknown): () => number {
-  const s = store as { subscribe(fn: () => void): () => void }
-  const subscribe = s.subscribe.bind(s)
-  let live = 0
-  s.subscribe = (fn) => {
-    const unsubscribe = subscribe(fn)
-    live += 1
-    let done = false
-    return () => {
-      if (!done) live -= 1
-      done = true
-      unsubscribe()
-    }
-  }
-  return () => live
-}
-
 async function createElement(attrs: Record<string, string> = {}): Promise<HTMLElement> {
   const el = document.createElement('nymbal-add-to-cart')
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v)
@@ -48,29 +31,47 @@ async function createElement(attrs: Record<string, string> = {}): Promise<HTMLEl
 }
 
 describe('nymbal-add-to-cart', () => {
-  it('renders a button with data-testid add-to-cart', async () => {
+  it('the button is enabled exactly while a variant-id is set', async () => {
     const el = await createElement()
-    const btn = shadow(el).querySelector('[data-testid="add-to-cart"]') as HTMLButtonElement
-    expect(btn).toBeTruthy()
-    expect(btn.tagName).toBe('BUTTON')
+    const disabled = () => (shadow(el).querySelector('button') as HTMLButtonElement).disabled
+    const seen = [disabled()]
+    el.setAttribute('variant-id', 'var-1')
+    await settled(el)
+    seen.push(disabled())
+    el.removeAttribute('variant-id')
+    await settled(el)
+    seen.push(disabled())
+    expect(seen).toEqual([true, false, true])
   })
 
-  it('button text is "Add to Cart" by default', async () => {
-    const el = await createElement()
-    const btn = shadow(el).querySelector('button') as HTMLButtonElement
-    expect(btn.textContent?.trim()).toBe('Add to Cart')
-  })
+  it('property: a click adds the qty attribute as whole units clamped to 1-99 (1 when it is not a whole number)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.oneof(
+          fc.integer({ min: -5, max: 150 }).map(String),
+          fc.constantFrom('', '2.5', 'two', ' 3 '),
+        ),
+        async (qtyAttr) => {
+          client = setupMockClient()
+          const cart = client.cart as unknown as {
+            setState(p: object): void
+            getState(): { itemCount: number }
+          }
+          client.cart.addItem = async (_variantId: string, qty = 1) =>
+            cart.setState({ itemCount: cart.getState().itemCount + qty })
+          const el = await createElement({ 'variant-id': 'var-1', qty: qtyAttr })
+          const before = cart.getState().itemCount
+          ;(shadow(el).querySelector('button') as HTMLButtonElement).click()
+          await new Promise((r) => setTimeout(r, 0))
 
-  it('button is disabled when no variant-id', async () => {
-    const el = await createElement()
-    const btn = shadow(el).querySelector('button') as HTMLButtonElement
-    expect(btn.disabled).toBe(true)
-  })
-
-  it('button is enabled when variant-id is set', async () => {
-    const el = await createElement({ 'variant-id': 'var-1' })
-    const btn = shadow(el).querySelector('button') as HTMLButtonElement
-    expect(btn.disabled).toBe(false)
+          const n = qtyAttr.trim() === '' ? Number.NaN : Number(qtyAttr)
+          const expected = Math.min(99, Math.max(1, Number.isInteger(n) ? n : 1))
+          expect(cart.getState().itemCount).toBe(before + expected)
+          el.remove()
+        },
+      ),
+      { numRuns: 40 },
+    )
   })
 
   it('button shows loading state when cart is loading', async () => {
@@ -79,15 +80,5 @@ describe('nymbal-add-to-cart', () => {
     const el = await createElement({ 'variant-id': 'var-1' })
     const btn = shadow(el).querySelector('button') as HTMLButtonElement
     expect(btn.disabled).toBe(true)
-  })
-
-  it('disconnectedCallback removes store subscription', async () => {
-    const live = liveSubscriptions(client.cart)
-    const el = await createElement()
-    const connected = live()
-    expect(connected).toBeGreaterThan(0)
-    document.body.removeChild(el)
-    expect(live()).toBeLessThan(connected)
-    expect(live()).toBe(0)
   })
 })

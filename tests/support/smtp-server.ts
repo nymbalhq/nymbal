@@ -2,17 +2,28 @@ import { createServer, type Socket } from 'node:net'
 
 // A minimal SMTP server in the test process, for the email contract on @nymbalhq/adapter-smtp without Mailpit: it
 // greets, answers EHLO without STARTTLS or AUTH (so nodemailer neither upgrades nor logs in), accepts MAIL, RCPT and
-// DATA, and keeps each message's data. Enough for nodemailer's verify() and sendMail(), nothing more.
+// DATA, and keeps each message's data and recipients. Enough for nodemailer's verify() and sendMail(), nothing more.
+// `refuseRecipients(n)` answers the next n RCPT commands with 451, a passing refusal, as a mail host under load does.
 
 export interface FakeSmtpServer {
   port: number
   messages: string[]
+  /** The envelope recipients of each message in `messages`, by the same index. */
+  recipients: string[][]
+  /** How many RCPT commands have been refused so far. */
+  refused(): number
+  /** Answers the next `n` RCPT commands with `451 4.3.0`. */
+  refuseRecipients(n: number): void
   close(): Promise<void>
 }
 
+/** Listens on 127.0.0.1: point the client at that address, not `localhost`, whose answer differs by resolver. */
 export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
   const sockets = new Set<Socket>()
   const messages: string[] = []
+  const recipients: string[][] = []
+  let toRefuse = 0
+  let refusedSoFar = 0
   const server = createServer((socket) => {
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
@@ -21,6 +32,7 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
     const reply = (line: string) => socket.write(`${line}\r\n`)
     let buffer = ''
     let data: string[] | null = null
+    let to: string[] = []
     reply('220 contracts fake smtp ready')
     socket.on('data', (chunk: string) => {
       buffer += chunk
@@ -30,6 +42,8 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
         if (data !== null) {
           if (line === '.') {
             messages.push(data.join('\r\n'))
+            recipients.push(to)
+            to = []
             data = null
             reply('250 2.0.0 queued')
           } else {
@@ -42,7 +56,19 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
           reply('250-contracts hello')
           reply('250 8BITMIME')
         } else if (verb === 'HELO') reply('250 contracts hello')
-        else if (['MAIL', 'RCPT', 'RSET', 'NOOP'].includes(verb)) reply('250 2.0.0 ok')
+        else if (verb === 'RCPT') {
+          if (toRefuse > 0) {
+            toRefuse -= 1
+            refusedSoFar += 1
+            reply('451 4.3.0 try again later')
+          } else {
+            to.push(/<([^>]*)>/.exec(line)?.[1] ?? '')
+            reply('250 2.0.0 ok')
+          }
+        } else if (verb === 'MAIL' || verb === 'RSET') {
+          to = []
+          reply('250 2.0.0 ok')
+        } else if (verb === 'NOOP') reply('250 2.0.0 ok')
         else if (verb === 'DATA') {
           data = []
           reply('354 end data with <CR><LF>.<CR><LF>')
@@ -53,10 +79,18 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
       }
     })
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
   return {
     port: (server.address() as { port: number }).port,
     messages,
+    recipients,
+    refused: () => refusedSoFar,
+    refuseRecipients(n) {
+      toRefuse = n
+    },
     async close() {
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => server.close(() => resolve()))

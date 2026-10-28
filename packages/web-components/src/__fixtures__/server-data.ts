@@ -323,3 +323,84 @@ export const pdpProduct = (prefix: string) =>
 export function formatMoney(minor: number, currency = 'GBP'): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(minor / 100)
 }
+
+/** The order timeline's kinds and the label each shows, as the order pages name them. */
+export const TIMELINE_LABELS = {
+  placed: 'Order placed',
+  paid: 'Payment received',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+  partially_refunded: 'Partially refunded',
+  refunded: 'Refunded',
+} as const
+export type TimelineKind = keyof typeof TIMELINE_LABELS
+export const TIMELINE_KINDS = Object.keys(TIMELINE_LABELS) as TimelineKind[]
+
+export const timelineAt = fc
+  .date({
+    min: new Date('2020-01-01T00:00:00Z'),
+    max: new Date('2035-12-31T23:59:59Z'),
+    noInvalidDate: true,
+  })
+  .map((d) => d.toISOString())
+
+/** An entry the element must leave out: a kind it does not know, or an `at` that is not a date. */
+export const unrenderableEntry = fc.oneof(
+  fc.record({
+    kind: fc.constantFrom('processing', 'fulfilled', 'Paid', '', 'status_changed'),
+    at: timelineAt,
+  }),
+  fc.record({
+    kind: fc.constantFrom(...TIMELINE_KINDS),
+    at: fc.constantFrom('not a date', '', 'yesterday', '2026-13-45T99:00:00Z'),
+  }),
+)
+
+/**
+ * `nymbal-order-timeline entries`: `[{ kind, at }]` in no particular time order (the element keeps the order it is
+ * served), kinds repeating as a second partial refund does, and now and then an entry the element must leave out.
+ */
+export const timelineEntries = (maxLength = 6) =>
+  fc.array(
+    fc.oneof(
+      {
+        weight: 4,
+        arbitrary: fc.record({ kind: fc.constantFrom(...TIMELINE_KINDS), at: timelineAt }),
+      },
+      { weight: 1, arbitrary: unrenderableEntry },
+    ),
+    { maxLength },
+  )
+
+/** The served entries the element renders, in the served order: a known kind and an `at` that parses. */
+export function renderableEntries(
+  entries: Array<{ kind: string; at: string }>,
+): Array<{ kind: TimelineKind; at: string }> {
+  return entries.filter(
+    (e): e is { kind: TimelineKind; at: string } =>
+      (TIMELINE_KINDS as string[]).includes(e.kind) && !Number.isNaN(new Date(e.at).getTime()),
+  )
+}
+
+/** An entry's time as the timeline shows it, in `zone` when it is a zone Intl knows, else in UTC; the oracle. */
+export function timelineTime(at: string, zone: string | undefined): string {
+  const format = (timeZone: string) =>
+    new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      timeZone,
+      timeZoneName: 'short',
+    })
+  let formatter: Intl.DateTimeFormat
+  try {
+    formatter = format(zone ?? 'UTC')
+  } catch {
+    formatter = format('UTC')
+  }
+  return formatter.format(new Date(at))
+}

@@ -12,9 +12,12 @@ const POLL_FOR_MS = 10_000
 
 export function OrderStatusRefresh({
   orderNumber,
+  orderKey,
   status,
 }: {
   orderNumber: string
+  /** The page's `?key=`: the API answers a guest's order to its key only. */
+  orderKey?: string | undefined
   status: OrderStatus
 }) {
   const router = useRouter()
@@ -26,7 +29,10 @@ export function OrderStatusRefresh({
     let stopped = false
     const poll = async () => {
       try {
-        const order = await getNymbalClient().customer.orders.get(orderNumber)
+        const order = await getNymbalClient().customer.orders.get(
+          orderNumber,
+          orderKey ? { key: orderKey } : {},
+        )
         if (stopped) return
         if (order.status !== status) {
           router.refresh()
@@ -42,7 +48,7 @@ export function OrderStatusRefresh({
       stopped = true
       clearTimeout(timer)
     }
-  }, [orderNumber, status, router])
+  }, [orderNumber, orderKey, status, router])
 
   return null
 }

@@ -8,6 +8,8 @@ import { EVT_ORDER_PAID } from '@nymbalhq/types'
 import { runUntilKilled } from '@nymbalhq/proof-kit/chaos'
 import { createMailSink } from '@nymbalhq/proof-kit/mail'
 import { startTestStore } from '@nymbalhq/proof-kit/store'
+import type { Kernel } from '../../../platform/tests/support/kernel.js'
+import { adminClient } from '../../../platform/tests/support/money.js'
 import { eventRows } from '../../../platform/tests/support/outbox.js'
 import { createDatabase } from '../../../platform/tests/support/postgres.js'
 import { openRaw } from '../../../platform/tests/support/raw.js'
@@ -15,7 +17,8 @@ import { openRaw } from '../../../platform/tests/support/raw.js'
 // AC-1 (SQLite) and AC-2 (Postgres): a child process runs a checkout, which the stub pays inline, with armChaos at
 // order.paid.v1 and is SIGKILLed when that event reaches the bus, after its transaction committed. The events table
 // holds the row, undelivered. A store restarted on the same database delivers it: one order-placed email in Mailpit
-// (sent on order.paid) and the order served from the document store, confirmed. A second restart sends nothing.
+// (sent on order.paid) and the order served, confirmed: the parent never saw the checkout answer and holds no order
+// key, so it reads the order as the admin does. A second restart sends nothing.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL and NYMBAL_TEST_POSTGRES_URL.
 
 function required(name: string, example: string): string {
@@ -79,7 +82,7 @@ function restart(dialect: Dialect, target: string, sink: ReturnType<typeof creat
 describe.each(cases)(
   '$ac: a kill between write and publish ($dialect)',
   ({ ac, dialect, fresh }) => {
-    it(`${ac}: SIGKILL at order.paid.v1 leaves its events row undelivered; a restart delivers it (exactly one order-placed email, the order served by GET /api/orders/:orderNumber, confirmed); a second restart leaves the email count at 1 (${dialect})`, async () => {
+    it(`${ac}: SIGKILL at order.paid.v1 leaves its events row undelivered; a restart delivers it (exactly one order-placed email, the order served by GET /api/admin/orders/:orderNumber, confirmed); a second restart leaves the email count at 1 (${dialect})`, async () => {
       const sink = createMailSink()
       const buyer = `${ac.toLowerCase()}-${randomUUID()}@proof-kit.test`
       const db = await fresh()
@@ -114,11 +117,20 @@ describe.each(cases)(
             expect(mails.length, 'order-placed emails after the first restart').toBe(1)
             expect(mails[0]!.subject).toContain(order.order_number)
 
-            const res = await fetch(`${first.baseUrl}/api/orders/${order.order_number}`)
-            const body = (await res.json()) as { data?: { id: string; status: string } }
-            expect(res.status, JSON.stringify(body)).toBe(200)
-            expect(body.data?.id).toBe(order.id)
-            expect(body.data?.status).toBe('confirmed')
+            const admin = await adminClient(
+              {
+                store: first.app.platform.commandStore,
+                repos: first.app.repos,
+              } satisfies Pick<Kernel, 'store' | 'repos'> as Kernel,
+              first.baseUrl,
+            )
+            const res = await admin.call<{ id: string; status: string }>(
+              'GET',
+              `/api/admin/orders/${order.order_number}`,
+            )
+            expect(res.status, JSON.stringify(res.body)).toBe(200)
+            expect(res.body.data?.id).toBe(order.id)
+            expect(res.body.data?.status).toBe('confirmed')
 
             // Every row the kill left behind, delivered or not, is delivered now; the restart appended none.
             const after = await eventRows(raw)

@@ -88,6 +88,12 @@ export interface Order {
   updatedAt: string
 }
 
+/**
+ * The request header a shopper's order key travels in to `GET /api/orders/:orderNumber`. Never a query parameter, so
+ * the key stays out of access logs that record request URLs.
+ */
+export const ORDER_KEY_HEADER = 'x-nymbal-order-key'
+
 /** Who took the money: the payments provider, the merchant recording an offline payment, or an imported history. */
 export type CaptureMethod = 'provider' | 'manual' | 'import'
 

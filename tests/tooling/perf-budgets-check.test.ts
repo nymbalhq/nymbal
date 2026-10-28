@@ -1,3 +1,4 @@
+// Reads: nothing
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { checkBudgets } from '../../scripts/perf-budgets-check'

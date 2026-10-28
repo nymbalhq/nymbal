@@ -1,3 +1,4 @@
+// Reads: package.json
 import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +16,7 @@ import {
   type StepSpec,
 } from '../../scripts/gate'
 import { aggregate, type Counts, type FileCensus, type Totals } from '../../scripts/test-census'
+import { leftOut } from './vitest-filters'
 
 // The gate: AC-1 to AC-5, AC-7 and AC-18.
 // AC-7 drives the exported runner with fake steps that are real shell commands, so the verdict under test comes
@@ -149,18 +151,24 @@ describe('AC-1: selectTests picks all, changed or none', () => {
 // The plain gate inside 60 s
 // ---------------------------------------------------------------------------------------------------------------
 
-describe('the tooling projects run in the plain gate only when the tooling changed; the ratchet is checked statically first', () => {
+describe('the tooling projects run in the plain gate only when the tooling or an input a tooling test declares changed; the ratchet is checked statically first', () => {
   const planned = (changed: string[], full = false): StepSpec[] =>
     plan({ full, base: 'abc1234', changed, mutated: [] }).steps
   const testsStep = (changed: string[], full = false): StepSpec =>
     planned(changed, full).find((s) => s.name === 'tests') as StepSpec
-  /** The projects a tests command negates (`--project '!name'`). */
-  const negated = (command: string): string[] =>
-    [...command.matchAll(/--project '!([\w-]+)'/g)].map((m) => m[1] as string).sort()
+  /** The harness projects a tests command leaves out (`leftOut`). */
+  const negated = (command: string): string[] => leftOut(command, HARNESS_PROJECTS)
   const HARNESS = [
     'scripts/gate.ts',
     'tests/tooling/gate.test.ts',
     'tests/architecture/guard.test.ts',
+    '.github/workflows/ci.yml',
+    'tests/e2e/playwright.config.ts',
+    'package.json',
+    'pnpm-lock.yaml',
+    'vitest.config.ts',
+    'tsconfig.base.json',
+    'packages/sdk/package.json',
   ]
   const PRODUCT = [
     'packages/sdk/src/client.ts',
@@ -168,42 +176,55 @@ describe('the tooling projects run in the plain gate only when the tooling chang
     'templates/astro/src/pages/index.astro',
   ]
 
-  it('isHarnessPath: scripts/, tests/tooling/ and tests/architecture/ are the harness; product paths are not', () => {
+  it('isHarnessPath: scripts/, the harness projects, .github/, the Playwright configs and configuration are the harness; product paths are not', () => {
     for (const path of HARNESS) expect(isHarnessPath(path), path).toBe(true)
-    for (const path of [...PRODUCT, 'scripts.ts', 'packages/cli/scripts/x.ts']) {
+    for (const path of [
+      ...PRODUCT,
+      'scripts.ts',
+      'packages/cli/scripts/x.ts',
+      'tests/e2e/fixtures/custom/nymbal.config.ts',
+      'tests/e2e/journeys/playwright.config.ts',
+      'templates/astro/package.json',
+    ]) {
       expect(isHarnessPath(path), path).toBe(false)
     }
   })
 
-  it('a product change, changed or all mode, negates every harness project; a harness change negates none', () => {
+  it('a product change negates every harness project in the plain gate; a harness change, configuration included, negates none', () => {
     expect(negated(testsStep(PRODUCT).command)).toEqual([...HARNESS_PROJECTS].sort())
-    expect(negated(testsStep([...PRODUCT, 'package.json']).command)).toEqual(
-      [...HARNESS_PROJECTS].sort(),
-    )
-    for (const path of HARNESS) expect(negated(testsStep([...PRODUCT, path]).command)).toEqual([])
+    for (const path of HARNESS) {
+      expect(negated(testsStep([...PRODUCT, path]).command), path).toEqual([])
+    }
   })
 
-  it('gate:full never negates them, whatever changed', () => {
-    expect(negated(testsStep(PRODUCT, true).command)).toEqual([])
-    expect(negated(testsStep([...PRODUCT, 'package.json'], true).command)).toEqual([])
+  it('gate:full negates only tooling for a product change, so architecture runs on every change; dev CI asks for both with harness: all', () => {
+    expect(negated(testsStep(PRODUCT, true).command)).toEqual(['tooling'])
+    for (const path of HARNESS) {
+      expect(negated(testsStep([...PRODUCT, path], true).command), path).toEqual([])
+    }
+    const ci = plan({ full: true, base: 'abc1234', changed: PRODUCT, mutated: [], harness: 'all' })
+    expect(negated((ci.steps.find((s) => s.name === 'tests') as StepSpec).command)).toEqual([])
   })
 
-  it('property: the harness projects are negated iff the plain gate has no harness path in its change set', () => {
-    const path = fc.oneof(
-      fc.constantFrom(...PRODUCT, 'package.json', 'README.md'),
-      fc.constantFrom(...HARNESS),
-    )
+  it('property: the plain gate negates every harness project iff its change set has no harness path', () => {
+    const path = fc.oneof(fc.constantFrom(...PRODUCT, 'README.md'), fc.constantFrom(...HARNESS))
     fc.assert(
       fc.property(fc.array(path, { minLength: 1, maxLength: 6 }), (changed) => {
         const step = testsStep(changed)
         if (step.skip !== undefined) return
-        const expected = changed.some(isHarnessPath) ? [] : [...HARNESS_PROJECTS].sort()
+        const expected = changed.some((p) => HARNESS.includes(p))
+          ? []
+          : [...HARNESS_PROJECTS].sort()
         expect(negated(step.command)).toEqual(expected)
       }),
     )
   })
 
-  it('the ratchet step runs the static check after lint and before the build and tests, in gate and gate:full', () => {
+  it('the ratchet step runs the static check of the unit ratchet with the base, then of the integration ratchet against its config, after lint and before the build and tests, in the plain and the full gate', () => {
+    const flagOf = (args: string[], name: string): string | undefined => {
+      const at = args.indexOf(name)
+      return at === -1 ? undefined : args[at + 1]
+    }
     for (const full of [false, true]) {
       const names = planned(PRODUCT, full).map((s) => s.name)
       const at = (name: string): number => names.indexOf(name)
@@ -211,8 +232,26 @@ describe('the tooling projects run in the plain gate only when the tooling chang
       expect(at('ratchet')).toBeLessThan(at('build'))
       expect(at('ratchet')).toBeLessThan(at('tests'))
       const step = planned(PRODUCT, full).find((s) => s.name === 'ratchet') as StepSpec
-      expect(step.command).toMatch(/mutation:ratchet check --static\b/)
       expect(step.skip).toBeUndefined()
+      const checks = step.command
+        .split('&&')
+        .map((part) => part.trim().split(/\s+/))
+        .filter((args) => args.join(' ').includes('mutation:ratchet check --static'))
+      expect(
+        checks.map((args) => ({
+          config: flagOf(args, '--config'),
+          ratchet: flagOf(args, '--ratchet'),
+          base: flagOf(args, '--base'),
+        })),
+        step.command,
+      ).toEqual([
+        { config: undefined, ratchet: undefined, base: 'abc1234' },
+        {
+          config: 'stryker.integration.config.mjs',
+          ratchet: 'mutation-ratchet.integration.json',
+          base: undefined,
+        },
+      ])
     }
   })
 })
@@ -751,20 +790,25 @@ describe('AC-18: run skips a step whose needs are red or skipped, and names them
       return fullPlan.filter((s) => s.name.startsWith('e2e')).map((s) => s.name)
     }
 
-    it('AC-18: the E2E steps run iff build is ok, whatever compose up does; a red build skips each, naming build', async () => {
+    // The custom-providers store mails through Mailpit, so its two steps also need `mailpit up`, which compose meets.
+    const MAILPIT_E2E = ['e2e astro-custom', 'e2e nextjs-custom', 'e2e mail-outage']
+
+    it('AC-18: the E2E steps run iff build is ok, whatever compose up does, but for the Mailpit store’s, which also need compose; a red build skips each, naming build', async () => {
       expect(e2eSteps().length).toBeGreaterThanOrEqual(2)
       for (const red of [[], ['compose up'], ['build'], ['build', 'compose up']]) {
         const cwd = scratch()
         const result = await run(rehearse(red), { cwd, budgetMs: 600_000 })
         const ran = fullPlan.filter((_, i) => existsSync(join(cwd, `e2e-ran-${i}`)))
         const buildOk = !red.includes('build')
+        const runs = (name: string): boolean =>
+          buildOk && (!MAILPIT_E2E.includes(name) || !red.includes('compose up'))
         expect(
           ran.map((s) => s.name),
           `red: ${red.join(', ')}`,
-        ).toEqual(buildOk ? e2eSteps() : [])
+        ).toEqual(e2eSteps().filter(runs))
         for (const name of e2eSteps()) {
           const step = result.steps.find((s) => s.name === name)
-          expect(step?.status, name).toBe(buildOk ? 'ok' : 'skipped')
+          expect(step?.status, name).toBe(runs(name) ? 'ok' : 'skipped')
           expect(
             buildOk || (step?.detail ?? '').includes('build'),
             `${name}: "${step?.detail}"`,

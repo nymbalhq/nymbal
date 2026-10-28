@@ -86,7 +86,7 @@ test.describe('Search', () => {
 
   // AC-3: the header search bar renders from the search slot. The branch is the one GET /api/capabilities names (both
   // the native and the custom-providers store report `search`); neither branch skips.
-  test('AC-3: the header search bar is present iff search reports search, and submitting a term opens the search page', async ({
+  test('AC-3: the header search bar is present iff search reports search, and submitting a term opens the search page @capabilities', async ({
     page,
     request,
   }) => {

@@ -1,3 +1,4 @@
+// Reads: **/*.test.*, **/*.spec.*
 import { describe, expect, it } from 'vitest'
 import { trackedFiles } from './workspace-manifests'
 

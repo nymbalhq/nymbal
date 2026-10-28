@@ -64,11 +64,15 @@ describe('AC-10: a paid order emails once, through the product alone', () => {
     })
     expect(item.status, JSON.stringify(item.body)).toBe(200)
 
-    const placed = await shopper.call<{ orderNumber: string }>('POST', '/api/checkout', {
-      email: buyer,
-      billingAddress: address,
-      shippingAddress: address,
-    })
+    const placed = await shopper.call<{ orderNumber: string; orderKey: string }>(
+      'POST',
+      '/api/checkout',
+      {
+        email: buyer,
+        billingAddress: address,
+        shippingAddress: address,
+      },
+    )
     expect(placed.status, JSON.stringify(placed.body)).toBe(200)
     const orderNumber = placed.body.data!.orderNumber
     const received = await sink.waitFor({ to: buyer }, { timeoutMs: 10_000 })
@@ -78,6 +82,8 @@ describe('AC-10: a paid order emails once, through the product alone', () => {
     const order = await shopper.call<{ orderNumber: string; status: string }>(
       'GET',
       `/api/orders/${orderNumber}`,
+      undefined,
+      { 'x-nymbal-order-key': placed.body.data!.orderKey },
     )
 
     expect(order.body.data?.status).toBe('confirmed')

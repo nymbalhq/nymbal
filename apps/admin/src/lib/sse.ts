@@ -8,6 +8,11 @@ export interface SseClient {
   disconnect(): void
 }
 
+export interface SseClientOptions {
+  /** Runs on each `connected` frame, which the server sends once its subscription is live. */
+  onConnected?: () => void
+}
+
 export type SseEventHandler = <K extends keyof NymbalEventMap>(
   type: K,
   payload: NymbalEventMap[K],
@@ -26,7 +31,10 @@ function payloadOf(data: string): unknown {
   return undefined
 }
 
-export function createSseClient(onEvent: SseEventHandler): SseClient {
+export function createSseClient(
+  onEvent: SseEventHandler,
+  options: SseClientOptions = {},
+): SseClient {
   let es: EventSource | null = null
   let retryCount = 0
   let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -57,6 +65,11 @@ export function createSseClient(onEvent: SseEventHandler): SseClient {
       es.onopen = () => {
         retryCount = 0
       }
+
+      // Not `onopen`: the stream opens before the ticket is checked, and before the subscription exists.
+      es.addEventListener('connected', () => {
+        options.onConnected?.()
+      })
 
       // The server names each event by its type and sends `{ id, type, timestamp, payload }`.
       for (const type of STANDARD_EVENT_TYPES) {

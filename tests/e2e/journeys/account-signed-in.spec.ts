@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
-import { adminToken, ownProduct } from '../support/checkout'
+import { adminToken, orderNumberOf, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
+import { formReady, signIn, submitSignInForm } from '../support/sign-in'
 
 // AC-5, AC-6 and AC-7: a shopper who signs in sees their own account on either storefront, and signing out really
 // signs them out. Both template projects run this file. Selectors are the data-testid contract both templates share
@@ -33,6 +34,7 @@ const onLogin = (url: URL): boolean => url.pathname.replace(/\/$/, '') === '/acc
 /** Registers through the storefront's own form, so the token is wherever that template keeps it. */
 async function register(page: Page, shopper: Shopper): Promise<void> {
   await page.goto('/account/register')
+  await formReady(page, 'nymbal-register-form')
   const form = page.getByTestId('register-form')
   // Both register forms label their name fields alike; neither shares a test id for them today.
   await form.getByLabel('First Name', { exact: true }).fill(shopper.firstName)
@@ -170,6 +172,29 @@ test.describe('Signed-in account', () => {
     expect(after.status()).not.toBe(before.status())
   })
 
+  test('a wrong password shows the API’s refusal in the sign-in form’s alert, and the browser stays signed out', async ({
+    page,
+  }) => {
+    const credentials = { email: `nobody-${randomUUID().slice(0, 8)}@e2e.test`, password: 'wrong' }
+    const refusal = await page.request.post(`${API}/api/auth/login`, {
+      headers: await csrf(page.request, API),
+      data: credentials,
+    })
+    expect(refusal.status()).toBe(401)
+    const { message } = ((await refusal.json()) as { error: { message: string } }).error
+
+    await signIn(page, credentials.email, credentials.password)
+    const form = page.locator('nymbal-login-form')
+
+    await expect(form.getByRole('alert')).toHaveText(message, { timeout: 10_000 })
+    const refresh = await page.request.post(`${API}/api/auth/refresh`, {
+      headers: await csrf(page.request, API),
+    })
+    expect(refresh.status(), 'the failed sign-in minted a session').toBe(401)
+    await page.goto('/account')
+    await page.waitForURL(onLogin, { timeout: 10_000 })
+  })
+
   test('AC-7: a signed-in shopper who reloads /account still sees their dashboard with their email', async ({
     page,
   }) => {
@@ -228,6 +253,7 @@ test.describe('Account views are elements', () => {
     // Register through nymbal-register-form.
     await page.goto('/account/register')
     await expect.poll(() => inShadowOf(page, 'nymbal-register-form', 'register-submit')).toBe(true)
+    await formReady(page, 'nymbal-register-form')
     const register = page.locator('nymbal-register-form')
     await register.getByTestId('register-firstName').fill(shopper.firstName)
     await register.getByTestId('register-lastName').fill(shopper.lastName)
@@ -253,10 +279,7 @@ test.describe('Account views are elements', () => {
     })
     await page.goto('/account/login?redirect=%2Faccount%2Fprofile')
     await expect.poll(() => inShadowOf(page, 'nymbal-login-form', 'login-submit')).toBe(true)
-    const login = page.locator('nymbal-login-form')
-    await login.getByTestId('login-email').fill(shopper.email)
-    await login.getByTestId('login-password').fill(shopper.password)
-    await login.getByTestId('login-submit').click()
+    await submitSignInForm(page, shopper.email, shopper.password)
     await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account/profile', {
       timeout: 15_000,
     })
@@ -298,5 +321,98 @@ test.describe('Account views are elements', () => {
     await expect.poll(async () => (await addresses()).length, { timeout: 10_000 }).toBe(before + 1)
     expect((await addresses()).map((a) => a.addressLine1)).toContain(line1)
     await expect(book.getByTestId('addresses-list')).toContainText(line1, { timeout: 10_000 })
+  })
+})
+
+// AC-12: an order belongs to the shopper who placed it. Another signed-in shopper who opens its account page sees
+// nothing of it, and the API answers their session as it answers a number no order has, so they are not even told it
+// exists; the owner still reads it.
+
+/** Product page, Add to Cart, and the checkout walked to a placed order, as the signed-in shopper on `page`. */
+async function placeSignedIn(
+  page: Page,
+  request: APIRequestContext,
+  shopper: Shopper,
+): Promise<{ orderNumber: string; productName: string; addressLine1: string }> {
+  const product = await ownProduct(request, await adminToken(request), 5)
+  await page.goto(`/product/${product.slug}`)
+  const productName = (await page.getByTestId('product-title').innerText()).trim()
+  await page.getByTestId('add-to-cart').click()
+  await page.getByTestId('cart-checkout-btn').click()
+  await page.waitForURL(/\/checkout/, { timeout: 10_000 })
+  await page.waitForLoadState('load')
+  await page.getByTestId('contact-email').fill(shopper.email)
+  await page.getByTestId('contact-continue').click()
+  const addressLine1 = `${randomUUID().slice(0, 8)} Private Row`
+  await page.getByTestId('shipping-firstName').fill(shopper.firstName)
+  await page.getByTestId('shipping-lastName').fill(shopper.lastName)
+  await page.getByTestId('shipping-addressLine1').fill(addressLine1)
+  await page.getByTestId('shipping-city').fill('London')
+  await page.getByTestId('shipping-region').fill('Greater London')
+  await page.getByTestId('shipping-postalCode').fill('E1 6AN')
+  await page.getByTestId('shipping-country').fill('GB')
+  await page.getByTestId('shipping-continue').click()
+  await page.getByTestId('place-order').click()
+  await page.waitForURL(/\/order\//, { timeout: 20_000 })
+  return { orderNumber: orderNumberOf(page), productName, addressLine1 }
+}
+
+test.describe('Another shopper’s order', () => {
+  // Kills: the route answering another customer 403, which says the order exists, or serving it.
+  test('AC-12: shopper B signed in on /account/orders/<A’s n> sees none of A’s email, address or product, and B’s bearer reads GET /api/orders/:n as 404 with the body of a number no order has; A’s own /account/orders/<n> still shows the order', async ({
+    page,
+    request,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const a = newShopper()
+    await register(page, a)
+    const placed = await placeSignedIn(page, request, a)
+    const n = placed.orderNumber
+    const secrets = [a.email, placed.addressLine1, placed.productName]
+
+    const b = newShopper()
+    const baseURL = testInfo.project.use.baseURL
+    const other = await browser.newContext({ ...(baseURL !== undefined && { baseURL }) })
+    try {
+      const pageB = await other.newPage()
+      await register(pageB, b)
+      const read = pageB.waitForResponse(
+        (r) =>
+          r.request().method() === 'GET' &&
+          new URL(r.url()).pathname === `/api/orders/${encodeURIComponent(n)}`,
+        { timeout: 15_000 },
+      )
+      await pageB.goto(`/account/orders/${encodeURIComponent(n)}`)
+      expect((await read).status(), 'B’s browser reading A’s order').toBe(404)
+      await expect(
+        pageB.getByRole('link', { name: /back to orders/i }),
+        'B’s page has settled',
+      ).toBeVisible({ timeout: 15_000 })
+      const shown = await pageB.content()
+      for (const secret of secrets)
+        expect(shown.includes(secret), `B’s page carries ${secret}`).toBe(false)
+    } finally {
+      await other.close()
+    }
+
+    const unknown = n.replace(/[0-9]+$/, '999999999')
+    const tokenB = await apiToken(request, b)
+    const missing = await request.get(`${API}/api/orders/${encodeURIComponent(unknown)}`, {
+      headers: { authorization: `Bearer ${tokenB}` },
+    })
+    const asB = await request.get(`${API}/api/orders/${encodeURIComponent(n)}`, {
+      headers: { authorization: `Bearer ${tokenB}` },
+    })
+    expect(asB.status(), `GET /api/orders/${n} with B’s bearer`).toBe(missing.status())
+    expect(missing.status(), `GET /api/orders/${unknown}`).toBe(404)
+    expect(await asB.json(), `GET /api/orders/${n} with B’s bearer`).toEqual(
+      JSON.parse((await missing.text()).replaceAll(unknown, n)),
+    )
+
+    await page.goto(`/account/orders/${encodeURIComponent(n)}`)
+    const detail = page.getByTestId('order-detail')
+    await expect(detail).toContainText(n, { timeout: 10_000 })
+    await expect(detail).toContainText(placed.productName)
   })
 })

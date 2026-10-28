@@ -35,6 +35,8 @@ function formatEvent(row: LoggedEvent, opts: { json: boolean; payload: boolean }
     ...(opts.payload && { payload }),
     seq: row.seq,
     deliveredAt: row.deliveredAt,
+    attempts: row.attempts,
+    deadAt: row.deadAt,
   })
 }
 

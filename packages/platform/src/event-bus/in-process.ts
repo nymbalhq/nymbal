@@ -2,13 +2,14 @@ import { v7 as uuidv7 } from 'uuid'
 import type {
   EventBusAdapter,
   EventHandler,
+  HandlerFailure,
   HealthReport,
   NymbalEvent,
   Subscription,
   SubscriptionConfig,
   Logger,
 } from '@nymbalhq/types'
-import { ValidationError } from '@nymbalhq/types'
+import { handlerFailedError, ValidationError } from '@nymbalhq/types'
 
 interface Registration {
   id: string
@@ -40,13 +41,17 @@ export class InProcessEventBus implements EventBusAdapter {
   }
 
   async publish<T>(event: NymbalEvent<T>): Promise<void> {
-    await this.#deliver(event, () => true)
+    const failed = await this.#deliver(event, () => true)
+    if (failed.length > 0) throw handlerFailedError(event, failed)
   }
 
   async publishBatch(events: NymbalEvent<unknown>[]): Promise<void> {
+    let first: Error | undefined
     for (const event of events) {
-      await this.publish(event)
+      const failed = await this.#deliver(event, () => true)
+      if (failed.length > 0) first ??= handlerFailedError(event, failed)
     }
+    if (first !== undefined) throw first
   }
 
   async replay(events: NymbalEvent<unknown>[]): Promise<void> {
@@ -55,23 +60,31 @@ export class InProcessEventBus implements EventBusAdapter {
     }
   }
 
-  async #deliver<T>(event: NymbalEvent<T>, eligible: (r: Registration) => boolean): Promise<void> {
+  /** Runs every matching handler to the end, each error logged; returns the named subscriptions that threw. */
+  async #deliver<T>(
+    event: NymbalEvent<T>,
+    eligible: (r: Registration) => boolean,
+  ): Promise<HandlerFailure[]> {
     this.#validate(event)
     const matches = Array.from(this.#registrations.values()).filter(
       (r) => eligible(r) && r.regexes.some((re) => re.test(event.type)),
     )
-    await Promise.all(
-      matches.map(async (r) => {
+    const outcomes = await Promise.all(
+      matches.map(async (r): Promise<HandlerFailure | null> => {
         try {
           await r.handler(event)
+          return null
         } catch (err) {
+          const subscription = r.config?.name
           this.#logger?.error(
-            { err, subscriptionId: r.id, eventType: event.type, eventId: event.id },
+            { err, subscriptionId: r.id, subscription, eventType: event.type, eventId: event.id },
             'Event handler failed',
           )
+          return subscription === undefined ? null : { subscription, message: messageOf(err) }
         }
       }),
     )
+    return outcomes.filter((o) => o !== null)
   }
 
   async subscribe(
@@ -114,6 +127,10 @@ export class InProcessEventBus implements EventBusAdapter {
       })
     }
   }
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 function compilePattern(pattern: string): RegExp {

@@ -1,3 +1,4 @@
+// Reads: pnpm-workspace.yaml, **/package.json
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import {

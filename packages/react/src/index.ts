@@ -40,6 +40,7 @@ export {
   AddressBook,
   Checkout,
   ProductGrid,
+  RecentlyViewed,
   ProductPrice,
   StockBadge,
   Breadcrumb,
@@ -50,6 +51,8 @@ export {
   ReviewList,
   ReviewForm,
   OrderSummary,
+  OrderTimeline,
+  NotifyMe,
 } from './generated/wrappers.js'
 
 export type {
@@ -73,6 +76,7 @@ export type {
   AddressBookProps,
   CheckoutProps,
   ProductGridProps,
+  RecentlyViewedProps,
   ProductPriceProps,
   StockBadgeProps,
   BreadcrumbProps,
@@ -83,4 +87,6 @@ export type {
   ReviewListProps,
   ReviewFormProps,
   OrderSummaryProps,
+  OrderTimelineProps,
+  NotifyMeProps,
 } from './generated/wrappers.js'

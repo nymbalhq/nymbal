@@ -7,8 +7,9 @@ import type * as ApiModule from '@/lib/api'
 // AC-7: the Next template's fetchers with `fetch` stubbed. (a) What `unstable_rethrow` passes on (Next's dynamic-usage
 // error, `notFound()`'s and `redirect()`'s) reaches the caller from every fetcher. (b) A network error or a 5xx rejects
 // every catalog fetcher (products, product, categories, capabilities, reviews), so a failed render is an error Next
-// does not cache and a failed regeneration keeps the last good page, while the shopper fetchers (cart, order, search)
-// still resolve to null. (c) `fetchProduct` is null on a 404 only, and `fetchCategories` is the API's list. (d) The
+// does not cache and a failed regeneration keeps the last good page, and rejects `loadOrder`, so a failed order read is
+// never the not-found page, while the cart and search fetchers still resolve to null. (c) `fetchProduct` and
+// `loadOrder` are null on a 404 only, and `fetchCategories` is the API's list. (d) The
 // catalog fetchers pass `next.revalidate` (capabilities 3600, categories 21600, product 300, products 300, reviews 60,
 // the product 60 when the PDP reads it, or NYMBAL_CATALOG_REVALIDATE_S when set) and never `cache: 'no-store'`; the
 // shopper fetchers keep `no-store`.
@@ -75,11 +76,14 @@ const CATALOG = {
 const SHOPPER = {
   // A distinct cookie per call: React's `cache` must not answer from an earlier call.
   fetchCart: (api: Api) => api.fetchCart(`nymbal.cart=fragments-${(cookieSeq += 1)}`),
-  fetchOrder: (api: Api) => api.fetchOrder('N-1'),
+  loadOrder: (api: Api) => api.loadOrder('N-1', 'key-1'),
   fetchSearch: (api: Api) => api.fetchSearch('wool', null),
 } as const
 const EVERY = { ...CATALOG, ...SHOPPER }
 type Name = keyof typeof EVERY
+/** The fetchers a network error or a 5xx rejects, and those it resolves to null. */
+const REJECTS_ON_FAILURE: readonly Name[] = [...(Object.keys(CATALOG) as Name[]), 'loadOrder']
+const NULL_ON_FAILURE: readonly Name[] = ['fetchCart', 'fetchSearch']
 
 /** Each catalog fetcher's seconds. */
 const REVALIDATE: Record<keyof typeof CATALOG, number> = {
@@ -159,7 +163,7 @@ describe('AC-7: the Next fetchers’ failure modes and cache options', () => {
     expect(swallowed).toEqual([])
   })
 
-  it('AC-7 (b, c): on a network TypeError or a 500 the catalog fetchers reject and the shopper fetchers resolve null; fetchProduct is null on a 404; over generated lists, fetchCategories resolves to exactly the API’s list', async () => {
+  it('AC-7 (b, c): on a network TypeError or a 5xx the catalog fetchers and loadOrder reject and the cart and search fetchers resolve null; fetchProduct and loadOrder are null on a 404; over generated lists, fetchCategories resolves to exactly the API’s list', async () => {
     const api = await load()
     const wrong: string[] = []
     const failures: Record<string, () => Response> = {
@@ -171,11 +175,11 @@ describe('AC-7: the Next fetchers’ failure modes and cache options', () => {
     }
     for (const [kind, failure] of Object.entries(failures)) {
       answer = failure
-      for (const name of Object.keys(CATALOG) as Array<keyof typeof CATALOG>) {
+      for (const name of REJECTS_ON_FAILURE) {
         const { outcome } = await only(name, api)
         if (outcome.ok) wrong.push(`${name} resolved ${JSON.stringify(outcome.value)} on ${kind}`)
       }
-      for (const name of Object.keys(SHOPPER) as Array<keyof typeof SHOPPER>) {
+      for (const name of NULL_ON_FAILURE) {
         const { outcome } = await only(name, api)
         if (!outcome.ok || outcome.value !== null)
           wrong.push(`${name} did not resolve null on ${kind}`)
@@ -185,8 +189,10 @@ describe('AC-7: the Next fetchers’ failure modes and cache options', () => {
 
     answer = () => json(null, 404)
     expect(await api.fetchProduct('no-such-slug')).toBeNull()
+    expect(await api.loadOrder('N-404', 'key-1')).toBeNull()
     answer = okFor
     expect(await api.fetchProduct('test-product')).toEqual(PRODUCT)
+    expect(await api.loadOrder('N-1', 'key-1')).toEqual({ orderNumber: 'N-1' })
 
     await fc.assert(
       fc.asyncProperty(

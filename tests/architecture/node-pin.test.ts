@@ -1,3 +1,4 @@
+// Reads: .github/workflows/*, .node-version, pnpm-workspace.yaml
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'

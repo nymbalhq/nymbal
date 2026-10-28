@@ -1,3 +1,5 @@
+// Reads: .changeset/**, package.json, pnpm-workspace.yaml, packages/*/package.json, apps/*/package.json
+// Reads: templates/*/package.json
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   cpSync,

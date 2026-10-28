@@ -1,7 +1,7 @@
 import { PlainHeader } from '@/components/server/Header'
 import { NotFoundView } from '@/components/server/NotFoundView'
 
-// A URL no route matches, and a shopper page with nothing to show.
+// A URL no route matches.
 export default function NotFound() {
   return (
     <>

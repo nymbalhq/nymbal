@@ -165,9 +165,20 @@ function useDefine(element: { define(): void }): void {
   }, [element])
 }`
 
+/** The `@nymbalhq/types` names an event detail may use, imported where a wrapper's detail type names one. */
+const DETAIL_TYPES = ['AlertKind']
+
+function detailTypeImports(schemas: ElementSchema[]): string {
+  const details = schemas.flatMap((s) => s.events.map((e) => e.detail))
+  const used = DETAIL_TYPES.filter((name) =>
+    details.some((detail) => new RegExp(`\\b${name}\\b`).test(detail)),
+  )
+  return used.length === 0 ? '' : `\nimport type { ${used.join(', ')} } from '@nymbalhq/types'`
+}
+
 /** The React wrappers module for these element schemas: one typed component per element. Pure. */
 export function generateWrappers(schemas: ElementSchema[]): string {
-  const imports = `import React, { forwardRef, useRef, useEffect } from 'react'`
+  const imports = `import React, { forwardRef, useRef, useEffect } from 'react'${detailTypeImports(schemas)}`
   const elementImports = schemas
     .map((s) => `import { ${elementClass(s)} } from '@nymbalhq/web-components/elements/${s.tag}'`)
     .join('\n')

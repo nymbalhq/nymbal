@@ -18,7 +18,7 @@ import { loadBootSettings } from './settings/load.js'
 import { scrubbingLogger } from './settings/secret-set.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
-import { createRelay, deliveringBus, type Relay } from './events/relay.js'
+import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
 import { registerHandlers } from './handlers/register.js'
 import { READ_MODEL_NAMES, rebuild } from './read-models/index.js'
 import {
@@ -66,6 +66,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   version?: string
   /** The project's own adapters, one per slot whose provider is `custom`. */
   adapters?: InjectedAdapters
+  /** How the event relay retries a failed delivery (`createRelay`). */
+  relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
 }
 
 /**
@@ -185,6 +187,7 @@ export async function createApp(
       eventLog: repos.eventLog,
       eventBus: platform.eventBus,
       logger,
+      ...options.relay,
     })
     const subscriberBus = deliveringBus(platform.eventBus, relay)
     const publisher = createEventPublisher({
@@ -212,6 +215,7 @@ export async function createApp(
       logger: logger.child({ layer: 'service' }),
       payments: adapters.payments,
       searchAdapter: adapters.search,
+      email: adapters.email,
     })
 
     await registerHandlers({
@@ -220,6 +224,7 @@ export async function createApp(
       documentStore: platform.documentStore,
       repos,
       adapters,
+      alerts: services.alert,
       logger,
     })
 

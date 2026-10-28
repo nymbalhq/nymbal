@@ -34,6 +34,12 @@ export type Runner = (
 /** The port `renderConfig` gives the API, which serves the admin at /admin/. */
 const API_PORT = 3001
 
+/** Each template's dev server origin, the storefront URL a new store starts with. */
+const STOREFRONT_ORIGIN: Record<Answers['template'], string> = {
+  astro: 'http://localhost:4321',
+  nextjs: 'http://localhost:3000',
+}
+
 interface AdminCredentials {
   email: string
   password: string
@@ -438,7 +444,7 @@ async function renameDotFiles(dir: string): Promise<void> {
 }
 
 function renderConfig(answers: Answers): string {
-  return `import { defineConfig } from '@nymbalhq/config'
+  return `import { defineConfig, env } from '@nymbalhq/config'
 
 export default defineConfig({
   store: {
@@ -446,6 +452,8 @@ export default defineConfig({
     currency: '${answers.currency}',
     locale: '${defaultLocale(answers.currency)}',
     timezone: '${defaultTimezone(answers.currency)}',
+    // The storefront's public origin: the order email links to its order page. Set it for production.
+    url: env('NYMBAL_STOREFRONT_URL', '${STOREFRONT_ORIGIN[answers.template]}'),
   },
 
   template: '${answers.template}',
