@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/sdk",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Framework-agnostic commerce SDK with pub/sub stores and adapter interface",
   "license": "MIT",
   "repository": {

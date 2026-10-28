@@ -17,17 +17,17 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "nymbal": "1.3.0",
-    "@nymbalhq/config": "1.3.0",
-    "@nymbalhq/platform": "1.3.0",
-    "@nymbalhq/stack": "1.3.0",
+    "nymbal": "1.4.0",
+    "@nymbalhq/config": "1.4.0",
+    "@nymbalhq/platform": "1.4.0",
+    "@nymbalhq/stack": "1.4.0",
     "next": "^16.4.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "@nymbalhq/sdk": "1.3.0",
-    "@nymbalhq/react": "1.3.0",
-    "@nymbalhq/web-components": "1.3.0",
-    "@nymbalhq/types": "1.3.0"
+    "@nymbalhq/sdk": "1.4.0",
+    "@nymbalhq/react": "1.4.0",
+    "@nymbalhq/web-components": "1.4.0",
+    "@nymbalhq/types": "1.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
@@ -38,26 +38,26 @@
   },
   "pnpm": {
     "overrides": {
-      "nymbal": "1.3.0",
-      "@nymbalhq/config": "1.3.0",
-      "@nymbalhq/http": "1.3.0",
-      "@nymbalhq/platform": "1.3.0",
-      "@nymbalhq/react": "1.3.0",
-      "@nymbalhq/sdk": "1.3.0",
-      "@nymbalhq/stack": "1.3.0",
-      "@nymbalhq/types": "1.3.0",
-      "@nymbalhq/web-components": "1.3.0"
+      "nymbal": "1.4.0",
+      "@nymbalhq/config": "1.4.0",
+      "@nymbalhq/http": "1.4.0",
+      "@nymbalhq/platform": "1.4.0",
+      "@nymbalhq/react": "1.4.0",
+      "@nymbalhq/sdk": "1.4.0",
+      "@nymbalhq/stack": "1.4.0",
+      "@nymbalhq/types": "1.4.0",
+      "@nymbalhq/web-components": "1.4.0"
     }
   },
   "overrides": {
-    "nymbal": "1.3.0",
-    "@nymbalhq/config": "1.3.0",
-    "@nymbalhq/http": "1.3.0",
-    "@nymbalhq/platform": "1.3.0",
-    "@nymbalhq/react": "1.3.0",
-    "@nymbalhq/sdk": "1.3.0",
-    "@nymbalhq/stack": "1.3.0",
-    "@nymbalhq/types": "1.3.0",
-    "@nymbalhq/web-components": "1.3.0"
+    "nymbal": "1.4.0",
+    "@nymbalhq/config": "1.4.0",
+    "@nymbalhq/http": "1.4.0",
+    "@nymbalhq/platform": "1.4.0",
+    "@nymbalhq/react": "1.4.0",
+    "@nymbalhq/sdk": "1.4.0",
+    "@nymbalhq/stack": "1.4.0",
+    "@nymbalhq/types": "1.4.0",
+    "@nymbalhq/web-components": "1.4.0"
   }
 }

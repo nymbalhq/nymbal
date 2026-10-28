@@ -1,5 +1,19 @@
 # @nymbalhq/admin
 
+## 1.4.0
+
+### Minor Changes
+
+- 8e06b03: A variant price edited in the admin's product page now saves: `PATCH /api/admin/products/:id` takes `variants: [{ id, priceMinor, compareAtPriceMinor? }]`, ignores stock, and answers 400 `product.variant_unknown` for a variant the product does not have. Each real change publishes `product.variant_price_changed.v1` with the old and new prices and the store currency.
+  Breaking for a kernel composed by hand: `createProductService` takes `currency`.
+- dbf1425: The admin's Resend confirmation now sends the order email again, with a link that opens the order through a new key; a refused send is retried. The new event is `order.confirmation_resend_requested.v1`.
+  `POST /api/admin/orders/:id/resend-confirmation` now answers `{ orderId, orderNumber, email }`; `sent` is gone. Pending and cancelled orders answer 409 `order.unpaid`.
+
+### Patch Changes
+
+- 157e040: After the API restarts or the connection drops, the admin's live lists refetch, so an order placed in the gap shows without a reload.
+- 8e06b03: A long customer email wraps on the customer and order pages, so they fit a phone's width.
+
 ## 1.3.0
 
 ### Minor Changes
