@@ -14,6 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // not atomic, merges instead of replacing, or empties the collection before a source that then throws, beside the
 // real in-memory store as the control. Each defective store fails only cases named for replaceCollection, among them
 // the one about its defect (a reader during the replace, the exact new set, a failing source).
+// The webhook suite runs the same way on the kernel's test provider: one twin mints a delivery id per call, one hands
+// on a kernel event type, one hands on class-instance payloads; each fails only the case named for its defect, and the
+// provider itself passes every case.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -28,6 +31,8 @@ const REPLACE = /replaceCollection/
 const CONCURRENT_READER = /reader|concurren|partial/i
 const STALE_KEYS = /stale|exact/i
 const FAILING_SOURCE = /fail|throw|reject/i
+const WEBHOOK_IDEMPOTENCY = /\bidempotency:/
+const WEBHOOK_NAMESPACE = /\bnamespace:/
 
 interface Outcome {
   passed: string[]
@@ -179,6 +184,35 @@ describe('the published document store suite fails a replaceCollection with the 
     expect(run.failed.filter((name) => FAILING_SOURCE.test(name)).length, run.why).toBeGreaterThan(
       0,
     )
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('the published webhook suite fails a provider with the defect it exists for', () => {
+  it('AC-7: a provider that mints a new delivery id on every call fails the idempotency case and nothing else; the test provider passes every case', () => {
+    const run = compare('webhook-fresh-delivery-id', 'webhook-control', WEBHOOK_IDEMPOTENCY)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-7: a provider that hands on a kernel event type (payment.captured.v1) fails the namespace case and nothing else; the test provider passes every case', () => {
+    const run = compare('webhook-kernel-namespace', 'webhook-control', WEBHOOK_NAMESPACE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('a provider whose event payloads are class instances, which the kernel refuses, fails the namespace case and nothing else; the test provider passes every case', () => {
+    const run = compare('webhook-class-payload', 'webhook-control', WEBHOOK_NAMESPACE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
     expect(run.offTopic, run.why).toEqual([])
     expect(run.controlFailed, run.why).toEqual([])
     expect(run.controlPassed).toBe(run.badTotal)

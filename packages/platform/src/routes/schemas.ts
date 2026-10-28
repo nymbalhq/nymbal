@@ -624,10 +624,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
 
   // Webhooks
-  'POST /api/webhooks/stripe': {
-    name: 'webhooks.stripe',
-    command: 'payment.finalize',
-    description: 'Receive a signed Stripe event.',
+  'POST /api/webhooks/:adapter': {
+    name: 'webhooks.receive',
+    // The route opens its own audit command: payment.finalize for a payments delivery, webhook.receive otherwise.
+    command: null,
+    description:
+      'Receive a signed delivery from a provider, by its name (stripe always names the payments provider).',
+    params: z.object({ adapter: id }),
     // The signature covers the raw bytes, and a malformed event is answered by the handler itself.
     body: z.unknown(),
   },

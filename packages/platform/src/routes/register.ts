@@ -32,7 +32,7 @@ import { registerCustomerRoutes } from './customers.js'
 import { registerAdminRoutes } from './admin.js'
 import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
-import { registerStripeWebhookRoute } from './webhooks-stripe.js'
+import { registerInboundWebhookRoute } from './webhooks-inbound.js'
 import { validatedAdapter } from './validated-adapter.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
@@ -196,8 +196,8 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     documentStore,
     ticketSecret: config.security.auth.jwtSecret,
   })
-  registerStripeWebhookRoute(adapter, {
-    payments: adapters.payments,
+  registerInboundWebhookRoute(adapter, {
+    adapters,
     checkout: services.checkout,
     publisher,
     store: repos.processedEvent.store,
