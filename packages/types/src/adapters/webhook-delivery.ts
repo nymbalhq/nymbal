@@ -8,7 +8,6 @@ export interface WebhookDeliveryProblem {
 }
 
 const VERSIONED_EVENT = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\.v[1-9][0-9]*$/
-const KERNEL_NAMESPACES = new Set(STANDARD_EVENT_TYPES.map((type) => type.split('.')[0]!))
 
 /** Plain JSON objects only: a class instance would not survive the event log's serialisation as itself. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -42,7 +41,8 @@ export function webhookDeliveryProblem(
     if (dot === -1 || type.slice(0, dot) !== providerName) {
       return { type, reason: `the type is not in the ${providerName} namespace` }
     }
-    if (KERNEL_NAMESPACES.has(providerName)) {
+    // Computed here, not at module level: a top-level Set would keep every event type in each storefront bundle.
+    if (STANDARD_EVENT_TYPES.some((standard) => standard.split('.')[0] === providerName)) {
       return { type, reason: 'the type is in a kernel namespace' }
     }
     if (!VERSIONED_EVENT.test(type.slice(dot + 1))) {
