@@ -303,6 +303,16 @@ describe('AC-12: release.yml', () => {
     }
   })
 
+  it("the release commit's own push publishes nothing: the publish job skips the message the commit step writes", () => {
+    const commit = only(steps, 'make the release commit', COMMIT)
+    const publish = only(steps, 'run `changeset publish`', PUBLISH)
+    const message = /git commit -m "([^"]+)"/.exec(commit.run)?.[1]
+    expect(message, 'the commit step names its message').toBeDefined()
+    expect(publish.condition).toContain(
+      `!startsWith(github.event.head_commit.message, '${message}')`,
+    )
+  })
+
   it('AC-12: the build runs after versioning and before the release commit, the commit stages its outputs, and a build not tied to changesets precedes publish', () => {
     const version = only(steps, 'run `changeset version`', VERSION)
     const commit = only(steps, 'make the release commit', COMMIT)
