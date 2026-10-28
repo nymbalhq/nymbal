@@ -101,7 +101,8 @@ jobs:
   publish:
     name: Publish, tag and release
     needs: [detect, version]
-    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release): version packages') }}
+    # Quoted: the message's ": " would end a plain YAML scalar.
+    if: "${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release): version packages') }}"
     runs-on: ubuntu-latest
     steps:
       # The branch tip, not the pushed sha: it holds the release commit, on a re-run too.
