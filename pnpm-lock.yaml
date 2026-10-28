@@ -937,28 +937,28 @@ importers:
   packages/stack:
     dependencies:
       '@nymbalhq/config':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../config
       '@nymbalhq/http':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../http
       '@nymbalhq/platform':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../platform
       '@nymbalhq/react':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../react
       '@nymbalhq/sdk':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../sdk
       '@nymbalhq/types':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../types
       '@nymbalhq/web-components':
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../web-components
       nymbal:
-        specifier: 1.3.0
+        specifier: 1.4.0
         version: link:../cli
 
   packages/test-factories:

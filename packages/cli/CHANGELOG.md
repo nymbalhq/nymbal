@@ -1,5 +1,38 @@
 # nymbal
 
+## 1.4.0
+
+### Minor Changes
+
+- d724fd2: Breaking in effect for your own handlers: a named handler that throws is now retried, up to five times over about 2.5 minutes, before its event is dead, so make it idempotent (for example with `withIdempotency`). `createApp` takes `relay` options for the attempts and the delay.
+  Migration `0015` adds `events.retry_at`. `nymbal doctor` lists dead events, and `nymbal events query --json` prints `attempts` and `deadAt`.
+- 75989c8: Home and product pages show the shopper's recently viewed products with the new `nymbal-recently-viewed` element (`RecentlyViewed` in React, `client.recentlyViewed` in the SDK), kept under an HttpOnly `nymbal.visitor` cookie and moved to the customer at sign-in. `POST` and `GET /api/recently-viewed` have a built-in rate limit of 600 a minute per IP, which `security.rateLimit['/api/recently-viewed']` replaces; `nymbal replay --to recently-viewed` rebuilds the lists from the events log.
+
+### Patch Changes
+
+- Updated dependencies [157e040]
+- Updated dependencies [8e06b03]
+- Updated dependencies [8e06b03]
+- Updated dependencies [295dab6]
+- Updated dependencies [d724fd2]
+- Updated dependencies [d724fd2]
+- Updated dependencies [63ede12]
+- Updated dependencies [6f73872]
+- Updated dependencies [ff6559d]
+- Updated dependencies [8e06b03]
+- Updated dependencies [75989c8]
+- Updated dependencies [d546cd3]
+- Updated dependencies [d546cd3]
+- Updated dependencies [dbf1425]
+- Updated dependencies [ea1926d]
+- Updated dependencies [c8588b2]
+  - @nymbalhq/admin@1.4.0
+  - @nymbalhq/platform@1.4.0
+  - @nymbalhq/types@1.4.0
+  - @nymbalhq/http@1.4.0
+  - @nymbalhq/importers@0.3.3
+  - @nymbalhq/config@1.4.0
+
 ## 1.3.0
 
 ### Patch Changes

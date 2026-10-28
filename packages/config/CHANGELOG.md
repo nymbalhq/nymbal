@@ -1,5 +1,20 @@
 # @nymbalhq/config
 
+## 1.4.0
+
+### Patch Changes
+
+- Updated dependencies [8e06b03]
+- Updated dependencies [295dab6]
+- Updated dependencies [d724fd2]
+- Updated dependencies [6f73872]
+- Updated dependencies [ff6559d]
+- Updated dependencies [8e06b03]
+- Updated dependencies [75989c8]
+- Updated dependencies [dbf1425]
+- Updated dependencies [c8588b2]
+  - @nymbalhq/types@1.4.0
+
 ## 1.3.0
 
 ### Patch Changes
