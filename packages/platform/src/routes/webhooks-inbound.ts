@@ -2,6 +2,7 @@ import {
   ConfigError,
   EVT_PAYMENT_FAILED,
   emailFeedbackProblem,
+  shippingTrackingProblem,
   webhookDeliveryProblem,
   type CommerceAdapter,
   type CommerceSlot,
@@ -59,6 +60,7 @@ const SLOT_WEBHOOK_RULES: Partial<
   >
 > = {
   email: emailFeedbackProblem,
+  shipping: shippingTrackingProblem,
 }
 
 /** Which slot each webhook name reaches. Two slots taking deliveries under one name stop startup. */

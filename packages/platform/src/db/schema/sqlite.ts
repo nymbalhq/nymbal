@@ -520,6 +520,27 @@ export const emailSuppressions = sqliteTable(
   }),
 )
 
+// --- Order shipments -------------------------------------------------------
+
+/**
+ * The parcel each shipped order went out in, written by the ship action: how a carrier's tracking update finds its
+ * orders. `tracking_number` is normalised; one parcel may carry two orders, so it is not unique.
+ */
+export const orderShipments = sqliteTable(
+  'order_shipments',
+  {
+    orderId: text('order_id')
+      .primaryKey()
+      .references(() => orders.id),
+    carrier: text('carrier').notNull(),
+    trackingNumber: text('tracking_number').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    trackingNumberIdx: index('order_shipments_tracking_number_idx').on(t.trackingNumber),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -541,4 +562,5 @@ export const schema = {
   auditEntries,
   alertSubscriptions,
   emailSuppressions,
+  orderShipments,
 }

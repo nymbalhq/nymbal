@@ -20,6 +20,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // The email feedback suite runs the same way on the kernel's test email provider: one twin mints a delivery id per
 // call, one hands on a feedback event with no recipient, one leaves its bounce type out of producesEvents; each fails
 // only the case named for its defect, and the provider itself passes every case.
+// The shipping tracking suite runs the same way on the kernel's test shipping provider: one twin mints a delivery id
+// per call, one hands on a numberless copy beside each tracking event, one leaves its tracking type out of
+// producesEvents; each fails only the case named for its defect, and the provider itself passes every case.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -38,6 +41,8 @@ const WEBHOOK_IDEMPOTENCY = /\bidempotency:/
 const WEBHOOK_NAMESPACE = /\bnamespace:/
 const FEEDBACK_REPLAY = /\breplay:/
 const FEEDBACK_SHAPE = /\bshape:/
+const TRACKING_REPLAY = /\breplay:/
+const TRACKING_SHAPE = /\bshape:/
 
 interface Outcome {
   passed: string[]
@@ -249,6 +254,43 @@ describe('the published email feedback suite fails a provider with the defect it
 
   it('AC-8: an email provider whose bounce type is missing from producesEvents, which the route refuses, fails the shape case and nothing else', () => {
     const run = compare('email-feedback-undeclared', 'email-feedback-control', FEEDBACK_SHAPE)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('the published shipping tracking suite fails a provider with the defect it exists for', () => {
+  it('AC-7: a shipping provider that mints a new delivery id on every call fails the replay case and nothing else; the test shipping provider passes every case', () => {
+    const run = compare(
+      'shipping-tracking-fresh-delivery-id',
+      'shipping-tracking-control',
+      TRACKING_REPLAY,
+    )
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-7: a shipping provider that hands on, beside each correct tracking event, a declared, versioned copy with no tracking number fails the shape case and nothing else; the test shipping provider passes every case', () => {
+    const run = compare(
+      'shipping-tracking-no-tracking-number',
+      'shipping-tracking-control',
+      TRACKING_SHAPE,
+    )
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-7: a shipping provider whose tracking type is missing from producesEvents, which the route refuses, fails the shape case and nothing else', () => {
+    const run = compare('shipping-tracking-undeclared', 'shipping-tracking-control', TRACKING_SHAPE)
 
     expect(run.failed.length, run.why).toBeGreaterThan(0)
     expect(run.offTopic, run.why).toEqual([])

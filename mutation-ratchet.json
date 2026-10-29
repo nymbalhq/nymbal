@@ -17,6 +17,7 @@
     "packages/platform/src/repositories/order-history.ts": 76.92,
     "packages/platform/src/repositories/order-refund.ts": 78.57,
     "packages/platform/src/repositories/order-sequence.ts": 52,
+    "packages/platform/src/repositories/order-shipment.ts": 38.1,
     "packages/platform/src/repositories/order.ts": 53.1,
     "packages/platform/src/repositories/page.ts": 0,
     "packages/platform/src/repositories/processed-event.ts": 0,

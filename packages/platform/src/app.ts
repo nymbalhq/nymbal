@@ -225,6 +225,7 @@ export async function createApp(
       repos,
       adapters,
       alerts: services.alert,
+      orders: services.order,
       logger,
     })
 

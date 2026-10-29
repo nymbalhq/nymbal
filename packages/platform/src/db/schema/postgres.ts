@@ -526,6 +526,27 @@ export const emailSuppressions = pgTable(
   }),
 )
 
+// --- Order shipments -------------------------------------------------------
+
+/**
+ * The parcel each shipped order went out in, written by the ship action: how a carrier's tracking update finds its
+ * orders. `tracking_number` is normalised; one parcel may carry two orders, so it is not unique.
+ */
+export const orderShipments = pgTable(
+  'order_shipments',
+  {
+    orderId: text('order_id')
+      .primaryKey()
+      .references(() => orders.id),
+    carrier: text('carrier').notNull(),
+    trackingNumber: text('tracking_number').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    trackingNumberIdx: index('order_shipments_tracking_number_idx').on(t.trackingNumber),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -547,4 +568,5 @@ export const schema = {
   auditEntries,
   alertSubscriptions,
   emailSuppressions,
+  orderShipments,
 }

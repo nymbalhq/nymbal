@@ -37,6 +37,11 @@ export {
   type EmailFeedbackContractOptions,
   type EmailFeedbackSample,
 } from './email-feedback.js'
+export {
+  runShippingTrackingContract,
+  type ShippingTrackingContractOptions,
+  type ShippingTrackingSample,
+} from './shipping-tracking.js'
 export { runSecurityContract } from './security.js'
 export { runProjectionContract } from './projection.js'
 export type { ProjectionContractOptions } from './projection.js'

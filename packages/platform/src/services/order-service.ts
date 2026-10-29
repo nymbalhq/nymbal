@@ -94,6 +94,12 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     return order
   }
 
+  async function lockOrder(tx: Tx, id: string): Promise<Order> {
+    const order = await repos.order.lock(tx, id)
+    if (!order) throw new NotFoundError('order', id)
+    return order
+  }
+
   async function doTransition(
     tx: Tx,
     order: Order,
@@ -192,7 +198,8 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async markShipped(id, trackingNumber, carrier, actor) {
       return store.transaction(async (tx) => {
         audit.note('order.ship', [{ type: 'order', id }])
-        const order = await requireOrder(tx, id)
+        // Under the row lock a second ship waits, then reads `shipped` and is refused: one shipment row per order.
+        const order = await lockOrder(tx, id)
         const fresh = await doTransition(
           tx,
           order,
@@ -200,6 +207,12 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           actor,
           `Shipped via ${carrier}: ${trackingNumber}`,
         )
+        await repos.orderShipment.record(tx, {
+          orderId: fresh.id,
+          carrier,
+          trackingNumber,
+          at: new Date(),
+        })
         await publisher.publish(EVT_ORDER_SHIPPED, {
           orderId: fresh.id,
           trackingNumber,
@@ -211,7 +224,8 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async markDelivered(id, actor) {
       return store.transaction(async (tx) => {
         audit.note('order.markDelivered', [{ type: 'order', id }])
-        const order = await requireOrder(tx, id)
+        // Under the row lock a tracking update and the admin's button cannot both move the order.
+        const order = await lockOrder(tx, id)
         const fresh = await doTransition(tx, order, 'delivered', actor, 'Delivered')
         await publisher.publish(EVT_ORDER_DELIVERED, { orderId: fresh.id })
         return fresh
