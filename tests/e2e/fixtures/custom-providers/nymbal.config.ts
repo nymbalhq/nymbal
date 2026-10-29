@@ -1,4 +1,5 @@
 import { env } from '@nymbalhq/config'
+import { EASYPOST_TEST_WEBHOOK_SECRET } from '../../../support/easypost'
 import { MAILGUN_TEST_SIGNING_KEY } from '../../../support/mailgun'
 import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adapters'
 
@@ -6,7 +7,8 @@ import { createFixturePaymentsAdapter, createFixtureSearchAdapter } from './adap
 // through the `adapters` export (`nymbal dev` passes it to createApp), and the API on 3011 so a custom E2E run never
 // reaches the native store on 3001. Its email is Mailgun with the SMTP relay pointed at Mailpit, so the alert journeys
 // read what the store sends, and its webhook signing key is the tests' own, so a journey signs Mailgun's bounces and
-// complaints; tests/e2e/playwright.config.ts passes the stack slot's Mailpit SMTP port as NYMBAL_E2E_SMTP_PORT.
+// complaints; tests/e2e/playwright.config.ts passes the stack slot's Mailpit SMTP port as NYMBAL_E2E_SMTP_PORT. Its
+// shipping is EasyPost with the tests' webhook secret, so a journey signs EasyPost's tracker updates.
 // `nymbal dev --api-only` runs from this directory; the NYMBAL_E2E_TARGET values astro-custom and nextjs-custom start
 // it (tests/e2e/playwright.config.ts).
 
@@ -69,7 +71,7 @@ export default {
     reviews: { provider: 'native' },
     search: { provider: 'custom' },
     analytics: { provider: 'native' },
-    shipping: { provider: 'native' },
+    shipping: { provider: 'easypost', config: { webhookSecret: EASYPOST_TEST_WEBHOOK_SECRET } },
     tax: { provider: 'native' },
     ai: { provider: 'none' },
   },

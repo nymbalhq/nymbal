@@ -59,6 +59,7 @@
   },
   "peerDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:^",
+    "@nymbalhq/adapter-easypost": "workspace:^",
     "@nymbalhq/adapter-mailgun": "workspace:^",
     "@nymbalhq/adapter-smtp": "workspace:^",
     "@nymbalhq/adapter-stripe": "workspace:^",
@@ -70,6 +71,9 @@
   },
   "peerDependenciesMeta": {
     "@nymbalhq/adapter-anthropic": {
+      "optional": true
+    },
+    "@nymbalhq/adapter-easypost": {
       "optional": true
     },
     "@nymbalhq/adapter-mailgun": {
@@ -99,6 +103,7 @@
   },
   "devDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:*",
+    "@nymbalhq/adapter-easypost": "workspace:*",
     "@nymbalhq/adapter-mailgun": "workspace:*",
     "@nymbalhq/adapter-smtp": "workspace:*",
     "@nymbalhq/adapter-stripe": "workspace:*",

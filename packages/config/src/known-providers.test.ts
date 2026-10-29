@@ -32,7 +32,7 @@ const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   reviews: ['native'],
   search: ['native'],
   analytics: ['native'],
-  shipping: ['native'],
+  shipping: ['native', 'easypost'],
   tax: ['native'],
 }
 

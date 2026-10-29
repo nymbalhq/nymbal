@@ -20,11 +20,15 @@ type Packages<P extends ProviderPackage> = Readonly<Record<string, P>>
 /**
  * The providers that live in their own package, by slot then provider. The kernel imports a package only when the
  * config names its provider; `native`, `none`, `custom` and the kernel's own primitives (`in-memory`, `in-process`,
- * `local-fs`) have no entry. Every package peers its provider's SDK but the security ones, which call an HTTP API.
+ * `local-fs`) have no entry. Every package peers its provider's SDK but the security ones, which call an HTTP API, and
+ * the shipping ones, which only verify and map the provider's webhooks.
  */
 export const PROVIDER_PACKAGES: Readonly<
-  Partial<Record<Exclude<Slot, 'security'>, Packages<Required<ProviderPackage>>>>
-> & { readonly security: Packages<ProviderPackage> } = {
+  Partial<Record<Exclude<Slot, 'security' | 'shipping'>, Packages<Required<ProviderPackage>>>>
+> & {
+  readonly security: Packages<ProviderPackage>
+  readonly shipping: Packages<ProviderPackage>
+} = {
   payments: { stripe: { package: '@nymbalhq/adapter-stripe', sdk: 'stripe' } },
   ai: { anthropic: { package: '@nymbalhq/adapter-anthropic', sdk: '@anthropic-ai/sdk' } },
   email: {
@@ -39,6 +43,7 @@ export const PROVIDER_PACKAGES: Readonly<
     'redis-streams': { package: '@nymbalhq/event-bus-redis-streams', sdk: 'ioredis' },
   },
   media: { s3: { package: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' } },
+  shipping: { easypost: { package: '@nymbalhq/adapter-easypost' } },
   security: { cloudflare: { package: '@nymbalhq/security-cloudflare' } },
 }
 

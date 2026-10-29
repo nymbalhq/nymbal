@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, type Manifest } from './workspace-manifests'
 
-// AC-6: the kernel's manifest holds no provider SDK and peers the four adapter packages as optional; the stack lists
-// no adapter package; each adapter package peers its own SDK, depends on @nymbalhq/types and never on the kernel, and
-// versions with the fixed group; no kernel source file imports a provider SDK. PUBLISHED_DIRS
-// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the four as well.
+// AC-6: the kernel's manifest holds no provider SDK and peers the five adapter packages as optional; the stack lists
+// no adapter package; each adapter package peers its own SDK (one that talks HTTP itself peers nothing), depends on
+// @nymbalhq/types and never on the kernel, and versions with the fixed group; no kernel source file imports a provider
+// SDK. PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the five as
+// well.
 
 interface PackageManifest extends Manifest {
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
@@ -43,8 +44,16 @@ const ADAPTERS = [
   },
 ] as const
 
+/** Each adapter package that peers no SDK: it only verifies and maps a provider's webhooks. */
+const SDK_FREE_ADAPTERS = [
+  { dir: 'packages/adapter-easypost', name: '@nymbalhq/adapter-easypost' },
+] as const
+
 const SDKS: readonly string[] = ADAPTERS.map((a) => a.sdk)
-const ADAPTER_NAMES: readonly string[] = ADAPTERS.map((a) => a.name)
+const ADAPTER_NAMES: readonly string[] = [
+  ...ADAPTERS.map((a) => a.name),
+  ...SDK_FREE_ADAPTERS.map((a) => a.name),
+]
 
 const DEPENDENCY_FIELDS = [
   'dependencies',
@@ -102,7 +111,7 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     ).toEqual([])
   })
 
-  it('AC-6: the kernel peers the four adapter packages, each optional, and links them for the workspace', () => {
+  it('AC-6: the kernel peers the five adapter packages, each optional, and links them for the workspace', () => {
     const platform = read('packages/platform')
     const peers = Object.keys(platform.peerDependencies ?? {})
     const optional = Object.entries(platform.peerDependenciesMeta ?? {})
@@ -128,7 +137,20 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     })
   }
 
-  it('AC-6: the four adapter packages version in the fixed group the kernel is in', () => {
+  for (const adapter of SDK_FREE_ADAPTERS) {
+    it(`AC-6: ${adapter.name} peers nothing, depends on @nymbalhq/types and not on the kernel, and lists no provider SDK`, () => {
+      expect(existsSync(join(REPO_ROOT, adapter.dir, 'package.json')), adapter.dir).toBe(true)
+      const m = read(adapter.dir)
+
+      expect(m.name).toBe(adapter.name)
+      expect(Object.keys(m.peerDependencies ?? {})).toEqual([])
+      expect(Object.keys(m.dependencies ?? {})).toContain('@nymbalhq/types')
+      expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
+      expect(listed(m, ['dependencies', 'optionalDependencies']).filter(isSdk)).toEqual([])
+    })
+  }
+
+  it('AC-6: the five adapter packages version in the fixed group the kernel is in', () => {
     const changesets = JSON.parse(
       readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
     ) as { fixed: string[][] }
