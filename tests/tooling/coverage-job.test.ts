@@ -1,4 +1,4 @@
-// Reads: .github/workflows/ci.yml, package.json, vitest.config.ts, tests/tooling/fixtures/coverage-job/**
+// Reads: .github/workflows/nightly.yml, package.json, vitest.config.ts, tests/tooling/fixtures/coverage-job/**
 import { spawn } from 'node:child_process'
 import {
   copyFileSync,
@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { parseYaml } from './workflow-yaml'
 
-// AC-7: in ci.yml the `coverage` job's coverage step cannot fail the job on a threshold miss, writes the summary to
-// $GITHUB_STEP_SUMMARY, and a run that crashes still fails the job.
+// AC-7: in nightly.yml (moved there from ci.yml as it was) the `coverage` job's coverage step cannot fail the job on
+// a threshold miss, writes the summary to $GITHUB_STEP_SUMMARY, and a run that crashes still fails the job.
 // The job's own `run` steps (all but the install; the `uses` steps only fetch the checkout, toolchain and build) are
 // executed as Actions would (bash -eo pipefail, `if:` and `continue-on-error` honoured) in a scratch project that holds
 // the repo's Vitest config and package.json scripts, with one fixture service under the services threshold
@@ -28,7 +28,7 @@ import { parseYaml } from './workflow-yaml'
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const FIXTURES = join(REPO, 'tests/tooling/fixtures/coverage-job')
-const WORKFLOW = join(REPO, '.github/workflows/ci.yml')
+const WORKFLOW = join(REPO, '.github/workflows/nightly.yml')
 const SERVICES = 'packages/platform/src/services'
 
 type Step = {
@@ -50,7 +50,7 @@ afterAll(() => {
 function coverageJob(): Job {
   const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as { jobs?: Record<string, Job> }
   const job = doc.jobs?.['coverage']
-  if (job === undefined) throw new Error('ci.yml has no coverage job')
+  if (job === undefined) throw new Error('nightly.yml has no coverage job')
   return job
 }
 

@@ -3,6 +3,7 @@
 # defect: finalize no longer commits the order reservations
 # where: packages/platform/src/services/checkout-service.ts:198
 # killed-by: packages/platform/src/services/checkout-service.test.ts
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/checkout-service.test.ts
 diff --git a/packages/platform/src/services/checkout-service.ts b/packages/platform/src/services/checkout-service.ts
 --- a/packages/platform/src/services/checkout-service.ts
 +++ b/packages/platform/src/services/checkout-service.ts

@@ -349,7 +349,7 @@ export async function run(opts: {
   process.on('SIGINT', onSignal)
   process.on('SIGTERM', onSignal)
   try {
-    const suites = new Set([opts.suite, ...selected.flatMap((s) => (s.suite ? [s.suite] : []))])
+    const suites = new Set(selected.map((s) => s.suite ?? opts.suite))
     for (const suite of suites) {
       const control = await runSuite(root, suite, session)
       if (control.status !== 0) {
