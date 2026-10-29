@@ -488,7 +488,7 @@ describe('AC-5: each E2E store config takes its CORS origins from NYMBAL_CORS_OR
 const PLAYWRIGHT = join(E2E_DIR, 'node_modules/.bin/playwright')
 const CUSTOM_OF: Record<string, string> = { astro: 'astro-custom', nextjs: 'nextjs-custom' }
 
-/** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 has two tests. */
+/** The tagged journeys, as `<file> <criterion>`; payment-step's AC-5 and bounce-stops-alerts' AC-6 have two tests each. */
 const CAPABILITY_JOURNEYS = [
   'alert-links.spec.ts AC-1',
   'alert-links.spec.ts AC-2',
@@ -499,6 +499,8 @@ const CAPABILITY_JOURNEYS = [
   'alerts.spec.ts AC-9',
   'alerts.spec.ts AC-10',
   'alerts.spec.ts AC-11',
+  'bounce-stops-alerts.spec.ts AC-6',
+  'bounce-stops-alerts.spec.ts AC-6',
   'browse-sort.spec.ts AC-4',
   'browse-sort.spec.ts AC-7',
   'browse.spec.ts AC-3',

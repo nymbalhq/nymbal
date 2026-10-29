@@ -12,6 +12,8 @@ export interface FakeSmtpServer {
   recipients: string[][]
   /** How many RCPT commands have been refused so far. */
   refused(): number
+  /** How many connections the server has accepted so far: a client's verify() opens one. */
+  connections(): number
   /** Answers the next `n` RCPT commands with `451 4.3.0`. */
   refuseRecipients(n: number): void
   close(): Promise<void>
@@ -24,7 +26,9 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
   const recipients: string[][] = []
   let toRefuse = 0
   let refusedSoFar = 0
+  let accepted = 0
   const server = createServer((socket) => {
+    accepted += 1
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
     socket.on('error', () => socket.destroy())
@@ -88,6 +92,7 @@ export async function fakeSmtpServer(): Promise<FakeSmtpServer> {
     messages,
     recipients,
     refused: () => refusedSoFar,
+    connections: () => accepted,
     refuseRecipients(n) {
       toRefuse = n
     },

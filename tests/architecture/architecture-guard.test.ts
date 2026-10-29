@@ -34,6 +34,7 @@ const GUARDED_PACKAGES = [
   'adapter-stripe',
   'adapter-anthropic',
   'adapter-smtp',
+  'adapter-mailgun',
   'doc-store-redis',
   'doc-store-postgres-jsonb',
   'event-bus-redis-streams',

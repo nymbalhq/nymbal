@@ -8,11 +8,11 @@ import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 import { formatPrice } from '../support/variants'
 
-// The admin resends an order's confirmation from the order page, on the custom-providers store, whose email is SMTP
-// into Mailpit (@capabilities; the native store's email only logs, so there is nothing to read there). A guest order
-// is placed and paid through the store's API, the admin selects Actions → Resend confirmation, and what is checked is
-// what the shopper and the admin get: one more confirmation in Mailpit, a link whose key opens the order in a browser
-// with nothing else, and one applied entry in Activity.
+// The admin resends an order's confirmation from the order page, on the custom-providers store, whose email is Mailgun
+// relaying into Mailpit (@capabilities; the native store's email only logs, so there is nothing to read there). A
+// guest order is placed and paid through the store's API, the admin selects Actions → Resend confirmation, and what is
+// checked is what the shopper and the admin get: one more confirmation in Mailpit, a link whose key opens the order in
+// a browser with nothing else, and one applied entry in Activity.
 
 const ADMIN_BASE = `${API_URL}/admin/`
 const COMMAND = 'order.resendConfirmation'

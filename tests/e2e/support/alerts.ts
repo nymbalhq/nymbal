@@ -186,6 +186,53 @@ export async function customStoreEvents(
 }
 
 /**
+ * The custom store's events of exactly `type` under one correlation id. A provider's webhook carries no correlation
+ * id of its own: the store gives the post one and answers it in `x-correlation-id`, which `postWebhook` returns.
+ */
+export async function customStoreEventsOfType(
+  correlationId: string,
+  type: string,
+): Promise<LoggedEvent[]> {
+  return (await customStoreEvents(correlationId, type)).filter((e) => e.type === type)
+}
+
+export interface WebhookAnswer {
+  status: number
+  data?: Record<string, unknown>
+  error?: { code?: string; message?: string }
+  /** The id the store published the delivery's events under. */
+  correlationId: string
+}
+
+/** `POST /api/webhooks/<name>` as a provider sends it: the body's exact JSON bytes, no browser, no CSRF pair. */
+export async function postWebhook(
+  request: APIRequestContext,
+  name: string,
+  body: unknown,
+): Promise<WebhookAnswer> {
+  // A bounce or a complaint reaches a store only as the provider's webhook: no page or route of the store's own makes
+  // one, so the journey posts what Mailgun would, signed with the store's key.
+  // eslint-disable-next-line no-restricted-syntax -- the provider's post is the only way a bounce enters the store
+  const res = await request.post(`${API_URL}/api/webhooks/${name}`, {
+    headers: { 'content-type': 'application/json' },
+    data: Buffer.from(JSON.stringify(body), 'utf8'),
+  })
+  const text = await res.text()
+  let parsed: { data?: Record<string, unknown>; error?: WebhookAnswer['error'] } = {}
+  try {
+    parsed = JSON.parse(text) as typeof parsed
+  } catch {
+    // not an envelope: the status and the correlation id say what happened
+  }
+  return {
+    status: res.status(),
+    ...(parsed.data !== undefined && { data: parsed.data }),
+    ...(parsed.error !== undefined && { error: parsed.error }),
+    correlationId: res.headers()['x-correlation-id'] ?? '',
+  }
+}
+
+/**
  * Mailpit's Chaos (v1.22.0 and later, started with MP_ENABLE_CHAOS): `on` refuses every recipient with 451, as a mail
  * host in an outage does; `off` sets every trigger's probability back to 0. It applies to the whole Mailpit instance.
  */

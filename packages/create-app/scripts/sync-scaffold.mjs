@@ -20,6 +20,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   // Provider adapters and primitive packages are optional peers of the kernel: a project installs one (and its SDK)
   // only when its config names it.
   '@nymbalhq/adapter-anthropic',
+  '@nymbalhq/adapter-mailgun',
   '@nymbalhq/adapter-smtp',
   '@nymbalhq/adapter-stripe',
   '@nymbalhq/contract-tests',

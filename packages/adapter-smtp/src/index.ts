@@ -7,6 +7,11 @@ import {
 import { createSmtpEmailAdapter, type SmtpEmailAdapterConfig } from './smtp-adapter.js'
 
 export { createSmtpEmailAdapter, type SmtpEmailAdapterConfig }
+export {
+  createSmtpTransportSender,
+  type SmtpTransportConfig,
+  type SmtpTransportSender,
+} from './smtp-transport-sender.js'
 
 /** The SMTP login the admin's Settings may fill; a server that takes mail without one needs neither. */
 export const settings: AdapterSetting[] = [

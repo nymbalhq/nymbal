@@ -59,6 +59,7 @@
   },
   "peerDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:^",
+    "@nymbalhq/adapter-mailgun": "workspace:^",
     "@nymbalhq/adapter-smtp": "workspace:^",
     "@nymbalhq/adapter-stripe": "workspace:^",
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:^",
@@ -69,6 +70,9 @@
   },
   "peerDependenciesMeta": {
     "@nymbalhq/adapter-anthropic": {
+      "optional": true
+    },
+    "@nymbalhq/adapter-mailgun": {
       "optional": true
     },
     "@nymbalhq/adapter-smtp": {
@@ -95,6 +99,7 @@
   },
   "devDependencies": {
     "@nymbalhq/adapter-anthropic": "workspace:*",
+    "@nymbalhq/adapter-mailgun": "workspace:*",
     "@nymbalhq/adapter-smtp": "workspace:*",
     "@nymbalhq/adapter-stripe": "workspace:*",
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:*",

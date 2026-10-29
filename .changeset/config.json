@@ -17,6 +17,7 @@
       "@nymbalhq/adapter-stripe",
       "@nymbalhq/adapter-anthropic",
       "@nymbalhq/adapter-smtp",
+      "@nymbalhq/adapter-mailgun",
       "@nymbalhq/doc-store-redis",
       "@nymbalhq/doc-store-postgres-jsonb",
       "@nymbalhq/event-bus-redis-streams",

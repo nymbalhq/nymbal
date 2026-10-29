@@ -16,12 +16,12 @@ import { adminToken, ownProduct, type OwnProduct } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 
-// A mail outage on the custom-providers store, whose email is SMTP into Mailpit: with Mailpit's Chaos refusing every
-// recipient, an alert confirmation and a back-in-stock alert are not sent, and their events stay in the store's log
-// with a failed attempt; once the outage ends, the store's own retries (the default delay, 10 s and doubling) send
-// each mail once. The journey drives the API and Mailpit only, once, against the store's API alone: no storefront
-// page. Chaos applies to the whole Mailpit, so nothing else may mail it while this runs, and it is off again at the
-// end whatever happens.
+// A mail outage on the custom-providers store, whose email is Mailgun relaying into Mailpit: with Mailpit's Chaos
+// refusing every recipient, an alert confirmation and a back-in-stock alert are not sent, and their events stay in the
+// store's log with a failed attempt; once the outage ends, the store's own retries (the default delay, 10 s and
+// doubling) send each mail once. The journey drives the API and Mailpit only, once, against the store's API alone: no
+// storefront page. Chaos applies to the whole Mailpit, so nothing else may mail it while this runs, and it is off
+// again at the end whatever happens.
 
 /** How long each phase waits on the store's retries and on Mailpit. */
 const PHASE_MS = 60_000

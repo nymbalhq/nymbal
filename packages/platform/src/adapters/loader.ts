@@ -27,7 +27,10 @@ export const PROVIDER_PACKAGES: Readonly<
 > & { readonly security: Packages<ProviderPackage> } = {
   payments: { stripe: { package: '@nymbalhq/adapter-stripe', sdk: 'stripe' } },
   ai: { anthropic: { package: '@nymbalhq/adapter-anthropic', sdk: '@anthropic-ai/sdk' } },
-  email: { smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' } },
+  email: {
+    smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' },
+    mailgun: { package: '@nymbalhq/adapter-mailgun', sdk: 'nodemailer' },
+  },
   documentStore: {
     redis: { package: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },
     'postgres-jsonb': { package: '@nymbalhq/doc-store-postgres-jsonb', sdk: 'pg' },

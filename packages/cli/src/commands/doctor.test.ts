@@ -23,7 +23,7 @@ import { fakeSmtpServer, type FakeSmtpServer } from '../../../../tests/support/s
 
 // AC-4: `nymbal doctor` on a healthy, migrated project exits 0 with one `ok` or `warn` line per check in a fixed
 // order, on the repository's config and on tests/e2e/fixtures/custom-providers (`custom` search and payments, email
-// SMTP to NYMBAL_E2E_SMTP_PORT, here a fake SMTP server so the store is healthy without Mailpit).
+// Mailgun relaying to NYMBAL_E2E_SMTP_PORT, here a fake SMTP server so the store is healthy without Mailpit).
 // Spawns the built CLI (`pnpm build` first), each run on a fresh migrated SQLite file of its own.
 
 interface Project {
