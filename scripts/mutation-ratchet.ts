@@ -299,7 +299,8 @@ async function staticCheck(
     )
   }
   // A warning, never a failure: replayed over fifteen dev commits a refusal would have hit four of the five that
-  // changed a measured file (one of them comment-only) for one real drop. The gate shows the line; the review reads it.
+  // changed a measured file (one of them comment-only) for one real drop. The gate shows the line; the author answers
+  // each `warning:` before the merge, with a unit test or a local `--full --stryker` run.
   if (base !== undefined) {
     const changed = new Set(changedSince(root, base))
     const untested = set.filter(

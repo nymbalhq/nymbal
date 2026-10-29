@@ -1204,12 +1204,7 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
         mailpitUrl: 'http://localhost:8025',
         noBuild: call.args.includes('--no-build'),
         artefactPresent: true,
-        sentinels:
-          modes.sentinels === 'impacted'
-            ? new Set(['S001'])
-            : modes.sentinels === 'all'
-              ? 'all'
-              : 'none',
+        sentinels: Array.isArray(modes.sentinels) ? new Set(modes.sentinels) : modes.sentinels,
         stryker: modes.stryker,
       }).steps
       for (const name of named(call).filter((n) => n === 'sentinels' || n === 'stryker')) {

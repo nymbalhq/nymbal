@@ -17,20 +17,24 @@ import { parseArgs } from 'node:util'
 import { gzipSync } from 'node:zlib'
 import { launch } from 'chrome-launcher'
 import lighthouse from 'lighthouse'
-import puppeteer, { type Browser } from 'puppeteer-core'
+import { defaultSettings } from 'lighthouse/core/config/constants.js'
+import puppeteer, { type Browser, type HTTPRequest } from 'puppeteer-core'
 import { seedProducts } from '../packages/platform/src/seed/data.js'
 import {
   checkBudgets,
   METRICS,
   NO_BUDGET,
   NOT_MEASURED,
+  referenceFailure,
+  SCRIPT_REFERENCES,
   type Budgets,
   type Metrics,
   type PageResult,
+  type ScriptReference,
 } from './perf-budgets-check.js'
 import { stack } from './stack.js'
 
-// pnpm perf:budgets [--template astro|nextjs] [--update] [--runs n] [--dir <template copy>]
+// pnpm perf:budgets [--bytes] [--template astro|nextjs] [--update] [--runs n] [--dir <template copy>]
 //
 // Builds the templates for production, serves them (Astro `preview`, Next `start`) against an API seeded with
 // images the store serves itself, runs Lighthouse (mobile preset) `--runs` times a page, and compares each metric's
@@ -38,10 +42,14 @@ import { stack } from './stack.js'
 // --update rewrites the budgets from this run: the absolute limits, and scriptBytes at the measured value plus 5%,
 // rounded up to the next KiB. --dir measures a copy of one template. The templates are always built here: the seed
 // images must be in a template's public directory when it is built.
+// --bytes measures scriptBytes alone, without Lighthouse: each page loaded once as Lighthouse loads it (its mobile
+// emulation and waits), held to its budget and to its reference (SCRIPT_REFERENCES), into reports/perf-bytes.json.
+// It ignores --runs: the bytes do not vary between runs or builds.
 
 const REPO = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const BUDGETS_FILE = join(REPO, 'perf-budgets.json')
 const REPORT_FILE = join(REPO, 'reports/perf-budgets.json')
+const BYTES_REPORT_FILE = join(REPO, 'reports/perf-bytes.json')
 const CLI = join(REPO, 'packages/cli/bin/nymbal.mjs')
 
 export const LIMITS = { lcpMs: 2500, cls: 0.1, tbtMs: 200 } as const
@@ -87,6 +95,7 @@ function fail(message: string): never {
 function options(): {
   templates: Template[]
   update: boolean
+  bytes: boolean
   runs: number
   dir: string | undefined
 } {
@@ -94,6 +103,7 @@ function options(): {
     options: {
       template: { type: 'string' },
       update: { type: 'boolean', default: false },
+      bytes: { type: 'boolean', default: false },
       runs: { type: 'string', default: '3' },
       dir: { type: 'string' },
     },
@@ -109,9 +119,12 @@ function options(): {
     fail('--dir measures one template: give --template')
   if (values.dir !== undefined && values.update)
     fail('--update writes the committed budgets: not with --dir')
+  if (values.bytes && values.update)
+    fail('--update writes the budgets from a Lighthouse run: not with --bytes')
   return {
     templates: template === undefined ? [...TEMPLATES] : [template as Template],
     update: values.update,
+    bytes: values.bytes,
     runs,
     dir: values.dir === undefined ? undefined : resolve(values.dir),
   }
@@ -362,6 +375,124 @@ const nanMetrics = (): Metrics => ({
   scriptBytes: Number.NaN,
 })
 
+// Lighthouse's long-task observer and its check (wait-for-condition.js), as page source: a function compiled here
+// would carry the transpiler's helpers into the page.
+const OBSERVE_LONG_TASKS = `(() => {
+  if (window.____lastLongTask !== undefined) return
+  window.____lastLongTask = performance.now()
+  new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (entry.entryType === 'longtask')
+        window.____lastLongTask = Math.max(window.____lastLongTask || 0, entry.startTime + entry.duration)
+    }
+  }).observe({ type: 'longtask', buffered: true })
+})()`
+const SINCE_LONG_TASK = `new Promise((resolve) => {
+  const at = performance.now()
+  const last = window.____lastLongTask || 0
+  setTimeout(() => resolve((window.____lastLongTask || 0) === last ? at - last : 0), 150)
+})`
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Math.max(0, ms)))
+
+/**
+ * A page's script bytes as Lighthouse's run sees them, without Lighthouse: a fresh Chrome launched as `measureOnce`
+ * launches it, Lighthouse's mobile screen and user agent, and its waits (load and `pauseAfterLoadMs`, the network quiet
+ * for `networkQuietThresholdMs`, then the CPU quiet for `cpuQuietThresholdMs`, all within `maxWaitForLoad`). The
+ * scripts are the page's script requests over http(s), summed as `scriptBytes` sums Lighthouse's.
+ */
+async function bytesOnce(chromePath: string, origin: string, spec: PageSpec): Promise<number> {
+  const chrome = await launch({
+    chromePath,
+    chromeFlags: ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage'],
+  })
+  try {
+    const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}` })
+    try {
+      if (spec.line) await addOneLine(browser, origin)
+      const settings = defaultSettings
+      const deadline = Date.now() + settings.maxWaitForLoad
+      const page = await browser.newPage()
+      const screen = settings.screenEmulation
+      await page.setViewport({
+        width: screen.width,
+        height: screen.height,
+        deviceScaleFactor: screen.deviceScaleFactor,
+        isMobile: screen.mobile,
+        hasTouch: screen.mobile,
+      })
+      if (typeof settings.emulatedUserAgent === 'string')
+        await page.setUserAgent(settings.emulatedUserAgent)
+      await page.evaluateOnNewDocument(OBSERVE_LONG_TASKS)
+
+      const scripts: string[] = []
+      const inflight = new Set<HTTPRequest>()
+      let quietSince: number | undefined = Date.now()
+      page.on('request', (request) => {
+        if (request.resourceType() === 'script' && /^https?:/.test(request.url()))
+          scripts.push(request.url())
+        // A server-sent event stream stays open: Lighthouse's quiet does not wait on it either.
+        if (request.resourceType() === 'eventsource') return
+        inflight.add(request)
+        quietSince = undefined
+      })
+      const settled = (request: HTTPRequest): void => {
+        if (!inflight.delete(request)) return
+        if (inflight.size === 0) quietSince = Date.now()
+      }
+      page.on('requestfinished', settled)
+      page.on('requestfailed', settled)
+
+      await page.goto(`${origin}${spec.path}`, {
+        waitUntil: 'load',
+        timeout: settings.maxWaitForLoad,
+      })
+      await sleep(Math.min(settings.pauseAfterLoadMs, deadline - Date.now()))
+      while (Date.now() < deadline) {
+        const quietFor = quietSince === undefined ? 0 : Date.now() - quietSince
+        if (quietFor >= settings.networkQuietThresholdMs) break
+        await sleep(Math.min(settings.networkQuietThresholdMs - quietFor, 100))
+      }
+      while (Date.now() < deadline) {
+        const idleFor = Number(await page.evaluate(SINCE_LONG_TASK))
+        if (idleFor >= settings.cpuQuietThresholdMs) break
+        await sleep(Math.min(settings.cpuQuietThresholdMs - idleFor, deadline - Date.now()))
+      }
+      return await scriptBytes(scripts)
+    } finally {
+      await browser.disconnect()
+    }
+  } finally {
+    chrome.kill()
+  }
+}
+
+async function measureBytes(
+  chrome: string,
+  template: Template,
+  origin: string,
+): Promise<PageResult[]> {
+  const results: PageResult[] = []
+  for (const spec of PAGES) {
+    let bytes = Number.NaN
+    try {
+      bytes = await bytesOnce(chrome, origin, spec)
+    } catch (error) {
+      process.stderr.write(
+        `${template} / ${spec.page}: failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      )
+    }
+    process.stdout.write(`${template} / ${spec.page}: scriptBytes ${format('scriptBytes', bytes)}\n`)
+    results.push({
+      template,
+      page: spec.page,
+      url: spec.path,
+      measured: { ...nanMetrics(), scriptBytes: bytes },
+    })
+  }
+  return results
+}
+
 async function measure(
   chrome: string,
   template: Template,
@@ -497,6 +628,86 @@ function updatedBudgets(current: Budgets, results: PageResult[]): Budgets {
   return next
 }
 
+/** A row of reports/perf-bytes.json. */
+interface BytesRow {
+  template: string
+  page: string
+  url: string
+  scriptBytes: number
+  budget: number | null
+  reference: { commit: string; scriptBytes: number } | null
+  ok: boolean
+  failures: string[]
+}
+
+function readReferences(): ScriptReference[] {
+  return SCRIPT_REFERENCES.map((path) => {
+    const { commit, template, page, scriptBytes } = JSON.parse(
+      readFileSync(join(REPO, path), 'utf8'),
+    ) as ScriptReference
+    return { commit, template, page, scriptBytes }
+  })
+}
+
+/** Holds each page's scriptBytes to its budget and reference, writes reports/perf-bytes.json, and says which fail. */
+function reportBytes(results: PageResult[], templates: Template[]): number {
+  const budgets = readBudgets()
+  const inScope: Budgets = Object.fromEntries(
+    Object.entries(budgets).filter(([t]) => (templates as string[]).includes(t)),
+  )
+  const references = readReferences()
+  const verdicts = checkBudgets(results, inScope, { metrics: ['scriptBytes'], references })
+  const rows: BytesRow[] = verdicts.map((v) => {
+    const at = (r: { template: string; page: string }): boolean =>
+      r.template === v.template && r.page === v.page
+    const reference = references.find(at)
+    const result = results.find(at)
+    return {
+      template: v.template,
+      page: v.page,
+      url: result?.url ?? PAGES.find((p) => p.page === v.page)?.path ?? '',
+      scriptBytes: result?.measured.scriptBytes ?? Number.NaN,
+      budget: inScope[v.template]?.[v.page]?.scriptBytes ?? null,
+      reference:
+        reference === undefined
+          ? null
+          : { commit: reference.commit, scriptBytes: reference.scriptBytes },
+      ok: v.ok,
+      failures: v.failures,
+    }
+  })
+  mkdirSync(join(REPO, 'reports'), { recursive: true })
+  writeFileSync(BYTES_REPORT_FILE, `${JSON.stringify(rows, null, 2)}\n`)
+
+  process.stdout.write(`\n${'template / page'.padEnd(27)}${'scriptBytes (measured/budget)'.padEnd(32)}\n`)
+  for (const r of rows) {
+    process.stdout.write(
+      `${`${r.template} / ${r.page}`.padEnd(27)}${`${format('scriptBytes', r.scriptBytes)}/${format('scriptBytes', r.budget ?? undefined)}`.padEnd(32)}${r.ok ? 'ok' : 'FAIL'}\n`,
+    )
+  }
+  const failing = rows.filter((r) => !r.ok)
+  for (const r of failing) {
+    for (const failure of r.failures) {
+      const measured = format('scriptBytes', r.scriptBytes)
+      if (failure === NOT_MEASURED || failure === NO_BUDGET) {
+        process.stdout.write(`FAIL ${r.template} / ${r.page} / ${failure}\n`)
+      } else if (r.reference !== null && failure === referenceFailure(r.reference.commit)) {
+        process.stdout.write(
+          `FAIL ${r.template} / ${r.page} / scriptBytes: measured ${measured}, reference ${r.reference.scriptBytes} at ${r.reference.commit}\n`,
+        )
+      } else {
+        process.stdout.write(
+          `FAIL ${r.template} / ${r.page} / scriptBytes: measured ${measured}, budget ${format('scriptBytes', r.budget ?? undefined)}\n`,
+        )
+      }
+    }
+  }
+  process.stdout.write(
+    `\n${failing.length === 0 ? 'perf:budgets --bytes: every page within budget and reference' : `perf:budgets --bytes: ${failing.length} page(s) over budget or reference`} (${BYTES_REPORT_FILE})\n`,
+  )
+  return failing.length === 0 ? 0 : 1
+}
+
 async function main(): Promise<number> {
   const opts = options()
   const chrome = findChrome()
@@ -524,9 +735,14 @@ async function main(): Promise<number> {
       const storefront = startStorefront(template, dir, ports[template], api)
       const origin = `http://localhost:${ports[template]}`
       await waitFor(origin, 120_000, storefront)
-      results.push(...(await measure(chrome, template, origin, opts.runs)))
+      results.push(
+        ...(opts.bytes
+          ? await measureBytes(chrome, template, origin)
+          : await measure(chrome, template, origin, opts.runs)),
+      )
     }
 
+    if (opts.bytes) return reportBytes(results, opts.templates)
     let budgets = readBudgets()
     if (opts.update) {
       budgets = updatedBudgets(budgets, results)

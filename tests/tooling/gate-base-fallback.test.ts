@@ -104,10 +104,11 @@ describe('gate: a --base that names no commit on a root commit narrows nothing',
     const repo = scratchRepo(FILES)
     const args = ['--full', '--only', 'stryker,sentinels', '--no-build', '--base', ZEROS, '--json']
 
-    const run = await gateCli(repo, [...args, '--sentinels', 'impacted'])
+    const run = await gateCli(repo, [...args, '--sentinels', 'all'])
 
     expect(run.code, run.output).toBe(0)
-    expect(run.output).toContain('sentinels: all')
+    const sentinels = repo.calls().filter((c) => /^pnpm sentinels\b/.test(c))
+    expect(sentinels, run.output).toEqual(['pnpm sentinels'])
     const stryker = repo.calls().filter((c) => /\bstryker run\b/.test(c))
     expect(stryker, run.output).toHaveLength(1)
     expect(stryker[0]).toContain('--force')

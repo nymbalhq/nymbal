@@ -24,20 +24,45 @@ export interface Verdict {
   failures: string[]
 }
 
+/** A page's script bytes at a commit, which it may not grow past whatever its budget allows. */
+export interface ScriptReference {
+  commit: string
+  template: string
+  page: string
+  scriptBytes: number
+}
+
+/** The reference files (from the repository root) that hold a page to its bytes at a commit. */
+export const SCRIPT_REFERENCES = ['tests/perf/fixtures/astro-home-75989c8.json']
+
+/** The failure a page above its reference has. */
+export const referenceFailure = (commit: string): string => `scriptBytes (reference ${commit})`
+
 /**
  * One verdict per page that is budgeted or measured. A metric passes only when it is at or under its budget, so a NaN
  * (a page that never loaded) fails; a budgeted page with no result fails, and so does a measured page with no budget.
+ * `metrics` limits the metrics judged (every one when not given); a page with a reference fails above its bytes.
  */
-export function checkBudgets(results: readonly PageResult[], budgets: Budgets): Verdict[] {
+export function checkBudgets(
+  results: readonly PageResult[],
+  budgets: Budgets,
+  opts: { metrics?: readonly Metric[]; references?: readonly ScriptReference[] } = {},
+): Verdict[] {
+  const judged = opts.metrics ?? METRICS
   const verdicts: Verdict[] = []
   const measured = new Set<string>()
   for (const result of results) {
     measured.add(`${result.template}\u0000${result.page}`)
     const budget = budgets[result.template]?.[result.page]
-    const failures =
+    const failures: string[] =
       budget === undefined
         ? [NO_BUDGET]
-        : METRICS.filter((metric) => !(result.measured[metric] <= budget[metric]))
+        : judged.filter((metric) => !(result.measured[metric] <= budget[metric]))
+    for (const reference of opts.references ?? []) {
+      if (reference.template !== result.template || reference.page !== result.page) continue
+      if (!(result.measured.scriptBytes <= reference.scriptBytes))
+        failures.push(referenceFailure(reference.commit))
+    }
     verdicts.push({
       template: result.template,
       page: result.page,
