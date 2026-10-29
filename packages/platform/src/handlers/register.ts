@@ -13,6 +13,7 @@ import { registerEmailHandler } from './side-effects/email-handler.js'
 import { registerSearchHandler } from './side-effects/search-handler.js'
 import { registerReviewsHandler } from './side-effects/reviews-handler.js'
 import { registerAlertHandler } from './side-effects/alert-handler.js'
+import { registerEmailFeedbackHandler } from './side-effects/email-feedback-handler.js'
 
 export interface RegisterHandlersDeps {
   config: NymbalConfig
@@ -89,6 +90,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     repos,
     alerts,
     storeName: config.store.name,
+  })
+  await registerEmailFeedbackHandler({
+    eventBus,
+    email: adapters.email,
+    repos,
+    logger: handlerLogger.child({ handler: 'email-feedback' }),
   })
   await registerSearchHandler({
     eventBus,

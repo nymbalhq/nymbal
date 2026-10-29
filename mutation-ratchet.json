@@ -8,6 +8,7 @@
     "packages/platform/src/repositories/cart.ts": 45.24,
     "packages/platform/src/repositories/category.ts": 67.14,
     "packages/platform/src/repositories/customer.ts": 45.22,
+    "packages/platform/src/repositories/email-suppression.ts": 0,
     "packages/platform/src/repositories/event-log.ts": 44.74,
     "packages/platform/src/repositories/index.ts": 100,
     "packages/platform/src/repositories/inventory-reservation.ts": 54.9,

@@ -32,6 +32,11 @@ export { runAnalyticsContract } from './analytics.js'
 export { runShippingContract } from './shipping.js'
 export { runTaxContract } from './tax.js'
 export { runWebhookContract, type WebhookContractOptions, type WebhookRequest } from './webhook.js'
+export {
+  runEmailFeedbackContract,
+  type EmailFeedbackContractOptions,
+  type EmailFeedbackSample,
+} from './email-feedback.js'
 export { runSecurityContract } from './security.js'
 export { runProjectionContract } from './projection.js'
 export type { ProjectionContractOptions } from './projection.js'

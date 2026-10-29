@@ -504,6 +504,28 @@ export const alertSubscriptions = pgTable(
   }),
 )
 
+// --- Email suppressions ----------------------------------------------------
+
+/**
+ * One row per normalised address that hard-bounced or complained, which is sent no more alert mail. The first reason
+ * stays; `event_id` is the feedback event that suppressed it.
+ */
+export const emailSuppressions = pgTable(
+  'email_suppressions',
+  {
+    email: text('email').primaryKey(),
+    reason: text('reason').notNull(),
+    eventId: text('event_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    reasonCheck: check(
+      'email_suppressions_reason',
+      sql`${t.reason} IN ('hard_bounce', 'complaint')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -524,4 +546,5 @@ export const schema = {
   settings,
   auditEntries,
   alertSubscriptions,
+  emailSuppressions,
 }

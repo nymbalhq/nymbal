@@ -35,6 +35,10 @@ import {
   createAlertSubscriptionRepository,
   type AlertSubscriptionRepository,
 } from './alert-subscription.js'
+import {
+  createEmailSuppressionRepository,
+  type EmailSuppressionRepository,
+} from './email-suppression.js'
 
 export * from './product.js'
 export * from './variant.js'
@@ -56,6 +60,7 @@ export * from './cart.js'
 export * from './settings.js'
 export * from './audit-entry.js'
 export * from './alert-subscription.js'
+export * from './email-suppression.js'
 export * from './page.js'
 
 export interface Repositories {
@@ -79,6 +84,7 @@ export interface Repositories {
   settings: SettingsRepository
   auditEntry: AuditEntryRepository
   alertSubscription: AlertSubscriptionRepository
+  emailSuppression: EmailSuppressionRepository
 }
 
 export function buildRepositories(
@@ -107,5 +113,6 @@ export function buildRepositories(
     settings: createSettingsRepository(commandStore),
     auditEntry: createAuditEntryRepository(commandStore),
     alertSubscription: createAlertSubscriptionRepository(commandStore),
+    emailSuppression: createEmailSuppressionRepository(commandStore),
   }
 }

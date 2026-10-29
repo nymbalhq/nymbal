@@ -1,6 +1,7 @@
 import {
   ConfigError,
   EVT_PAYMENT_FAILED,
+  emailFeedbackProblem,
   webhookDeliveryProblem,
   type CommerceAdapter,
   type CommerceSlot,
@@ -9,6 +10,7 @@ import {
   type RequestContext,
   type ResponseEnvelope,
   type WebhookDelivery,
+  type WebhookDeliveryProblem,
   type WebhookResult,
 } from '@nymbalhq/types'
 import { COMMERCE_SLOTS, type AdapterRegistry } from '../adapters/registry.js'
@@ -42,8 +44,21 @@ interface Targets {
  * `in`, not `typeof`: the not-configured adapter answers every property read with a throwing function, but has no
  * `has` trap, so it never counts as taking deliveries.
  */
-function isHooked(adapter: CommerceAdapter): adapter is Hooked {
+export function isHooked(adapter: CommerceAdapter): adapter is Hooked {
   return 'receiveWebhook' in adapter && typeof adapter.receiveWebhook === 'function'
+}
+
+/**
+ * What a slot's own consumers need of its deliveries, beyond the rule every adapter's events follow: a delivery
+ * breaking it is refused before it is claimed, so the provider's retry after a fix is still received.
+ */
+const SLOT_WEBHOOK_RULES: Partial<
+  Record<
+    CommerceSlot,
+    (providerName: string, delivery: WebhookDelivery) => WebhookDeliveryProblem | null
+  >
+> = {
+  email: emailFeedbackProblem,
 }
 
 /** Which slot each webhook name reaches. Two slots taking deliveries under one name stop startup. */
@@ -186,11 +201,14 @@ export function registerInboundWebhookRoute(
       throw err
     }
     if (!delivery.verified) return invalid()
-    const problem = webhookDeliveryProblem(
-      target.adapter.providerName,
-      target.adapter.producesEvents,
-      delivery,
-    )
+    const problem =
+      webhookDeliveryProblem(
+        target.adapter.providerName,
+        target.adapter.producesEvents,
+        delivery,
+      ) ??
+      SLOT_WEBHOOK_RULES[target.slot]?.(target.adapter.providerName, delivery) ??
+      null
     if (problem !== null) {
       // The provider retries this for its whole window, so the log is the store owner's only signal.
       ctx.logger.warn(

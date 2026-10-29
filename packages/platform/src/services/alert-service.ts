@@ -12,6 +12,7 @@ import {
 } from '@nymbalhq/types'
 import { audit } from '../audit/audit.js'
 import type { CommandStore, Tx } from '../db/command-store.js'
+import { normaliseEmail } from '../email-address.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { AlertSubscription } from '../repositories/alert-subscription.js'
 import type { Repositories } from '../repositories/index.js'
@@ -95,7 +96,7 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
         }
         const row = await repos.alertSubscription.upsertPending(tx, {
           id: uuidv7(),
-          email: email.trim().toLowerCase(),
+          email: normaliseEmail(email),
           kind,
           variantId,
           productId: variant.productId,
