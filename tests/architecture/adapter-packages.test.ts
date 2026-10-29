@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REPO_ROOT, type Manifest } from './workspace-manifests'
 
-// AC-6: the kernel's manifest holds no provider SDK and peers the five adapter packages as optional; the stack lists
+// AC-6: the kernel's manifest holds no provider SDK and peers the six adapter packages as optional; the stack lists
 // no adapter package; each adapter package peers its own SDK (one that talks HTTP itself peers nothing), depends on
 // @nymbalhq/types and never on the kernel, and versions with the fixed group; no kernel source file imports a provider
-// SDK. PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the five as
+// SDK. PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the six as
 // well.
 
 interface PackageManifest extends Manifest {
@@ -39,6 +39,12 @@ const ADAPTERS = [
   {
     dir: 'packages/adapter-mailgun',
     name: '@nymbalhq/adapter-mailgun',
+    sdk: 'nodemailer',
+    range: '^6.9.16',
+  },
+  {
+    dir: 'packages/adapter-resend',
+    name: '@nymbalhq/adapter-resend',
     sdk: 'nodemailer',
     range: '^6.9.16',
   },
@@ -111,7 +117,7 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     ).toEqual([])
   })
 
-  it('AC-6: the kernel peers the five adapter packages, each optional, and links them for the workspace', () => {
+  it('AC-6: the kernel peers the six adapter packages, each optional, and links them for the workspace', () => {
     const platform = read('packages/platform')
     const peers = Object.keys(platform.peerDependencies ?? {})
     const optional = Object.entries(platform.peerDependenciesMeta ?? {})
@@ -150,7 +156,7 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     })
   }
 
-  it('AC-6: the five adapter packages version in the fixed group the kernel is in', () => {
+  it('AC-6: the six adapter packages version in the fixed group the kernel is in', () => {
     const changesets = JSON.parse(
       readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
     ) as { fixed: string[][] }

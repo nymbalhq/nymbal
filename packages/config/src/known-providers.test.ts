@@ -27,7 +27,7 @@ const known = (slot: Slot): readonly string[] => KNOWN_PROVIDERS[slot]
 /** The known providers, per slot, without `custom` (which every slot also accepts). */
 const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   payments: ['native', 'stripe'],
-  email: ['native', 'smtp', 'mailgun'],
+  email: ['native', 'smtp', 'mailgun', 'resend'],
   ai: ['none', 'anthropic'],
   reviews: ['native'],
   search: ['native'],
