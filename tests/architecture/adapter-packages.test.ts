@@ -1,9 +1,10 @@
-// Reads: packages/adapter-*/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
+// Reads: packages/adapters/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
 // Reads: .changeset/config.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REPO_ROOT, type Manifest } from './workspace-manifests'
+import { ROOT as REPO_ROOT } from './adapter-table'
+import type { Manifest } from './workspace-manifests'
 
 // AC-6: the kernel's manifest holds no provider SDK and peers the seven adapter packages as optional; the stack lists
 // no adapter package; each adapter package peers its own SDK (one that talks HTTP itself peers nothing), depends on
@@ -19,38 +20,38 @@ interface PackageManifest extends Manifest {
 /** Each adapter package, its directory and the SDK range it peers. */
 const ADAPTERS = [
   {
-    dir: 'packages/adapter-stripe',
-    name: '@nymbalhq/adapter-stripe',
+    dir: 'packages/adapters/payments/stripe',
+    name: '@nymbalhq/payments-stripe',
     sdk: 'stripe',
     range: '^17.4.0',
   },
   {
-    dir: 'packages/adapter-anthropic',
-    name: '@nymbalhq/adapter-anthropic',
+    dir: 'packages/adapters/ai/anthropic',
+    name: '@nymbalhq/ai-anthropic',
     sdk: '@anthropic-ai/sdk',
     range: '^0.39.0',
   },
   {
-    dir: 'packages/adapter-smtp',
-    name: '@nymbalhq/adapter-smtp',
+    dir: 'packages/adapters/email/smtp',
+    name: '@nymbalhq/email-smtp',
     sdk: 'nodemailer',
     range: '^6.9.16',
   },
   {
-    dir: 'packages/adapter-mailgun',
-    name: '@nymbalhq/adapter-mailgun',
+    dir: 'packages/adapters/email/mailgun',
+    name: '@nymbalhq/email-mailgun',
     sdk: 'nodemailer',
     range: '^6.9.16',
   },
   {
-    dir: 'packages/adapter-resend',
-    name: '@nymbalhq/adapter-resend',
+    dir: 'packages/adapters/email/resend',
+    name: '@nymbalhq/email-resend',
     sdk: 'nodemailer',
     range: '^6.9.16',
   },
   {
-    dir: 'packages/adapter-ses',
-    name: '@nymbalhq/adapter-ses',
+    dir: 'packages/adapters/email/ses',
+    name: '@nymbalhq/email-ses',
     sdk: 'nodemailer',
     range: '^6.9.16',
   },
@@ -58,7 +59,7 @@ const ADAPTERS = [
 
 /** Each adapter package that peers no SDK: it only verifies and maps a provider's webhooks. */
 const SDK_FREE_ADAPTERS = [
-  { dir: 'packages/adapter-easypost', name: '@nymbalhq/adapter-easypost' },
+  { dir: 'packages/adapters/shipping/easypost', name: '@nymbalhq/shipping-easypost' },
 ] as const
 
 const SDKS: readonly string[] = ADAPTERS.map((a) => a.sdk)
@@ -118,7 +119,7 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     expect(listed(platform, ['dependencies', 'optionalDependencies']).filter(isSdk)).toEqual([])
     expect(
       listed(stack, ['dependencies', 'peerDependencies', 'optionalDependencies']).filter(
-        (n) => isSdk(n) || n.startsWith('@nymbalhq/adapter-'),
+        (n) => isSdk(n) || ADAPTER_NAMES.includes(n),
       ),
     ).toEqual([])
   })
@@ -190,7 +191,10 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
 // on the kernel, with no Cloudflare SDK anywhere (it talks to the API with fetch), and peered by the kernel as
 // optional and linked for the workspace, so the kernel's loader resolves it.
 
-const SECURITY = { dir: 'packages/security-cloudflare', name: '@nymbalhq/security-cloudflare' }
+const SECURITY = {
+  dir: 'packages/adapters/security/cloudflare',
+  name: '@nymbalhq/security-cloudflare',
+}
 
 describe('AC-10: @nymbalhq/security-cloudflare publishes like the adapter packages', () => {
   it("AC-10: it is in the fixed group the kernel is in, at the kernel's version", () => {
@@ -232,7 +236,7 @@ describe('AC-10: @nymbalhq/security-cloudflare publishes like the adapter packag
     const platform = read('packages/platform')
 
     expect(platform.peerDependencies?.[SECURITY.name]).toBe(
-      platform.peerDependencies?.['@nymbalhq/adapter-stripe'],
+      platform.peerDependencies?.['@nymbalhq/payments-stripe'],
     )
     expect(platform.peerDependenciesMeta?.[SECURITY.name]?.optional).toBe(true)
     expect(platform.devDependencies?.[SECURITY.name]).toBe('workspace:*')

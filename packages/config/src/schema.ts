@@ -372,13 +372,13 @@ export const nymbalConfigSchema = z
         message: `events.archive.bucket is infrastructure.s3.bucket ('${archiveBucket}'), the media bucket, which serves its objects publicly; archive events to a private bucket of their own`,
       })
     }
-    // SMTP left the kernel for @nymbalhq/adapter-smtp; a native block still asking for it would print to the console.
+    // SMTP left the kernel for @nymbalhq/email-smtp; a native block still asking for it would print to the console.
     const email = cfg.commerce.email
     if (email.provider === 'native' && email.config?.['transport'] === 'smtp') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['commerce', 'email', 'config', 'transport'],
-        message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/adapter-smtp)`,
+        message: `the native email provider only prints to the console; for SMTP mail set email.provider to 'smtp' (@nymbalhq/email-smtp)`,
       })
     }
   })

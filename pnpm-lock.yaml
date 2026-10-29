@@ -358,11 +358,11 @@ importers:
         specifier: ^5.0.0
         version: 5.0.12(@types/react@18.3.28)(react@18.3.1)
 
-  packages/adapter-anthropic:
+  packages/adapters/ai/anthropic:
     dependencies:
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
@@ -380,18 +380,27 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-easypost:
+  packages/adapters/document-store/postgres-jsonb:
     dependencies:
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
     devDependencies:
+      '@nymbalhq/contract-tests':
+        specifier: workspace:*
+        version: link:../../../contract-tests
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.20.0
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
       fast-check:
         specifier: ^4.10.2
         version: 4.10.2
+      pg:
+        specifier: ^8.13.1
+        version: 8.20.0
       tsup:
         specifier: ^9.0.0
         version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
@@ -402,14 +411,42 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-mailgun:
+  packages/adapters/document-store/redis:
     dependencies:
-      '@nymbalhq/adapter-smtp':
-        specifier: workspace:*
-        version: link:../adapter-smtp
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
+    devDependencies:
+      '@nymbalhq/contract-tests':
+        specifier: workspace:*
+        version: link:../../../contract-tests
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0(supports-color@7.2.0)
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  packages/adapters/email/mailgun:
+    dependencies:
+      '@nymbalhq/email-smtp':
+        specifier: workspace:*
+        version: link:../smtp
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
     devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
@@ -433,14 +470,14 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-resend:
+  packages/adapters/email/resend:
     dependencies:
-      '@nymbalhq/adapter-smtp':
+      '@nymbalhq/email-smtp':
         specifier: workspace:*
-        version: link:../adapter-smtp
+        version: link:../smtp
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
     devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
@@ -464,14 +501,14 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-ses:
+  packages/adapters/email/ses:
     dependencies:
-      '@nymbalhq/adapter-smtp':
+      '@nymbalhq/email-smtp':
         specifier: workspace:*
-        version: link:../adapter-smtp
+        version: link:../smtp
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
     devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
@@ -495,11 +532,11 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-smtp:
+  packages/adapters/email/smtp:
     dependencies:
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
     devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
@@ -520,11 +557,58 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/adapter-stripe:
+  packages/adapters/event-bus/redis-streams:
     dependencies:
       '@nymbalhq/types':
         specifier: workspace:*
-        version: link:../types
+        version: link:../../../types
+    devDependencies:
+      '@nymbalhq/contract-tests':
+        specifier: workspace:*
+        version: link:../../../contract-tests
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0(supports-color@7.2.0)
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  packages/adapters/media/s3:
+    dependencies:
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
+    devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1153.0
+        version: 3.1153.0
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+
+  packages/adapters/payments/stripe:
+    dependencies:
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
     devDependencies:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
@@ -535,6 +619,50 @@ importers:
       stripe:
         specifier: ^17.4.0
         version: 17.7.0
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  packages/adapters/security/cloudflare:
+    dependencies:
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
+    devDependencies:
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
+
+  packages/adapters/shipping/easypost:
+    dependencies:
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
+    devDependencies:
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
       tsup:
         specifier: ^9.0.0
         version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
@@ -654,93 +782,6 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/doc-store-postgres-jsonb:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@nymbalhq/contract-tests':
-        specifier: workspace:*
-        version: link:../contract-tests
-      '@types/pg':
-        specifier: ^8.11.10
-        version: 8.20.0
-      '@typescript/native':
-        specifier: npm:typescript@^7.0.2
-        version: typescript@7.0.2
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
-      pg:
-        specifier: ^8.13.1
-        version: 8.20.0
-      tsup:
-        specifier: ^9.0.0
-        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
-      typescript:
-        specifier: npm:@typescript/typescript6@^6.0.2
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
-
-  packages/doc-store-redis:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@nymbalhq/contract-tests':
-        specifier: workspace:*
-        version: link:../contract-tests
-      '@typescript/native':
-        specifier: npm:typescript@^7.0.2
-        version: typescript@7.0.2
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
-      ioredis:
-        specifier: ^6.0.0
-        version: 6.0.0(supports-color@7.2.0)
-      tsup:
-        specifier: ^9.0.0
-        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
-      typescript:
-        specifier: npm:@typescript/typescript6@^6.0.2
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
-
-  packages/event-bus-redis-streams:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@nymbalhq/contract-tests':
-        specifier: workspace:*
-        version: link:../contract-tests
-      '@typescript/native':
-        specifier: npm:typescript@^7.0.2
-        version: typescript@7.0.2
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
-      ioredis:
-        specifier: ^6.0.0
-        version: 6.0.0(supports-color@7.2.0)
-      tsup:
-        specifier: ^9.0.0
-        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
-      typescript:
-        specifier: npm:@typescript/typescript6@^6.0.2
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
-
   packages/http:
     dependencies:
       '@fastify/cookie':
@@ -806,25 +847,6 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
-  packages/media-s3:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1153.0
-        version: 3.1153.0
-      '@typescript/native':
-        specifier: npm:typescript@^7.0.2
-        version: typescript@7.0.2
-      tsup:
-        specifier: ^9.0.0
-        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
-      typescript:
-        specifier: npm:@typescript/typescript6@^6.0.2
-        version: '@typescript/typescript6@6.0.2'
-
   packages/platform:
     dependencies:
       '@nymbalhq/config':
@@ -861,42 +883,42 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@nymbalhq/adapter-anthropic':
+      '@nymbalhq/ai-anthropic':
         specifier: workspace:*
-        version: link:../adapter-anthropic
-      '@nymbalhq/adapter-easypost':
+        version: link:../adapters/ai/anthropic
+      '@nymbalhq/document-store-postgres-jsonb':
         specifier: workspace:*
-        version: link:../adapter-easypost
-      '@nymbalhq/adapter-mailgun':
+        version: link:../adapters/document-store/postgres-jsonb
+      '@nymbalhq/document-store-redis':
         specifier: workspace:*
-        version: link:../adapter-mailgun
-      '@nymbalhq/adapter-resend':
+        version: link:../adapters/document-store/redis
+      '@nymbalhq/email-mailgun':
         specifier: workspace:*
-        version: link:../adapter-resend
-      '@nymbalhq/adapter-ses':
+        version: link:../adapters/email/mailgun
+      '@nymbalhq/email-resend':
         specifier: workspace:*
-        version: link:../adapter-ses
-      '@nymbalhq/adapter-smtp':
+        version: link:../adapters/email/resend
+      '@nymbalhq/email-ses':
         specifier: workspace:*
-        version: link:../adapter-smtp
-      '@nymbalhq/adapter-stripe':
+        version: link:../adapters/email/ses
+      '@nymbalhq/email-smtp':
         specifier: workspace:*
-        version: link:../adapter-stripe
-      '@nymbalhq/doc-store-postgres-jsonb':
-        specifier: workspace:*
-        version: link:../doc-store-postgres-jsonb
-      '@nymbalhq/doc-store-redis':
-        specifier: workspace:*
-        version: link:../doc-store-redis
+        version: link:../adapters/email/smtp
       '@nymbalhq/event-bus-redis-streams':
         specifier: workspace:*
-        version: link:../event-bus-redis-streams
+        version: link:../adapters/event-bus/redis-streams
       '@nymbalhq/media-s3':
         specifier: workspace:*
-        version: link:../media-s3
+        version: link:../adapters/media/s3
+      '@nymbalhq/payments-stripe':
+        specifier: workspace:*
+        version: link:../adapters/payments/stripe
       '@nymbalhq/security-cloudflare':
         specifier: workspace:*
-        version: link:../security-cloudflare
+        version: link:../adapters/security/cloudflare
+      '@nymbalhq/shipping-easypost':
+        specifier: workspace:*
+        version: link:../adapters/shipping/easypost
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
@@ -930,12 +952,12 @@ importers:
 
   packages/proof-kit:
     dependencies:
-      '@nymbalhq/adapter-smtp':
-        specifier: workspace:*
-        version: link:../adapter-smtp
       '@nymbalhq/config':
         specifier: workspace:*
         version: link:../config
+      '@nymbalhq/email-smtp':
+        specifier: workspace:*
+        version: link:../adapters/email/smtp
       '@nymbalhq/http':
         specifier: workspace:*
         version: link:../http
@@ -1038,28 +1060,6 @@ importers:
       typescript:
         specifier: npm:@typescript/typescript6@^6.0.2
         version: '@typescript/typescript6@6.0.2'
-
-  packages/security-cloudflare:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../types
-    devDependencies:
-      '@typescript/native':
-        specifier: npm:typescript@^7.0.2
-        version: typescript@7.0.2
-      fast-check:
-        specifier: ^4.10.2
-        version: 4.10.2
-      tsup:
-        specifier: ^9.0.0
-        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
-      typescript:
-        specifier: npm:@typescript/typescript6@^6.0.2
-        version: '@typescript/typescript6@6.0.2'
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/stack:
     dependencies:
@@ -1214,18 +1214,18 @@ importers:
 
   tests/contracts:
     dependencies:
-      '@nymbalhq/adapter-stripe':
-        specifier: workspace:*
-        version: link:../../packages/adapter-stripe
       '@nymbalhq/contract-tests':
         specifier: workspace:*
         version: link:../../packages/contract-tests
+      '@nymbalhq/payments-stripe':
+        specifier: workspace:*
+        version: link:../../packages/adapters/payments/stripe
       '@nymbalhq/platform':
         specifier: workspace:*
         version: link:../../packages/platform
       '@nymbalhq/security-cloudflare':
         specifier: workspace:*
-        version: link:../../packages/security-cloudflare
+        version: link:../../packages/adapters/security/cloudflare
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -15567,7 +15567,7 @@ snapshots:
   stripe@17.7.0:
     dependencies:
       '@types/node': 22.19.17
-      qs: 6.15.1
+      qs: 6.16.1
 
   styled-jsx@5.1.6(@babel/core@8.0.7)(react@19.3.1):
     dependencies:

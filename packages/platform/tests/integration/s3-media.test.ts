@@ -106,11 +106,11 @@ describe('AC-1: a missing bucket fails resolvePrimitives with config.s3_bucket_m
     const loaded = resolutions
       .filter(
         (r) =>
-          inPackage(r.url, 'media-s3') ||
+          inPackage(r.url, 'adapters/media/s3') ||
           underModule(r.url, '@aws-sdk') ||
           r.specifier.startsWith('@aws-sdk/') ||
           r.specifier === '@nymbalhq/media-s3' ||
-          inPackage(r.url, 'doc-store-redis') ||
+          inPackage(r.url, 'adapters/document-store/redis') ||
           underModule(r.url, 'ioredis'),
       )
       .map((r) => r.url)

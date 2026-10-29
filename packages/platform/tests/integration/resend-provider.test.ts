@@ -15,7 +15,7 @@ import { cleanupGraphDirs, runGraphChild } from '../support/primitive-graph.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // `email.provider: 'resend'` passes the config's validation and createApp builds the email slot from
-// @nymbalhq/adapter-resend, with the config block's webhook secret; a signed permanent bounce posted to
+// @nymbalhq/email-resend, with the config block's webhook secret; a signed permanent bounce posted to
 // /api/webhooks/resend ends as the address's suppression row. Without the package, startup fails naming it and its
 // install line. The missing-package case runs createApp from the built dist in a child process
 // (fixtures/primitive-graph). Needs `pnpm build`.
@@ -95,14 +95,14 @@ describe('AC-4: the resend provider loads and its webhook suppresses', () => {
     expect(bounces).toEqual([real])
   }, 60_000)
 
-  it('AC-4: with @nymbalhq/adapter-resend not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/adapter-resend nodemailer"', async () => {
+  it('AC-4: with @nymbalhq/email-resend not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/email-resend nodemailer"', async () => {
     const { outcome } = await runGraphChild(withResend(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/adapter-resend'],
+      hide: ['@nymbalhq/email-resend'],
     })
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')
-    expect(outcome.error?.message).toContain('npm install @nymbalhq/adapter-resend nodemailer')
+    expect(outcome.error?.message).toContain('npm install @nymbalhq/email-resend nodemailer')
     expect(outcome.error?.message).toMatch(/\bemail\b/)
   }, 90_000)
 })

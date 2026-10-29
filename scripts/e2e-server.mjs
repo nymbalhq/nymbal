@@ -22,7 +22,7 @@ const REPORT = join(REPO, 'reports', 'e2e-shutdown.json')
 // The SDKs come from the packages that depend on them: the repository root has neither.
 const pg = () => createRequire(join(REPO, 'packages/platform/package.json'))('pg')
 const ioredis = () =>
-  createRequire(join(REPO, 'packages/event-bus-redis-streams/package.json'))('ioredis')
+  createRequire(join(REPO, 'packages/adapters/event-bus/redis-streams/package.json'))('ioredis')
 
 const args = process.argv.slice(2)
 const command = args[0] === '--' ? args.slice(1) : args

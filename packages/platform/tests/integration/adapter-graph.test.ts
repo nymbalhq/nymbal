@@ -20,7 +20,7 @@ const SDKS = { stripe: 'stripe', anthropic: '@anthropic-ai/sdk', smtp: 'nodemail
 const underPackage = (url: string, name: string): boolean => url.includes(`/node_modules/${name}/`)
 const isSdkUrl = (url: string): boolean => Object.values(SDKS).some((sdk) => underPackage(url, sdk))
 const isAdapterUrl = (url: string, name: string): boolean =>
-  url.includes(`/adapter-${name}/`) && !url.includes('/node_modules/.pnpm/')
+  new RegExp(`/packages/adapters/[^/]+/${name}/`).test(url) && !url.includes('/node_modules/.pnpm/')
 
 interface Outcome {
   started?: { payments: string; ai: string | null }
@@ -91,7 +91,7 @@ function withAnthropic(config: NymbalConfig): NymbalConfig {
   }
 }
 
-const INSTALL_STRIPE = '@nymbalhq/adapter-stripe stripe'
+const INSTALL_STRIPE = '@nymbalhq/payments-stripe stripe'
 
 describe('AC-2: the config names a provider, and only then does its package load', () => {
   it('AC-2: with native everywhere and ai none, createApp starts and no resolved URL is under stripe, @anthropic-ai/sdk or nodemailer', async () => {
@@ -102,7 +102,7 @@ describe('AC-2: the config names a provider, and only then does its package load
     expect(outcome).toEqual({ started: { payments: 'native-stub', ai: null } })
   }, 90_000)
 
-  it('AC-2: with payments stripe and ai anthropic (apiKey in the block), payments is stripe and ai anthropic, loaded from @nymbalhq/adapter-stripe and @nymbalhq/adapter-anthropic, and nodemailer is never resolved', async () => {
+  it('AC-2: with payments stripe and ai anthropic (apiKey in the block), payments is stripe and ai anthropic, loaded from @nymbalhq/payments-stripe and @nymbalhq/ai-anthropic, and nodemailer is never resolved', async () => {
     const { urls, outcome } = await run(withAnthropic(withStripe(kernelConfig('sqlite'))))
 
     expect(outcome).toEqual({ started: { payments: 'stripe', ai: 'anthropic' } })
@@ -130,12 +130,12 @@ describe('AC-7 (kernel half): a missing adapter package fails with the install l
     return null
   }
 
-  it('AC-7: with @nymbalhq/adapter-stripe not installed, createApp fails adapter.package_missing with the install verb of the user agent it runs under', async () => {
+  it('AC-7: with @nymbalhq/payments-stripe not installed, createApp fails adapter.package_missing with the install verb of the user agent it runs under', async () => {
     const config = withStripe(kernelConfig('sqlite'))
     const results = await Promise.all(
       AGENTS.map(async ({ agent, verb }) => {
         const { outcome } = await run(config, {
-          hide: ['@nymbalhq/adapter-stripe'],
+          hide: ['@nymbalhq/payments-stripe'],
           env: { npm_config_user_agent: agent },
         })
         return { agent, why: missing(outcome, verb) }
@@ -154,19 +154,19 @@ describe('AC-7 (kernel half): a missing adapter package fails with the install l
       {
         label: 'pnpm lockfile',
         cwd: pnpmProject,
-        hide: ['@nymbalhq/adapter-stripe'],
+        hide: ['@nymbalhq/payments-stripe'],
         verb: 'pnpm add',
       },
       {
         label: 'yarn lockfile',
         cwd: yarnProject,
-        hide: ['@nymbalhq/adapter-stripe'],
+        hide: ['@nymbalhq/payments-stripe'],
         verb: 'yarn add',
       },
       {
         label: 'no lockfile',
         cwd: scratch(),
-        hide: ['@nymbalhq/adapter-stripe'],
+        hide: ['@nymbalhq/payments-stripe'],
         verb: 'npm install',
       },
       { label: 'sdk missing', cwd: scratch(), hide: ['stripe'], verb: 'npm install' },

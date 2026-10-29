@@ -8,7 +8,7 @@ import { installLine, PROVIDER_PACKAGES } from '../../../platform/src/adapters/l
 import {
   startFakeCloudflare,
   type FakeCloudflare,
-} from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
+} from '../../../adapters/security/cloudflare/src/tests/fake-cloudflare.js'
 import {
   cliEnv,
   doctorLines,

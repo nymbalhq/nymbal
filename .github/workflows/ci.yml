@@ -45,6 +45,7 @@ jobs:
           name: build-output
           path: |
             packages/*/dist
+            packages/adapters/*/*/dist
             templates/astro/dist
             templates/astro/.astro
             templates/nextjs/.next

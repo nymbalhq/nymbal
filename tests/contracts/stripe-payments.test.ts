@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import Stripe from 'stripe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runPaymentsContract } from '@nymbalhq/contract-tests'
-import { createStripePaymentsAdapter } from '@nymbalhq/adapter-stripe'
+import { createStripePaymentsAdapter } from '@nymbalhq/payments-stripe'
 import { createLogger } from '@nymbalhq/platform'
 import { PaymentError } from '@nymbalhq/types'
 

@@ -29,23 +29,23 @@ export const PROVIDER_PACKAGES: Readonly<
   readonly security: Packages<ProviderPackage>
   readonly shipping: Packages<ProviderPackage>
 } = {
-  payments: { stripe: { package: '@nymbalhq/adapter-stripe', sdk: 'stripe' } },
-  ai: { anthropic: { package: '@nymbalhq/adapter-anthropic', sdk: '@anthropic-ai/sdk' } },
+  payments: { stripe: { package: '@nymbalhq/payments-stripe', sdk: 'stripe' } },
+  ai: { anthropic: { package: '@nymbalhq/ai-anthropic', sdk: '@anthropic-ai/sdk' } },
   email: {
-    smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' },
-    mailgun: { package: '@nymbalhq/adapter-mailgun', sdk: 'nodemailer' },
-    resend: { package: '@nymbalhq/adapter-resend', sdk: 'nodemailer' },
-    ses: { package: '@nymbalhq/adapter-ses', sdk: 'nodemailer' },
+    smtp: { package: '@nymbalhq/email-smtp', sdk: 'nodemailer' },
+    mailgun: { package: '@nymbalhq/email-mailgun', sdk: 'nodemailer' },
+    resend: { package: '@nymbalhq/email-resend', sdk: 'nodemailer' },
+    ses: { package: '@nymbalhq/email-ses', sdk: 'nodemailer' },
   },
   documentStore: {
-    redis: { package: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },
-    'postgres-jsonb': { package: '@nymbalhq/doc-store-postgres-jsonb', sdk: 'pg' },
+    redis: { package: '@nymbalhq/document-store-redis', sdk: 'ioredis' },
+    'postgres-jsonb': { package: '@nymbalhq/document-store-postgres-jsonb', sdk: 'pg' },
   },
   eventBus: {
     'redis-streams': { package: '@nymbalhq/event-bus-redis-streams', sdk: 'ioredis' },
   },
   media: { s3: { package: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' } },
-  shipping: { easypost: { package: '@nymbalhq/adapter-easypost' } },
+  shipping: { easypost: { package: '@nymbalhq/shipping-easypost' } },
   security: { cloudflare: { package: '@nymbalhq/security-cloudflare' } },
 }
 

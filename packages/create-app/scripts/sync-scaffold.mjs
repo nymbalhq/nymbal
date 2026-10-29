@@ -19,20 +19,20 @@ const SCAFFOLD_TEMPLATES = resolve(PKG_ROOT, 'scaffold', 'templates')
 export const NON_SCAFFOLD_PACKAGES = new Set([
   // Provider adapters and primitive packages are optional peers of the kernel: a project installs one (and its SDK)
   // only when its config names it.
-  '@nymbalhq/adapter-anthropic',
-  '@nymbalhq/adapter-easypost',
-  '@nymbalhq/adapter-mailgun',
-  '@nymbalhq/adapter-resend',
-  '@nymbalhq/adapter-ses',
-  '@nymbalhq/adapter-smtp',
-  '@nymbalhq/adapter-stripe',
+  '@nymbalhq/ai-anthropic',
   '@nymbalhq/contract-tests',
-  '@nymbalhq/doc-store-postgres-jsonb',
-  '@nymbalhq/doc-store-redis',
+  '@nymbalhq/document-store-postgres-jsonb',
+  '@nymbalhq/document-store-redis',
+  '@nymbalhq/email-mailgun',
+  '@nymbalhq/email-resend',
+  '@nymbalhq/email-ses',
+  '@nymbalhq/email-smtp',
   '@nymbalhq/event-bus-redis-streams',
   '@nymbalhq/media-s3',
+  '@nymbalhq/payments-stripe',
   '@nymbalhq/proof-kit',
   '@nymbalhq/security-cloudflare',
+  '@nymbalhq/shipping-easypost',
   '@nymbalhq/test-factories',
 ])
 

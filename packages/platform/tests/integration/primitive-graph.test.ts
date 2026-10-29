@@ -11,7 +11,7 @@ import {
 } from '../support/primitive-graph.js'
 
 // AC-5, the cases that need no Redis: with in-memory and in-process the child-process module graph holds no Redis SDK,
-// no primitive package and no `pg` beyond the command store's own import; with @nymbalhq/doc-store-redis hidden,
+// no primitive package and no `pg` beyond the command store's own import; with @nymbalhq/document-store-redis hidden,
 // createApp fails adapter.package_missing with the install line. The Redis-backed load is
 // tests/primitives/primitive-graph.test.ts. Needs `pnpm build`.
 
@@ -24,11 +24,11 @@ describe('AC-5: the loader knows the infrastructure packages', () => {
       Record<string, { package: string; sdk: string }> | undefined
     >
     expect(packages['documentStore']?.['redis']).toEqual({
-      package: '@nymbalhq/doc-store-redis',
+      package: '@nymbalhq/document-store-redis',
       sdk: 'ioredis',
     })
     expect(packages['documentStore']?.['postgres-jsonb']).toEqual({
-      package: '@nymbalhq/doc-store-postgres-jsonb',
+      package: '@nymbalhq/document-store-postgres-jsonb',
       sdk: 'pg',
     })
     expect(packages['eventBus']?.['redis-streams']).toEqual({
@@ -75,7 +75,7 @@ describe('AC-5: with in-memory and in-process, no primitive SDK or package is re
 })
 
 describe('AC-5: a missing primitive package fails with the install line', () => {
-  it('AC-5: documentStore redis with @nymbalhq/doc-store-redis not installed fails createApp adapter.package_missing, naming the slot and "npm install @nymbalhq/doc-store-redis ioredis"', async () => {
+  it('AC-5: documentStore redis with @nymbalhq/document-store-redis not installed fails createApp adapter.package_missing, naming the slot and "npm install @nymbalhq/document-store-redis ioredis"', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
       documentStore: 'redis',
@@ -85,12 +85,12 @@ describe('AC-5: a missing primitive package fails with the install line', () => 
     })
 
     const { resolutions, outcome } = await runGraphChild(config, {
-      hide: ['@nymbalhq/doc-store-redis'],
+      hide: ['@nymbalhq/document-store-redis'],
     })
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')
-    expect(outcome.error?.message).toContain('npm install @nymbalhq/doc-store-redis ioredis')
+    expect(outcome.error?.message).toContain('npm install @nymbalhq/document-store-redis ioredis')
     expect(outcome.error?.message).toMatch(/\bdocumentStore\b/)
     expect(resolutions.filter((r) => underModule(r.url, 'ioredis')).length).toBe(0)
   }, 90_000)

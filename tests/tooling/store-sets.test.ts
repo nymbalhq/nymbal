@@ -211,9 +211,9 @@ describe('AC-7: nightly.yml runs the E2E suite on each new store set', () => {
 
 /** The service-backed store suites (Redis, Postgres JSONB, the E2E harness). */
 const SERVICE_SUITES = [
-  'packages/doc-store-redis/src/contract.test.ts',
-  'packages/doc-store-postgres-jsonb/src/contract.test.ts',
-  'packages/event-bus-redis-streams/src/contract.test.ts',
+  'packages/adapters/document-store/redis/src/contract.test.ts',
+  'packages/adapters/document-store/postgres-jsonb/src/contract.test.ts',
+  'packages/adapters/event-bus/redis-streams/src/contract.test.ts',
   'packages/platform/tests/primitives/admin-tabs.test.ts',
   'packages/platform/tests/primitives/delivery-marker.test.ts',
   'packages/platform/tests/primitives/primitive-graph.test.ts',

@@ -4,15 +4,20 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
+import { namedRunners } from './contract-runner-files'
 import { REPO_ROOT } from './workspace-manifests'
 
 // AC-2: the suites live in @nymbalhq/contract-tests and nowhere else. tests/contracts/suites/ is gone and no file
-// imports from it; every runner (tests/contracts/*.test.ts and packages/*/src/contract.test.ts that call a
-// run*Contract) imports its suite from the package (where a workspace package cannot depend on it, from the
-// package's own src/index.ts: the same code, no fork); and each runner collects at least as many cases as it did at
-// 45a48d6. The counts are `vitest list` (collection only: no service is reached). Needs `pnpm build`.
+// imports from it; every runner (tests/contracts/*.test.ts and <member>/src/contract.test.ts, for each workspace
+// member under packages/ at any depth, that call a run*Contract) imports its suite from the package (where a workspace
+// package cannot depend on it, from the package's own src/index.ts: the same code, no fork); and each runner collects
+// at least as many cases as it did at 45a48d6. The counts are `vitest list` (collection only: no service is reached).
+// Needs `pnpm build`.
 
-/** Each runner's case count at 45a48d6, by project, as `vitest list --project <p> <file>` collected it. */
+/**
+ * Each runner's case count at 45a48d6, by project, as `vitest list --project <p> <file>` collected it. The store
+ * packages' runners are at the directories they moved to.
+ */
 const BASE_COUNTS: Record<string, Record<string, number>> = {
   'contracts-native': {
     'tests/contracts/analytics.test.ts': 3,
@@ -30,9 +35,9 @@ const BASE_COUNTS: Record<string, Record<string, number>> = {
     'tests/contracts/tax.test.ts': 3,
   },
   'integration-stores': {
-    'packages/doc-store-postgres-jsonb/src/contract.test.ts': 22,
-    'packages/doc-store-redis/src/contract.test.ts': 22,
-    'packages/event-bus-redis-streams/src/contract.test.ts': 20,
+    'packages/adapters/document-store/postgres-jsonb/src/contract.test.ts': 22,
+    'packages/adapters/document-store/redis/src/contract.test.ts': 22,
+    'packages/adapters/event-bus/redis-streams/src/contract.test.ts': 20,
     'tests/stores/media-s3-contract.test.ts': 5,
   },
   'integration-postgres': {
@@ -44,7 +49,6 @@ const PACKAGE = '@nymbalhq/contract-tests'
 /** The package's source entry, for a workspace package that does not depend on it (platform, cli, tests/stores). */
 const PACKAGE_SOURCE = /(^|\/)contract-tests\/src\/index(\.js)?$/
 const RUN_CALL = /\b(run[A-Z]\w*Contract)\s*\(/g
-const CALLS_A_SUITE = /\brun[A-Z]\w*Contract\s*\(/
 const SKIP_DIRS = new Set([
   'node_modules',
   'dist',
@@ -87,19 +91,6 @@ function importedFrom(source: string): Map<string, string> {
 }
 
 const rel = (file: string) => relative(REPO_ROOT, file).split('\\').join('/')
-
-/** The runner files AC-2 names: tests/contracts/*.test.ts and packages/<pkg>/src/contract.test.ts calling a suite. */
-function namedRunners(): string[] {
-  const contracts = readdirSync(join(REPO_ROOT, 'tests', 'contracts'))
-    .filter((f) => f.endsWith('.test.ts'))
-    .map((f) => `tests/contracts/${f}`)
-  const packages = readdirSync(join(REPO_ROOT, 'packages'))
-    .map((p) => `packages/${p}/src/contract.test.ts`)
-    .filter((f) => existsSync(join(REPO_ROOT, f)))
-  return [...contracts, ...packages].filter((f) =>
-    CALLS_A_SUITE.test(readFileSync(join(REPO_ROOT, f), 'utf8')),
-  )
-}
 
 /** The module specifiers a file imports or re-exports, statically or dynamically. */
 function specifiers(source: string): string[] {

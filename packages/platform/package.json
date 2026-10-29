@@ -58,45 +58,39 @@
     "zod": "^3.23.8"
   },
   "peerDependencies": {
-    "@nymbalhq/adapter-anthropic": "workspace:^",
-    "@nymbalhq/adapter-easypost": "workspace:^",
-    "@nymbalhq/adapter-mailgun": "workspace:^",
-    "@nymbalhq/adapter-resend": "workspace:^",
-    "@nymbalhq/adapter-ses": "workspace:^",
-    "@nymbalhq/adapter-smtp": "workspace:^",
-    "@nymbalhq/adapter-stripe": "workspace:^",
-    "@nymbalhq/doc-store-postgres-jsonb": "workspace:^",
-    "@nymbalhq/doc-store-redis": "workspace:^",
+    "@nymbalhq/ai-anthropic": "workspace:^",
+    "@nymbalhq/document-store-postgres-jsonb": "workspace:^",
+    "@nymbalhq/document-store-redis": "workspace:^",
+    "@nymbalhq/email-mailgun": "workspace:^",
+    "@nymbalhq/email-resend": "workspace:^",
+    "@nymbalhq/email-ses": "workspace:^",
+    "@nymbalhq/email-smtp": "workspace:^",
     "@nymbalhq/event-bus-redis-streams": "workspace:^",
     "@nymbalhq/media-s3": "workspace:^",
-    "@nymbalhq/security-cloudflare": "workspace:^"
+    "@nymbalhq/payments-stripe": "workspace:^",
+    "@nymbalhq/security-cloudflare": "workspace:^",
+    "@nymbalhq/shipping-easypost": "workspace:^"
   },
   "peerDependenciesMeta": {
-    "@nymbalhq/adapter-anthropic": {
+    "@nymbalhq/ai-anthropic": {
       "optional": true
     },
-    "@nymbalhq/adapter-easypost": {
+    "@nymbalhq/document-store-postgres-jsonb": {
       "optional": true
     },
-    "@nymbalhq/adapter-mailgun": {
+    "@nymbalhq/document-store-redis": {
       "optional": true
     },
-    "@nymbalhq/adapter-resend": {
+    "@nymbalhq/email-mailgun": {
       "optional": true
     },
-    "@nymbalhq/adapter-ses": {
+    "@nymbalhq/email-resend": {
       "optional": true
     },
-    "@nymbalhq/adapter-smtp": {
+    "@nymbalhq/email-ses": {
       "optional": true
     },
-    "@nymbalhq/adapter-stripe": {
-      "optional": true
-    },
-    "@nymbalhq/doc-store-postgres-jsonb": {
-      "optional": true
-    },
-    "@nymbalhq/doc-store-redis": {
+    "@nymbalhq/email-smtp": {
       "optional": true
     },
     "@nymbalhq/event-bus-redis-streams": {
@@ -105,23 +99,29 @@
     "@nymbalhq/media-s3": {
       "optional": true
     },
+    "@nymbalhq/payments-stripe": {
+      "optional": true
+    },
     "@nymbalhq/security-cloudflare": {
+      "optional": true
+    },
+    "@nymbalhq/shipping-easypost": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@nymbalhq/adapter-anthropic": "workspace:*",
-    "@nymbalhq/adapter-easypost": "workspace:*",
-    "@nymbalhq/adapter-mailgun": "workspace:*",
-    "@nymbalhq/adapter-resend": "workspace:*",
-    "@nymbalhq/adapter-ses": "workspace:*",
-    "@nymbalhq/adapter-smtp": "workspace:*",
-    "@nymbalhq/adapter-stripe": "workspace:*",
-    "@nymbalhq/doc-store-postgres-jsonb": "workspace:*",
-    "@nymbalhq/doc-store-redis": "workspace:*",
+    "@nymbalhq/ai-anthropic": "workspace:*",
+    "@nymbalhq/document-store-postgres-jsonb": "workspace:*",
+    "@nymbalhq/document-store-redis": "workspace:*",
+    "@nymbalhq/email-mailgun": "workspace:*",
+    "@nymbalhq/email-resend": "workspace:*",
+    "@nymbalhq/email-ses": "workspace:*",
+    "@nymbalhq/email-smtp": "workspace:*",
     "@nymbalhq/event-bus-redis-streams": "workspace:*",
     "@nymbalhq/media-s3": "workspace:*",
+    "@nymbalhq/payments-stripe": "workspace:*",
     "@nymbalhq/security-cloudflare": "workspace:*",
+    "@nymbalhq/shipping-easypost": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",
     "@types/pg": "^8.11.10",

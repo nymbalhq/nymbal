@@ -7,7 +7,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nymbalhq/adapter-stripe": "workspace:*",
+    "@nymbalhq/payments-stripe": "workspace:*",
     "@nymbalhq/contract-tests": "workspace:*",
     "@nymbalhq/platform": "workspace:*",
     "@nymbalhq/security-cloudflare": "workspace:*",

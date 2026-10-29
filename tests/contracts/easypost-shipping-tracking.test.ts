@@ -1,6 +1,6 @@
 import { runShippingTrackingContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
-import { createEasyPostShippingAdapter } from '../../packages/adapter-easypost/src/index.js'
+import { createEasyPostShippingAdapter } from '../../packages/adapters/shipping/easypost/src/index.js'
 import {
   changeOneByte,
   EASYPOST_TEST_WEBHOOK_SECRET,
@@ -11,7 +11,7 @@ import {
   trackerEvent,
 } from '../support/easypost'
 
-// The shipping tracking contract and the webhook contract on @nymbalhq/adapter-easypost with a test webhook secret.
+// The shipping tracking contract and the webhook contract on @nymbalhq/shipping-easypost with a test webhook secret.
 // Each sample is the same Event built afresh, as EasyPost's retry of an Event posts the same bytes under the same id.
 // EasyPost signs the whole raw body, so the tampered delivery is the signed body with one byte changed, under the
 // header signed for the original.

@@ -4,7 +4,7 @@ import {
   runMediaStorageContract,
   type MediaStorageContractOptions,
 } from '../../packages/contract-tests/src/index.js'
-import { createS3MediaStorage, s3ObjectUrl } from '../../packages/media-s3/src/index.js'
+import { createS3MediaStorage, s3ObjectUrl } from '../../packages/adapters/media/s3/src/index.js'
 import {
   anonymousGet,
   createPublicBucket,

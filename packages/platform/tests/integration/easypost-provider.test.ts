@@ -18,7 +18,7 @@ import { cleanupGraphDirs, runGraphChild } from '../support/primitive-graph.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // `shipping.provider: 'easypost'` passes the config's validation and createApp builds the shipping slot from
-// @nymbalhq/adapter-easypost with the config block's webhook secret, so EasyPost's signed tracker posts to
+// @nymbalhq/shipping-easypost with the config block's webhook secret, so EasyPost's signed tracker posts to
 // /api/webhooks/easypost reach the kernel's tracking handler: a delivered update delivers the shipped order with that
 // tracking number, an in-transit one and a forged one leave it shipped. Without the package, startup fails naming its
 // install line, with no SDK beside it. The missing-package case runs createApp from the built dist in a child process
@@ -169,15 +169,15 @@ describe('AC-4: the easypost provider loads', () => {
 })
 
 describe('AC-4: the easypost provider without its package', () => {
-  it('AC-4: with @nymbalhq/adapter-easypost not installed, createApp fails adapter.package_missing, naming the shipping slot and "npm install @nymbalhq/adapter-easypost" with no SDK after it', async () => {
+  it('AC-4: with @nymbalhq/shipping-easypost not installed, createApp fails adapter.package_missing, naming the shipping slot and "npm install @nymbalhq/shipping-easypost" with no SDK after it', async () => {
     const { outcome } = await runGraphChild(withEasyPost(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/adapter-easypost'],
+      hide: ['@nymbalhq/shipping-easypost'],
     })
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')
     expect(outcome.error?.message).toMatch(/\bshipping\b/)
     const install = /npm install [^\n]*/.exec(outcome.error?.message ?? '')?.[0]
-    expect(install?.trim(), outcome.error?.message).toBe('npm install @nymbalhq/adapter-easypost')
+    expect(install?.trim(), outcome.error?.message).toBe('npm install @nymbalhq/shipping-easypost')
   }, 90_000)
 })

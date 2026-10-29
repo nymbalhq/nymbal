@@ -1,6 +1,6 @@
 import { runEmailFeedbackContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
-import { createSesEmailAdapter } from '../../packages/adapter-ses/src/index.js'
+import { createSesEmailAdapter } from '../../packages/adapters/email/ses/src/index.js'
 import {
   changeOneCharacter,
   notification,
@@ -14,7 +14,7 @@ import {
   type SesRequest,
 } from '../support/ses'
 
-// The email feedback contract and the webhook contract on @nymbalhq/adapter-ses, with the test certificate injected
+// The email feedback contract and the webhook contract on @nymbalhq/email-ses, with the test certificate injected
 // through fetchCertificate and the store on the test topic. A sample is built afresh on every call under the same SNS
 // MessageId and the same SES message, as SNS retries one message: so a sample received twice is SNS's retry of it. SNS
 // signs the Message, so the tampered delivery changes one character of the recipient inside it.

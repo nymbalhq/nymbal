@@ -22,6 +22,7 @@ export default {
     '!/vitest.stryker.integration.config.ts',
     '!/packages',
     '/packages/*/dist',
+    '/packages/adapters/*/*/dist',
     '**/CLAUDE.md',
   ],
   disableTypeChecks: 'packages/platform/src/{services,repositories}/**/*.ts',

@@ -1,6 +1,6 @@
 import { runEmailFeedbackContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
-import { createResendEmailAdapter } from '../../packages/adapter-resend/src/index.js'
+import { createResendEmailAdapter } from '../../packages/adapters/email/resend/src/index.js'
 import {
   bounced,
   changeOneCharacter,
@@ -10,7 +10,7 @@ import {
   type ResendRequest,
 } from '../support/resend'
 
-// The email feedback contract and the webhook contract on @nymbalhq/adapter-resend with a test webhook secret. Each
+// The email feedback contract and the webhook contract on @nymbalhq/email-resend with a test webhook secret. Each
 // sample is signed afresh on every call under the same svix-id, as Svix signs a retry of one message again with a new
 // timestamp, so a sample received twice is Resend's retry of it. Svix signs the body, so the tampered delivery
 // changes one byte of it.

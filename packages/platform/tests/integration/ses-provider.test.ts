@@ -20,7 +20,7 @@ import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // `email.provider: 'ses'` passes the config's validation and createApp builds the email slot from
-// @nymbalhq/adapter-ses, on the config block's topic. A signed permanent bounce, posted to /api/webhooks/ses as SNS
+// @nymbalhq/email-ses, on the config block's topic. A signed permanent bounce, posted to /api/webhooks/ses as SNS
 // posts it (text/plain), ends as the address's suppression row. The adapter's default certificate fetch resolves
 // `globalThis.fetch` when it runs, so `fetch` is stubbed after the kernel is built: the certificate URL answers the test
 // certificate, and every other URL (the test's own posts to the kernel) goes to the real fetch. Needs `pnpm build`.

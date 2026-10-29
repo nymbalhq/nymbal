@@ -23,7 +23,7 @@ afterAll(async () => {
 })
 
 describe('AC-5: redis and redis-streams load from their packages', () => {
-  it('AC-5: createApp loads @nymbalhq/doc-store-redis and @nymbalhq/event-bus-redis-streams (and ioredis through them), and reports each instance’s own capabilities()', async () => {
+  it('AC-5: createApp loads @nymbalhq/document-store-redis and @nymbalhq/event-bus-redis-streams (and ioredis through them), and reports each instance’s own capabilities()', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
       documentStore: 'redis',
@@ -34,12 +34,16 @@ describe('AC-5: redis and redis-streams load from their packages', () => {
     const { resolutions, outcome } = await runGraphChild(config)
 
     expect(outcome.error, JSON.stringify(outcome.error)).toBeUndefined()
-    expect(resolutions.filter((r) => inPackage(r.url, 'doc-store-redis')).length).toBeGreaterThan(0)
     expect(
-      resolutions.filter((r) => inPackage(r.url, 'event-bus-redis-streams')).length,
+      resolutions.filter((r) => inPackage(r.url, 'adapters/document-store/redis')).length,
+    ).toBeGreaterThan(0)
+    expect(
+      resolutions.filter((r) => inPackage(r.url, 'adapters/event-bus/redis-streams')).length,
     ).toBeGreaterThan(0)
     expect(resolutions.filter((r) => underModule(r.url, 'ioredis')).length).toBeGreaterThan(0)
-    expect(resolutions.filter((r) => inPackage(r.url, 'doc-store-postgres-jsonb'))).toEqual([])
+    expect(
+      resolutions.filter((r) => inPackage(r.url, 'adapters/document-store/postgres-jsonb')),
+    ).toEqual([])
 
     const { report, own, probed } = outcome.started!
     expect(report.documentStore).toEqual({ provider: 'redis', capabilities: own.documentStore })

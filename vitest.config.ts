@@ -164,10 +164,9 @@ export default defineConfig({
         test: {
           name: 'adapters',
           environment: 'node',
-          include: [
-            'packages/adapter-*/src/**/*.test.ts',
-            'packages/security-cloudflare/src/**/*.test.ts',
-          ],
+          include: ['packages/adapters/*/*/src/**/*.test.ts'],
+          // Their contract suites need the compose services: integration-stores runs them.
+          exclude: [...configDefaults.exclude, 'packages/adapters/{document-store,event-bus}/**'],
         },
       },
       {
@@ -270,9 +269,7 @@ export default defineConfig({
           name: 'integration-stores',
           environment: 'node',
           include: [
-            'packages/doc-store-redis/src/**/*.test.ts',
-            'packages/doc-store-postgres-jsonb/src/**/*.test.ts',
-            'packages/event-bus-redis-streams/src/**/*.test.ts',
+            'packages/adapters/{document-store,event-bus}/*/src/**/*.test.ts',
             'packages/platform/tests/primitives/**/*.test.ts',
             'tests/stores/**/*.test.ts',
             ...NESTED_VITEST_RUNS,
@@ -359,7 +356,7 @@ export default defineConfig({
     ]).filter(kept),
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**'],
+      include: ['packages/*/src/**', 'packages/adapters/*/*/src/**'],
       exclude: [
         '**/generated/**',
         '**/*.generated.ts',
@@ -368,6 +365,7 @@ export default defineConfig({
         '**/*.test.tsx',
         '**/dist/**',
         'packages/*/src/index.ts',
+        'packages/adapters/*/*/src/index.ts',
         '**/tests/**',
         'packages/test-factories/**',
         'packages/contract-tests/**',

@@ -181,7 +181,7 @@ describe('AC-1: recipes are data in their packages', () => {
     const r = (name: string): Recipe => byName.get(name)!
 
     expect(unique(r('redis').install).sort()).toEqual([
-      '@nymbalhq/doc-store-redis',
+      '@nymbalhq/document-store-redis',
       '@nymbalhq/event-bus-redis-streams',
       'ioredis',
     ])
@@ -224,7 +224,7 @@ describe('AC-1: recipes are data in their packages', () => {
         .map((e) => e.name),
     ).toEqual(['S3_BUCKET'])
 
-    expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/adapter-stripe', 'stripe'])
+    expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/payments-stripe', 'stripe'])
     // The fields the Stripe package declares as settings are not in `set` (an unset variable would throw at
     // loadConfig before Settings could fill them), so the recipe sets the provider and writes no env() at all; the
     // variables stay in `.env`, required, for a deploy that sets them there.

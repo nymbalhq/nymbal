@@ -1,6 +1,6 @@
 import { createServer, type Socket } from 'node:net'
 
-// A minimal SMTP server in the test process, for the email contract on @nymbalhq/adapter-smtp without Mailpit: it
+// A minimal SMTP server in the test process, for the email contract on @nymbalhq/email-smtp without Mailpit: it
 // greets, answers EHLO without STARTTLS or AUTH (so nodemailer neither upgrades nor logs in), accepts MAIL, RCPT and
 // DATA, and keeps each message's data and recipients. Enough for nodemailer's verify() and sendMail(), nothing more.
 // `refuseRecipients(n)` answers the next n RCPT commands with 451, a passing refusal, as a mail host under load does.

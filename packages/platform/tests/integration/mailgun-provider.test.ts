@@ -16,7 +16,7 @@ import { cleanupGraphDirs, runGraphChild } from '../support/primitive-graph.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 
 // `email.provider: 'mailgun'` passes the config's validation and createApp builds the email slot from
-// @nymbalhq/adapter-mailgun, with the config block's signing key; without the package, startup fails naming it and
+// @nymbalhq/email-mailgun, with the config block's signing key; without the package, startup fails naming it and
 // its install line, as it does for smtp. The missing-package case runs createApp from the built dist in a child
 // process (fixtures/primitive-graph). Needs `pnpm build`.
 
@@ -88,14 +88,14 @@ describe('AC-4: the mailgun provider loads', () => {
     expect(afterReal.at(-1)).toBe('bounced@mailgun.test')
   }, 60_000)
 
-  it('AC-4: with @nymbalhq/adapter-mailgun not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/adapter-mailgun nodemailer"', async () => {
+  it('AC-4: with @nymbalhq/email-mailgun not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/email-mailgun nodemailer"', async () => {
     const { outcome } = await runGraphChild(withMailgun(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/adapter-mailgun'],
+      hide: ['@nymbalhq/email-mailgun'],
     })
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')
-    expect(outcome.error?.message).toContain('npm install @nymbalhq/adapter-mailgun nodemailer')
+    expect(outcome.error?.message).toContain('npm install @nymbalhq/email-mailgun nodemailer')
     expect(outcome.error?.message).toMatch(/\bemail\b/)
   }, 90_000)
 })

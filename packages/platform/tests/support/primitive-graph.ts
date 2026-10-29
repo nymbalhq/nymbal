@@ -34,13 +34,14 @@ export interface GraphOutcome {
   error?: { name?: string; code?: string; message: string }
 }
 
+/** The primitive packages, by directory under packages/. */
 export const PRIMITIVE_PACKAGES = [
-  'doc-store-redis',
-  'doc-store-postgres-jsonb',
-  'event-bus-redis-streams',
+  'adapters/document-store/redis',
+  'adapters/document-store/postgres-jsonb',
+  'adapters/event-bus/redis-streams',
 ] as const
 
-/** A URL inside the workspace package `dir` (packages/<dir>/), not a copy under node_modules/.pnpm. */
+/** A URL inside the workspace package `dir` (packages/<dir>/, at any depth), not a copy under node_modules/.pnpm. */
 export const inPackage = (url: string, dir: string): boolean =>
   url.includes(`/packages/${dir}/`) && !url.includes('/node_modules/.pnpm/')
 export const underModule = (url: string, name: string): boolean =>

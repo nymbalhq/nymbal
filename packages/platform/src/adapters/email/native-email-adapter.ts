@@ -11,7 +11,7 @@ import {
 } from '@nymbalhq/types'
 import { okHealth } from '../base.js'
 
-/** The native provider logs mail to the console; SMTP is the `smtp` provider (@nymbalhq/adapter-smtp). */
+/** The native provider logs mail to the console; SMTP is the `smtp` provider (@nymbalhq/email-smtp). */
 export interface NativeEmailAdapterConfig {
   transport?: 'console'
   from?: string

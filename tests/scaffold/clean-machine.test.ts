@@ -374,29 +374,108 @@ describe('AC-7: a clean machine installs no provider SDK', () => {
     expect(installed.size).toBeGreaterThan(0)
     expect(PROVIDER_SDKS.filter((sdk) => installed.has(sdk))).toEqual([])
   })
+})
 
-  it('AC-7: with payments.provider changed to stripe, `npx nymbal dev --api-only` on a free port exits non-zero printing `npm install @nymbalhq/adapter-stripe stripe`', async () => {
+const STRIPE_PACKAGE = '@nymbalhq/payments-stripe'
+
+/** The scaffold's config with Stripe payments in place of native ones. */
+function withStripe(original: string): string {
+  return original.replace(
+    /payments:\s*\{\s*provider:\s*'native'\s*\}/,
+    "payments: { provider: 'stripe', config: { secretKey: 'sk_test_adapters', webhookSecret: 'whsec_adapters' } }",
+  )
+}
+
+/** The add and remove commands of the package manager the project's package.json records. */
+function packageManagerCommands(): { command: string; add: string[]; remove: string[] } {
+  const pm = manifest(join(DIR, 'package.json')).packageManager?.split('@')[0] ?? 'npm'
+  return pm === 'npm'
+    ? { command: 'npm', add: ['install'], remove: ['uninstall'] }
+    : { command: pm, add: ['add'], remove: ['remove'] }
+}
+
+/** Starts `npx nymbal dev --api-only` on `port` in the project; the returned stop kills its process group. */
+function serveApi(port: number): { output: () => string; stop: () => void } {
+  const env = { ...process.env }
+  for (const key of Object.keys(env)) {
+    if (
+      key === 'npm_config_user_agent' ||
+      key === 'npm_execpath' ||
+      key.startsWith('npm_lifecycle_')
+    ) {
+      delete env[key]
+    }
+  }
+  const child = spawn('npx', ['nymbal', 'dev', '--api-only', '--port', String(port)], {
+    cwd: DIR,
+    env,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()))
+  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()))
+  return {
+    output: () => output,
+    stop: () => {
+      try {
+        process.kill(-child.pid!, 'SIGKILL')
+      } catch {
+        // already gone
+      }
+    },
+  }
+}
+
+// AC-4: the renamed adapter installs from the local registry and the store boots on it. Last in the file: it installs
+// Stripe's SDK, which AC-7 above holds a fresh project never has, and removes both packages again when it is done.
+describe('AC-4: a scaffold installs a renamed adapter package', () => {
+  it('AC-4: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install it answers GET /health 200', async () => {
     const path = join(DIR, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
-    const edited = original.replace(
-      /payments:\s*\{\s*provider:\s*'native'\s*\}/,
-      "payments: { provider: 'stripe', config: { secretKey: 'sk_test_adapters', webhookSecret: 'whsec_adapters' } }",
-    )
+    const edited = withStripe(original)
     expect(edited, 'the scaffold config names native payments').not.toBe(original)
+    const platform = [...(installedNymbalVersions(DIR).get('@nymbalhq/platform') ?? [])]
+    expect(platform, 'one installed @nymbalhq/platform').toHaveLength(1)
+    const pm = packageManagerCommands()
+    let server: { output: () => string; stop: () => void } | undefined
     try {
       writeFileSync(path, edited)
-      const port = await freePort()
-      const run = await runInProject(
+      const missing = await runInProject(
         'npx',
-        ['nymbal', 'dev', '--api-only', '--port', String(port)],
+        ['nymbal', 'dev', '--api-only', '--port', String(await freePort())],
         60_000,
       )
 
-      expect(run.timedOut, `still serving after 60 s:\n${run.output.slice(-2000)}`).toBe(false)
-      expect(run.code).not.toBe(0)
-      expect(run.output).toContain('npm install @nymbalhq/adapter-stripe stripe')
+      expect(missing.timedOut, `still serving after 60 s:\n${missing.output.slice(-2000)}`).toBe(
+        false,
+      )
+      expect(missing.code).not.toBe(0)
+      expect(missing.output).toContain(`npm install ${STRIPE_PACKAGE} stripe`)
+
+      // The registry scaffold-clean.sh published to holds the renamed package at the version the project runs.
+      const install = await runInProject(
+        pm.command,
+        [...pm.add, `${STRIPE_PACKAGE}@${platform[0]!}`, 'stripe'],
+        180_000,
+      )
+      expect(install.code, install.output.slice(-2000)).toBe(0)
+      expect([...(installedNymbalVersions(DIR).get(STRIPE_PACKAGE) ?? [])]).toEqual(platform)
+
+      const port = await freePort()
+      server = serveApi(port)
+      const served = server
+      await vi.waitFor(
+        async () => {
+          const res = await fetch(`http://localhost:${port}/health`)
+          expect(res.status, served.output().slice(-2000)).toBe(200)
+        },
+        { timeout: 90_000, interval: 500 },
+      )
     } finally {
+      server?.stop()
       writeFileSync(path, original)
+      await runInProject(pm.command, [...pm.remove, STRIPE_PACKAGE, 'stripe'], 180_000)
     }
-  }, 90_000)
+  }, 480_000)
 })

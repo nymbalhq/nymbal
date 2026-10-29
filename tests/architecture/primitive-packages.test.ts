@@ -1,10 +1,11 @@
-// Reads: packages/doc-store-redis/**, packages/doc-store-postgres-jsonb/**, packages/event-bus-redis-streams/**
-// Reads: packages/media-s3/**, packages/platform/package.json, packages/platform/src/**
+// Reads: packages/adapters/document-store/**, packages/adapters/event-bus/**, packages/adapters/media/**
+// Reads: packages/platform/package.json, packages/platform/src/**
 // Reads: packages/create-app/scripts/sync-scaffold.mjs, .changeset/config.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REPO_ROOT, type Manifest } from './workspace-manifests'
+import { ROOT as REPO_ROOT } from './adapter-table'
+import type { Manifest } from './workspace-manifests'
 
 // AC-6: the kernel's manifest holds no Redis SDK and peers the primitive packages as optional (`workspace:^`); each
 // package peers its own SDK, depends on @nymbalhq/types and never on the kernel, starts at the fixed group's version,
@@ -20,18 +21,22 @@ interface PackageManifest extends Manifest {
 
 /** Each package, its directory and the SDK it peers. */
 const PRIMITIVES = [
-  { dir: 'packages/doc-store-redis', name: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },
   {
-    dir: 'packages/doc-store-postgres-jsonb',
-    name: '@nymbalhq/doc-store-postgres-jsonb',
+    dir: 'packages/adapters/document-store/redis',
+    name: '@nymbalhq/document-store-redis',
+    sdk: 'ioredis',
+  },
+  {
+    dir: 'packages/adapters/document-store/postgres-jsonb',
+    name: '@nymbalhq/document-store-postgres-jsonb',
     sdk: 'pg',
   },
   {
-    dir: 'packages/event-bus-redis-streams',
+    dir: 'packages/adapters/event-bus/redis-streams',
     name: '@nymbalhq/event-bus-redis-streams',
     sdk: 'ioredis',
   },
-  { dir: 'packages/media-s3', name: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' },
+  { dir: 'packages/adapters/media/s3', name: '@nymbalhq/media-s3', sdk: '@aws-sdk/client-s3' },
 ] as const
 
 const NAMES: readonly string[] = PRIMITIVES.map((p) => p.name)

@@ -22,6 +22,22 @@ const PACKAGES = resolve(REPO_ROOT, 'packages')
 const TEMPLATES = ['astro', 'nextjs'] as const
 type Template = (typeof TEMPLATES)[number]
 
+// The first-party adapter packages: optional peers of the kernel that a project installs only when its config names one.
+const ADAPTER_PACKAGES = [
+  '@nymbalhq/payments-stripe',
+  '@nymbalhq/email-smtp',
+  '@nymbalhq/email-mailgun',
+  '@nymbalhq/email-resend',
+  '@nymbalhq/email-ses',
+  '@nymbalhq/ai-anthropic',
+  '@nymbalhq/shipping-easypost',
+  '@nymbalhq/document-store-redis',
+  '@nymbalhq/document-store-postgres-jsonb',
+  '@nymbalhq/event-bus-redis-streams',
+  '@nymbalhq/media-s3',
+  '@nymbalhq/security-cloudflare',
+]
+
 // The public runtime packages @nymbalhq/stack pins, and the directory each lives in.
 const PUBLIC_RUNTIME: Record<string, string> = {
   nymbal: 'cli',
@@ -346,7 +362,7 @@ describe('scaffold() output', () => {
         listed.filter(
           (n) =>
             ['stripe', '@anthropic-ai/sdk', 'nodemailer'].includes(n) ||
-            n.startsWith('@nymbalhq/adapter-'),
+            ADAPTER_PACKAGES.includes(n),
         ),
       ).toEqual([])
     })

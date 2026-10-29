@@ -12,9 +12,9 @@ import type { Recipe } from '@nymbalhq/types'
 export const RECIPE_HOLDERS: Readonly<Record<string, string>> = {
   cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
-  redis: '@nymbalhq/doc-store-redis',
+  redis: '@nymbalhq/document-store-redis',
   s3: '@nymbalhq/media-s3',
-  stripe: '@nymbalhq/adapter-stripe',
+  stripe: '@nymbalhq/payments-stripe',
 }
 
 export function knownRecipes(): string[] {

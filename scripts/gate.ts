@@ -39,6 +39,7 @@ import {
   testKeys,
   type Totals,
 } from './test-census'
+import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspace-packages'
 
 // The gate: one command to run before finishing (`pnpm gate`) and one before a pull request (`pnpm gate:full`).
 // Every step is a shell command whose exit code decides its status; the verdict is red if and only if a step is
@@ -149,8 +150,8 @@ const INTEGRATION_MUTATION_FILES = new Set([
 function isConfiguration(path: string): boolean {
   return (
     ROOT_CONFIG_FILES.has(path) ||
-    /^(?:packages\/[^/]+\/)?tsconfig[^/]*\.json$/.test(path) ||
-    /^packages\/[^/]+\/package\.json$/.test(path)
+    /^(?:packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/)?tsconfig[^/]*\.json$/.test(path) ||
+    /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/package\.json$/.test(path)
   )
 }
 
@@ -263,9 +264,30 @@ export function selectTests(changed: string[]): {
  */
 export function isBuildInput(path: string): boolean {
   if (TEST_FILE.test(path)) return false
-  return /^packages\/[^/]+\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+  // A package is `packages/<name>` or, by the second workspace glob, `packages/adapters/<slot>/<provider>`.
+  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
     path,
   )
+}
+
+/**
+ * The packages under `packages/`, at any depth, with their manifests: the workspace members when `root` is a
+ * workspace, else (a tree with no `pnpm-workspace.yaml`, so no nested glob) each `packages/<name>` on the disk.
+ */
+function packageManifests(root: string): WorkspaceMember[] {
+  if (existsSync(resolve(root, 'pnpm-workspace.yaml'))) {
+    return workspaceMembers(root).filter(({ dir }) => dir.startsWith('packages/'))
+  }
+  const packages = resolve(root, 'packages')
+  if (!existsSync(packages)) return []
+  return readdirSync(packages)
+    .filter((name) => existsSync(resolve(packages, name, 'package.json')))
+    .map((name) => ({
+      dir: `packages/${name}`,
+      manifest: JSON.parse(
+        readFileSync(resolve(packages, name, 'package.json'), 'utf8'),
+      ) as Manifest,
+    }))
 }
 
 /**
@@ -273,19 +295,9 @@ export function isBuildInput(path: string): boolean {
  * The proof kit's tests import these through `dist`, which `vitest --changed` cannot trace back to their source.
  */
 export function workspaceClosure(root: string, start: string): string[] {
-  const packages = resolve(root, 'packages')
   const dirByName = new Map<string, string>()
   const depsByDir = new Map<string, string[]>()
-  for (const name of readdirSync(packages)) {
-    const manifest = resolve(packages, name, 'package.json')
-    if (!existsSync(manifest)) continue
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as {
-      name?: string
-      dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
-      peerDependencies?: Record<string, string>
-    }
-    const dir = `packages/${name}`
+  for (const { dir, manifest: pkg } of packageManifests(root)) {
     if (pkg.name !== undefined) dirByName.set(pkg.name, dir)
     depsByDir.set(dir, [
       ...Object.keys(pkg.dependencies ?? {}),
@@ -1601,25 +1613,20 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
 const APP_OUTPUTS = ['templates/astro/dist', 'templates/nextjs/.next', 'apps/admin/dist']
 
-/** The `packages/<name>` directories whose manifest has a build script. */
+/** The package directories under `packages/` whose manifest has a build script. */
 function buildingPackages(root: string): string[] {
-  const packages = resolve(root, 'packages')
-  if (!existsSync(packages)) return []
-  return readdirSync(packages).filter((name) => {
-    const manifest = resolve(packages, name, 'package.json')
-    if (!existsSync(manifest)) return false
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { scripts?: { build?: string } }
-    return typeof pkg.scripts?.build === 'string'
-  })
+  return packageManifests(root)
+    .filter(
+      ({ manifest }) =>
+        typeof (manifest['scripts'] as { build?: unknown } | undefined)?.build === 'string',
+    )
+    .map(({ dir }) => dir)
 }
 
 /** Whether every package that has a build script has its `dist`, and at least one does. */
 export function packagesBuilt(root: string): boolean {
   const builders = buildingPackages(root)
-  return (
-    builders.length > 0 &&
-    builders.every((name) => existsSync(resolve(root, 'packages', name, 'dist')))
-  )
+  return builders.length > 0 && builders.every((dir) => existsSync(resolve(root, dir, 'dist')))
 }
 
 /**

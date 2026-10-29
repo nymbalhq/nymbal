@@ -90,14 +90,15 @@ export npm_config_registry="$registry/"
 export npm_config_cache="$work/npm-cache"
 
 # ─── publish every public package at one snapshot version ───────────────────────────────────────────────────────
-tar -cf "$work/backup.tar" -C "$root" \
-  $(cd "$root" && ls packages/*/package.json) apps/admin/package.json packages/create-app/scaffold
+# One list of member manifests, at any depth, for both the backup and the stamping, so the exit trap restores exactly
+# what was stamped.
+(cd "$root" && node scripts/workspace-packages.ts --manifests) > "$work/manifests"
+tar -cf "$work/backup.tar" -C "$root" $(cat "$work/manifests") packages/create-app/scaffold
 restore=1
 
-snapshot="$(cd "$root" && node -e '
-const { readFileSync, writeFileSync, readdirSync } = require("node:fs")
-const dirs = readdirSync("packages").filter((d) => { try { readFileSync(`packages/${d}/package.json`); return true } catch { return false } })
-const paths = [...dirs.map((d) => `packages/${d}/package.json`), "apps/admin/package.json"]
+snapshot="$(cd "$root" && MANIFESTS="$work/manifests" node -e '
+const { readFileSync, writeFileSync } = require("node:fs")
+const paths = readFileSync(process.env.MANIFESTS, "utf8").split("\n").filter(Boolean)
 const manifests = paths.map((path) => ({ path, pkg: JSON.parse(readFileSync(path, "utf8")) }))
 const stack = manifests.find((m) => m.pkg.name === "@nymbalhq/stack").pkg
 const version = `${stack.version}-scaffold.${Math.floor(Date.now() / 1000)}`

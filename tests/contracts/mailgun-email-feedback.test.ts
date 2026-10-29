@@ -1,6 +1,6 @@
 import { runEmailFeedbackContract, runWebhookContract } from '@nymbalhq/contract-tests'
 import type { Logger } from '@nymbalhq/types'
-import { createMailgunEmailAdapter } from '../../packages/adapter-mailgun/src/index.js'
+import { createMailgunEmailAdapter } from '../../packages/adapters/email/mailgun/src/index.js'
 import {
   changeOneCharacter,
   complaint,
@@ -13,7 +13,7 @@ import {
   type MailgunSignature,
 } from '../support/mailgun'
 
-// The email feedback contract and the webhook contract on @nymbalhq/adapter-mailgun with a test signing key. Each
+// The email feedback contract and the webhook contract on @nymbalhq/email-mailgun with a test signing key. Each
 // sample is signed afresh on every call, as Mailgun signs each post with a new token (the adapter takes a token once),
 // so a sample received twice is Mailgun's retry of one event: its `event-data.id` is the delivery. Mailgun signs only
 // `signature.timestamp` and `signature.token`, so the tampered delivery changes a byte of the token.

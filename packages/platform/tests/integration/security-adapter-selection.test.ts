@@ -13,7 +13,7 @@ import { createKernel, kernelConfig } from '../support/kernel.js'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
-} from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
+} from '../../../adapters/security/cloudflare/src/tests/fake-cloudflare.js'
 
 // AC-2: `createApp` honours `security.adapter`. With `cloudflare` (its apiBase on the fake) it builds the Cloudflare
 // adapter, reports `edge-rules`, sets the same response headers as a `middleware` store and makes no request at boot;

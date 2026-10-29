@@ -3,7 +3,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createStripePaymentsAdapter } from '@nymbalhq/adapter-stripe'
+import { createStripePaymentsAdapter } from '@nymbalhq/payments-stripe'
 import { createLogger } from '@nymbalhq/platform'
 import { PaymentError, type PaymentsAdapter } from '@nymbalhq/types'
 

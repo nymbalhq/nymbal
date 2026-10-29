@@ -48,7 +48,7 @@ const STRIPE_ENV = {
 }
 
 const STRIPE_RECIPE = fileURLToPath(
-  new URL('../../../../adapter-stripe/recipes/stripe.json', import.meta.url),
+  new URL('../../../../adapters/payments/stripe/recipes/stripe.json', import.meta.url),
 )
 
 type RecipeValue =

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { loadConfig } from '@nymbalhq/config'
 import { PROVIDER_PACKAGES } from '@nymbalhq/platform'
 import { readRecipe } from '../recipes/index.js'
-import { WINDOW_PERIODS } from '../../../security-cloudflare/src/rules.js'
+import { WINDOW_PERIODS } from '../../../adapters/security/cloudflare/src/rules.js'
 import {
   REPO,
   changedPaths,
