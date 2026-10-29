@@ -1,4 +1,16 @@
+import { readdirSync } from 'node:fs'
 import { defineConfig } from 'tsup'
+
+// tsup expands an entry array with an async glob whose order changes from run to run, and esbuild's shared chunks
+// follow the entry order, so the same source built twice could ship different bytes. Named entries, sorted, do not.
+const inDir = (dir: string) =>
+  readdirSync(dir)
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => `${dir}/${f}`)
+const named = (files: string[]) =>
+  Object.fromEntries(
+    [...files].sort().map((f) => [f.replace(/^src\//, '').replace(/\.tsx?$/, ''), f]),
+  )
 
 export default defineConfig({
   // One entry per element, and registerComponents (which reaches every element) in an entry of its own, so the root
@@ -6,13 +18,13 @@ export default defineConfig({
   // elements it imports.
   // The hydrate support is an entry of its own (a store's override imports it before lit), and the server renderer
   // one that only Node loads.
-  entry: [
+  entry: named([
     'src/index.ts',
     'src/register-components.ts',
-    'src/elements/*.ts',
+    ...inDir('src/elements'),
     'src/hydrate-support.ts',
     'src/ssr/index.ts',
-  ],
+  ]),
   format: ['esm'],
   splitting: true,
   dts: true,
