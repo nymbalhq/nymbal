@@ -19,6 +19,7 @@
       "@nymbalhq/adapter-smtp",
       "@nymbalhq/adapter-mailgun",
       "@nymbalhq/adapter-resend",
+      "@nymbalhq/adapter-ses",
       "@nymbalhq/adapter-easypost",
       "@nymbalhq/doc-store-redis",
       "@nymbalhq/doc-store-postgres-jsonb",

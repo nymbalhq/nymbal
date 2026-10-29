@@ -36,6 +36,7 @@ const GUARDED_PACKAGES = [
   'adapter-smtp',
   'adapter-mailgun',
   'adapter-resend',
+  'adapter-ses',
   'adapter-easypost',
   'doc-store-redis',
   'doc-store-postgres-jsonb',

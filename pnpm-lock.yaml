@@ -464,6 +464,37 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
+  packages/adapter-ses:
+    dependencies:
+      '@nymbalhq/adapter-smtp':
+        specifier: workspace:*
+        version: link:../adapter-smtp
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@types/nodemailer':
+        specifier: ^6.4.17
+        version: 6.4.23
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      fast-check:
+        specifier: ^4.10.2
+        version: 4.10.2
+      nodemailer:
+        specifier: ^6.9.16
+        version: 6.10.1
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
+
   packages/adapter-smtp:
     dependencies:
       '@nymbalhq/types':
@@ -842,6 +873,9 @@ importers:
       '@nymbalhq/adapter-resend':
         specifier: workspace:*
         version: link:../adapter-resend
+      '@nymbalhq/adapter-ses':
+        specifier: workspace:*
+        version: link:../adapter-ses
       '@nymbalhq/adapter-smtp':
         specifier: workspace:*
         version: link:../adapter-smtp

@@ -8,7 +8,7 @@ export type { CommerceSlot }
  */
 export const KNOWN_PROVIDERS = {
   payments: ['native', 'stripe', 'custom'],
-  email: ['native', 'smtp', 'mailgun', 'resend', 'custom'],
+  email: ['native', 'smtp', 'mailgun', 'resend', 'ses', 'custom'],
   reviews: ['native', 'custom'],
   search: ['native', 'custom'],
   analytics: ['native', 'custom'],

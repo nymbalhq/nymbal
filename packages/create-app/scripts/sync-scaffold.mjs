@@ -23,6 +23,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/adapter-easypost',
   '@nymbalhq/adapter-mailgun',
   '@nymbalhq/adapter-resend',
+  '@nymbalhq/adapter-ses',
   '@nymbalhq/adapter-smtp',
   '@nymbalhq/adapter-stripe',
   '@nymbalhq/contract-tests',

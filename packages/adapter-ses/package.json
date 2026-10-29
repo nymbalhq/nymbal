@@ -1,0 +1,50 @@
+{
+  "name": "@nymbalhq/adapter-ses",
+  "version": "1.4.0",
+  "description": "Amazon SES email for Nymbal: the `ses` email provider (SES SMTP, SNS bounce and complaint notifications)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/adapter-ses"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@nymbalhq/adapter-smtp": "workspace:*",
+    "@nymbalhq/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^6.4.17",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "fast-check": "^4.10.2",
+    "nodemailer": "^6.9.16",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

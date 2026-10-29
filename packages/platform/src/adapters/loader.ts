@@ -35,6 +35,7 @@ export const PROVIDER_PACKAGES: Readonly<
     smtp: { package: '@nymbalhq/adapter-smtp', sdk: 'nodemailer' },
     mailgun: { package: '@nymbalhq/adapter-mailgun', sdk: 'nodemailer' },
     resend: { package: '@nymbalhq/adapter-resend', sdk: 'nodemailer' },
+    ses: { package: '@nymbalhq/adapter-ses', sdk: 'nodemailer' },
   },
   documentStore: {
     redis: { package: '@nymbalhq/doc-store-redis', sdk: 'ioredis' },

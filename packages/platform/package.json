@@ -62,6 +62,7 @@
     "@nymbalhq/adapter-easypost": "workspace:^",
     "@nymbalhq/adapter-mailgun": "workspace:^",
     "@nymbalhq/adapter-resend": "workspace:^",
+    "@nymbalhq/adapter-ses": "workspace:^",
     "@nymbalhq/adapter-smtp": "workspace:^",
     "@nymbalhq/adapter-stripe": "workspace:^",
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:^",
@@ -81,6 +82,9 @@
       "optional": true
     },
     "@nymbalhq/adapter-resend": {
+      "optional": true
+    },
+    "@nymbalhq/adapter-ses": {
       "optional": true
     },
     "@nymbalhq/adapter-smtp": {
@@ -110,6 +114,7 @@
     "@nymbalhq/adapter-easypost": "workspace:*",
     "@nymbalhq/adapter-mailgun": "workspace:*",
     "@nymbalhq/adapter-resend": "workspace:*",
+    "@nymbalhq/adapter-ses": "workspace:*",
     "@nymbalhq/adapter-smtp": "workspace:*",
     "@nymbalhq/adapter-stripe": "workspace:*",
     "@nymbalhq/doc-store-postgres-jsonb": "workspace:*",

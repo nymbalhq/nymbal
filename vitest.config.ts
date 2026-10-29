@@ -244,6 +244,8 @@ export default defineConfig({
           include: ['packages/platform/tests/postgres/**/*.test.ts'],
           exclude: [...configDefaults.exclude, PERF_POSTGRES],
           testTimeout: 30000,
+          // Dropping a file's test databases in afterAll waits on the shared server, past 10 s under load.
+          hookTimeout: 30000,
         },
       },
       {
