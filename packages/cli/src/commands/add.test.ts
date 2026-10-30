@@ -143,13 +143,14 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
-  it('AC-4: an unknown recipe exits 1, lists cloudflare, postgres, redis, s3, stripe, and changes nothing', async () => {
+  it('AC-4: an unknown name exits 1, names the three forms of nymbal add, and changes nothing', async () => {
     const dir = project('unknown')
     const before = listing(dir)
 
     const result = await add(dir, 'recipes-no-such-recipe', '--no-install')
     expect(result.code, result.output).toBe(1)
-    expect(result.output).toMatch(/cloudflare,\s*postgres,\s*redis,\s*s3,\s*stripe/)
+    const forms = ['<slot> <provider>', '<package>', '<recipe>']
+    expect(forms.filter((f) => result.output.includes(f))).toEqual(forms)
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 

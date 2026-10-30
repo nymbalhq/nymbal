@@ -66,7 +66,13 @@ async function addAlgolia(
   const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(capture as never)
   try {
     const code = await add(
-      { recipe: 'algolia', install: false, force: false, dryRun: false, ...opts },
+      {
+        target: { kind: 'recipe', name: 'algolia' },
+        install: false,
+        force: false,
+        dryRun: false,
+        ...opts,
+      },
       dir,
     )
     return { code, out: stripAnsi(out) }

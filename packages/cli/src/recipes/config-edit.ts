@@ -8,6 +8,7 @@ export const SCAFFOLD_DEFAULTS: readonly string[] = [
   'in-process',
   'local-fs',
   'native',
+  'none',
   'middleware',
 ]
 

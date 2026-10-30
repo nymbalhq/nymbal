@@ -16,6 +16,7 @@ import {
   type DoctorLine,
 } from '../support/doctor'
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
+import { holdWorkspace } from '../support/workspace-lock'
 
 // A fresh Astro scaffold, made the scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with
 // --no-install, then `pnpm install`), runs on Redis after `nymbal add redis` alone. With REDIS_URL and a prefix of
@@ -60,6 +61,9 @@ interface ProductDoc {
 
 let lockfile: Buffer | null = null
 let created = false
+let release: (() => void) | null = null
+// The other scaffold store tests install into the same workspace: wait for theirs to finish.
+const LOCK_WAIT_MS = 1_200_000
 let api: ChildProcess | null = null
 let base = ''
 
@@ -166,6 +170,7 @@ async function stopApi(): Promise<void> {
 }
 
 beforeAll(async () => {
+  release = await holdWorkspace(LOCK_WAIT_MS)
   if (existsSync(DIR)) {
     throw new Error(
       `${DIR} exists: remove it first (this test scaffolds it and deletes it afterwards)`,
@@ -189,19 +194,23 @@ beforeAll(async () => {
   const installed = await sh('pnpm', ['install', '--no-frozen-lockfile', '--prefer-offline'], DIR)
   if (installed.code !== 0)
     throw new Error(`pnpm install failed:\n${installed.output.slice(-4000)}`)
-}, 600_000)
+}, LOCK_WAIT_MS + 600_000)
 
 afterAll(async () => {
-  await stopApi()
-  await deleteUnder(redisUrl, prefix)
-  if (created) rmSync(DIR, { recursive: true, force: true })
-  if (lockfile !== null && !readFileSync(LOCKFILE).equals(lockfile))
-    writeFileSync(LOCKFILE, lockfile)
-  // The install also re-linked the workspace's node_modules for the scaffold; put them back to the lockfile.
-  if (created) {
-    const synced = await sh('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], REPO)
-    if (synced.code !== 0)
-      throw new Error(`pnpm install --frozen-lockfile failed:\n${synced.output.slice(-4000)}`)
+  try {
+    await stopApi()
+    await deleteUnder(redisUrl, prefix)
+    if (created) rmSync(DIR, { recursive: true, force: true })
+    if (lockfile !== null && !readFileSync(LOCKFILE).equals(lockfile))
+      writeFileSync(LOCKFILE, lockfile)
+    // The install also re-linked the workspace's node_modules for the scaffold; put them back to the lockfile.
+    if (created) {
+      const synced = await sh('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], REPO)
+      if (synced.code !== 0)
+        throw new Error(`pnpm install --frozen-lockfile failed:\n${synced.output.slice(-4000)}`)
+    }
+  } finally {
+    release?.()
   }
 }, 360_000)
 

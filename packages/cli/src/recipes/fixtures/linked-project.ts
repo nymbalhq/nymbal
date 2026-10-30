@@ -63,6 +63,7 @@ const NYMBAL_PACKAGES: Readonly<Record<string, string>> = {
   '@nymbalhq/payments-stripe': 'packages/adapters/payments/stripe',
   '@nymbalhq/security-cloudflare': 'packages/adapters/security/cloudflare',
   '@nymbalhq/search-algolia': 'packages/adapters/search/algolia',
+  '@nymbalhq/ai-anthropic': 'packages/adapters/ai/anthropic',
 }
 
 /** The SDKs the recipes install, and the workspace package whose node_modules already holds each. */
@@ -70,6 +71,7 @@ const SDK_HOMES: Readonly<Record<string, string>> = {
   ioredis: 'packages/adapters/document-store/redis',
   stripe: 'packages/adapters/payments/stripe',
   '@aws-sdk/client-s3': 'packages/adapters/media/s3',
+  '@anthropic-ai/sdk': 'packages/adapters/ai/anthropic',
 }
 
 export function tempDir(label: string): string {

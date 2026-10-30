@@ -1,4 +1,4 @@
-import { defineCommand, runMain } from 'citty'
+import { defineCommand, runMain, showUsage } from 'citty'
 import { getCliVersion } from './utils/version.js'
 import { devCommand } from './commands/dev.js'
 import { buildCommand } from './commands/build.js'
@@ -6,7 +6,7 @@ import { migrateCommand } from './commands/migrate.js'
 import { seedCommand } from './commands/seed.js'
 import { importCommand } from './commands/import.js'
 import { configValidateCommand } from './commands/config-validate.js'
-import { addCommand } from './commands/add.js'
+import { addCommand, addUsage } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
 import { secretsCommand } from './commands/secrets.js'
 import { eventsCommand } from './commands/events.js'
@@ -66,5 +66,11 @@ const [flag, ...rest] = process.argv.slice(2)
 if (rest.length === 0 && (flag === '--version' || flag === '-v')) {
   process.stdout.write(`${getCliVersion()}\n`)
 } else {
-  runMain(main)
+  runMain(main, {
+    // `nymbal add --help` lists the forms, the slots with their providers, and the recipes.
+    showUsage: async (cmd, parent) => {
+      await showUsage(cmd, parent)
+      if ((cmd as unknown) === addCommand) process.stdout.write(`${addUsage()}\n`)
+    },
+  })
 }
