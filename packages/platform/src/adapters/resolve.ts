@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ADAPTER_CATALOGUE, BUILT_IN, conventionPackage, suggestProvider } from '@nymbalhq/config'
 import {
   ConfigError,
@@ -93,6 +93,16 @@ export function installLine(
   return [INSTALL_VERBS[packageManager(env, cwd)], ...packages].join(' ')
 }
 
+const DEDUPE_LINES: Record<PackageManager, string> = {
+  npm: 'npm dedupe',
+  pnpm: 'pnpm dedupe',
+  yarn: 'yarn dedupe',
+  bun: 'bun install --force',
+}
+
+const TYPES = '@nymbalhq/types'
+const TYPES_DUPLICATE = 'adapter.types_duplicate'
+
 /** The package a bare specifier names: `@scope/name` or `name`, without any subpath. */
 function packageOf(specifier: string): string {
   const parts = specifier.split('/')
@@ -174,7 +184,10 @@ export function checkAdapterModule(
   return m as unknown as ProviderPackageModule
 }
 
-/** What a failed import becomes: a missing package named for what it is, any other error as it is. */
+/**
+ * What a failed import becomes: a second copy of @nymbalhq/types with the slot and the remedy added, a missing package
+ * named for what it is, any other error as it is.
+ */
 function importFailure(
   slot: Slot,
   provider: string,
@@ -182,6 +195,9 @@ function importFailure(
   error: unknown,
   env: NodeJS.ProcessEnv,
 ): unknown {
+  if (error instanceof ConfigError && error.code === TYPES_DUPLICATE) {
+    return typesDuplicate(slot, provider, resolution.package, error, env)
+  }
   const missing = missingPackage(error)
   if (missing === null) return error
   const pkg = resolution.package
@@ -218,18 +234,134 @@ function importFailure(
   )
 }
 
+/** A copy of @nymbalhq/types on disk: the realpath of its package directory, and its version. */
+interface TypesCopy {
+  dir: string
+  version: string
+}
+
+/** The copy of @nymbalhq/types whose entry is `entryUrl`: the nearest package.json above it that is named so. */
+function typesCopyAt(entryUrl: string): TypesCopy {
+  const entry = realpathSync(fileURLToPath(entryUrl))
+  for (let dir = dirname(entry); dirname(dir) !== dir; dir = dirname(dir)) {
+    const path = join(dir, 'package.json')
+    if (!existsSync(path)) continue
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as { name?: unknown; version?: unknown }
+    if (manifest.name === TYPES) return { dir, version: String(manifest.version) }
+  }
+  throw new Error(`${entry} lies in no ${TYPES} package`)
+}
+
+const kernelCopies = new Map<string, TypesCopy>()
+
+/**
+ * The copy of @nymbalhq/types the module at `adapterUrl` resolves and the one the module at `kernelUrl` resolves, as
+ * realpath'd package directories with their versions; equal directories are one copy. An adapter that resolves no
+ * @nymbalhq/types has `adapterTypes` and `adapterVersion` null. The kernel's side is read once per URL.
+ */
+export function sameTypesCopy(
+  adapterUrl: string,
+  kernelUrl: string,
+): {
+  adapterTypes: string | null
+  kernelTypes: string
+  adapterVersion: string | null
+  kernelVersion: string
+} {
+  let kernel = kernelCopies.get(kernelUrl)
+  if (kernel === undefined) {
+    kernel = typesCopyAt(resolveFrom(TYPES, kernelUrl))
+    kernelCopies.set(kernelUrl, kernel)
+  }
+  let adapter: TypesCopy | null
+  try {
+    adapter = typesCopyAt(resolveFrom(TYPES, adapterUrl))
+  } catch (error) {
+    // A copy whose exports target is missing resolves (import-meta-resolve does not check the file) but has no
+    // realpath: the adapter's own import then fails with Node's error, naming the package.
+    const code = (error as { code?: unknown } | null)?.code
+    if (code !== 'ERR_MODULE_NOT_FOUND' && code !== 'ENOENT') throw error
+    adapter = null
+  }
+  return {
+    adapterTypes: adapter?.dir ?? null,
+    kernelTypes: kernel.dir,
+    adapterVersion: adapter?.version ?? null,
+    kernelVersion: kernel.version,
+  }
+}
+
+/**
+ * The order of two versions by their numeric major.minor.patch; at equal numbers a prerelease ranks below its release.
+ * Enough to tell which side of a duplicate is older, without a semver dependency.
+ */
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string): { parts: number[]; pre: boolean } => {
+    const core = v.split(/[-+]/, 1)[0] ?? ''
+    const parts = core.split('.').map((n) => Number.parseInt(n, 10) || 0)
+    return { parts, pre: /^[^+]*-/.test(v) }
+  }
+  const x = parse(a)
+  const y = parse(b)
+  for (let i = 0; i < 3; i++) {
+    const diff = (x.parts[i] ?? 0) - (y.parts[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return Number(y.pre) - Number(x.pre)
+}
+
+/**
+ * `adapter.types_duplicate` for `slot`, completed with the remedy: a dedupe when both copies are at one version, else a
+ * version step, since no dedupe can move the kernel's exact pin. An older adapter copy is the adapter's step alone: the
+ * core already has what it asks for.
+ */
+function typesDuplicate(
+  slot: Slot,
+  provider: string,
+  pkg: string,
+  error: ConfigError,
+  env: NodeJS.ProcessEnv,
+): ConfigError {
+  const { adapterVersion, kernelVersion } = error.context
+  const cwd = process.cwd()
+  const dedupe = adapterVersion === kernelVersion
+  const install = dedupe ? DEDUPE_LINES[packageManager(env, cwd)] : installLine([pkg], env, cwd)
+  const adapterAt = `${pkg} at a version whose ${TYPES} peer range includes ${String(kernelVersion)}`
+  const remedy = dedupe
+    ? `Run ${install} so both load one copy.`
+    : compareVersions(String(adapterVersion), String(kernelVersion)) < 0
+      ? `Install ${adapterAt}.`
+      : `Update Nymbal's core (nymbal, @nymbalhq/platform) to a release whose ${TYPES} is at least ${String(adapterVersion)}, or install ${adapterAt}.`
+  return new ConfigError(`${error.message} ${remedy}`, {
+    code: TYPES_DUPLICATE,
+    context: { slot, provider, ...error.context, install },
+  })
+}
+
 /**
  * Imports `specifier` as the project in `process.cwd()` would, from its own node_modules and the directories above,
- * under the `import` conditions. A store installs its adapters beside its config, not beside the kernel.
+ * under the `import` conditions. A store installs its adapters beside its config, not beside the kernel. An adapter
+ * that resolves a copy of @nymbalhq/types other than the kernel's is refused before it loads: the kernel's
+ * `instanceof` checks would not recognise the errors it throws.
  */
-const projectImport = async (specifier: string): Promise<unknown> =>
-  import(resolveFrom(specifier, pathToFileURL(join(process.cwd(), 'package.json')).href))
+const projectImport = async (specifier: string): Promise<unknown> => {
+  const url = resolveFrom(specifier, pathToFileURL(join(process.cwd(), 'package.json')).href)
+  const copies = sameTypesCopy(url, import.meta.url)
+  if (copies.adapterTypes !== null && copies.adapterTypes !== copies.kernelTypes) {
+    throw new ConfigError(
+      `${specifier} loads ${TYPES} ${copies.adapterVersion} from ${copies.adapterTypes}, but the kernel loads ${copies.kernelVersion} from ${copies.kernelTypes}: two copies make errors the adapter throws unrecognisable.`,
+      { code: TYPES_DUPLICATE, context: { package: specifier, ...copies } },
+    )
+  }
+  return import(url)
+}
 
 /**
  * The adapter module the slot's choice resolves to, imported and checked, or `undefined` for `custom` and a built-in.
  * The specifier is imported from the project root, `process.cwd()`. A package that is not installed is
  * `adapter.package_missing` with its install line, or `adapter.provider_unknown` (with a suggestion when one is near)
- * for a convention name no first-party package has; any other load error is rethrown as it is.
+ * for a convention name no first-party package has; an adapter that resolves another copy of @nymbalhq/types than the
+ * kernel's is `adapter.types_duplicate`; any other load error is rethrown as it is.
  */
 export async function importAdapterModule(
   slot: Slot,

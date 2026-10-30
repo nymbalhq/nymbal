@@ -1,6 +1,13 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import semver from 'semver'
@@ -43,6 +50,7 @@ const address = {
 }
 
 interface Manifest {
+  name?: string
   version?: string
   packageManager?: string
   dependencies?: Record<string, string>
@@ -123,6 +131,47 @@ function installedNymbalVersions(root: string): Map<string, Set<string>> {
   }
   visitNodeModules(join(root, 'node_modules'))
   return found
+}
+
+/**
+ * The realpath of each installed copy of `name`'s package.json under `root`'s node_modules (npm's nested copies,
+ * pnpm's store entries and the links into them, yarn's), so two copies at one version are two and two links to one
+ * copy are one.
+ */
+function installedCopies(root: string, name: string): string[] {
+  const copies = new Set<string>()
+  const seen = new Set<string>()
+  const visitPackage = (pkgDir: string): void => {
+    let real: string
+    try {
+      real = realpathSync(pkgDir)
+    } catch {
+      return // a dangling link
+    }
+    if (seen.has(real)) return
+    seen.add(real)
+    const path = join(real, 'package.json')
+    if (existsSync(path) && manifest(path).name === name) copies.add(path)
+    const nested = join(real, 'node_modules')
+    if (existsSync(nested)) visitNodeModules(nested)
+  }
+  const visitNodeModules = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (entry === '.pnpm') {
+        for (const id of readdirSync(full)) {
+          const inner = join(full, id, 'node_modules')
+          if (existsSync(inner)) visitNodeModules(inner)
+        }
+      } else if (entry.startsWith('@')) {
+        for (const scoped of readdirSync(full)) visitPackage(join(full, scoped))
+      } else if (!entry.startsWith('.')) {
+        visitPackage(full)
+      }
+    }
+  }
+  visitNodeModules(join(root, 'node_modules'))
+  return [...copies].sort()
 }
 
 describe('AC-11: a clean-machine scaffold', () => {
@@ -452,13 +501,14 @@ const WRONG_SLOT_CHECK = [
 // boots on it. Last in the file: it installs Stripe's SDK, which AC-7 above holds a fresh project never has, and
 // removes both packages again when it is done.
 describe("AC-7: an adapter installed by name shares the project's @nymbalhq/types", () => {
-  it("AC-7: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install, with no version, one @nymbalhq/types is installed, the adapter peers it and does not depend on it, its wrong-slot error is instanceof the project's ConfigError, and GET /health answers 200", async () => {
+  it("AC-7: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install, with no version, one copy of @nymbalhq/types is installed (counted by realpath, not by version), the adapter peers it and does not depend on it, its wrong-slot error is instanceof the project's ConfigError, and GET /health answers 200", async () => {
     const path = join(DIR, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
     const edited = withStripe(original)
     expect(edited, 'the scaffold config names native payments').not.toBe(original)
-    const types = [...(installedNymbalVersions(DIR).get(TYPES_PACKAGE) ?? [])]
-    expect(types, 'one installed @nymbalhq/types').toHaveLength(1)
+    const copies = installedCopies(DIR, TYPES_PACKAGE)
+    expect(copies, 'one installed copy of @nymbalhq/types').toHaveLength(1)
+    const typesVersion = manifest(copies[0]!).version ?? ''
     const pm = packageManagerCommands()
     let server: { output: () => string; stop: () => void } | undefined
     try {
@@ -484,11 +534,12 @@ describe("AC-7: an adapter installed by name shares the project's @nymbalhq/type
         undefined,
       )
       expect(
-        semver.satisfies(types[0]!, adapter.peerDependencies?.[TYPES_PACKAGE] ?? ''),
-        `installed ${TYPES_PACKAGE} ${types[0]} against the adapter's peer ${adapter.peerDependencies?.[TYPES_PACKAGE]}`,
+        semver.satisfies(typesVersion, adapter.peerDependencies?.[TYPES_PACKAGE] ?? ''),
+        `installed ${TYPES_PACKAGE} ${typesVersion} against the adapter's peer ${adapter.peerDependencies?.[TYPES_PACKAGE]}`,
       ).toBe(true)
-      expect(adapter.peerDependencies?.[TYPES_PACKAGE]).toBe(`^${types[0]!}`)
-      expect([...(installedNymbalVersions(DIR).get(TYPES_PACKAGE) ?? [])]).toEqual(types)
+      expect(adapter.peerDependencies?.[TYPES_PACKAGE]).toBe(`^${typesVersion}`)
+      // The install added no copy, not even one at the same version: the one copy is the one there before.
+      expect(installedCopies(DIR, TYPES_PACKAGE)).toEqual(copies)
 
       const check = await runInProject(
         'node',
