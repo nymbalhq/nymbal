@@ -5,11 +5,17 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Slot } from '../../packages/types/src/index'
 import { ADAPTER_CATALOGUE, slotFolder } from '../../packages/config/src/adapter-names'
-import { MOVED_ADAPTERS, ROOT, pnpmMembers, pnpmPackageDirs } from './adapter-table'
+import {
+  FIRST_PARTY_ADAPTERS,
+  MOVED_ADAPTERS,
+  ROOT,
+  pnpmMembers,
+  pnpmPackageDirs,
+} from './adapter-table'
 
-// AC-2: each of the twelve first-party adapters is a workspace member at packages/adapters/<slotFolder>/<provider>/,
-// named @nymbalhq/<slotFolder>-<provider>, with `repository.directory` its own directory; none of the old
-// directories is left, and every other package stays at packages/<name>. The slot folder is slotFolder of a catalogue
+// AC-2: each first-party adapter (the twelve that moved, and those added since) is a workspace member at
+// packages/adapters/<slotFolder>/<provider>/, named @nymbalhq/<slotFolder>-<provider>, with `repository.directory` its
+// own directory; none of the moved adapters' old directories is left, and every other package stays at packages/<name>. The slot folder is slotFolder of a catalogue
 // slot, and the provider one of that slot's catalogue entries.
 
 /** The packages that are not adapters, which stay one level under packages/. */
@@ -44,18 +50,20 @@ const tracked = (dir: string): string[] =>
     .filter(Boolean)
 
 describe('AC-2: the adapters live by slot', () => {
-  it('AC-2: each of the twelve is a workspace member at packages/adapters/<kebab slot>/<provider>, under its new name', () => {
+  it('AC-2: each of the thirteen first-party adapters is a workspace member at packages/adapters/<kebab slot>/<provider>, under its convention name', () => {
     const byDir = new Map(pnpmMembers().map((m) => [m.dir, m.name]))
-    const wrong = MOVED_ADAPTERS.filter((a) => byDir.get(a.dir) !== a.name).map(
+    const wrong = FIRST_PARTY_ADAPTERS.filter((a) => byDir.get(a.dir) !== a.name).map(
       (a) => `${a.dir}: ${byDir.has(a.dir) ? `named ${byDir.get(a.dir)}` : 'not a member'}`,
     )
 
     expect(wrong).toEqual([])
-    expect(MOVED_ADAPTERS.filter((a) => byDir.has(a.dir)).length).toBe(MOVED_ADAPTERS.length)
+    expect(FIRST_PARTY_ADAPTERS.filter((a) => byDir.has(a.dir)).length).toBe(
+      FIRST_PARTY_ADAPTERS.length,
+    )
   })
 
-  it("AC-2: each moved manifest's repository.directory is its own directory", () => {
-    const wrong = MOVED_ADAPTERS.map((a) => {
+  it("AC-2: each first-party adapter manifest's repository.directory is its own directory", () => {
+    const wrong = FIRST_PARTY_ADAPTERS.map((a) => {
       const path = join(ROOT, a.dir, 'package.json')
       const repository = existsSync(path) ? manifest(a.dir).repository : undefined
       const directory = typeof repository === 'object' ? repository.directory : undefined
@@ -79,16 +87,16 @@ describe('AC-2: the adapters live by slot', () => {
   })
 
   it('AC-2: every other member under packages/ stays at packages/<name>', () => {
-    const adapterDirs = new Set(MOVED_ADAPTERS.map((a) => a.dir))
+    const adapterDirs = new Set(FIRST_PARTY_ADAPTERS.map((a) => a.dir))
     const others = pnpmPackageDirs().filter((d) => !adapterDirs.has(d))
 
     expect(others.filter((d) => !/^packages\/[^/]+$/.test(d))).toEqual([])
     expect(others).toEqual(CORE_DIRS)
-    expect(pnpmPackageDirs().length).toBe(CORE_DIRS.length + MOVED_ADAPTERS.length)
+    expect(pnpmPackageDirs().length).toBe(CORE_DIRS.length + FIRST_PARTY_ADAPTERS.length)
   })
 
   it("AC-2: each slot folder is slotFolder of a catalogue slot, and each provider one of that slot's catalogue entries", () => {
-    const wrong = MOVED_ADAPTERS.filter((a) => {
+    const wrong = FIRST_PARTY_ADAPTERS.filter((a) => {
       const [, , folder, provider] = a.dir.split('/')
       return (
         folder !== slotFolder(a.slot) ||
@@ -103,6 +111,8 @@ describe('AC-2: the adapters live by slot', () => {
 
     expect(wrong).toEqual([])
     expect(folders.filter((f) => !slotFolders.has(f))).toEqual([])
-    expect(new Set(folders).size).toBe(new Set(MOVED_ADAPTERS.map((a) => slotFolder(a.slot))).size)
+    expect(new Set(folders).size).toBe(
+      new Set(FIRST_PARTY_ADAPTERS.map((a) => slotFolder(a.slot))).size,
+    )
   })
 })

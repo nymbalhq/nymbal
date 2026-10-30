@@ -18,6 +18,6 @@ export const search: ReadModel = {
   },
 
   handlers(deps) {
-    return searchHandler({ search: searchOf(deps), repos: deps.repos })
+    return searchHandler({ search: searchOf(deps), repos: deps.repos, logger: deps.logger })
   },
 }

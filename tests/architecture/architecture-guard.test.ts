@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FIRST_PARTY_ADAPTERS } from './adapter-table'
 
 /**
  * Architecture guard.
@@ -22,27 +23,16 @@ import { describe, expect, it } from 'vitest'
 // Resolve the repo root from this file's location: tests/architecture -> repo root.
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
-// Packages whose source must never depend on a rendering framework, by directory under packages/.
+// Packages whose source must never depend on a rendering framework, by directory under packages/: the core, and every
+// first-party adapter (server-side packages all).
 const GUARDED_PACKAGES = [
   'platform',
   'sdk',
   'types',
   'config',
   'http',
-  'adapters/payments/stripe',
-  'adapters/ai/anthropic',
-  'adapters/email/smtp',
-  'adapters/email/mailgun',
-  'adapters/email/resend',
-  'adapters/email/ses',
-  'adapters/shipping/easypost',
-  'adapters/document-store/redis',
-  'adapters/document-store/postgres-jsonb',
-  'adapters/event-bus/redis-streams',
-  'adapters/media/s3',
-  // The Cloudflare security adapter, a server-side package like the adapters above.
-  'adapters/security/cloudflare',
-] as const
+  ...FIRST_PARTY_ADAPTERS.map((a) => a.dir.replace(/^packages\//, '')),
+]
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.
 const FORBIDDEN_FRAMEWORKS = [

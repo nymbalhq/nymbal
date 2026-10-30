@@ -39,7 +39,7 @@ export const ADAPTER_CATALOGUE: Readonly<Record<Slot, Readonly<Record<string, Ca
     ses: { sdk: 'nodemailer' },
   },
   reviews: { native: builtIn },
-  search: { native: builtIn },
+  search: { native: builtIn, algolia: {} },
   analytics: { native: builtIn },
   shipping: { native: builtIn, easypost: {} },
   tax: { native: builtIn },

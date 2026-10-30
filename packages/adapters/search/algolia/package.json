@@ -1,0 +1,47 @@
+{
+  "name": "@nymbalhq/search-algolia",
+  "version": "1.4.0",
+  "description": "Algolia search for Nymbal: the `algolia` search provider, matching as native search does",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/adapters/search/algolia"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./recipes/*": "./recipes/*"
+  },
+  "files": [
+    "dist",
+    "recipes"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../../../.."
+  },
+  "peerDependencies": {
+    "@nymbalhq/types": "^1.5.0"
+  },
+  "devDependencies": {
+    "@nymbalhq/types": "workspace:*",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "fast-check": "^4.10.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

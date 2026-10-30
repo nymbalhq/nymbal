@@ -128,7 +128,7 @@ function declaredSet(
 }
 
 describe('AC-1: recipe holders', () => {
-  it('AC-1: RECIPE_HOLDERS maps the five recipes to the packages that ship them', () => {
+  it('AC-1: RECIPE_HOLDERS maps the six recipes to the packages that ship them', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
   })
 

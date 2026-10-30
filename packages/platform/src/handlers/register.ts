@@ -114,6 +114,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     eventBus,
     search: adapters.search,
     repos,
+    logger: handlerLogger.child({ handler: 'search' }),
   })
   await registerReviewsHandler({
     eventBus,

@@ -33,6 +33,6 @@ describe('AC-5: every first-party adapter says what it serves', () => {
 
     expect(seen.filter((s) => s.folder.slot === undefined).map((s) => s.dir)).toEqual([])
     expect(seen.map((s) => [s.dir, s.exported])).toEqual(seen.map((s) => [s.dir, s.folder]))
-    expect(seen.length).toBe(12)
+    expect(seen.length).toBe(13)
   }, 60_000)
 })

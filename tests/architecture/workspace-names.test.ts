@@ -18,7 +18,7 @@ const root = members.find((m) => m.dir === '')
 const published = members.filter((m) => m.dir !== '' && isPublished(m.manifest))
 
 /**
- * The twenty-five published packages, by directory (names are what is under test); the adapters by slot.
+ * The twenty-six published packages, by directory (names are what is under test); the adapters by slot.
  */
 const PUBLISHED_DIRS = [
   'apps/admin',
@@ -32,6 +32,7 @@ const PUBLISHED_DIRS = [
   'packages/adapters/event-bus/redis-streams',
   'packages/adapters/media/s3',
   'packages/adapters/payments/stripe',
+  'packages/adapters/search/algolia',
   'packages/adapters/security/cloudflare',
   'packages/adapters/shipping/easypost',
   'packages/cli',
@@ -75,7 +76,7 @@ function repositoryUrl(m: Manifest): string | undefined {
 }
 
 describe('AC-2: workspace package names and published manifests', () => {
-  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the twenty-five publish', () => {
+  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the twenty-six publish', () => {
     // Discovery guard: every published package directory is a workspace member.
     const dirs = new Set(members.map((m) => m.dir))
     expect.soft(root).toBeDefined()

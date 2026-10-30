@@ -99,7 +99,7 @@ describe('AC-3: every package name the kernel and the CLI import is a workspace 
     expect(unresolved(Object.values(RECIPE_HOLDERS))).toEqual([])
   })
 
-  it("AC-3: every @nymbalhq name the platform's manifest lists is a member, the twelve among its devDependencies", () => {
+  it("AC-3: every @nymbalhq name the platform's manifest lists is a member, every first-party adapter among its devDependencies", () => {
     const platform = JSON.parse(read('packages/platform/package.json')) as PlatformManifest
     const names = [platform.dependencies, platform.devDependencies, platform.peerDependencies]
       .flatMap((field) => Object.keys(field ?? {}))
@@ -109,7 +109,7 @@ describe('AC-3: every package name the kernel and the CLI import is a workspace 
     expect(ADAPTER_NAMES.filter((n) => platform.devDependencies?.[n] === undefined)).toEqual([])
   })
 
-  it('AC-3: the changesets fixed group names only members, and none of the twelve', () => {
+  it('AC-3: the changesets fixed group names only members, and no first-party adapter', () => {
     const config = JSON.parse(read('.changeset/config.json')) as { fixed: string[][] }
     const fixed = config.fixed.flat()
 
@@ -117,7 +117,7 @@ describe('AC-3: every package name the kernel and the CLI import is a workspace 
     expect(ADAPTER_NAMES.filter((n) => fixed.includes(n))).toEqual([])
   })
 
-  it('AC-3: NON_SCAFFOLD_PACKAGES names only members, the twelve among them', async () => {
+  it('AC-3: NON_SCAFFOLD_PACKAGES names only members, every first-party adapter among them', async () => {
     const { NON_SCAFFOLD_PACKAGES } = (await import(
       join(ROOT, 'packages/create-app/scripts/sync-scaffold.mjs')
     )) as { NON_SCAFFOLD_PACKAGES: ReadonlySet<string> }

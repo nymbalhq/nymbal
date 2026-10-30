@@ -12,6 +12,7 @@ import type { Recipe } from '@nymbalhq/types'
  * only says where to look.
  */
 export const RECIPE_HOLDERS: Readonly<Record<string, string>> = {
+  algolia: conventionPackage('search', 'algolia'),
   cloudflare: conventionPackage('security', 'cloudflare'),
   postgres: '@nymbalhq/platform',
   // Sets the document store and the bus; the document store's package ships it.

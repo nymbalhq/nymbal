@@ -47,8 +47,9 @@ describe('AC-5: the moved tests still run', () => {
 
     expect(wrong).toEqual([])
     expect(left.map((r) => r.file)).toEqual([])
-    expect(rows.filter((r) => r.file.startsWith('packages/adapters/')).length).toBe(
-      MOVED_ADAPTERS.reduce((sum, a) => sum + a.tests.length, 0),
-    )
+    // An adapter added since the move brings tests of its own; only the moved ones are counted here.
+    expect(
+      rows.filter((r) => MOVED_ADAPTERS.some((a) => r.file.startsWith(`${a.dir}/`))).length,
+    ).toBe(MOVED_ADAPTERS.reduce((sum, a) => sum + a.tests.length, 0))
   }, 60_000)
 })

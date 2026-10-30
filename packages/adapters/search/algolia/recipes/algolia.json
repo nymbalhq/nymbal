@@ -1,0 +1,30 @@
+{
+  "name": "algolia",
+  "summary": "Run the storefront's search, its category facet and the header's search bar on Algolia.",
+  "install": ["@nymbalhq/search-algolia"],
+  "set": [{ "path": "commerce.search", "value": { "provider": "algolia" } }],
+  "env": [
+    {
+      "name": "ALGOLIA_APP_ID",
+      "example": "",
+      "required": true,
+      "comment": "Your Algolia application ID (Algolia dashboard, Settings, API Keys)"
+    },
+    {
+      "name": "ALGOLIA_API_KEY",
+      "example": "",
+      "required": true,
+      "comment": "An Algolia API key that may write the index: the Write API key, or one with addObject, deleteObject, deleteIndex, editSettings, settings and search"
+    },
+    {
+      "name": "ALGOLIA_INDEX",
+      "example": "products",
+      "required": false,
+      "comment": "The index the catalogue lives in (default products)"
+    }
+  ],
+  "next": [
+    "Run nymbal replay --to search once to fill the index from the catalogue; product changes keep it current after that.",
+    "A replace briefly holds the catalogue twice (a temporary index), so keep the catalogue under half your Algolia plan's record quota."
+  ]
+}

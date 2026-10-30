@@ -163,7 +163,21 @@ export const RETIRED_NAMES: readonly string[] = MOVED_ADAPTERS.flatMap((a) =>
   a.retired === undefined ? [] : [a.retired],
 )
 
-export const ADAPTER_NAMES: readonly string[] = MOVED_ADAPTERS.map((a) => a.name)
+/** A first-party adapter: its slot, provider, directory and package name. */
+export type FirstPartyAdapter = Pick<MovedAdapter, 'slot' | 'provider' | 'dir' | 'name'>
+
+/** Every first-party adapter: the twelve that moved, and those added at their convention home since. */
+export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = [
+  ...MOVED_ADAPTERS,
+  {
+    slot: 'search',
+    provider: 'algolia',
+    dir: 'packages/adapters/search/algolia',
+    name: '@nymbalhq/search-algolia',
+  },
+]
+
+export const ADAPTER_NAMES: readonly string[] = FIRST_PARTY_ADAPTERS.map((a) => a.name)
 
 export const adapterNamed = (name: string): MovedAdapter => {
   const found = MOVED_ADAPTERS.find((a) => a.name === name)

@@ -43,6 +43,7 @@ export const REPO = fileURLToPath(new URL('../../../../../', import.meta.url))
 
 /** The recipes and the package that ships each one. */
 export const SPEC_HOLDERS: Readonly<Record<string, string>> = {
+  algolia: '@nymbalhq/search-algolia',
   cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
   redis: '@nymbalhq/document-store-redis',
@@ -61,6 +62,7 @@ const NYMBAL_PACKAGES: Readonly<Record<string, string>> = {
   '@nymbalhq/media-s3': 'packages/adapters/media/s3',
   '@nymbalhq/payments-stripe': 'packages/adapters/payments/stripe',
   '@nymbalhq/security-cloudflare': 'packages/adapters/security/cloudflare',
+  '@nymbalhq/search-algolia': 'packages/adapters/search/algolia',
 }
 
 /** The SDKs the recipes install, and the workspace package whose node_modules already holds each. */

@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
 import { loadProject } from '../utils/project.js'
-import { createPlatform, resolvePrimitives, runSeed } from '@nymbalhq/platform'
+import { createPlatform, resolveChoice, resolvePrimitives, runSeed } from '@nymbalhq/platform'
 import { getCliVersion } from '../utils/version.js'
 import { migrateProject } from './migrate.js'
 
@@ -47,6 +47,12 @@ export const seedCommand = defineCommand({
           ? '✓ demo content already present, nothing to seed'
           : `✓ seeded ${result.products} products across ${result.categories} categories`,
       )
+      // Seed fills only the native index; a package's index is filled by a replay.
+      const search = config.commerce.search
+      if (!result.alreadySeeded && resolveChoice('search', search).kind === 'package') {
+        // eslint-disable-next-line no-console
+        console.log(`search: run \`nymbal replay --to search\` to fill ${search.provider}`)
+      }
     } finally {
       await platform.close()
     }

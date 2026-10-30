@@ -28,7 +28,7 @@ import {
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
-import { importAdapterModule } from './adapters/resolve.js'
+import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
@@ -230,15 +230,20 @@ export async function createApp(
     })
 
     // Every read model is rebuilt from the tables before anything is served, so a fresh process serves what a
-    // long-running one does.
-    await rebuild(READ_MODEL_NAMES, {
-      config,
-      store: platform.commandStore,
-      repos,
-      documentStore: platform.documentStore,
-      search: adapters.search,
-      logger,
-    })
+    // long-running one does. A search index in a package lives outside the process and outlasts it: a restart would
+    // only upload the catalogue again, so live events and `nymbal replay --to search` fill it instead.
+    const externalSearch = resolveChoice('search', config.commerce.search).kind === 'package'
+    await rebuild(
+      externalSearch ? READ_MODEL_NAMES.filter((name) => name !== 'search') : READ_MODEL_NAMES,
+      {
+        config,
+        store: platform.commandStore,
+        repos,
+        documentStore: platform.documentStore,
+        search: adapters.search,
+        logger,
+      },
+    )
 
     // Events committed before a crash, or whose delivery failed, go out before the app serves anything.
     await relay.drain()

@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ADAPTER_NAMES, MOVED_ADAPTERS, ROOT } from './adapter-table'
+import { ADAPTER_NAMES, FIRST_PARTY_ADAPTERS, ROOT } from './adapter-table'
 import type { Manifest } from './workspace-manifests'
 
 // AC-4: each first-party adapter peers @nymbalhq/types at a literal caret floor (`^M.m.p`, never `workspace:^`, which
@@ -11,7 +11,7 @@ import type { Manifest } from './workspace-manifests'
 // as a devDependency, never a dependency, so a store holds one copy of it; an adapter it depends on is
 // `workspace:^`, so that adapter's release does not republish it. The changesets `fixed` group is the core and
 // contract-tests alone. A moved adapter's CHANGELOG heads with its current name. AC-5: the platform peers no adapter
-// (a store installs the ones it needs by name), and the repository root lists the twelve so the workspace's servers,
+// (a store installs the ones it needs by name), and the repository root lists every one so the workspace's servers,
 // walks and tests resolve them from the root.
 
 interface PackageManifest extends Manifest {
@@ -50,8 +50,8 @@ const TYPES_MAJOR = Number(read('packages/types').version?.split('.')[0])
 const LITERAL_FLOOR = /^\^(\d+)\.\d+\.\d+$/
 
 describe('AC-4: the adapters peer @nymbalhq/types and version outside the fixed group', () => {
-  it("AC-4: each of the twelve peers @nymbalhq/types at a literal caret floor on the workspace types' major, has it in devDependencies at workspace:* and not in dependencies", () => {
-    const manifests = MOVED_ADAPTERS.map((a) => ({ name: a.name, m: read(a.dir) }))
+  it("AC-4: each of the thirteen first-party adapters peers @nymbalhq/types at a literal caret floor on the workspace types' major, has it in devDependencies at workspace:* and not in dependencies", () => {
+    const manifests = FIRST_PARTY_ADAPTERS.map((a) => ({ name: a.name, m: read(a.dir) }))
     expect(TYPES_MAJOR).toBeGreaterThanOrEqual(1)
     const wrong = manifests.flatMap(({ name, m }) => [
       ...(Number(LITERAL_FLOOR.exec(m.peerDependencies?.[TYPES] ?? '')?.[1]) === TYPES_MAJOR
@@ -70,7 +70,7 @@ describe('AC-4: the adapters peer @nymbalhq/types and version outside the fixed 
   })
 
   it('AC-4: every adapter one adapter depends on is at workspace:^, mailgun, resend and ses on smtp among them', () => {
-    const edges = MOVED_ADAPTERS.flatMap((a) =>
+    const edges = FIRST_PARTY_ADAPTERS.flatMap((a) =>
       Object.entries(read(a.dir).dependencies ?? {})
         .filter(([dep]) => ADAPTER_NAMES.includes(dep))
         .map(([dep, range]) => ({ from: a.name, dep, range })),
@@ -95,7 +95,7 @@ describe('AC-4: the adapters peer @nymbalhq/types and version outside the fixed 
   })
 
   it('AC-4: each adapter that has a CHANGELOG heads it with `# <its package name>`', () => {
-    const logs = MOVED_ADAPTERS.filter((a) => existsSync(join(ROOT, a.dir, 'CHANGELOG.md')))
+    const logs = FIRST_PARTY_ADAPTERS.filter((a) => existsSync(join(ROOT, a.dir, 'CHANGELOG.md')))
     const headers = logs.map((a) => ({
       name: a.name,
       first: readFileSync(join(ROOT, a.dir, 'CHANGELOG.md'), 'utf8').split('\n')[0],
@@ -116,7 +116,7 @@ describe('AC-5: the platform names no adapter it does not need', () => {
     expect(named.filter((n) => ADAPTER_NAMES.includes(n))).toEqual([])
   })
 
-  it('AC-5: the root package.json lists each of the twelve in devDependencies at workspace:*', () => {
+  it('AC-5: the root package.json lists each first-party adapter in devDependencies at workspace:*', () => {
     const root = read('')
 
     expect(ADAPTER_NAMES.filter((n) => root.devDependencies?.[n] !== 'workspace:*')).toEqual([])

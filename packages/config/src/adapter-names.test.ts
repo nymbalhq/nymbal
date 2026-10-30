@@ -26,13 +26,13 @@ const COMMERCE = [
 ] as const
 const SLOTS: readonly Slot[] = [...COMMERCE, 'documentStore', 'eventBus', 'media', 'security']
 
-/** The commerce providers the config knew before the catalogue, `custom` aside. */
+/** The commerce providers the config knew before the catalogue, and those added since, `custom` aside. */
 const KNOWN_BEFORE: Record<(typeof COMMERCE)[number], readonly string[]> = {
   payments: ['native', 'stripe'],
   email: ['native', 'smtp', 'mailgun', 'resend', 'ses'],
   ai: ['none', 'anthropic'],
   reviews: ['native'],
-  search: ['native'],
+  search: ['native', 'algolia'],
   analytics: ['native'],
   shipping: ['native', 'easypost'],
   tax: ['native'],
