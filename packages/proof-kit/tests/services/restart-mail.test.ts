@@ -150,11 +150,17 @@ async function served(store: TestStore, placed: Placed) {
     'customer-profiles',
     placed.customerId,
   )
+  // A key holder's read names no order id: the id is the stored document's.
+  const order = await store.app.platform.documentStore.get<{ id: string }>(
+    'orders',
+    placed.orderNumber,
+  )
+  const keyed = await getData(store.baseUrl, `/api/orders/${placed.orderNumber}`, {
+    'x-nymbal-order-key': placed.orderKey,
+  })
   return {
     product: await getData(store.baseUrl, `/api/products/${placed.productSlug}`),
-    order: await getData(store.baseUrl, `/api/orders/${placed.orderNumber}`, {
-      'x-nymbal-order-key': placed.orderKey,
-    }),
+    order: { status: keyed.status, id: order?.id },
     customer: profile?.customerId ?? null,
   }
 }

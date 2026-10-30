@@ -25,6 +25,15 @@ export default {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
       '/api/recently-viewed': { requests: 1000, window: '1m', action: 'block' },
+      '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
+      // Order reads that carry the order's email beside an expired key; key-only reads are never limited.
+      '/api/orders/*': {
+        requests: 1000,
+        window: '1m',
+        action: 'block',
+        header: 'x-nymbal-order-email',
+      },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {

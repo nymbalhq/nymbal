@@ -61,6 +61,19 @@ async function apiOrder(
   return ((await res.json()) as { data: ApiOrder }).data
 }
 
+/** The order's id, from the admin's read: a key holder's read of the order carries none. */
+async function orderIdOf(
+  request: APIRequestContext,
+  token: string,
+  orderNumber: string,
+): Promise<string> {
+  const res = await request.get(`${API_URL}/api/admin/orders/${encodeURIComponent(orderNumber)}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  expect(res.status(), `GET /api/admin/orders/${orderNumber}: ${await res.text()}`).toBe(200)
+  return ((await res.json()) as { data: { id: string } }).data.id
+}
+
 /** One admin command on the order, through the admin API. */
 async function adminPost(
   request: APIRequestContext,
@@ -137,9 +150,10 @@ test.describe('a carrier delivers an order', () => {
     const { orderNumber, key } = await placeThroughCheckout(page, request, token)
     const placed = await apiOrder(request, orderNumber, key)
     expect(placed.status, 'the custom payments captured at checkout').toBe('confirmed')
+    const orderId = await orderIdOf(request, token, orderNumber)
 
-    await adminPost(request, token, placed.id, 'process')
-    await adminPost(request, token, placed.id, 'ship', { carrier: 'USPS', trackingNumber })
+    await adminPost(request, token, orderId, 'process')
+    await adminPost(request, token, orderId, 'ship', { carrier: 'USPS', trackingNumber })
     await expect
       .poll(async () => (await apiOrder(request, orderNumber, key)).status, { timeout: 10_000 })
       .toBe('shipped')

@@ -3,6 +3,9 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
 import { fetchCapabilities, fetchCart } from '../lib/api'
 
+// The shopper's own cart and checkout: no shared cache may keep them for the next visitor.
+Astro.response.headers.set('Cache-Control', 'no-store')
+
 const [capabilities, cart] = await Promise.all([
   fetchCapabilities(),
   fetchCart(Astro.request.headers.get('cookie')),
@@ -36,9 +39,13 @@ const paymentElement = `<nymbal-payment-element slot="payment" data-testid="paym
   NymbalPaymentElement.define()
   NymbalCheckout.define()
 
-  // The element places the order; the page only goes to it.
+  // The element places the order; the page only goes to it. A guest's order opens with its key; a signed-in
+  // shopper's checkout answers none, and their account is the order's home.
   document.addEventListener('nymbal:checkout:placed', (event) => {
     const { orderNumber, orderKey } = (event as CustomEvent<{ orderNumber: string; orderKey?: string }>).detail
-    window.location.href = `/order/${encodeURIComponent(orderNumber)}${orderKey ? `?key=${encodeURIComponent(orderKey)}` : ''}`
+    const number = encodeURIComponent(orderNumber)
+    window.location.href = orderKey
+      ? `/order/${number}?key=${encodeURIComponent(orderKey)}`
+      : `/account/orders/${number}`
   })
 </script>

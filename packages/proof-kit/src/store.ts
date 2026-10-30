@@ -171,7 +171,12 @@ function configure(
       documentStore: { provider: 'in-memory' },
       eventBus: { provider: 'in-process' },
     },
-    security: { adapter: 'middleware', botProtection: { mode: 'off' } },
+    security: {
+      adapter: 'middleware',
+      botProtection: { mode: 'off' },
+      // A race sends every checkout from 127.0.0.1, far past the built-in per-IP limit.
+      rateLimit: { '/api/checkout': { requests: 10_000, window: '1m', action: 'block' } },
+    },
     commerce: {
       payments: { provider: 'native' },
       email: email

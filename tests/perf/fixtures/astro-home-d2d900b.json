@@ -1,0 +1,8 @@
+{
+  "commit": "d2d900b",
+  "template": "astro",
+  "page": "home",
+  "url": "/",
+  "scriptBytes": 27272,
+  "method": "Measured on 2026-10-30 by pnpm perf:budgets --bytes --template astro: the Astro template built for production (astro build) and served by astro preview against a seeded API; each script request Lighthouse's mobile load of / makes is fetched again, and scriptBytes is the sum of gzip(body) at zlib's default level. astro preview does not compress, so the wire size is the raw size. 48 B over 75989c8 (27,224 B), all in the client chunk every page shares: the guest order link (client.orders.requestLink), the email header sent beside an expired order key, and the stub for an adapter without guest orders. No script on / changed."
+}

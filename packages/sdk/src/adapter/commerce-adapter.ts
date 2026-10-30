@@ -27,6 +27,15 @@ export interface CommerceAdapter {
   capabilities?: {
     get(): Promise<StoreCapabilities>
   }
+  /**
+   * A guest's orders, read with the order's key; an expired key opens the order beside the order's email. An adapter
+   * without it cannot open a guest's order.
+   */
+  orders?: {
+    get(orderNumber: string, options?: { key?: string; email?: string }): Promise<ShopperOrder>
+    /** Asks the store to email the order's link to the order's own email; it answers the same whatever matched. */
+    requestLink(request: { orderNumber: string; email: string }): Promise<void>
+  }
   /** The shopper's recently viewed products; an adapter without it shows none. */
   recentlyViewed?: {
     record(productId: string): Promise<void>

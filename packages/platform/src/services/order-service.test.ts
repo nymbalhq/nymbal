@@ -673,6 +673,7 @@ describe('OrderService.keyOpens', () => {
         keyHash,
         purpose: 'checkout',
         createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 48 * 3_600_000),
       }),
     )
   }
@@ -745,6 +746,162 @@ describe('OrderService.keyOpens', () => {
     expect(reads).toBe(0)
     expect(await env.orderService.keyOpens(orderId, good)).toBe(false)
     expect(reads).toBe(1)
+    await env.commandStore.close()
+  })
+
+  // Defect: a key still opens at or after its expiry, an expired key reads as `none` (so the page never asks for the
+  // email), a key opens another order, or `now` is ignored for the clock.
+  it('keyState: open before expiresAt, expired from expiresAt on, none for another order or a malformed key', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const otherId = uuidv7()
+    const minted = mintOrderKey()
+    const expiresAt = new Date('2026-03-01T12:00:00.000Z')
+    await env.commandStore.transaction((tx) =>
+      env.repos.orderAccessKey.insert(tx, {
+        id: uuidv7(),
+        orderId,
+        keyHash: minted.hash,
+        purpose: 'checkout',
+        createdAt: new Date(expiresAt.getTime() - 48 * 3_600_000),
+        expiresAt,
+      }),
+    )
+    const at = (ms: number) => new Date(expiresAt.getTime() + ms)
+    const states = await Promise.all(
+      [-1, 0, 1].map((ms) => env.orderService.keyState(orderId, minted.key, at(ms))),
+    )
+    expect(states).toEqual(['open', 'expired', 'expired'])
+    expect(await env.orderService.keyState(otherId, minted.key, at(-1))).toBe('none')
+    expect(await env.orderService.keyState(orderId, `${minted.key}A`, at(-1))).toBe('none')
+    // Without `now`, the clock is today's, long after this key expired.
+    expect(await env.orderService.keyState(orderId, minted.key)).toBe('expired')
+    expect(await env.orderService.keyOpens(orderId, minted.key)).toBe(false)
+    await env.commandStore.close()
+  })
+
+  it('keyState without `now` reads a key that expires tomorrow as open', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const minted = mintOrderKey()
+    await storeHash(env, orderId, minted.hash)
+    expect(await env.orderService.keyState(orderId, minted.key)).toBe('open')
+    expect(await env.orderService.keyOpens(orderId, minted.key)).toBe(true)
+    await env.commandStore.close()
+  })
+})
+
+describe('OrderService.requestLink', () => {
+  type Env = Awaited<ReturnType<typeof setup>>
+
+  async function importIn(
+    env: Env,
+    status: OrderStatus,
+    { email = 'Link.Shopper@Example.com', customerId = null as string | null } = {},
+  ) {
+    const totalMinor = 2500
+    const paid = status !== 'pending' && status !== 'cancelled'
+    const line = await createLine(totalMinor, 1)
+    return env.orderService.importOrder({
+      orderId: uuidv7(),
+      orderNumber: `WC-${uuidv7().slice(-12)}`,
+      status,
+      customerId,
+      email,
+      billingAddress: addr,
+      shippingAddress: addr,
+      lineItems: [line],
+      subtotalMinor: totalMinor,
+      taxTotalMinor: 0,
+      shippingTotalMinor: 0,
+      discountTotalMinor: 0,
+      totalMinor,
+      currency: 'GBP',
+      createdAt: new Date('2024-03-01T09:30:00Z'),
+      ...(paid && {
+        capturedMinor: totalMinor,
+        refundedMinor:
+          status === 'refunded' ? totalMinor : status === 'partially_refunded' ? 1000 : 0,
+        captureMethod: 'manual' as const,
+      }),
+    })
+  }
+
+  async function resendEvents(env: Env) {
+    const all = await env.commandStore.read((tx) => env.repos.eventLog.listAll(tx))
+    return all
+      .filter((l) => l.event.type === EVT_ORDER_CONFIRMATION_RESEND_REQUESTED)
+      .map((l) => l.event.payload)
+  }
+
+  const due: OrderStatus[] = [
+    'confirmed',
+    'processing',
+    'shipped',
+    'delivered',
+    'partially_refunded',
+    'refunded',
+  ]
+
+  // Defect: a confirmed-or-later order's link is never sent, is sent for the wrong order, or the order changes.
+  it.each(due)(
+    'a %s guest order whose email matches gets one resend event naming it, the order unchanged',
+    async (status) => {
+      const env = await setup()
+      const order = await importIn(env, status)
+      const before = await env.orderService.getById(order.id)
+      await expect(
+        env.orderService.requestLink(order.orderNumber, order.email),
+      ).resolves.toBeUndefined()
+      expect(await resendEvents(env)).toEqual([{ orderId: order.id }])
+      expect(await env.orderService.getById(order.id)).toEqual(before)
+      await env.commandStore.close()
+    },
+  )
+
+  // Defect: an email typed in another case or with space around it is refused, or a different address is accepted.
+  it('the email matches trimmed and in any case, and no other address matches', async () => {
+    const env = await setup()
+    const order = await importIn(env, 'confirmed')
+    await fc.assert(
+      fc.asyncProperty(
+        fc.emailAddress().filter((e) => e.toLowerCase() !== order.email.toLowerCase()),
+        async (other) => {
+          await env.orderService.requestLink(order.orderNumber, other)
+          await env.orderService.requestLink(order.orderNumber, `${order.email}x`)
+          expect(await resendEvents(env)).toEqual([])
+        },
+      ),
+      { numRuns: 20 },
+    )
+    await env.orderService.requestLink(order.orderNumber, `  ${order.email.toUpperCase()}\t`)
+    await env.orderService.requestLink(order.orderNumber, order.email.toLowerCase())
+    expect(await resendEvents(env)).toEqual([{ orderId: order.id }, { orderId: order.id }])
+    await env.commandStore.close()
+  })
+
+  // Defect: an order an account owns is skipped, so its owner never gets the email that links to the account.
+  it('an order an account owns gets the resend event as a guest order does', async () => {
+    const env = await setup()
+    const owned = await importIn(env, 'shipped', { customerId: uuidv7() })
+    await env.orderService.requestLink(owned.orderNumber, owned.email)
+    expect(await resendEvents(env)).toEqual([{ orderId: owned.id }])
+    await env.commandStore.close()
+  })
+
+  // Defect: a pending or cancelled order is mailed a confirmation, an unknown number throws (telling the caller the
+  // number does not exist), or a refusal throws at all.
+  it('a pending or cancelled order, or an unknown number, resolves silently and publishes nothing', async () => {
+    const env = await setup()
+    const pending = await importIn(env, 'pending')
+    const cancelled = await importIn(env, 'cancelled')
+    const results = await Promise.all([
+      env.orderService.requestLink(pending.orderNumber, pending.email),
+      env.orderService.requestLink(cancelled.orderNumber, cancelled.email),
+      env.orderService.requestLink('WC-000000000000', pending.email),
+    ])
+    expect(results).toEqual([undefined, undefined, undefined])
+    expect(await resendEvents(env)).toEqual([])
     await env.commandStore.close()
   })
 })

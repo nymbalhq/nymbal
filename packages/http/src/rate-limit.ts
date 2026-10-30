@@ -1,8 +1,10 @@
-import type { RateLimitAction } from '@nymbalhq/types'
+import { ORDER_EMAIL_HEADER, type RateLimitAction } from '@nymbalhq/types'
 
 export interface ParsedRule {
   pattern: string
   regex: RegExp
+  /** The rule counts only requests that carry this header (lower case). */
+  header?: string
   requests: number
   windowMs: number
   action: RateLimitAction
@@ -14,7 +16,10 @@ export interface RateLimitDecision {
   retryAfter?: number
 }
 
-type RateLimitRules = Record<string, { requests: number; window: string; action: RateLimitAction }>
+type RateLimitRules = Record<
+  string,
+  { requests: number; window: string; action: RateLimitAction; header?: string | undefined }
+>
 
 /**
  * Applied under the configured rules: a configured key with the same pattern replaces its default, and the defaults
@@ -27,6 +32,13 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/recently-viewed': { requests: 600, window: '1m', action: 'block' },
   // Each accepted subscribe mails a confirmation: the bound on how much mail one IP can make the store send.
   '/api/alerts/subscribe': { requests: 10, window: '1h', action: 'block' },
+  // Each match mails the order's link. Before the order-read rule, which a request carrying the email would also match.
+  '/api/orders/link': { requests: 5, window: '1h', action: 'block' },
+  // The email is the second factor of an expired order key: bounded so it cannot be guessed. The key-only poll of a
+  // pending order carries no email and is never counted.
+  '/api/orders/*': { requests: 10, window: '1h', action: 'block', header: ORDER_EMAIL_HEADER },
+  // Every checkout answer can mint an order key.
+  '/api/checkout': { requests: 30, window: '1m', action: 'block' },
 }
 
 interface Bucket {
@@ -46,14 +58,19 @@ export class RateLimiter {
     this.#rules = Object.entries(rules).map(([pattern, rule]) => ({
       pattern,
       regex: compilePathPattern(pattern),
+      ...(rule.header !== undefined && { header: rule.header.toLowerCase() }),
       requests: rule.requests,
       windowMs: parseWindow(rule.window),
       action: rule.action,
     }))
   }
 
-  check(ip: string, path: string): RateLimitDecision | null {
-    const rule = this.#ruleFor(path)
+  check(
+    ip: string,
+    path: string,
+    headers: Readonly<Record<string, unknown>> = {},
+  ): RateLimitDecision | null {
+    const rule = this.#ruleFor(path, headers)
     if (!rule) return null
     const key = `${rule.pattern}|${ip}`
     const now = Date.now()
@@ -125,8 +142,10 @@ export class RateLimiter {
     this.#buckets.set(key, { count: 1, resetAt: now + windowMs })
   }
 
-  #ruleFor(path: string): ParsedRule | undefined {
-    return this.#rules.find((r) => r.regex.test(path))
+  #ruleFor(path: string, headers: Readonly<Record<string, unknown>> = {}): ParsedRule | undefined {
+    return this.#rules.find(
+      (r) => r.regex.test(path) && (r.header === undefined || headers[r.header] !== undefined),
+    )
   }
 }
 

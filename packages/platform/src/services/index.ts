@@ -7,7 +7,7 @@ import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
 import { createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
-import { createAuthService, type AuthService } from './auth-service.js'
+import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
 import { createInventoryService, type InventoryService } from './inventory-service.js'
 import {
@@ -101,6 +101,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     inventory,
     payments,
     currency: config.store.currency,
+    keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.checkout),
   })
   return {
     product: createProductService({

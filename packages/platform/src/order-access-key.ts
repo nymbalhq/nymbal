@@ -19,3 +19,8 @@ export function hashOrderKey(key: string): string {
 export function isOrderKey(value: unknown): value is string {
   return typeof value === 'string' && ORDER_KEY.test(value)
 }
+
+/** The order's email as a shopper types it: any case, with space around it. */
+export function orderEmailMatches(orderEmail: string, given: string): boolean {
+  return orderEmail.trim().toLowerCase() === given.trim().toLowerCase()
+}

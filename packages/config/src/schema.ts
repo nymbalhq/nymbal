@@ -12,6 +12,8 @@ const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
   window: z.string().regex(/^\d+(ms|s|m|h)$/, 'window must look like "60s", "5m", "1h"'),
   action: z.enum(['block', 'challenge', 'throttle']),
+  /** Counts only the requests to the path that carry this header, such as `x-nymbal-order-email`. */
+  header: z.string().min(1).optional(),
 })
 
 const rateLimitPathPattern = /^\/[\w\-/*:]*$/
@@ -405,6 +407,19 @@ export const commerceSchema = z.object({
     .object({
       numberPrefix: z.string().min(1).default('NYM'),
       numberStart: z.number().int().nonnegative().default(1000),
+      /** How long an order key opens the order on its own: the checkout's, and the order email's. */
+      keyLifetime: z
+        .object({
+          checkout: z
+            .string()
+            .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "48h"')
+            .default('48h'),
+          email: z
+            .string()
+            .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "30d"')
+            .default('30d'),
+        })
+        .default({}),
     })
     .default({}),
 })

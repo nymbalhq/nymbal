@@ -4,6 +4,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { AlertService } from '../services/alert-service.js'
 import type { OrderService } from '../services/order-service.js'
+import { parseDurationToMs } from '../services/auth-service.js'
 import { registerCategoryProjection } from './projections/category-projection.js'
 import { registerProductProjection } from './projections/product-projection.js'
 import { registerOrderProjection } from './projections/order-projection.js'
@@ -86,6 +87,7 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     orderAccessKeyRepo: repos.orderAccessKey,
     storeName: config.store.name,
     ...(config.store.url !== undefined && { storeUrl: config.store.url }),
+    keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.email),
   })
   await registerAlertHandler({
     eventBus,

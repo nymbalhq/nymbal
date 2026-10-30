@@ -94,6 +94,9 @@ export interface Order {
  */
 export const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 
+/** The request header that carries the order's email beside an expired order key. Never a query parameter either. */
+export const ORDER_EMAIL_HEADER = 'x-nymbal-order-email'
+
 /** Who took the money: the payments provider, the merchant recording an offline payment, or an imported history. */
 export type CaptureMethod = 'provider' | 'manual' | 'import'
 

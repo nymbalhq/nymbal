@@ -33,6 +33,17 @@ export interface CustomerAccount {
   }
 }
 
+/**
+ * A guest's orders, opened with the key from the checkout or the order email. Once the key has expired, the read is
+ * refused with `orders.key_expired` and opens with the order's email beside the key; the email travels in a header,
+ * never in a URL.
+ */
+export interface GuestOrders {
+  get(orderNumber: string, options?: { key?: string; email?: string }): Promise<ShopperOrder>
+  /** Asks the store to email the order's link to the order's own email; it answers the same whatever matched. */
+  requestLink(request: { orderNumber: string; email: string }): Promise<void>
+}
+
 /** The store's capabilities report, read once per client: what it can do does not change while it runs. */
 export interface StoreCapabilitiesReader {
   get(): Promise<StoreCapabilities>
@@ -56,6 +67,7 @@ export interface NymbalClient {
   checkout: CheckoutStore
   auth: AuthStore
   customer: CustomerAccount
+  orders: GuestOrders
   adapter: CommerceAdapter
   destroy(): void
 }
@@ -126,6 +138,11 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
   }
 
+  // The adapter is the client's for its whole life, so whether it reads guests' orders is known here.
+  const noGuestOrders = () =>
+    Promise.reject(new Error('This client’s adapter cannot open a guest’s order.'))
+  const orders: GuestOrders = adapter.orders ?? { get: noGuestOrders, requestLink: noGuestOrders }
+
   const recentlyViewedOf = (): NonNullable<CommerceAdapter['recentlyViewed']> => {
     const reader = adapter.recentlyViewed
     if (reader === undefined) {
@@ -164,6 +181,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     checkout,
     auth,
     customer,
+    orders,
     adapter,
     destroy,
   }

@@ -257,6 +257,7 @@ export const orderAccessKeys = sqliteTable(
     keyHash: text('key_hash').notNull(),
     purpose: text('purpose', { enum: ['checkout', 'email'] }).notNull(),
     createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
   },
   (t) => ({
     keyHashIdx: uniqueIndex('order_access_keys_key_hash_idx').on(t.keyHash),

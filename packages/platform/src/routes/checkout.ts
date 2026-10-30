@@ -36,7 +36,7 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         totalMinor: result.totalMinor,
         orderStatus: result.orderStatus,
         payment: result.payment,
-        orderKey: result.orderKey,
+        ...(result.orderKey !== undefined && { orderKey: result.orderKey }),
       })
     } catch (err) {
       return renderError(err)

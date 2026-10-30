@@ -259,6 +259,7 @@ export const orderAccessKeys = pgTable(
     keyHash: text('key_hash').notNull(),
     purpose: text('purpose', { enum: ['checkout', 'email'] }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
   (t) => ({
     keyHashIdx: uniqueIndex('order_access_keys_key_hash_idx').on(t.keyHash),

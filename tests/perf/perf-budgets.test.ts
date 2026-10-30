@@ -16,13 +16,14 @@ import {
 // the real run (both templates, as committed), which is the last to write reports/perf-budgets.json, so the report
 // is the real one.
 // - AC-2: the fixture run fails on its page alone, and scriptBytes is the gzip sum of the page's scripts.
-// - AC-4: every page is in the run and within budget, and Astro `/` ships no more script bytes than at 75989c8
-//   (tests/perf/fixtures/astro-home-75989c8.json).
-// The maintainers accepted the recently viewed list's bytes on `/`: the reference was 606e5aa (26,413 B) before it.
+// - AC-4: every page is in the run and within budget, and Astro `/` ships no more script bytes than at d2d900b
+//   (tests/perf/fixtures/astro-home-d2d900b.json).
+// The maintainers moved the reference twice on purpose: from 606e5aa (26,413 B) to 75989c8 (27,224 B) for the
+// recently viewed list, and to d2d900b (27,272 B) for the guest order link in the shared client chunk.
 // Then the bytes runs, without Lighthouse (`--bytes`, reports/perf-bytes.json):
 // - AC-5: gate:full's perf-bytes step, planned by plan() and run by the gate's runner in this checkout, is ok, and
 //   gives each of the ten pages the scriptBytes the Lighthouse run measured;
-// - AC-6: `--bytes` fails the fixture's home page alone, and fails a home page lifted above its 75989c8 reference
+// - AC-6: `--bytes` fails the fixture's home page alone, and fails a home page lifted above its reference
 //   but kept under its budget on the reference.
 // Without Chrome the tests skip and say so (Lighthouse cannot run), except under CI, where they fail.
 
@@ -38,7 +39,7 @@ const RUN_TIMEOUT_MS = 20 * 60_000
 const FROM_ENV = (process.env.NYMBAL_PERF_BUDGETS_ARGS ?? '').split(/\s+/).filter(Boolean)
 const baseline = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('./fixtures/astro-home-75989c8.json', import.meta.url)),
+    fileURLToPath(new URL('./fixtures/astro-home-d2d900b.json', import.meta.url)),
     'utf8',
   ),
 ) as { commit: string; scriptBytes: number }
@@ -282,7 +283,7 @@ describe('AC-4: the budgets hold', () => {
     }
   })
 
-  it('AC-4: Astro / ships no more script bytes than at 75989c8', (ctx) => {
+  it('AC-4: Astro / ships no more script bytes than at its reference commit', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     const home = row(real, 'astro', 'home')
     expect(home, tail(real.output)).toBeDefined()
@@ -333,7 +334,7 @@ describe('AC-6: --bytes fails what CI fails', () => {
     )
   })
 
-  it('AC-6: a script that lifts Astro / above its 75989c8 reference but not over its budget fails on the reference alone', (ctx) => {
+  it('AC-6: a script that lifts Astro / above its reference but not over its budget fails on the reference alone', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)
     const budget = BUDGETS.astro?.home?.scriptBytes ?? Number.NaN
     // The fixture's own sizing: H < H + g <= budget.

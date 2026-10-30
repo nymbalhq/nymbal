@@ -12,6 +12,8 @@ interface Props {
   jsonLd?: Record<string, unknown>
   /** The shopper's cart, when the page has read it already (fetchCart); the layout reads it otherwise. */
   cart?: CartProjection | null
+  /** The page's canonical URL and og:url, when its own URL carries what must not travel (an order's key). */
+  canonical?: string
 }
 
 const { title, description = 'Shop the Nymbal store', ogImage, jsonLd } = Astro.props
@@ -19,7 +21,7 @@ const cart =
   Astro.props.cart !== undefined ? Astro.props.cart : await fetchCart(Astro.request.headers.get('cookie'))
 const capabilities = await fetchCapabilities()
 const canSearch = capabilities?.search.capabilities.includes('search') ?? false
-const canonicalUrl = Astro.url.href
+const canonicalUrl = Astro.props.canonical ?? Astro.url.href
 ---
 <!doctype html>
 <html lang="en">

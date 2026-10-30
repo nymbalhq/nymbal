@@ -505,6 +505,8 @@ const CAPABILITY_JOURNEYS = [
   'browse-sort.spec.ts AC-4',
   'browse-sort.spec.ts AC-7',
   'browse.spec.ts AC-3',
+  'order-key-expiry.spec.ts AC-7',
+  'order-key-expiry.spec.ts AC-9',
   'payment-step.spec.ts AC-5',
   'payment-step.spec.ts AC-5',
   'resend-confirmation.spec.ts AC-10',

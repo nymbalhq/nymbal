@@ -39,6 +39,10 @@ export default {
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      // Every checkout and order link request of the suite comes from one IP; the built-in limits are proven in the
+      // http package.
+      '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
       '/api/alerts/subscribe': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },

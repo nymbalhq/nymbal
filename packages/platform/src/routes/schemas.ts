@@ -242,8 +242,18 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/orders/:orderNumber': {
     name: 'orders.get',
     description:
-      "Get one order by its number, with a key that opens it in the x-nymbal-order-key header or as the order's signed-in customer.",
+      "Get one order by its number, with a key that opens it in the x-nymbal-order-key header (an expired key with the order's email in x-nymbal-order-email) or as the order's signed-in customer.",
     params: orderNumberParams,
+  },
+  'POST /api/orders/link': {
+    name: 'orders.requestLink',
+    command: 'order.requestLink',
+    description:
+      "Email the order's link again to the order's own email; the answer is the same whether or not the number and email matched an order.",
+    body: z.object({
+      orderNumber: z.string().trim().min(1).max(64),
+      email: z.string().trim().min(1).max(254),
+    }),
   },
 
   // Recently viewed: the viewer is the bearer's customer or the visitor cookie's, never one the request names.
