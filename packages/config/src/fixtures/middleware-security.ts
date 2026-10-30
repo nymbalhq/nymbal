@@ -12,7 +12,11 @@ export const RECORD_RUNS = 60
 export const BASE_CONFIG = {
   store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
   template: 'astro',
-  infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
+  infrastructure: {
+    commandStore: 'sqlite',
+    documentStore: { provider: 'in-memory' },
+    eventBus: { provider: 'in-process' },
+  },
   commerce: {
     payments: { provider: 'native' },
     email: { provider: 'native' },

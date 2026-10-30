@@ -5,6 +5,10 @@ import {
   type PostgresJsonbDocumentStoreOptions,
 } from './postgres-jsonb-document-store.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'documentStore'
+export const provider = 'postgres-jsonb'
+
 export {
   createPostgresJsonbDocumentStore,
   PostgresJsonbDocumentStore,
@@ -12,7 +16,7 @@ export {
 }
 
 /**
- * The kernel's entry: `infrastructure.documentStore: 'postgres-jsonb'`, on the command store's connection
+ * The kernel's entry: `infrastructure.documentStore: { provider: 'postgres-jsonb' }`, on the command store's connection
  * (`config.postgresUrl`, then `DATABASE_URL`). The kernel calls `initialize()` before it uses the store.
  */
 export function createAdapter(ctx: AdapterContext): PostgresJsonbDocumentStore {

@@ -7,7 +7,7 @@ import { ConfigError } from '@nymbalhq/types'
 import { loadConfig, nymbalConfigSchema } from './index.js'
 
 // AC-8 and AC-9, the config half: `events` sets the retention period (default 30, at least 1) and an optional archive,
-// and an archive in the public `media: 's3'` bucket is refused. The sweeper half is tests/stores/event-archive.test.ts.
+// and an archive in the public `media: { provider: 's3' }` bucket is refused. The sweeper half is tests/stores/event-archive.test.ts.
 
 const dirs: string[] = []
 afterAll(() => {
@@ -20,8 +20,8 @@ function configWith(more: Record<string, unknown>, infrastructure: Record<string
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
       ...infrastructure,
     },
     security: { adapter: 'middleware' },
@@ -101,7 +101,10 @@ describe('AC-8: events.retentionDays', () => {
 })
 
 describe('AC-9: archives never share the public media bucket', () => {
-  const media = { media: 's3', s3: { bucket: 'shop-media', endpoint: 'http://localhost:59000' } }
+  const media = {
+    media: { provider: 's3' },
+    s3: { bucket: 'shop-media', endpoint: 'http://localhost:59000' },
+  }
 
   it('AC-9: events.archive.bucket equal to infrastructure.s3.bucket with media s3 fails loadConfig with a ConfigError naming both keys; a bucket of its own loads', async () => {
     const same = await rejectionOf(

@@ -39,7 +39,8 @@ export async function openReadModels(
   try {
     const documentStore = await buildDocumentStore(config, { ...storage, logger, env }, logger, env)
     closers.push(() => documentStore.close())
-    if (config.infrastructure.documentStore === 'postgres-jsonb') await documentStore.initialize?.()
+    if (config.infrastructure.documentStore.provider === 'postgres-jsonb')
+      await documentStore.initialize?.()
     const repos = buildRepositories(store, documentStore)
     const search = await slotBuilders({
       config,

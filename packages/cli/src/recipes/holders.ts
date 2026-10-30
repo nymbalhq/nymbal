@@ -3,18 +3,21 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { conventionPackage } from '@nymbalhq/config'
 import type { Recipe } from '@nymbalhq/types'
 
 /**
- * Each recipe `nymbal add` knows, and the package that ships it as `recipes/<name>.json`. The recipe itself is data in
- * that package, so a package brings its own recipe; this table only says where to look.
+ * Each recipe `nymbal add` knows, and the package that ships it as `recipes/<name>.json`: the package of the provider a
+ * one-provider recipe sets. The recipe itself is data in that package, so a package brings its own recipe; this table
+ * only says where to look.
  */
 export const RECIPE_HOLDERS: Readonly<Record<string, string>> = {
-  cloudflare: '@nymbalhq/security-cloudflare',
+  cloudflare: conventionPackage('security', 'cloudflare'),
   postgres: '@nymbalhq/platform',
-  redis: '@nymbalhq/document-store-redis',
-  s3: '@nymbalhq/media-s3',
-  stripe: '@nymbalhq/payments-stripe',
+  // Sets the document store and the bus; the document store's package ships it.
+  redis: conventionPackage('documentStore', 'redis'),
+  s3: conventionPackage('media', 's3'),
+  stripe: conventionPackage('payments', 'stripe'),
 }
 
 export function knownRecipes(): string[] {

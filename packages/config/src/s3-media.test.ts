@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { infrastructureSchema, loadConfig } from './index.js'
 
-// AC-1, the config half: `media: 's3'` parses with and without an `infrastructure.s3` block and keeps every field;
+// AC-1, the config half: `media: { provider: 's3' }` parses with and without an `infrastructure.s3` block and keeps every field;
 // any other key in the block fails naming it (credentials are never config keys); an `s3` block without media 's3'
 // fails. The resolvePrimitives half is packages/platform/tests/integration/s3-media.test.ts.
 
@@ -17,7 +17,11 @@ afterAll(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-const BASE = { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' }
+const BASE = {
+  commandStore: 'sqlite',
+  documentStore: { provider: 'in-memory' },
+  eventBus: { provider: 'in-process' },
+}
 
 function configWith(infrastructure: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -107,8 +111,8 @@ const unknownS3Key = fc
 
 describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
   it("AC-1: media 's3' loads with no s3 block, and with a full one whose every field is kept", async () => {
-    const bare = await loadConfig(project(configWith({ ...BASE, media: 's3' })))
-    expect(bare.config.infrastructure.media).toBe('s3')
+    const bare = await loadConfig(project(configWith({ ...BASE, media: { provider: 's3' } })))
+    expect(bare.config.infrastructure.media).toEqual({ provider: 's3' })
 
     const block = {
       bucket: 'shop-media',
@@ -118,16 +122,22 @@ describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
       publicUrl: 'https://cdn.example.com/media',
       forcePathStyle: true,
     }
-    const full = await loadConfig(project(configWith({ ...BASE, media: 's3', s3: block })))
+    const full = await loadConfig(
+      project(configWith({ ...BASE, media: { provider: 's3' }, s3: block })),
+    )
     const infra = full.config.infrastructure as Record<string, unknown>
-    expect(infra['media']).toBe('s3')
+    expect(infra['media']).toEqual({ provider: 's3' })
     expect(infra['s3']).toEqual(block)
   })
 
   it("AC-1: infrastructureSchema accepts media 's3' with any subset of the block's fields and keeps exactly those given", () => {
     fc.assert(
       fc.property(s3Block, (block) => {
-        const parsed = infrastructureSchema.safeParse({ ...BASE, media: 's3', s3: block })
+        const parsed = infrastructureSchema.safeParse({
+          ...BASE,
+          media: { provider: 's3' },
+          s3: block,
+        })
         expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
         const s3 = (parsed.data as Record<string, unknown> | undefined)?.['s3'] as
           | Record<string, unknown>
@@ -142,10 +152,16 @@ describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
 
   it('AC-1: any other key inside infrastructure.s3 fails loadConfig with a ConfigError that quotes the key', async () => {
     // The same block without the stray key loads, so the key alone is what fails.
-    expect(await rejectionOf({ ...BASE, media: 's3', s3: { bucket: 'b' } })).toBeNull()
+    expect(
+      await rejectionOf({ ...BASE, media: { provider: 's3' }, s3: { bucket: 'b' } }),
+    ).toBeNull()
     await fc.assert(
       fc.asyncProperty(unknownS3Key, async (key) => {
-        const message = await rejectionOf({ ...BASE, media: 's3', s3: { bucket: 'b', [key]: 'x' } })
+        const message = await rejectionOf({
+          ...BASE,
+          media: { provider: 's3' },
+          s3: { bucket: 'b', [key]: 'x' },
+        })
 
         expect(message, `infrastructure.s3.${key} was accepted`).not.toBeNull()
         expect(quoted(message!, key), `the message quotes ${key}: ${message}`).toBe(true)
@@ -158,7 +174,7 @@ describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
   it('AC-1: credentials are never config keys: accessKeyId and secretAccessKey inside infrastructure.s3 fail, naming each', async () => {
     const message = await rejectionOf({
       ...BASE,
-      media: 's3',
+      media: { provider: 's3' },
       s3: { bucket: 'b', accessKeyId: 'AKIA-TEST', secretAccessKey: 's3-secret' },
     })
 
@@ -170,9 +186,9 @@ describe("AC-1: media 's3' and the infrastructure.s3 block", () => {
   it("AC-1: the block that loads with media 's3' fails, naming s3, with media 'local-fs' and with media left to its default", async () => {
     const s3 = { bucket: 'shop-media', endpoint: 'http://localhost:59000' }
 
-    expect(await rejectionOf({ ...BASE, media: 's3', s3 })).toBeNull()
+    expect(await rejectionOf({ ...BASE, media: { provider: 's3' }, s3 })).toBeNull()
     for (const infrastructure of [
-      { ...BASE, media: 'local-fs', s3 },
+      { ...BASE, media: { provider: 'local-fs' }, s3 },
       { ...BASE, s3 },
     ]) {
       const message = await rejectionOf(infrastructure)

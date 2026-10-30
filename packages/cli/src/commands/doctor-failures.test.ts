@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { nymbalConfigSchema } from '@nymbalhq/config'
+import { ADAPTER_CATALOGUE, conventionPackage, nymbalConfigSchema } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
-import { installLine, PROVIDER_PACKAGES } from '../../../platform/src/adapters/loader.js'
+import { installLine } from '../../../platform/src/adapters/index.js'
 import {
   cliEnv,
   doctorLines,
@@ -97,8 +97,8 @@ describe('AC-5: each failure exits 1 and names its cause', () => {
       ...repoConfig,
       infrastructure: {
         commandStore: 'sqlite',
-        documentStore: 'in-memory',
-        eventBus: 'in-process',
+        documentStore: { provider: 'in-memory' },
+        eventBus: { provider: 'in-process' },
       },
       commerce: {
         ...repoConfig.commerce,
@@ -111,7 +111,10 @@ describe('AC-5: each failure exits 1 and names its cause', () => {
     )
     const sqlitePath = join(project, 'nymbal.db')
     await migratedSqlite(sqlitePath)
-    const stripe = PROVIDER_PACKAGES.payments!['stripe']!
+    const stripe = {
+      package: conventionPackage('payments', 'stripe'),
+      sdk: ADAPTER_CATALOGUE.payments['stripe']!.sdk!,
+    }
     const env = cliEnv({
       NYMBAL_SQLITE_PATH: sqlitePath,
       NODE_OPTIONS: hiding([stripe.package]),
@@ -183,7 +186,7 @@ describe('AC-5: each failure exits 1 and names its cause', () => {
       infrastructure: {
         ...repoConfig.infrastructure,
         commandStore: 'sqlite',
-        documentStore: 'postgres-jsonb',
+        documentStore: { provider: 'postgres-jsonb' },
       },
     })
     expect(parsed.success).toBe(false)

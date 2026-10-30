@@ -2,7 +2,7 @@
   "name": "s3",
   "summary": "Store product images and other media in an S3-compatible bucket (AWS S3, R2, MinIO).",
   "install": ["@nymbalhq/media-s3", "@aws-sdk/client-s3"],
-  "set": [{ "path": "infrastructure.media", "value": "s3" }],
+  "set": [{ "path": "infrastructure.media", "value": { "provider": "s3" } }],
   "env": [
     {
       "name": "S3_BUCKET",

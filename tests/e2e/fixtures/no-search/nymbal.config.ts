@@ -21,8 +21,8 @@ export default {
   template: 'astro',
   infrastructure: {
     commandStore: env('NYMBAL_COMMAND_STORE', 'sqlite'),
-    documentStore: env('NYMBAL_DOCUMENT_STORE', 'in-memory'),
-    eventBus: env('NYMBAL_EVENT_BUS', 'in-process'),
+    documentStore: { provider: env('NYMBAL_DOCUMENT_STORE', 'in-memory') },
+    eventBus: { provider: env('NYMBAL_EVENT_BUS', 'in-process') },
     redis: { prefix: env('NYMBAL_REDIS_PREFIX', 'nymbal') },
   },
   security: {

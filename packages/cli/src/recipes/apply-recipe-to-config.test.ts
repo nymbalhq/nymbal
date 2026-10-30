@@ -200,7 +200,10 @@ function vary(source: string, v: Variation): string {
     v.comments[c++ % v.comments.length] ? [`${indent}// ${v.commentText} ${c}`] : []
 
   edit('infrastructure', (lines) => {
-    const inner = [...lines.slice(1, -1), ...(v.explicitMedia ? ["    media: 'local-fs',"] : [])]
+    const inner = [
+      ...lines.slice(1, -1),
+      ...(v.explicitMedia ? ["    media: { provider: 'local-fs' },"] : []),
+    ]
     return [
       lines[0]!,
       ...permute(inner, v.order).flatMap((l) => [...comment('    '), l]),
@@ -430,15 +433,11 @@ describe('AC-2: applyRecipeToConfig on generated scaffold configs', () => {
         const bodyStart = start + parentOpen.length
         const bodyEnd = plain.indexOf('\n  },', bodyStart)
         const body = plain.slice(bodyStart, bodyEnd)
-        const heldBody =
-          key === 'payments'
-            ? body.replace(
-                /payments: \{ provider: 'native' \}/,
-                `payments: { provider: '${other}' }`,
-              )
-            : new RegExp(`^ {4}${key}: '`, 'm').test(body)
-              ? body.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
-              : `    ${key}: '${other}',\n${body}`
+        const heldBody = new RegExp(`^ {4}${key}: \\{ provider: '`, 'm').test(body)
+          ? body.replace(new RegExp(`^( {4}${key}: \\{ provider: )'[^']*'`, 'm'), `$1'${other}'`)
+          : new RegExp(`^ {4}${key}: '`, 'm').test(body)
+            ? body.replace(new RegExp(`^( {4}${key}: )'[^']*'`, 'm'), `$1'${other}'`)
+            : `    ${key}: '${other}',\n${body}`
         const held = plain.slice(0, bodyStart) + heldBody + plain.slice(bodyEnd)
         expect(held, 'the generator placed the other value').not.toBe(plain)
 

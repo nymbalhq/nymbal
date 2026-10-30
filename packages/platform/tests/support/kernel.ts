@@ -40,8 +40,8 @@ export function kernelConfig(dialect: Dialect): NymbalConfig {
     template: 'astro',
     infrastructure: {
       commandStore: dialect,
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
     },
     security: {
       adapter: 'middleware',

@@ -143,9 +143,9 @@ async function configFor(shape: Shape): Promise<{ config: NymbalConfig; database
     ...kernelConfig('postgres'),
     infrastructure: {
       commandStore: 'postgres',
-      documentStore: shape.documentStore,
-      eventBus: shape.eventBus,
-      media: 'local-fs',
+      documentStore: { provider: shape.documentStore },
+      eventBus: { provider: shape.eventBus },
+      media: { provider: 'local-fs' },
       ...(usesRedis && { redis: { url: redisAt, prefix } }),
     },
   } as unknown as NymbalConfig

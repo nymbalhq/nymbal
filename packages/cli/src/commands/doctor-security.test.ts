@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { conventionPackage } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
-import { installLine, PROVIDER_PACKAGES } from '../../../platform/src/adapters/loader.js'
+import { installLine } from '../../../platform/src/adapters/index.js'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
@@ -21,7 +22,7 @@ import {
 // missing package is down and exits 1. Spawns the built CLI (`pnpm build` first).
 
 const TOKEN = 'cf-doctor-token-accepted-3Rk9'
-const SECURITY_PACKAGE = PROVIDER_PACKAGES.security['cloudflare']!.package
+const SECURITY_PACKAGE = conventionPackage('security', 'cloudflare')
 
 let dir = ''
 let fake: FakeCloudflare
@@ -73,7 +74,11 @@ async function doctor(
   const project = mkdtempSync(join(dir, 'project-'))
   const raw = {
     ...repoConfig,
-    infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
+    infrastructure: {
+      commandStore: 'sqlite',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+    },
     security: { ...repoConfig.security, ...security },
   }
   writeFileSync(

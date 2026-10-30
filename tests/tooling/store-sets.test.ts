@@ -6,7 +6,7 @@ import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { plan, POSTGRES_URL, type StepSpec } from '../../scripts/gate'
+import { plan, POSTGRES_URL, STORE_SETS, type StepSpec } from '../../scripts/gate'
 import {
   cleanupScratch,
   GATE_PACKAGE_JSON,
@@ -40,6 +40,13 @@ const SETS = {
   },
 } as const
 type SetName = keyof typeof SETS
+
+/** A set as loadConfig reads it: the command store a dialect string, the document store and the bus their blocks. */
+const loaded = (set: (typeof SETS)[SetName]) => ({
+  commandStore: set.commandStore,
+  documentStore: { provider: set.documentStore },
+  eventBus: { provider: set.eventBus },
+})
 
 const REDIS_COMPOSE = 'localhost:63799'
 const POSTGRES_COMPOSE = new URL(POSTGRES_URL).host
@@ -75,7 +82,7 @@ async function rootInfrastructure(env: Record<string, string>): Promise<Record<s
 describe('AC-7: the repo-root config takes its stores from the environment', () => {
   it('AC-7: with no store variables the root config is SQLite, in-memory and in-process, as today', async () => {
     const infra = await rootInfrastructure({})
-    expect(infra).toMatchObject(SETS['sqlite-memory'])
+    expect(infra).toMatchObject(loaded(SETS['sqlite-memory']))
   }, 30_000)
 
   it.each(['postgres-redis', 'postgres-jsonb'] as const)(
@@ -89,8 +96,33 @@ describe('AC-7: the repo-root config takes its stores from the environment', () 
         NYMBAL_EVENT_BUS: wanted.eventBus,
         NYMBAL_REDIS_PREFIX: prefix,
       })
-      expect(infra).toMatchObject(wanted)
+      expect(infra).toMatchObject(loaded(wanted))
       expect((infra['redis'] as { prefix?: unknown } | undefined)?.prefix).toBe(prefix)
+    },
+    30_000,
+  )
+})
+
+interface BlockSet {
+  commandStore: string
+  documentStore: { provider: string }
+  eventBus: { provider: string }
+}
+
+describe('AC-11: each STORE_SETS entry loads through the root config', () => {
+  it.each(Object.keys(STORE_SETS))(
+    'AC-11: the %s entry is written as blocks and, given to the root config through its variables, loads as itself',
+    async (name) => {
+      const set = STORE_SETS[name as keyof typeof STORE_SETS] as unknown as BlockSet
+      expect(set.documentStore).toEqual({ provider: expect.any(String) })
+      expect(set.eventBus).toEqual({ provider: expect.any(String) })
+
+      const infra = await rootInfrastructure({
+        NYMBAL_COMMAND_STORE: set.commandStore,
+        NYMBAL_DOCUMENT_STORE: set.documentStore.provider,
+        NYMBAL_EVENT_BUS: set.eventBus.provider,
+      })
+      expect(infra).toMatchObject(set as unknown as Record<string, unknown>)
     },
     30_000,
   )

@@ -18,7 +18,12 @@ import { createNativeReviewsAdapter } from './reviews/native-adapter.js'
 import { createNativeAnalyticsAdapter } from './analytics/native-adapter.js'
 import { createNativeShippingAdapter } from './shipping/native-adapter.js'
 import { createNativeTaxAdapter } from './tax/native-adapter.js'
-import { declaredSettings, importProviderPackage, loadProviderAdapter, PROVIDER_PACKAGES } from './loader.js'
+import {
+  declaredSettings,
+  importAdapterModule,
+  loadProviderAdapter,
+  resolveChoice,
+} from './resolve.js'
 import { createNotConfiguredAdapter } from './not-configured.js'
 import { fillFromSettings, missingSecrets, type SettingValue } from '../settings/resolve.js'
 
@@ -98,10 +103,11 @@ export function checkInjectedSlot(
 type BuiltIns<S extends CommerceSlot> = Readonly<Record<string, () => SlotAdapter<S>>>
 
 /**
- * The slot's adapter, from the injected ones (`custom`), an adapter package, or the kernel's own, initialized with the
- * slot's config block. A package's declared settings fill the block where it is unset (config, then env, then
- * `settings`); a declared secret set nowhere gives the not-configured adapter instead of building the package. A
- * provider none of them has is refused, never replaced by a stand-in.
+ * The slot's adapter, from the injected ones (`custom`), the kernel's own, or the package the block resolves to
+ * (`package`, else `@nymbalhq/<slot>-<provider>`), initialized with the slot's config block. A package's declared
+ * settings fill the block where it is unset (config, then env, then `settings`); a declared secret set nowhere gives
+ * the not-configured adapter instead of building the package. A provider none of them has is refused, never replaced
+ * by a stand-in.
  */
 async function resolveSlot<S extends CommerceSlot>(
   slot: S,
@@ -117,7 +123,7 @@ async function resolveSlot<S extends CommerceSlot>(
   if (block.provider === 'custom') {
     adapter = injected[slot] as SlotAdapter<S> | undefined
   } else {
-    const mod = await importProviderPackage(slot, block.provider, process.env)
+    const mod = await importAdapterModule(slot, block, process.env)
     if (mod !== undefined) {
       const declared = declaredSettings(mod)
       blockConfig = fillFromSettings(slot, blockConfig, declared, settings, process.env)
@@ -165,31 +171,39 @@ export function resolvePaymentsAdapter(
   )
 }
 
+/** The security slot's choice: `security.adapter` is its provider. */
+export function securityChoice(config: NymbalConfig): { provider: string; package?: string } {
+  const { adapter, package: pkg } = config.security
+  return { provider: adapter, ...(pkg !== undefined && { package: pkg }) }
+}
+
 /**
- * The adapter `security.adapter` names, initialized with its own block (`security.cloudflare`): `middleware` is the
- * kernel's, `cloudflare` its package's. One with neither is refused rather than run as middleware.
+ * The adapter `security.adapter` names, by the rule every slot resolves by, initialized with its config:
+ * `security.cloudflare` for `cloudflare`, `security.config` for any other package. `middleware` is the kernel's.
  */
 export async function resolveSecurityAdapter(
   config: NymbalConfig,
   logger: Logger,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SecurityAdapter> {
-  const choice = config.security.adapter
+  const choice = securityChoice(config)
   const slotLogger = logger.child({ adapter: 'security' })
-  if (choice === 'middleware') return createMiddlewareSecurityAdapter({ logger: slotLogger })
+  if (resolveChoice('security', choice).kind === 'built-in') {
+    return createMiddlewareSecurityAdapter({ logger: slotLogger })
+  }
   const blockConfig: Record<string, unknown> =
-    choice === 'cloudflare' ? { ...config.security.cloudflare } : {}
+    choice.provider === 'cloudflare'
+      ? { ...config.security.cloudflare }
+      : { ...config.security.config }
   const adapter = (await loadProviderAdapter('security', choice, {
     config: blockConfig,
     logger: slotLogger,
     env,
   })) as SecurityAdapter | undefined
   if (adapter === undefined) {
-    const known = ['middleware', ...Object.keys(PROVIDER_PACKAGES.security)]
-    throw new ConfigError(
-      `security.adapter '${choice}' has no adapter; the security adapters are ${known.join(', ')}`,
-      { code: 'config.security_adapter_unknown', context: { adapter: choice, known } },
-    )
+    throw new ConfigError(`security.adapter '${choice.provider}' has no adapter`, {
+      context: { slot: 'security', provider: choice.provider },
+    })
   }
   await adapter.initialize(blockConfig)
   return adapter

@@ -111,18 +111,29 @@ export const minioUrl = (port: string = '59000'): string => `http://localhost:${
  * is the default and needs no service.
  */
 export const STORE_SETS = {
-  'sqlite-memory': { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
-  'postgres-redis': { commandStore: 'postgres', documentStore: 'redis', eventBus: 'redis-streams' },
+  'sqlite-memory': {
+    commandStore: 'sqlite',
+    documentStore: { provider: 'in-memory' },
+    eventBus: { provider: 'in-process' },
+  },
+  'postgres-redis': {
+    commandStore: 'postgres',
+    documentStore: { provider: 'redis' },
+    eventBus: { provider: 'redis-streams' },
+  },
   'postgres-jsonb': {
     commandStore: 'postgres',
-    documentStore: 'postgres-jsonb',
-    eventBus: 'in-process',
+    documentStore: { provider: 'postgres-jsonb' },
+    eventBus: { provider: 'in-process' },
   },
 } as const
 export type StoreSet = keyof typeof STORE_SETS
 
-function usesRedis(set: { documentStore: string; eventBus: string }): boolean {
-  return set.documentStore === 'redis' || set.eventBus === 'redis-streams'
+function usesRedis(set: {
+  documentStore: { provider: string }
+  eventBus: { provider: string }
+}): boolean {
+  return set.documentStore.provider === 'redis' || set.eventBus.provider === 'redis-streams'
 }
 
 export function storeSet(name: string): StoreSet {
@@ -1171,7 +1182,8 @@ function rerunTestsCommand(red: RedTest[]): string {
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
-const TEST_SCRIPT_FILTERS = "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
+const TEST_SCRIPT_FILTERS =
+  "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
 /** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 /** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
@@ -1351,7 +1363,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
   // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
-  const harnessKept = input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+  const harnessKept =
+    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
   const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
   const skipEnv = (projects: string[]): string =>
     projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
@@ -1463,8 +1476,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       ? ''
       : [
           `NYMBAL_COMMAND_STORE=${set.commandStore}`,
-          `NYMBAL_DOCUMENT_STORE=${set.documentStore}`,
-          `NYMBAL_EVENT_BUS=${set.eventBus}`,
+          `NYMBAL_DOCUMENT_STORE=${set.documentStore.provider}`,
+          `NYMBAL_EVENT_BUS=${set.eventBus.provider}`,
           `DATABASE_URL=${shellWord(postgresAt)}`,
           ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisAt)}`] : []),
         ].join(' ') + ' '

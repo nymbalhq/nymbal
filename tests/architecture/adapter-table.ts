@@ -1,15 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Slot } from '../../packages/types/src/index'
 
 // The first-party adapters by slot: where each lived, where it lives now and its name, and the workspace as pnpm reads
 // it from the disk. This module imports nothing from the workspace expander, so the tests built on it judge that
 // expander instead of trusting it.
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url))
-
-/** A config slot key as its folder: `documentStore` → `document-store`. */
-export const kebab = (slot: string): string => slot.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
 
 /** A scoped name assembled from parts, so the retired names never appear literally in a tracked file. */
 const scoped = (...parts: string[]): string => ['@nymbalhq', '/', ...parts].join('')
@@ -18,9 +16,9 @@ export interface MovedAdapter {
   /** The directory it had before it moved. */
   from: string
   /** The config's slot key, camel case as in the schema. */
-  slot: string
+  slot: Slot
   provider: string
-  /** Its directory now, `packages/adapters/<kebab slot>/<provider>`. */
+  /** Its directory now, `packages/adapters/<slotFolder(slot)>/<provider>`. */
   dir: string
   /** Its package name now. */
   name: string
@@ -31,7 +29,7 @@ export interface MovedAdapter {
 }
 
 /** The Vitest project that runs a package's tests: the store packages need Redis or Postgres. */
-const projectOf = (slot: string): string =>
+const projectOf = (slot: Slot): string =>
   slot === 'documentStore' || slot === 'eventBus' ? 'integration-stores' : 'adapters'
 
 /**

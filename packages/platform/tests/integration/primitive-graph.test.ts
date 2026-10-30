@@ -1,5 +1,4 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { PROVIDER_PACKAGES } from '../../src/adapters/loader.js'
 import { kernelConfig } from '../support/kernel.js'
 import {
   cleanupGraphDirs,
@@ -16,30 +15,6 @@ import {
 // tests/primitives/primitive-graph.test.ts. Needs `pnpm build`.
 
 afterAll(cleanupGraphDirs)
-
-describe('AC-5: the loader knows the infrastructure packages', () => {
-  it('AC-5: PROVIDER_PACKAGES maps documentStore redis and postgres-jsonb, and eventBus redis-streams, to their packages and SDKs', () => {
-    const packages = PROVIDER_PACKAGES as Record<
-      string,
-      Record<string, { package: string; sdk: string }> | undefined
-    >
-    expect(packages['documentStore']?.['redis']).toEqual({
-      package: '@nymbalhq/document-store-redis',
-      sdk: 'ioredis',
-    })
-    expect(packages['documentStore']?.['postgres-jsonb']).toEqual({
-      package: '@nymbalhq/document-store-postgres-jsonb',
-      sdk: 'pg',
-    })
-    expect(packages['eventBus']?.['redis-streams']).toEqual({
-      package: '@nymbalhq/event-bus-redis-streams',
-      sdk: 'ioredis',
-    })
-    // The native primitives are built in: no package entry, so nothing is imported for them.
-    expect(Object.keys(packages['documentStore'] ?? {}).sort()).toEqual(['postgres-jsonb', 'redis'])
-    expect(Object.keys(packages['eventBus'] ?? {})).toEqual(['redis-streams'])
-  })
-})
 
 describe('AC-5: with in-memory and in-process, no primitive SDK or package is resolved', () => {
   it('AC-5: createApp starts on SQLite, in-memory and in-process; no URL is under ioredis or a primitive package, and every import of pg is the command store’s', async () => {
@@ -78,8 +53,8 @@ describe('AC-5: a missing primitive package fails with the install line', () => 
   it('AC-5: documentStore redis with @nymbalhq/document-store-redis not installed fails createApp adapter.package_missing, naming the slot and "npm install @nymbalhq/document-store-redis ioredis"', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
-      documentStore: 'redis',
-      eventBus: 'in-process',
+      documentStore: { provider: 'redis' },
+      eventBus: { provider: 'in-process' },
       // Never connected to: the package is missing before any connection is made.
       redis: { url: 'redis://127.0.0.1:1', prefix: 'primitives-hidden' },
     })

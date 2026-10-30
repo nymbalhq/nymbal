@@ -6,6 +6,10 @@ import {
 } from '@nymbalhq/types'
 import { createMailgunEmailAdapter, type MailgunEmailAdapterConfig } from './mailgun-adapter.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'email'
+export const provider = 'mailgun'
+
 export { createMailgunEmailAdapter, type MailgunEmailAdapterConfig }
 
 /** The fields the admin's Settings may fill; without the signing key the slot runs, degraded, and refuses every post. */

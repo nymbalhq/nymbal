@@ -9,6 +9,10 @@ import {
   type EasyPostShippingAdapterConfig,
 } from './easypost-adapter.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'shipping'
+export const provider = 'easypost'
+
 export { createEasyPostShippingAdapter, type EasyPostShippingAdapterConfig }
 
 /** The fields the admin's Settings may fill; without the secret the slot runs, degraded, and refuses every post. */

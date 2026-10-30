@@ -28,7 +28,7 @@ import {
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
-import { importProviderPackage } from './adapters/loader.js'
+import { importAdapterModule } from './adapters/resolve.js'
 import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
@@ -109,7 +109,7 @@ async function eventArchiveWriter(config: NymbalConfig): Promise<EventArchiveWri
   const { adapter, ...options } = archive
   let mod: ObjectWriterModule | undefined
   try {
-    mod = (await importProviderPackage('media', adapter, process.env)) as
+    mod = (await importAdapterModule('media', { provider: adapter }, process.env)) as
       | ObjectWriterModule
       | undefined
   } catch (error) {
@@ -310,15 +310,15 @@ export async function createApp(
             capabilities: adapters.security.capabilities(),
           },
           documentStore: {
-            provider: config.infrastructure.documentStore,
+            provider: config.infrastructure.documentStore.provider,
             capabilities: platform.documentStore.capabilities(),
           },
           eventBus: {
-            provider: config.infrastructure.eventBus,
+            provider: config.infrastructure.eventBus.provider,
             capabilities: platform.eventBus.capabilities(),
           },
           media: {
-            provider: config.infrastructure.media,
+            provider: config.infrastructure.media.provider,
             capabilities: platform.media.capabilities(),
           },
         }

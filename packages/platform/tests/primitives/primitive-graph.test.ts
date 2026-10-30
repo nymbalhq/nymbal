@@ -26,8 +26,8 @@ describe('AC-5: redis and redis-streams load from their packages', () => {
   it('AC-5: createApp loads @nymbalhq/document-store-redis and @nymbalhq/event-bus-redis-streams (and ioredis through them), and reports each instance’s own capabilities()', async () => {
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
-      documentStore: 'redis',
-      eventBus: 'redis-streams',
+      documentStore: { provider: 'redis' },
+      eventBus: { provider: 'redis-streams' },
       redis: { url, prefix },
     })
 

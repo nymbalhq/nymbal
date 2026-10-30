@@ -168,8 +168,8 @@ function configure(
     template: 'astro',
     infrastructure: {
       commandStore: kind,
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
     },
     security: { adapter: 'middleware', botProtection: { mode: 'off' } },
     commerce: {

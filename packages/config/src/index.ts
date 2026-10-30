@@ -2,7 +2,16 @@ export { defineConfig } from './define-config.js'
 export { env, envOptional, envNumber, envBool } from './env.js'
 export { KNOWN_PROVIDERS, type CommerceSlot } from './known-providers.js'
 export {
-  KNOWN_INFRASTRUCTURE,
+  ADAPTER_CATALOGUE,
+  BUILT_IN,
+  conventionPackage,
+  PROVIDER_NAME,
+  slotFolder,
+  suggestProvider,
+  type CatalogueEntry,
+} from './adapter-names.js'
+export {
+  COMMAND_STORES,
   REMOVED_INFRASTRUCTURE_KEYS,
   type InfrastructureSlot,
 } from './known-infrastructure.js'

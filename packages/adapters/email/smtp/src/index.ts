@@ -6,6 +6,10 @@ import {
 } from '@nymbalhq/types'
 import { createSmtpEmailAdapter, type SmtpEmailAdapterConfig } from './smtp-adapter.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'email'
+export const provider = 'smtp'
+
 export { createSmtpEmailAdapter, type SmtpEmailAdapterConfig }
 export {
   createSmtpTransportSender,

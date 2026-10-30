@@ -44,8 +44,8 @@ services:
       timeout: 3s
       retries: 30
 
-  # S3-compatible storage for `media: 's3'`. The community fork of MinIO: minio/minio and minio/mc are no longer
-  # published. Its credentials are MinIO's defaults, which the S3 test suites assume.
+  # S3-compatible storage for `media: { provider: 's3' }`. The community fork of MinIO: minio/minio and minio/mc are
+  # no longer published. Its credentials are MinIO's defaults, which the S3 test suites assume.
   minio:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     command: ['server', '/data']

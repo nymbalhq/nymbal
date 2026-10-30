@@ -61,9 +61,9 @@ function made(c: Case) {
     ...repoConfig,
     infrastructure: {
       commandStore: 'postgres',
-      documentStore: 'redis',
-      eventBus: 'in-process',
-      media: 's3',
+      documentStore: { provider: 'redis' },
+      eventBus: { provider: 'in-process' },
+      media: { provider: 's3' },
       redis: { url: redisUrl, prefix: 'nymbal' },
       s3: { bucket: 'shop-media', region: 'eu-west-2' },
     },
@@ -146,7 +146,11 @@ describe('AC-6 (b): doctor prints no secret', () => {
     )
     const raw = {
       ...repoConfig,
-      infrastructure: { commandStore: 'postgres', documentStore: 'redis', eventBus: 'in-process' },
+      infrastructure: {
+        commandStore: 'postgres',
+        documentStore: { provider: 'redis' },
+        eventBus: { provider: 'in-process' },
+      },
       commerce: {
         ...repoConfig.commerce,
         payments: { provider: 'stripe', config: { secretKey: '__STRIPE__' } },

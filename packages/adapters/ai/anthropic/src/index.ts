@@ -6,6 +6,10 @@ import {
 } from '@nymbalhq/types'
 import { createAnthropicAiAdapter, type AnthropicAiAdapterConfig } from './anthropic-adapter.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'ai'
+export const provider = 'anthropic'
+
 export { createAnthropicAiAdapter, type AnthropicAiAdapterConfig }
 
 /** The fields the admin's Settings may fill when the config (and, for the key, ANTHROPIC_API_KEY) leaves them unset. */

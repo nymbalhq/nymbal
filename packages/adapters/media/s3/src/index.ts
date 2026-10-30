@@ -1,6 +1,10 @@
 import { ConfigError, type AdapterContext, type MediaStorage } from '@nymbalhq/types'
 import { createS3MediaStorage, type S3MediaStorageOptions } from './s3-media-storage.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'media'
+export const provider = 's3'
+
 export {
   createS3MediaStorage,
   DEFAULT_S3_REGION,
@@ -19,8 +23,8 @@ const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined
 
 /**
- * The kernel's entry: `infrastructure.media: 's3'`, with the `s3` block as the platform resolved it (its environment
- * fallbacks and defaults applied). Credentials are never in it: the AWS SDK's default chain provides them.
+ * The kernel's entry: `infrastructure.media: { provider: 's3' }`, with the `s3` block as the platform resolved it (its
+ * environment fallbacks and defaults applied). Credentials are never in it: the AWS SDK's default chain provides them.
  */
 export function createAdapter(ctx: AdapterContext): MediaStorage {
   if (ctx.slot !== 'media') {

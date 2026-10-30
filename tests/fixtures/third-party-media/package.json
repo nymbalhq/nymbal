@@ -1,0 +1,14 @@
+{
+  "name": "@acme/nymbal-media",
+  "version": "1.0.0",
+  "description": "Test fixture: a third-party Nymbal media adapter, named by `package:` on infrastructure.media",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ]
+}

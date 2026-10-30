@@ -1,17 +1,16 @@
-// Reads: packages/**, pnpm-workspace.yaml, packages/config/src/known-providers.ts
-// Reads: packages/config/src/known-infrastructure.ts
+// Reads: packages/**, pnpm-workspace.yaml, packages/config/src/adapter-names.ts
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { KNOWN_INFRASTRUCTURE } from '../../packages/config/src/known-infrastructure'
-import { KNOWN_PROVIDERS } from '../../packages/config/src/known-providers'
-import { MOVED_ADAPTERS, ROOT, kebab, pnpmMembers, pnpmPackageDirs } from './adapter-table'
+import type { Slot } from '../../packages/types/src/index'
+import { ADAPTER_CATALOGUE, slotFolder } from '../../packages/config/src/adapter-names'
+import { MOVED_ADAPTERS, ROOT, pnpmMembers, pnpmPackageDirs } from './adapter-table'
 
-// AC-2: each of the twelve first-party adapters is a workspace member at packages/adapters/<kebab slot>/<provider>/,
-// named @nymbalhq/<kebab slot>-<provider>, with `repository.directory` its own directory; none of the old
-// directories is left, and every other package stays at packages/<name>. The slot folder is the config's slot key in
-// kebab case.
+// AC-2: each of the twelve first-party adapters is a workspace member at packages/adapters/<slotFolder>/<provider>/,
+// named @nymbalhq/<slotFolder>-<provider>, with `repository.directory` its own directory; none of the old
+// directories is left, and every other package stays at packages/<name>. The slot folder is slotFolder of a catalogue
+// slot, and the provider one of that slot's catalogue entries.
 
 /** The packages that are not adapters, which stay one level under packages/. */
 const CORE_DIRS = [
@@ -30,13 +29,6 @@ const CORE_DIRS = [
   'packages/types',
   'packages/web-components',
 ]
-
-/** Each slot key the config has, and the values it accepts: the commerce slots, infrastructure, `security.adapter`. */
-const CONFIG_SLOTS: Record<string, readonly string[]> = {
-  ...KNOWN_PROVIDERS,
-  ...KNOWN_INFRASTRUCTURE,
-  security: ['cloudflare'],
-}
 
 interface AdapterManifest {
   name?: string
@@ -95,22 +87,22 @@ describe('AC-2: the adapters live by slot', () => {
     expect(pnpmPackageDirs().length).toBe(CORE_DIRS.length + MOVED_ADAPTERS.length)
   })
 
-  it('AC-2: each slot folder is a config slot key in kebab case, and each provider one that slot accepts', () => {
+  it("AC-2: each slot folder is slotFolder of a catalogue slot, and each provider one of that slot's catalogue entries", () => {
     const wrong = MOVED_ADAPTERS.filter((a) => {
       const [, , folder, provider] = a.dir.split('/')
       return (
-        folder !== kebab(a.slot) ||
+        folder !== slotFolder(a.slot) ||
         provider !== a.provider ||
-        !(CONFIG_SLOTS[a.slot] ?? []).includes(a.provider)
+        !Object.hasOwn(ADAPTER_CATALOGUE[a.slot], a.provider)
       )
-    }).map((a) => `${a.dir}: slot ${a.slot} → ${kebab(a.slot)}, provider ${a.provider}`)
+    }).map((a) => `${a.dir}: slot ${a.slot} → ${slotFolder(a.slot)}, provider ${a.provider}`)
     const folders = existsSync(join(ROOT, 'packages/adapters'))
       ? readdirSync(join(ROOT, 'packages/adapters'))
       : []
-    const slotFolders = new Set(Object.keys(CONFIG_SLOTS).map(kebab))
+    const slotFolders = new Set((Object.keys(ADAPTER_CATALOGUE) as Slot[]).map(slotFolder))
 
     expect(wrong).toEqual([])
     expect(folders.filter((f) => !slotFolders.has(f))).toEqual([])
-    expect(new Set(folders).size).toBe(new Set(MOVED_ADAPTERS.map((a) => kebab(a.slot))).size)
+    expect(new Set(folders).size).toBe(new Set(MOVED_ADAPTERS.map((a) => slotFolder(a.slot))).size)
   })
 })

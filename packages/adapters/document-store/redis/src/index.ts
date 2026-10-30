@@ -5,9 +5,16 @@ import {
   type RedisDocumentStoreOptions,
 } from './redis-document-store.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'documentStore'
+export const provider = 'redis'
+
 export { createRedisDocumentStore, RedisDocumentStore, type RedisDocumentStoreOptions }
 
-/** The kernel's entry: `infrastructure.documentStore: 'redis'`, with `{ url, prefix }` from the `redis` block. */
+/**
+ * The kernel's entry: `infrastructure.documentStore: { provider: 'redis' }`, with `{ url, prefix }` from the `redis`
+ * block.
+ */
 export async function createAdapter(ctx: AdapterContext): Promise<DocumentStoreAdapter> {
   if (ctx.slot !== 'documentStore') {
     throw new ConfigError(`@nymbalhq/document-store-redis serves documentStore, not ${ctx.slot}`, {

@@ -1,7 +1,7 @@
 {
   "name": "@nymbalhq/media-s3",
   "version": "1.4.0",
-  "description": "S3 media storage for Nymbal: `infrastructure.media: 's3'`, on AWS or any S3-compatible bucket",
+  "description": "S3 media storage for Nymbal: `infrastructure.media: { provider: 's3' }`, on AWS or any S3-compatible bucket",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -6,11 +6,15 @@ export {
   type InjectedAdapters,
 } from './registry.js'
 export {
-  importProviderPackage,
+  checkAdapterModule,
+  declaredSettings,
+  importAdapterModule,
   installLine,
-  PROVIDER_PACKAGES,
-  type ProviderPackage,
-} from './loader.js'
+  missingPackage,
+  resolveChoice,
+  type Choice,
+  type Resolution,
+} from './resolve.js'
 export { createMiddlewareSecurityAdapter } from './security/middleware-adapter.js'
 export { RateLimiter } from './security/rate-limit.js'
 export { buildSecurityHeaders, CSRF_COOKIE, CSRF_HEADER } from './security/headers.js'

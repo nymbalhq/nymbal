@@ -4,13 +4,18 @@ import { lstatSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { RECIPE_HOLDERS } from '../../packages/cli/src/recipes/holders'
-import { PROVIDER_PACKAGES } from '../../packages/platform/src/adapters/loader'
-import { ADAPTER_NAMES, RETIRED_NAMES, ROOT, kebab, pnpmMembers } from './adapter-table'
+import type { Slot } from '../../packages/types/src/index'
+import {
+  ADAPTER_CATALOGUE,
+  conventionPackage,
+  slotFolder,
+} from '../../packages/config/src/adapter-names'
+import { ADAPTER_NAMES, RETIRED_NAMES, ROOT, pnpmMembers } from './adapter-table'
 
-// AC-3: every name the kernel and the CLI import is a workspace package. Each entry of PROVIDER_PACKAGES, the recipe
-// holders and the platform's optional peers names a member whose manifest has that name; the changesets `fixed`
-// group and NON_SCAFFOLD_PACKAGES name no package missing from the workspace; every pending changeset's frontmatter
-// keys are members. No tracked file names a retired name, READMEs included, but CHANGELOG.md files, the lockfile and
+// AC-3: every name the kernel and the CLI import is a workspace package. The workspace adapters are the catalogue's
+// first-party entries at their convention names, and the recipe holders and the platform's optional peers name a
+// member whose manifest has that name; the changesets `fixed` group and NON_SCAFFOLD_PACKAGES name no package missing
+// from the workspace; every pending changeset's frontmatter keys are members. No tracked file names a retired name, READMEs included, but CHANGELOG.md files, the lockfile and
 // the changeset bodies (which may say "renamed from").
 
 interface PlatformManifest {
@@ -20,7 +25,6 @@ interface PlatformManifest {
 
 const members = pnpmMembers()
 const memberNames = new Set(members.map((m) => m.name))
-const dirOf = new Map(members.map((m) => [m.name, m.dir]))
 const retired = new Set(RETIRED_NAMES)
 
 /** The names in `names` that `changeset version` or an import would not find: not a member, or a retired name. */
@@ -49,20 +53,44 @@ function frontmatterKeys(text: string): string[] {
 }
 
 describe('AC-3: every package name the kernel and the CLI import is a workspace package', () => {
-  it('AC-3: each PROVIDER_PACKAGES entry names the member at packages/adapters/<kebab slot>/<provider> with that name', () => {
-    const entries = Object.entries(PROVIDER_PACKAGES).flatMap(([slot, providers]) =>
-      Object.entries(providers ?? {}).map(([provider, entry]) => ({
-        slot,
-        provider,
-        pkg: entry.package,
-      })),
+  it("AC-3: the workspace adapters at packages/adapters/<folder>/<provider> are exactly the catalogue's first-party entries, each named conventionPackage of the slot whose slotFolder is <folder>, and peering the catalogue's SDK and nothing else", () => {
+    const slots = Object.keys(ADAPTER_CATALOGUE) as Slot[]
+    const slotOf = new Map(slots.map((slot) => [slotFolder(slot), slot]))
+    const workspace = members
+      .filter((m) => /^packages\/adapters\/[^/]+\/[^/]+$/.test(m.dir))
+      .map((m) => {
+        const [, , folder = '', provider = ''] = m.dir.split('/')
+        return { folder, provider, name: m.name, dir: m.dir }
+      })
+    const firstParty = slots.flatMap((slot) =>
+      Object.entries(
+        ADAPTER_CATALOGUE[slot] as Readonly<Record<string, { builtIn?: true; sdk?: string }>>,
+      )
+        .filter(([, entry]) => entry.builtIn !== true)
+        .map(([provider, entry]) => ({ slot, provider, sdk: entry.sdk })),
     )
-    const wrong = entries
-      .filter((e) => dirOf.get(e.pkg) !== `packages/adapters/${kebab(e.slot)}/${e.provider}`)
-      .map((e) => `${e.slot}.${e.provider}: ${e.pkg} is ${dirOf.get(e.pkg) ?? 'no member'}`)
 
-    expect(wrong).toEqual([])
-    expect(entries.length).toBe(ADAPTER_NAMES.length)
+    expect(workspace.map((w) => `${w.folder}/${w.provider}`).sort()).toEqual(
+      firstParty.map((e) => `${slotFolder(e.slot)}/${e.provider}`).sort(),
+    )
+    const misnamed = workspace
+      .filter((w) => {
+        const slot = slotOf.get(w.folder)
+        return slot === undefined || w.name !== conventionPackage(slot, w.provider)
+      })
+      .map((w) => `${w.dir}: ${w.name}`)
+    expect(misnamed).toEqual([])
+    const wrongSdk = firstParty
+      .map((e) => {
+        const dir = `packages/adapters/${slotFolder(e.slot)}/${e.provider}`
+        const peers = Object.keys(
+          (JSON.parse(read(`${dir}/package.json`)) as PlatformManifest).peerDependencies ?? {},
+        ).filter((name) => !name.startsWith('@nymbalhq/'))
+        return { dir, peers, sdk: e.sdk === undefined ? [] : [e.sdk] }
+      })
+      .filter((e) => JSON.stringify(e.peers) !== JSON.stringify(e.sdk))
+    expect(wrongSdk).toEqual([])
+    expect(workspace.length).toBe(ADAPTER_NAMES.length)
   })
 
   it('AC-3: every recipe holder is a member by that name', () => {

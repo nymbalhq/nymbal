@@ -19,7 +19,7 @@ import { ALL_MODELS, DOCUMENT_COLLECTIONS, collectionOf } from '../support/read-
 
 // AC-5: `nymbal replay`, the built CLI against a SQLite command store whose read models are on the composed Redis (a
 // prefix of this file's own). Each case reads the outcome from the stores, never from what the command says it did.
-// The in-memory case is a second project on the same file with `documentStore: 'in-memory'`. Faults are real: a table
+// The in-memory case is a second project on the same file with `documentStore: { provider: 'in-memory' }`. Faults are real: a table
 // the catalogue rebuilder reads is renamed away; a logged, undelivered order.placed.v1 has a payload the order
 // projection cannot read. Needs `pnpm build` (the CLI and the store packages) and Redis (NYMBAL_TEST_REDIS_URL).
 
@@ -41,8 +41,17 @@ const categorySlugs: string[] = []
 function project(documentStore: 'redis' | 'in-memory'): string {
   const infrastructure =
     documentStore === 'redis'
-      ? { commandStore: 'sqlite', documentStore, eventBus: 'in-process', redis: { url, prefix } }
-      : { commandStore: 'sqlite', documentStore, eventBus: 'in-process' }
+      ? {
+          commandStore: 'sqlite',
+          documentStore: { provider: documentStore },
+          eventBus: { provider: 'in-process' },
+          redis: { url, prefix },
+        }
+      : {
+          commandStore: 'sqlite',
+          documentStore: { provider: documentStore },
+          eventBus: { provider: 'in-process' },
+        }
   const target = mkdtempSync(join(dir, `${documentStore}-project-`))
   writeFileSync(
     join(target, 'nymbal.config.ts'),
@@ -113,8 +122,8 @@ beforeAll(async () => {
     configure: (c) =>
       withInfrastructure(c, {
         commandStore: 'sqlite',
-        documentStore: 'redis',
-        eventBus: 'in-process',
+        documentStore: { provider: 'redis' },
+        eventBus: { provider: 'in-process' },
         redis: { url, prefix },
       }),
   })

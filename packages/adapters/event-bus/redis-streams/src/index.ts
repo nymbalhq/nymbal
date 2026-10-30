@@ -5,6 +5,10 @@ import {
   type RedisStreamsEventBusOptions,
 } from './redis-streams-event-bus.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'eventBus'
+export const provider = 'redis-streams'
+
 export { createRedisStreamsEventBus, RedisStreamsEventBus, type RedisStreamsEventBusOptions }
 
 function positive(value: unknown, name: string): number | undefined {
@@ -17,8 +21,8 @@ function positive(value: unknown, name: string): number | undefined {
 }
 
 /**
- * The kernel's entry: `infrastructure.eventBus: 'redis-streams'`, with `{ url, prefix, ackTimeoutMs, claimIdleMs,
- * streamMaxLen }` from the `redis` block.
+ * The kernel's entry: `infrastructure.eventBus: { provider: 'redis-streams' }`, with `{ url, prefix, ackTimeoutMs,
+ * claimIdleMs, streamMaxLen }` from the `redis` block.
  */
 export async function createAdapter(ctx: AdapterContext): Promise<EventBusAdapter> {
   if (ctx.slot !== 'eventBus') {

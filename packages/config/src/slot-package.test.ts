@@ -24,7 +24,11 @@ function input(slot: Slot, pkg: unknown): NymbalConfigInput {
   return {
     store: { name: 'Test Store', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
-    infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
+    infrastructure: {
+      commandStore: 'sqlite',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+    },
     security: { adapter: 'middleware' },
     commerce,
     http: { adapter: 'fastify' },

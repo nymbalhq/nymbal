@@ -3,8 +3,8 @@
   "summary": "Keep the read model in Redis and carry events on Redis Streams, so several API instances share one store.",
   "install": ["@nymbalhq/document-store-redis", "@nymbalhq/event-bus-redis-streams", "ioredis"],
   "set": [
-    { "path": "infrastructure.documentStore", "value": "redis" },
-    { "path": "infrastructure.eventBus", "value": "redis-streams" }
+    { "path": "infrastructure.documentStore", "value": { "provider": "redis" } },
+    { "path": "infrastructure.eventBus", "value": { "provider": "redis-streams" } }
   ],
   "env": [
     {

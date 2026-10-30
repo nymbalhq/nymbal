@@ -24,8 +24,8 @@ deliveryMarkerSuite(
       configure: (config) =>
         withInfrastructure(config, {
           commandStore: 'sqlite',
-          documentStore: 'redis',
-          eventBus: 'redis-streams',
+          documentStore: { provider: 'redis' },
+          eventBus: { provider: 'redis-streams' },
           redis: { url, prefix, ackTimeoutMs: ACK_TIMEOUT_MS, claimIdleMs: 400 },
         }),
     }),

@@ -14,7 +14,11 @@ export function sqliteProject(dbPath: string): { dir: string; env: NodeJS.Proces
   const config = {
     store: { name: 'events-cli', currency: 'GBP', locale: 'en-GB', timezone: 'Europe/London' },
     template: 'astro',
-    infrastructure: { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
+    infrastructure: {
+      commandStore: 'sqlite',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+    },
     security: { adapter: 'middleware' },
     commerce: {
       payments: { provider: 'native' },

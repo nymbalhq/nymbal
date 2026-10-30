@@ -2,6 +2,10 @@ import { ConfigError, type AdapterContext } from '@nymbalhq/types'
 import { createCloudflareSecurityAdapter, type CloudflareSecurityAdapter } from './adapter.js'
 import type { CloudflareConnection } from './client.js'
 
+/** What this package serves: the kernel refuses it on any other slot or provider. */
+export const slot = 'security'
+export const provider = 'cloudflare'
+
 export {
   createCloudflareSecurityAdapter,
   isEmptyPlan,

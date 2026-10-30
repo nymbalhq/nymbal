@@ -9,9 +9,9 @@ function baseConfig(): NymbalConfigInput {
     // cloud and compute are gone; the cast keeps this compiling until the schema drops them.
     infrastructure: {
       commandStore: 'sqlite' as const,
-      documentStore: 'in-memory' as const,
-      eventBus: 'in-process' as const,
-    } as NymbalConfigInput['infrastructure'],
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+    } as unknown as NymbalConfigInput['infrastructure'],
     security: { adapter: 'middleware' as const, rateLimit: {}, csrf: true },
     commerce: {
       payments: { provider: 'stripe', config: { secretKey: 's', webhookSecret: 'w' } },
