@@ -1,23 +1,18 @@
 import { execFile } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createNativeStubPaymentsAdapter } from '../../src/adapters/payments/native-stub.js'
 import { createLogger } from '../../src/logger.js'
 import { createKernel } from '../support/kernel.js'
-import {
-  INSTALL_VERB,
-  moduleHooks,
-  readResolved,
-  type ModuleHooks,
-} from '../../../../tests/support/module-hooks.js'
+import { INSTALL_VERB, moduleHooks, readResolved } from '../../../../tests/support/module-hooks.js'
+import { project, workspace } from '../../../../tests/support/project.js'
 
-// The resolver through createApp. Child processes run createApp from the built dist (`pnpm build` first) under Node
-// module hooks: a third party's package is a fixture file the hooks answer its specifier with, and every bare specifier
-// resolved is recorded. AC-4: a custom slot uses the injected adapter even with `package` set. AC-6: a typo or an unknown
+// The resolver through createApp. Child processes run createApp from the built dist (`pnpm build` first) in a temp
+// project whose node_modules holds the packages the case installs (a third party's package is a fixture file), under
+// Node module hooks that record every URL resolved, so a case reads which adapter code was loaded. AC-4: a custom slot uses the injected adapter even with `package` set. AC-6: a typo or an unknown
 // provider, with no such package, is adapter.provider_unknown with no install line. AC-12: security resolves by the
 // same rule. AC-14: Settings rows never choose the code a slot runs.
 
@@ -26,14 +21,16 @@ const FIXTURES = fileURLToPath(new URL('./fixtures/adapter-resolution/', import.
 const CHILD = join(FIXTURES, 'child.mjs')
 const PAYMENTS_FIXTURE = join(FIXTURES, 'payments-acme.mjs')
 const SECURITY_FIXTURE = join(FIXTURES, 'security-acme.mjs')
+const STRIPE_PACKAGE = '@nymbalhq/payments-stripe'
+const CLOUDFLARE_PACKAGE = '@nymbalhq/security-cloudflare'
 
 const dirs: string[] = []
 afterAll(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function scratch(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'adapter-resolution-test-'))
+function scratch(installed: Record<string, string>): string {
+  const dir = project(installed, { prefix: 'adapter-resolution-test-' })
   dirs.push(dir)
   return dir
 }
@@ -80,11 +77,11 @@ interface Outcome {
 async function boot(
   raw: Raw,
   opts: {
-    alias?: ModuleHooks['alias']
+    installed?: Record<string, string>
     settings?: Array<{ slot: string; path: string; value: string }>
   } = {},
-): Promise<{ outcome: Outcome; specifiers: string[] }> {
-  const dir = scratch()
+): Promise<{ outcome: Outcome; urls: string[] }> {
+  const dir = scratch(opts.installed ?? {})
   const record = join(dir, 'resolved.jsonl')
   writeFileSync(record, '')
   const env: NodeJS.ProcessEnv = { ...process.env }
@@ -93,7 +90,7 @@ async function boot(
     cwd: dir,
     env: {
       ...env,
-      NODE_OPTIONS: moduleHooks(dir, { record, ...(opts.alias && { alias: opts.alias }) }),
+      NODE_OPTIONS: moduleHooks(dir, { record }),
       ADAPTER_RESOLUTION: JSON.stringify({ settings: opts.settings ?? [] }),
     },
     timeout: 60_000,
@@ -103,7 +100,7 @@ async function boot(
   if (line === undefined) throw new Error(`the child printed no outcome:\n${stdout}`)
   return {
     outcome: JSON.parse(line.slice('ADAPTER-RESOLUTION-OUTCOME '.length)) as Outcome,
-    specifiers: [...new Set(readResolved(record).map((r) => r.specifier))].sort(),
+    urls: [...new Set(readResolved(record).flatMap((r) => (r.url === null ? [] : [r.url])))].sort(),
   }
 }
 
@@ -116,9 +113,20 @@ const withSecurity = (security: Record<string, unknown>) =>
     raw['security'] = security
   })
 
-/** The specifiers that could carry a payments or security adapter: an adapter package, Stripe's SDK, a third party. */
-const adapterLike = (specifiers: string[]): string[] =>
-  specifiers.filter((s) => /^@nymbalhq\/(payments|security)-|^stripe$|^@acme\//.test(s))
+const PAYMENTS_URL = pathToFileURL(PAYMENTS_FIXTURE).href
+const SECURITY_URL = pathToFileURL(SECURITY_FIXTURE).href
+
+/** The URLs loaded that carry a payments or security adapter: an adapter package, Stripe's SDK, a third party's file. */
+const adapterLike = (urls: string[]): string[] =>
+  urls.filter(
+    (u) =>
+      /\/packages\/adapters\/(payments|security)\/|\/node_modules\/stripe\//.test(u) ||
+      u === PAYMENTS_URL ||
+      u === SECURITY_URL,
+  )
+/** The URLs loaded from inside `dir`, a package's directory. */
+const under = (urls: string[], dir: string): string[] =>
+  urls.filter((u) => u.startsWith(`${pathToFileURL(dir).href}/`))
 
 describe('AC-4: a custom slot uses the injected adapter', () => {
   it('AC-4: through createApp, payments custom with package @nymbalhq/payments-stripe uses the injected adapter, not the package', async () => {
@@ -181,6 +189,7 @@ describe('AC-6: a typo or an unknown provider gets no install line', () => {
 
 describe('AC-12: security.adapter resolves by the same rule', () => {
   it("AC-12: 'cloudflare' loads @nymbalhq/security-cloudflare; 'middleware' imports no security package", async () => {
+    const cloudflareInstalled = workspace(CLOUDFLARE_PACKAGE)
     const [cloudflare, middleware] = await Promise.all([
       boot(
         withSecurity({
@@ -192,16 +201,18 @@ describe('AC-12: security.adapter resolves by the same rule', () => {
             apiBase: 'http://127.0.0.1:9/client/v4',
           },
         }),
+        { installed: cloudflareInstalled },
       ),
-      boot(withSecurity({ adapter: 'middleware' })),
+      // Installed here too, so a middleware store that loaded it anyway would show.
+      boot(withSecurity({ adapter: 'middleware' }), { installed: cloudflareInstalled }),
     ])
 
     expect(cloudflare.outcome.error, JSON.stringify(cloudflare.outcome.error)).toBeUndefined()
     expect(cloudflare.outcome.started?.security.capabilities).toContain('edge-rules')
-    expect(cloudflare.specifiers).toContain('@nymbalhq/security-cloudflare')
+    expect(under(cloudflare.urls, cloudflareInstalled[CLOUDFLARE_PACKAGE]!)).not.toEqual([])
     expect(middleware.outcome.error, JSON.stringify(middleware.outcome.error)).toBeUndefined()
     expect(middleware.outcome.started?.security.capabilities).not.toContain('edge-rules')
-    expect(middleware.specifiers.filter((s) => s.startsWith('@nymbalhq/security-'))).toEqual([])
+    expect(middleware.urls.filter((u) => /\/packages\/adapters\/security\//.test(u))).toEqual([])
   }, 120_000)
 
   it.each(['aws-waf', 'akamai'])(
@@ -219,26 +230,29 @@ describe('AC-12: security.adapter resolves by the same rule', () => {
 
   it('AC-12: a third-party security adapter named by package: is loaded and built with security.config as its ctx.config', async () => {
     const config = { apiToken: 't' }
-    const { outcome, specifiers } = await boot(
+    const { outcome, urls } = await boot(
       withSecurity({ adapter: 'acme', package: '@acme/nymbal-security', config }),
-      { alias: { '@acme/nymbal-security': SECURITY_FIXTURE } },
+      {
+        installed: { '@acme/nymbal-security': SECURITY_FIXTURE, ...workspace(CLOUDFLARE_PACKAGE) },
+      },
     )
 
     expect(outcome.error, JSON.stringify(outcome.error)).toBeUndefined()
     expect(outcome.started?.security.providerName).toBe('acme-security')
     expect(outcome.received['security']).toEqual({ slot: 'security', config })
-    expect(adapterLike(specifiers)).toEqual(['@acme/nymbal-security'])
+    expect(adapterLike(urls)).toEqual([SECURITY_URL])
   }, 90_000)
 })
 
 describe('AC-14: Settings rows never choose the code a slot runs', () => {
   it('AC-14: with Settings rows naming another provider and another package for payments, createApp runs the config’s adapter and imports exactly what it imports without them', async () => {
     const raw = withPayments({ provider: 'acme', package: '@acme/nymbal-payments' })
-    const alias = { '@acme/nymbal-payments': PAYMENTS_FIXTURE }
+    // Stripe is installed beside the config's package, so a Settings row that chose it would load it.
+    const installed = { '@acme/nymbal-payments': PAYMENTS_FIXTURE, ...workspace(STRIPE_PACKAGE) }
     const [without, withRows] = await Promise.all([
-      boot(raw, { alias }),
+      boot(raw, { installed }),
       boot(raw, {
-        alias,
+        installed,
         settings: [
           { slot: 'payments', path: 'provider', value: 'stripe' },
           { slot: 'payments', path: 'package', value: '@acme/settings-chosen' },
@@ -250,7 +264,7 @@ describe('AC-14: Settings rows never choose the code a slot runs', () => {
     expect(withRows.outcome.error, JSON.stringify(withRows.outcome.error)).toBeUndefined()
     expect(without.outcome.started?.payments).toBe('acme-payments')
     expect(withRows.outcome.started?.payments).toBe(without.outcome.started?.payments)
-    expect(adapterLike(withRows.specifiers)).toEqual(adapterLike(without.specifiers))
-    expect(adapterLike(withRows.specifiers)).toEqual(['@acme/nymbal-payments'])
+    expect(adapterLike(withRows.urls)).toEqual(adapterLike(without.urls))
+    expect(adapterLike(withRows.urls)).toEqual([PAYMENTS_URL])
   }, 120_000)
 })

@@ -10,7 +10,7 @@ import {
 } from '../support/primitive-graph.js'
 
 // AC-5, the cases that need no Redis: with in-memory and in-process the child-process module graph holds no Redis SDK,
-// no primitive package and no `pg` beyond the command store's own import; with @nymbalhq/document-store-redis hidden,
+// no primitive package and no `pg` beyond the command store's own import; with @nymbalhq/document-store-redis not installed,
 // createApp fails adapter.package_missing with the install line. The Redis-backed load is
 // tests/primitives/primitive-graph.test.ts. Needs `pnpm build`.
 
@@ -59,9 +59,7 @@ describe('AC-5: a missing primitive package fails with the install line', () => 
       redis: { url: 'redis://127.0.0.1:1', prefix: 'primitives-hidden' },
     })
 
-    const { resolutions, outcome } = await runGraphChild(config, {
-      hide: ['@nymbalhq/document-store-redis'],
-    })
+    const { resolutions, outcome } = await runGraphChild(config)
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')

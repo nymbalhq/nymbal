@@ -13,14 +13,16 @@ import {
 import { ADAPTER_NAMES, RETIRED_NAMES, ROOT, pnpmMembers } from './adapter-table'
 
 // AC-3: every name the kernel and the CLI import is a workspace package. The workspace adapters are the catalogue's
-// first-party entries at their convention names, and the recipe holders and the platform's optional peers name a
-// member whose manifest has that name; the changesets `fixed` group and NON_SCAFFOLD_PACKAGES name no package missing
-// from the workspace; every pending changeset's frontmatter keys are members. No tracked file names a retired name, READMEs included, but CHANGELOG.md files, the lockfile and
-// the changeset bodies (which may say "renamed from").
+// first-party entries at their convention names, and the recipe holders and the platform's manifest name a member
+// whose manifest has that name; the changesets `fixed` group and NON_SCAFFOLD_PACKAGES name no package missing from the
+// workspace, and the `fixed` group no adapter; every pending changeset's frontmatter keys are members. No tracked file
+// names a retired name, READMEs included, but CHANGELOG.md files, the lockfile and the changeset bodies (which may say
+// "renamed from").
 
 interface PlatformManifest {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
-  peerDependenciesMeta?: Record<string, { optional?: boolean }>
 }
 
 const members = pnpmMembers()
@@ -97,22 +99,22 @@ describe('AC-3: every package name the kernel and the CLI import is a workspace 
     expect(unresolved(Object.values(RECIPE_HOLDERS))).toEqual([])
   })
 
-  it('AC-3: the platform peers each of the twelve as optional, and every optional peer it names is a member', () => {
+  it("AC-3: every @nymbalhq name the platform's manifest lists is a member, the twelve among its devDependencies", () => {
     const platform = JSON.parse(read('packages/platform/package.json')) as PlatformManifest
-    const optional = Object.entries(platform.peerDependenciesMeta ?? {})
-      .filter(([name, meta]) => meta.optional === true && name.startsWith('@nymbalhq/'))
-      .map(([name]) => name)
+    const names = [platform.dependencies, platform.devDependencies, platform.peerDependencies]
+      .flatMap((field) => Object.keys(field ?? {}))
+      .filter((n) => n.startsWith('@nymbalhq/'))
 
-    expect(unresolved(optional)).toEqual([])
-    expect(ADAPTER_NAMES.filter((n) => !optional.includes(n))).toEqual([])
+    expect(unresolved(names)).toEqual([])
+    expect(ADAPTER_NAMES.filter((n) => platform.devDependencies?.[n] === undefined)).toEqual([])
   })
 
-  it('AC-3: the changesets fixed group names only members, the twelve among them', () => {
+  it('AC-3: the changesets fixed group names only members, and none of the twelve', () => {
     const config = JSON.parse(read('.changeset/config.json')) as { fixed: string[][] }
     const fixed = config.fixed.flat()
 
     expect(unresolved(fixed)).toEqual([])
-    expect(ADAPTER_NAMES.filter((n) => !fixed.includes(n))).toEqual([])
+    expect(ADAPTER_NAMES.filter((n) => fixed.includes(n))).toEqual([])
   })
 
   it('AC-3: NON_SCAFFOLD_PACKAGES names only members, the twelve among them', async () => {

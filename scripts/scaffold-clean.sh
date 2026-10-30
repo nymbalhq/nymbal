@@ -108,6 +108,8 @@ for (const { path, pkg } of manifests) {
   if (pkg.name === "@nymbalhq/stack") {
     for (const name of Object.keys(pkg.dependencies)) pkg.dependencies[name] = version
   }
+  // An adapter peers types at a literal floor of the coming release, which no snapshot prerelease satisfies.
+  if (pkg.peerDependencies?.["@nymbalhq/types"]) pkg.peerDependencies["@nymbalhq/types"] = `^${version}`
   writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n")
 }
 console.log(version)

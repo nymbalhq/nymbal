@@ -1,21 +1,20 @@
 // Reads: packages/adapters/document-store/**, packages/adapters/event-bus/**, packages/adapters/media/**
 // Reads: packages/platform/package.json, packages/platform/src/**
-// Reads: packages/create-app/scripts/sync-scaffold.mjs, .changeset/config.json
+// Reads: packages/create-app/scripts/sync-scaffold.mjs
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ROOT as REPO_ROOT } from './adapter-table'
 import type { Manifest } from './workspace-manifests'
 
-// AC-6: the kernel's manifest holds no Redis SDK and peers the primitive packages as optional (`workspace:^`); each
-// package peers its own SDK, depends on @nymbalhq/types and never on the kernel, starts at the fixed group's version,
-// versions with that group and is left out of the scaffold's dependencies. No kernel source file imports ioredis.
+// AC-6: the kernel's manifest holds no Redis SDK and links the primitive packages for its own tests; each package
+// peers its own SDK and @nymbalhq/types, never names the kernel, and is left out of the scaffold's dependencies. No
+// kernel source file imports ioredis.
 // PUBLISHED_DIRS (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list them as well.
 // @nymbalhq/media-s3 peers @aws-sdk/client-s3: the same rules hold for it, and the kernel's dependencies and source
 // name no @aws-sdk/* package.
 
 interface PackageManifest extends Manifest {
-  peerDependenciesMeta?: Record<string, { optional?: boolean }>
   optionalDependencies?: Record<string, string>
 }
 
@@ -54,6 +53,11 @@ function read(dir: string): PackageManifest {
   return JSON.parse(readFileSync(join(REPO_ROOT, dir, 'package.json'), 'utf8')) as PackageManifest
 }
 
+/** A literal caret floor on the workspace types' major (`^M.m.p`), which publishes as written. */
+const TYPES_FLOOR = new RegExp(
+  `^\\^${read('packages/types').version?.split('.')[0] ?? 'none'}\\.\\d+\\.\\d+$`,
+)
+
 function listed(
   m: PackageManifest,
   fields: readonly (typeof DEPENDENCY_FIELDS)[number][],
@@ -86,46 +90,35 @@ const isRedisSdk = (spec: string): boolean => spec === 'ioredis' || spec.startsW
 const isAwsSdk = (spec: string): boolean => spec.startsWith('@aws-sdk/')
 
 describe('AC-6: primitive SDKs live in the primitive packages, never in the kernel', () => {
-  it("AC-6: the kernel's dependencies hold no ioredis, and it peers the primitive packages, each optional, at workspace:^", () => {
+  it("AC-6: the kernel's dependencies hold no ioredis, and it links the primitive packages for its own tests at workspace:*", () => {
     const platform = read('packages/platform')
-    const optional = Object.entries(platform.peerDependenciesMeta ?? {})
-      .filter(([, meta]) => meta.optional === true)
-      .map(([name]) => name)
 
     expect(listed(platform, ['dependencies', 'optionalDependencies']).filter(isRedisSdk)).toEqual(
       [],
     )
-    expect(NAMES.filter((n) => platform.peerDependencies?.[n] !== 'workspace:^')).toEqual([])
-    expect(NAMES.filter((n) => !optional.includes(n))).toEqual([])
+    expect(NAMES.filter((n) => platform.devDependencies?.[n] !== 'workspace:*')).toEqual([])
   })
 
   for (const primitive of PRIMITIVES) {
-    it(`AC-6: ${primitive.name} peers ${primitive.sdk}, depends on @nymbalhq/types and not on the kernel, at the kernel’s version`, () => {
+    it(`AC-6: ${primitive.name} peers ${primitive.sdk} and @nymbalhq/types, and not the kernel`, () => {
       expect(existsSync(join(REPO_ROOT, primitive.dir, 'package.json')), primitive.dir).toBe(true)
       const m = read(primitive.dir)
 
       expect(m.name).toBe(primitive.name)
       expect(Object.keys(m.peerDependencies ?? {})).toContain(primitive.sdk)
-      expect(Object.keys(m.dependencies ?? {})).toContain('@nymbalhq/types')
+      expect(m.peerDependencies?.['@nymbalhq/types']).toMatch(TYPES_FLOOR)
       expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
       // The SDK is the project's to install: a regular dependency would put it in every tree that has the package.
       expect(listed(m, ['dependencies', 'optionalDependencies'])).not.toContain(primitive.sdk)
-      // It starts at the group's current version, so the kernel's workspace:^ peer on it is in range.
-      expect(m.version).toBe(read('packages/platform').version)
     })
   }
 
-  it('AC-6: the primitive packages version in the fixed group the kernel is in, and none is a scaffold dependency', async () => {
+  it('AC-6: none of the primitive packages is a scaffold dependency', async () => {
     // An untyped script module: imported through a variable, so it is loaded as it is, without declarations.
     const { NON_SCAFFOLD_PACKAGES } = (await import(SCAFFOLD_SCRIPT)) as {
       NON_SCAFFOLD_PACKAGES: ReadonlySet<string>
     }
-    const changesets = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
-    ) as { fixed: string[][] }
-    const group = changesets.fixed.find((g) => g.includes('@nymbalhq/platform')) ?? []
 
-    expect(NAMES.filter((n) => group.includes(n)).length).toBe(NAMES.length)
     expect(NAMES.filter((n) => NON_SCAFFOLD_PACKAGES.has(n)).length).toBe(NAMES.length)
   })
 

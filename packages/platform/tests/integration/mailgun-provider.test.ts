@@ -89,9 +89,7 @@ describe('AC-4: the mailgun provider loads', () => {
   }, 60_000)
 
   it('AC-4: with @nymbalhq/email-mailgun not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/email-mailgun nodemailer"', async () => {
-    const { outcome } = await runGraphChild(withMailgun(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/email-mailgun'],
-    })
+    const { outcome } = await runGraphChild(withMailgun(kernelConfig('sqlite')))
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')

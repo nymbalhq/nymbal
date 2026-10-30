@@ -1,4 +1,4 @@
-# @nymbalhq/adapter-smtp
+# @nymbalhq/email-smtp
 
 ## 1.4.0
 

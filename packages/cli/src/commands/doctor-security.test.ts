@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { conventionPackage } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
@@ -17,9 +16,11 @@ import {
   runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // doctor checks the security slot as it checks a commerce slot, against a fake Cloudflare API: a refused token or a
-// missing package is down and exits 1. Spawns the built CLI (`pnpm build` first).
+// missing package is down and exits 1. Each project's node_modules holds the security package unless the case leaves it
+// out. Spawns the built CLI (`pnpm build` first).
 
 const TOKEN = 'cf-doctor-token-accepted-3Rk9'
 const SECURITY_PACKAGE = conventionPackage('security', 'cloudflare')
@@ -40,38 +41,15 @@ afterAll(async () => {
 })
 
 /**
- * NODE_OPTIONS for a child in which each of `specifiers` resolves as if imported from an empty directory under `dir`
- * (no node_modules above it), so Node raises the error it raises for a package that is not installed.
+ * Runs `nymbal doctor` in a fresh project whose config has `security` replaced by `security`, and whose node_modules
+ * holds `installed`.
  */
-function hiding(specifiers: string[]): string {
-  const nowhere = mkdtempSync(join(dir, 'nowhere-'))
-  const hooks = join(nowhere, 'hide-hooks.mjs')
-  const entry = join(nowhere, 'hide-register.mjs')
-  writeFileSync(
-    hooks,
-    [
-      `const hide = ${JSON.stringify(specifiers)}`,
-      `const parentURL = ${JSON.stringify(pathToFileURL(join(nowhere, 'x.mjs')).href)}`,
-      'export async function resolve(specifier, context, nextResolve) {',
-      '  if (hide.includes(specifier)) return nextResolve(specifier, { ...context, parentURL })',
-      '  return nextResolve(specifier, context)',
-      '}',
-      '',
-    ].join('\n'),
-  )
-  writeFileSync(
-    entry,
-    `import { register } from 'node:module'\nregister(${JSON.stringify(pathToFileURL(hooks).href)})\n`,
-  )
-  return `--import=${pathToFileURL(entry).href}`
-}
-
-/** Runs `nymbal doctor` in a fresh project whose config has `security` replaced by `security`. */
 async function doctor(
   security: Record<string, unknown>,
-  extraEnv: Record<string, string> = {},
+  installed: Record<string, string> = workspace(SECURITY_PACKAGE),
 ): Promise<CliRun & { project: string; env: NodeJS.ProcessEnv }> {
   const project = mkdtempSync(join(dir, 'project-'))
+  install(project, installed)
   const raw = {
     ...repoConfig,
     infrastructure: {
@@ -87,7 +65,7 @@ async function doctor(
   )
   const sqlitePath = join(project, 'nymbal.db')
   await migratedSqlite(sqlitePath)
-  const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath, ...extraEnv })
+  const env = cliEnv({ NYMBAL_SQLITE_PATH: sqlitePath })
   return { ...(await runCli(['doctor'], { cwd: project, env })), project, env }
 }
 
@@ -125,7 +103,7 @@ describe('nymbal doctor checks the security slot', () => {
   }, 60_000)
 
   it('cloudflare with @nymbalhq/security-cloudflare not installed: `package security` is down with the install line, `slot security` is down, and doctor exits 1', async () => {
-    const run = await doctor(cloudflare(TOKEN), { NODE_OPTIONS: hiding([SECURITY_PACKAGE]) })
+    const run = await doctor(cloudflare(TOKEN), {})
     const pkg = line(run, 'package security')
 
     expect(run.code, run.out.slice(-3000)).toBe(1)

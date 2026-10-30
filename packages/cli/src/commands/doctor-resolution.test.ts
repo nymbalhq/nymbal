@@ -14,16 +14,17 @@ import {
   runCli,
   type CliRun,
 } from '../../../../tests/support/doctor.js'
-import { INSTALL_VERB, moduleHooks } from '../../../../tests/support/module-hooks.js'
+import { INSTALL_VERB } from '../../../../tests/support/module-hooks.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-9: `nymbal doctor` resolves each slot by the kernel's rule. `package <slot>` is ok naming the package for a
 // convention provider and for a `package:` one; a typo is down with the suggestion and no install verb; a missing
-// catalogue package is down with the install line. The infrastructure slots and security report the same way. A third
-// party's package is a fixture the child's module hooks answer its specifier with, and a missing package is one they
-// hide (tests/support/module-hooks.ts). Spawns the built CLI (`pnpm build` first).
+// catalogue package is down with the install line. The infrastructure slots and security report the same way. Each
+// project's node_modules holds what its case installs: a workspace adapter, or a third party's fixture package; a
+// missing package is one it does not hold (tests/support/project.ts). Spawns the built CLI (`pnpm build` first).
 
-const SEARCH_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-search', 'index.js')
-const MEDIA_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-media', 'index.js')
+const SEARCH_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-search')
+const MEDIA_FIXTURE = join(REPO_ROOT, 'tests', 'fixtures', 'third-party-media')
 
 let dir = ''
 beforeAll(() => {
@@ -45,9 +46,10 @@ async function doctor(
     security?: Record<string, unknown>
     commerce?: Record<string, unknown>
   },
-  hooks: Parameters<typeof moduleHooks>[1],
+  installed: Record<string, string>,
 ): Promise<Doctored> {
   const project = mkdtempSync(join(dir, 'project-'))
+  install(project, installed)
   const raw = {
     ...repoConfig,
     infrastructure: edit.infrastructure,
@@ -63,7 +65,6 @@ async function doctor(
   const env = cliEnv({
     NYMBAL_SQLITE_PATH: sqlitePath,
     npm_config_user_agent: undefined,
-    NODE_OPTIONS: moduleHooks(project, hooks),
   })
   return { ...(await runCli(['doctor'], { cwd: project, env })), project, env, raw }
 }
@@ -93,7 +94,11 @@ describe('AC-9: doctor reports each slot as the kernel resolves it', () => {
           email: { provider: 'smpt' },
         },
       },
-      { alias: { '@acme/nymbal-search': SEARCH_FIXTURE, '@acme/nymbal-media': MEDIA_FIXTURE } },
+      {
+        '@acme/nymbal-search': SEARCH_FIXTURE,
+        '@acme/nymbal-media': MEDIA_FIXTURE,
+        ...workspace('@nymbalhq/payments-stripe'),
+      },
     )
   }, 90_000)
 
@@ -155,7 +160,7 @@ describe('AC-9: a missing catalogue package is down with the install line', () =
           redis: { url: 'redis://127.0.0.1:1', prefix: 'doctor-resolution' },
         },
       },
-      { hide: ['@nymbalhq/document-store-redis'] },
+      {},
     )
     const pkg = line(run, 'package documentStore')
 

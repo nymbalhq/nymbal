@@ -15,6 +15,7 @@ import { createEventBuilder } from '../../src/events/builder.js'
 import { createLogger } from '../../src/logger.js'
 import { address, createKernel, kernelConfig } from '../support/kernel.js'
 import { withInfrastructure } from '../support/primitive-graph.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 import { ALL_MODELS, DOCUMENT_COLLECTIONS, collectionOf } from '../support/read-model-shapes.js'
 
 // AC-5: `nymbal replay`, the built CLI against a SQLite command store whose read models are on the composed Redis (a
@@ -37,7 +38,10 @@ let docs: DocumentStoreAdapter
 const products: Array<{ id: string; word: string }> = []
 const categorySlugs: string[] = []
 
-/** A project directory whose nymbal.config.ts is the kernel's config on `documentStore` (the file via NYMBAL_SQLITE_PATH). */
+/**
+ * A project directory whose nymbal.config.ts is the kernel's config on `documentStore` (the file via NYMBAL_SQLITE_PATH),
+ * with the Redis document store package installed when it is the one named.
+ */
 function project(documentStore: 'redis' | 'in-memory'): string {
   const infrastructure =
     documentStore === 'redis'
@@ -53,6 +57,7 @@ function project(documentStore: 'redis' | 'in-memory'): string {
           eventBus: { provider: 'in-process' },
         }
   const target = mkdtempSync(join(dir, `${documentStore}-project-`))
+  if (documentStore === 'redis') install(target, workspace('@nymbalhq/document-store-redis'))
   writeFileSync(
     join(target, 'nymbal.config.ts'),
     `export default ${JSON.stringify({ ...config, infrastructure }, null, 2)}\n`,

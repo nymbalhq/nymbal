@@ -174,9 +174,45 @@ importers:
       '@lhci/cli':
         specifier: 0.15.1
         version: 0.15.1(supports-color@7.2.0)
+      '@nymbalhq/ai-anthropic':
+        specifier: workspace:*
+        version: link:packages/adapters/ai/anthropic
       '@nymbalhq/config':
         specifier: workspace:*
         version: link:packages/config
+      '@nymbalhq/document-store-postgres-jsonb':
+        specifier: workspace:*
+        version: link:packages/adapters/document-store/postgres-jsonb
+      '@nymbalhq/document-store-redis':
+        specifier: workspace:*
+        version: link:packages/adapters/document-store/redis
+      '@nymbalhq/email-mailgun':
+        specifier: workspace:*
+        version: link:packages/adapters/email/mailgun
+      '@nymbalhq/email-resend':
+        specifier: workspace:*
+        version: link:packages/adapters/email/resend
+      '@nymbalhq/email-ses':
+        specifier: workspace:*
+        version: link:packages/adapters/email/ses
+      '@nymbalhq/email-smtp':
+        specifier: workspace:*
+        version: link:packages/adapters/email/smtp
+      '@nymbalhq/event-bus-redis-streams':
+        specifier: workspace:*
+        version: link:packages/adapters/event-bus/redis-streams
+      '@nymbalhq/media-s3':
+        specifier: workspace:*
+        version: link:packages/adapters/media/s3
+      '@nymbalhq/payments-stripe':
+        specifier: workspace:*
+        version: link:packages/adapters/payments/stripe
+      '@nymbalhq/security-cloudflare':
+        specifier: workspace:*
+        version: link:packages/adapters/security/cloudflare
+      '@nymbalhq/shipping-easypost':
+        specifier: workspace:*
+        version: link:packages/adapters/shipping/easypost
       '@stryker-mutator/core':
         specifier: ^10.0.0
         version: 10.0.0(@types/node@22.19.17)
@@ -192,6 +228,9 @@ importers:
       '@types/node':
         specifier: ^22.9.0
         version: 22.19.17
+      '@types/semver':
+        specifier: ^7.8.0
+        version: 7.8.0
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.72.0
         version: 8.72.0(@typescript-eslint/parser@8.72.0(@typescript/typescript6@6.0.2)(eslint@9.39.4(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0))(@typescript/typescript6@6.0.2)(eslint@9.39.4(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)
@@ -237,6 +276,9 @@ importers:
       puppeteer-core:
         specifier: 24.43.1
         version: 24.43.1(supports-color@7.2.0)
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       tsup:
         specifier: ^9.0.0
         version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
@@ -359,14 +401,13 @@ importers:
         version: 5.0.12(@types/react@18.3.28)(react@18.3.1)
 
   packages/adapters/ai/anthropic:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../../../types
     devDependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -381,14 +422,13 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/document-store/postgres-jsonb:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../../../types
     devDependencies:
       '@nymbalhq/contract-tests':
         specifier: workspace:*
         version: link:../../../contract-tests
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
       '@types/pg':
         specifier: ^8.11.10
         version: 8.20.0
@@ -412,14 +452,13 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/document-store/redis:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../../../types
     devDependencies:
       '@nymbalhq/contract-tests':
         specifier: workspace:*
         version: link:../../../contract-tests
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -442,12 +481,12 @@ importers:
   packages/adapters/email/mailgun:
     dependencies:
       '@nymbalhq/email-smtp':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../smtp
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
         version: 6.4.23
@@ -473,12 +512,12 @@ importers:
   packages/adapters/email/resend:
     dependencies:
       '@nymbalhq/email-smtp':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../smtp
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
         version: 6.4.23
@@ -504,12 +543,12 @@ importers:
   packages/adapters/email/ses:
     dependencies:
       '@nymbalhq/email-smtp':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../smtp
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
         version: 6.4.23
@@ -533,11 +572,10 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/email/smtp:
-    dependencies:
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@types/nodemailer':
         specifier: ^6.4.17
         version: 6.4.23
@@ -558,14 +596,13 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/event-bus/redis-streams:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../../../types
     devDependencies:
       '@nymbalhq/contract-tests':
         specifier: workspace:*
         version: link:../../../contract-tests
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -586,14 +623,13 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/media/s3:
-    dependencies:
-      '@nymbalhq/types':
-        specifier: workspace:*
-        version: link:../../../types
     devDependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.1153.0
         version: 3.1153.0
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -605,11 +641,10 @@ importers:
         version: '@typescript/typescript6@6.0.2'
 
   packages/adapters/payments/stripe:
-    dependencies:
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -630,11 +665,10 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/security/cloudflare:
-    dependencies:
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -652,11 +686,10 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
   packages/adapters/shipping/easypost:
-    dependencies:
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
-    devDependencies:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
@@ -864,6 +897,9 @@ importers:
       drizzle-orm:
         specifier: ^0.36.0
         version: 0.36.4(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(@types/react@19.3.0)(better-sqlite3@12.11.1)(pg@8.20.0)(react@19.3.1)
+      import-meta-resolve:
+        specifier: ^4.2.0
+        version: 4.2.0
       jose:
         specifier: ^5.9.6
         version: 5.10.0
@@ -4391,6 +4427,9 @@ packages:
   '@types/react@19.3.0':
     resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
 
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
@@ -7685,11 +7724,6 @@ packages:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
     hasBin: true
 
-  semver@7.7.4:
-    resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
     engines: {node: '>=10'}
@@ -9641,7 +9675,7 @@ snapshots:
       package-manager-detector: 0.2.11
       picocolors: 1.1.1
       resolve-from: 5.0.0
-      semver: 7.7.4
+      semver: 7.8.5
       spawndamnit: 3.0.1
       term-size: 2.2.1
     transitivePeerDependencies:
@@ -11562,7 +11596,7 @@ snapshots:
       npm-run-path: 6.0.0
       progress: 2.0.3
       rxjs: 7.8.2
-      semver: 7.7.4
+      semver: 7.8.5
       source-map: 0.7.6
       tree-kill: 1.2.2
       tslib: 2.8.1
@@ -11595,7 +11629,7 @@ snapshots:
       '@stryker-mutator/api': 10.0.0
       '@stryker-mutator/core': 10.0.0(@types/node@22.19.17)
       '@stryker-mutator/util': 10.0.0
-      semver: 7.7.4
+      semver: 7.8.5
       tslib: 2.8.1
       vitest: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@16.8.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)
 
@@ -11783,6 +11817,8 @@ snapshots:
   '@types/react@19.3.0':
     dependencies:
       csstype: 3.2.3
+
+  '@types/semver@7.8.0': {}
 
   '@types/trusted-types@2.0.7': {}
 
@@ -13424,7 +13460,7 @@ snapshots:
       proxy-addr: 2.0.7
       rfdc: 1.4.1
       secure-json-parse: 2.7.0
-      semver: 7.7.4
+      semver: 7.8.5
       toad-cache: 3.7.0
 
   fastq@1.20.1:
@@ -15264,8 +15300,6 @@ snapshots:
   semver@5.7.2: {}
 
   semver@6.3.1: {}
-
-  semver@7.7.4: {}
 
   semver@7.8.5: {}
 

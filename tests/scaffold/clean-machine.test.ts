@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
+import semver from 'semver'
 import { describe, expect, it, vi } from 'vitest'
 
 // AC-11, run by scripts/scaffold-clean.sh (and the CI job scaffold-clean) after it has scaffolded `shop` with
@@ -45,6 +46,7 @@ interface Manifest {
   version?: string
   packageManager?: string
   dependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
 }
 interface ProductDoc {
   slug: string
@@ -427,16 +429,36 @@ function serveApi(port: number): { output: () => string; stop: () => void } {
   }
 }
 
-// AC-4: the renamed adapter installs from the local registry and the store boots on it. Last in the file: it installs
-// Stripe's SDK, which AC-7 above holds a fresh project never has, and removes both packages again when it is done.
-describe('AC-4: a scaffold installs a renamed adapter package', () => {
-  it('AC-4: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install it answers GET /health 200', async () => {
+const TYPES_PACKAGE = '@nymbalhq/types'
+
+/**
+ * Run in the project's Node: Stripe's adapter built for the wrong slot, and whether what it throws is the `ConfigError`
+ * the project's own @nymbalhq/types exports, as the kernel's `instanceof` checks see it.
+ */
+const WRONG_SLOT_CHECK = [
+  `import { ConfigError } from '${TYPES_PACKAGE}'`,
+  `import { createAdapter } from '${STRIPE_PACKAGE}'`,
+  'let result = { thrown: false }',
+  'try {',
+  "  await createAdapter({ slot: 'email', env: {}, config: {} })",
+  '} catch (error) {',
+  '  result = { thrown: true, configError: error instanceof ConfigError, code: error?.code ?? null }',
+  '}',
+  'console.log(`WRONG-SLOT ${JSON.stringify(result)}`)',
+].join('\n')
+
+// AC-7: an adapter installs by its bare name, with no version to match the kernel's, and adds no second
+// @nymbalhq/types: it peers the project's, so an error it throws is the class the kernel checks for, and the store
+// boots on it. Last in the file: it installs Stripe's SDK, which AC-7 above holds a fresh project never has, and
+// removes both packages again when it is done.
+describe("AC-7: an adapter installed by name shares the project's @nymbalhq/types", () => {
+  it("AC-7: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install, with no version, one @nymbalhq/types is installed, the adapter peers it and does not depend on it, its wrong-slot error is instanceof the project's ConfigError, and GET /health answers 200", async () => {
     const path = join(DIR, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
     const edited = withStripe(original)
     expect(edited, 'the scaffold config names native payments').not.toBe(original)
-    const platform = [...(installedNymbalVersions(DIR).get('@nymbalhq/platform') ?? [])]
-    expect(platform, 'one installed @nymbalhq/platform').toHaveLength(1)
+    const types = [...(installedNymbalVersions(DIR).get(TYPES_PACKAGE) ?? [])]
+    expect(types, 'one installed @nymbalhq/types').toHaveLength(1)
     const pm = packageManagerCommands()
     let server: { output: () => string; stop: () => void } | undefined
     try {
@@ -453,14 +475,33 @@ describe('AC-4: a scaffold installs a renamed adapter package', () => {
       expect(missing.code).not.toBe(0)
       expect(missing.output).toContain(`npm install ${STRIPE_PACKAGE} stripe`)
 
-      // The registry scaffold-clean.sh published to holds the renamed package at the version the project runs.
-      const install = await runInProject(
-        pm.command,
-        [...pm.add, `${STRIPE_PACKAGE}@${platform[0]!}`, 'stripe'],
-        180_000,
-      )
+      // The install line as printed: the adapter's name, no version.
+      const install = await runInProject(pm.command, [...pm.add, STRIPE_PACKAGE, 'stripe'], 180_000)
       expect(install.code, install.output.slice(-2000)).toBe(0)
-      expect([...(installedNymbalVersions(DIR).get(STRIPE_PACKAGE) ?? [])]).toEqual(platform)
+
+      const adapter = manifest(join(DIR, 'node_modules', STRIPE_PACKAGE, 'package.json'))
+      expect(adapter.dependencies?.[TYPES_PACKAGE], 'the adapter depends on @nymbalhq/types').toBe(
+        undefined,
+      )
+      expect(
+        semver.satisfies(types[0]!, adapter.peerDependencies?.[TYPES_PACKAGE] ?? ''),
+        `installed ${TYPES_PACKAGE} ${types[0]} against the adapter's peer ${adapter.peerDependencies?.[TYPES_PACKAGE]}`,
+      ).toBe(true)
+      expect(adapter.peerDependencies?.[TYPES_PACKAGE]).toBe(`^${types[0]!}`)
+      expect([...(installedNymbalVersions(DIR).get(TYPES_PACKAGE) ?? [])]).toEqual(types)
+
+      const check = await runInProject(
+        'node',
+        ['--input-type=module', '-e', WRONG_SLOT_CHECK],
+        60_000,
+      )
+      const line = check.output.split('\n').find((l) => l.startsWith('WRONG-SLOT '))
+      expect(line, check.output.slice(-2000)).toMatch(/^WRONG-SLOT /)
+      expect(JSON.parse(line!.slice('WRONG-SLOT '.length))).toEqual({
+        thrown: true,
+        configError: true,
+        code: 'adapter.wrong_slot',
+      })
 
       const port = await freePort()
       server = serveApi(port)

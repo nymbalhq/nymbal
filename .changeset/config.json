@@ -14,18 +14,6 @@
       "@nymbalhq/http",
       "@nymbalhq/react",
       "@nymbalhq/admin",
-      "@nymbalhq/payments-stripe",
-      "@nymbalhq/ai-anthropic",
-      "@nymbalhq/email-smtp",
-      "@nymbalhq/email-mailgun",
-      "@nymbalhq/email-resend",
-      "@nymbalhq/email-ses",
-      "@nymbalhq/shipping-easypost",
-      "@nymbalhq/document-store-redis",
-      "@nymbalhq/document-store-postgres-jsonb",
-      "@nymbalhq/event-bus-redis-streams",
-      "@nymbalhq/media-s3",
-      "@nymbalhq/security-cloudflare",
       "@nymbalhq/contract-tests"
     ]
   ],

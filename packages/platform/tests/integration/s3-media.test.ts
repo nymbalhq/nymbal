@@ -123,7 +123,6 @@ describe('AC-2: a missing @nymbalhq/media-s3 fails with the install line', () =>
     const config = s3Config({ bucket: 's3-hidden', endpoint: NOWHERE })
 
     const { resolutions, outcome } = await runGraphChild(config, {
-      hide: ['@nymbalhq/media-s3'],
       env: NO_S3_ENV,
     })
 

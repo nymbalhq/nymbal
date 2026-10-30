@@ -22,6 +22,7 @@ import {
   openReader,
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-7: `nymbal secrets rotate` with NYMBAL_SECRETS_KEY_OLD and NYMBAL_SECRETS_KEY re-encrypts every secret row under
 // the new key and leaves plain rows untouched; one row that fails under the old key exits 2 and changes nothing.
@@ -40,10 +41,11 @@ const PLAIN_FIELDS = [
 
 const aad = (slot: string, path: string): string => `${slot}:${path}`
 
-/** A project whose nymbal.config.ts is the store's config, on a SQLite file of its own. */
+/** A project whose nymbal.config.ts is the store's config, on a SQLite file of its own, with its adapters installed. */
 function project(run: ReturnType<typeof cleanups>): { dir: string; db: string } {
   const dir = mkdtempSync(join(tmpdir(), 'settings-rotate-'))
   run.add(() => rmSync(dir, { recursive: true, force: true }))
+  install(dir, workspace('@nymbalhq/payments-stripe', '@nymbalhq/ai-anthropic'))
   writeFileSync(
     join(dir, 'nymbal.config.ts'),
     `export default ${JSON.stringify(settingsConfigInput('sqlite', COMMERCE), null, 2)}\n`,

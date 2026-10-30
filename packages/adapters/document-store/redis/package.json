@@ -33,14 +33,13 @@
     "dev": "tsup --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../../../.."
   },
-  "dependencies": {
-    "@nymbalhq/types": "workspace:*"
-  },
   "peerDependencies": {
+    "@nymbalhq/types": "^1.5.0",
     "ioredis": "^5.4.0 || ^6.0.0"
   },
   "devDependencies": {
     "@nymbalhq/contract-tests": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "@typescript/native": "npm:typescript@^7.0.2",
     "fast-check": "^4.10.2",
     "ioredis": "^6.0.0",

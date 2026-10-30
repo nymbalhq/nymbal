@@ -1,4 +1,4 @@
-# @nymbalhq/adapter-anthropic
+# @nymbalhq/ai-anthropic
 
 ## 1.4.0
 

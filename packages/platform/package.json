@@ -50,64 +50,13 @@
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.36.0",
+    "import-meta-resolve": "^4.2.0",
     "jose": "^5.9.6",
     "pg": "^8.13.1",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "uuid": "^10.0.0",
     "zod": "^3.23.8"
-  },
-  "peerDependencies": {
-    "@nymbalhq/ai-anthropic": "workspace:^",
-    "@nymbalhq/document-store-postgres-jsonb": "workspace:^",
-    "@nymbalhq/document-store-redis": "workspace:^",
-    "@nymbalhq/email-mailgun": "workspace:^",
-    "@nymbalhq/email-resend": "workspace:^",
-    "@nymbalhq/email-ses": "workspace:^",
-    "@nymbalhq/email-smtp": "workspace:^",
-    "@nymbalhq/event-bus-redis-streams": "workspace:^",
-    "@nymbalhq/media-s3": "workspace:^",
-    "@nymbalhq/payments-stripe": "workspace:^",
-    "@nymbalhq/security-cloudflare": "workspace:^",
-    "@nymbalhq/shipping-easypost": "workspace:^"
-  },
-  "peerDependenciesMeta": {
-    "@nymbalhq/ai-anthropic": {
-      "optional": true
-    },
-    "@nymbalhq/document-store-postgres-jsonb": {
-      "optional": true
-    },
-    "@nymbalhq/document-store-redis": {
-      "optional": true
-    },
-    "@nymbalhq/email-mailgun": {
-      "optional": true
-    },
-    "@nymbalhq/email-resend": {
-      "optional": true
-    },
-    "@nymbalhq/email-ses": {
-      "optional": true
-    },
-    "@nymbalhq/email-smtp": {
-      "optional": true
-    },
-    "@nymbalhq/event-bus-redis-streams": {
-      "optional": true
-    },
-    "@nymbalhq/media-s3": {
-      "optional": true
-    },
-    "@nymbalhq/payments-stripe": {
-      "optional": true
-    },
-    "@nymbalhq/security-cloudflare": {
-      "optional": true
-    },
-    "@nymbalhq/shipping-easypost": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@nymbalhq/ai-anthropic": "workspace:*",

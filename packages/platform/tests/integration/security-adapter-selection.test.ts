@@ -90,7 +90,7 @@ describe('AC-2: createApp builds the adapter security.adapter names', () => {
       cwd: dir,
       env: {
         ...env,
-        ADAPTERS_GRAPH: JSON.stringify({ out, hide: ['@nymbalhq/security-cloudflare'] }),
+        ADAPTERS_GRAPH: JSON.stringify({ out }),
       },
       timeout: 60_000,
       maxBuffer: 16 * 1024 * 1024,

@@ -2,13 +2,13 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-// Node module hooks for a child process, given as the NODE_OPTIONS that register them. They stand in for what is
-// installed where the kernel looks, without touching any node_modules: `alias` answers a bare specifier from a file
-// (a third party's adapter, installed), `hide` resolves one as if from an empty directory so Node raises its own
-// not-installed error, and `record` appends every bare specifier resolved, with its importer, to a JSONL file.
+// Node module hooks for a child process, given as the NODE_OPTIONS that register them. `hide` resolves a bare
+// specifier (an SDK an adapter imports) as if from an empty directory, so Node raises its own not-installed error, and
+// `record` appends every bare or `file:` specifier resolved, with its importer and the URL it resolved to, to a JSONL
+// file. An adapter package is not hooked: the kernel resolves it from the project itself and imports the `file:` URL it
+// finds, which `record` sees; a test installs one in its project (tests/support/project.ts).
 
 export interface ModuleHooks {
-  alias?: Record<string, string>
   hide?: readonly string[]
   record?: string
 }
@@ -16,31 +16,36 @@ export interface ModuleHooks {
 export interface Resolved {
   specifier: string
   parent: string | null
+  /** The URL it resolved to, or null when it failed to resolve. */
+  url: string | null
 }
 
 /** NODE_OPTIONS registering the hooks, written into a fresh directory under `dir`. */
 export function moduleHooks(dir: string, hooks: ModuleHooks): string {
   const at = mkdtempSync(join(dir, 'hooks-'))
-  const alias = Object.fromEntries(
-    Object.entries(hooks.alias ?? {}).map(([name, file]) => [name, pathToFileURL(file).href]),
-  )
   const file = join(at, 'hooks.mjs')
   writeFileSync(
     file,
     [
       "import { appendFileSync } from 'node:fs'",
-      `const alias = ${JSON.stringify(alias)}`,
       `const hide = ${JSON.stringify(hooks.hide ?? [])}`,
       `const record = ${JSON.stringify(hooks.record ?? null)}`,
       `const nowhere = ${JSON.stringify(pathToFileURL(join(at, 'nowhere.mjs')).href)}`,
-      'const bare = (s) => !/^(node:|file:|data:|\\.|\\/)/.test(s)',
+      'const recorded = (s) => s.startsWith("file:") || !/^(node:|data:|\\.|\\/)/.test(s)',
+      'const note = (specifier, context, url) => {',
+      '  if (record === null || !recorded(specifier)) return',
+      '  appendFileSync(record, JSON.stringify({ specifier, parent: context.parentURL ?? null, url }) + "\\n")',
+      '}',
       'export async function resolve(specifier, context, nextResolve) {',
-      '  if (record !== null && bare(specifier)) {',
-      '    appendFileSync(record, JSON.stringify({ specifier, parent: context.parentURL ?? null }) + "\\n")',
+      '  const next = hide.includes(specifier) ? { ...context, parentURL: nowhere } : context',
+      '  try {',
+      '    const result = await nextResolve(specifier, next)',
+      '    note(specifier, context, result.url)',
+      '    return result',
+      '  } catch (error) {',
+      '    note(specifier, context, null)',
+      '    throw error',
       '  }',
-      '  if (Object.hasOwn(alias, specifier)) return { url: alias[specifier], shortCircuit: true }',
-      '  if (hide.includes(specifier)) return nextResolve(specifier, { ...context, parentURL: nowhere })',
-      '  return nextResolve(specifier, context)',
       '}',
       '',
     ].join('\n'),

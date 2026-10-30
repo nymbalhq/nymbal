@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { install, workspace } from '../support/project'
 import { anonymousGet, createPublicBucket, type TestBucket } from '../support/s3'
 import { startWooCommerceServer, type WooCommerceServer } from '../support/woocommerce-server'
 
@@ -49,7 +50,10 @@ afterAll(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-/** A project with only `infrastructure` set beyond the required blocks; its migrations are the kernel's. */
+/**
+ * A project with only `infrastructure` set beyond the required blocks; its migrations are the kernel's, and its
+ * node_modules holds the S3 media package when the media block names s3.
+ */
 function project(infrastructure: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 's3-cli-'))
   dirs.push(dir)
@@ -76,6 +80,8 @@ function project(infrastructure: Record<string, unknown>): string {
     `export default ${JSON.stringify(config, null, 2)}\n`,
   )
   symlinkSync(MIGRATIONS, join(dir, 'migrations'), 'dir')
+  const media = infrastructure['media'] as { provider?: string } | undefined
+  if (media?.provider === 's3') install(dir, workspace('@nymbalhq/media-s3'))
   return dir
 }
 

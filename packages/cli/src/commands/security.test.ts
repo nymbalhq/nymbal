@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
 import { cliEnv, closedPort, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
@@ -57,6 +58,7 @@ function project(opts: {
 }): Project {
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-cf-cli-'))
   dirs.push(dir)
+  install(dir, workspace('@nymbalhq/security-cloudflare'))
   const security = {
     ...repoConfig.security,
     adapter: opts.adapter ?? 'cloudflare',

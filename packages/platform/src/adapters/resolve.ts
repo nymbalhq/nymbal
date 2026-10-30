@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { ADAPTER_CATALOGUE, BUILT_IN, conventionPackage, suggestProvider } from '@nymbalhq/config'
 import {
   ConfigError,
@@ -8,6 +9,7 @@ import {
   type ProviderPackageModule,
   type Slot,
 } from '@nymbalhq/types'
+import { resolve as resolveFrom } from 'import-meta-resolve'
 
 /** What the config names for a slot: its provider, and the package the adapter comes from when it says. */
 export interface Choice {
@@ -216,11 +218,16 @@ function importFailure(
   )
 }
 
-const kernelImport = (specifier: string): Promise<unknown> => import(specifier)
+/**
+ * Imports `specifier` as the project in `process.cwd()` would, from its own node_modules and the directories above,
+ * under the `import` conditions. A store installs its adapters beside its config, not beside the kernel.
+ */
+const projectImport = async (specifier: string): Promise<unknown> =>
+  import(resolveFrom(specifier, pathToFileURL(join(process.cwd(), 'package.json')).href))
 
 /**
  * The adapter module the slot's choice resolves to, imported and checked, or `undefined` for `custom` and a built-in.
- * The specifier is imported from the kernel's own location. A package that is not installed is
+ * The specifier is imported from the project root, `process.cwd()`. A package that is not installed is
  * `adapter.package_missing` with its install line, or `adapter.provider_unknown` (with a suggestion when one is near)
  * for a convention name no first-party package has; any other load error is rethrown as it is.
  */
@@ -228,7 +235,7 @@ export async function importAdapterModule(
   slot: Slot,
   choice: Choice,
   env: NodeJS.ProcessEnv,
-  importer: (specifier: string) => Promise<unknown> = kernelImport,
+  importer: (specifier: string) => Promise<unknown> = projectImport,
 ): Promise<ProviderPackageModule | undefined> {
   const resolution = resolveChoice(slot, choice)
   if (resolution.kind !== 'package') return undefined

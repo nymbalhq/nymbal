@@ -1,8 +1,8 @@
-// The child process of adapter-resolution.test.ts, run with the module hooks of tests/support/module-hooks.ts in
-// NODE_OPTIONS. It parses the raw config in argv[2] with @nymbalhq/config, migrates a SQLite store, writes the settings
-// rows in ADAPTER_RESOLUTION's `settings` ([{ slot, path, value }], plain values), runs createApp from the kernel's
-// built dist and prints one line, `ADAPTER-RESOLUTION-OUTCOME <json>`: the payments and security adapters it started
-// with, or the error it threw, and what the fixture adapters were built with.
+// The child process of adapter-resolution.test.ts (run with the module hooks of tests/support/module-hooks.ts in
+// NODE_OPTIONS) and adapter-import-base.test.ts, its working directory a temp project holding the installed packages. It parses the raw config in argv[2] with @nymbalhq/config, migrates a
+// SQLite store, writes the settings rows in ADAPTER_RESOLUTION's `settings` ([{ slot, path, value }], plain values),
+// runs createApp from the kernel's built dist and prints one line, `ADAPTER-RESOLUTION-OUTCOME <json>`: the payments,
+// search and security adapters it started with, or the error it threw, and what the fixture adapters were built with.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -41,6 +41,7 @@ try {
   outcome = {
     started: {
       payments: app.adapters.payments.providerName,
+      search: app.adapters.search.providerName ?? null,
       security: {
         providerName: app.adapters.security.providerName ?? null,
         capabilities: [...app.adapters.security.capabilities()],

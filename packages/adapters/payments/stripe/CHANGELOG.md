@@ -1,4 +1,4 @@
-# @nymbalhq/adapter-stripe
+# @nymbalhq/payments-stripe
 
 ## 1.4.0
 

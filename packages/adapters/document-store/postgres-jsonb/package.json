@@ -31,14 +31,13 @@
     "dev": "tsup --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../../../.."
   },
-  "dependencies": {
-    "@nymbalhq/types": "workspace:*"
-  },
   "peerDependencies": {
+    "@nymbalhq/types": "^1.5.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
     "@nymbalhq/contract-tests": "workspace:*",
+    "@nymbalhq/types": "workspace:*",
     "@types/pg": "^8.11.10",
     "@typescript/native": "npm:typescript@^7.0.2",
     "fast-check": "^4.10.2",

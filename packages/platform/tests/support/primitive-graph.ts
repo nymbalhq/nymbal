@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // Runs fixtures/primitive-graph/child.mjs (createApp from the built dist, every resolution recorded with its
 // importer) and reads back what it resolved and what it reported. Needs `pnpm build`.
@@ -68,10 +69,14 @@ export function withInfrastructure(
 
 export async function runGraphChild(
   config: NymbalConfig,
-  /** `env` is laid over the child's environment; a variable set to undefined is removed from it. */
-  opts: { hide?: string[]; env?: Record<string, string | undefined> } = {},
+  /**
+   * `env` is laid over the child's environment; a variable set to undefined is removed from it. `installed` names the
+   * workspace packages the child's project (its working directory) holds; the kernel resolves adapters from there.
+   */
+  opts: { hide?: string[]; env?: Record<string, string | undefined>; installed?: string[] } = {},
 ): Promise<{ resolutions: Resolution[]; outcome: GraphOutcome }> {
   const dir = scratch()
+  install(dir, workspace(...(opts.installed ?? [])))
   const out = join(dir, 'resolved.jsonl')
   writeFileSync(out, '')
   const env: NodeJS.ProcessEnv = {

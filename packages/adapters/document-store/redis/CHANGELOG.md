@@ -1,4 +1,4 @@
-# @nymbalhq/doc-store-redis
+# @nymbalhq/document-store-redis
 
 ## 1.4.0
 

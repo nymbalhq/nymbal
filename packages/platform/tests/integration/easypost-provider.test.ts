@@ -170,9 +170,7 @@ describe('AC-4: the easypost provider loads', () => {
 
 describe('AC-4: the easypost provider without its package', () => {
   it('AC-4: with @nymbalhq/shipping-easypost not installed, createApp fails adapter.package_missing, naming the shipping slot and "npm install @nymbalhq/shipping-easypost" with no SDK after it', async () => {
-    const { outcome } = await runGraphChild(withEasyPost(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/shipping-easypost'],
-    })
+    const { outcome } = await runGraphChild(withEasyPost(kernelConfig('sqlite')))
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')

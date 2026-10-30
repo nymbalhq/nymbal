@@ -31,7 +31,9 @@ describe('AC-5: redis and redis-streams load from their packages', () => {
       redis: { url, prefix },
     })
 
-    const { resolutions, outcome } = await runGraphChild(config)
+    const { resolutions, outcome } = await runGraphChild(config, {
+      installed: ['@nymbalhq/document-store-redis', '@nymbalhq/event-bus-redis-streams'],
+    })
 
     expect(outcome.error, JSON.stringify(outcome.error)).toBeUndefined()
     expect(

@@ -96,9 +96,7 @@ describe('AC-4: the resend provider loads and its webhook suppresses', () => {
   }, 60_000)
 
   it('AC-4: with @nymbalhq/email-resend not installed, createApp fails adapter.package_missing, naming the email slot and "npm install @nymbalhq/email-resend nodemailer"', async () => {
-    const { outcome } = await runGraphChild(withResend(kernelConfig('sqlite')), {
-      hide: ['@nymbalhq/email-resend'],
-    })
+    const { outcome } = await runGraphChild(withResend(kernelConfig('sqlite')))
 
     expect(outcome.started, JSON.stringify(outcome.started)).toBeUndefined()
     expect(outcome.error?.code, outcome.error?.message).toBe('adapter.package_missing')

@@ -1,4 +1,4 @@
-# @nymbalhq/doc-store-postgres-jsonb
+# @nymbalhq/document-store-postgres-jsonb
 
 ## 1.4.0
 

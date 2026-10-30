@@ -15,6 +15,7 @@ import {
   openReader,
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, runCli } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-6, recovery from a lost key: `nymbal secrets clear [--slot <s>] [--path <p>]` with NYMBAL_SECRETS_KEY unset
 // deletes the matching rows (a filtered clear that row alone), and the store then boots without the key.
@@ -38,6 +39,7 @@ describe('AC-6: nymbal secrets clear needs no key', () => {
     )
     const dir = mkdtempSync(join(tmpdir(), 'settings-clear-'))
     scope.add(() => rmSync(dir, { recursive: true, force: true }))
+    install(dir, workspace('@nymbalhq/ai-anthropic', '@nymbalhq/email-smtp'))
     writeFileSync(
       join(dir, 'nymbal.config.ts'),
       `export default ${JSON.stringify(settingsConfigInput('sqlite', COMMERCE), null, 2)}\n`,
