@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createNymbalClient } from '../client.js'
+import { createNymbalClient } from '../index.js'
 
 // AC-6: the order's key goes to the API in `x-nymbal-order-key`, only when the caller passes one, and never in the URL,
 // which a proxy's access log keeps.

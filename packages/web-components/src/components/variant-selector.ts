@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/product'
 import { css, html } from 'lit'
 import type { DenormalisedVariant, DenormalisedProduct } from '@nymbalhq/sdk'
 import type { VariantOption } from '@nymbalhq/types'

@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createNymbalClient } from '../client.js'
+import { createNymbalClient } from '../index.js'
 import { NymbalApiError } from './fetch-client.js'
 
 // Once an order's key has expired the shopper gives the order's email: the SDK sends it to the API in

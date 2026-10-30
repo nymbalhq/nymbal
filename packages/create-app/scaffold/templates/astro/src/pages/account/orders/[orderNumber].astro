@@ -13,7 +13,7 @@ import AccountLayout from '../../../layouts/AccountLayout.astro'
 </AccountLayout>
 
 <script>
-  import { NymbalApiError } from '@nymbalhq/sdk'
+  import { NymbalApiError } from '@nymbalhq/sdk/core'
   import { client } from '../../../lib/client.js'
   import { escapeHtml, formatPrice, formatDate } from '../../../lib/format.js'
   import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'

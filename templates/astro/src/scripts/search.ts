@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/search'
 import { NymbalProductFilter } from '@nymbalhq/web-components/elements/nymbal-product-filter'
 import { NymbalSearchResults } from '@nymbalhq/web-components/elements/nymbal-search-results'
 import { client } from '../lib/client.js'

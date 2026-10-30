@@ -1,3 +1,5 @@
+import '@nymbalhq/sdk/ns/cart'
+import '@nymbalhq/sdk/ns/checkout'
 import { css, html, nothing } from 'lit'
 import type { PaymentConfirmation, PaymentConfirmContext } from '@nymbalhq/sdk'
 import type { Address, CartItem } from '@nymbalhq/types'

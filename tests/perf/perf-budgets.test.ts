@@ -320,6 +320,28 @@ describe('AC-5: the perf-bytes step measures what Lighthouse does', () => {
   })
 })
 
+// AC-1: the storefront client built from the core and the namespaces a page uses leaves the checkout, auth and
+// product stores off Astro `/`, so `/` ships at least 256 B less script than at its reference, and no Astro page goes
+// over its budget. Read from the bytes run above (`pnpm perf:budgets --bytes`, which measures Astro as
+// `--template astro` does).
+describe('AC-1: Astro / carries only the client its elements use', () => {
+  const HEADROOM_BYTES = 256
+
+  it('AC-1: perf:budgets --bytes measures Astro / at least 256 B under its reference, and every Astro page within its scriptBytes budget', (ctx) => {
+    if (chrome === undefined) return ctx.skip(NO_CHROME)
+    const home = bytesRow(step.report, 'astro', 'home')
+    expect(home?.scriptBytes, tail(step.log)).toBeLessThanOrEqual(
+      baseline.scriptBytes - HEADROOM_BYTES,
+    )
+    for (const page of PAGES) {
+      const measured = bytesRow(step.report, 'astro', page)?.scriptBytes
+      expect(measured, `astro / ${page} scriptBytes`).toBeLessThanOrEqual(
+        BUDGETS.astro?.[page]?.scriptBytes ?? Number.NaN,
+      )
+    }
+  })
+})
+
 describe('AC-6: --bytes fails what CI fails', () => {
   it('AC-6: with a 300 KB script on Astro /, --bytes exits 1 naming astro / home / scriptBytes, and no other page fails', (ctx) => {
     if (chrome === undefined) return ctx.skip(NO_CHROME)

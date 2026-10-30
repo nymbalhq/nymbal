@@ -1,4 +1,4 @@
-import { NymbalApiError } from '@nymbalhq/sdk'
+import { NymbalApiError } from '@nymbalhq/sdk/core'
 import type { ShopperAddress, ShopperOrder } from '@nymbalhq/types'
 import { client } from '../lib/client.js'
 import { isPaid, orderHeading } from '../lib/order-status.js'

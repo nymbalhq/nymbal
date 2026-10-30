@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/cart'
 import type { NymbalClient } from '@nymbalhq/sdk'
 import type { CartItem } from '@nymbalhq/types'
 import { parsedJson } from './base-element.js'

@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/product-list'
 import { css, html, nothing } from 'lit'
 import {
   baseStyles,

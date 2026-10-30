@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/search'
 import { css, html, nothing } from 'lit'
 import type { SearchState } from '@nymbalhq/sdk'
 import {

@@ -4,7 +4,7 @@ import {
   type PaymentConfirmContext,
   type PaymentConfirmation,
   type PaymentDriver,
-} from '@nymbalhq/sdk'
+} from '@nymbalhq/sdk/core'
 import type { PaymentClient } from '@nymbalhq/types'
 import { css, nothing, type CSSResult } from 'lit'
 import { NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'

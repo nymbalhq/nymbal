@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ProductSortKey } from '@nymbalhq/types'
-import { createNymbalClient } from '../client.js'
+import { createNymbalClient } from '../index.js'
 
 // AC-6: the product list sends the active sort and the active category on every request it makes, however the
 // category was set (Astro's `applyFilter`, Next's `load({ category })`), and `loadMore` keeps both next to its cursor.
