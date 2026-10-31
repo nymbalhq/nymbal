@@ -55,11 +55,17 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  gate:
-    name: Gate — lint, typecheck, tests, census trend
+  # The tests step split over shards that run side by side, each file in one shard; the lightest shard runs the
+  # static steps too, which adds no job to the org's concurrent-job cap.
+  gate-tests:
+    name: Gate — tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -73,8 +79,21 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      - name: Gate
-        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --harness all --no-build --base "$GATE_BASE"
+      - name: Gate — lint, typecheck, census trend
+        if: matrix.shard == 1
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,census trend" --harness all --no-build --base "$GATE_BASE"
+      - name: Gate — tests
+        # A red static step in shard 1 still leaves that shard's test verdict.
+        if: ${{ !cancelled() }}
+        run: pnpm exec tsx scripts/gate.ts --full --only tests --harness all --no-build --shard ${{ matrix.shard }}/3 --base "$GATE_BASE"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vitest-shard-${{ matrix.shard }}
+          path: reports/vitest.json
+          overwrite: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   perf-budgets:
     name: Performance budgets — both templates, five pages

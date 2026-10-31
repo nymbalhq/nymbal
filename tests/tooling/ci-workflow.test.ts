@@ -274,7 +274,7 @@ const RUNS_TESTS =
 
 /** The CI jobs that must use the build artefact (besides build itself). */
 const SPEC_JOBS = [
-  'gate',
+  'gate-tests',
   'integration',
   'mutation',
   'sentinels',
@@ -470,6 +470,8 @@ function evaluate(source: string, ctx: Ctx): unknown {
   const equal = (a: unknown, b: unknown): boolean => {
     if ((a ?? null) === null || (b ?? null) === null) return (a ?? null) === (b ?? null)
     if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase() === b.toLowerCase()
+    // GitHub coerces mismatched types to numbers: `matrix.shard == 1` holds for the matrix value 1.
+    if (typeof a === 'number' || typeof b === 'number') return Number(a) === Number(b)
     return a === b
   }
   const call = (name: string, args: unknown[]): unknown => {
@@ -1945,6 +1947,190 @@ describe('dev CI runs the harness projects whatever changed', () => {
       }).steps.find((s) => s.name === 'tests')
       expect(leftOut(tests?.command ?? '', HARNESS_PROJECTS)).toEqual([])
     }
+  })
+})
+
+// The gate's tests step split over a matrix of shards: every shard runs the same tests call but for its `--shard`,
+// and shard 1 alone runs lint, typecheck and census trend besides, so each step runs once per push and every test
+// file in one shard.
+const SHARDED_JOB = 'gate-tests'
+
+type ShardCall = { shard: string; args: string[] }
+
+/** The gate.ts calls each combination of a job runs on an event, by the combination's `shard`. */
+function shardCalls(workflow: Workflow, github: Ctx, id: string): ShardCall[] {
+  return execute(workflow, github)
+    .filter((run) => run.job === id)
+    .flatMap((run) =>
+      [...run.script.matchAll(/scripts\/gate\.ts([^\n;&|]*)/g)].map((m) => ({
+        shard: run.matrix.shard ?? '',
+        args: words(m[1] ?? '').map((w) => expand(w, run, m.index)),
+      })),
+    )
+}
+
+const onlyOf = (args: string[]): string[] =>
+  (flag(args, '--only') ?? '')
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean)
+
+/** A call's `--shard` values, in either form, and its other arguments. */
+function shardFlags(args: string[]): { values: string[]; rest: string[] } {
+  const values: string[] = []
+  const rest: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!
+    if (arg === '--shard') {
+      values.push(args[i + 1] ?? '')
+      i += 1
+    } else if (arg.startsWith('--shard=')) values.push(arg.slice('--shard='.length))
+    else rest.push(arg)
+  }
+  return { values, rest }
+}
+
+/** The steps one combination of a job runs on an event: its `if` honoured, `with` values substituted. */
+function stepsRun(
+  workflow: Workflow,
+  github: Ctx,
+  id: string,
+  matrix: Record<string, string>,
+): Step[] {
+  const job = workflow.jobs[id] ?? {}
+  const base: Ctx = {
+    github,
+    matrix,
+    inputs: {},
+    vars: {},
+    secrets: {},
+    runner: { os: 'Linux' },
+    steps: {},
+  }
+  const wfEnv = layer(workflow.env, { ...base, env: {} })
+  const env = { ...wfEnv, ...layer(job.env, { ...base, env: wfEnv }) }
+  return (job.steps ?? [])
+    .filter((step) =>
+      holds(step.if, { ...base, env: { ...env, ...layer(step.env, { ...base, env }) } }),
+    )
+    .map((step) =>
+      step.with === undefined
+        ? step
+        : {
+            ...step,
+            with: Object.fromEntries(
+              Object.entries(step.with).map(([k, v]) => [k, substitute(text(v), { ...base, env })]),
+            ),
+          },
+    )
+}
+
+const bareCondition = (condition: string | undefined): string =>
+  (condition ?? '').replace(/^\s*\$\{\{\s*|\s*\}\}\s*$/g, '').trim()
+
+describe('AC-3: the workflow splits the Gate job without dropping a step', () => {
+  it('AC-3: on a push to dev, gate-tests runs shards 1..N, each the same tests call but for --shard=i/N, and shard 1 alone runs lint, typecheck and census trend', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    expect(Object.keys(ci.jobs), 'the single Gate job is gone').not.toContain('gate')
+    const matrix = ci.jobs[SHARDED_JOB]?.strategy?.matrix?.['shard']
+    const count = Array.isArray(matrix) ? matrix.length : 0
+    const shards =
+      ci.jobs[SHARDED_JOB] === undefined
+        ? []
+        : combinations(ci.jobs[SHARDED_JOB]).map((c) => c.shard ?? '')
+    expect(
+      shards.map(Number).sort((a, b) => a - b),
+      'each shard index 1..N once, N the matrix length',
+    ).toEqual(Array.from({ length: count }, (_, i) => i + 1))
+    expect(count, 'a split runs more than one shard').toBeGreaterThan(1)
+
+    const calls = shardCalls(ci, DEV_PUSH, SHARDED_JOB)
+    const testCalls = calls.filter((c) => onlyOf(c.args).includes('tests'))
+    expect(
+      testCalls.map((c) => `${c.shard}: --shard ${shardFlags(c.args).values.join(' ')}`).sort(),
+      'one tests call per shard, carrying its own i/N once',
+    ).toEqual(shards.map((s) => `${s}: --shard ${s}/${count}`).sort())
+    const rests = testCalls.map((c) => shardFlags(c.args).rest)
+    expect(rests, 'the shard calls differ in --shard alone').toEqual(rests.map(() => rests[0]))
+    const rest = rests[0] ?? []
+    expect({
+      full: rest.includes('--full'),
+      only: flag(rest, '--only'),
+      harness: flag(rest, '--harness'),
+      noBuild: rest.includes('--no-build'),
+      base: flag(rest, '--base'),
+    }).toEqual({
+      full: true,
+      only: 'tests',
+      harness: 'all',
+      noBuild: true,
+      base: DEV_PUSH.event.before,
+    })
+
+    expect(
+      calls
+        .filter((c) => !onlyOf(c.args).includes('tests'))
+        .map((c) => `shard ${c.shard}: ${onlyOf(c.args).sort().join(',')}`),
+      'the lint, typecheck and census trend call runs in shard 1 alone',
+    ).toEqual(['shard 1: census trend,lint,typecheck'])
+    const runsPerStep: Record<string, number> = {}
+    for (const c of calls)
+      for (const step of onlyOf(c.args)) runsPerStep[step] = (runsPerStep[step] ?? 0) + 1
+    expect(runsPerStep, 'each step once per push, tests once per shard').toEqual({
+      lint: 1,
+      typecheck: 1,
+      'census trend': 1,
+      tests: count,
+    })
+  })
+})
+
+describe('AC-4: each shard uses the build artefact and full history', () => {
+  it('AC-4: every gate-tests combination needs build, downloads build-output before its first gate.ts call, checks out with fetch-depth 0, and uploads reports/vitest.json as vitest-shard-<i> always, overwriting; the job keeps a timeout of at most 15 minutes and does not fail fast', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    expect(Object.keys(ci.jobs)).toContain(SHARDED_JOB)
+    const job = ci.jobs[SHARDED_JOB]!
+    const built = artefactName(uploadsOf(ci.jobs.build ?? {})[0] ?? {})
+    const shards = combinations(job).map((c) => c.shard ?? '')
+    const rows = shards.map((shard) => {
+      const steps = stepsRun(ci, DEV_PUSH, SHARDED_JOB, { shard })
+      const download = steps.findIndex(
+        (s) => s.uses?.startsWith('actions/download-artifact@') && s.with?.name === built,
+      )
+      const firstGate = steps.findIndex((s) => /scripts\/gate\.ts/.test(s.run ?? ''))
+      const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'))
+      const reports = steps.filter(
+        (s) =>
+          s.uses?.startsWith('actions/upload-artifact@') &&
+          (s.with?.path ?? '')
+            .split('\n')
+            .map((p) => p.trim())
+            .includes('reports/vitest.json'),
+      )
+      return {
+        shard,
+        needsBuild: needsOf(job).includes('build'),
+        downloadsBeforeGate: download !== -1 && firstGate !== -1 && download < firstGate,
+        fetchDepth: text(checkout?.with?.['fetch-depth']),
+        reports: reports.map((s) => ({
+          name: s.with?.name,
+          if: bareCondition(s.if),
+          overwrite: text(s.with?.['overwrite']),
+        })),
+      }
+    })
+    expect(rows).toEqual(
+      shards.map((shard) => ({
+        shard,
+        needsBuild: true,
+        downloadsBeforeGate: true,
+        fetchDepth: '0',
+        reports: [{ name: `vitest-shard-${shard}`, if: 'always()', overwrite: 'true' }],
+      })),
+    )
+    const timeout = Number(text((job as { 'timeout-minutes'?: Yaml })['timeout-minutes']))
+    expect(timeout).toBeLessThanOrEqual(15)
+    expect(text((job.strategy as Record<string, Yaml> | undefined)?.['fail-fast'])).toBe('false')
   })
 })
 

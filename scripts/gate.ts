@@ -1146,6 +1146,30 @@ export type PlanInput = {
   buildStale?: boolean | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
   rerun?: { tests: RedTest[] } | undefined
+  /** `--shard <i>/<n>`: the tests step runs Vitest's shard i of n, when it runs every test. */
+  shard?: Shard | undefined
+}
+
+/** One of n slices of the tests step, as Vitest cuts them (`--shard=<i>/<n>`). */
+export type Shard = { index: number; count: number }
+
+function shardRefusal(value: string): Error {
+  return new Error(`--shard takes <i>/<n> with integers 1 ≤ i ≤ n: got "${value}"`)
+}
+
+/** The shard a `--shard` value names; anything but integers 1 ≤ i ≤ n is refused. */
+function parseShard(value: string): Shard {
+  const match = /^(\d+)\/(\d+)$/.exec(value)
+  if (match === null) throw shardRefusal(value)
+  return checkedShard({ index: Number(match[1]), count: Number(match[2]) })
+}
+
+function checkedShard(shard: Shard): Shard {
+  const { index, count } = shard
+  if (!Number.isInteger(index) || !Number.isInteger(count) || index < 1 || index > count) {
+    throw shardRefusal(`${index}/${count}`)
+  }
+  return shard
 }
 
 /** A Vitest test by file (from the root) and full name (describe titles and its own, joined by spaces). */
@@ -1314,6 +1338,7 @@ function select(steps: StepSpec[], input: PlanInput): StepSpec[] {
 
 export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } {
   const { full, base, changed, mutated } = input
+  const shard = input.shard === undefined ? undefined : checkedShard(input.shard)
   const remeasured = input.remeasured ?? []
   const prune =
     remeasured.length === 0
@@ -1359,6 +1384,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  // CI splits a run of every test over a matrix of jobs; the changed and rerun selections are local and run whole.
+  const shardPart =
+    shard === undefined || input.rerun !== undefined
+      ? ''
+      : ` --shard=${shard.index}/${shard.count}`
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
@@ -1418,7 +1448,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
             }
           : {
               name: 'tests',
-              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
+              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
               ...buildNeeds,
             }
   const steps: StepSpec[] = [
@@ -1960,6 +1990,7 @@ async function main(argv: string[]): Promise<number> {
       check: { type: 'boolean', default: false },
       stores: { type: 'string' },
       'rerun-red': { type: 'boolean', default: false },
+      shard: { type: 'string' },
     },
   })
   const root = repoRoot()
@@ -2063,6 +2094,7 @@ async function main(argv: string[]): Promise<number> {
   const rerun = values['rerun-red']
   if (rerun && only !== undefined)
     throw new Error('--rerun-red runs what was red; it takes no --only')
+  const shard = values.shard === undefined ? undefined : parseShard(values.shard)
   const inUse = checkoutInUse(root)
   if (inUse !== undefined) {
     process.stderr.write(
@@ -2118,12 +2150,19 @@ async function main(argv: string[]): Promise<number> {
     inputReaders,
     relatedPaths,
     buildStale,
+    ...(shard === undefined ? {} : { shard }),
     ...(last === undefined
       ? {}
       : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
   })
   const { budgetMs } = planned
   const steps = last === undefined ? planned.steps : redSteps(planned.steps, last)
+  const testsStep = steps.find((step) => step.name === 'tests')
+  if (shard !== undefined && testsStep !== undefined && !testsStep.command.includes(' --shard=')) {
+    process.stderr.write(
+      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not ${rerun ? '--rerun-red' : 'the changed tests'}\n`,
+    )
+  }
   if (values.full && only === undefined && last === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
