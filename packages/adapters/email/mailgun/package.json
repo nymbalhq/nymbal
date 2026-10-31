@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/email-mailgun",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Mailgun email for Nymbal: the `mailgun` email provider (SMTP relay, bounce and complaint webhooks)",
   "license": "MIT",
   "repository": {

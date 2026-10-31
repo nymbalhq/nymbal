@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/document-store-postgres-jsonb",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "The Postgres JSONB document store for Nymbal: `infrastructure.documentStore: { provider: 'postgres-jsonb' }`",
   "license": "MIT",
   "repository": {

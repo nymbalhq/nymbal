@@ -1,5 +1,22 @@
 # @nymbalhq/react
 
+## 1.5.0
+
+### Patch Changes
+
+- d0b44ed: Storefront client bundles are about 30 bytes smaller (the document-order collator is made on first use), and the
+  web components and React wrappers build to the same bytes every time.
+- Updated dependencies [f05e635]
+- Updated dependencies [0b51500]
+- Updated dependencies [965b85a]
+- Updated dependencies [c778b26]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+- Updated dependencies [439c2aa]
+  - @nymbalhq/types@1.5.0
+  - @nymbalhq/sdk@1.5.0
+  - @nymbalhq/web-components@1.5.0
+
 ## 1.4.0
 
 ### Minor Changes

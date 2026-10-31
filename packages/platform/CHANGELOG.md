@@ -1,5 +1,79 @@
 # @nymbalhq/platform
 
+## 1.5.0
+
+### Minor Changes
+
+- 6c85536: Adapters are named by slot: `@nymbalhq/payments-stripe` (renamed from `@nymbalhq/adapter-stripe`), `@nymbalhq/email-smtp`
+  (from `@nymbalhq/adapter-smtp`), `@nymbalhq/ai-anthropic` (from `@nymbalhq/adapter-anthropic`), `@nymbalhq/document-store-redis`
+  (from `@nymbalhq/doc-store-redis`) and `@nymbalhq/document-store-postgres-jsonb` (from `@nymbalhq/doc-store-postgres-jsonb`).
+  Breaking: replace each old name with its new one in your store's `package.json`; the old names are not loaded.
+- f05e635: Any provider name loads `@nymbalhq/<slot>-<provider>`, or the package its block names with `package:` (`security`
+  too), so a third-party adapter needs no Nymbal release; a mistyped provider gets "did you mean", not an install line.
+  Breaking: write `documentStore: { provider: 'redis' }` for `documentStore: 'redis'`, and the same for `eventBus` and
+  `media`.
+  Breaking: `@nymbalhq/config` `KNOWN_INFRASTRUCTURE` is now `ADAPTER_CATALOGUE` and `COMMAND_STORES`; `@nymbalhq/platform`
+  `PROVIDER_PACKAGES` and `importProviderPackage` are now `resolveChoice` and `importAdapterModule`; error code
+  `config.security_adapter_unknown` is now `adapter.provider_unknown`.
+- d2513b9: Adapters now version on their own and peer `@nymbalhq/types`; install an adapter by name, with no version to match.
+- 0b51500: A subscribe for a stock or price alert that is already active is logged as `alert.repeated.v1`; nothing is sent.
+- bb453b8: New `algolia` search provider (`@nymbalhq/search-algolia`, `nymbal add algolia`), matching as native search does. Fill
+  it once with `nymbal replay --to search`. A restart no longer rebuilds a search index that lives in a package.
+- 5db4e1b: `nymbal build --image` builds your store into one container image; `nymbal start` runs it in production on one port
+  (`PORT`, with `NYMBAL_PUBLIC_URL` set), answers `/ready` and drains on SIGTERM; `nymbal deploy fly|railway --dry-run`
+  writes `fly.toml` or `railway.json` and prints the deploy steps. New Astro stores read `NYMBAL_API_URL` at run time.
+- 39c852e: Commands print slots in kebab case (`document-store`, `event-bus`): doctor's checks, `nymbal dev` and `config:validate`; `test:contracts --slot` accepts either spelling.
+  Breaking: a script reading `nymbal doctor --json` matches `primitive document-store` and `primitive event-bus` (and the same for `package`) now, in place of the camelCase names; `config:validate`'s summary says `command store:` in place of `commandStore:`.
+- 59e1639: New `easypost` shipping provider (`@nymbalhq/shipping-easypost`): set `shipping.provider: 'easypost'`, and its tracker
+  webhooks (`/api/webhooks/easypost`) mark a shipped order delivered.
+- 965b85a: Email adapters can report bounces and complaints from `receiveWebhook` as `<provider>.bounced.v1` and
+  `<provider>.complained.v1`; a hard bounce or a complaint stops alert mail to that address. Webhooks may be
+  form-encoded or plain text. `runEmailFeedbackContract` certifies an email adapter's bounces and complaints.
+- ca1a5f6: A new store runs in production with no config edit: `NYMBAL_JWT_SECRET` (written into `.env` by `create-nymbal-app`,
+  set as a platform secret by `nymbal deploy`) signs tokens when the config names no `security.auth.jwtSecret`.
+  `http.trustProxy` takes a hop count, and `NYMBAL_TRUST_PROXY_HOPS` sets it at run time (the deploy recipes set 1), so
+  rate limits key on the shopper behind the platform's proxy, not on the proxy or a forged `X-Forwarded-For`.
+  Breaking: `registerAllRoutes` needs `jwtSecret` (`resolveAuthSecret(config, process.env).secret`).
+- 95dad2e: New `mailgun` email provider (`@nymbalhq/email-mailgun`): it sends over Mailgun's SMTP relay, and its bounce and
+  complaint webhooks stop alert mail to bad addresses. Set Mailgun's webhook URL to `/api/webhooks/mailgun`.
+- c778b26: Order links now expire (48 hours from checkout, 30 days from the email). After that the shopper enters their email,
+  or asks for a new link. Signed-in shoppers go to their account's order page.
+
+  Breaking: an order read with its key no longer returns `billingAddress`, phones or `customerId`, and `ShopperOrder`
+  makes every field the confirmation page does not show optional.
+
+- 0b51500: A delivery that fails while the event bus, document store or a commerce adapter reports itself down no longer uses
+  up the event's retries: it is tried again at a steady pace and sent once the adapter is back. Each such pass logs one
+  `outage:` warning naming what is down.
+- a67f867: New `resend` email provider (`@nymbalhq/email-resend`): it sends over Resend's SMTP relay, and its bounce and
+  complaint webhooks stop alert mail to bad addresses. Set Resend's webhook URL to `/api/webhooks/resend`.
+- ab6c631: New `ses` email provider (`@nymbalhq/email-ses`): it sends over Amazon SES SMTP, and its SNS bounce and complaint
+  notifications stop alert mail to bad addresses. Subscribe the SNS topic to `/api/webhooks/ses` over HTTPS.
+- d9c8c5a: Shipping adapters can report tracking updates from `receiveWebhook` as `<provider>.tracking.v1`; a delivered update
+  marks the shipped order delivered. `runShippingTrackingContract` certifies a shipping adapter's tracking updates.
+  Breaking for a kernel composed by hand: `registerHandlers` takes `orders` (the order service).
+
+### Patch Changes
+
+- eed87ad: Concurrent first checkouts on a new Postgres store no longer fail with a duplicate key error on the order number.
+- 733d4b1: A store whose adapter loads its own copy of `@nymbalhq/types` now fails to start, naming both copies, instead of
+  mishandling that adapter's errors.
+- 86724f2: `nymbal replay` no longer hides products and other changes made while it rebuilds: each read model is caught up before it is swapped in.
+- Updated dependencies [f05e635]
+- Updated dependencies [0b51500]
+- Updated dependencies [bb453b8]
+- Updated dependencies [59e1639]
+- Updated dependencies [965b85a]
+- Updated dependencies [ca1a5f6]
+- Updated dependencies [95dad2e]
+- Updated dependencies [c778b26]
+- Updated dependencies [a67f867]
+- Updated dependencies [ab6c631]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+  - @nymbalhq/config@1.5.0
+  - @nymbalhq/types@1.5.0
+
 ## 1.4.0
 
 ### Minor Changes

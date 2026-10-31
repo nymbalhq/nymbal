@@ -1,5 +1,29 @@
 # create-nymbal-app
 
+## 0.7.0
+
+### Minor Changes
+
+- 5db4e1b: `nymbal build --image` builds your store into one container image; `nymbal start` runs it in production on one port
+  (`PORT`, with `NYMBAL_PUBLIC_URL` set), answers `/ready` and drains on SIGTERM; `nymbal deploy fly|railway --dry-run`
+  writes `fly.toml` or `railway.json` and prints the deploy steps. New Astro stores read `NYMBAL_API_URL` at run time.
+- ca1a5f6: A new store runs in production with no config edit: `NYMBAL_JWT_SECRET` (written into `.env` by `create-nymbal-app`,
+  set as a platform secret by `nymbal deploy`) signs tokens when the config names no `security.auth.jwtSecret`.
+  `http.trustProxy` takes a hop count, and `NYMBAL_TRUST_PROXY_HOPS` sets it at run time (the deploy recipes set 1), so
+  rate limits key on the shopper behind the platform's proxy, not on the proxy or a forged `X-Forwarded-For`.
+  Breaking: `registerAllRoutes` needs `jwtSecret` (`resolveAuthSecret(config, process.env).secret`).
+- c778b26: Order links now expire (48 hours from checkout, 30 days from the email). After that the shopper enters their email,
+  or asks for a new link. Signed-in shoppers go to their account's order page.
+
+  Breaking: an order read with its key no longer returns `billingAddress`, phones or `customerId`, and `ShopperOrder`
+  makes every field the confirmation page does not show optional.
+
+### Patch Changes
+
+- 439c2aa: The storefront client can be built from `@nymbalhq/sdk/core` plus the `@nymbalhq/sdk/ns/*` namespaces a page uses; the
+  Astro template does so. A store's own element that reads `client.cart`, `client.checkout` or another store namespace
+  imports its `@nymbalhq/sdk/ns/<name>` module.
+
 ## 0.6.0
 
 ### Minor Changes

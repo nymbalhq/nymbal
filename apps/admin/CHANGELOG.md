@@ -1,5 +1,11 @@
 # @nymbalhq/admin
 
+## 1.5.0
+
+### Patch Changes
+
+- 0b51500: The customer Notes panel shows saved notes, and a double-clicked note is saved once.
+
 ## 1.4.0
 
 ### Minor Changes

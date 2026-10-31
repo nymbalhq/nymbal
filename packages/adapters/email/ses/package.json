@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/email-ses",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Amazon SES email for Nymbal: the `ses` email provider (SES SMTP, SNS bounce and complaint notifications)",
   "license": "MIT",
   "repository": {

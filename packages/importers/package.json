@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/importers",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Source migration importers for Nymbal (WooCommerce, etc.)",
   "license": "MIT",
   "repository": {

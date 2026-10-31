@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/document-store-redis",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "The Redis document store for Nymbal: `infrastructure.documentStore: { provider: 'redis' }`",
   "license": "MIT",
   "repository": {
