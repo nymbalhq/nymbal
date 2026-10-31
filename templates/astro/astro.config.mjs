@@ -31,6 +31,9 @@ export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   server: { port },
+  // `nymbal start` forwards pages with the store's public origin in Host and X-Forwarded-*, so Astro.url is that
+  // origin. Only the forward reaches the server it starts, on 127.0.0.1.
+  security: { allowedDomains: [{}] },
   // The page's CSS travels in its HTML, so the first paint waits on no stylesheet request (perf-budgets.json: LCP).
   build: { inlineStylesheets: 'always' },
   vite: { plugins: elementsEntryPath ? [elementsEntry(elementsEntryPath)] : [] },

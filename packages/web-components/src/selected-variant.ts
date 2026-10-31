@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/product'
 import type { DenormalisedProduct, DenormalisedVariant } from '@nymbalhq/sdk'
 import { NymbalElement } from './base-element.js'
 

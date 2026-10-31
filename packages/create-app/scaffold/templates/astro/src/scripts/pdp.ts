@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/product'
 import { NymbalAddToCart } from '@nymbalhq/web-components/elements/nymbal-add-to-cart'
 import { NymbalBreadcrumb } from '@nymbalhq/web-components/elements/nymbal-breadcrumb'
 import { NymbalImageGallery } from '@nymbalhq/web-components/elements/nymbal-image-gallery'

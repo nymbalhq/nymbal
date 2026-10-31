@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/auth'
 import { css, html, nothing } from 'lit'
 import type { Customer } from '@nymbalhq/types'
 import { baseStyles, parsedJson, propertiesOf, type ElementSchema } from '../base-element.js'

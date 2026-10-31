@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest'
 // AC-11: E2E and scaffold tests reach the store through its own surface. The repository's eslint.config.js reports,
 // as errors, an import of `finaliseStubPayment` or `stubPaymentWebhook` from @nymbalhq/proof-kit
 // (no-restricted-imports) and a string or template literal holding `/api/webhooks/` (no-restricted-syntax) in
-// tests/e2e/** and tests/scaffold/**, and neither in the kernel's tests or the contract suites, which drive the hook
-// on purpose. The fixture is linted at virtual paths, as test-lint-rules.test.ts does; lines marked `lint: <rule>`
+// tests/e2e/**, tests/scaffold/** and tests/scaffold-image/**, and neither in the kernel's tests or the contract
+// suites, which drive the hook on purpose. The fixture is linted at virtual paths, as test-lint-rules.test.ts does; lines marked `lint: <rule>`
 // are where each rule must report, and only there.
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -22,6 +22,7 @@ const BANNED = [
   'tests/e2e/journeys/admin/__lint-fixture__.spec.ts',
   'tests/e2e/support/__lint-fixture__.ts',
   'tests/scaffold/__lint-fixture__.test.ts',
+  'tests/scaffold-image/__lint-fixture__.test.ts',
 ]
 const ALLOWED = [
   'packages/platform/tests/integration/__lint-fixture__.test.ts',

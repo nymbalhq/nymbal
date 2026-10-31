@@ -137,8 +137,9 @@ export type Slot = CommerceSlot | 'documentStore' | 'eventBus' | 'media' | 'secu
 
 /**
  * What the kernel hands an adapter package's `createAdapter`. A package that serves more than one slot switches on
- * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, a primitive's connection block, or for
- * `security` the block named after the adapter (`security.cloudflare`).
+ * `slot`; `config` is a commerce slot's `config` block from nymbal.config.ts, a primitive's connection block (or a
+ * third-party primitive's `config`), or for `security` the block named after the adapter (`security.cloudflare`) or a
+ * third-party adapter's `security.config`.
  */
 export interface AdapterContext {
   slot: Slot
@@ -166,8 +167,23 @@ export interface AdapterSetting {
   optional?: boolean
 }
 
-/** What a provider package exports: `createAdapter`, and the fields it lets Settings fill. */
+/**
+ * What a provider package exports: `createAdapter`, the slot and provider it serves (checked when it is loaded), and
+ * the fields it lets Settings fill.
+ */
 export interface ProviderPackageModule {
   createAdapter(ctx: AdapterContext): unknown
+  slot: Slot
+  provider: string
   settings?: readonly AdapterSetting[]
+}
+
+/**
+ * How `nymbal.config.ts` names an infrastructure slot's adapter (`documentStore`, `eventBus`, `media`): the provider,
+ * the npm package it comes from when not `@nymbalhq/<slot>-<provider>`, and a third-party adapter's `ctx.config`.
+ */
+export interface InfrastructureBlock {
+  provider: string
+  package?: string
+  config?: Record<string, unknown>
 }

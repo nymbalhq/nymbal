@@ -36,6 +36,7 @@ const { title } = Astro.props
 </BaseLayout>
 
 <script>
+  import '@nymbalhq/sdk/ns/auth'
   import { client } from '../lib/client.js'
 
   async function guardAuth() {

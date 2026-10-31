@@ -60,6 +60,8 @@ export interface EventLogRepository extends StoreRepository {
    * given, is the earliest the next attempt may be made.
    */
   recordFailure(tx: Tx, id: string, at: Date, maxAttempts: number, retryAt?: Date): Promise<void>
+  /** A delivery that failed during an adapter outage: only the earliest next attempt moves, nothing is counted. */
+  recordOutage(tx: Tx, id: string, retryAt: Date): Promise<void>
   countDead(tx: ReadTx): Promise<number>
   /** Dead events, oldest first. */
   listDead(tx: ReadTx, limit: number): Promise<LoggedEvent[]>
@@ -310,6 +312,13 @@ export function createEventLogRepository(store: CommandStore): EventLogRepositor
           ...(retryAt !== undefined && { retryAt }),
         })
         .where(eq(p.id, id))
+    },
+    async recordOutage(tx, id, retryAt) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).update(s).set({ retryAt: retryAt.toISOString() }).where(eq(s.id, id)).run()
+        return
+      }
+      await postgresDb(tx).update(p).set({ retryAt }).where(eq(p.id, id))
     },
     async countDead(tx) {
       if (tx.kind === 'sqlite') {

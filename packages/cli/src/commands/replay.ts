@@ -92,11 +92,11 @@ export const replayCommand = defineCommand({
       const names = modelsOf(args.to)
       const { config, adapters } = await loadProject()
       const shared = names.filter((n) => n !== 'search')
-      if (config.infrastructure.documentStore === 'in-memory' && shared.length > 0) {
+      if (config.infrastructure.documentStore.provider === 'in-memory' && shared.length > 0) {
         throw new ReplayError(
           `the ${shared.join(', ')} read model${shared.length === 1 ? '' : 's'} live in the server's own process ` +
-            '(documentStore: in-memory), out of reach of this one; a restart of the server rebuilds them. ' +
-            'With documentStore redis or postgres-jsonb the read models are shared, and replay rebuilds them in ' +
+            "(infrastructure.documentStore 'in-memory'), out of reach of this one; a restart of the server rebuilds them. " +
+            'With infrastructure.documentStore redis or postgres-jsonb the read models are shared, and replay rebuilds them in ' +
             'place. --to search works here: the native index lives in the command store.',
         )
       }

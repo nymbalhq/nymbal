@@ -43,11 +43,12 @@ export const REPO = fileURLToPath(new URL('../../../../../', import.meta.url))
 
 /** The recipes and the package that ships each one. */
 export const SPEC_HOLDERS: Readonly<Record<string, string>> = {
+  algolia: '@nymbalhq/search-algolia',
   cloudflare: '@nymbalhq/security-cloudflare',
   postgres: '@nymbalhq/platform',
-  redis: '@nymbalhq/doc-store-redis',
+  redis: '@nymbalhq/document-store-redis',
   s3: '@nymbalhq/media-s3',
-  stripe: '@nymbalhq/adapter-stripe',
+  stripe: '@nymbalhq/payments-stripe',
 }
 export const RECIPE_NAMES = Object.keys(SPEC_HOLDERS).sort()
 
@@ -56,18 +57,21 @@ const NYMBAL_PACKAGES: Readonly<Record<string, string>> = {
   '@nymbalhq/config': 'packages/config',
   '@nymbalhq/types': 'packages/types',
   '@nymbalhq/platform': 'packages/platform',
-  '@nymbalhq/doc-store-redis': 'packages/doc-store-redis',
-  '@nymbalhq/event-bus-redis-streams': 'packages/event-bus-redis-streams',
-  '@nymbalhq/media-s3': 'packages/media-s3',
-  '@nymbalhq/adapter-stripe': 'packages/adapter-stripe',
-  '@nymbalhq/security-cloudflare': 'packages/security-cloudflare',
+  '@nymbalhq/document-store-redis': 'packages/adapters/document-store/redis',
+  '@nymbalhq/event-bus-redis-streams': 'packages/adapters/event-bus/redis-streams',
+  '@nymbalhq/media-s3': 'packages/adapters/media/s3',
+  '@nymbalhq/payments-stripe': 'packages/adapters/payments/stripe',
+  '@nymbalhq/security-cloudflare': 'packages/adapters/security/cloudflare',
+  '@nymbalhq/search-algolia': 'packages/adapters/search/algolia',
+  '@nymbalhq/ai-anthropic': 'packages/adapters/ai/anthropic',
 }
 
 /** The SDKs the recipes install, and the workspace package whose node_modules already holds each. */
 const SDK_HOMES: Readonly<Record<string, string>> = {
-  ioredis: 'packages/doc-store-redis',
-  stripe: 'packages/adapter-stripe',
-  '@aws-sdk/client-s3': 'packages/media-s3',
+  ioredis: 'packages/adapters/document-store/redis',
+  stripe: 'packages/adapters/payments/stripe',
+  '@aws-sdk/client-s3': 'packages/adapters/media/s3',
+  '@anthropic-ai/sdk': 'packages/adapters/ai/anthropic',
 }
 
 export function tempDir(label: string): string {

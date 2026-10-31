@@ -4,6 +4,7 @@ import {
   EVT_PRODUCT_UPDATED,
   type EventBusAdapter,
   type EventHandler,
+  type Logger,
   type ProductCreatedV1Payload,
   type ProductDeletedV1Payload,
   type ProductUpdatedV1Payload,
@@ -16,6 +17,7 @@ import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
 export interface SearchHandlerDeps {
   search: SearchAdapter
+  logger: Logger
   repos: Pick<Repositories, 'product' | 'variant' | 'category' | 'productCategory'>
 }
 
@@ -28,11 +30,23 @@ export interface RegisterSearchHandlerDeps extends SearchHandlerDeps {
  * so no processed-event record is kept, and a rebuild refills it.
  */
 export function searchHandler(deps: SearchHandlerDeps): DerivedHandler[] {
-  const { search, repos } = deps
+  const { search, repos, logger } = deps
+
+  // A slot that cannot index (a provider whose key is not set yet) is skipped: failing would kill every product
+  // event, and `nymbal replay --to search` fills the index once it can.
+  const skips = (event: { id: string; type: string }): boolean => {
+    if (search.capabilities().includes('index')) return false
+    logger.debug(
+      { eventId: event.id, type: event.type, provider: search.providerName },
+      'search: the slot cannot index, event skipped',
+    )
+    return true
+  }
 
   const onUpsert: EventHandler<ProductCreatedV1Payload | ProductUpdatedV1Payload> = async (
     event,
   ) => {
+    if (skips(event)) return
     const { id } = event.payload.product
     const snapshot = await repos.product.store.read(async (tx) => {
       const product = await repos.product.findById(tx, id)
@@ -43,6 +57,7 @@ export function searchHandler(deps: SearchHandlerDeps): DerivedHandler[] {
   }
 
   const onDelete: EventHandler<ProductDeletedV1Payload> = async (event) => {
+    if (skips(event)) return
     await search.remove([event.payload.productId])
   }
 

@@ -1,17 +1,13 @@
-import type { HttpAdapter, Customer, Order } from '@nymbalhq/types'
+import { NotFoundError, type HttpAdapter, type Customer, type Order } from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
+import type { CustomerNote, CustomerService } from '../services/customer-service.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
-import { audit } from '../audit/audit.js'
 import { requireRole } from './role-middleware.js'
 import { answerAsOf, answerHistory, atOf } from '../history/http.js'
 import type { HistoryReader, HistorySubject } from '../history/read.js'
 
-export interface NoteEntry {
-  body: string
-  actor: string
-  at: string
-}
+export type NoteEntry = CustomerNote
 
 export interface CustomerStats {
   orderCount: number
@@ -23,6 +19,7 @@ export interface CustomerStats {
 
 export interface RegisterAdminCustomersRoutesDeps {
   order: OrderService
+  customer: CustomerService
   repos: Repositories
   history: HistoryReader
 }
@@ -201,22 +198,12 @@ export function registerAdminCustomersRoutes(
           actor: `admin:${ctx.auth!.userId}`,
           at: new Date().toISOString(),
         }
-        const noted = await store.transaction(async (tx) => {
-          const raw = await repos.customer.findById(tx, id)
-          if (!raw) return false
-          audit.note('customer.addNote', [{ type: 'customer', id }])
-          const existingNotes = (raw.metadata.adminNotes as NoteEntry[] | undefined) ?? []
-          const updatedMeta = {
-            ...raw.metadata,
-            adminNotes: [...existingNotes, newNote],
-          }
-          await repos.customer.update(tx, id, {
-            metadata: updatedMeta,
-            updatedAt: new Date(),
-          })
-          return true
-        })
-        if (!noted) return fail('customers.not_found', `Customer not found: ${id}`, 404)
+        try {
+          await deps.customer.addNote(id, newNote)
+        } catch (err) {
+          if (err instanceof NotFoundError) return notFound(id)()
+          throw err
+        }
         return ok({ note: newNote })
       } catch (err) {
         return renderError(err)

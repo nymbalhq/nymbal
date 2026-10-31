@@ -1,4 +1,10 @@
-import { errorText, type DocumentStoreAdapter, type SearchDocument } from '@nymbalhq/types'
+import {
+  errorText,
+  type DocumentStoreAdapter,
+  type PutOptions,
+  type SearchAdapter,
+  type SearchDocument,
+} from '@nymbalhq/types'
 import { rawClients } from '../db/command-store.js'
 import { nativeIndexDocuments } from '../adapters/search/native-adapter.js'
 import type { KeysetPage } from '../repositories/index.js'
@@ -59,6 +65,8 @@ export interface RebuildReportEntry {
   model: ReadModelName
   /** Each collection swapped in and the documents it was given (the search model's is `index`). */
   collections: Array<{ name: string; documents: number }>
+  /** Logged events applied to the collected contents before the swap. */
+  caughtUpBeforeSwap: number
   /** Logged events re-applied after the swap. */
   caughtUpEvents: number
   /** Catch-up events a handler failed on: the model is swapped all the same. */
@@ -191,6 +199,82 @@ async function swap({ model, writes }: Collected, deps: RebuildDeps): Promise<st
 }
 
 /**
+ * `deps` with the model's own collections (and, for search, the index) read from and written to `writes` instead of
+ * the live stores, so the snapshot can be caught up before it is swapped in. Other collections stay live.
+ */
+function stagedDeps({ model, writes }: Collected, deps: RebuildDeps): RebuildDeps {
+  if (model.target === 'search') return { ...deps, search: stagedSearch(searchOf(deps), writes) }
+  const live = deps.documentStore
+  const documentStore: DocumentStoreAdapter = {
+    capabilities: () => live.capabilities(),
+    async get<T>(collection: string, key: string) {
+      const docs = writes.get(collection)
+      if (docs === undefined) return live.get<T>(collection, key)
+      return (docs.get(key) as T | undefined) ?? null
+    },
+    async put<T>(collection: string, key: string, doc: T, options?: PutOptions) {
+      const docs = writes.get(collection)
+      if (docs === undefined) return live.put(collection, key, doc, options)
+      docs.set(key, doc)
+    },
+    async delete(collection, key) {
+      const docs = writes.get(collection)
+      if (docs === undefined) return live.delete(collection, key)
+      docs.delete(key)
+    },
+    async batchGet<T>(collection: string, keys: string[]) {
+      const docs = writes.get(collection)
+      if (docs === undefined) return live.batchGet<T>(collection, keys)
+      const out = new Map<string, T>()
+      for (const key of keys) if (docs.has(key)) out.set(key, docs.get(key) as T)
+      return out
+    },
+    async batchPut<T>(collection: string, items: Map<string, T>) {
+      const docs = writes.get(collection)
+      if (docs === undefined) return live.batchPut(collection, items)
+      for (const [key, doc] of items) docs.set(key, doc)
+    },
+    query() {
+      throw new Error('a staged read model does not answer queries')
+    },
+    replaceCollection() {
+      throw new Error('a staged read model is not replaced')
+    },
+    close: async () => undefined,
+  }
+  return { ...deps, documentStore }
+}
+
+/** The live search adapter's name and capabilities, with `index` and `remove` kept in the collected index. */
+function stagedSearch(live: SearchAdapter, writes: Collected['writes']): SearchAdapter {
+  const held = writes.get(SEARCH_INDEX)!
+  return {
+    kind: 'search',
+    get providerName() {
+      return live.providerName
+    },
+    capabilities: () => live.capabilities(),
+    producesEvents: [],
+    consumesEvents: [],
+    initialize: async () => undefined,
+    healthCheck: () => live.healthCheck(),
+    async index(docs) {
+      for (const doc of docs) held.set(doc.id, doc)
+      return { indexed: docs.length }
+    },
+    async remove(ids) {
+      for (const id of ids) held.delete(id)
+    },
+    search() {
+      throw new Error('a staged search index does not answer searches')
+    },
+    facet() {
+      throw new Error('a staged search index does not answer facets')
+    },
+  }
+}
+
+/**
  * Re-applies, in seq order, every logged event that is not dead and was delivered at or after `since` or not yet, to
  * the model's handlers, called directly so a failure is collected instead of logged by the bus. The handlers write
  * the state they read at handle time, so an event applied twice changes nothing.
@@ -232,8 +316,9 @@ async function catchUp(
 }
 
 /**
- * Rebuilds `names` from the command store's tables: every model is read first, then each is swapped in (atomically
- * per collection) and caught up with the events delivered since its read began. A rebuilder that throws rejects with
+ * Rebuilds `names` from the command store's tables: every model is read first, then each is caught up in memory with
+ * the events delivered since its read began, swapped in (atomically per collection) and caught up again, for the
+ * events delivered while it was swapped. A rebuilder that throws rejects with
  * a `RebuildError` before anything is swapped. Catch-up failures are in the report.
  */
 export async function rebuild(
@@ -244,16 +329,19 @@ export async function rebuild(
   for (const model of modelsOf(names)) collected.push(await collect(model, deps))
   const report: RebuildReport = []
   for (const c of collected) {
+    const since = new Date(c.startedAt - CATCH_UP_MARGIN_MS)
+    await deps.onPhase?.('collected', c.model.name)
+    // Caught up before the swap, so what was written since the read began is not missing once it is swapped in. The
+    // tail after it starts from the margin again: on Postgres a lower seq can commit after a higher one.
+    const staged = await catchUp(c.model, since, stagedDeps(c, deps), c.logReadThrough)
     const note = await swap(c, deps)
-    const { applied, failures } = await catchUp(
-      c.model,
-      new Date(c.startedAt - CATCH_UP_MARGIN_MS),
-      deps,
-      c.logReadThrough,
-    )
+    await deps.onPhase?.('swapped', c.model.name)
+    // The tail re-applies every event the staged pass saw, so a failure there is retried here and reported once.
+    const { applied, failures } = await catchUp(c.model, since, deps, c.logReadThrough)
     const entry: RebuildReportEntry = {
       model: c.model.name,
       collections: [...c.writes].map(([name, docs]) => ({ name, documents: docs.size })),
+      caughtUpBeforeSwap: staged.applied,
       caughtUpEvents: applied,
       failures,
       ms: Date.now() - c.startedAt,

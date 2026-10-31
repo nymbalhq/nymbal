@@ -1,6 +1,6 @@
 import type { NymbalConfig } from '@nymbalhq/config'
 import { ConfigError, type AdapterSetting, type CommerceSlot, type Logger } from '@nymbalhq/types'
-import { declaredSettings, importProviderPackage } from '../adapters/loader.js'
+import { declaredSettings, importAdapterModule } from '../adapters/resolve.js'
 import { COMMERCE_SLOTS } from '../adapters/registry.js'
 import {
   createCommandStore,
@@ -26,9 +26,10 @@ export async function declaredSlots(
 ): Promise<DeclaredSlot[]> {
   const out: DeclaredSlot[] = []
   for (const slot of COMMERCE_SLOTS) {
-    const provider = config.commerce[slot].provider
+    const block = config.commerce[slot]
+    const provider = block.provider
     if (provider === 'custom') continue
-    const declared = declaredSettings(await importProviderPackage(slot, provider, env))
+    const declared = declaredSettings(await importAdapterModule(slot, block, env))
     if (declared.length > 0) out.push({ slot, provider, declared })
   }
   return out

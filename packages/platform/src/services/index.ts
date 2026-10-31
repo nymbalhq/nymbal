@@ -7,7 +7,7 @@ import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
 import { createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
-import { createAuthService, type AuthService } from './auth-service.js'
+import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
 import { createInventoryService, type InventoryService } from './inventory-service.js'
 import {
@@ -66,10 +66,13 @@ export interface BuildServicesDeps {
   payments: PaymentsAdapter
   searchAdapter: SearchAdapter
   email: EmailAdapter
+  /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
+  jwtSecret: string
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, publisher, logger, payments, searchAdapter, email } = deps
+  const { config, store, repos, publisher, logger, payments, searchAdapter, email, jwtSecret } =
+    deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -101,6 +104,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     inventory,
     payments,
     currency: config.store.currency,
+    keyLifetimeMs: parseDurationToMs(config.commerce.orders.keyLifetime.checkout),
   })
   return {
     product: createProductService({
@@ -125,7 +129,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       repos,
       publisher,
       logger: logger.child({ service: 'auth' }),
-      jwtSecret: config.security.auth.jwtSecret,
+      jwtSecret,
       accessTtl: config.security.auth.accessTtl,
       refreshTtl: config.security.auth.refreshTtl,
     }),

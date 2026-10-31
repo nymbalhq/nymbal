@@ -1,43 +1,46 @@
-// Reads: packages/adapter-*/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
-// Reads: .changeset/config.json
+// Reads: packages/adapters/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
+// Reads: packages/config/src/adapter-names.ts, registry/adapters.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { REPO_ROOT, type Manifest } from './workspace-manifests'
+import { ADAPTER_CATALOGUE, isCommerceSlot } from '../../packages/config/src/adapter-names'
+import { FIRST_PARTY_ADAPTERS, ROOT as REPO_ROOT } from './adapter-table'
+import type { Manifest } from './workspace-manifests'
 
-// AC-6: the kernel's manifest holds no provider SDK and peers the three adapter packages as optional; the stack lists
-// no adapter package; each adapter package peers its own SDK, depends on @nymbalhq/types and never on the kernel, and
-// versions with the fixed group; no kernel source file imports a provider SDK. PUBLISHED_DIRS
-// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the three as well.
+// AC-6: the kernel's manifest holds no commerce provider SDK and links every first-party adapter package for its own
+// tests; the stack lists no adapter package; each adapter package peers the SDK its catalogue entry names (one that
+// talks HTTP itself peers nothing) and @nymbalhq/types, and never names the kernel; no kernel source file imports a
+// commerce provider SDK. The adapters are the first-party ones registry/adapters.json lists; PUBLISHED_DIRS
+// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) read the same list.
 
 interface PackageManifest extends Manifest {
-  peerDependenciesMeta?: Record<string, { optional?: boolean }>
   optionalDependencies?: Record<string, string>
 }
 
-/** Each adapter package, its directory and the SDK range it peers. */
-const ADAPTERS = [
-  {
-    dir: 'packages/adapter-stripe',
-    name: '@nymbalhq/adapter-stripe',
-    sdk: 'stripe',
-    range: '^17.4.0',
-  },
-  {
-    dir: 'packages/adapter-anthropic',
-    name: '@nymbalhq/adapter-anthropic',
-    sdk: '@anthropic-ai/sdk',
-    range: '^0.39.0',
-  },
-  {
-    dir: 'packages/adapter-smtp',
-    name: '@nymbalhq/adapter-smtp',
-    sdk: 'nodemailer',
-    range: '^6.9.16',
-  },
-] as const
+/** Each first-party adapter, with the SDK its catalogue entry says it peers (none for one that talks HTTP itself). */
+const ADAPTERS = FIRST_PARTY_ADAPTERS.map((a) => ({
+  ...a,
+  sdk: (ADAPTER_CATALOGUE[a.slot] as (typeof ADAPTER_CATALOGUE)[typeof a.slot] | undefined)?.[
+    a.provider
+  ]?.sdk,
+}))
 
-const SDKS: readonly string[] = ADAPTERS.map((a) => a.sdk)
+/** The exact SDK range an adapter peers, where it is pinned, by package. */
+const SDK_RANGES: Readonly<Record<string, string>> = {
+  '@nymbalhq/payments-stripe': '^17.4.0',
+  '@nymbalhq/ai-anthropic': '^0.39.0',
+  '@nymbalhq/email-smtp': '^6.9.16',
+  '@nymbalhq/email-mailgun': '^6.9.16',
+  '@nymbalhq/email-resend': '^6.9.16',
+  '@nymbalhq/email-ses': '^6.9.16',
+}
+
+/** The commerce adapters' SDKs, which no kernel or stack install may pull in (the kernel's own Postgres store peers pg). */
+const SDKS: readonly string[] = [
+  ...new Set(
+    ADAPTERS.flatMap((a) => (isCommerceSlot(a.slot) && a.sdk !== undefined ? [a.sdk] : [])),
+  ),
+]
 const ADAPTER_NAMES: readonly string[] = ADAPTERS.map((a) => a.name)
 
 const DEPENDENCY_FIELDS = [
@@ -50,6 +53,11 @@ const DEPENDENCY_FIELDS = [
 function read(dir: string): PackageManifest {
   return JSON.parse(readFileSync(join(REPO_ROOT, dir, 'package.json'), 'utf8')) as PackageManifest
 }
+
+/** A literal caret floor on the workspace types' major (`^M.m.p`), which publishes as written. */
+const TYPES_FLOOR = new RegExp(
+  `^\\^${read('packages/types').version?.split('.')[0] ?? 'none'}\\.\\d+\\.\\d+$`,
+)
 
 /** Every package name a manifest lists, in the fields given. */
 function listed(
@@ -91,47 +99,63 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     expect(listed(platform, ['dependencies', 'optionalDependencies']).filter(isSdk)).toEqual([])
     expect(
       listed(stack, ['dependencies', 'peerDependencies', 'optionalDependencies']).filter(
-        (n) => isSdk(n) || n.startsWith('@nymbalhq/adapter-'),
+        (n) => isSdk(n) || ADAPTER_NAMES.includes(n),
       ),
     ).toEqual([])
   })
 
-  it('AC-6: the kernel peers the three adapter packages, each optional, and links them for the workspace', () => {
+  it('AC-6: the kernel links every first-party adapter package for its own tests, as devDependencies at workspace:*', () => {
     const platform = read('packages/platform')
-    const peers = Object.keys(platform.peerDependencies ?? {})
-    const optional = Object.entries(platform.peerDependenciesMeta ?? {})
-      .filter(([, meta]) => meta.optional === true)
-      .map(([name]) => name)
 
-    expect(ADAPTER_NAMES.filter((n) => !peers.includes(n))).toEqual([])
-    expect(ADAPTER_NAMES.filter((n) => !optional.includes(n))).toEqual([])
     expect(ADAPTER_NAMES.filter((n) => platform.devDependencies?.[n] !== 'workspace:*')).toEqual([])
   })
 
-  for (const adapter of ADAPTERS) {
-    it(`AC-6: ${adapter.name} peers ${adapter.sdk} ${adapter.range}, depends on @nymbalhq/types and not on the kernel`, () => {
+  for (const { sdk, ...adapter } of ADAPTERS.flatMap((a) =>
+    a.sdk === undefined ? [] : [{ ...a, sdk: a.sdk }],
+  )) {
+    it(`AC-6: ${adapter.name} peers ${sdk}, its catalogue SDK, and @nymbalhq/types, and not the kernel`, () => {
       expect(existsSync(join(REPO_ROOT, adapter.dir, 'package.json')), adapter.dir).toBe(true)
       const m = read(adapter.dir)
 
       expect(m.name).toBe(adapter.name)
-      expect(m.peerDependencies?.[adapter.sdk]).toBe(adapter.range)
-      expect(Object.keys(m.dependencies ?? {})).toContain('@nymbalhq/types')
+      expect(
+        Object.keys(m.peerDependencies ?? {}).filter((n) => !n.startsWith('@nymbalhq/')),
+      ).toEqual([sdk])
+      expect(m.peerDependencies?.['@nymbalhq/types']).toMatch(TYPES_FLOOR)
       expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
       // The SDK is the project's to install: a regular dependency would put it in every tree that has the package.
+      expect(
+        listed(m, ['dependencies', 'optionalDependencies']).filter(
+          (n) => n === sdk || n.startsWith(`${sdk}/`) || isSdk(n),
+        ),
+      ).toEqual([])
+    })
+  }
+
+  for (const [name, range] of Object.entries(SDK_RANGES)) {
+    it(`AC-6: ${name} peers its catalogue SDK at ${range}`, () => {
+      const adapter = ADAPTERS.find((a) => a.name === name)
+      const m = adapter === undefined ? undefined : read(adapter.dir)
+
+      expect(adapter?.sdk === undefined ? undefined : m?.peerDependencies?.[adapter.sdk]).toBe(
+        range,
+      )
+    })
+  }
+
+  for (const adapter of ADAPTERS.filter((a) => a.sdk === undefined)) {
+    it(`AC-6: ${adapter.name} peers @nymbalhq/types alone, not the kernel, and lists no provider SDK`, () => {
+      expect(existsSync(join(REPO_ROOT, adapter.dir, 'package.json')), adapter.dir).toBe(true)
+      const m = read(adapter.dir)
+
+      expect(m.name).toBe(adapter.name)
+      expect(m.peerDependencies).toEqual({ '@nymbalhq/types': expect.stringMatching(TYPES_FLOOR) })
+      expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
       expect(listed(m, ['dependencies', 'optionalDependencies']).filter(isSdk)).toEqual([])
     })
   }
 
-  it('AC-6: the three adapter packages version in the fixed group the kernel is in', () => {
-    const changesets = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
-    ) as { fixed: string[][] }
-    const group = changesets.fixed.find((g) => g.includes('@nymbalhq/platform')) ?? []
-
-    expect(ADAPTER_NAMES.filter((n) => group.includes(n)).length).toBe(ADAPTER_NAMES.length)
-  })
-
-  it('AC-6: no file under packages/platform/src imports stripe, @anthropic-ai/sdk or nodemailer', () => {
+  it('AC-6: no file under packages/platform/src imports the SDK of a commerce adapter', () => {
     const root = join(REPO_ROOT, 'packages', 'platform', 'src')
     const files = sourceFiles(root)
     expect(files.length).toBeGreaterThan(0)
@@ -145,25 +169,16 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
   })
 })
 
-// AC-10: @nymbalhq/security-cloudflare publishes as the adapter packages do: in the changesets fixed group at the
-// kernel's version, `dist` and `recipes` in `files` and `./recipes/*` exported, depending on @nymbalhq/types and never
-// on the kernel, with no Cloudflare SDK anywhere (it talks to the API with fetch), and peered by the kernel as
-// optional and linked for the workspace, so the kernel's loader resolves it.
+// AC-10: @nymbalhq/security-cloudflare publishes as the adapter packages do: `dist` and `recipes` in `files` and
+// `./recipes/*` exported, peering @nymbalhq/types and never naming the kernel, with no Cloudflare SDK anywhere (it
+// talks to the API with fetch), and linked by the kernel for its own tests as the adapter packages are.
 
-const SECURITY = { dir: 'packages/security-cloudflare', name: '@nymbalhq/security-cloudflare' }
+const SECURITY = {
+  dir: 'packages/adapters/security/cloudflare',
+  name: '@nymbalhq/security-cloudflare',
+}
 
 describe('AC-10: @nymbalhq/security-cloudflare publishes like the adapter packages', () => {
-  it("AC-10: it is in the fixed group the kernel is in, at the kernel's version", () => {
-    const changesets = JSON.parse(
-      readFileSync(join(REPO_ROOT, '.changeset', 'config.json'), 'utf8'),
-    ) as { fixed: string[][] }
-    const group = changesets.fixed.find((g) => g.includes('@nymbalhq/platform')) ?? []
-
-    expect(group).toContain(SECURITY.name)
-    expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
-    expect(read(SECURITY.dir).version).toBe(read('packages/platform').version)
-  })
-
   it('AC-10: its files hold dist and recipes, and it exports ./recipes/*', () => {
     expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
     const m = read(SECURITY.dir) as PackageManifest & { exports?: Record<string, unknown> }
@@ -176,25 +191,23 @@ describe('AC-10: @nymbalhq/security-cloudflare publishes like the adapter packag
     expect(m.exports?.['./recipes/*']).toBe('./recipes/*')
   })
 
-  it('AC-10: it depends on @nymbalhq/types, never on the kernel, and lists no Cloudflare SDK and no peer', () => {
+  it('AC-10: it peers @nymbalhq/types and nothing else, never names the kernel, and lists no Cloudflare SDK', () => {
     expect(existsSync(join(REPO_ROOT, SECURITY.dir, 'package.json')), SECURITY.dir).toBe(true)
     const m = read(SECURITY.dir)
 
-    expect(Object.keys(m.dependencies ?? {})).toContain('@nymbalhq/types')
+    expect(m.peerDependencies).toEqual({ '@nymbalhq/types': expect.stringMatching(TYPES_FLOOR) })
     expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
     expect(
       listed(m, DEPENDENCY_FIELDS).filter((n) => n === 'cloudflare' || n.startsWith('cloudflare/')),
     ).toEqual([])
-    expect(Object.keys(m.peerDependencies ?? {})).toEqual([])
   })
 
-  it('AC-10: the kernel peers it as optional and links it for the workspace, as it does the adapter packages', () => {
+  it('AC-10: the kernel links it for its own tests as it does the adapter packages', () => {
     const platform = read('packages/platform')
 
-    expect(platform.peerDependencies?.[SECURITY.name]).toBe(
-      platform.peerDependencies?.['@nymbalhq/adapter-stripe'],
+    expect(platform.devDependencies?.[SECURITY.name]).toBe(
+      platform.devDependencies?.['@nymbalhq/payments-stripe'],
     )
-    expect(platform.peerDependenciesMeta?.[SECURITY.name]?.optional).toBe(true)
     expect(platform.devDependencies?.[SECURITY.name]).toBe('workspace:*')
   })
 })

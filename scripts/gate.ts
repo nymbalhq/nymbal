@@ -15,7 +15,7 @@ import { dirname, matchesGlob, relative, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
-import { loadSentinels, type Sentinel, touchedPaths } from './sentinels'
+import { loadSentinels } from './sentinels'
 import {
   acquireExclusive,
   acquireShared,
@@ -39,6 +39,7 @@ import {
   testKeys,
   type Totals,
 } from './test-census'
+import { type Manifest, type WorkspaceMember, workspaceMembers } from './workspace-packages'
 
 // The gate: one command to run before finishing (`pnpm gate`) and one before a pull request (`pnpm gate:full`).
 // Every step is a shell command whose exit code decides its status; the verdict is red if and only if a step is
@@ -110,18 +111,29 @@ export const minioUrl = (port: string = '59000'): string => `http://localhost:${
  * is the default and needs no service.
  */
 export const STORE_SETS = {
-  'sqlite-memory': { commandStore: 'sqlite', documentStore: 'in-memory', eventBus: 'in-process' },
-  'postgres-redis': { commandStore: 'postgres', documentStore: 'redis', eventBus: 'redis-streams' },
+  'sqlite-memory': {
+    commandStore: 'sqlite',
+    documentStore: { provider: 'in-memory' },
+    eventBus: { provider: 'in-process' },
+  },
+  'postgres-redis': {
+    commandStore: 'postgres',
+    documentStore: { provider: 'redis' },
+    eventBus: { provider: 'redis-streams' },
+  },
   'postgres-jsonb': {
     commandStore: 'postgres',
-    documentStore: 'postgres-jsonb',
-    eventBus: 'in-process',
+    documentStore: { provider: 'postgres-jsonb' },
+    eventBus: { provider: 'in-process' },
   },
 } as const
 export type StoreSet = keyof typeof STORE_SETS
 
-function usesRedis(set: { documentStore: string; eventBus: string }): boolean {
-  return set.documentStore === 'redis' || set.eventBus === 'redis-streams'
+function usesRedis(set: {
+  documentStore: { provider: string }
+  eventBus: { provider: string }
+}): boolean {
+  return set.documentStore.provider === 'redis' || set.eventBus.provider === 'redis-streams'
 }
 
 export function storeSet(name: string): StoreSet {
@@ -149,8 +161,8 @@ const INTEGRATION_MUTATION_FILES = new Set([
 function isConfiguration(path: string): boolean {
   return (
     ROOT_CONFIG_FILES.has(path) ||
-    /^(?:packages\/[^/]+\/)?tsconfig[^/]*\.json$/.test(path) ||
-    /^packages\/[^/]+\/package\.json$/.test(path)
+    /^(?:packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/)?tsconfig[^/]*\.json$/.test(path) ||
+    /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/package\.json$/.test(path)
   )
 }
 
@@ -263,9 +275,30 @@ export function selectTests(changed: string[]): {
  */
 export function isBuildInput(path: string): boolean {
   if (TEST_FILE.test(path)) return false
-  return /^packages\/[^/]+\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+  // A package is `packages/<name>` or, by the second workspace glob, `packages/adapters/<slot>/<provider>`.
+  return /^packages\/(?:adapters\/[^/]+\/[^/]+|[^/]+)\/(?:src\/|package\.json$|tsup\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
     path,
   )
+}
+
+/**
+ * The packages under `packages/`, at any depth, with their manifests: the workspace members when `root` is a
+ * workspace, else (a tree with no `pnpm-workspace.yaml`, so no nested glob) each `packages/<name>` on the disk.
+ */
+function packageManifests(root: string): WorkspaceMember[] {
+  if (existsSync(resolve(root, 'pnpm-workspace.yaml'))) {
+    return workspaceMembers(root).filter(({ dir }) => dir.startsWith('packages/'))
+  }
+  const packages = resolve(root, 'packages')
+  if (!existsSync(packages)) return []
+  return readdirSync(packages)
+    .filter((name) => existsSync(resolve(packages, name, 'package.json')))
+    .map((name) => ({
+      dir: `packages/${name}`,
+      manifest: JSON.parse(
+        readFileSync(resolve(packages, name, 'package.json'), 'utf8'),
+      ) as Manifest,
+    }))
 }
 
 /**
@@ -273,19 +306,9 @@ export function isBuildInput(path: string): boolean {
  * The proof kit's tests import these through `dist`, which `vitest --changed` cannot trace back to their source.
  */
 export function workspaceClosure(root: string, start: string): string[] {
-  const packages = resolve(root, 'packages')
   const dirByName = new Map<string, string>()
   const depsByDir = new Map<string, string[]>()
-  for (const name of readdirSync(packages)) {
-    const manifest = resolve(packages, name, 'package.json')
-    if (!existsSync(manifest)) continue
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as {
-      name?: string
-      dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
-      peerDependencies?: Record<string, string>
-    }
-    const dir = `packages/${name}`
+  for (const { dir, manifest: pkg } of packageManifests(root)) {
     if (pkg.name !== undefined) dirByName.set(pkg.name, dir)
     depsByDir.set(dir, [
       ...Object.keys(pkg.dependencies ?? {}),
@@ -305,49 +328,6 @@ export function workspaceClosure(root: string, start: string): string[] {
     }
   }
   return [...seen].sort()
-}
-
-/** Test files a sentinel's `# killed-by` and `# suite:` headers name. */
-const NAMED_TEST_FILE =
-  /\b(?:packages|tests|apps|templates)\/[\w./[\]-]+\.(?:test|spec)\.[cm]?[jt]sx?\b/g
-
-/**
- * A change that can move every sentinel: the runner, or the sentinels themselves. A configuration change does not:
- * dev CI runs every sentinel on every push, so a local gate:full selects by the changed files alone (running all of
- * them for a package.json change cost about half the run).
- */
-function selectsEverySentinel(path: string): boolean {
-  return path === 'scripts/sentinels.ts' || path.startsWith('tests/sentinels/')
-}
-
-/**
- * The sentinels a change can bear on: a changed file is a path the patch touches, a test file its headers name, or
- * inside the workspace closure (`closure(packages/<dir>)`) of a named file's package. Selection only grows with
- * `changed`. Package-level by design: every kernel change selects every kernel sentinel.
- */
-export function selectSentinels(
-  sentinels: Sentinel[],
-  changed: string[],
-  closure: (packageDir: string) => string[],
-): Set<string> {
-  if (changed.some(selectsEverySentinel)) return new Set(sentinels.map((s) => s.id))
-  const selected = new Set<string>()
-  for (const sentinel of sentinels) {
-    const named = [...`${sentinel.killedBy} ${sentinel.suite ?? ''}`.matchAll(NAMED_TEST_FILE)].map(
-      (m) => m[0],
-    )
-    const exact = new Set([...touchedPaths(sentinel.patch), ...named])
-    const dirs = new Set(
-      named.flatMap((path) => {
-        const dir = /^packages\/[^/]+/.exec(path)?.[0]
-        return dir === undefined ? [] : closure(dir)
-      }),
-    )
-    const hit = (path: string): boolean =>
-      exact.has(path) || [...dirs].some((dir) => path.startsWith(`${dir}/`))
-    if (changed.some(hit)) selected.add(sentinel.id)
-  }
-  return selected
 }
 
 /** Rule 2 on the test files a change touches, and the census movement. Old debt in untouched files is ignored. */
@@ -634,7 +614,7 @@ export function resolveBase(
           )
         }
         log(
-          `base: --base ${requested} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+          `base: --base ${requested} and HEAD is a root commit; nothing is narrowed by a diff: every test, a forced Stryker run, no test file judged as changed`,
         )
         return tree
       }
@@ -649,7 +629,7 @@ export function resolveBase(
       return parent
     }
     log(
-      `base: ${why} and HEAD is a root commit; nothing is narrowed by a diff: every test, every sentinel, a forced Stryker run, no test file judged as changed`,
+      `base: ${why} and HEAD is a root commit; nothing is narrowed by a diff: every test, a forced Stryker run, no test file judged as changed`,
     )
     return tree
   }
@@ -1135,17 +1115,17 @@ export type PlanInput = {
   /** `packages/<dir>` of the kernel and what it imports, which the timing-bound tests load; the kernel when not given. */
   perfPackages?: string[] | undefined
   /**
-   * The sentinels gate:full runs: every one, a selection (`selectSentinels`), or `none`, which leaves them to dev CI
-   * and the release run. Every one when not given.
+   * The sentinels gate:full runs: every one, the ids given, or `none` (as is an empty set), which leaves them to dev
+   * CI and the release run. Every one when not given.
    */
   sentinels?: 'all' | 'none' | Set<string> | undefined
   /**
-   * The stryker step: `blocking` fails on a file below its ratchet (CI, and the default when not given), `advisory`
-   * runs it and prints the ratchet's verdict without failing on it, `off` leaves it to dev CI. Locally a run is
-   * `off` unless `--stryker` asks for the advisory run: six fix rounds in seven tasks lifted entries for files the
-   * task never changed (audit 2026-10-25).
+   * The stryker step: `blocking` fails on a file below its ratchet (the default when not given), `off` leaves it to
+   * dev CI. Locally a run is `off` unless `--stryker` asks for it.
    */
-  stryker?: 'off' | 'advisory' | 'blocking' | undefined
+  stryker?: 'off' | 'blocking' | undefined
+  /** gate:full's perf-bytes step: script bytes per page against the budgets, as dev CI's perf job holds them. */
+  perfBytes?: boolean | undefined
   /**
    * The harness's own Vitest projects (`HARNESS_PROJECTS`): `all` runs them whatever changed (dev CI); `changed`,
    * the default, leaves them out when no harness path changed: all of them in the plain gate, the tooling ones in
@@ -1166,6 +1146,30 @@ export type PlanInput = {
   buildStale?: boolean | undefined
   /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
   rerun?: { tests: RedTest[] } | undefined
+  /** `--shard <i>/<n>`: the tests step runs Vitest's shard i of n, when it runs every test. */
+  shard?: Shard | undefined
+}
+
+/** One of n slices of the tests step, as Vitest cuts them (`--shard=<i>/<n>`). */
+export type Shard = { index: number; count: number }
+
+function shardRefusal(value: string): Error {
+  return new Error(`--shard takes <i>/<n> with integers 1 ≤ i ≤ n: got "${value}"`)
+}
+
+/** The shard a `--shard` value names; anything but integers 1 ≤ i ≤ n is refused. */
+function parseShard(value: string): Shard {
+  const match = /^(\d+)\/(\d+)$/.exec(value)
+  if (match === null) throw shardRefusal(value)
+  return checkedShard({ index: Number(match[1]), count: Number(match[2]) })
+}
+
+function checkedShard(shard: Shard): Shard {
+  const { index, count } = shard
+  if (!Number.isInteger(index) || !Number.isInteger(count) || index < 1 || index > count) {
+    throw shardRefusal(`${index}/${count}`)
+  }
+  return shard
 }
 
 /** A Vitest test by file (from the root) and full name (describe titles and its own, joined by spaces). */
@@ -1202,7 +1206,8 @@ function rerunTestsCommand(red: RedTest[]): string {
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
-const TEST_SCRIPT_FILTERS = "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
+const TEST_SCRIPT_FILTERS =
+  "--project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'"
 /** The `perf` project's timing-bound file, which `pnpm test` would collect too; the Postgres one is apart already. */
 const PERF_FILE = 'packages/platform/tests/integration/search-performance.test.ts'
 /** The steps that load the CPU, besides the E2E steps: each holds a shared hold of the quiet lock while it runs. */
@@ -1214,6 +1219,7 @@ const SHARED_HOLD_STEPS = new Set([
   'stryker',
   'sentinels',
   'tests-fail-on-base',
+  'perf-bytes',
 ])
 const EXCLUSIVE_HOLD_STEPS = new Set(['perf', 'perf-postgres'])
 
@@ -1332,6 +1338,7 @@ function select(steps: StepSpec[], input: PlanInput): StepSpec[] {
 
 export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } {
   const { full, base, changed, mutated } = input
+  const shard = input.shard === undefined ? undefined : checkedShard(input.shard)
   const remeasured = input.remeasured ?? []
   const prune =
     remeasured.length === 0
@@ -1377,11 +1384,17 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
+  // CI splits a run of every test over a matrix of jobs; the changed and rerun selections are local and run whole.
+  const shardPart =
+    shard === undefined || input.rerun !== undefined
+      ? ''
+      : ` --shard=${shard.index}/${shard.count}`
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
   // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
-  const harnessKept = input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+  const harnessKept =
+    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
   const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
   const skipEnv = (projects: string[]): string =>
     projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
@@ -1435,14 +1448,14 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
             }
           : {
               name: 'tests',
-              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}`,
+              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
               ...buildNeeds,
             }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
     // entry found by gate:full's stryker step costs the whole run (two 16-minute runs on 2026-10-22). With the base,
-    // a measured file changed without a change to its unit test is refused here, not by CI's Stryker after the merge.
+    // a measured file changed without a change to its unit test prints a warning here; it does not fail the step.
     {
       name: 'ratchet',
       // The integration ratchet against its own mutate set; its base warning is about unit test files, so no base.
@@ -1493,8 +1506,8 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       ? ''
       : [
           `NYMBAL_COMMAND_STORE=${set.commandStore}`,
-          `NYMBAL_DOCUMENT_STORE=${set.documentStore}`,
-          `NYMBAL_EVENT_BUS=${set.eventBus}`,
+          `NYMBAL_DOCUMENT_STORE=${set.documentStore.provider}`,
+          `NYMBAL_EVENT_BUS=${set.eventBus.provider}`,
           `DATABASE_URL=${shellWord(postgresAt)}`,
           ...(usesRedis(set) ? [`REDIS_URL=${shellWord(redisAt)}`] : []),
         ].join(' ') + ' '
@@ -1512,26 +1525,18 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const sentinels: StepSpec =
     chosen === 'all'
       ? { name: 'sentinels', command: `${postgres} pnpm sentinels` }
-      : chosen === 'none'
+      : chosen === 'none' || chosen.size === 0
         ? {
             name: 'sentinels',
             command: 'true',
-            skip: 'left to dev CI and the release run (--sentinels impacted or all runs them here)',
+            skip: 'left to dev CI and the release run (--sentinels all or <ids> runs them here)',
             idle: true,
           }
-        : chosen.size === 0
-          ? {
-              name: 'sentinels',
-              command: 'true',
-              skip: 'no sentinel is impacted by the changed files (--sentinels all runs every one)',
-              idle: true,
-            }
-          : {
-              name: 'sentinels',
-              command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
-            }
-  // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell. Advisory, the verdict prints
-  // and the step stays green: dev CI blocks on it.
+        : {
+            name: 'sentinels',
+            command: `${postgres} pnpm sentinels --only ${[...chosen].sort().join(',')}`,
+          }
+  // Stryker exits 0 with survivors; the ratchet is what fails a file whose score fell.
   const strykerMode = input.stryker ?? 'blocking'
   const ratchetCheck =
     'pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json'
@@ -1540,7 +1545,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       ? {
           name: 'stryker',
           command: 'true',
-          skip: 'left to dev CI (--stryker runs it here, with the ratchet advisory)',
+          skip: 'left to dev CI (--stryker runs it here)',
           idle: true,
         }
       : mutated.length === 0
@@ -1554,9 +1559,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
             name: 'stryker',
             command:
               `${prune}pnpm exec stryker run${input.noBase === true ? ' --force' : ''} --mutate ${shellWord(mutated.join(','))} && ` +
-              (strykerMode === 'advisory'
-                ? `{ ${ratchetCheck} || echo 'ratchet: below the ratchet here (advisory; dev CI blocks on it)'; }`
-                : ratchetCheck),
+              ratchetCheck,
           }
   steps.push(
     external
@@ -1636,31 +1639,37 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
       { name: 'e2e nextjs-override', command: e2e('nextjs-override'), needs: e2eNeeds },
     )
   }
+  // Last: it builds the templates for production and serves them on the slot's ports, which the E2E dev servers use.
+  steps.push(
+    input.perfBytes === true
+      ? { name: 'perf-bytes', command: 'pnpm perf:budgets --bytes', needs: ['build'] }
+      : {
+          name: 'perf-bytes',
+          command: 'true',
+          skip: "left to dev CI's perf-budgets job (--perf-bytes runs it here)",
+          idle: true,
+        },
+  )
   return { steps: select(withHolds(steps), input), budgetMs: FULL_BUDGET_MS }
 }
 
 /** Build outputs outside `packages/` that the E2E steps serve: both templates and the admin SPA. */
 const APP_OUTPUTS = ['templates/astro/dist', 'templates/nextjs/.next', 'apps/admin/dist']
 
-/** The `packages/<name>` directories whose manifest has a build script. */
+/** The package directories under `packages/` whose manifest has a build script. */
 function buildingPackages(root: string): string[] {
-  const packages = resolve(root, 'packages')
-  if (!existsSync(packages)) return []
-  return readdirSync(packages).filter((name) => {
-    const manifest = resolve(packages, name, 'package.json')
-    if (!existsSync(manifest)) return false
-    const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { scripts?: { build?: string } }
-    return typeof pkg.scripts?.build === 'string'
-  })
+  return packageManifests(root)
+    .filter(
+      ({ manifest }) =>
+        typeof (manifest['scripts'] as { build?: unknown } | undefined)?.build === 'string',
+    )
+    .map(({ dir }) => dir)
 }
 
 /** Whether every package that has a build script has its `dist`, and at least one does. */
 export function packagesBuilt(root: string): boolean {
   const builders = buildingPackages(root)
-  return (
-    builders.length > 0 &&
-    builders.every((name) => existsSync(resolve(root, 'packages', name, 'dist')))
-  )
+  return builders.length > 0 && builders.every((dir) => existsSync(resolve(root, dir, 'dist')))
 }
 
 /**
@@ -1920,27 +1929,31 @@ function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: 
 }
 
 /**
- * What the command line asks of the sentinels and stryker steps. They run here only when asked: dev CI runs every
- * sentinel and the mutation job on every push, and the release run passes `--sentinels all`. `--only` naming a step
- * is asking for it, and `--only stryker` (CI's mutation job) blocks on the ratchet; `--stryker` alone is advisory.
+ * What the command line asks of the sentinels, stryker and perf-bytes steps. They run here only when asked: dev CI
+ * runs every sentinel, the mutation job and the perf job on every push, and the release run passes `--sentinels all`.
+ * `--only` naming a step is asking for it; a Stryker run that is asked for blocks on the ratchet. `--sentinels` takes
+ * `all`, `none` or a comma-separated list of ids, which run as given whatever changed.
  */
 export function stepModes(flags: {
   only?: string[] | undefined
   sentinels?: string | undefined
   stryker?: boolean | undefined
-}): { sentinels: 'all' | 'impacted' | 'none'; stryker: 'off' | 'advisory' | 'blocking' } {
-  const sentinels =
-    flags.sentinels ?? (flags.only?.includes('sentinels') === true ? 'impacted' : 'none')
-  if (sentinels !== 'all' && sentinels !== 'impacted' && sentinels !== 'none') {
-    throw new Error(`--sentinels takes all, impacted or none, not "${flags.sentinels}"`)
+  perfBytes?: boolean | undefined
+}): { sentinels: 'all' | 'none' | string[]; stryker: 'off' | 'blocking'; perfBytes: boolean } {
+  const flag = flags.sentinels ?? (flags.only?.includes('sentinels') === true ? 'all' : 'none')
+  let sentinels: 'all' | 'none' | string[]
+  if (flag === 'all' || flag === 'none') sentinels = flag
+  else {
+    sentinels = flag
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id !== '')
+    if (sentinels.length === 0) throw new Error(`--sentinels takes all, none or ids, not "${flag}"`)
   }
   const stryker =
-    flags.only?.includes('stryker') === true
-      ? 'blocking'
-      : flags.stryker === true
-        ? 'advisory'
-        : 'off'
-  return { sentinels, stryker }
+    flags.stryker === true || flags.only?.includes('stryker') === true ? 'blocking' : 'off'
+  const perfBytes = flags.perfBytes === true || flags.only?.includes('perf-bytes') === true
+  return { sentinels, stryker, perfBytes }
 }
 
 /** Sets every Mailpit Chaos trigger's probability to 0, so the Mailpit refuses nothing. */
@@ -1972,10 +1985,12 @@ async function main(argv: string[]): Promise<number> {
       'no-build': { type: 'boolean', default: false },
       sentinels: { type: 'string' },
       stryker: { type: 'boolean', default: false },
+      'perf-bytes': { type: 'boolean', default: false },
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
       stores: { type: 'string' },
       'rerun-red': { type: 'boolean', default: false },
+      shard: { type: 'string' },
     },
   })
   const root = repoRoot()
@@ -2052,17 +2067,34 @@ async function main(argv: string[]): Promise<number> {
   if (only !== undefined && !values.full) throw new Error('--only needs --full')
   const stores = values.stores === undefined ? undefined : storeSet(values.stores)
   if (stores !== undefined && !values.full) throw new Error('--stores needs --full')
-  const { sentinels: sentinelsFlag, stryker: strykerMode } = stepModes({
+  const {
+    sentinels: sentinelsMode,
+    stryker: strykerMode,
+    perfBytes,
+  } = stepModes({
     only,
     sentinels: values.sentinels,
     stryker: values.stryker,
+    perfBytes: values['perf-bytes'],
   })
+  if (perfBytes && !values.full) throw new Error('--perf-bytes needs --full')
+  const sentinelsDir = resolve(root, 'tests/sentinels')
+  if (Array.isArray(sentinelsMode)) {
+    const known = existsSync(sentinelsDir) ? loadSentinels(sentinelsDir).map((s) => s.id) : []
+    const unknown = sentinelsMode.filter((id) => !known.includes(id))
+    if (unknown.length > 0) {
+      throw new Error(
+        `--sentinels: ${unknown.join(', ')} is not in tests/sentinels/; it takes all, none or ids from: ${known.join(', ')}`,
+      )
+    }
+  }
   if (values.harness !== 'all' && values.harness !== 'changed') {
     throw new Error(`--harness takes all or changed, not "${values.harness}"`)
   }
   const rerun = values['rerun-red']
   if (rerun && only !== undefined)
     throw new Error('--rerun-red runs what was red; it takes no --only')
+  const shard = values.shard === undefined ? undefined : parseShard(values.shard)
   const inUse = checkoutInUse(root)
   if (inUse !== undefined) {
     process.stderr.write(
@@ -2090,14 +2122,7 @@ async function main(argv: string[]): Promise<number> {
   const minioPort = process.env.NYMBAL_MINIO_PORT
   // Only gate:full starts services and servers; the plain gate needs no slot.
   const block = values.full ? stack(root) : undefined
-  const sentinelsDir = resolve(root, 'tests/sentinels')
-  const allSentinels = values.full && existsSync(sentinelsDir) ? loadSentinels(sentinelsDir) : []
-  const sentinels =
-    sentinelsFlag === 'none'
-      ? ('none' as const)
-      : sentinelsFlag === 'all' || noBase || allSentinels.length === 0
-        ? ('all' as const)
-        : selectSentinels(allSentinels, changed, (dir) => workspaceClosure(root, dir))
+  const sentinels = Array.isArray(sentinelsMode) ? new Set(sentinelsMode) : sentinelsMode
   const planned = plan({
     full: values.full,
     base,
@@ -2120,16 +2145,24 @@ async function main(argv: string[]): Promise<number> {
     perfPackages: workspaceClosure(root, 'packages/platform'),
     sentinels,
     stryker: strykerMode,
+    perfBytes,
     harness: values.harness,
     inputReaders,
     relatedPaths,
     buildStale,
+    ...(shard === undefined ? {} : { shard }),
     ...(last === undefined
       ? {}
       : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
   })
   const { budgetMs } = planned
   const steps = last === undefined ? planned.steps : redSteps(planned.steps, last)
+  const testsStep = steps.find((step) => step.name === 'tests')
+  if (shard !== undefined && testsStep !== undefined && !testsStep.command.includes(' --shard=')) {
+    process.stderr.write(
+      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not ${rerun ? '--rerun-red' : 'the changed tests'}\n`,
+    )
+  }
   if (values.full && only === undefined && last === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
@@ -2139,17 +2172,6 @@ async function main(argv: string[]): Promise<number> {
   }
   const log = (text: string): void => {
     process.stderr.write(text)
-  }
-  if (steps.some((s) => s.name === 'sentinels' && s.skip === undefined)) {
-    log(
-      sentinels === 'all'
-        ? `sentinels: all (${sentinelsFlag === 'all' ? '--sentinels all' : noBase ? 'no base commit to select by' : 'no tests/sentinels/ to select from'})\n`
-        : sentinels === 'none'
-          ? ''
-          : `sentinels: --sentinels impacted selects ${sentinels.size} of ${allSentinels.length}: ${[...sentinels].sort().join(', ')}\n`,
-    )
-  } else if (sentinels instanceof Set && steps.some((s) => s.name === 'sentinels')) {
-    log(`sentinels: --sentinels impacted selects none of ${allSentinels.length}\n`)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
   if (last !== undefined) return reportRerun(root, result, last, startedMs)

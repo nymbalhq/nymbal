@@ -1,4 +1,5 @@
 import {
+  ORDER_EMAIL_HEADER,
   ORDER_KEY_HEADER,
   type AlertKind,
   type Cart,
@@ -27,6 +28,20 @@ import type {
 } from '../types.js'
 
 export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapter {
+  // One read for a signed-in owner's order and a guest's: the key and the email, when given, go in headers.
+  const getOrder = (orderNumber: string, { key, email }: { key?: string; email?: string } = {}) =>
+    fetchClient.request<ShopperOrder>(
+      'GET',
+      `/api/orders/${encodeURIComponent(orderNumber)}`,
+      undefined,
+      {
+        headers: {
+          ...(key !== undefined && { [ORDER_KEY_HEADER]: key }),
+          ...(email !== undefined && { [ORDER_EMAIL_HEADER]: email }),
+        },
+      },
+    )
+
   return {
     capabilities: {
       get() {
@@ -137,14 +152,16 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         const nextCursor = typeof meta.nextCursor === 'string' ? meta.nextCursor : null
         return { items: data ?? [], nextCursor }
       },
-      getOrder(orderNumber: string, options: { key?: string } = {}) {
-        const { key } = options
-        return fetchClient.request<ShopperOrder>(
-          'GET',
-          `/api/orders/${encodeURIComponent(orderNumber)}`,
-          undefined,
-          key === undefined ? {} : { headers: { [ORDER_KEY_HEADER]: key } },
-        )
+      getOrder,
+    },
+
+    orders: {
+      get: getOrder,
+      async requestLink({ orderNumber, email }: { orderNumber: string; email: string }) {
+        await fetchClient.request<{ sent: string }>('POST', '/api/orders/link', {
+          orderNumber,
+          email,
+        })
       },
     },
 

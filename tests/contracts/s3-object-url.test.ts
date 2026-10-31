@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { s3ObjectUrl } from '../../packages/media-s3/src/index.js'
+import { s3ObjectUrl } from '../../packages/adapters/media/s3/src/index.js'
 
 // AC-3, the pure half: s3ObjectUrl(options, key) is the base (publicUrl, else endpoint/bucket, else the AWS
 // virtual-hosted URL), with trailing slashes trimmed, then the object key `<prefix>/<key>` (just `<key>` when the

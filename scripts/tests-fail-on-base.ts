@@ -28,6 +28,9 @@ import { EXCLUDED_PREFIXES, TEST_FILE } from './test-census'
 // from the base's, the worktree installs the base's own dependencies. When that or the base's build fails, no file is
 // judged and the step fails closed with the first error line and the output's tail: a change must not be able to
 // opt out of the rule by breaking the base's install.
+// Every test-code file the change adds (a shared suite, a helper, a fixture) is copied in before the runs, so a new
+// test is judged by what it asserts and not by an import the base lacks; added product files and modified files stay
+// at the base's version. A `fails on base` line notes the error that failed the run.
 // A file can pass on the base by design when it guards correct code against a known defect. A file that passes on
 // the base and is named in the `# suite:` of an injected sentinel under `tests/sentinels/` is run once more, alone, in
 // a second temporary worktree of HEAD with that sentinel's patch applied: failing there is `fails under sentinel <id>`
@@ -110,6 +113,29 @@ function addedTestFiles(root: string, base: string): string[] {
     .sort()
 }
 
+/** A path segment that marks test code: suites, helpers and fixtures live under one. */
+const TEST_CODE_SEGMENTS = new Set(['test', 'tests', '__tests__', 'fixtures'])
+
+/**
+ * The added files that are test code but no test file themselves, sorted: `nameStatus` is `git diff --name-status
+ * --no-renames --diff-filter=A <base>` (a rename is an add at its new path), `untracked` the untracked paths.
+ */
+export function addedTestCode(nameStatus: string, untracked: readonly string[]): string[] {
+  const added = nameStatus
+    .split('\n')
+    .map((line) => line.split('\t'))
+    .filter(([status, path]) => status === 'A' && path !== undefined && path !== '')
+    .map(([, path]) => path as string)
+  return [...new Set([...added, ...untracked])]
+    .filter(
+      (path) =>
+        !TEST_FILE.test(path) &&
+        path.split('/').slice(0, -1).some((segment) => TEST_CODE_SEGMENTS.has(segment)) &&
+        !EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix)),
+    )
+    .sort()
+}
+
 /** Directories holding a `node_modules`: the root and each workspace directory one level below a top-level folder. */
 function nodeModulesDirs(root: string): string[] {
   const dirs: string[] = []
@@ -165,6 +191,13 @@ function mirrorNodeModules(
         : undefined
     symlinkSync(inRepo === undefined ? from : join(worktree, inRepo), to)
   }
+}
+
+/** Copies `path` from the checkout into a worktree, at the same path. */
+function copyInto(root: string, worktree: string, path: string): void {
+  const target = join(worktree, path)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, readFileSync(join(root, path)))
 }
 
 function hasBuildScript(dir: string): boolean {
@@ -244,6 +277,24 @@ export function firstErrorLine(output: string): string {
     all.find((line) => ERROR_SHAPES.some((shape) => shape.test(line))) ??
     all[all.length - 1] ??
     'no output'
+  )
+}
+
+/** A named error's own line: `AssertionError [ERR_ASSERTION]:`, `TypeError:`, `Error [ERR_MODULE_NOT_FOUND]:`. */
+const NAMED_ERROR = /^\w*Error(?: \[\w+\])?:/
+
+/** Vitest's one-line reason under a failed test. */
+const VITEST_REASON = '→ '
+
+/** Why a run failed: the first named error line, else Vitest's first `→ ` line, else firstErrorLine. Trimmed. */
+export function failureLine(output: string): string {
+  const all = outputLines(output)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  return (
+    all.find((line) => NAMED_ERROR.test(line)) ??
+    all.find((line) => line.startsWith(VITEST_REASON)) ??
+    firstErrorLine(output)
   )
 }
 
@@ -363,9 +414,7 @@ async function judgeUnderSentinels(
         }
       }
       for (const r of named) {
-        const target = join(head.worktree, r.path)
-        mkdirSync(dirname(target), { recursive: true })
-        writeFileSync(target, readFileSync(join(head.root, r.path)))
+        copyInto(head.root, head.worktree, r.path)
         const run = await runCommand(head.worktree, `${head.suite} ${quote(r.path)}`, head.session)
         if (head.session.signal !== undefined) {
           throw new Error(`interrupted by ${head.session.signal}`)
@@ -465,6 +514,12 @@ export async function judge(opts: {
       if (built.status !== 0) return notBuilt(built.output)
     }
 
+    const support = addedTestCode(
+      git(root, ['diff', '--name-status', '--no-renames', '--diff-filter=A', baseSha]),
+      git(root, ['ls-files', '--others', '--exclude-standard']).split('\n'),
+    )
+    for (const path of support) copyInto(root, worktree, path)
+
     const results: Judgement[] = []
     for (const path of added) {
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
@@ -476,12 +531,15 @@ export async function judge(opts: {
         })
         continue
       }
-      const target = join(worktree, path)
-      mkdirSync(dirname(target), { recursive: true })
-      writeFileSync(target, readFileSync(join(root, path)))
+      copyInto(root, worktree, path)
       const run = await runCommand(worktree, `${opts.suite} ${quote(path)}`, session)
       if (session.signal !== undefined) throw new Error(`interrupted by ${session.signal}`)
-      results.push({ path, ...verdictOf(run) })
+      const judgement = verdictOf(run)
+      results.push(
+        judgement.verdict === 'fails on base'
+          ? { path, ...judgement, note: failureLine(run.output) }
+          : { path, ...judgement },
+      )
     }
 
     const passing = results.filter((r) => r.verdict === 'PASSES ON BASE').map((r) => r.path)

@@ -128,7 +128,7 @@ function declaredSet(
 }
 
 describe('AC-1: recipe holders', () => {
-  it('AC-1: RECIPE_HOLDERS maps the five recipes to the packages that ship them', () => {
+  it('AC-1: RECIPE_HOLDERS maps the six recipes to the packages that ship them', () => {
     expect(RECIPE_HOLDERS).toEqual(SPEC_HOLDERS)
   })
 
@@ -219,7 +219,7 @@ describe('AC-1: recipe holders', () => {
       }
     }
     expect(offending).toEqual([])
-    // The stripe recipe and @nymbalhq/adapter-stripe's three fields: the check above ran on something.
+    // The stripe recipe and @nymbalhq/payments-stripe's three fields: the check above ran on something.
     expect(pairs).toBeGreaterThanOrEqual(3)
   }, 30_000) // imports every holder's src entry: 1 s alone, 5.5 s beside a gate:full (2026-10-22)
 

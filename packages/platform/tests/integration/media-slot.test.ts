@@ -60,7 +60,7 @@ describe('AC-4: the media report is read from the instance', () => {
 
     expect(typeof media?.put).toBe('function')
     const report = k.app.capabilities().media
-    expect(report.provider).toBe(k.config.infrastructure.media)
+    expect(report.provider).toBe(k.config.infrastructure.media.provider)
     expect(report.capabilities).toEqual(media.capabilities())
 
     vi.spyOn(media, 'capabilities').mockReturnValue(['primitives-probe'])

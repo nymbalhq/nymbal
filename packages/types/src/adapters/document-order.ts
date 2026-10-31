@@ -4,7 +4,9 @@ import type { QueryParams, QueryResult } from './document-store.js'
 // The one order and filter every document store is held to: the in-memory store runs it, and stores that cannot
 // order or filter the same way on their server fetch candidates and run it in the process.
 
-const collator = new Intl.Collator(undefined, { sensitivity: 'base' })
+// Made on first use: a top-level `new` is a side effect bundlers keep, so every storefront bundle that imports
+// these types would carry it.
+let collator: Intl.Collator | undefined
 
 /** Number, then string, then any other type, then null and missing: so values of different types never tie. */
 function rankOf(value: unknown): number {
@@ -40,6 +42,7 @@ export function compareDocumentValues(a: unknown, b: unknown): number {
     case 0:
       return sign((a as number) - (b as number))
     case 1:
+      collator ??= new Intl.Collator(undefined, { sensitivity: 'base' })
       return sign(collator.compare(a as string, b as string))
     case 2:
       return sign(compareOther(a, b))

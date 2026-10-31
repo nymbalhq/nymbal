@@ -1,5 +1,10 @@
 import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
-import { ConfigError, type CommerceSlot, type PaymentsAdapter } from '@nymbalhq/types'
+import {
+  ConfigError,
+  type CommerceSlot,
+  type HealthReport,
+  type PaymentsAdapter,
+} from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
 import type { ResolvePrimitivesOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
@@ -13,12 +18,15 @@ import {
   type AdapterRegistry,
   type InjectedAdapters,
 } from './adapters/registry.js'
+import { isNotConfigured } from './adapters/not-configured.js'
 import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
-import { scrubbingLogger } from './settings/secret-set.js'
+import { addSecret, scrubbingLogger } from './settings/secret-set.js'
+import { JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
+import { createOutageProbe, type OutageSubject } from './events/outage.js'
 import { registerHandlers } from './handlers/register.js'
 import { READ_MODEL_NAMES, rebuild } from './read-models/index.js'
 import {
@@ -28,7 +36,7 @@ import {
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
-import { importProviderPackage } from './adapters/loader.js'
+import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { HttpAdapter } from '@nymbalhq/types'
 
 export interface NymbalApp {
@@ -72,10 +80,14 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
- * tokens with the schema's published default secret. Checked on the resolved adapter, built or injected, before
- * anything opens the store.
+ * tokens with the schema's published default secret. Checked on the resolved adapter, built or injected, and the
+ * effective secret, before anything opens the store.
  */
-function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter): void {
+function refuseUnsafeProduction(
+  config: NymbalConfig,
+  payments: PaymentsAdapter,
+  jwtSecret: string,
+): void {
   if (process.env.NODE_ENV !== 'production') return
   const provider = config.commerce.payments.provider
   if (payments.providerName === 'native-stub') {
@@ -85,9 +97,9 @@ function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter)
       { code: 'config.production_stub_payments', context: { provider } },
     )
   }
-  if (config.security.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+  if (jwtSecret === DEFAULT_JWT_SECRET) {
     throw new ConfigError(
-      'security.auth.jwtSecret is the schema default; set a secret of your own for production.',
+      `security.auth.jwtSecret is the schema default and ${JWT_SECRET_ENV} is not set; set either to a secret of your own for production.`,
       { code: 'config.production_default_jwt_secret' },
     )
   }
@@ -109,7 +121,7 @@ async function eventArchiveWriter(config: NymbalConfig): Promise<EventArchiveWri
   const { adapter, ...options } = archive
   let mod: ObjectWriterModule | undefined
   try {
-    mod = (await importProviderPackage('media', adapter, process.env)) as
+    mod = (await importAdapterModule('media', { provider: adapter }, process.env)) as
       | ObjectWriterModule
       | undefined
   } catch (error) {
@@ -132,6 +144,58 @@ async function eventArchiveWriter(config: NymbalConfig): Promise<EventArchiveWri
   return mod.createS3ObjectWriter(options)
 }
 
+interface Checkable {
+  providerName?: unknown
+  healthCheck?(): Promise<HealthReport>
+}
+
+/**
+ * What the relay's outage probe checks: the primitives and every commerce slot a delivery can go through, each named
+ * by its slot with the provider in the detail. Security and ai are left out (no delivery goes through either), and a
+ * not-configured placeholder is too: it is down until a restart with its key, which is not an outage.
+ */
+function outageSubjects(
+  config: NymbalConfig,
+  platform: Platform,
+  adapters: AdapterRegistry,
+): OutageSubject[] {
+  const subject = (name: string, provider: string, adapter: Checkable): OutageSubject[] => {
+    if (isNotConfigured(adapter)) return []
+    if (typeof adapter.healthCheck !== 'function') return [{ name }]
+    const check = adapter.healthCheck.bind(adapter)
+    const named = (detail: string | undefined) => (detail ? `${provider}: ${detail}` : provider)
+    return [
+      {
+        name,
+        healthCheck: () =>
+          Promise.resolve()
+            .then(check)
+            .then(
+              (report) =>
+                report.status === 'down' ? { ...report, detail: named(report.detail) } : report,
+              (err: unknown) => {
+                throw new Error(named(err instanceof Error ? err.message : String(err)))
+              },
+            ),
+      },
+    ]
+  }
+  const { infrastructure } = config
+  return [
+    ...subject('eventBus', infrastructure.eventBus.provider, platform.eventBus),
+    ...subject('documentStore', infrastructure.documentStore.provider, platform.documentStore),
+    ...subject('media', infrastructure.media.provider, platform.media),
+    ...COMMERCE_SLOTS.filter((slot) => slot !== 'ai').flatMap((slot) => {
+      const adapter = adapters[slot] as Checkable
+      const provider =
+        typeof adapter.providerName === 'string'
+          ? adapter.providerName
+          : config.commerce[slot].provider
+      return subject(slot, provider, adapter)
+    }),
+  ]
+}
+
 export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
@@ -142,6 +206,21 @@ export async function createApp(
   )
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
+  const jwt = resolveAuthSecret(config, process.env)
+  addSecret(jwt.secret)
+  const shadowed = process.env[JWT_SECRET_ENV]
+  if (jwt.source === 'config' && shadowed !== undefined && shadowed !== jwt.secret) {
+    logger.warn(
+      { variable: JWT_SECRET_ENV },
+      `security.auth.jwtSecret in the config is used; ${JWT_SECRET_ENV} is set and ignored`,
+    )
+  }
+  if (process.env.NODE_ENV === 'production' && jwt.secret.length < 32) {
+    logger.warn(
+      { source: jwt.source },
+      'the JWT secret is shorter than 32 characters; HS256 wants 256 bits (`openssl rand -base64 32`)',
+    )
+  }
   // Settings are read, through a read-only open closed again here, before any adapter is built: payments first.
   const settings = await loadBootSettings(config, {
     storage: {
@@ -157,7 +236,7 @@ export async function createApp(
     options.adapters,
     settings.values,
   )
-  refuseUnsafeProduction(config, payments)
+  refuseUnsafeProduction(config, payments, jwt.secret)
   const security = await resolveSecurityAdapter(config, adapterLogger)
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
@@ -187,6 +266,7 @@ export async function createApp(
       eventLog: repos.eventLog,
       eventBus: platform.eventBus,
       logger,
+      outage: createOutageProbe(outageSubjects(config, platform, adapters)),
       ...options.relay,
     })
     const subscriberBus = deliveringBus(platform.eventBus, relay)
@@ -216,6 +296,7 @@ export async function createApp(
       payments: adapters.payments,
       searchAdapter: adapters.search,
       email: adapters.email,
+      jwtSecret: jwt.secret,
     })
 
     await registerHandlers({
@@ -225,19 +306,25 @@ export async function createApp(
       repos,
       adapters,
       alerts: services.alert,
+      orders: services.order,
       logger,
     })
 
     // Every read model is rebuilt from the tables before anything is served, so a fresh process serves what a
-    // long-running one does.
-    await rebuild(READ_MODEL_NAMES, {
-      config,
-      store: platform.commandStore,
-      repos,
-      documentStore: platform.documentStore,
-      search: adapters.search,
-      logger,
-    })
+    // long-running one does. A search index in a package lives outside the process and outlasts it: a restart would
+    // only upload the catalogue again, so live events and `nymbal replay --to search` fill it instead.
+    const externalSearch = resolveChoice('search', config.commerce.search).kind === 'package'
+    await rebuild(
+      externalSearch ? READ_MODEL_NAMES.filter((name) => name !== 'search') : READ_MODEL_NAMES,
+      {
+        config,
+        store: platform.commandStore,
+        repos,
+        documentStore: platform.documentStore,
+        search: adapters.search,
+        logger,
+      },
+    )
 
     // Events committed before a crash, or whose delivery failed, go out before the app serves anything.
     await relay.drain()
@@ -285,6 +372,7 @@ export async function createApp(
           eventBus: subscriberBus,
           publisher,
           settingsSlots: settings.slots,
+          jwtSecret: jwt.secret,
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
         })
@@ -309,15 +397,15 @@ export async function createApp(
             capabilities: adapters.security.capabilities(),
           },
           documentStore: {
-            provider: config.infrastructure.documentStore,
+            provider: config.infrastructure.documentStore.provider,
             capabilities: platform.documentStore.capabilities(),
           },
           eventBus: {
-            provider: config.infrastructure.eventBus,
+            provider: config.infrastructure.eventBus.provider,
             capabilities: platform.eventBus.capabilities(),
           },
           media: {
-            provider: config.infrastructure.media,
+            provider: config.infrastructure.media.provider,
             capabilities: platform.media.capabilities(),
           },
         }

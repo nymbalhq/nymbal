@@ -37,6 +37,7 @@ import {
   orderStatus,
   paidFor,
 } from '../support/webhooks.js'
+import { unaudited } from '../support/write-audit.js'
 
 // AC-2, AC-3, AC-4, AC-6 and AC-13 on SQLite: a kernel from `src/` served over HTTP, the admin's own routes, the stub
 // payments adapter (wrapped where a test needs the provider to answer otherwise), and the committed rows read through
@@ -685,8 +686,11 @@ describe('the admin tells the truth about money (sqlite)', () => {
       const order = await paidOrder(2_000, 1)
       const captured = order.totalMinor
       provider(async (...args) => {
-        await k.store.transaction((tx) =>
-          k.repos.order.setStatus(tx, order.orderId, 'cancelled', new Date()),
+        // A concurrent writer of the test's own, not a command.
+        await unaudited(() =>
+          k.store.transaction((tx) =>
+            k.repos.order.setStatus(tx, order.orderId, 'cancelled', new Date()),
+          ),
         )
         return (stubRefund as (...a: unknown[]) => Promise<Refund>)(...args)
       })

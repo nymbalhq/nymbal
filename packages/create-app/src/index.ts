@@ -52,7 +52,8 @@ function newAdminCredentials(): AdminCredentials {
 
 /**
  * `.env` holds the admin credentials the seed (and a first `nymbal dev`) creates the admin from, and the project's own
- * key for the values the admin's Settings encrypt (32 random bytes, base64).
+ * key for the values the admin's Settings encrypt (32 random bytes, base64) and its own JWT secret (32 random bytes,
+ * base64url), which the platform reads at run time so the config never holds it.
  */
 async function writeAdminEnv(dir: string, admin: AdminCredentials): Promise<void> {
   const lines = [
@@ -62,6 +63,9 @@ async function writeAdminEnv(dir: string, admin: AdminCredentials): Promise<void
     '',
     "# Encrypts the keys saved in the admin's Settings. Losing it loses them: back it up with your deploy's secrets.",
     `NYMBAL_SECRETS_KEY=${randomBytes(32).toString('base64')}`,
+    '',
+    '# Signs sign-in tokens. Changing it signs everyone out: deploy it with your secrets, as the key above.',
+    `NYMBAL_JWT_SECRET=${randomBytes(32).toString('base64url')}`,
     '',
   ]
   await writeFile(resolve(dir, '.env'), lines.join('\n'), { encoding: 'utf8', mode: 0o600 })
@@ -460,8 +464,8 @@ export default defineConfig({
 
   infrastructure: {
     commandStore: 'sqlite',
-    documentStore: 'in-memory',
-    eventBus: 'in-process',
+    documentStore: { provider: 'in-memory' },
+    eventBus: { provider: 'in-process' },
   },
 
   security: {

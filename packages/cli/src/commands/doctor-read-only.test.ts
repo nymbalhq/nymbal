@@ -43,8 +43,8 @@ describe.each(['wal', 'delete'] as const)(
         ...repoConfig,
         infrastructure: {
           commandStore: 'sqlite',
-          documentStore: 'in-memory',
-          eventBus: 'in-process',
+          documentStore: { provider: 'in-memory' },
+          eventBus: { provider: 'in-process' },
         },
       }
       writeFileSync(

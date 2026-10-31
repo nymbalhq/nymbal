@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { createAdapter } from '@nymbalhq/adapter-smtp'
+import { createAdapter } from '@nymbalhq/email-smtp'
 import { createMailSink } from '@nymbalhq/proof-kit/mail'
 import { createLogger } from '@nymbalhq/platform'
 import type { EmailAdapter } from '@nymbalhq/types'
 
-// AC-10: the `smtp` email adapter (@nymbalhq/adapter-smtp, loaded through its createAdapter as the kernel loads it),
+// AC-10: the `smtp` email adapter (@nymbalhq/email-smtp, loaded through its createAdapter as the kernel loads it),
 // configured with the sink's emailConfig(), really delivers to Mailpit, and waitFor fails loudly (address and counts)
 // instead of hanging or resolving short.
 // The file refuses to load without NYMBAL_TEST_MAILPIT_URL, so a missing Mailpit fails the project.

@@ -2,8 +2,14 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { loadConfig, nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
-import { PROVIDER_PACKAGES } from '@nymbalhq/platform'
+import {
+  ADAPTER_CATALOGUE,
+  conventionPackage,
+  loadConfig,
+  nymbalConfigSchema,
+  type NymbalConfig,
+} from '@nymbalhq/config'
+import type { Slot } from '@nymbalhq/types'
 import { scaffold } from '../../../create-app/src/index.js'
 import { readRecipe } from './index.js'
 import {
@@ -20,7 +26,7 @@ import type {
 } from './fixtures/linked-project.js'
 
 // AC-1, the unit half: each recipe is data its holder package ships under `./recipes/*`, has the `Recipe` shape,
-// leaves the scaffold's config parsing, and installs the package and SDK the loader asks for. The architecture half is
+// leaves the scaffold's config parsing, and installs the package and SDK the resolver asks for. The architecture half is
 // tests/architecture/recipe-holders.test.ts.
 
 const dirs: string[] = []
@@ -181,12 +187,15 @@ describe('AC-1: recipes are data in their packages', () => {
     const r = (name: string): Recipe => byName.get(name)!
 
     expect(unique(r('redis').install).sort()).toEqual([
-      '@nymbalhq/doc-store-redis',
+      '@nymbalhq/document-store-redis',
       '@nymbalhq/event-bus-redis-streams',
       'ioredis',
     ])
     expect(applied({}, r('redis'))).toEqual({
-      infrastructure: { documentStore: 'redis', eventBus: 'redis-streams' },
+      infrastructure: {
+        documentStore: { provider: 'redis' },
+        eventBus: { provider: 'redis-streams' },
+      },
     })
     expect(r('redis').env.map((e) => [e.name, e.required])).toEqual([
       ['REDIS_URL', true],
@@ -202,7 +211,7 @@ describe('AC-1: recipes are data in their packages', () => {
     expect(r('postgres').next.join('\n')).toContain('nymbal migrate')
 
     expect(unique(r('s3').install).sort()).toEqual(['@aws-sdk/client-s3', '@nymbalhq/media-s3'])
-    expect(applied({}, r('s3'))).toEqual({ infrastructure: { media: 's3' } })
+    expect(applied({}, r('s3'))).toEqual({ infrastructure: { media: { provider: 's3' } } })
     expect(
       r('s3')
         .env.map((e) => e.name)
@@ -224,7 +233,7 @@ describe('AC-1: recipes are data in their packages', () => {
         .map((e) => e.name),
     ).toEqual(['S3_BUCKET'])
 
-    expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/adapter-stripe', 'stripe'])
+    expect(unique(r('stripe').install).sort()).toEqual(['@nymbalhq/payments-stripe', 'stripe'])
     // The fields the Stripe package declares as settings are not in `set` (an unset variable would throw at
     // loadConfig before Settings could fill them), so the recipe sets the provider and writes no env() at all; the
     // variables stay in `.env`, required, for a deploy that sets them there.
@@ -259,22 +268,24 @@ describe('AC-1: recipes are data in their packages', () => {
     }
   })
 
-  it('AC-1: for every slot provider a recipe sets that PROVIDER_PACKAGES lists, its install holds that package and SDK', async () => {
+  it("AC-1: for every slot provider a recipe sets that the catalogue lists as first-party, its install holds conventionPackage of it and the catalogue's SDK", async () => {
     let related = 0
     for (const recipe of await allRecipes()) {
       for (const [path, value] of leaves(recipe)) {
         // `security` is a slot too, its choice `security.adapter`, and its package peers no SDK.
-        const slot =
-          /^infrastructure\.(\w+)$/.exec(path)?.[1] ??
+        const slot = (/^infrastructure\.(\w+)\.provider$/.exec(path)?.[1] ??
           /^commerce\.(\w+)\.provider$/.exec(path)?.[1] ??
-          (path === 'security.adapter' ? 'security' : undefined)
+          (path === 'security.adapter' ? 'security' : undefined)) as Slot | undefined
         if (slot === undefined || typeof value !== 'string') continue
         const entry = (
-          PROVIDER_PACKAGES as Record<string, Record<string, { package: string; sdk?: string }>>
+          ADAPTER_CATALOGUE as Record<string, Record<string, { builtIn?: true; sdk?: string }>>
         )[slot]?.[value]
-        if (entry === undefined) continue
+        if (entry === undefined || entry.builtIn === true) continue
         related += 1
-        const wanted = [entry.package, ...(entry.sdk === undefined ? [] : [entry.sdk])]
+        const wanted = [
+          conventionPackage(slot, value),
+          ...(entry.sdk === undefined ? [] : [entry.sdk]),
+        ]
         expect(
           recipe.install.filter((p) => wanted.includes(p)).length,
           `${recipe.name} ${path}=${value} installs ${wanted.join(' and ')}`,

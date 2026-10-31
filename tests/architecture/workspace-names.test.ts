@@ -1,6 +1,7 @@
-// Reads: pnpm-workspace.yaml, **/package.json
+// Reads: pnpm-workspace.yaml, **/package.json, registry/adapters.json
 import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
+import { FIRST_PARTY_ADAPTERS } from './adapter-table'
 import {
   NEW_SCOPE,
   REPO_ROOT,
@@ -17,32 +18,25 @@ const members = workspaceMembers()
 const root = members.find((m) => m.dir === '')
 const published = members.filter((m) => m.dir !== '' && isPublished(m.manifest))
 
-/**
- * The twenty-one published packages, by directory (names are what is under test).
- */
-const PUBLISHED_DIRS = [
+/** The published packages that are not adapters, by directory (names are what is under test). */
+const PUBLISHED_CORE_DIRS = [
   'apps/admin',
-  'packages/adapter-anthropic',
-  'packages/adapter-smtp',
-  'packages/adapter-stripe',
   'packages/cli',
   'packages/config',
   'packages/contract-tests',
   'packages/create-app',
-  'packages/doc-store-postgres-jsonb',
-  'packages/doc-store-redis',
-  'packages/event-bus-redis-streams',
   'packages/http',
   'packages/importers',
-  'packages/media-s3',
   'packages/platform',
   'packages/react',
   'packages/sdk',
-  'packages/security-cloudflare',
   'packages/stack',
   'packages/types',
   'packages/web-components',
 ]
+
+/** Every published package: the core above, and each first-party adapter registry/adapters.json lists. */
+const PUBLISHED_DIRS = [...PUBLISHED_CORE_DIRS, ...FIRST_PARTY_ADAPTERS.map((a) => a.dir)]
 
 const SCOPED_NAME = new RegExp(`^${NEW_SCOPE.replace('/', '\\/')}[a-z0-9][a-z0-9-]*$`)
 const UNSCOPED_PUBLISHED = new Set(['nymbal', 'create-nymbal-app'])
@@ -71,7 +65,7 @@ function repositoryUrl(m: Manifest): string | undefined {
 }
 
 describe('AC-2: workspace package names and published manifests', () => {
-  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the twenty-one publish', () => {
+  it('AC-2: names are unique; each published one is @nymbalhq/<x>, nymbal or create-nymbal-app; only the core and the registry first-party adapters publish', () => {
     // Discovery guard: every published package directory is a workspace member.
     const dirs = new Set(members.map((m) => m.dir))
     expect.soft(root).toBeDefined()

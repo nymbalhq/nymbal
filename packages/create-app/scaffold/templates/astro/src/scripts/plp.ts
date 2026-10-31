@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/product-list'
 import type { ProductSortKey } from '@nymbalhq/types'
 import { NymbalBreadcrumb } from '@nymbalhq/web-components/elements/nymbal-breadcrumb'
 import { NymbalProductFilter } from '@nymbalhq/web-components/elements/nymbal-product-filter'

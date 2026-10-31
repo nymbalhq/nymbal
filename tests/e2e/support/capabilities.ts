@@ -12,7 +12,7 @@ export interface StoreCapabilities {
   }
   search: { capabilities: string[] }
   catalog: { sortKeys: string[]; defaultSort: string }
-  /** Whether the store's email adapter delivers mail (`smtp` or a custom one), not only logs it (`native`). */
+  /** Whether the store's email adapter delivers mail (`smtp`, `mailgun` or custom), not only logs it (`native`). */
   email: { delivers: boolean }
 }
 

@@ -1,0 +1,27 @@
+name: Nightly trigger
+
+# A schedule runs the default branch's copy of a workflow, so the nightly runs by dispatch: this one asks for dev's own
+# nightly.yml and registry.yml against dev's tree. A GITHUB_TOKEN may start a workflow_dispatch run.
+on:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    name: Dispatch the nightly on dev
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch nightly.yml on dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run nightly.yml --ref dev
+      - name: Dispatch registry.yml on dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run registry.yml --ref dev

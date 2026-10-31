@@ -1,0 +1,14 @@
+{
+  "name": "@acme/nymbal-wrong-slot",
+  "version": "1.0.0",
+  "description": "Test fixture: a working search adapter whose `slot` export says payments",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ]
+}

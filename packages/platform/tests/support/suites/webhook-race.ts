@@ -15,6 +15,7 @@ import {
   paidFor,
   type WebhookAnswer,
 } from '../webhooks.js'
+import { unaudited } from '../write-audit.js'
 
 // AC-12 on one dialect: two deliveries of one captured payment at the same instant, against a pending order whose
 // reservation the sweeper already released, so the reservation's DELETE … RETURNING is not what keeps the second
@@ -54,14 +55,16 @@ export function webhookRaceSuite(dialect: Kernel['dialect'], start: () => Promis
 
     async function customer(): Promise<string> {
       const id = uuidv7()
-      await k.store.transaction((tx) =>
-        k.repos.customer.insert(tx, {
-          id,
-          email: `race-${randomUUID()}@webhook.test`,
-          passwordHash: 'x',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
+      await unaudited(() =>
+        k.store.transaction((tx) =>
+          k.repos.customer.insert(tx, {
+            id,
+            email: `race-${randomUUID()}@webhook.test`,
+            passwordHash: 'x',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        ),
       )
       return id
     }

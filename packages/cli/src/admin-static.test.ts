@@ -48,8 +48,8 @@ function config(port: number) {
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
     },
     security: { adapter: 'middleware' },
     commerce: {

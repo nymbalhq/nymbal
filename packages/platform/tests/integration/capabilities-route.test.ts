@@ -11,7 +11,7 @@ import { createFixtureSearchAdapter } from '../../../../tests/e2e/fixtures/custo
 // AC-1 and AC-3's integration half, over HTTP against a kernel built from `src/`. GET /api/capabilities is public and
 // reports what the configured adapters can do, never a provider name or a secret; GET /api/products sends no `facets`
 // when the search adapter lacks `facet`. Needs the adapter packages built (the Stripe kernel loads
-// @nymbalhq/adapter-stripe).
+// @nymbalhq/payments-stripe).
 
 interface Report {
   payments: {

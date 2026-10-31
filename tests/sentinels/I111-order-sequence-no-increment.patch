@@ -1,0 +1,18 @@
+# id: I111
+# kind: injected
+# defect: on SQLite the order-number upsert's conflict branch writes next_value back unchanged, so every allocation after a store's first hands out the same order number again
+# where: packages/platform/src/repositories/order-sequence.ts:26-29
+# killed-by: packages/platform/tests/integration/order-sequence.test.ts (AC-1, AC-2, AC-4)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/order-sequence.test.ts
+diff --git a/packages/platform/src/repositories/order-sequence.ts b/packages/platform/src/repositories/order-sequence.ts
+--- a/packages/platform/src/repositories/order-sequence.ts
++++ b/packages/platform/src/repositories/order-sequence.ts
+@@ -25,7 +25,7 @@ export function createOrderSequenceRepository(store: CommandStore): OrderSequenc
+           .values({ id: 1, nextValue: startFrom + 1 })
+           .onConflictDoUpdate({
+             target: sqliteSchema.orderSequences.id,
+-            set: { nextValue: sql`${sqliteSchema.orderSequences.nextValue} + 1` },
++            set: { nextValue: sql`${sqliteSchema.orderSequences.nextValue}` },
+           })
+           .returning({ nextValue: sqliteSchema.orderSequences.nextValue })
+           .get()

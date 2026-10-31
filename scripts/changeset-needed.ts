@@ -1,8 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { workspaceMembers } from './workspace-packages'
 
 // The Changeset check. `changeset status --since` fails any diff that changes a file under a package without a
 // changeset, its tests included, so a test-only change went red. A change needs one when it touches a file under a
@@ -19,39 +18,11 @@ export function needsChangeset(changed: string[], publishedPackageDirs: string[]
   )
 }
 
-/** The `packages:` entries of pnpm-workspace.yaml: `dir/*` or a plain directory. */
-function workspaceGlobs(root: string): string[] {
-  const text = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')
-  const globs: string[] = []
-  let inPackages = false
-  for (const line of text.split('\n')) {
-    if (/^\S/.test(line)) inPackages = /^packages:\s*$/.test(line)
-    const entry = inPackages ? /^\s+-\s+["']?([^"'#\s]+)["']?/.exec(line)?.[1] : undefined
-    if (entry !== undefined) globs.push(entry)
-  }
-  return globs
-}
-
 /** The workspace package directories, from the root, whose package.json is not `private`. */
 function publishedPackageDirs(root: string): string[] {
-  const globs = workspaceGlobs(root)
-  const excluded = new Set(globs.filter((g) => g.startsWith('!')).map((g) => g.slice(1)))
-  const dirs = globs
-    .filter((g) => !g.startsWith('!'))
-    .flatMap((glob) => {
-      if (!glob.endsWith('/*')) return [glob]
-      const parent = glob.slice(0, -2)
-      if (!existsSync(join(root, parent))) return []
-      return readdirSync(join(root, parent), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => `${parent}/${entry.name}`)
-    })
-  return dirs.filter((dir) => {
-    if (excluded.has(dir)) return false
-    const manifest = join(root, dir, 'package.json')
-    if (!existsSync(manifest)) return false
-    return (JSON.parse(readFileSync(manifest, 'utf8')) as { private?: boolean }).private !== true
-  })
+  return workspaceMembers(root)
+    .filter(({ dir, manifest }) => dir !== '' && manifest.private !== true)
+    .map(({ dir }) => dir)
 }
 
 function git(root: string, args: string[]): string {

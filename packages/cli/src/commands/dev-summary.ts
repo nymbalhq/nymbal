@@ -1,3 +1,4 @@
+import { slotFolder } from '@nymbalhq/config'
 import { displayUrl } from '@nymbalhq/types'
 
 /** What `nymbal dev` reports once it is up. */
@@ -79,7 +80,7 @@ export function renderDevSummary(info: DevSummaryInfo): string {
     '',
     ...slotLines,
     '',
-    ...info.primitives.map(({ name, provider }) => row(name, provider)),
+    ...info.primitives.map(({ name, provider }) => row(slotFolder(name), provider)),
     '',
     '  Debug logs: run with --verbose (or LOG_LEVEL=debug).',
   ]

@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/cart'
 import { css, html, nothing } from 'lit'
 import type { CartItem } from '@nymbalhq/types'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'

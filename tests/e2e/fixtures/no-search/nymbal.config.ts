@@ -21,8 +21,8 @@ export default {
   template: 'astro',
   infrastructure: {
     commandStore: env('NYMBAL_COMMAND_STORE', 'sqlite'),
-    documentStore: env('NYMBAL_DOCUMENT_STORE', 'in-memory'),
-    eventBus: env('NYMBAL_EVENT_BUS', 'in-process'),
+    documentStore: { provider: env('NYMBAL_DOCUMENT_STORE', 'in-memory') },
+    eventBus: { provider: env('NYMBAL_EVENT_BUS', 'in-process') },
     redis: { prefix: env('NYMBAL_REDIS_PREFIX', 'nymbal') },
   },
   security: {
@@ -30,6 +30,10 @@ export default {
     rateLimit: {
       '/api/auth/login': { requests: 1000, window: '1m', action: 'block' },
       '/api/auth/register': { requests: 1000, window: '1m', action: 'block' },
+      // Every checkout and order link request of the suite comes from one IP; the built-in limits are proven in the
+      // http package.
+      '/api/checkout': { requests: 1000, window: '1m', action: 'block' },
+      '/api/orders/link': { requests: 1000, window: '1m', action: 'block' },
     },
     botProtection: { mode: 'managed', allowList: [] },
     headers: {

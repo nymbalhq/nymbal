@@ -3,18 +3,36 @@ import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { conventionPackage } from '@nymbalhq/config'
 import type { Recipe } from '@nymbalhq/types'
 
 /**
- * Each recipe `nymbal add` knows, and the package that ships it as `recipes/<name>.json`. The recipe itself is data in
- * that package, so a package brings its own recipe; this table only says where to look.
+ * Each recipe `nymbal add` knows, and the package that ships it as `recipes/<name>.json`: the package of the provider a
+ * one-provider recipe sets. The recipe itself is data in that package, so a package brings its own recipe; this table
+ * only says where to look.
  */
 export const RECIPE_HOLDERS: Readonly<Record<string, string>> = {
-  cloudflare: '@nymbalhq/security-cloudflare',
+  algolia: conventionPackage('search', 'algolia'),
+  cloudflare: conventionPackage('security', 'cloudflare'),
   postgres: '@nymbalhq/platform',
-  redis: '@nymbalhq/doc-store-redis',
-  s3: '@nymbalhq/media-s3',
-  stripe: '@nymbalhq/adapter-stripe',
+  // Sets the document store and the bus; the document store's package ships it.
+  redis: conventionPackage('documentStore', 'redis'),
+  s3: conventionPackage('media', 's3'),
+  stripe: conventionPackage('payments', 'stripe'),
+}
+
+/**
+ * The `<slot>/<provider>` pairs a recipe that sets several slots owns: `nymbal add <slot> <provider>` refuses them
+ * toward the recipe, since adding one slot alone would leave the other where it was.
+ */
+export const MULTI_SLOT_PAIRS: Readonly<Record<string, readonly string[]>> = {
+  redis: ['documentStore/redis', 'eventBus/redis-streams'],
+}
+
+/** The multi-slot recipe that owns `slot` on `provider`, if one does. */
+export function multiSlotRecipe(slot: string, provider: string): string | undefined {
+  const pair = `${slot}/${provider}`
+  return Object.keys(MULTI_SLOT_PAIRS).find((name) => MULTI_SLOT_PAIRS[name]!.includes(pair))
 }
 
 export function knownRecipes(): string[] {
@@ -44,20 +62,25 @@ function packageDir(pkg: string, projectRoot: string): string | null {
   }
 }
 
-/** Where the project resolves `<holder>/recipes/<name>.json`, or null when the holder is not installed there. */
-export function recipeFile(name: string, projectRoot: string): string | null {
-  const holder = RECIPE_HOLDERS[name]
-  if (holder === undefined || !isKnownRecipe(name)) throw unknownRecipe(name)
-  const dir = packageDir(holder, projectRoot)
+/** Where the project resolves `<pkg>/recipes/<name>.json`, or null when `pkg` is not installed there or ships none. */
+export function packageRecipeFile(pkg: string, name: string, projectRoot: string): string | null {
+  const dir = packageDir(pkg, projectRoot)
   if (dir === null) return null
   try {
-    // From the holder's own manifest the specifier resolves through its `exports`, as from the project.
-    return createRequire(join(dir, 'package.json')).resolve(`${holder}/recipes/${name}.json`)
+    // From the package's own manifest the specifier resolves through its `exports`, as from the project.
+    return createRequire(join(dir, 'package.json')).resolve(`${pkg}/recipes/${name}.json`)
   } catch (error) {
     const code = (error as { code?: unknown }).code
     if (code === 'MODULE_NOT_FOUND' || code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return null
     throw error
   }
+}
+
+/** Where the project resolves `<holder>/recipes/<name>.json`, or null when the holder is not installed there. */
+export function recipeFile(name: string, projectRoot: string): string | null {
+  const holder = RECIPE_HOLDERS[name]
+  if (holder === undefined || !isKnownRecipe(name)) throw unknownRecipe(name)
+  return packageRecipeFile(holder, name, projectRoot)
 }
 
 export function isInstalled(pkg: string, projectRoot: string): boolean {
@@ -72,6 +95,11 @@ export async function readRecipe(name: string, projectRoot: string): Promise<Rec
       `${RECIPE_HOLDERS[name]} is not installed in ${projectRoot}, so its ${name} recipe cannot be read`,
     )
   }
+  return readRecipeFile(file, name)
+}
+
+/** The recipe `name` in `file`, checked for the shape `nymbal add` applies. */
+export async function readRecipeFile(file: string, name: string): Promise<Recipe> {
   const recipe = JSON.parse(await readFile(file, 'utf8')) as Recipe
   const malformed =
     recipe === null ||
@@ -100,16 +128,16 @@ function entryOf(dir: string, manifest: Record<string, unknown>): string | null 
 }
 
 /**
- * The environment variables the Nymbal packages in `packages` declare as settings (their `settings` export), as the
- * project has them installed: a variable the admin's Settings can fill as well as `.env`. A package that is not
- * installed, or whose SDK is not yet, declares nothing here.
+ * The environment variables the packages in `packages` declare as settings (their `settings` export), as the project
+ * has them installed: a variable the admin's Settings can fill as well as `.env`. A package that is not installed, or
+ * whose SDK is not yet, declares nothing here.
  */
 export async function settingsEnv(
   packages: readonly string[],
   projectRoot: string,
 ): Promise<Set<string>> {
   const names = new Set<string>()
-  for (const pkg of packages.filter((p) => p.startsWith('@nymbalhq/'))) {
+  for (const pkg of packages) {
     const dir = packageDir(pkg, projectRoot)
     if (dir === null) continue
     const manifest = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as Record<
@@ -121,10 +149,10 @@ export async function settingsEnv(
     let mod: { settings?: unknown }
     try {
       mod = (await import(pathToFileURL(entry).href)) as { settings?: unknown }
-    } catch (error) {
-      // `--no-install` may leave the provider's SDK out; the hint then names `.env` alone.
-      if ((error as { code?: unknown }).code === 'ERR_MODULE_NOT_FOUND') continue
-      throw error
+    } catch {
+      // Only a hint is built from this, after the files are written: a module that fails to load (an SDK left out by
+      // `--no-install`, or one that throws on import) leaves the hint naming `.env` alone.
+      continue
     }
     if (!Array.isArray(mod.settings)) continue
     for (const setting of mod.settings as Array<{ env?: unknown }>) {

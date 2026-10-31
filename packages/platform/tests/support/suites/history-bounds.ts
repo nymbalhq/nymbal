@@ -21,6 +21,7 @@ import {
   untilDelivered,
   type HistoryKind,
 } from '../history.js'
+import { unaudited } from '../write-audit.js'
 
 // AC-2 on one dialect: the bounds of `?at=` and history.
 // A seeded product (rows with no event) answers 409 `history.before_start` with `historyStartsAt: null`; t before a
@@ -136,27 +137,29 @@ export function historyBoundsSuite(dialect: string, start: () => Promise<Kernel>
     it('AC-2: a seeded product, with rows and no event, answers 409 history.before_start with historyStartsAt null, and its history lists nothing from a null start', async () => {
       const id = randomUUID()
       const now = new Date()
-      await k.store.transaction(async (tx) => {
-        await k.repos.product.insert(tx, {
-          id,
-          slug: `history-seeded-${id.slice(0, 8)}`,
-          name: 'Seeded',
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        })
-        await k.repos.variant.insert(tx, {
-          id: randomUUID(),
-          productId: id,
-          sku: `SEED-${id.slice(0, 8)}`,
-          name: 'Default',
-          priceMinor: 900,
-          stock: 3,
-          options: [],
-          createdAt: now,
-          updatedAt: now,
-        })
-      })
+      await unaudited(() =>
+        k.store.transaction(async (tx) => {
+          await k.repos.product.insert(tx, {
+            id,
+            slug: `history-seeded-${id.slice(0, 8)}`,
+            name: 'Seeded',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+          })
+          await k.repos.variant.insert(tx, {
+            id: randomUUID(),
+            productId: id,
+            sku: `SEED-${id.slice(0, 8)}`,
+            name: 'Default',
+            priceMinor: 900,
+            stock: 3,
+            options: [],
+            createdAt: now,
+            updatedAt: now,
+          })
+        }),
+      )
       expect(await rowsOf('product', id), 'the fixture: no event names the seeded product').toEqual(
         [],
       )

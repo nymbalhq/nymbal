@@ -1,13 +1,12 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import fc from 'fast-check'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
 import { KNOWN_PROVIDERS, loadConfig, type CommerceSlot } from './index.js'
 
-// AC-1: every slot's provider is one of KNOWN_PROVIDERS[slot] or `custom`; any other string fails loadConfig naming
-// the slot, the string and the known list, and a `native` email block asking for SMTP fails naming `smtp`.
+// AC-1: every slot loads each of KNOWN_PROVIDERS[slot] and `custom`, keeping it, and a `native` email block asking for
+// SMTP fails naming `smtp`. Open provider names are open-providers.test.ts.
 
 const SLOTS = [
   'payments',
@@ -27,17 +26,14 @@ const known = (slot: Slot): readonly string[] => KNOWN_PROVIDERS[slot]
 /** The known providers, per slot, without `custom` (which every slot also accepts). */
 const SPEC_PROVIDERS: Record<Slot, readonly string[]> = {
   payments: ['native', 'stripe'],
-  email: ['native', 'smtp'],
+  email: ['native', 'smtp', 'mailgun', 'resend', 'ses'],
   ai: ['none', 'anthropic'],
   reviews: ['native'],
   search: ['native'],
   analytics: ['native'],
-  shipping: ['native'],
+  shipping: ['native', 'easypost'],
   tax: ['native'],
 }
-
-/** Every provider name any slot knows: a generated string outside it is unknown to every slot. */
-const EVERY_NAME = new Set([...Object.values(SPEC_PROVIDERS).flat(), 'custom'])
 
 const dirs: string[] = []
 afterAll(() => {
@@ -50,8 +46,8 @@ function baseConfig(): Record<string, unknown> & { commerce: Record<string, unkn
     template: 'astro',
     infrastructure: {
       commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
     },
     security: { adapter: 'middleware' },
     commerce: {
@@ -94,32 +90,7 @@ async function rejectionOf(config: unknown): Promise<unknown> {
   )
 }
 
-function quoted(message: string, value: string): boolean {
-  return [`'${value}'`, `"${value}"`, `\`${value}\``].some((q) => message.includes(q))
-}
-
-/** Strings no slot lists: random provider-shaped names, and one-character typos of the listed ones. */
-const unknownProvider = fc
-  .oneof(
-    fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,24}$/),
-    fc
-      .tuple(fc.constantFrom(...EVERY_NAME), fc.stringMatching(/^[a-z0-9-]$/), fc.nat())
-      .map(([name, c, at]) => {
-        const i = at % (name.length + 1)
-        return `${name.slice(0, i)}${c}${name.slice(i)}`
-      }),
-  )
-  .filter((s) => !EVERY_NAME.has(s))
-
 describe('AC-1: the config knows its providers', () => {
-  it('AC-1: KNOWN_PROVIDERS lists, per slot, exactly the known providers (custom aside)', () => {
-    expect(Object.keys(KNOWN_PROVIDERS).sort()).toEqual([...SLOTS].sort())
-    for (const slot of SLOTS) {
-      const listed = known(slot).filter((p) => p !== 'custom')
-      expect([...listed].sort(), slot).toEqual([...SPEC_PROVIDERS[slot]].sort())
-    }
-  })
-
   it('AC-1: loadConfig accepts every slot × every known provider, and custom, and keeps the provider it was given', async () => {
     const cells = SLOTS.flatMap((slot) =>
       [...new Set([...known(slot), 'custom'])].map((provider) => ({ slot, provider })),
@@ -131,22 +102,6 @@ describe('AC-1: the config knows its providers', () => {
       const loaded = await loadConfig(project(withBlock(slot, { provider })))
       expect(loaded.config.commerce[slot].provider, `${slot}: ${provider}`).toBe(provider)
     }
-  })
-
-  it('AC-1: any other provider string fails loadConfig with a ConfigError naming the slot, the string and every known provider for that slot', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.constantFrom(...SLOTS), unknownProvider, async (slot, provider) => {
-        const error = await rejectionOf(withBlock(slot, { provider }))
-
-        expect(error, `${slot}: ${provider} loaded`).toBeInstanceOf(ConfigError)
-        const message = (error as ConfigError).message
-        expect(message).toMatch(new RegExp(`\\b${slot}\\b`))
-        expect(quoted(message, provider), `the message quotes ${provider}: ${message}`).toBe(true)
-        const unnamed = SPEC_PROVIDERS[slot].filter((known) => !message.includes(known))
-        expect(unnamed, message).toEqual([])
-      }),
-      { numRuns: 40 },
-    )
   })
 
   it("AC-1: email { provider: 'native', config: { transport: 'smtp' } } fails loadConfig naming smtp, where the same block on the console transport loads", async () => {

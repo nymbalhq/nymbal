@@ -1,7 +1,10 @@
-// Reads: nothing
+// Reads: tests/perf/fixtures/**
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { checkBudgets } from '../../scripts/perf-budgets-check'
+import { checkBudgets, SCRIPT_REFERENCES } from '../../scripts/perf-budgets-check'
 
 // AC-1: the budget checker. A page passes iff every metric is at or under its budget (a NaN, which is what a page
 // that failed to load measures as, is not); a budgeted page with no result fails as "not measured"; a measured page
@@ -169,5 +172,139 @@ describe('AC-1: checkBudgets', () => {
         },
       ),
     )
+  })
+})
+
+// AC-7: the options a bytes-only run judges with. `metrics` limits the judged metrics, so the NaN that a run without
+// Lighthouse leaves in LCP, CLS and TBT fails nothing; a reference fails a matching page above its bytes, under budget
+// or not, as `scriptBytes (reference <commit>)`.
+
+const REPO = fileURLToPath(new URL('../../', import.meta.url))
+
+interface Reference {
+  commit: string
+  template: string
+  page: string
+  scriptBytes: number
+}
+
+const NAN_TIMINGS = { lcpMs: Number.NaN, cls: Number.NaN, tbtMs: Number.NaN }
+
+describe('AC-7: checkBudgets options', () => {
+  it('AC-7: property: with metrics [scriptBytes], a page passes iff its scriptBytes is at or under budget, whatever NaN LCP, CLS and TBT it has', () => {
+    fc.assert(
+      fc.property(
+        budgetArb.chain((budget) =>
+          relative(budget.scriptBytes).map((scriptBytes) => ({ budget, scriptBytes })),
+        ),
+        ({ budget, scriptBytes }) => {
+          const verdicts: Verdict[] = checkBudgets(
+            [
+              {
+                template: 'astro',
+                page: 'home',
+                url: '/',
+                measured: { ...NAN_TIMINGS, scriptBytes },
+              },
+            ],
+            { astro: { home: budget } },
+            { metrics: ['scriptBytes'] },
+          )
+          const over = !(scriptBytes <= budget.scriptBytes)
+          expect(verdicts.map((v) => [v.ok, v.failures])).toEqual([
+            [!over, over ? ['scriptBytes'] : []],
+          ])
+        },
+      ),
+      { numRuns: 300 },
+    )
+  })
+
+  it('AC-7: property: a page above its reference fails "scriptBytes (reference <commit>)" under budget, one at or under it passes, and another page is not held to it', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1000, max: 200_000 }),
+        fc.integer({ min: 1, max: 5000 }),
+        fc.integer({ min: -2000, max: 5000 }),
+        fc.stringMatching(/^[0-9a-f]{7}$/),
+        (referenceBytes, headroom, delta, commit) => {
+          const budgetBytes = referenceBytes + headroom
+          const scriptBytes = Math.min(referenceBytes + delta, budgetBytes)
+          const budget = { lcpMs: 2500, cls: 0.1, tbtMs: 200, scriptBytes: budgetBytes }
+          const timings = { lcpMs: 1000, cls: 0, tbtMs: 0 }
+          const reference: Reference = {
+            commit,
+            template: 'astro',
+            page: 'home',
+            scriptBytes: referenceBytes,
+          }
+          const verdicts: Verdict[] = checkBudgets(
+            [
+              { template: 'astro', page: 'home', url: '/', measured: { ...timings, scriptBytes } },
+              {
+                template: 'astro',
+                page: 'cart',
+                url: '/cart',
+                measured: { ...timings, scriptBytes },
+              },
+            ],
+            { astro: { home: budget, cart: budget } },
+            { references: [reference] },
+          )
+          const above = scriptBytes > referenceBytes
+          const of = (page: string): Verdict | undefined => verdicts.find((v) => v.page === page)
+          expect(of('home')?.failures).toEqual(above ? [`scriptBytes (reference ${commit})`] : [])
+          expect(of('home')?.ok).toBe(!above)
+          expect(of('cart')?.failures).toEqual([])
+        },
+      ),
+      { numRuns: 300 },
+    )
+  })
+
+  it('AC-7: every SCRIPT_REFERENCES file parses to { commit, template, page, scriptBytes } and holds its page to those bytes', () => {
+    expect(SCRIPT_REFERENCES).toContain('tests/perf/fixtures/astro-home-d2d900b.json')
+    for (const path of SCRIPT_REFERENCES) {
+      const parsed = JSON.parse(readFileSync(join(REPO, path), 'utf8')) as Reference
+      const reference: Reference = {
+        commit: parsed.commit,
+        template: parsed.template,
+        page: parsed.page,
+        scriptBytes: parsed.scriptBytes,
+      }
+      expect(reference.commit, path).toMatch(/^[0-9a-f]{7,40}$/)
+      expect(Number.isInteger(reference.scriptBytes) && reference.scriptBytes > 0, path).toBe(true)
+      const budgets: Budgets = {
+        [reference.template]: {
+          [reference.page]: {
+            lcpMs: 2500,
+            cls: 0.1,
+            tbtMs: 200,
+            scriptBytes: reference.scriptBytes * 2,
+          },
+        },
+      }
+      const judge = (scriptBytes: number): Verdict[] =>
+        checkBudgets(
+          [
+            {
+              template: reference.template,
+              page: reference.page,
+              url: '/',
+              measured: { ...NAN_TIMINGS, scriptBytes },
+            },
+          ],
+          budgets,
+          { metrics: ['scriptBytes'], references: [reference] },
+        )
+      expect(
+        judge(reference.scriptBytes).map((v) => v.failures),
+        path,
+      ).toEqual([[]])
+      expect(
+        judge(reference.scriptBytes + 1).map((v) => v.failures),
+        path,
+      ).toEqual([[`scriptBytes (reference ${reference.commit})`]])
+    }
   })
 })

@@ -1,22 +1,28 @@
 ---
 import '../../styles/pages/confirmation.css'
+import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import { fetchOrder } from '../../lib/api'
 import { isPaid, orderHeading } from '../../lib/order-status'
 
-// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header
-// and the meta tag below. The rewrite to /404 drops the header, so the not-found page sets its own.
+// The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header,
+// the meta tag below and a canonical URL without the query. No shared cache may keep what a key opened.
 Astro.response.headers.set('Referrer-Policy', 'no-referrer')
+Astro.response.headers.set('Cache-Control', 'no-store')
 
 const { orderNumber } = Astro.params
 const key = Astro.url.searchParams.get('key') ?? undefined
-// Rejects when the API fails, so a failed read is a 500 and never a 404 for an order the shopper has.
-const order = await fetchOrder(orderNumber!, key)
+// Rejects when the API fails, so a failed read is a 500 and never a not-found page for an order the shopper has. A POST
+// here (a form sent before its script ran) is answered as the plain page: its body is never read.
+const read = await fetchOrder(orderNumber!, key)
+const order = read === 'expired' ? null : read
+const canonical = new URL(Astro.url.pathname, Astro.url).href
 
-if (!order) return Astro.rewrite('/404')
+// The order page's own not-found state, which offers a fresh link; the site-wide 404 would drop the headers above.
+if (read === null) Astro.response.status = 404
 
-const summary = {
+const summary = order && {
   items: JSON.stringify(
     (order.lineItems ?? []).map((item) => ({
       name: `${item.productName}${item.variantName ? ` - ${item.variantName}` : ''}`,
@@ -33,81 +39,168 @@ const summary = {
   currency: order.currency,
 }
 
-const shippingAddress = order.shippingAddress
-const heading = orderHeading(order.status)
-const paid = isPaid(order.status)
+const shippingAddress = order?.shippingAddress
+const heading = order ? orderHeading(order.status) : read === 'expired' ? 'Open your order' : 'Order not found'
+const paid = order ? isPaid(order.status) : false
 ---
 
-<BaseLayout title={`${heading} | Nymbal`} description="Your order with Nymbal.">
+<BaseLayout title={`${heading} | Nymbal`} description="Your order with Nymbal." canonical={canonical}>
   <meta slot="head" name="referrer" content="no-referrer" />
-  <div class="container section">
-    <div class="confirmation-page" data-order-number={order.orderNumber} data-order-status={order.status}>
-      {paid && (
-        <div class="confirmation-icon">
+  {read === 'expired' && (
+    <div class="container section" id="order-email-prompt">
+      <form method="post" class="error-page" id="order-email-form" data-order-number={orderNumber}>
+        <h1 class="error-title">Open your order</h1>
+        <p class="error-message">This order link has expired. Enter the email you gave at checkout to open the order.</p>
+        <div class="form-group">
+          <label for="order-email">Email</label>
+          <input id="order-email" type="email" name="email" autocomplete="email" required data-testid="order-email-input" />
+        </div>
+        <p class="error-message" data-testid="order-email-limited" hidden>
+          Too many tries for now. Please try again in a while.
+        </p>
+        <p class="error-message" id="order-email-failed" hidden>We could not open the order just now. Please try again.</p>
+        <div class="error-actions">
+          <button type="submit" class="btn btn-primary" data-testid="order-email-submit">Open order</button>
+        </div>
+      </form>
+    </div>
+  )}
+  {read === 'expired' && (
+    <div class="container section" id="order-opened" hidden>
+      <div class="confirmation-page">
+        <div class="confirmation-icon" data-order-field="paid">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
-      )}
-
-      <h1 class="confirmation-title" data-testid="order-heading">{heading}</h1>
-      {paid ? (
-        <p class="confirmation-subtitle">
-          Thank you. Your order <strong data-testid="order-number">{order.orderNumber}</strong> is paid.
-          We'll send a confirmation to <strong>{order.email}</strong>.
-        </p>
-      ) : order.status === 'pending' ? (
-        <p class="confirmation-subtitle">
-          Your order <strong data-testid="order-number">{order.orderNumber}</strong> is waiting for its payment.
-          We'll email <strong>{order.email}</strong> once it arrives.
-        </p>
-      ) : (
-        <p class="confirmation-subtitle">
-          Your order <strong data-testid="order-number">{order.orderNumber}</strong> is {order.status.replace(/_/g, ' ')}.
-        </p>
-      )}
-
-      <div class="confirmation-card">
-        <h2 class="confirmation-card-title">Order Details</h2>
-
-        <dl>
-          <div class="confirmation-detail-row">
-            <dt>Order Number</dt>
-            <dd>{order.orderNumber}</dd>
-          </div>
-          <div class="confirmation-detail-row">
-            <dt>Status</dt>
-            <dd style="text-transform: capitalize;" data-testid="order-status">{order.status}</dd>
-          </div>
-        </dl>
-      </div>
-
-      <NymbalElement tag="nymbal-order-timeline" attributes={{ class: 'confirmation-summary', entries: JSON.stringify(order.timeline ?? []) }} />
-
-      <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
-
-      {shippingAddress && (
+        <h1 class="confirmation-title" data-order-field="heading"></h1>
+        <p class="confirmation-subtitle" data-order-field="subtitle"></p>
         <div class="confirmation-card">
-          <h2 class="confirmation-card-title">Shipping Address</h2>
-          <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
-            {shippingAddress.addressLine1}<br />
-            {shippingAddress.addressLine2 && <>{shippingAddress.addressLine2}<br /></>}
-            {shippingAddress.city}, {shippingAddress.region} {shippingAddress.postalCode}<br />
-            {shippingAddress.country}
-          </p>
+          <h2 class="confirmation-card-title">Order Details</h2>
+          <dl>
+            <div class="confirmation-detail-row">
+              <dt>Order Number</dt>
+              <dd data-order-field="number"></dd>
+            </div>
+            <div class="confirmation-detail-row">
+              <dt>Status</dt>
+              <dd style="text-transform: capitalize;" data-order-field="status"></dd>
+            </div>
+          </dl>
         </div>
-      )}
-
-      <div class="confirmation-actions">
-        <a href="/account/register" class="btn btn-primary">Create an Account</a>
-        <a href="/products" class="btn btn-secondary">Continue Shopping</a>
+        <nymbal-order-timeline class="confirmation-summary"></nymbal-order-timeline>
+        <nymbal-order-summary class="confirmation-summary"></nymbal-order-summary>
+        <div class="confirmation-card" data-order-field="shipping" hidden>
+          <h2 class="confirmation-card-title">Shipping Address</h2>
+          <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;" data-order-field="address"></p>
+        </div>
+        <div class="confirmation-actions">
+          <a href="/account/register" class="btn btn-primary">Create an Account</a>
+          <a href="/products" class="btn btn-secondary">Continue Shopping</a>
+        </div>
       </div>
     </div>
-  </div>
+  )}
+  {(read === 'expired' || read === null) && (
+    <div class="container section" id="order-not-found" hidden={read === 'expired'}>
+      <div class="error-page">
+        <span class="error-code">404</span>
+        <h1 class="error-title">Order not found</h1>
+        <p class="error-message">
+          This link does not open an order. Give its order number and the email you gave at checkout, and we'll email
+          you a fresh link if they match.
+        </p>
+        <form method="post" id="order-link-form">
+          <div class="form-group">
+            <label for="order-link-number">Order number</label>
+            <input id="order-link-number" name="orderNumber" required data-testid="order-link-number" />
+          </div>
+          <div class="form-group">
+            <label for="order-link-email">Email</label>
+            <input id="order-link-email" type="email" name="email" autocomplete="email" required data-testid="order-link-email" />
+          </div>
+          <div class="error-actions">
+            <button type="submit" class="btn btn-primary" data-testid="order-link-submit">Send me my order link</button>
+          </div>
+        </form>
+        <p class="error-message" data-testid="order-link-sent" hidden>
+          If that number and email match an order, its link is on its way to that email.
+        </p>
+        <p class="error-message" id="order-link-failed" hidden>We could not send the link just now. Please try again.</p>
+      </div>
+    </div>
+  )}
+  {order && (
+    <div class="container section">
+      <div class="confirmation-page" data-order-number={order.orderNumber} data-order-status={order.status}>
+        {paid && (
+          <div class="confirmation-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+        )}
+
+        <h1 class="confirmation-title" data-testid="order-heading">{heading}</h1>
+        {paid ? (
+          <p class="confirmation-subtitle">
+            Thank you. Your order <strong data-testid="order-number">{order.orderNumber}</strong> is paid.
+            We'll send a confirmation to the email you gave at checkout.
+          </p>
+        ) : order.status === 'pending' ? (
+          <p class="confirmation-subtitle">
+            Your order <strong data-testid="order-number">{order.orderNumber}</strong> is waiting for its payment.
+            We'll email the address you gave at checkout once it arrives.
+          </p>
+        ) : (
+          <p class="confirmation-subtitle">
+            Your order <strong data-testid="order-number">{order.orderNumber}</strong> is {order.status.replace(/_/g, ' ')}.
+          </p>
+        )}
+
+        <div class="confirmation-card">
+          <h2 class="confirmation-card-title">Order Details</h2>
+
+          <dl>
+            <div class="confirmation-detail-row">
+              <dt>Order Number</dt>
+              <dd>{order.orderNumber}</dd>
+            </div>
+            <div class="confirmation-detail-row">
+              <dt>Status</dt>
+              <dd style="text-transform: capitalize;" data-testid="order-status">{order.status}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <NymbalElement tag="nymbal-order-timeline" attributes={{ class: 'confirmation-summary', entries: JSON.stringify(order.timeline ?? []) }} />
+
+        <NymbalElement tag="nymbal-order-summary" attributes={{ class: 'confirmation-summary', ...summary }} />
+
+        {shippingAddress && (
+          <div class="confirmation-card">
+            <h2 class="confirmation-card-title">Shipping Address</h2>
+            <p style="font-size: var(--nymbal-font-size-sm, 0.875rem); color: var(--nymbal-color-text-muted, #71717a); line-height: 1.6;">
+              {shippingAddress.addressLine1}<br />
+              {shippingAddress.addressLine2 && <>{shippingAddress.addressLine2}<br /></>}
+              {shippingAddress.city}, {shippingAddress.region} {shippingAddress.postalCode}<br />
+              {shippingAddress.country}
+            </p>
+          </div>
+        )}
+
+        <div class="confirmation-actions">
+          <a href="/account/register" class="btn btn-primary">Create an Account</a>
+          <a href="/products" class="btn btn-secondary">Continue Shopping</a>
+        </div>
+      </div>
+    </div>
+  )}
 </BaseLayout>
 
 <script>
   import '../../scripts/order-status.js'
+  import '../../scripts/order-access.js'
   import { NymbalOrderSummary } from '@nymbalhq/web-components/elements/nymbal-order-summary'
   import { NymbalOrderTimeline } from '@nymbalhq/web-components/elements/nymbal-order-timeline'
 

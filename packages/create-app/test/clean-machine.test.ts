@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type * as Clack from '@clack/prompts'
 import fc from 'fast-check'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ADAPTER_NAMES } from '../../../tests/architecture/adapter-table.js'
 import { loadConfig } from '../../config/src/index.js'
 import { main, parseCliFlags, scaffold } from '../src/index.js'
 
@@ -21,6 +22,9 @@ const PACKAGES = resolve(REPO_ROOT, 'packages')
 
 const TEMPLATES = ['astro', 'nextjs'] as const
 type Template = (typeof TEMPLATES)[number]
+
+// The first-party adapter packages: optional peers of the kernel that a project installs only when its config names one.
+const ADAPTER_PACKAGES: readonly string[] = ADAPTER_NAMES
 
 // The public runtime packages @nymbalhq/stack pins, and the directory each lives in.
 const PUBLIC_RUNTIME: Record<string, string> = {
@@ -346,7 +350,7 @@ describe('scaffold() output', () => {
         listed.filter(
           (n) =>
             ['stripe', '@anthropic-ai/sdk', 'nodemailer'].includes(n) ||
-            n.startsWith('@nymbalhq/adapter-'),
+            ADAPTER_PACKAGES.includes(n),
         ),
       ).toEqual([])
     })

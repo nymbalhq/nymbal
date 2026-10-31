@@ -1,0 +1,95 @@
+{
+  "adapters": [
+    {
+      "package": "@nymbalhq/ai-anthropic",
+      "slot": "ai",
+      "provider": "anthropic",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/ai/anthropic" }
+    },
+    {
+      "package": "@nymbalhq/document-store-postgres-jsonb",
+      "slot": "document-store",
+      "provider": "postgres-jsonb",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/document-store/postgres-jsonb" }
+    },
+    {
+      "package": "@nymbalhq/document-store-redis",
+      "slot": "document-store",
+      "provider": "redis",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/document-store/redis" }
+    },
+    {
+      "package": "@nymbalhq/email-mailgun",
+      "slot": "email",
+      "provider": "mailgun",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/email/mailgun" }
+    },
+    {
+      "package": "@nymbalhq/email-resend",
+      "slot": "email",
+      "provider": "resend",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/email/resend" }
+    },
+    {
+      "package": "@nymbalhq/email-ses",
+      "slot": "email",
+      "provider": "ses",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/email/ses" }
+    },
+    {
+      "package": "@nymbalhq/email-smtp",
+      "slot": "email",
+      "provider": "smtp",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/email/smtp" }
+    },
+    {
+      "package": "@nymbalhq/event-bus-redis-streams",
+      "slot": "event-bus",
+      "provider": "redis-streams",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/event-bus/redis-streams" }
+    },
+    {
+      "package": "@nymbalhq/media-s3",
+      "slot": "media",
+      "provider": "s3",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/media/s3" }
+    },
+    {
+      "package": "@nymbalhq/payments-stripe",
+      "slot": "payments",
+      "provider": "stripe",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/payments/stripe" }
+    },
+    {
+      "package": "@nymbalhq/search-algolia",
+      "slot": "search",
+      "provider": "algolia",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/search/algolia" }
+    },
+    {
+      "package": "@nymbalhq/security-cloudflare",
+      "slot": "security",
+      "provider": "cloudflare",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/security/cloudflare" }
+    },
+    {
+      "package": "@nymbalhq/shipping-easypost",
+      "slot": "shipping",
+      "provider": "easypost",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/shipping/easypost" }
+    }
+  ]
+}

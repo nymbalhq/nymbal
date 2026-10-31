@@ -6,19 +6,18 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
-import { ConfigError } from '@nymbalhq/types'
 import { buildSecurityHeaders } from '../../src/adapters/security/headers.js'
 import { serveKernel } from '../support/http.js'
 import { createKernel, kernelConfig } from '../support/kernel.js'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
-} from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
+} from '../../../adapters/security/cloudflare/src/tests/fake-cloudflare.js'
 
 // AC-2: `createApp` honours `security.adapter`. With `cloudflare` (its apiBase on the fake) it builds the Cloudflare
 // adapter, reports `edge-rules`, sets the same response headers as a `middleware` store and makes no request at boot;
-// `aws-waf` or `akamai` is refused naming the adapters that exist; a missing package fails with the install line (in
-// the adapter-graph child process, from the built dist: `pnpm build` first).
+// a missing package fails with the install line (in the adapter-graph child process, from the built dist: `pnpm build`
+// first). An adapter nothing provides is adapter-resolution.test.ts.
 
 const exec = promisify(execFile)
 const CHILD = fileURLToPath(new URL('./fixtures/adapter-graph/child.mjs', import.meta.url))
@@ -79,25 +78,6 @@ describe('AC-2: createApp builds the adapter security.adapter names', () => {
     }
   }, 60_000)
 
-  it.each(['aws-waf', 'akamai'])(
-    'AC-2: with %s, createApp throws a ConfigError naming middleware, cloudflare',
-    async (adapter) => {
-      const outcome = await createKernel({
-        dialect: 'sqlite',
-        configure: withAdapter(adapter),
-      }).then(
-        async (k) => {
-          await k.close()
-          return null
-        },
-        (error: unknown) => error,
-      )
-      expect(outcome).toBeInstanceOf(ConfigError)
-      expect(String((outcome as Error).message)).toContain('middleware, cloudflare')
-    },
-    60_000,
-  )
-
   it('AC-2: with @nymbalhq/security-cloudflare not installed, createApp fails adapter.package_missing with the install line and no SDK in it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cf-missing-'))
     dirs.push(dir)
@@ -110,7 +90,7 @@ describe('AC-2: createApp builds the adapter security.adapter names', () => {
       cwd: dir,
       env: {
         ...env,
-        ADAPTERS_GRAPH: JSON.stringify({ out, hide: ['@nymbalhq/security-cloudflare'] }),
+        ADAPTERS_GRAPH: JSON.stringify({ out }),
       },
       timeout: 60_000,
       maxBuffer: 16 * 1024 * 1024,

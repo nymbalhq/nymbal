@@ -1,20 +1,7 @@
 import type { NymbalClient } from '@nymbalhq/sdk'
+import { onStoreBuilt } from '@nymbalhq/sdk/core'
 
 const CLIENT_KEY = Symbol.for('nymbal.client')
-
-interface Store {
-  subscribe(fn: () => void): () => void
-  getState(): unknown
-}
-
-function isStore(value: unknown): value is Store {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as Store).subscribe === 'function' &&
-    typeof (value as Store).getState === 'function'
-  )
-}
 
 /**
  * The registered clients' stores that have had a settled update (one that is not `loading`). A store starts at
@@ -25,12 +12,12 @@ const settledStores = new WeakSet<object>()
 
 export function registerClient(client: NymbalClient): void {
   ;(globalThis as Record<symbol, unknown>)[CLIENT_KEY] = client
-  for (const store of Object.values(client)) {
-    if (!isStore(store)) continue
+  // A store the page builds after this (its first read) is subscribed then; reading one here would build it.
+  onStoreBuilt(client, (store) => {
     store.subscribe(() => {
       if ((store.getState() as { loading?: unknown }).loading !== true) settledStores.add(store)
     })
-  }
+  })
 }
 
 /** Whether a registered client's store has had a settled update since the client was registered. */

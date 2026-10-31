@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { runWooCommerceImport } from '../../packages/importers/src/index.js'
-import { createS3MediaStorage } from '../../packages/media-s3/src/index.js'
+import { createS3MediaStorage } from '../../packages/adapters/media/s3/src/index.js'
 import {
   buildImportEnv,
   importedMedia,

@@ -8,6 +8,7 @@ import {
 } from '@nymbalhq/types'
 import { seedVariant, type Kernel } from '../kernel.js'
 import { openRaw, type RawReader } from '../raw.js'
+import { unaudited } from '../write-audit.js'
 
 // AC-4 (SQLite) / AC-5 (Postgres): a transaction that writes through two repositories then throws leaves neither
 // write. AC-9 (both): events are delivered after commit, never after rollback, in order, before `transaction`
@@ -139,15 +140,17 @@ export function transactionsSuite(
         if ((event as Marker).payload.variantId === marker) delivered.push(event.type)
       })
 
-      const seenAtResolve = await k.store.transaction(async () => {
-        await k.publisher.publish(EVT_INVENTORY_LOW_STOCK, {
-          variantId: marker,
-          currentQty: 1,
-          threshold: 2,
-        })
-        await k.publisher.publish(EVT_INVENTORY_OUT_OF_STOCK, { variantId: marker })
-        return delivered.length
-      })
+      const seenAtResolve = await unaudited(() =>
+        k.store.transaction(async () => {
+          await k.publisher.publish(EVT_INVENTORY_LOW_STOCK, {
+            variantId: marker,
+            currentQty: 1,
+            threshold: 2,
+          })
+          await k.publisher.publish(EVT_INVENTORY_OUT_OF_STOCK, { variantId: marker })
+          return delivered.length
+        }),
+      )
 
       // Nothing awaited between the resolution and this line.
       expect(delivered).toEqual([EVT_INVENTORY_LOW_STOCK, EVT_INVENTORY_OUT_OF_STOCK])

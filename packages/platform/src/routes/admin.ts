@@ -52,7 +52,12 @@ export function registerAdminRoutes(adapter: HttpAdapter, deps: RegisterAdminRou
     product: services.product,
     repos,
   })
-  registerAdminCustomersRoutes(adapter, { order: services.order, repos, history })
+  registerAdminCustomersRoutes(adapter, {
+    order: services.order,
+    customer: services.customer,
+    repos,
+    history,
+  })
   registerAdminSearchRoute(adapter, {
     order: services.order,
     product: services.product,

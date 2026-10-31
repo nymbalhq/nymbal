@@ -17,6 +17,7 @@ import {
   stripeBlock,
 } from '../../../platform/tests/support/settings.js'
 import { cliEnv, doctorJson, doctorLines, runCli } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-4: with a Stripe secretKey held only in Settings, `nymbal doctor` (and `--json`) reports payments healthy and
 // prints neither the value nor its base64. Needs `pnpm build`. The in-process half is
@@ -44,6 +45,7 @@ describe('AC-4: doctor on a store whose key is held in Settings', () => {
           }
           const dir = mkdtempSync(join(tmpdir(), 'settings-doctor-'))
           run.add(() => rmSync(dir, { recursive: true, force: true }))
+          install(dir, workspace('@nymbalhq/payments-stripe'))
           writeFileSync(
             join(dir, 'nymbal.config.ts'),
             `export default ${JSON.stringify(settingsConfigInput('sqlite', commerce), null, 2)}\n`,

@@ -1,0 +1,16 @@
+{
+  "name": "@acme/nymbal-search-x",
+  "version": "1.0.0",
+  "description": "Test fixture: a third-party Nymbal search adapter with settings, added by `nymbal add <package>`",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    }
+  },
+  "files": [
+    "index.js"
+  ]
+}

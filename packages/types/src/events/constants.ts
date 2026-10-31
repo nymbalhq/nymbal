@@ -60,6 +60,8 @@ export const EVT_PAYMENT_REFUNDED = 'payment.refunded.v1'
 
 // Alerts
 export const EVT_ALERT_REQUESTED = 'alert.requested.v1'
+/** A subscribe for an alert already active: the subscription stands and nothing is sent. */
+export const EVT_ALERT_REPEATED = 'alert.repeated.v1'
 export const EVT_ALERT_CONFIRMED = 'alert.confirmed.v1'
 export const EVT_ALERT_UNSUBSCRIBED = 'alert.unsubscribed.v1'
 export const EVT_ALERT_SENT = 'alert.sent.v1'
@@ -110,6 +112,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_PAYMENT_FAILED,
   EVT_PAYMENT_REFUNDED,
   EVT_ALERT_REQUESTED,
+  EVT_ALERT_REPEATED,
   EVT_ALERT_CONFIRMED,
   EVT_ALERT_UNSUBSCRIBED,
   EVT_ALERT_SENT,

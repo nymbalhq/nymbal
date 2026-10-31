@@ -1,14 +1,27 @@
 name: CI
 
 # Tasks merge into dev locally (scripts/merge-to-dev.sh, after a green gate:full at the merged sha), so CI runs on
-# the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first.
+# the shared branches only: a red dev run is a fix-forward task, and a release needs a green dev run first. A release
+# dispatches a run of every job on dev, Lighthouse included.
 on:
   push:
     branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      select:
+        description: Which jobs run (all, or auto for those the change reaches)
+        type: choice
+        options: [all, auto]
+        default: auto
+      base:
+        description: The commit every gate.ts call diffs against (a release passes origin/main)
+        type: string
+        required: true
 
 env:
-  # The base every gate.ts call diffs against: the previous tip of the pushed branch, so one merge's own changes.
-  GATE_BASE: ${{ github.event.before }}
+  # The base every gate.ts call diffs against: on a push the previous tip of the pushed branch, so one merge's own
+  # changes; a dispatch carries no `before`, so it names its base.
+  GATE_BASE: ${{ github.event.before || inputs.base }}
 
 jobs:
   build:
@@ -32,6 +45,7 @@ jobs:
           name: build-output
           path: |
             packages/*/dist
+            packages/adapters/*/*/dist
             templates/astro/dist
             templates/astro/.astro
             templates/nextjs/.next
@@ -41,11 +55,17 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  gate:
-    name: Gate — lint, typecheck, tests, census trend
+  # The tests step split over shards that run side by side, each file in one shard; the lightest shard runs the
+  # static steps too, which adds no job to the org's concurrent-job cap.
+  gate-tests:
+    name: Gate — tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,8 +79,21 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      - name: Gate
-        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,tests,census trend" --harness all --no-build --base "$GATE_BASE"
+      - name: Gate — lint, typecheck, census trend
+        if: matrix.shard == 1
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,census trend" --harness all --no-build --base "$GATE_BASE"
+      - name: Gate — tests
+        # A red static step in shard 1 still leaves that shard's test verdict.
+        if: ${{ !cancelled() }}
+        run: pnpm exec tsx scripts/gate.ts --full --only tests --harness all --no-build --shard ${{ matrix.shard }}/3 --base "$GATE_BASE"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vitest-shard-${{ matrix.shard }}
+          path: reports/vitest.json
+          overwrite: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   perf-budgets:
     name: Performance budgets — both templates, five pages
@@ -78,29 +111,53 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
-      # The packages come from the build job. The templates are built again by the run: the store's own seed images
-      # go into each template's public directory first, and Astro copies them at build time.
-      # The suite runs `pnpm perf:budgets` twice: with a 300 KB script added to Astro's home page (it must fail),
-      # then as committed (it must pass, and writes the report the pull request quotes). Each metric is the median of
-      # five Lighthouse runs a page: of three, one slow run on a shared runner was enough to cross a budget.
+      # The packages come from the build job. The templates are built again by each perf:budgets run: the store's own
+      # seed images go into each template's public directory first, and Astro copies them at build time.
+      # Every event holds each page's script bytes to its budget, with no Lighthouse; the nightly runs Lighthouse.
+      - name: perf:budgets --bytes
+        run: pnpm perf:budgets --bytes
+      # A dispatch (the release's) also runs the Lighthouse suite. It runs `pnpm perf:budgets` twice: with a 300 KB
+      # script added to Astro's home page (it must fail), then as committed (it must pass, and writes the report).
+      # Each metric is the median of five Lighthouse runs a page: of three, one slow run on a shared runner was enough
+      # to cross a budget.
       - name: perf:budgets (tests/perf)
+        if: github.event_name == 'workflow_dispatch'
         env:
           NYMBAL_PERF_BUDGETS_ARGS: --runs 5
         run: pnpm exec vitest run --config tests/perf/vitest.config.ts
-      # AC-3 and AC-5: each page loads only its own elements, seen only in a production build (the dev-server E2E
-      # jobs cannot): both templates built for this slot's API, then the journeys in tests/e2e/prod.
-      - name: Install Playwright Chromium
+      # Each page loads only its own elements, seen only in a production build (the dev-server E2E jobs cannot): both
+      # templates built for this slot's API, then the journeys in tests/e2e/prod.
+      # The browsers are cached on the runner OS and the locked Playwright version; the cache holds no system
+      # libraries, so a hit still installs those.
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Production E2E (tests/e2e/prod)
         run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.prod.config.ts
       - name: ISR E2E (tests/e2e/isr)
         run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.isr.config.ts
-      - name: Upload the budget report
+      - name: Upload the budget reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: perf-budgets
-          path: reports/perf-budgets.json
+          path: |
+            reports/perf-bytes.json
+            reports/perf-budgets.json
           if-no-files-found: warn
 
   integration:
@@ -219,7 +276,6 @@ jobs:
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
-      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
       NYMBAL_TEST_S3_ENDPOINT: http://localhost:9000
       NYMBAL_TEST_S3_ACCESS_KEY_ID: minioadmin
       NYMBAL_TEST_S3_SECRET_ACCESS_KEY: minioadmin
@@ -272,71 +328,6 @@ jobs:
       - name: Sentinels
         run: pnpm exec tsx scripts/gate.ts --full --only "sentinels,tests-fail-on-base" --sentinels all --no-build --services external --base "$GATE_BASE"
 
-  coverage:
-    name: Coverage gate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    # Not a gate step: four of CI's reds since 2026-10-19 were this job alone (a timeout, a runner), each holding the
-    # next merge for a CI run. The job still goes red on a crash; the run does not.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      # integration-postgres, integration-stores and proof-kit-services have their own job, with the services they need.
-      # Coverage thresholds never block alone (constitution rule 3): a run whose only failure is a threshold miss
-      # passes, with the summary on the run page. Vitest exits 1 for a miss and for a failed test alike, so the
-      # verdict comes from its JSON test report, whose success ignores thresholds; a crash leaves no report and fails.
-      # Instrumented code runs three to four times slower on the runner than in the gate, so every project's own
-      # timeouts scale here (vitest.config.ts): a test that only times out under coverage is not a failure.
-      # tooling-slow runs a nested Vitest on a copy of the work tree, so it covers none of the repo's code and needs
-      # the full history this shallow checkout lacks; the gate job runs it.
-      - name: Coverage (reported, not a gate)
-        env:
-          NYMBAL_TEST_TIMEOUT_SCALE: '4'
-          NYMBAL_VITEST_SKIP_PROJECTS: tooling-slow
-        run: |
-          rm -rf coverage reports/coverage-tests.json
-          status=0
-          pnpm vitest run --coverage --coverage.reporter=text --coverage.reporter=json-summary \
-            --reporter=default --reporter=json --outputFile.json=reports/coverage-tests.json \
-            --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**' || status=$?
-          node -e '
-            const fs = require("fs")
-            const out = ["## Coverage", ""]
-            if (fs.existsSync("coverage/coverage-summary.json")) {
-              const t = JSON.parse(fs.readFileSync("coverage/coverage-summary.json", "utf8")).total
-              out.push("| metric | covered | total | % |", "|---|---:|---:|---:|")
-              for (const k of ["lines", "statements", "functions", "branches"]) {
-                out.push(`| ${k} | ${t[k].covered} | ${t[k].total} | ${t[k].pct}% |`)
-              }
-            } else {
-              out.push("No coverage summary: the run did not finish.")
-            }
-            if (process.argv[1] !== "0") out.push("", `Vitest exited ${process.argv[1]}; thresholds are reported, never blocking.`)
-            console.log(out.join("\n"))
-          ' "$status" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$status" -ne 0 ]; then
-            node -e '
-              const fs = require("fs")
-              const f = "reports/coverage-tests.json"
-              const ok = fs.existsSync(f) && JSON.parse(fs.readFileSync(f, "utf8")).success === true
-              if (!ok) {
-                console.error("the coverage run failed: a test failed or the run crashed")
-                process.exit(1)
-              }
-              console.log("every test passed; the coverage threshold miss is reported, not blocking")
-            '
-          fi
-
   e2e-astro:
     name: E2E — Astro
     runs-on: ubuntu-24.04
@@ -356,8 +347,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Astro (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro" --no-build --base "$GATE_BASE"
 
@@ -380,8 +386,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Next.js (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs" --no-build --base "$GATE_BASE"
 
@@ -404,8 +425,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Admin (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
 
@@ -447,8 +483,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Astro on custom providers (functional, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --services external --no-build --base "$GATE_BASE"
 
@@ -488,8 +539,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
       - name: Next.js on custom providers (functional, a11y), then a mail outage
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
@@ -515,8 +581,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Astro with no search (@nosearch)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-nosearch" --no-build --base "$GATE_BASE"
 
@@ -539,8 +620,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Next.js with no search (@nosearch)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
 
@@ -565,8 +661,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Astro with the override fixture (@override)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-override" --no-build --base "$GATE_BASE"
 
@@ -589,8 +700,23 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: build-output
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Next.js with the override fixture (@override)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-override" --no-build --base "$GATE_BASE"
 
@@ -700,3 +826,54 @@ jobs:
         run: |
           scripts/scaffold-clean.sh "$TEMPLATE" | tee scaffold-clean.log
           grep '^scaffold-clean: ' scaffold-clean.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  scaffold-image:
+    name: Scaffold into an image and run it (${{ matrix.template }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [astro, nextjs]
+    env:
+      NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nymbal
+          POSTGRES_DB: nymbal
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The script publishes to a local Verdaccio as scaffold-clean does, scaffolds outside the checkout, builds the
+      # store's image with `nymbal build --image`, and runs it against the Postgres and Redis services.
+      - name: Scaffold, build the image and run it
+        shell: bash
+        env:
+          TEMPLATE: ${{ matrix.template }}
+        run: |
+          scripts/scaffold-image.sh "$TEMPLATE" | tee scaffold-image.log
+          grep '^scaffold-image: ' scaffold-image.log | tail -1 >> "$GITHUB_STEP_SUMMARY"

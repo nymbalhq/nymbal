@@ -17,10 +17,25 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/ns/*.js",
+    "./dist/chunk-*.js",
+    "./src/index.ts",
+    "./src/ns/*.ts"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js"
+    },
+    "./ns/*": {
+      "types": "./dist/ns/*.d.ts",
+      "import": "./dist/ns/*.js"
     }
   },
   "files": [

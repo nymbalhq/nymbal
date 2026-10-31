@@ -1969,7 +1969,7 @@ export function alertsSuite(dialect: Dialect, options: AlertsSuiteOptions): void
         await migrate(dialect, target, MIGRATIONS_ROOT)
 
         const after = await tableCounts(raw, dialect)
-        expect(Object.fromEntries(Object.entries(after).filter(([t]) => t !== TABLE))).toEqual(kept)
+        expect(Object.fromEntries(Object.keys(kept).map((t) => [t, after[t]]))).toEqual(kept)
         expect(after[TABLE]).toBe(0)
         expect(await columnsOf(raw, dialect)).toEqual(
           [

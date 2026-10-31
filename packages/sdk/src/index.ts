@@ -1,8 +1,17 @@
+// The whole client: every store namespace registers here, so `createNymbalClient` builds any of them.
+import './ns/cart.js'
+import './ns/product.js'
+import './ns/product-list.js'
+import './ns/search.js'
+import './ns/checkout.js'
+import './ns/auth.js'
+
 export { createNymbalClient } from './client.js'
 export type {
   NymbalClient,
   NymbalClientOptions,
   CustomerAccount,
+  GuestOrders,
   RecentlyViewed,
   StoreCapabilitiesReader,
 } from './client.js'

@@ -232,6 +232,7 @@ export interface AlertRequestedV1Payload {
   variantId: string
   productId: string
 }
+export type AlertRepeatedV1Payload = AlertRequestedV1Payload
 export interface AlertConfirmedV1Payload {
   subscriptionId: string
 }

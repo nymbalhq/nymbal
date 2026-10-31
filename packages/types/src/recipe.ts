@@ -17,7 +17,7 @@ export interface Recipe {
   summary: string
   /** npm packages to install, SDKs included; empty when the service is built in. */
   install: string[]
-  /** Config paths and the values they take, e.g. `infrastructure.documentStore` = `'redis'`. */
+  /** Config paths and the values they take, e.g. `infrastructure.documentStore.provider` = `'redis'`. */
   set: Array<{ path: string; value: RecipeValue }>
   /** The variables the service reads, appended to `.env.example`; an optional one is written commented out. */
   env: Array<{ name: string; example: string; required: boolean; comment: string }>

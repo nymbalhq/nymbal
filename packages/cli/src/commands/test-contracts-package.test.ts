@@ -29,8 +29,12 @@ const CONTRACT_TESTS = join(REPO, 'packages', 'contract-tests')
 const VITEST = dirname(createRequire(join(REPO, 'package.json')).resolve('vitest/package.json'))
 const SEARCH_FIXTURE = join(REPO, 'tests', 'fixtures', 'third-party-search')
 const NO_FACTORY_FIXTURE = join(REPO, 'tests', 'fixtures', 'third-party-no-create-adapter')
+const WRONG_SLOT_FIXTURE = join(REPO, 'tests', 'fixtures', 'third-party-wrong-slot')
 const PKG = '@acme/nymbal-search'
 const NO_FACTORY_PKG = '@acme/nymbal-search-no-factory'
+const WRONG_SLOT_PKG = '@acme/nymbal-wrong-slot'
+/** The search fixture installed under the name the convention gives search provider 'acme'. */
+const CONVENTION_PKG = '@nymbalhq/search-acme'
 /** The certifying run is a vitest run of the full search suite over an in-memory index. */
 const CERTIFY_WITHIN_MS = 150_000
 
@@ -46,6 +50,8 @@ interface Scratch {
   configSource?: string
   /** The package the search slot names. */
   slotPackage?: string
+  /** The whole search block, in place of the `custom` one naming `slotPackage`. */
+  search?: Record<string, unknown>
   /** Linked into node_modules, by name. */
   links: Record<string, string>
 }
@@ -74,7 +80,7 @@ function scratchProject(s: Scratch): string {
     join(project, 'package.json'),
     `${JSON.stringify({ name: 'contracts-scratch-store', private: true, type: 'module', dependencies }, null, 2)}\n`,
   )
-  const search = {
+  const search = s.search ?? {
     provider: 'custom',
     package: s.slotPackage ?? PKG,
     ...(s.config !== undefined && { config: s.config }),
@@ -88,8 +94,8 @@ function scratchProject(s: Scratch): string {
         template: 'astro',
         infrastructure: {
           commandStore: 'sqlite',
-          documentStore: 'in-memory',
-          eventBus: 'in-process',
+          documentStore: { provider: 'in-memory' },
+          eventBus: { provider: 'in-process' },
         },
         security: { adapter: 'middleware' },
         commerce: {
@@ -292,5 +298,65 @@ describe('AC-6: nymbal test:contracts --package certifies a third-party adapter 
         `\\b(npm (i|install)|pnpm add|yarn add|bun add)\\b[^\\n]*${PKG.replace('/', '\\/')}`,
       ),
     )
+  }, 90_000)
+})
+
+describe('AC-10: test:contracts picks the slot the kernel would load the package on, and checks the module first', () => {
+  it(
+    "AC-10: a slot naming the package by package: with a provider other than custom is picked: search { provider: 'acme', package, config: { ignoreCursor: true } } is not certified, failing the pagination case",
+    () => {
+      const project = scratchProject({
+        links: ALL_LINKS,
+        search: { provider: 'acme', package: PKG, config: { ignoreCursor: true } },
+      })
+
+      const run = certify(project, PKG)
+      const failed = NOT_CERTIFIED.exec(run.out)
+
+      expect(run.status, run.out.slice(-3000)).toBe(1)
+      expect(failed?.slice(1, 3), run.out.slice(-3000)).toEqual([PKG, 'search'])
+      expect(Number(failed?.[3])).toBeGreaterThan(0)
+      expect(Number(failed?.[3])).toBeLessThan(Number(failed?.[4]))
+    },
+    CERTIFY_WITHIN_MS + 30_000,
+  )
+
+  it(
+    `AC-10: a slot whose convention name is the package is picked: search { provider: 'acme', config: { ignoreCursor: true } } with ${CONVENTION_PKG} installed is not certified, failing the pagination case`,
+    () => {
+      const project = scratchProject({
+        links: {
+          vitest: VITEST,
+          '@nymbalhq/contract-tests': CONTRACT_TESTS,
+          [CONVENTION_PKG]: SEARCH_FIXTURE,
+        },
+        search: { provider: 'acme', config: { ignoreCursor: true } },
+      })
+
+      const run = certify(project, CONVENTION_PKG)
+      const failed = NOT_CERTIFIED.exec(run.out)
+
+      expect(run.status, run.out.slice(-3000)).toBe(1)
+      expect(failed?.slice(1, 3), run.out.slice(-3000)).toEqual([CONVENTION_PKG, 'search'])
+      expect(Number(failed?.[3])).toBeGreaterThan(0)
+      expect(Number(failed?.[3])).toBeLessThan(Number(failed?.[4]))
+    },
+    CERTIFY_WITHIN_MS + 30_000,
+  )
+
+  it('AC-10: a module whose slot export is payments, named on the search slot, exits 1 with one line naming the package and both slots, before any suite runs', () => {
+    const project = scratchProject({
+      links: { ...ALL_LINKS, [WRONG_SLOT_PKG]: WRONG_SLOT_FIXTURE },
+      search: { provider: 'acme', package: WRONG_SLOT_PKG },
+    })
+
+    const run = certify(project, WRONG_SLOT_PKG, 60_000)
+
+    expect(run.status, run.out).toBe(1)
+    expect(run.lines, run.out).toHaveLength(1)
+    expect(run.lines[0]).toContain(WRONG_SLOT_PKG)
+    expect(run.lines[0]).toMatch(/\bpayments\b/)
+    expect(run.lines[0]).toMatch(/\bsearch\b/)
+    expect(CERTIFIED.test(run.out) || NOT_CERTIFIED.test(run.out)).toBe(false)
   }, 90_000)
 })

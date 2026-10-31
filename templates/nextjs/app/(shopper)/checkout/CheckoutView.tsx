@@ -18,11 +18,15 @@ export function CheckoutView({
 }) {
   // A full load, not router.push: the order page's URL carries its key, and only a document of its own takes the
   // page's Referrer-Policy header. A soft navigation leaves it in the checkout's document, whose requests (its
-  // script chunks among them) refer the keyed URL on.
+  // script chunks among them) refer the keyed URL on. A signed-in shopper's checkout answers no key: their account is
+  // the order's home.
   const onPlaced = useCallback((event: CustomEvent<{ orderNumber: string; orderKey?: string }>) => {
     const { orderNumber, orderKey } = event.detail
+    const number = encodeURIComponent(orderNumber)
     window.location.assign(
-      `/order/${encodeURIComponent(orderNumber)}${orderKey ? `?key=${encodeURIComponent(orderKey)}` : ''}`,
+      orderKey
+        ? `/order/${number}?key=${encodeURIComponent(orderKey)}`
+        : `/account/orders/${number}`,
     )
   }, [])
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import type { Kernel } from './kernel.js'
 import { shopper, type ShopResponse } from './shopper.js'
+import { unaudited } from './write-audit.js'
 
 // The audit tests' HTTP half: an admin and a customer over HTTP who can send any header, and the activity API's pages.
 // Kept apart from the table reads (audit.ts) so the CLI's tests, compiled with the root project, can use it without
@@ -59,16 +60,18 @@ export async function adminSession(k: Kernel, baseUrl: string): Promise<AdminSes
   const email = `admin-${userId}@audit.test`
   const password = 'correct-horse-battery'
   const now = new Date()
-  await k.store.transaction((tx) =>
-    k.repos.customer.insert(tx, {
-      id: userId,
-      email,
-      passwordHash: bcrypt.hashSync(password, 4),
-      roles: ['admin'],
-      requiresPasswordReset: false,
-      createdAt: now,
-      updatedAt: now,
-    }),
+  await unaudited(() =>
+    k.store.transaction((tx) =>
+      k.repos.customer.insert(tx, {
+        id: userId,
+        email,
+        passwordHash: bcrypt.hashSync(password, 4),
+        roles: ['admin'],
+        requiresPasswordReset: false,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ),
   )
   const shop = await primed(baseUrl)
   const answer = await shop.call<{ accessToken: string }>('POST', '/api/auth/login', {

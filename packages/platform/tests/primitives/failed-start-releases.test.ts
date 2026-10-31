@@ -42,8 +42,8 @@ describe('a failed createApp releases what it opened', () => {
     const before = await clientsOnDb13()
     const config = withInfrastructure(kernelConfig('sqlite'), {
       commandStore: 'sqlite',
-      documentStore: 'redis',
-      eventBus: 'redis-streams',
+      documentStore: { provider: 'redis' },
+      eventBus: { provider: 'redis-streams' },
       redis: { url: onDb13(), prefix },
     })
 

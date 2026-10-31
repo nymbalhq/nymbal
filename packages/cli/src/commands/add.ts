@@ -1,13 +1,25 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { parseEnv } from 'node:util'
 import { defineCommand } from 'citty'
+import { resolve as resolveFrom } from 'import-meta-resolve'
 import pc from 'picocolors'
-import { findConfigFile, loadConfig } from '@nymbalhq/config'
-import { installLine } from '@nymbalhq/platform'
-import type { Recipe } from '@nymbalhq/types'
 import {
+  ADAPTER_CATALOGUE,
+  BUILT_IN,
+  PROVIDER_NAME,
+  conventionPackage,
+  findConfigFile,
+  loadConfig,
+  slotFolder,
+  suggestProvider,
+} from '@nymbalhq/config'
+import { checkAdapterModule, installLine, missingPackage, resolveChoice } from '@nymbalhq/platform'
+import type { AdapterSetting, Recipe, Slot } from '@nymbalhq/types'
+import {
+  MULTI_SLOT_PAIRS,
   RECIPE_HOLDERS,
   appendRecipeEnv,
   applyRecipeToConfig,
@@ -16,16 +28,82 @@ import {
   isKnownRecipe,
   knownRecipes,
   missingEnv,
+  multiSlotRecipe,
+  packageRecipeFile,
   readRecipe,
+  readRecipeFile,
   recipeFile,
+  setsOnly,
   settingsEnv,
+  slotRecipe,
+  slotsSetBy,
 } from '../recipes/index.js'
+import { slotNamed } from '../slot-names.js'
+
+/** What `nymbal add` adds: a recipe by name, a slot's provider, or a third-party adapter package. */
+export type AddTarget =
+  | { kind: 'recipe'; name: string }
+  | { kind: 'slot'; slot: Slot; provider: string }
+  | { kind: 'package'; name: string }
 
 export interface AddOptions {
-  recipe: string
+  target: AddTarget
   install: boolean
   force: boolean
   dryRun: boolean
+}
+
+const SLOTS = Object.keys(ADAPTER_CATALOGUE) as Slot[]
+
+/** A scoped npm package name, `@scope/name`: how a third-party adapter is named. */
+const PACKAGE_NAME = /^@[a-z0-9-~][a-z0-9-._~]*\/[a-z0-9-~][a-z0-9-._~]*$/
+
+const usageHint = (): string =>
+  `nymbal add takes <recipe> (${knownRecipes().join(', ')}), <slot> <provider> or <package> (a scoped npm name, @scope/name)`
+
+/** How the command line's positionals name what to add, or why they name nothing. */
+export function parseAddTarget(args: string[]): AddTarget | { error: string } {
+  if (args.length === 1) {
+    const name = args[0]!
+    if (isKnownRecipe(name)) return { kind: 'recipe', name }
+    if (PACKAGE_NAME.test(name)) return { kind: 'package', name }
+    const slot = slotNamed(name)
+    if (slot !== undefined) {
+      return {
+        error: `name the ${slotFolder(slot)} provider: nymbal add ${slotFolder(slot)} <provider>, one of ${Object.keys(ADAPTER_CATALOGUE[slot]).join(', ')}. ${usageHint()}`,
+      }
+    }
+    return { error: `unknown name '${name}'. ${usageHint()}` }
+  }
+  if (args.length === 2) {
+    const [word, provider] = args as [string, string]
+    const slot = slotNamed(word)
+    if (slot === undefined)
+      return { error: `unknown slot '${word}'; the slots are ${SLOTS.map(slotFolder).join(', ')}` }
+    return { kind: 'slot', slot, provider }
+  }
+  return {
+    error: `${args.length === 0 ? 'name what to add' : `nymbal add takes one or two names, not ${args.length}`}. ${usageHint()}`,
+  }
+}
+
+/** `nymbal add`'s list: its three forms, every slot with the providers Nymbal ships, and the recipes. */
+export function addUsage(): string {
+  const forms: Array<[string, string]> = [
+    ['nymbal add <recipe>', `a service, as in nymbal add redis: ${knownRecipes().join(', ')}`],
+    ['nymbal add <slot> <provider>', 'one slot on a provider, as in nymbal add media s3'],
+    ['nymbal add <package>', 'a third-party adapter by its npm name, as in nymbal add @acme/x'],
+  ]
+  const lines = ['Forms:']
+  for (const [form, what] of forms) lines.push(`  ${form.padEnd(30)}${what}`)
+  lines.push('', 'Slots and the providers Nymbal ships:')
+  for (const slot of SLOTS) {
+    const providers = Object.entries(ADAPTER_CATALOGUE[slot]).map(([provider, entry]) =>
+      entry.builtIn === true ? `${provider} (built in)` : provider,
+    )
+    lines.push(`  ${slotFolder(slot)}: ${providers.join(', ')}`)
+  }
+  return lines.join('\n')
 }
 
 const out = (line = ''): void => void process.stdout.write(`${line}\n`)
@@ -128,28 +206,253 @@ function lineDiff(before: string, after: string): string[] {
 const show = (value: unknown): string =>
   typeof value === 'string' ? `'${value}'` : JSON.stringify(value)
 
+/** What one run applies: the recipe, the arguments as given, how messages name it, and whose settings to read. */
+interface Plan {
+  recipe: Recipe
+  /** The arguments as typed: `payments stripe`, `@acme/nymbal-search-x`, `stripe`. */
+  label: string
+  /** The subject of a refusal: `the stripe recipe`, `nymbal add ai anthropic`. */
+  what: string
+  /** The packages whose `settings` say which variables the admin's Settings can fill. */
+  adapters: string[]
+}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+/** The command that uninstalls `pkg` with the package manager `installLine` picks. */
+function removeLine(pkg: string, root: string): string {
+  return installLine([pkg], process.env, root).replace(
+    /^(\S+) \S+/,
+    (_, pm: string) => `${pm} ${pm === 'npm' ? 'uninstall' : 'remove'}`,
+  )
+}
+
+/**
+ * Installs `packages` when `pkg` is not installed in the project; the exit code of a refusal or a failed install, else
+ * null. A dry run and `--no-install` install nothing, so they need `pkg` installed already.
+ */
+function ensureInstalled(
+  pkg: string,
+  packages: string[],
+  notInstalled: string,
+  root: string,
+  opts: AddOptions,
+  installed: string[],
+): number | null {
+  if (isInstalled(pkg, root)) return null
+  const line = installLine(packages, process.env, root)
+  if (!opts.install || opts.dryRun) return fail(`${notInstalled}. Install it: ${line}`)
+  if (!runInstall(line, root)) return fail(`${line} failed`)
+  installed.push(...packages)
+  return null
+}
+
+/** `pkg` imported as the project resolves it, from the config's directory. */
+async function importFromProject(pkg: string, root: string): Promise<Record<string, unknown>> {
+  const mod = (await import(resolveFrom(pkg, pathToFileURL(join(root, 'package.json')).href))) as
+    | Record<string, unknown>
+    | undefined
+  return mod ?? {}
+}
+
+/** Why `pkg` did not load, with the install line of a package it imports that is not installed. */
+function loadFailure(pkg: string, error: unknown, root: string): string {
+  const missing = missingPackage(error)
+  const install =
+    missing === null || missing === pkg ? '' : `: ${installLine([missing], process.env, root)}`
+  return `${pkg} could not be loaded: ${messageOf(error)}${install}`
+}
+
+/** The recipe a package ships for `slot`, refused toward its own name when it sets any other slot as well. */
+async function packageRecipe(file: string, provider: string, slot: Slot): Promise<Recipe | number> {
+  const recipe = await readRecipeFile(file, provider)
+  if (!setsOnly(recipe, slot)) {
+    return fail(
+      `${recipe.name} sets ${slotsSetBy(recipe).join(' and ')} together: run nymbal add ${recipe.name}`,
+    )
+  }
+  return recipe
+}
+
+async function recipePlan(
+  name: string,
+  root: string,
+  opts: AddOptions,
+  installed: string[],
+): Promise<Plan | number> {
+  const holder = RECIPE_HOLDERS[name]!
+  if (recipeFile(name, root) === null) {
+    const failed = ensureInstalled(
+      holder,
+      [holder],
+      `the ${name} recipe ships in ${holder}, which is not installed`,
+      root,
+      opts,
+      installed,
+    )
+    if (failed !== null) return failed
+  }
+  const recipe = await readRecipe(name, root)
+  return { recipe, label: name, what: `the ${name} recipe`, adapters: recipe.install }
+}
+
+async function slotPlan(
+  slot: Slot,
+  provider: string,
+  root: string,
+  opts: AddOptions,
+  installed: string[],
+): Promise<Plan | number> {
+  const label = `${slotFolder(slot)} ${provider}`
+  const kind = slot === 'security' ? 'security adapter' : `${slotFolder(slot)} provider`
+  if (!PROVIDER_NAME.test(provider)) {
+    return fail(`'${provider}' is no provider name: lower-case letters, digits and hyphens`)
+  }
+  if (provider === 'custom') {
+    return fail('custom is an adapter you pass to createApp: there is no package to add')
+  }
+  if (!Object.hasOwn(ADAPTER_CATALOGUE[slot], provider)) {
+    const suggestion = suggestProvider(slot, provider)
+    return fail(
+      suggestion === undefined
+        ? `unknown ${kind} '${provider}': no first-party adapter is named that; a third-party one: nymbal add <package>`
+        : `unknown ${kind} '${provider}'; did you mean '${suggestion}'?`,
+    )
+  }
+  const owner = multiSlotRecipe(slot, provider)
+  if (owner !== undefined) {
+    const slots = MULTI_SLOT_PAIRS[owner]!.map((pair) => slotFolder(pair.split('/')[0] as Slot))
+    return fail(`${owner} sets ${slots.join(' and ')} together: run nymbal add ${owner}`)
+  }
+
+  const what = `nymbal add ${label}`
+  const resolution = resolveChoice(slot, { provider })
+  if (resolution.kind !== 'package') {
+    const recipe = slotRecipe({ name: label, slot, provider, install: [], settings: [] })
+    return { recipe, label, what, adapters: [] }
+  }
+  const pkg = resolution.package
+  const packages = [pkg, ...(resolution.sdk === undefined ? [] : [resolution.sdk])]
+  const failed = ensureInstalled(
+    pkg,
+    packages,
+    `${label} is ${pkg}, which is not installed`,
+    root,
+    opts,
+    installed,
+  )
+  if (failed !== null) return failed
+
+  const file = packageRecipeFile(pkg, provider, root)
+  if (file !== null) {
+    const recipe = await packageRecipe(file, provider, slot)
+    if (typeof recipe === 'number') return recipe
+    return { recipe, label, what: `the ${recipe.name} recipe`, adapters: recipe.install }
+  }
+  let settings: readonly AdapterSetting[]
+  try {
+    settings =
+      checkAdapterModule(await importFromProject(pkg, root), slot, provider, pkg).settings ?? []
+  } catch (error) {
+    return fail(
+      (error as { code?: unknown }).code === 'ERR_MODULE_NOT_FOUND'
+        ? loadFailure(pkg, error, root)
+        : messageOf(error),
+    )
+  }
+  const recipe = slotRecipe({ name: label, slot, provider, install: packages, settings })
+  return { recipe, label, what, adapters: [pkg] }
+}
+
+async function packagePlan(
+  name: string,
+  root: string,
+  opts: AddOptions,
+  installed: string[],
+): Promise<Plan | number> {
+  const failed = ensureInstalled(name, [name], `${name} is not installed`, root, opts, installed)
+  if (failed !== null) return failed
+  // A package this run installed stays installed when it is refused: the refusal says how to remove it.
+  const refuse = (why: string): number =>
+    fail(
+      installed.includes(name)
+        ? `${why}\n  ${name} stays installed; ${removeLine(name, root)} removes it`
+        : why,
+    )
+
+  let mod: Record<string, unknown>
+  try {
+    mod = await importFromProject(name, root)
+  } catch (error) {
+    return refuse(loadFailure(name, error, root))
+  }
+  const { slot, provider } = mod
+  if (slot === undefined) return refuse(`${name} exports no slot`)
+  if (typeof slot !== 'string' || !(SLOTS as string[]).includes(slot)) {
+    return refuse(
+      `${name} exports slot ${show(slot)}, which is no slot; the slots are ${SLOTS.join(', ')}`,
+    )
+  }
+  const at = slot as Slot
+  if (provider === undefined) return refuse(`${name} exports no provider`)
+  if (typeof provider !== 'string' || !PROVIDER_NAME.test(provider)) {
+    return refuse(
+      `${name} exports provider ${show(provider)}, which is no provider name: lower-case letters, digits and hyphens`,
+    )
+  }
+  if (provider === 'custom') {
+    return refuse(`${name} exports provider 'custom', the name of an adapter passed to createApp`)
+  }
+  if (BUILT_IN[at].includes(provider)) {
+    return refuse(
+      `${name} exports provider '${provider}', the name of the built-in ${slotFolder(at)} provider`,
+    )
+  }
+  let settings: readonly AdapterSetting[]
+  try {
+    settings = checkAdapterModule(mod, at, provider, name).settings ?? []
+  } catch (error) {
+    return refuse(messageOf(error))
+  }
+
+  const file = packageRecipeFile(name, provider, root)
+  if (file !== null) {
+    const recipe = await packageRecipe(file, provider, at)
+    if (typeof recipe === 'number') return recipe
+    return { recipe, label: name, what: `the ${recipe.name} recipe`, adapters: recipe.install }
+  }
+  const convention = conventionPackage(at, provider) === name
+  const sdk = convention ? ADAPTER_CATALOGUE[at][provider]?.sdk : undefined
+  const recipe = slotRecipe({
+    name,
+    slot: at,
+    provider,
+    package: convention ? undefined : name,
+    install: [name, ...(sdk === undefined ? [] : [sdk])],
+    settings,
+  })
+  return { recipe, label: name, what: `nymbal add ${name}`, adapters: [name] }
+}
+
 export async function add(opts: AddOptions, cwd: string = process.cwd()): Promise<number> {
-  const name = opts.recipe
-  if (!isKnownRecipe(name)) {
-    return fail(`unknown recipe '${name}'. The recipes are: ${knownRecipes().join(', ')}`)
+  const { target } = opts
+  if (target.kind === 'recipe' && !isKnownRecipe(target.name)) {
+    return fail(`unknown recipe '${target.name}'. ${usageHint()}`)
   }
   const configPath = findConfigFile(cwd)
   if (configPath === null) return fail(`no nymbal.config.ts in ${cwd} or any parent directory`)
   const root = dirname(configPath)
-  const holder = RECIPE_HOLDERS[name]!
 
   const installed: string[] = []
-  if (recipeFile(name, root) === null) {
-    const line = installLine([holder], process.env, root)
-    if (!opts.install || opts.dryRun) {
-      return fail(
-        `the ${name} recipe ships in ${holder}, which is not installed. Install it: ${line}`,
-      )
-    }
-    if (!runInstall(line, root)) return fail(`${line} failed`)
-    installed.push(holder)
-  }
-  const recipe = await readRecipe(name, root)
+  const plan =
+    target.kind === 'recipe'
+      ? await recipePlan(target.name, root, opts, installed)
+      : target.kind === 'slot'
+        ? await slotPlan(target.slot, target.provider, root, opts, installed)
+        : await packagePlan(target.name, root, opts, installed)
+  if (typeof plan === 'number') return plan
+  const { recipe, label, what } = plan
 
   const source = readFileSync(configPath, 'utf8')
   let edited: { source: string; changed: string[] }
@@ -158,7 +461,7 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
     if ('conflict' in applied) {
       const { path, current, wanted } = applied.conflict
       return fail(
-        `${path} is ${show(current)} in nymbal.config.ts, and the ${name} recipe sets it to ${show(wanted)}. ` +
+        `${path} is ${show(current)} in nymbal.config.ts, and ${what} sets it to ${show(wanted)}. ` +
           'nymbal.config.ts is unchanged: edit it by hand, or re-run with --force to overwrite it.',
       )
     }
@@ -171,7 +474,7 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
   const nextExample = appendRecipeEnv(example, recipe)
 
   if (opts.dryRun) {
-    out(pc.bold(`nymbal add ${name} --dry-run: nothing is written`))
+    out(pc.bold(`nymbal add ${label} --dry-run: nothing is written`))
     out()
     out(
       recipe.install.length > 0
@@ -204,7 +507,7 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
   const problems = await problemsWith(edited.source, recipe, root, fromFile)
   if (problems.length > 0) {
     return fail(
-      `the ${name} recipe would leave a config that does not load, so nymbal.config.ts is unchanged:\n  ${problems.join('\n  ')}`,
+      `${what} would leave a config that does not load, so nymbal.config.ts is unchanged:\n  ${problems.join('\n  ')}`,
     )
   }
 
@@ -223,13 +526,13 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
     )
   }
 
-  out(pc.green(`✓ ${name}: ${recipe.summary}`))
+  out(pc.green(`✓ ${label}: ${recipe.summary}`))
   out(written.length > 0 ? `  changed ${written.join(', ')}` : '  already added: nothing changed')
   const unset = recipe.env.filter((v) => v.required && !isSet(v.name, fromFile))
   if (unset.length > 0 || recipe.next.length > 0) {
     out()
     out('Next:')
-    const fromSettings = unset.length > 0 ? await settingsEnv(recipe.install, root) : new Set()
+    const fromSettings = unset.length > 0 ? await settingsEnv(plan.adapters, root) : new Set()
     for (const v of unset) {
       out(
         fromSettings.has(v.name)
@@ -245,10 +548,20 @@ export async function add(opts: AddOptions, cwd: string = process.cwd()): Promis
 export const addCommand = defineCommand({
   meta: {
     name: 'add',
-    description: `Put the store on a service: ${knownRecipes().join(', ')}`,
+    description:
+      'Add a provider by slot, a third-party adapter by package, or a service by recipe (nymbal add lists them)',
   },
   args: {
-    recipe: { type: 'positional', required: true, description: knownRecipes().join(', ') },
+    name: {
+      type: 'positional',
+      required: false,
+      description: '<recipe>, <slot> or <package>',
+    },
+    provider: {
+      type: 'positional',
+      required: false,
+      description: "after <slot>: the slot's provider",
+    },
     install: {
       type: 'boolean',
       default: true,
@@ -257,7 +570,7 @@ export const addCommand = defineCommand({
     force: {
       type: 'boolean',
       default: false,
-      description: 'Overwrite a config value the recipe conflicts with',
+      description: 'Overwrite a config value the addition conflicts with',
     },
     'dry-run': {
       type: 'boolean',
@@ -267,8 +580,19 @@ export const addCommand = defineCommand({
     },
   },
   async run({ args }) {
+    const positionals = args._.map(String)
+    if (positionals.length === 0) {
+      out(addUsage())
+      process.exitCode = 1
+      return
+    }
+    const target = parseAddTarget(positionals)
+    if ('error' in target) {
+      process.exitCode = fail(target.error)
+      return
+    }
     process.exitCode = await add({
-      recipe: args.recipe,
+      target,
       install: args.install,
       force: args.force,
       dryRun: args['dry-run'],

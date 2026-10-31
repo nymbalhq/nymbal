@@ -40,9 +40,9 @@ function withS3(config: NymbalConfig): NymbalConfig {
     ...config,
     infrastructure: {
       commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
-      media: 's3',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+      media: { provider: 's3' },
       s3: { bucket: bucket.name, endpoint, region: bucket.region },
     },
   } as unknown as NymbalConfig

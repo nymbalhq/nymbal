@@ -3,6 +3,9 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
 import { fetchCart } from '../lib/api'
 
+// The shopper's own cart: no shared cache may keep it for the next visitor.
+Astro.response.headers.set('Cache-Control', 'no-store')
+
 const cart = await fetchCart(Astro.request.headers.get('cookie'))
 ---
 

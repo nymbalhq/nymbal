@@ -21,8 +21,8 @@ adminTabsSuite('redis-streams', () =>
     configure: (config) =>
       withInfrastructure(config, {
         commandStore: 'sqlite',
-        documentStore: 'redis',
-        eventBus: 'redis-streams',
+        documentStore: { provider: 'redis' },
+        eventBus: { provider: 'redis-streams' },
         redis: { url, prefix, ackTimeoutMs: 4000, claimIdleMs: 400 },
       }),
   }),

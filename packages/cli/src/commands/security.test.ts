@@ -4,12 +4,13 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import repoConfig from '../../../../nymbal.config.js'
 import { cliEnv, closedPort, runCli, type CliRun } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
   type Plan,
-} from '../../../security-cloudflare/src/tests/fake-cloudflare.js'
-import type { SpecPlan } from '../../../security-cloudflare/src/tests/support.js'
+} from '../../../adapters/security/cloudflare/src/tests/fake-cloudflare.js'
+import type { SpecPlan } from '../../../adapters/security/cloudflare/src/tests/support.js'
 
 // AC-7: `nymbal security:plan [--json]`, `security:apply`, `security:drift [--json]` and `security:inspect` against a
 // fake Cloudflare API: exit 0 done or in sync, 1 drift, 2 a config, credential or API error (and on a `middleware`
@@ -57,6 +58,7 @@ function project(opts: {
 }): Project {
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-cf-cli-'))
   dirs.push(dir)
+  install(dir, workspace('@nymbalhq/security-cloudflare'))
   const security = {
     ...repoConfig.security,
     adapter: opts.adapter ?? 'cloudflare',
@@ -107,9 +109,10 @@ describe('AC-7: nymbal security:*', () => {
     const first = await cli(p, ['security:plan', '--json'])
     expect(first.code, first.out).toBe(0)
     const plan = parsePlan(first.stdout)
-    const { desiredRules } = (await import('../../../security-cloudflare/src/index.js')) as {
-      desiredRules(config: unknown): Record<string, Array<{ ref?: string }>>
-    }
+    const { desiredRules } =
+      (await import('../../../adapters/security/cloudflare/src/index.js')) as {
+        desiredRules(config: unknown): Record<string, Array<{ ref?: string }>>
+      }
     const wanted = Object.values(desiredRules(p.security))
       .flat()
       .map((r) => String(r.ref))

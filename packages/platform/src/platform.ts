@@ -7,7 +7,7 @@ import {
   type Logger,
   type MediaStorage,
 } from '@nymbalhq/types'
-import { loadProviderAdapter } from './adapters/loader.js'
+import { loadProviderAdapter, type Choice } from './adapters/resolve.js'
 import { createCommandStore, type CommandStore } from './db/command-store.js'
 import { InMemoryDocumentStore } from './document-store/in-memory.js'
 import { InProcessEventBus } from './event-bus/in-process.js'
@@ -114,19 +114,19 @@ function s3Connection(config: NymbalConfig, env: NodeJS.ProcessEnv) {
 
 async function loadPrimitive<T>(
   slot: 'documentStore' | 'eventBus' | 'media',
-  provider: string,
+  choice: Choice,
   config: Record<string, unknown>,
   logger: Logger,
   env: NodeJS.ProcessEnv,
 ): Promise<T> {
-  const instance = await loadProviderAdapter(slot, provider, {
+  const instance = await loadProviderAdapter(slot, choice, {
     config,
     logger: logger.child({ primitive: slot }),
     env,
   })
   if (instance === undefined) {
-    throw new ConfigError(`infrastructure.${slot} '${provider}' has no implementation`, {
-      context: { slot, provider },
+    throw new ConfigError(`infrastructure.${slot} '${choice.provider}' has no implementation`, {
+      context: { slot, provider: choice.provider },
     })
   }
   return instance as T
@@ -146,7 +146,7 @@ export async function buildDocumentStore(
   env: NodeJS.ProcessEnv,
 ): Promise<InitializableDocumentStore> {
   const choice = config.infrastructure.documentStore
-  switch (choice) {
+  switch (choice.provider) {
     case 'in-memory':
       return new InMemoryDocumentStore()
     case 'redis': {
@@ -169,10 +169,8 @@ export async function buildDocumentStore(
         env,
       )
     }
-    default: {
-      const exhaustive: never = choice
-      throw new ConfigError(`Unknown documentStore: ${String(exhaustive)}`)
-    }
+    default:
+      return loadPrimitive('documentStore', choice, choice.config ?? {}, logger, env)
   }
 }
 
@@ -182,7 +180,7 @@ export async function buildEventBus(
   env: NodeJS.ProcessEnv,
 ): Promise<EventBusAdapter> {
   const choice = config.infrastructure.eventBus
-  switch (choice) {
+  switch (choice.provider) {
     case 'in-process':
       return new InProcessEventBus({ logger })
     case 'redis-streams':
@@ -193,10 +191,8 @@ export async function buildEventBus(
         logger,
         env,
       )
-    default: {
-      const exhaustive: never = choice
-      throw new ConfigError(`Unknown eventBus: ${String(exhaustive)}`)
-    }
+    default:
+      return loadPrimitive('eventBus', choice, choice.config ?? {}, logger, env)
   }
 }
 
@@ -207,7 +203,7 @@ export async function buildMedia(
   env: NodeJS.ProcessEnv,
 ): Promise<MediaStorage> {
   const choice = config.infrastructure.media
-  switch (choice) {
+  switch (choice.provider) {
     case 'local-fs':
       return createLocalFsMediaStorage({
         root: options.mediaRoot ?? join(process.cwd(), 'public', 'imported-media'),
@@ -215,16 +211,16 @@ export async function buildMedia(
       })
     case 's3':
       return loadPrimitive('media', choice, s3Connection(config, env), logger, env)
-    default: {
-      const exhaustive: never = choice
-      throw new ConfigError(`Unknown media: ${String(exhaustive)}`)
-    }
+    default:
+      return loadPrimitive('media', choice, choice.config ?? {}, logger, env)
   }
 }
 
 /**
  * The document store, event bus and media storage the config names. A primitive that lives in its own package is
- * imported only when named; a missing package fails `adapter.package_missing` with the install line.
+ * imported only when named, from its block's `package` or `@nymbalhq/<slot>-<provider>`; a missing package fails
+ * `adapter.package_missing` with the install line. A provider whose connection the kernel does not build gets its
+ * block's `config`.
  */
 export async function resolvePrimitives(
   config: NymbalConfig,
@@ -233,13 +229,14 @@ export async function resolvePrimitives(
   const env = options.env ?? process.env
   const logger = options.logger ?? createLogger({ base: { store: config.store.name } })
   // Checked before anything is loaded or connects, so a missing URL or bucket never leaves a half-built set behind.
-  if (config.infrastructure.media === 's3') s3Connection(config, env)
-  if (config.infrastructure.documentStore === 'redis') redisConnection(config, env, 'documentStore')
-  if (config.infrastructure.eventBus === 'redis-streams') redisConnection(config, env, 'eventBus')
+  const { documentStore: store, eventBus: bus, media: storage } = config.infrastructure
+  if (storage.provider === 's3') s3Connection(config, env)
+  if (store.provider === 'redis') redisConnection(config, env, 'documentStore')
+  if (bus.provider === 'redis-streams') redisConnection(config, env, 'eventBus')
   const media = await buildMedia(config, options, logger, env)
   const documentStore = await buildDocumentStore(config, options, logger, env)
   try {
-    if (config.infrastructure.documentStore === 'postgres-jsonb') await documentStore.initialize?.()
+    if (store.provider === 'postgres-jsonb') await documentStore.initialize?.()
     const eventBus = await buildEventBus(config, logger, env)
     return { documentStore, eventBus, media }
   } catch (error) {

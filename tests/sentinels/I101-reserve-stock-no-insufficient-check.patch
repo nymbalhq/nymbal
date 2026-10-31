@@ -3,6 +3,7 @@
 # defect: remove the insufficient-stock throw in reserveStock
 # where: packages/platform/src/services/inventory-service.ts:169-177
 # killed-by: packages/platform/src/services/inventory-service.test.ts
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/inventory-service.test.ts
 diff --git a/packages/platform/src/services/inventory-service.ts b/packages/platform/src/services/inventory-service.ts
 --- a/packages/platform/src/services/inventory-service.ts
 +++ b/packages/platform/src/services/inventory-service.ts

@@ -1,0 +1,46 @@
+{
+  "name": "@nymbalhq/ai-anthropic",
+  "version": "1.4.0",
+  "description": "Anthropic AI for Nymbal: the `anthropic` ai provider",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nymbalhq/nymbal.git",
+    "directory": "packages/adapters/ai/anthropic"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit --rootDir ../../../.."
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@nymbalhq/types": "^1.5.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@nymbalhq/types": "workspace:*",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "tsup": "^9.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^3.0.0"
+  }
+}

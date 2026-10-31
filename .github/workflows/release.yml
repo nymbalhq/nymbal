@@ -96,10 +96,13 @@ jobs:
 
   # Runs on every push to main with the tokens, whether or not this push carried changesets: publishing, tagging and
   # releasing skip whatever already exists, so re-running a failed run (or the next push) completes the release.
+  # Not on the release commit's own push: the run that made it publishes from it, and the registry still reads the
+  # new versions as unpublished for a while after, so a second publish fails on every one.
   publish:
     name: Publish, tag and release
     needs: [detect, version]
-    if: ${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' }}
+    # Quoted: the message's ": " would end a plain YAML scalar.
+    if: "${{ !cancelled() && !failure() && needs.detect.outputs.release_token == 'true' && needs.detect.outputs.npm_token == 'true' && !startsWith(github.event.head_commit.message, 'chore(release): version packages') }}"
     runs-on: ubuntu-latest
     steps:
       # The branch tip, not the pushed sha: it holds the release commit, on a re-run too.

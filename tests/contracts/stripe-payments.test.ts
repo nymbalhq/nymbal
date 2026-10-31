@@ -1,230 +1,29 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import Stripe from 'stripe'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runPaymentsContract } from '@nymbalhq/contract-tests'
-import { createStripePaymentsAdapter } from '@nymbalhq/adapter-stripe'
+import { createStripePaymentsAdapter } from '@nymbalhq/payments-stripe'
 import { createLogger } from '@nymbalhq/platform'
 import { PaymentError } from '@nymbalhq/types'
+import {
+  SIGNATURE_HEADER,
+  startStripeFake,
+  type StripeFake,
+} from '../fixtures/stripe-api/server.mjs'
 
 const SECRET_KEY = 'sk_test_mock'
 const WEBHOOK_SECRET = 'whsec_test_mock'
 
-/**
- * Minimal in-process mock of the Stripe REST API covering exactly the calls
- * the Stripe payments adapter makes. Request bodies are form-encoded (that is
- * what stripe-node sends) and the mock honours the amount/currency the
- * adapter sent — nothing the contract asserts is hardcoded here.
- *
- * Refunds behave as Stripe's do, so the payments contract's idempotency case can see a double refund. A POST with an
- * Idempotency-Key it has answered before gets that answer again and moves nothing; a refund needs a succeeded intent
- * and never exceeds what is left of the amount received, else it is an invalid request (which the adapter reports as
- * refund_rejected).
- */
-
-/** Stripe wire shape (provider boundary), not a Nymbal domain type. */
-interface MockStripeIntent {
-  id: string
-  object: 'payment_intent'
-  amount: number
-  amount_received: number | null
-  client_secret: string
-  currency: string
-  status: 'requires_payment_method' | 'succeeded'
-  metadata: Record<string, string>
-}
-
-const intents = new Map<string, MockStripeIntent>()
-/** What has been refunded of each intent, in minor units. */
-const refunded = new Map<string, number>()
-/** Each Idempotency-Key's first answer, replayed to a retry as Stripe does. */
-const answered = new Map<string, { statusCode: number; body: unknown }>()
-let seq = 0
-
-/** The Idempotency-Key a response answers, when its request carried one. */
-const keyOf = new WeakMap<ServerResponse, string>()
-
-function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
-  const key = keyOf.get(res)
-  if (key !== undefined) answered.set(key, { statusCode, body })
-  res.writeHead(statusCode, { 'content-type': 'application/json', 'stripe-should-retry': 'false' })
-  res.end(JSON.stringify(body))
-}
-
-function sendStripeError(
-  res: ServerResponse,
-  statusCode: number,
-  message: string,
-  code?: string,
-): void {
-  sendJson(res, statusCode, {
-    error: { type: 'invalid_request_error', message, ...(code !== undefined && { code }) },
-  })
-}
-
-async function readBody(req: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
-  return Buffer.concat(chunks).toString('utf8')
-}
-
-function metadataFromParams(params: URLSearchParams): Record<string, string> {
-  const metadata: Record<string, string> = {}
-  for (const [key, value] of params) {
-    const match = /^metadata\[(.+)\]$/.exec(key)
-    if (match) metadata[match[1]!] = value
-  }
-  return metadata
-}
-
-async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const auth = req.headers.authorization
-  if (auth !== `Bearer ${SECRET_KEY}`) {
-    sendJson(res, 401, { error: { type: 'invalid_request_error', message: 'Invalid API key' } })
-    return
-  }
-  const path = (req.url ?? '').split('?')[0] ?? ''
-  const method = req.method ?? 'GET'
-  const body = await readBody(req)
-  const params = new URLSearchParams(body)
-
-  const header = req.headers['idempotency-key']
-  const key = Array.isArray(header) ? header[0] : header
-  const replay = method === 'POST' && key !== undefined ? answered.get(key) : undefined
-  if (replay !== undefined) {
-    sendJson(res, replay.statusCode, replay.body)
-    return
-  }
-  if (method === 'POST' && key !== undefined) keyOf.set(res, key)
-
-  if (method === 'POST' && path === '/v1/payment_intents') {
-    const amountRaw = params.get('amount')
-    const currency = params.get('currency')
-    if (amountRaw === null || currency === null) {
-      sendStripeError(res, 400, 'Missing required param: amount or currency')
-      return
-    }
-    seq += 1
-    const id = `pi_${seq}`
-    const intent: MockStripeIntent = {
-      id,
-      object: 'payment_intent',
-      amount: Number(amountRaw),
-      amount_received: 0,
-      client_secret: `${id}_secret_${seq}`,
-      currency,
-      status: 'requires_payment_method',
-      metadata: metadataFromParams(params),
-    }
-    intents.set(id, intent)
-    sendJson(res, 200, intent)
-    return
-  }
-
-  const captureMatch = /^\/v1\/payment_intents\/([^/]+)\/capture$/.exec(path)
-  if (method === 'POST' && captureMatch) {
-    const intent = intents.get(captureMatch[1]!)
-    if (!intent) {
-      sendStripeError(res, 404, `No such payment_intent: '${captureMatch[1]!}'`)
-      return
-    }
-    const amountToCapture = params.get('amount_to_capture')
-    intent.status = 'succeeded'
-    intent.amount_received = amountToCapture !== null ? Number(amountToCapture) : intent.amount
-    sendJson(res, 200, intent)
-    return
-  }
-
-  const retrieveMatch = /^\/v1\/payment_intents\/([^/]+)$/.exec(path)
-  if (method === 'GET' && retrieveMatch) {
-    const intent = intents.get(retrieveMatch[1]!)
-    if (!intent) {
-      sendStripeError(res, 404, `No such payment_intent: '${retrieveMatch[1]!}'`)
-      return
-    }
-    sendJson(res, 200, intent)
-    return
-  }
-
-  if (method === 'POST' && path === '/v1/refunds') {
-    const paymentIntentId = params.get('payment_intent')
-    const intent = paymentIntentId === null ? undefined : intents.get(paymentIntentId)
-    if (!intent) {
-      sendStripeError(res, 404, `No such payment_intent: '${paymentIntentId ?? ''}'`)
-      return
-    }
-    if (intent.status !== 'succeeded') {
-      sendStripeError(
-        res,
-        400,
-        `This PaymentIntent (${intent.id}) does not have a successful charge to refund.`,
-        'payment_intent_unexpected_state',
-      )
-      return
-    }
-    const left = (intent.amount_received ?? 0) - (refunded.get(intent.id) ?? 0)
-    const amountRaw = params.get('amount')
-    const amount = amountRaw !== null ? Number(amountRaw) : left
-    if (left <= 0) {
-      sendStripeError(
-        res,
-        400,
-        `Charge for ${intent.id} has already been refunded.`,
-        'charge_already_refunded',
-      )
-      return
-    }
-    if (amount <= 0 || amount > left) {
-      sendStripeError(
-        res,
-        400,
-        `Refund amount (${amount}) is greater than unrefunded amount on charge (${left})`,
-        'amount_too_large',
-      )
-      return
-    }
-    refunded.set(intent.id, (refunded.get(intent.id) ?? 0) + amount)
-    seq += 1
-    sendJson(res, 200, {
-      id: `re_${seq}`,
-      object: 'refund',
-      amount,
-      currency: intent.currency,
-      payment_intent: intent.id,
-      reason: params.get('reason'),
-      status: 'succeeded',
-    })
-    return
-  }
-
-  if (method === 'GET' && path === '/v1/balance') {
-    sendJson(res, 200, {
-      object: 'balance',
-      available: [{ amount: 0, currency: 'gbp', source_types: { card: 0 } }],
-      pending: [{ amount: 0, currency: 'gbp', source_types: { card: 0 } }],
-      livemode: false,
-    })
-    return
-  }
-
-  sendStripeError(res, 404, `Unrecognized request URL (${method}: ${path})`)
-}
-
-const server: Server = createServer((req, res) => {
-  handleRequest(req, res).catch((err: unknown) => {
-    console.error('mock stripe server error', err)
-    sendStripeError(res, 500, 'mock stripe server error')
-  })
-})
-
+// The offline Stripe API (tests/fixtures/stripe-api/server.mjs), on loopback: what the adapter calls, as Stripe answers.
+let fake: StripeFake
 let port = 0
 let closedPort = 0
 
 beforeAll(async () => {
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  port = (server.address() as AddressInfo).port
+  fake = await startStripeFake({ host: '127.0.0.1', secretKey: SECRET_KEY })
+  port = fake.port
 
   // Reserve and release a second ephemeral port so the "provider down" tests
   // have an address that refuses connections.
@@ -237,8 +36,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  server.close()
-  await once(server, 'close')
+  await fake.close()
 })
 
 const logger = createLogger({ pretty: false, level: 'error' })
@@ -320,6 +118,7 @@ describe('Stripe payments adapter against the mock Stripe API', () => {
     const adapter = buildAdapter()
     const intent = await adapter.createPaymentIntent({ amountMinor: 5000, currency: 'GBP' })
     const capture = await adapter.capturePayment(intent.id, 1500)
+    expect(capture.capturedAmountMinor).toBeLessThan(intent.amountMinor)
     expect(capture.capturedAmountMinor).toBe(1500)
     expect(capture.status).toBe('succeeded')
   })
@@ -466,5 +265,94 @@ describe('Stripe payments adapter webhooks (signed locally, no network)', () => 
       .catch((err: unknown) => err)
     expect(error).toBeInstanceOf(PaymentError)
     expect((error as PaymentError).code).toBe('payment.webhook_invalid')
+  })
+})
+
+describe('the fake Stripe API delivers the webhook a confirm causes', () => {
+  /** A stand-in for the store's webhook endpoint: keeps each delivery's raw body and signature, answers 200. */
+  async function receiver(): Promise<{
+    url: string
+    deliveries: Array<{ rawBody: string; signature: string }>
+    close(): Promise<void>
+  }> {
+    const deliveries: Array<{ rawBody: string; signature: string }> = []
+    const server: Server = createServer((req: IncomingMessage, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', () => {
+        deliveries.push({
+          rawBody: Buffer.concat(chunks).toString('utf8'),
+          signature: String(req.headers[SIGNATURE_HEADER] ?? ''),
+        })
+        res.writeHead(200, { 'content-type': 'application/json' }).end('{"received":true}')
+      })
+    })
+    server.listen(0, '127.0.0.1')
+    await once(server, 'listening')
+    return {
+      url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/hook`,
+      deliveries,
+      async close() {
+        server.close()
+        await once(server, 'close')
+      },
+    }
+  }
+
+  it("a confirm with the intent's client_secret, as Stripe.js sends it, posts one payment_intent.succeeded signed with the webhook secret, which the adapter verifies as the capture of that intent's amount, currency and metadata", async () => {
+    const hook = await receiver()
+    const delivering = await startStripeFake({
+      host: '127.0.0.1',
+      secretKey: SECRET_KEY,
+      webhookUrl: hook.url,
+      webhookSecret: WEBHOOK_SECRET,
+    })
+    try {
+      const adapter = createStripePaymentsAdapter({
+        logger,
+        config: {
+          secretKey: SECRET_KEY,
+          webhookSecret: WEBHOOK_SECRET,
+          host: '127.0.0.1',
+          port: delivering.port,
+          protocol: 'http',
+        },
+      })
+      const intent = await adapter.createPaymentIntent({
+        amountMinor: 1875,
+        currency: 'GBP',
+        orderRef: 'order-confirm-1',
+      })
+      const before = hook.deliveries.length
+
+      const confirmed = await fetch(`${delivering.url}/v1/payment_intents/${intent.id}/confirm`, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer pk_test_storefront',
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ client_secret: intent.clientSecret }).toString(),
+      })
+      const answer = (await confirmed.json()) as { status?: string; amount_received?: number }
+      const delivered = hook.deliveries.slice(before)
+      const parsed = await adapter.parseWebhook(delivered[0]!.rawBody, delivered[0]!.signature)
+      const event = JSON.parse(delivered[0]!.rawBody) as {
+        data: { object: { metadata?: Record<string, string> } }
+      }
+
+      expect(confirmed.status, JSON.stringify(answer)).toBe(200)
+      expect(answer.amount_received).toBe(intent.amountMinor)
+      expect(delivered).toHaveLength(1)
+      expect(parsed.verified).toBe(true)
+      expect(parsed.kind).toBe('payment.captured')
+      expect(parsed.paymentIntentId).toBe(intent.id)
+      expect(parsed.amountMinor).toBe(intent.amountMinor)
+      expect(parsed.currency).toBe(intent.currency)
+      expect(event.data.object.metadata?.['orderRef']).toBe('order-confirm-1')
+      await expect(adapter.getPaymentStatus(intent.id)).resolves.toBe('succeeded')
+    } finally {
+      await delivering.close()
+      await hook.close()
+    }
   })
 })

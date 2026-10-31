@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { nymbalConfigSchema, slotFolder, type NymbalConfig } from '@nymbalhq/config'
 import {
   boundedHealthCheck,
   connectionSecrets,
@@ -15,12 +15,18 @@ import {
   type Logger,
   type Slot,
 } from '@nymbalhq/types'
-import { declaredSettings, importProviderPackage, PROVIDER_PACKAGES } from './adapters/loader.js'
+import {
+  declaredSettings,
+  importAdapterModule,
+  resolveChoice,
+  type Choice,
+} from './adapters/resolve.js'
 import {
   checkInjectedSlot,
   COMMERCE_SLOTS,
   resolvePaymentsAdapter,
   resolveSecurityAdapter,
+  securityChoice,
   slotBuilders,
   type InjectedAdapters,
 } from './adapters/registry.js'
@@ -183,26 +189,30 @@ export async function diagnose(
   )
   const injected = options.adapters ?? {}
   const infrastructure = config.infrastructure
-  const providers: Record<Slot, string> = {
-    ...(Object.fromEntries(COMMERCE_SLOTS.map((s) => [s, config.commerce[s].provider])) as Record<
+  const choices: Record<Slot, Choice> = {
+    ...(Object.fromEntries(COMMERCE_SLOTS.map((s) => [s, config.commerce[s]])) as Record<
       CommerceSlot,
-      string
+      Choice
     >),
     documentStore: infrastructure.documentStore,
     eventBus: infrastructure.eventBus,
     media: infrastructure.media,
-    security: config.security.adapter,
+    security: securityChoice(config),
   }
+  const providers = Object.fromEntries(
+    Object.entries(choices).map(([slot, choice]) => [slot, choice.provider]),
+  ) as Record<Slot, string>
 
+  // Each slot that resolves to a package, resolved as createApp resolves it: the package it names, or why it fails.
   const packages: DiagnosisCheck[] = []
   for (const slot of [...COMMERCE_SLOTS, ...PRIMITIVES, 'security'] as const) {
-    const entry = PROVIDER_PACKAGES[slot]?.[providers[slot]]
-    if (entry === undefined) continue
-    const found = await within(timeoutMs, () => importProviderPackage(slot, providers[slot], env))
+    const resolution = resolveChoice(slot, choices[slot])
+    if (resolution.kind !== 'package') continue
+    const found = await within(timeoutMs, () => importAdapterModule(slot, choices[slot], env))
     packages.push({
-      name: `package ${slot}`,
+      name: `package ${slotFolder(slot)}`,
       status: found.ok ? 'ok' : 'down',
-      detail: found.ok ? entry.package : found.detail,
+      detail: found.ok ? resolution.package : found.detail,
     })
   }
 
@@ -296,7 +306,7 @@ export async function diagnose(
   const built: Partial<Record<PrimitiveName, Checkable>> = {}
   const primitiveFailures: Partial<Record<PrimitiveName, string>> = {}
   let documentStore: DocumentStoreAdapter | undefined
-  if (infrastructure.documentStore === 'postgres-jsonb' && commandStore === undefined) {
+  if (infrastructure.documentStore.provider === 'postgres-jsonb' && commandStore === undefined) {
     primitiveFailures.documentStore = notChecked('command store')
   } else {
     const store = await within(
@@ -344,7 +354,7 @@ export async function diagnose(
   const settingsOf = async (slot: CommerceSlot): Promise<SettingValue[]> => {
     const provider = providers[slot]
     if (provider === 'custom') return []
-    const declared = declaredSettings(await importProviderPackage(slot, provider, env))
+    const declared = declaredSettings(await importAdapterModule(slot, choices[slot], env))
     if (declared.length === 0) return []
     if (!stored.ok) throw new Error(`settings not read: ${stored.detail}`)
     return settingValues(config, [{ slot, provider, declared }], stored.value, env, logger)
@@ -405,12 +415,14 @@ export async function diagnose(
     const primitive = built[name]
     if (primitive === undefined) {
       primitives.push({
-        name: `primitive ${name}`,
+        name: `primitive ${slotFolder(name)}`,
         status: 'down',
         detail: primitiveFailures[name] ?? '',
       })
     } else {
-      primitives.push(fromReport(`primitive ${name}`, subject(name), await health(primitive)))
+      primitives.push(
+        fromReport(`primitive ${slotFolder(name)}`, subject(name), await health(primitive)),
+      )
     }
   }
 

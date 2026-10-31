@@ -16,16 +16,20 @@ import {
   markInUse,
   plan,
   releaseInUse,
+  STORE_SETS,
+  stepModes,
   writeBuildStamp,
   type PlanInput,
   type StepSpec,
 } from '../../scripts/gate'
+import { loadSentinels } from '../../scripts/sentinels'
 import { leftOut, listedProjects, vitestFilters } from './vitest-filters'
 
-// What a local run of the full gate leaves to dev CI, and what it refuses to do: the sentinels and Stryker run only
-// when asked (`--sentinels`, `--stryker`, or `--only` naming them), the harness's own projects only when a harness
-// path changed, the plain gate builds when the build output is older than HEAD's package inputs, and no gate runs
-// while another process holds the checkout.
+// What a local run of the full gate leaves to dev CI, and what it refuses to do: the sentinels, Stryker and the
+// script bytes per page run only when asked (`--sentinels`, `--stryker`, `--perf-bytes`, or `--only` naming them),
+// and a Stryker run that is asked for blocks on the ratchet; the harness's own projects run only when a harness path
+// changed, the plain gate builds when the build output is older than HEAD's package inputs, and no gate runs while
+// another process holds the checkout.
 
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const TSX = join(REPO, 'node_modules/.bin/tsx')
@@ -70,7 +74,7 @@ describe('the sentinels step runs only when asked', () => {
   })
 })
 
-describe('the stryker step: off locally, advisory on request, blocking in CI', () => {
+describe('the stryker step: off locally, blocking when asked and in CI', () => {
   const RATCHET = /pnpm --silent mutation:ratchet check --report reports\/mutation\/mutation\.json/
 
   it('off is an idle skip that names dev CI and --stryker', () => {
@@ -78,28 +82,6 @@ describe('the stryker step: off locally, advisory on request, blocking in CI', (
     expect(idleSkip(s)).toBe(true)
     expect(s.skip).toMatch(/dev CI/)
     expect(s.skip).toMatch(/--stryker/)
-  })
-
-  it('advisory runs Stryker and the ratchet check, and a ratchet below the line does not fail the step', () => {
-    const { command } = step(fullPlan({ stryker: 'advisory' }), 'stryker')
-    expect(command).toMatch(/pnpm exec stryker run/)
-    expect(command).toMatch(RATCHET)
-    expect(command).toMatch(/\|\| echo 'ratchet: below the ratchet here/)
-    // The shape holds: a failing check inside the braces leaves the command green, a failing Stryker does not.
-    const shape = command
-      .replace(/^.*pnpm exec stryker run[^&]*&& /, 'stryker_run && ')
-      .replace(RATCHET, 'ratchet_check')
-    const run = (stryker: string, ratchet: string): number =>
-      spawnSync(
-        'bash',
-        ['-c', `stryker_run() { ${stryker}; }; ratchet_check() { ${ratchet}; }; ${shape}`],
-        {
-          encoding: 'utf8',
-        },
-      ).status ?? 1
-    expect(run('true', 'false')).toBe(0)
-    expect(run('false', 'true')).toBe(1)
-    expect(run('true', 'true')).toBe(0)
   })
 
   it('blocking (the plan default) chains the ratchet check with &&, so a file below its ratchet is red', () => {
@@ -111,11 +93,174 @@ describe('the stryker step: off locally, advisory on request, blocking in CI', (
   })
 
   it('an empty mutate set is an idle skip whatever the mode but off', () => {
-    for (const stryker of ['advisory', 'blocking'] as const) {
+    for (const stryker of ['blocking'] as const) {
       const s = step(fullPlan({ stryker, mutated: [] }), 'stryker')
       expect(idleSkip(s)).toBe(true)
       expect(s.skip).toMatch(/mutate set/)
     }
+  })
+})
+
+describe('AC-1: the command line decides the sentinels, stryker and perf bytes modes', () => {
+  const KNOWN = loadSentinels(join(REPO, 'tests/sentinels')).map((s) => s.id)
+
+  it('AC-1: no flag runs no sentinel, --only sentinels alone runs every one, a list runs as given, and an empty list throws', () => {
+    expect(stepModes({}).sentinels).toBe('none')
+    expect(stepModes({ only: ['sentinels'] }).sentinels).toBe('all')
+    expect(stepModes({ sentinels: 'S001,I101' }).sentinels).toEqual(['S001', 'I101'])
+    expect(() => stepModes({ sentinels: ',' })).toThrow()
+  })
+
+  it('AC-1: --stryker blocks with or without --only, --only stryker blocks, and neither leaves it off', () => {
+    expect(stepModes({ stryker: true }).stryker).toBe('blocking')
+    expect(stepModes({ stryker: true, only: ['stryker'] }).stryker).toBe('blocking')
+    expect(stepModes({ only: ['stryker'] }).stryker).toBe('blocking')
+    expect(stepModes({}).stryker).toBe('off')
+    expect(stepModes({ stryker: false, only: ['tests'] }).stryker).toBe('off')
+  })
+
+  it('AC-1: perf bytes is on exactly for --perf-bytes or --only perf-bytes', () => {
+    const cases = [false, true].flatMap((flag) =>
+      [undefined, ['tests'], ['perf-bytes'], ['tests', 'perf-bytes']].map((only) => ({
+        flag,
+        only,
+      })),
+    )
+    for (const { flag, only } of cases) {
+      expect(stepModes({ perfBytes: flag, only }).perfBytes, `${flag} ${only}`).toBe(
+        flag || (only?.includes('perf-bytes') ?? false),
+      )
+    }
+  })
+
+  it('AC-1: property: stryker is off or blocking, sentinels is all, none or the non-empty list given, perf bytes follows its flags', () => {
+    const names = ['tests', 'sentinels', 'stryker', 'perf-bytes', 'e2e astro']
+    fc.assert(
+      fc.property(
+        fc.option(fc.subarray(names), { nil: undefined }),
+        fc.option(
+          fc.oneof(
+            fc.constantFrom('all', 'none'),
+            fc.uniqueArray(fc.constantFrom(...KNOWN), { minLength: 1, maxLength: 4 }),
+          ),
+          { nil: undefined },
+        ),
+        fc.option(fc.boolean(), { nil: undefined }),
+        fc.option(fc.boolean(), { nil: undefined }),
+        (only, sentinels, stryker, perfBytes) => {
+          const flag = Array.isArray(sentinels) ? sentinels.join(',') : sentinels
+          const modes = stepModes({ only, sentinels: flag, stryker, perfBytes })
+          expect(modes.stryker).toBe(
+            stryker === true || only?.includes('stryker') === true ? 'blocking' : 'off',
+          )
+          expect(modes.perfBytes).toBe(perfBytes === true || only?.includes('perf-bytes') === true)
+          const expected =
+            sentinels === undefined
+              ? only?.includes('sentinels') === true
+                ? 'all'
+                : 'none'
+              : sentinels
+          expect(modes.sentinels).toEqual(expected)
+          const kind = Array.isArray(modes.sentinels)
+            ? modes.sentinels.length > 0
+              ? 'list'
+              : 'empty list'
+            : modes.sentinels
+          expect(['all', 'none', 'list']).toContain(kind)
+        },
+      ),
+      { numRuns: 300 },
+    )
+  })
+})
+
+describe('AC-4: the perf-bytes step of gate:full', () => {
+  const STORES = Object.keys(STORE_SETS) as Array<keyof typeof STORE_SETS>
+  const COMMAND = /^(?:\S+=\S+ )*pnpm perf:budgets --bytes$/
+
+  it('AC-4: off, it is an idle skip naming dev CI and --perf-bytes; not asked for, it is off', () => {
+    for (const steps of [fullPlan({ perfBytes: false }), fullPlan()]) {
+      const s = step(steps, 'perf-bytes')
+      expect(idleSkip(s)).toBe(true)
+      expect(s.skip).toMatch(/dev CI/)
+      expect(s.skip).toMatch(/--perf-bytes/)
+    }
+  })
+
+  it('AC-4: on, it runs pnpm perf:budgets --bytes after the build under a shared hold, after every e2e step of each store set; the plain gate has none', () => {
+    for (const stores of STORES) {
+      const steps = fullPlan({ perfBytes: true, stores })
+      const names = steps.map((s) => s.name)
+      const s = step(steps, 'perf-bytes')
+      expect(s.skip, stores).toBeUndefined()
+      expect(s.command, stores).toMatch(COMMAND)
+      expect(s.needs ?? [], stores).toContain('build')
+      expect(s.hold, stores).toBe('shared')
+      const lastE2e = Math.max(...names.flatMap((n, i) => (n.startsWith('e2e ') ? [i] : [])))
+      expect(lastE2e, `${stores} has e2e steps`).toBeGreaterThan(names.indexOf('build'))
+      expect(names.indexOf('perf-bytes'), stores).toBeGreaterThan(lastE2e)
+    }
+    for (const perfBytes of [true, false]) {
+      const plain = plainPlan(['packages/sdk/src/client.ts'], { perfBytes }).map((s) => s.name)
+      expect(plain.filter((n) => n === 'perf-bytes')).toEqual([])
+    }
+  })
+
+  it('AC-4: property: turning perf bytes on changes the perf-bytes step alone', () => {
+    const others = (steps: StepSpec[]): StepSpec[] => steps.filter((s) => s.name !== 'perf-bytes')
+    fc.assert(
+      fc.property(
+        fc.record({
+          stores: fc.constantFrom(...STORES),
+          services: fc.constantFrom('compose' as const, 'external' as const),
+          sentinels: fc.oneof(
+            fc.constantFrom('all' as const, 'none' as const),
+            fc.uniqueArray(fc.constantFrom('S001', 'I101', 'I102')).map((ids) => new Set(ids)),
+          ),
+          stryker: fc.constantFrom('off' as const, 'blocking' as const),
+          mutated: fc.subarray(['packages/sdk/src/client.ts']),
+          changed: fc.subarray([
+            'packages/sdk/src/client.ts',
+            'templates/astro/src/pages/index.astro',
+            'scripts/gate.ts',
+          ]),
+          noBase: fc.boolean(),
+        }),
+        (input) => {
+          const extra: Partial<PlanInput> = {
+            ...input,
+            ...(input.services === 'external'
+              ? {
+                  postgresUrl: 'postgres://ci@localhost:5432/ci',
+                  mailpitUrl: 'http://localhost:8025',
+                }
+              : {}),
+          }
+          const off = fullPlan({ ...extra, perfBytes: false })
+          const on = fullPlan({ ...extra, perfBytes: true })
+          expect(others(on)).toEqual(others(off))
+          expect(idleSkip(step(off, 'perf-bytes'))).toBe(true)
+          expect(step(on, 'perf-bytes').skip).toBeUndefined()
+        },
+      ),
+      { numRuns: 100 },
+    )
+  })
+
+  it('AC-4: --perf-bytes without --full exits 1, naming --full, before any step runs', () => {
+    const dir = scratch()
+    const env = { ...process.env }
+    for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key]
+    const r = spawnSync(TSX, [GATE, '--perf-bytes', '--base', 'HEAD', '--json'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env,
+      timeout: 60_000,
+    })
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(1)
+    expect(r.stderr).toMatch(/--perf-bytes/)
+    expect(r.stderr).toMatch(/--full/)
+    expect(r.stdout, 'no step ran').not.toContain('"steps"')
   })
 })
 

@@ -3,10 +3,9 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { loadConfig } from '@nymbalhq/config'
-import { PROVIDER_PACKAGES } from '@nymbalhq/platform'
+import { conventionPackage, loadConfig } from '@nymbalhq/config'
 import { readRecipe } from '../recipes/index.js'
-import { WINDOW_PERIODS } from '../../../security-cloudflare/src/rules.js'
+import { WINDOW_PERIODS } from '../../../adapters/security/cloudflare/src/rules.js'
 import {
   REPO,
   changedPaths,
@@ -108,11 +107,14 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(twice.get('nymbal.config.ts')).toBe(once.get('nymbal.config.ts'))
   }, 60_000)
 
-  it("AC-4: after a hand edit to documentStore: 'postgres-jsonb', `nymbal add redis` exits 1 naming the path and both values, and leaves the files byte-identical", async () => {
+  it("AC-4: after a hand edit to documentStore: { provider: 'postgres-jsonb' }, `nymbal add redis` exits 1 naming the path and both values, and leaves the files byte-identical", async () => {
     const dir = project('conflict')
     const path = join(dir, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
-    const edited = original.replace(/documentStore: 'in-memory'/, "documentStore: 'postgres-jsonb'")
+    const edited = original.replace(
+      /documentStore: \{ provider: 'in-memory' \}/,
+      "documentStore: { provider: 'postgres-jsonb' }",
+    )
     expect(edited, 'the scaffold config names the in-memory document store').not.toBe(original)
     writeFileSync(path, edited)
     const before = listing(dir)
@@ -141,13 +143,14 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
-  it('AC-4: an unknown recipe exits 1, lists cloudflare, postgres, redis, s3, stripe, and changes nothing', async () => {
+  it('AC-4: an unknown name exits 1, names the three forms of nymbal add, and changes nothing', async () => {
     const dir = project('unknown')
     const before = listing(dir)
 
     const result = await add(dir, 'recipes-no-such-recipe', '--no-install')
     expect(result.code, result.output).toBe(1)
-    expect(result.output).toMatch(/cloudflare,\s*postgres,\s*redis,\s*s3,\s*stripe/)
+    const forms = ['<slot> <provider>', '<package>', '<recipe>']
+    expect(forms.filter((f) => result.output.includes(f))).toEqual(forms)
     expect(changedPaths(before, listing(dir))).toHaveLength(0)
   })
 
@@ -252,12 +255,9 @@ describe('AC-4: nymbal add', { timeout: 30_000 }, () => {
 // scaffold's rate limits use windows Cloudflare has a period for, so the first `security:plan` is not refused.
 
 describe('AC-9: nymbal add cloudflare', () => {
-  const securityPackage = (): string | undefined =>
-    (PROVIDER_PACKAGES as Readonly<Record<string, Readonly<Record<string, { package: string }>>>>)[
-      'security'
-    ]?.['cloudflare']?.package
+  const securityPackage = (): string => conventionPackage('security', 'cloudflare')
 
-  it('AC-9: --dry-run names the install of the package PROVIDER_PACKAGES.security.cloudflare names and changes nothing; the run sets security.adapter and security.cloudflare to the two env() reads and adds both variables to .env.example', async () => {
+  it("AC-9: --dry-run names the install of the package conventionPackage('security', 'cloudflare') names and changes nothing; the run sets security.adapter and security.cloudflare to the two env() reads and adds both variables to .env.example", async () => {
     const dir = project('cloudflare')
     const before = listing(dir)
     const pkg = securityPackage()

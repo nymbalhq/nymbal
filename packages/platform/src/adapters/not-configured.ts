@@ -1,5 +1,17 @@
 import { AdapterError, type CommerceSlot, type HealthReport } from '@nymbalhq/types'
 
+// Registered, so the mark is the same symbol whichever copy of this module (source or a built package) made the adapter.
+const NOT_CONFIGURED = Symbol.for('nymbal.adapter.notConfigured')
+
+/** Whether `subject` is a not-configured placeholder, which answers `down` for ever. */
+export function isNotConfigured(subject: unknown): boolean {
+  return (
+    typeof subject === 'object' &&
+    subject !== null &&
+    (subject as Record<symbol, unknown>)[NOT_CONFIGURED] === true
+  )
+}
+
 /**
  * The adapter a slot resolves to when a secret its provider package declares is set nowhere (config, environment or
  * Settings): the store boots, so the admin can take the key, while the slot reports itself down and refuses every
@@ -14,6 +26,7 @@ export function createNotConfiguredAdapter(
   const fields = missing.map((path) => `${slot}.${path}`).join(', ')
   const detail = `${provider} is not configured: ${fields} not set (in the config, the environment or the admin's Settings)`
   const base: Record<PropertyKey, unknown> = {
+    [NOT_CONFIGURED]: true,
     kind: slot,
     providerName: provider,
     capabilities: () => [],

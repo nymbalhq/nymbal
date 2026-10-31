@@ -38,9 +38,9 @@ function s3Config(s3?: Record<string, unknown>, more: Record<string, unknown> = 
     ...kernelConfig('sqlite'),
     infrastructure: {
       commandStore: 'sqlite',
-      documentStore: 'in-memory',
-      eventBus: 'in-process',
-      media: 's3',
+      documentStore: { provider: 'in-memory' },
+      eventBus: { provider: 'in-process' },
+      media: { provider: 's3' },
       ...(s3 !== undefined && { s3 }),
       ...more,
     },
@@ -94,7 +94,7 @@ describe('AC-1: a missing bucket fails resolvePrimitives with config.s3_bucket_m
     // A Redis document store beside it, on a port nothing listens on: had the check come after the other
     // primitives, the failure would be a Redis one, or the Redis package would have been imported first.
     const config = s3Config(undefined, {
-      documentStore: 'redis',
+      documentStore: { provider: 'redis' },
       redis: { url: 'redis://127.0.0.1:1', prefix: 's3-early' },
     })
 
@@ -106,11 +106,11 @@ describe('AC-1: a missing bucket fails resolvePrimitives with config.s3_bucket_m
     const loaded = resolutions
       .filter(
         (r) =>
-          inPackage(r.url, 'media-s3') ||
+          inPackage(r.url, 'adapters/media/s3') ||
           underModule(r.url, '@aws-sdk') ||
           r.specifier.startsWith('@aws-sdk/') ||
           r.specifier === '@nymbalhq/media-s3' ||
-          inPackage(r.url, 'doc-store-redis') ||
+          inPackage(r.url, 'adapters/document-store/redis') ||
           underModule(r.url, 'ioredis'),
       )
       .map((r) => r.url)
@@ -123,7 +123,6 @@ describe('AC-2: a missing @nymbalhq/media-s3 fails with the install line', () =>
     const config = s3Config({ bucket: 's3-hidden', endpoint: NOWHERE })
 
     const { resolutions, outcome } = await runGraphChild(config, {
-      hide: ['@nymbalhq/media-s3'],
       env: NO_S3_ENV,
     })
 

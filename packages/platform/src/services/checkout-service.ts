@@ -60,8 +60,11 @@ export interface BeginCheckoutResult {
   /** The order's status as the checkout answers. */
   orderStatus: OrderStatus
   payment: CheckoutPayment
-  /** A fresh key that reads the order with no session (`ORDER_KEY_HEADER`). Only its hash is stored. */
-  orderKey: string
+  /**
+   * A guest order's fresh key, which reads it with no session (`ORDER_KEY_HEADER`) until it expires. Only its hash is
+   * stored. A signed-in customer's order has none: their account is its home.
+   */
+  orderKey?: string
 }
 
 /** What the payment provider captured. */
@@ -110,7 +113,14 @@ export interface CreateCheckoutServiceDeps {
   inventory: InventoryService
   payments: PaymentsAdapter
   currency: string
+  /** How long a checkout's order key opens the order on its own; 48 hours when not given. */
+  keyLifetimeMs?: number
 }
+
+/** The checkout keys an order keeps: each mint past this deletes the oldest, so a checkout loop cannot grow the table. */
+const CHECKOUT_KEYS_KEPT = 5
+
+const DEFAULT_CHECKOUT_KEY_LIFETIME_MS = 48 * 3_600_000
 
 interface DraftMetadata {
   cartToken: string
@@ -165,8 +175,8 @@ const ABANDON_AFTER_MS = 120_000
 
 /** What one pass under the cart lock decided, with the key minted for the order it answers. */
 type Placement =
-  | { kind: 'placed'; order: Order; orderKey: string }
-  | { kind: 'existing'; order: Order & { paymentIntentId: string }; orderKey: string }
+  | { kind: 'placed'; order: Order; orderKey: string | undefined }
+  | { kind: 'existing'; order: Order & { paymentIntentId: string }; orderKey: string | undefined }
   | { kind: 'cancel-first'; order: Order & { paymentIntentId: string } }
 
 /** A checkout answer before its order's key is added. */
@@ -197,24 +207,40 @@ export function createCheckoutService(
   deps: CreateCheckoutServiceDeps,
 ): CheckoutService & ManualPayments {
   const { store, repos, publisher, logger, cart, orders, inventory, payments, currency } = deps
+  const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_CHECKOUT_KEY_LIFETIME_MS
 
-  /** A new key for the order, its hash written in `tx`; earlier keys keep opening it. */
-  async function mintKey(tx: Tx, orderId: string): Promise<string> {
+  /**
+   * A new key for a guest's order, its hash written in `tx`, and none for a customer's. Earlier keys keep opening the
+   * order until they expire, the newest few of them: the oldest past the cap is deleted in the same write.
+   */
+  async function mintKey(
+    tx: Tx,
+    order: Pick<Order, 'id' | 'customerId'>,
+  ): Promise<string | undefined> {
+    if (order.customerId !== null) return undefined
     const { key, hash } = mintOrderKey()
+    const createdAt = new Date()
     await repos.orderAccessKey.insert(tx, {
       id: uuidv7(),
-      orderId,
+      orderId: order.id,
       keyHash: hash,
       purpose: 'checkout',
-      createdAt: new Date(),
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + keyLifetimeMs),
     })
+    await repos.orderAccessKey.keepNewest(tx, order.id, 'checkout', CHECKOUT_KEYS_KEPT)
     return key
   }
 
+  /** A checkout answer with the key minted for its order, when it has one. */
+  function withKey(answer: Answer, orderKey: string | undefined): BeginCheckoutResult {
+    return orderKey === undefined ? answer : { ...answer, orderKey }
+  }
+
   /**
-   * A refusal that names an order (the cart already became it, or its payment is under way) gets a key to read it.
-   * Minted in its own write once the placement transaction has settled: a row written there before the throw would
-   * roll back with it.
+   * A refusal that names a guest's order (the cart already became it, or its payment is under way) gets a key to read
+   * it; a customer's order is read from their account. Minted in its own write once the placement transaction has
+   * settled: a row written there before the throw would roll back with it.
    */
   async function withOrderKey(err: unknown): Promise<unknown> {
     if (!(err instanceof CheckoutError)) return err
@@ -222,7 +248,8 @@ export function createCheckoutService(
     if (typeof orderNumber !== 'string') return err
     const order = await store.read((tx) => repos.order.findByOrderNumber(tx, orderNumber))
     if (order === null) return err
-    err.context['orderKey'] = await store.transaction((tx) => mintKey(tx, order.id))
+    const orderKey = await store.transaction((tx) => mintKey(tx, order))
+    if (orderKey !== undefined) err.context['orderKey'] = orderKey
     return err
   }
 
@@ -634,7 +661,7 @@ export function createCheckoutService(
         const reason = closed.get(paymentIntentId)
         if (reason === undefined) {
           if (sameLines(pending, cartDoc)) {
-            const orderKey = await mintKey(tx, pending.id)
+            const orderKey = await mintKey(tx, pending)
             return { kind: 'existing', order: { ...pending, paymentIntentId }, orderKey }
           }
           return { kind: 'cancel-first', order: { ...pending, paymentIntentId } }
@@ -694,7 +721,7 @@ export function createCheckoutService(
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
     })
-    return { kind: 'placed', order, orderKey: await mintKey(tx, order.id) }
+    return { kind: 'placed', order, orderKey: await mintKey(tx, order) }
   }
 
   /**
@@ -877,11 +904,11 @@ export function createCheckoutService(
         for (let attempt = 0; ; attempt += 1) {
           const placement = await store.transaction((tx) => place(tx, input, closed))
           if (placement.kind === 'placed') {
-            return { ...(await pay(input, placement.order)), orderKey: placement.orderKey }
+            return withKey(await pay(input, placement.order), placement.orderKey)
           }
           if (placement.kind === 'existing') {
             const answer = await answerExisting(placement.order)
-            if (!('closed' in answer)) return { ...answer, orderKey: placement.orderKey }
+            if (!('closed' in answer)) return withKey(answer, placement.orderKey)
             closed.set(placement.order.paymentIntentId, answer.closed)
             continue
           }

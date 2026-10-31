@@ -8,11 +8,14 @@ const NESTED_VITEST_RUNS = [
   'tests/contracts/contract-breakers.test.ts',
 ]
 
-// Each runs the real Vitest over copies of the work tree, about 100 s together: the plain gate never runs them
-// (scripts/gate.ts), gate:full and dev CI do.
+// Each runs the real Vitest over copies of the work tree, or the registry run in Docker (Linux only): the plain gate
+// never runs them (scripts/gate.ts), gate:full and dev CI do.
 const SLOW_TOOLING = [
   'tests/tooling/harness-input-selection.test.ts',
   'tests/tooling/gate-base-env.test.ts',
+  'tests/tooling/registry-run.test.ts',
+  'tests/tooling/new-adapter-scaffold.test.ts',
+  'tests/tooling/adapter-list.test.ts',
 ]
 
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
@@ -30,6 +33,20 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
           name: 'scaffold-clean',
           environment: 'node' as const,
           include: ['tests/scaffold/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
+
+// The same for the store's container image: it exists only when `scripts/scaffold-image.sh <astro|nextjs>` has built
+// the image and started its container (NYMBAL_IMAGE and the rest; the file throws at collection without them).
+const scaffoldImage = process.env['NYMBAL_IMAGE']
+  ? [
+      {
+        test: {
+          name: 'scaffold-image',
+          environment: 'node' as const,
+          include: ['tests/scaffold-image/**/*.test.ts'],
         },
       },
     ]
@@ -149,6 +166,8 @@ export default defineConfig({
           environment: 'node',
           include: ['packages/platform/tests/integration/**/*.test.ts'],
           exclude: [...configDefaults.exclude, PERF],
+          // Every transaction a test commits is checked for its event (tests/support/write-audit.ts).
+          setupFiles: ['packages/platform/tests/integration/write-audit.setup.ts'],
           testTimeout: 30000,
         },
       },
@@ -164,10 +183,9 @@ export default defineConfig({
         test: {
           name: 'adapters',
           environment: 'node',
-          include: [
-            'packages/adapter-*/src/**/*.test.ts',
-            'packages/security-cloudflare/src/**/*.test.ts',
-          ],
+          include: ['packages/adapters/*/*/src/**/*.test.ts'],
+          // Their contract suites need the compose services: integration-stores runs them.
+          exclude: [...configDefaults.exclude, 'packages/adapters/{document-store,event-bus}/**'],
         },
       },
       {
@@ -244,6 +262,8 @@ export default defineConfig({
           include: ['packages/platform/tests/postgres/**/*.test.ts'],
           exclude: [...configDefaults.exclude, PERF_POSTGRES],
           testTimeout: 30000,
+          // Dropping a file's test databases in afterAll waits on the shared server, past 10 s under load.
+          hookTimeout: 30000,
         },
       },
       {
@@ -268,9 +288,7 @@ export default defineConfig({
           name: 'integration-stores',
           environment: 'node',
           include: [
-            'packages/doc-store-redis/src/**/*.test.ts',
-            'packages/doc-store-postgres-jsonb/src/**/*.test.ts',
-            'packages/event-bus-redis-streams/src/**/*.test.ts',
+            'packages/adapters/{document-store,event-bus}/*/src/**/*.test.ts',
             'packages/platform/tests/primitives/**/*.test.ts',
             'tests/stores/**/*.test.ts',
             ...NESTED_VITEST_RUNS,
@@ -329,6 +347,7 @@ export default defineConfig({
         },
       },
       ...scaffoldClean,
+      ...scaffoldImage,
       ...nightly,
       {
         test: {
@@ -357,7 +376,7 @@ export default defineConfig({
     ]).filter(kept),
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**'],
+      include: ['packages/*/src/**', 'packages/adapters/*/*/src/**'],
       exclude: [
         '**/generated/**',
         '**/*.generated.ts',
@@ -366,6 +385,7 @@ export default defineConfig({
         '**/*.test.tsx',
         '**/dist/**',
         'packages/*/src/index.ts',
+        'packages/adapters/*/*/src/index.ts',
         '**/tests/**',
         'packages/test-factories/**',
         'packages/contract-tests/**',

@@ -510,6 +510,16 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/routes/validated-adapter.ts',
       marks: /config\.route_schema_missing/,
     },
+    I110: {
+      kind: 'injected',
+      path: 'packages/platform/src/services/category-service.ts',
+      marks: /publisher\.publish\(EVT_CATEGORY_UPDATED, \{ category: fresh \}\)/,
+    },
+    I111: {
+      kind: 'injected',
+      path: 'packages/platform/src/repositories/order-sequence.ts',
+      marks: /set: \{ nextValue: sql`\$\{sqliteSchema\.orderSequences\.nextValue\} \+ 1` \}/,
+    },
   }
 
   function loadAll(): Array<{ file: string; sentinel: Sentinel }> {
@@ -522,7 +532,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I109, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I111, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {
@@ -871,6 +881,69 @@ describe('AC-24: a sentinel with its own suite', () => {
       .filter((l) => l === 'counted').length
     // One control for the shared suite plus one run per sentinel that uses it.
     expect(ownRuns).toBe(1 + report.sentinels.length)
+  })
+})
+
+describe('the controls are the suites the selected sentinels run', () => {
+  /** A repo whose own suite logs `counted` and whose default suite (`node --test`) logs `run`. */
+  function suitedRepo(): { repo: TempRepo; own: string; runs: (line: string) => number } {
+    const repo = makeRepo({ green: true })
+    commitFile(
+      repo,
+      'counted-suite.mjs',
+      [
+        "import { appendFileSync } from 'node:fs'",
+        "import { add } from './src/math.js'",
+        `appendFileSync(${JSON.stringify(repo.log)}, 'counted\\n')`,
+        'process.exit(add(2, 3) === 5 ? 0 : 1)',
+        '',
+      ].join('\n'),
+    )
+    const runs = (line: string) =>
+      readLog(repo)
+        .split('\n')
+        .filter((l) => l === line).length
+    return { repo, own: 'node counted-suite.mjs', runs }
+  }
+
+  it('runs no default control when every selected sentinel names its own suite', async () => {
+    const { repo, own, runs } = suitedRepo()
+    writeSentinel(repo, { id: 'I001', kind: 'injected', patch: breakAdd(repo), suite: own })
+    writeSentinel(repo, { id: 'I002', kind: 'injected', patch: changeUntested(repo), suite: own })
+    commitAll(repo.root, 'sentinels')
+
+    const report = await run({ root: repo.root, dir: repo.dir, suite: SUITE })
+
+    expect(statuses(report)).toEqual({ I001: 'caught', I002: 'missed' })
+    expect(runs('run'), 'the default suite never ran').toBe(0)
+    expect(runs('counted')).toBe(1 + report.sentinels.length)
+  })
+
+  it('runs the default control when a selected sentinel has no suite of its own', async () => {
+    const { repo, own, runs } = suitedRepo()
+    writeSentinel(repo, { id: 'I001', kind: 'injected', patch: breakAdd(repo), suite: own })
+    writeSentinel(repo, { id: 'I002', kind: 'injected', patch: changeUntested(repo) })
+    commitAll(repo.root, 'sentinels')
+
+    const report = await run({ root: repo.root, dir: repo.dir, suite: SUITE })
+
+    expect(statuses(report)).toEqual({ I001: 'caught', I002: 'missed' })
+    // The default suite: its control, then I002's run. The own suite: its control, then I001's run.
+    expect(runs('run')).toBe(2)
+    expect(runs('counted')).toBe(2)
+  })
+
+  it('runs no default control when the only selected sentinel is suited, though another is not', async () => {
+    const { repo, own, runs } = suitedRepo()
+    writeSentinel(repo, { id: 'I001', kind: 'injected', patch: breakAdd(repo), suite: own })
+    writeSentinel(repo, { id: 'I002', kind: 'injected', patch: changeUntested(repo) })
+    commitAll(repo.root, 'sentinels')
+
+    const report = await run({ root: repo.root, dir: repo.dir, suite: SUITE, only: 'I001' })
+
+    expect(statuses(report)).toEqual({ I001: 'caught' })
+    expect(runs('run'), 'the default suite never ran').toBe(0)
+    expect(runs('counted')).toBe(2)
   })
 })
 

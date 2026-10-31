@@ -28,7 +28,7 @@ export interface RegisterAlertHandlerDeps {
   eventBus: EventBusAdapter
   email: EmailAdapter
   logger: Logger
-  repos: Pick<Repositories, 'alertSubscription' | 'processedEvent' | 'product'>
+  repos: Pick<Repositories, 'alertSubscription' | 'emailSuppression' | 'processedEvent' | 'product'>
   alerts: AlertService
   storeName: string
 }
@@ -46,6 +46,11 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
   const { eventBus, email, logger, repos, alerts, storeName } = deps
   const { store } = repos.processedEvent
 
+  // A suppressed address is skipped, not failed: its row keeps its status and baseline, and the event is not retried
+  // for it. The log names the row, never the address.
+  const skipped = (subscriptionId: string, eventId: string) =>
+    logger.info({ subscriptionId, eventId }, 'alert mail skipped: the address is suppressed')
+
   // A confirmation goes only to a row still waiting for one: a row confirmed or left since is sent nothing.
   const onRequested: EventHandler<AlertRequestedV1Payload> = async (event) => {
     const key = `${event.id}:${event.payload.subscriptionId}`
@@ -53,10 +58,12 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       if (await repos.processedEvent.seen(tx, HANDLER, key)) return null
       const row = await repos.alertSubscription.findById(tx, event.payload.subscriptionId)
       if (row === null || row.status !== 'pending') return null
+      if (await repos.emailSuppression.isSuppressed(tx, row.email)) return 'suppressed' as const
       const product = await repos.product.findById(tx, row.productId)
       return product === null ? null : { row, product }
     })
     if (found === null) return
+    if (found === 'suppressed') return skipped(event.payload.subscriptionId, event.id)
     const { row, product } = found
     const { confirmUrl, unsubscribeUrl, productUrl } = links(row, product)
     await email.sendTransactional({
@@ -81,7 +88,12 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
     const failed: string[] = []
     for (const row of rows) {
       const key = `${event.id}:${row.id}`
-      if (await store.read((tx) => repos.processedEvent.seen(tx, HANDLER, key))) continue
+      const skip = await store.read(async (tx) => {
+        if (await repos.processedEvent.seen(tx, HANDLER, key)) return 'sent'
+        return (await repos.emailSuppression.isSuppressed(tx, row.email)) ? 'suppressed' : null
+      })
+      if (skip === 'suppressed') skipped(row.id, event.id)
+      if (skip !== null) continue
       try {
         await email.sendTransactional({ ...message(row), to: row.email })
         await store.transaction(async (tx) => {

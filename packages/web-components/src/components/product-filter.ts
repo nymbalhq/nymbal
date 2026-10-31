@@ -1,3 +1,5 @@
+import '@nymbalhq/sdk/ns/product-list'
+import '@nymbalhq/sdk/ns/search'
 import { css, html, nothing, type PropertyValues } from 'lit'
 import type { Facet } from '@nymbalhq/types'
 import {

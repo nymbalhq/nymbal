@@ -34,6 +34,10 @@ function decodeCursor(cursor) {
   return Number(text)
 }
 
+/** What the adapter serves, which the kernel and `nymbal test:contracts` check on load. */
+export const slot = 'search'
+export const provider = 'acme'
+
 export function createAdapter(options = {}) {
   const ignoreCursor = options !== null && options.ignoreCursor === true
   const docs = new Map()

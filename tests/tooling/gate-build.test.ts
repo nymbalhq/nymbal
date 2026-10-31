@@ -1,5 +1,5 @@
-// Reads: packages/*/package.json
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+// Reads: packages/*/package.json, packages/adapters/*/*/package.json, pnpm-workspace.yaml
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
@@ -96,17 +96,21 @@ describe('AC-18: the plain gate builds what it tests', () => {
 })
 
 describe('AC-18: the kit closure and build inputs', () => {
-  it('AC-18: workspaceClosure of the kit holds the kit and every workspace package it imports, and not the CLI', () => {
+  it('AC-18: workspaceClosure of the kit holds the kit and every workspace package it imports, and not the CLI', async () => {
+    const { workspacePackageDirs } = (await import('../../scripts/workspace-packages')) as {
+      workspacePackageDirs: (root: string) => string[]
+    }
     const closure = workspaceClosure(REPO, KIT)
     for (const dir of [KIT, 'packages/platform', 'packages/types']) expect(closure).toContain(dir)
     expect(closure).not.toContain('packages/cli')
     // Every workspace package the kit's manifest names is in it, and it is closed under dependency.
     const manifest = (dir: string): Record<string, Record<string, string> | string | undefined> =>
       JSON.parse(readFileSync(join(REPO, dir, 'package.json'), 'utf8'))
+    // Every workspace package, at any depth under packages/, by name.
     const dirOf = new Map(
-      readdirSync(join(REPO, 'packages'))
-        .filter((name) => existsSync(join(REPO, 'packages', name, 'package.json')))
-        .map((name) => [manifest(`packages/${name}`).name as string, `packages/${name}`]),
+      workspacePackageDirs(REPO)
+        .filter((dir) => dir.startsWith('packages/'))
+        .map((dir) => [manifest(dir).name as string, dir]),
     )
     const kit = manifest(KIT)
     const named = ['dependencies', 'devDependencies', 'peerDependencies']

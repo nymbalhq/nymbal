@@ -3,14 +3,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { nymbalConfigSchema } from '@nymbalhq/config'
 import { EVT_ORDER_PAID, renderEmailTemplate, type TransactionalEmail } from '@nymbalhq/types'
 import { serveKernel, type ServedKernel } from '../support/http.js'
-import { checkoutOf, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
+import {
+  address,
+  cartWith,
+  checkoutOf,
+  createKernel,
+  seedVariant,
+  type Kernel,
+} from '../support/kernel.js'
 import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
+import { unaudited } from '../support/write-audit.js'
 
 // AC-4 on SQLite, through the kernel's own bus and email handler, with the email adapter's sends captured: with
 // `store.url` set, the order-placed email of a paid guest order links to `/order/<n>?key=<k>` on the storefront, and
 // `k` reads the order; a second order.paid sends nothing and mints no key. With no `store.url` the email is as it was:
-// no link, no dangling line, no email key.
+// no link, no dangling line, no email key. A customer's order links to its account page and mints no key.
 
 const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 const ORDER_KEY = /^[A-Za-z0-9_-]{43}$/
@@ -74,12 +82,15 @@ async function secondPaid(
   r: Rig,
   started: { orderId: string; paymentIntent: { id: string }; totalMinor: number; currency: string },
 ): Promise<void> {
-  await r.k.publisher.publish(EVT_ORDER_PAID, {
-    orderId: started.orderId,
-    paymentIntentId: started.paymentIntent.id,
-    amountMinor: started.totalMinor,
-    currency: started.currency,
-  })
+  // A provider's repeat of the payment, appended by the test itself.
+  await unaudited(() =>
+    r.k.publisher.publish(EVT_ORDER_PAID, {
+      orderId: started.orderId,
+      paymentIntentId: started.paymentIntent.id,
+      amountMinor: started.totalMinor,
+      currency: started.currency,
+    }),
+  )
   await delivered(r)
 }
 
@@ -144,6 +155,38 @@ describe('AC-4: the order-placed email links to the order (sqlite)', () => {
       await linked.raw.count('order_access_keys', 'order_id = ?', [started.orderId]),
       'key rows after a second order.paid',
     ).toBe(rowsBefore)
+  })
+
+  // Kills: an account holder's order mailed a URL-borne key, which outlives the session that owns the order.
+  it('AC-6: with store.url https://shop.test/, a paid signed-in customer’s order-placed email has orderUrl https://shop.test/account/orders/<n>, its text contains it, and the order has no key row of either purpose', async () => {
+    const seeded = await seedVariant(linked.k, 5)
+    const buyer = `owned-${randomUUID()}@email-link.test`
+    const { customer } = await linked.k.services.auth.register({
+      email: buyer,
+      password: 'email-link-correct-horse',
+    })
+    const cartToken = await cartWith(linked.k, seeded, 1)
+    const started = await linked.k.services.checkout.beginCheckout({
+      cartToken,
+      customerId: customer.id,
+      email: buyer,
+      billingAddress: address,
+      shippingAddress: address,
+    })
+    await delivered(linked)
+
+    const mails = orderPlacedTo(linked, buyer)
+    expect(mails.length, 'order-placed emails').toBe(1)
+    const vars = mails[0]!.vars
+    const orderUrl = typeof vars['orderUrl'] === 'string' ? vars['orderUrl'] : ''
+    expect(orderUrl).toBe(
+      `https://shop.test/account/orders/${encodeURIComponent(started.orderNumber)}`,
+    )
+    expect(renderEmailTemplate('order-placed', vars).text).toContain(orderUrl)
+    expect(
+      await linked.raw.count('order_access_keys', 'order_id = ?', [started.orderId]),
+      'key rows for the customer’s order',
+    ).toBe(0)
   })
 
   // Kills: a link mailed with no storefront URL (a localhost link from a production store), and a dangling

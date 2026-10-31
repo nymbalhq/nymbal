@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/auth'
 import { client } from '../lib/client.js'
 
 export async function guardAuth(): Promise<boolean> {

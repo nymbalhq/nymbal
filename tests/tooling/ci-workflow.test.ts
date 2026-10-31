@@ -1,11 +1,24 @@
 // Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
+// Reads: .github/workflows/nightly-trigger.yml, pnpm-lock.yaml, tests/e2e/package.json
+// Reads: .github/workflows/registry.yml
 // Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
 // Reads: tests/perf/perf-budgets.test.ts
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import {
   emptyTree,
   HARNESS_PROJECTS,
@@ -25,6 +38,9 @@ import { leftOut } from './vitest-filters'
 
 const WORKFLOW = fileURLToPath(new URL('../../.github/workflows/ci.yml', import.meta.url))
 const NIGHTLY = fileURLToPath(new URL('../../.github/workflows/nightly.yml', import.meta.url))
+const NIGHTLY_TRIGGER = fileURLToPath(
+  new URL('../../.github/workflows/nightly-trigger.yml', import.meta.url),
+)
 
 type Yaml = string | null | Yaml[] | { [key: string]: Yaml }
 
@@ -179,20 +195,25 @@ function parseYaml(source: string): Yaml {
 }
 
 type Step = {
+  id?: string
   name?: string
   uses?: string
   run?: string
   if?: string
   env?: Record<string, string>
   with?: Record<string, string>
+  'continue-on-error'?: string
 }
 type Job = {
+  name?: string
   needs?: string | string[]
   if?: string
   env?: Record<string, string>
+  permissions?: Record<string, string>
   services?: Record<string, { image?: string }>
   strategy?: { matrix?: Record<string, Yaml> }
   steps?: Step[]
+  'continue-on-error'?: string
 }
 
 /** The job keys as they appear in the text: two-space keys under the top-level `jobs:`. */
@@ -207,18 +228,32 @@ function textualJobIds(source: string): string[] {
   return ids
 }
 
-type Workflow = { env?: Record<string, string>; jobs: Record<string, Job> }
+type Workflow = {
+  on?: Yaml
+  'run-name'?: string
+  permissions?: Record<string, string>
+  env?: Record<string, string>
+  jobs: Record<string, Job>
+}
 
 function loadWorkflow(file: string): Workflow {
   const source = readFileSync(file, 'utf8')
-  const doc = parseYaml(source) as { env?: Record<string, string>; jobs?: Record<string, Job> }
+  const doc = parseYaml(source) as Omit<Workflow, 'jobs'> & { jobs?: Record<string, Job> }
   const jobs = doc.jobs ?? {}
   const parsed = Object.keys(jobs)
   const textual = textualJobIds(source)
   if (parsed.join(',') !== textual.join(',')) {
     throw new Error(`${file} misread: parsed jobs [${parsed}] but the text has [${textual}]`)
   }
-  return { ...(doc.env === undefined ? {} : { env: doc.env }), jobs }
+  return { ...doc, jobs }
+}
+
+/** The events a workflow's `on:` names, in any of its three forms (a name, a list, a map). */
+function eventsOf(workflow: Pick<Workflow, 'on'>): string[] {
+  const on = workflow.on
+  if (typeof on === 'string') return [on]
+  if (Array.isArray(on)) return on.map((e) => text(e))
+  return on === null || on === undefined ? [] : Object.keys(on)
 }
 
 function loadJobs(): Record<string, Job> {
@@ -239,7 +274,7 @@ const RUNS_TESTS =
 
 /** The CI jobs that must use the build artefact (besides build itself). */
 const SPEC_JOBS = [
-  'gate',
+  'gate-tests',
   'integration',
   'mutation',
   'sentinels',
@@ -435,6 +470,8 @@ function evaluate(source: string, ctx: Ctx): unknown {
   const equal = (a: unknown, b: unknown): boolean => {
     if ((a ?? null) === null || (b ?? null) === null) return (a ?? null) === (b ?? null)
     if (typeof a === 'string' && typeof b === 'string') return a.toLowerCase() === b.toLowerCase()
+    // GitHub coerces mismatched types to numbers: `matrix.shard == 1` holds for the matrix value 1.
+    if (typeof a === 'number' || typeof b === 'number') return Number(a) === Number(b)
     return a === b
   }
   const call = (name: string, args: unknown[]): unknown => {
@@ -450,6 +487,11 @@ function evaluate(source: string, ctx: Ctx): unknown {
         return Array.isArray(args[0])
           ? args[0].some((x) => equal(x, args[1]))
           : s[0]!.toLowerCase().includes(s[1]!.toLowerCase())
+      case 'hashFiles': {
+        const hash = (ctx as { hashFiles?: (patterns: string[]) => string }).hashFiles
+        if (hash === undefined) throw new Error(`hashFiles() has no files to hash in: ${source}`)
+        return hash(s)
+      }
       case 'success':
       case 'always':
         return true
@@ -568,8 +610,13 @@ type Executed = {
   env: Record<string, string>
 }
 
-/** The run scripts that execute for an event, expressions substituted, with the env each one sees. */
-function execute(workflow: Workflow, github: Ctx): Executed[] {
+/**
+ * The run scripts that execute for an event, expressions substituted, with the env each one sees. A workflow whose
+ * `on:` does not name the event runs nothing, as on GitHub. A dispatch's `inputs` are its event's. `extra` adds or
+ * replaces contexts (`steps`, `secrets`, `runner`) for a test that sets what an earlier step or the runner gives.
+ */
+function execute(workflow: Workflow, github: Ctx, extra: Ctx = {}): Executed[] {
+  if (workflow.on !== undefined && !eventsOf(workflow).includes(text(github.event_name))) return []
   const defaults: Record<string, string> = {
     GITHUB_EVENT_NAME: text(github.event_name),
     GITHUB_BASE_REF: text(github.base_ref),
@@ -577,17 +624,21 @@ function execute(workflow: Workflow, github: Ctx): Executed[] {
     GITHUB_REF: text(github.ref),
     GITHUB_REF_NAME: text(github.ref_name),
     GITHUB_SHA: text(github.sha),
+    GITHUB_REPOSITORY: text(github.repository),
   }
+  const inputs = ((github.event as Ctx | undefined)?.inputs as Ctx | undefined) ?? {}
   const out: Executed[] = []
   for (const [id, job] of Object.entries(workflow.jobs)) {
     for (const matrix of combinations(job)) {
       const base: Ctx = {
         github,
         matrix,
-        inputs: {},
+        inputs,
         vars: {},
         secrets: {},
         runner: { os: 'Linux' },
+        steps: {},
+        ...extra,
       }
       const wfEnv = layer(workflow.env, { ...base, env: {} })
       if (!holds(job.if, { ...base, env: wfEnv })) continue
@@ -661,46 +712,51 @@ const DEV_PUSH = {
   },
 }
 
+const MAIN_PUSH = {
+  event_name: 'push',
+  base_ref: '',
+  head_ref: '',
+  ref: 'refs/heads/main',
+  ref_name: 'main',
+  sha: sha('c'),
+  event: { before: sha('d'), after: sha('c'), ref: 'refs/heads/main' },
+}
+
+// The release's dispatch: every job, diffed against origin/main's sha, which the dispatch passes as `base`.
+const DEV_DISPATCH = {
+  event_name: 'workflow_dispatch',
+  base_ref: '',
+  head_ref: '',
+  ref: 'refs/heads/dev',
+  ref_name: 'dev',
+  sha: sha('a'),
+  event: { inputs: { select: 'all', base: sha('9') } },
+}
+
 const CI_EVENTS: Array<{ label: string; github: Ctx; expected: string }> = [
   { label: 'a push to dev', github: DEV_PUSH, expected: sha('b') },
+  { label: 'a push to main', github: MAIN_PUSH, expected: sha('d') },
   {
-    label: 'a push to main',
-    github: {
-      event_name: 'push',
-      base_ref: '',
-      head_ref: '',
-      ref: 'refs/heads/main',
-      ref_name: 'main',
-      sha: sha('c'),
-      event: { before: sha('d'), after: sha('c'), ref: 'refs/heads/main' },
-    },
-    expected: sha('d'),
+    label: 'a workflow_dispatch on dev with inputs.base (AC-8)',
+    github: DEV_DISPATCH,
+    expected: sha('9'),
   },
 ]
 
+const nightlyDispatch = (branch: string, c: string): Ctx => ({
+  event_name: 'workflow_dispatch',
+  base_ref: '',
+  ref: `refs/heads/${branch}`,
+  ref_name: branch,
+  sha: sha(c),
+  repository: 'nymbalhq/nymbal',
+  event: { inputs: {} },
+})
+
+// The nightly runs by dispatch only (nightly-trigger.yml dispatches dev's copy); a dispatch on main stays possible.
 const NIGHTLY_EVENTS: Array<{ label: string; github: Ctx }> = [
-  {
-    label: 'schedule',
-    github: {
-      event_name: 'schedule',
-      base_ref: '',
-      ref: 'refs/heads/main',
-      ref_name: 'main',
-      sha: sha('e'),
-      event: { schedule: '0 3 * * *' },
-    },
-  },
-  {
-    label: 'workflow_dispatch',
-    github: {
-      event_name: 'workflow_dispatch',
-      base_ref: '',
-      ref: 'refs/heads/dev',
-      ref_name: 'dev',
-      sha: sha('f'),
-      event: { inputs: {} },
-    },
-  },
+  { label: 'a workflow_dispatch on main', github: nightlyDispatch('main', 'e') },
+  { label: 'a workflow_dispatch on dev', github: nightlyDispatch('dev', 'f') },
 ]
 
 /** Jobs that call gate.ts but check out a shallow clone, where neither origin/<base> nor `before` resolves. */
@@ -750,7 +806,7 @@ describe('AC-7: CI passes the right base to every gate.ts call', () => {
 describe('nightly.yml: every gate call has a base that resolves on the commit it checks out', () => {
   afterEach(cleanupScratch)
 
-  // A release can put a root commit at main's head, and the schedule runs on main: there `HEAD~1` names nothing.
+  // A release can put a root commit at main's head, and a dispatch can run on main: there `HEAD~1` names nothing.
   it.each(NIGHTLY_EVENTS)(
     'on $label, every gate call resolves its base on a root commit, to the empty tree',
     ({ github }) => {
@@ -772,15 +828,69 @@ describe('nightly.yml: every gate call has a base that resolves on the commit it
   )
 })
 
-describe('CI runs on pushes to main and dev only', () => {
-  it('ci.yml triggers on push to main and dev and on nothing else (no pull_request)', () => {
+describe('CI runs on pushes to main and dev, and on a dispatch', () => {
+  it('AC-8: ci.yml triggers on push to main and dev and on workflow_dispatch, and on nothing else (no pull_request)', () => {
     const doc = parseYaml(readFileSync(WORKFLOW, 'utf8')) as {
       on?: Record<string, { branches?: string[] }>
     }
     expect({
-      events: Object.keys(doc.on ?? {}),
+      events: Object.keys(doc.on ?? {}).sort(),
       branches: [...(doc.on?.push?.branches ?? [])].sort(),
-    }).toEqual({ events: ['push'], branches: ['dev', 'main'] })
+    }).toEqual({ events: ['push', 'workflow_dispatch'], branches: ['dev', 'main'] })
+  })
+})
+
+type DispatchInput = { type?: string; options?: string[]; required?: string; default?: string }
+
+/**
+ * The `inputs` GitHub gives a dispatch of `workflow` asked for with `given`, or the refusal it answers with: an input
+ * the workflow does not declare, a required one left out (with no default), or a choice outside its options.
+ */
+function dispatchInputs(workflow: Workflow, given: Record<string, string>): Record<string, string> {
+  const on = workflow.on as {
+    workflow_dispatch?: { inputs?: Record<string, DispatchInput> } | null
+  }
+  if (!eventsOf(workflow).includes('workflow_dispatch')) {
+    throw new Error('the workflow does not run on workflow_dispatch')
+  }
+  const declared = on.workflow_dispatch?.inputs ?? {}
+  for (const name of Object.keys(given)) {
+    if (!(name in declared)) throw new Error(`Unexpected inputs provided: ${name}`)
+  }
+  const out: Record<string, string> = {}
+  for (const [name, input] of Object.entries(declared)) {
+    const value = given[name] ?? text(input.default)
+    if (value === '' && text(input.required) === 'true') throw new Error(`${name} is required`)
+    if (input.type === 'choice' && !(input.options ?? []).includes(value)) {
+      throw new Error(`${name}: ${value} is not one of ${(input.options ?? []).join(', ')}`)
+    }
+    out[name] = value
+  }
+  return out
+}
+
+/** The ids of the jobs that run at least one step for an event. */
+function jobsRun(workflow: Workflow, github: Ctx): string[] {
+  return [...new Set(execute(workflow, github).map((r) => r.job))].sort()
+}
+
+describe('AC-8: a dispatch runs every job with a real base', () => {
+  it('AC-8: a dispatch of ci.yml takes select (all or auto, auto by default) and is refused without a base', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const base = sha('9')
+    expect(dispatchInputs(ci, { base })).toEqual({ select: 'auto', base })
+    expect(dispatchInputs(ci, { select: 'all', base })).toEqual({ select: 'all', base })
+    expect(() => dispatchInputs(ci, { select: 'all' })).toThrow('base is required')
+    expect(() => dispatchInputs(ci, { select: 'some', base })).toThrow(
+      'select: some is not one of all, auto',
+    )
+  })
+
+  it('AC-8: a workflow_dispatch on dev runs every job a push to dev runs', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const onPush = jobsRun(ci, DEV_PUSH)
+    expect(onPush.length, 'jobs that run on a push to dev').toBeGreaterThan(10)
+    expect(jobsRun(ci, DEV_DISPATCH)).toEqual(onPush)
   })
 })
 
@@ -1118,24 +1228,701 @@ describe('perf:budgets takes the median of at least five Lighthouse runs a page'
     expect(source).toMatch(/^const FROM_ENV = .*process\.env\.NYMBAL_PERF_BUDGETS_ARGS\b/m)
   })
 
+  // A `--bytes` call measures script bytes with no Lighthouse, so it has no runs to set.
   it.each([
-    { label: 'ci.yml on a push to dev', file: WORKFLOW, github: DEV_PUSH },
+    { label: 'ci.yml on a push to dev', file: WORKFLOW, github: DEV_PUSH, lighthouse: false },
+    { label: 'ci.yml on a push to main', file: WORKFLOW, github: MAIN_PUSH, lighthouse: false },
+    {
+      label: 'ci.yml on a workflow_dispatch',
+      file: WORKFLOW,
+      github: DEV_DISPATCH,
+      lighthouse: true,
+    },
     ...NIGHTLY_EVENTS.map((e) => ({
       label: `nightly.yml on ${e.label}`,
       file: NIGHTLY,
       github: e.github,
+      lighthouse: true,
     })),
-  ])('$label: every perf:budgets call passes --runs 5 or more', ({ file, github }) => {
-    const calls = perfCalls(loadWorkflow(file), github)
-    expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
-    const short = calls
-      .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
-      .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
-    expect(short).toEqual([])
-  })
+  ])(
+    'AC-3: $label, every perf:budgets call but a --bytes one passes --runs 5 or more',
+    ({ file, github, lighthouse }) => {
+      const calls = perfCalls(loadWorkflow(file), github)
+      expect(calls.length, 'perf:budgets calls that run').toBeGreaterThan(0)
+      const timed = calls.filter((c) => !isBytes(c))
+      expect(timed.length > 0, 'any Lighthouse call runs').toBe(lighthouse)
+      const short = timed
+        .filter((c) => !(Number(flag(c.args, '--runs')) >= 5))
+        .map((c) => `${c.where}: perf:budgets ${c.args.join(' ')}`.trim())
+      expect(short).toEqual([])
+    },
+  )
 
   it('release.yml runs no perf:budgets, so it has no runs to set', () => {
     expect(readFileSync(RELEASE, 'utf8')).not.toMatch(/perf:budgets|perf-budgets\.ts|tests\/perf\//)
+  })
+})
+
+const isBytes = (c: PerfCall): boolean => c.args.includes('--bytes')
+const PERF_JOB = 'perf-budgets'
+
+/** The config (`-c` or `--config`) of each `playwright test` command in a script. */
+function playwrightConfigs(script: string): string[] {
+  return [...script.matchAll(/\bplaywright\s+test\b([^\n;&|]*)/g)].map((m) => {
+    const args = words(m[1] ?? '')
+    return flag(args, '-c') ?? flag(args, '--config') ?? '(the default config)'
+  })
+}
+
+/** What ci.yml's perf job runs for an event, and how many Lighthouse runs the whole workflow makes. */
+function perfJobRuns(github: Ctx): {
+  bytes: number
+  lighthouse: number
+  prod: number
+  isr: number
+} {
+  const ci = loadWorkflow(WORKFLOW)
+  const calls = perfCalls(ci, github)
+  const configs = execute(ci, github)
+    .filter((r) => r.job === PERF_JOB)
+    .flatMap((r) => playwrightConfigs(r.script))
+  return {
+    bytes: calls.filter((c) => c.where === PERF_JOB && isBytes(c)).length,
+    lighthouse: calls.filter((c) => !isBytes(c)).length,
+    prod: configs.filter((c) => c === 'playwright.prod.config.ts').length,
+    isr: configs.filter((c) => c === 'playwright.isr.config.ts').length,
+  }
+}
+
+describe('AC-3: script bytes on a push, Lighthouse on a dispatch and in the nightly', () => {
+  it.each([
+    { label: 'a push to dev', github: DEV_PUSH },
+    { label: 'a push to main', github: MAIN_PUSH },
+  ])(
+    'AC-3: on $label, the perf job measures script bytes and runs the prod and ISR E2E, and nothing runs Lighthouse',
+    ({ github }) => {
+      expect(perfJobRuns(github)).toEqual({ bytes: 1, lighthouse: 0, prod: 1, isr: 1 })
+    },
+  )
+
+  it('AC-3: on a workflow_dispatch, the perf job runs what a push runs and the tests/perf Lighthouse suite besides', () => {
+    const onPush = perfJobRuns(DEV_PUSH)
+    expect(perfJobRuns(DEV_DISPATCH)).toEqual({ ...onPush, lighthouse: onPush.lighthouse + 1 })
+    const lighthouse = perfCalls(loadWorkflow(WORKFLOW), DEV_DISPATCH).filter((c) => !isBytes(c))
+    expect(lighthouse.map((c) => c.where)).toEqual([`${PERF_JOB} (tests/perf)`])
+  })
+})
+
+const COVERAGE = /\bvitest\b[^\n;&|]*\s--coverage(?:[\s=]|$)/
+
+/** The jobs whose steps, as an event runs them, run Vitest with coverage. */
+function coverageJobs(workflow: Workflow, github: Ctx): string[] {
+  return [
+    ...new Set(
+      execute(workflow, github)
+        .filter((r) => COVERAGE.test(r.script))
+        .map((r) => r.job),
+    ),
+  ]
+}
+
+const truthyText = (v: unknown): boolean => {
+  if (v === undefined || v === null) return false
+  return holds(text(v), { github: {}, matrix: {}, inputs: {}, vars: {}, secrets: {}, env: {} })
+}
+
+describe('AC-4: coverage runs nightly, not on a push', () => {
+  it('AC-4: no ci.yml job runs coverage on a push to dev or main, or on a dispatch', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    const found = [DEV_PUSH, MAIN_PUSH, DEV_DISPATCH].flatMap((github) =>
+      coverageJobs(ci, github).map((id) => `${github.event_name} on ${github.ref_name}: ${id}`),
+    )
+    expect(found).toEqual([])
+  })
+
+  it('AC-4: one nightly.yml job runs coverage on a dispatch on dev: continue-on-error, needing build, the artefact downloaded before the run', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const ids = coverageJobs(nightly, nightlyDispatch('dev', 'f'))
+    const shape = ids.map((id) => {
+      const job = nightly.jobs[id]!
+      const steps = job.steps ?? []
+      const download = steps.findIndex(
+        (s) => s.uses?.startsWith('actions/download-artifact@') && s.with?.name === 'build-output',
+      )
+      const run = steps.findIndex((s) => typeof s.run === 'string' && COVERAGE.test(s.run))
+      return {
+        job: id,
+        continueOnError: truthyText(job['continue-on-error']),
+        needsBuild: needsOf(job).includes('build'),
+        artefactFirst: download !== -1 && download < run,
+      }
+    })
+    expect(shape).toEqual([
+      { job: ids[0], continueOnError: true, needsBuild: true, artefactFirst: true },
+    ])
+  })
+})
+
+type Recorded = { argv: string[]; token: string; repoKnown: boolean }
+
+/**
+ * Runs a step's script under bash with a `gh` on PATH that records, call by call, its arguments, token and
+ * repository. The script's exit status, and every `gh` call in the order made.
+ */
+function runWithGh(
+  run: Executed,
+  repository: string,
+  checkedOut: boolean,
+): { status: number; calls: Recorded[] } {
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-gh-stub-'))
+  scratchDirs.push(dir)
+  const calls = join(dir, 'calls')
+  mkdirSync(calls)
+  writeFileSync(
+    join(dir, 'gh'),
+    [
+      '#!/usr/bin/env bash',
+      `n=$(ls "${calls}" | wc -l | tr -d ' ')`,
+      `mkdir "${calls}/$n"`,
+      `printf '%s\\n' "$@" >"${calls}/$n/argv"`,
+      `printf '%s' "\${GH_TOKEN:-\${GITHUB_TOKEN:-}}" >"${calls}/$n/token"`,
+      `printf '%s' "\${GH_REPO:-}" >"${calls}/$n/repo"`,
+      '',
+    ].join('\n'),
+  )
+  chmodSync(join(dir, 'gh'), 0o755)
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', run.script], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...run.env, HOME: dir, PATH: `${dir}:/usr/bin:/bin` },
+  })
+  const read = (call: string, name: string): string => {
+    try {
+      return readFileSync(join(calls, call, name), 'utf8')
+    } catch {
+      return ''
+    }
+  }
+  const recorded = readdirSync(calls)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((call) => {
+      const argv = read(call, 'argv').split('\n').slice(0, -1)
+      let repo = read(call, 'repo')
+      const kept: string[] = []
+      for (let k = 0; k < argv.length; k += 1) {
+        const arg = argv[k]!
+        if (arg === '--repo' || arg === '-R') repo = argv[(k += 1)] ?? ''
+        else if (arg.startsWith('--repo=')) repo = arg.slice('--repo='.length)
+        else kept.push(arg)
+      }
+      return {
+        argv: kept,
+        token: read(call, 'token'),
+        repoKnown: repo === repository || (repo === '' && checkedOut),
+      }
+    })
+  return { status: r.status ?? -1, calls: recorded }
+}
+
+const scratchDirs: string[] = []
+afterAll(() => {
+  for (const d of scratchDirs.splice(0)) rmSync(d, { recursive: true, force: true })
+})
+
+describe("AC-5: the nightly is dev's, by dispatch", () => {
+  it('AC-5: nightly.yml runs on workflow_dispatch alone, and its run-name names the branch it was dispatched on', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const branches = ['dev', 'main']
+    expect({
+      events: eventsOf(nightly),
+      names: branches.map((b) =>
+        substitute(text(nightly['run-name']), { github: nightlyDispatch(b, 'f') }),
+      ),
+    }).toEqual({ events: ['workflow_dispatch'], names: branches.map((b) => `Nightly on ${b}`) })
+  })
+
+  it("AC-6: nightly-trigger.yml runs on the 03:00 schedule alone, and dispatches dev's nightly.yml then dev's registry.yml, both with the GITHUB_TOKEN", () => {
+    const trigger = loadWorkflow(NIGHTLY_TRIGGER)
+    const token = 'ghs_fixture-token'
+    const github = {
+      event_name: 'schedule',
+      base_ref: '',
+      ref: 'refs/heads/main',
+      ref_name: 'main',
+      sha: sha('e'),
+      repository: 'nymbalhq/nymbal',
+      token,
+      event: { schedule: '0 3 * * *' },
+    }
+    const runs = execute(trigger, github, { secrets: { GITHUB_TOKEN: token } })
+    const schedule = (trigger.on as { schedule?: Array<{ cron?: string }> } | undefined)?.schedule
+    const stepsRun = runs.map((r) =>
+      runWithGh(
+        r,
+        github.repository,
+        (trigger.jobs[r.job]?.steps ?? []).some((s) => s.uses?.startsWith('actions/checkout@')),
+      ),
+    )
+    expect({
+      events: eventsOf(trigger),
+      crons: (schedule ?? []).map((s) => s.cron),
+      actions: [
+        ...new Set(
+          runs.map((r) => (trigger.jobs[r.job]?.permissions ?? trigger.permissions)?.actions),
+        ),
+      ],
+      failed: stepsRun.filter((s) => s.status !== 0).length,
+      dispatched: stepsRun.flatMap((s) => s.calls),
+    }).toEqual({
+      events: ['schedule'],
+      crons: ['0 3 * * *'],
+      actions: ['write'],
+      failed: 0,
+      dispatched: ['nightly.yml', 'registry.yml'].map((workflow) => ({
+        argv: ['workflow', 'run', workflow, '--ref', 'dev'],
+        token,
+        repoKnown: true,
+      })),
+    })
+  })
+
+  // Only these never brake a merge: the quarantined tests and the mobile E2E (non-blocking by the harness's own
+  // rules), and coverage, which moves from ci.yml as it was.
+  it('AC-5: in nightly.yml, quarantine, e2e-full and the coverage job continue on error, and no other job or step does', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const lenient = Object.entries(nightly.jobs)
+      .flatMap(([id, job]) =>
+        truthyText(job['continue-on-error'])
+          ? [id]
+          : (job.steps ?? []).flatMap((s, i) =>
+              truthyText(s['continue-on-error']) ? [`${id} (step ${i})`] : [],
+            ),
+      )
+      .sort()
+    expect(lenient).toEqual(
+      ['e2e-full', 'quarantine', ...coverageJobs(nightly, nightlyDispatch('dev', 'f'))].sort(),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// The registry nightly installs and certifies adapters nobody here wrote, so its job holds nothing their code could
+// use: no write permission, no secret, no persisted token, and no cache a job holding secrets would restore. Its one
+// saved cache is the status history, carried from night to night so the 7-day clock runs.
+// ---------------------------------------------------------------------------------------------------------------
+
+const REGISTRY = fileURLToPath(new URL('../../.github/workflows/registry.yml', import.meta.url))
+const REGISTRY_RUN_ID = '4242'
+const REGISTRY_DISPATCH: Ctx = {
+  event_name: 'workflow_dispatch',
+  base_ref: '',
+  ref: 'refs/heads/dev',
+  ref_name: 'dev',
+  sha: sha('d'),
+  repository: 'nymbalhq/nymbal',
+  run_id: REGISTRY_RUN_ID,
+  event: { inputs: {} },
+}
+const RUNNER_WORKSPACE = '/home/runner/work/nymbal/nymbal'
+const RUNNER_TEMP = '/home/runner/work/_temp'
+
+describe('AC-6: the registry workflow', () => {
+  it('AC-6: registry.yml runs on workflow_dispatch alone, in one job holding contents: read and nothing else, with a timeout, no secret, a checkout that keeps no token, and no setup-node or actions/cache@ cache', () => {
+    const workflow = loadWorkflow(REGISTRY)
+    const jobs = Object.values(workflow.jobs)
+    const steps = jobs.flatMap((j) => j.steps ?? [])
+    const using = (prefix: string) => steps.filter((s) => s.uses?.startsWith(prefix) === true)
+
+    expect({
+      events: eventsOf(workflow),
+      permissions: jobs.map((j) => j.permissions ?? workflow.permissions ?? null),
+      timeouts: jobs.map((j) => text((j as { 'timeout-minutes'?: Yaml })['timeout-minutes'])),
+      secrets: JSON.stringify(workflow).match(/\$\{\{[^}]*\bsecrets\b[^}]*\}\}/g) ?? [],
+      checkouts: using('actions/checkout@').map((s) => text(s.with?.['persist-credentials'])),
+      setupNodeCaches: using('actions/setup-node@').flatMap((s) =>
+        s.with?.['cache'] === undefined ? [] : [s.with['cache']],
+      ),
+      cacheSaveAndRestore: using('actions/cache@').map((s) => s.uses),
+    }).toEqual({
+      events: ['workflow_dispatch'],
+      permissions: [{ contents: 'read' }],
+      timeouts: ['90'],
+      secrets: [],
+      checkouts: ['false'],
+      setupNodeCaches: [],
+      cacheSaveAndRestore: [],
+    })
+  })
+
+  it("AC-6: registry.yml restores last night's history to the file pnpm registry reads on registry/adapters.json, saves only that file as registry-history-<run id> after the run, and uploads the run's output as registry-site", () => {
+    const workflow = loadWorkflow(REGISTRY)
+    const [jobId, job] = Object.entries(workflow.jobs)[0] ?? ['', { steps: [] } as Job]
+    const steps = job.steps ?? []
+    const base: Ctx = {
+      github: REGISTRY_DISPATCH,
+      matrix: {},
+      inputs: {},
+      vars: {},
+      secrets: {},
+      runner: { os: 'Linux', temp: RUNNER_TEMP },
+      steps: {},
+    }
+    const wfEnv = layer(workflow.env, { ...base, env: {} })
+    const jobEnv = { ...wfEnv, ...layer(job.env, { ...base, env: wfEnv }) }
+    const withOf = (step: Step, key: string): string => {
+      try {
+        return substitute(text(step.with?.[key]), { ...base, env: jobEnv }).trim()
+      } catch {
+        return ''
+      }
+    }
+
+    // Every run step under bash in a stand-in workspace, with a `pnpm` on PATH that records the step and its words.
+    const dir = mkdtempSync(join(tmpdir(), 'nymbal-registry-wf-'))
+    scratchDirs.push(dir)
+    const ws = join(dir, 'ws')
+    const bin = join(dir, 'bin')
+    const calls = join(dir, 'calls')
+    for (const d of [ws, bin, calls]) mkdirSync(d)
+    writeFileSync(
+      join(bin, 'pnpm'),
+      [
+        '#!/usr/bin/env bash',
+        `n=$(ls "${calls}" | wc -l | tr -d ' ')`,
+        `printf '%s\\n' "$REGISTRY_STEP" "$@" >"${calls}/$n"`,
+        '',
+      ].join('\n'),
+    )
+    chmodSync(join(bin, 'pnpm'), 0o755)
+    for (const [i, step] of steps.entries()) {
+      if (typeof step.run !== 'string') continue
+      const env = { ...jobEnv, ...layer(step.env, { ...base, env: jobEnv }) }
+      let runs = true
+      try {
+        runs = holds(step.if, { ...base, env })
+      } catch {
+        // A status function the evaluator does not know: on a night with no failure the step runs.
+      }
+      if (!runs) continue
+      spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-eo',
+          'pipefail',
+          '-c',
+          substitute(step.run.replace(/\\\n/g, ' '), { ...base, env }),
+        ],
+        {
+          cwd: ws,
+          encoding: 'utf8',
+          env: {
+            ...env,
+            REGISTRY_STEP: String(i),
+            GITHUB_WORKSPACE: ws,
+            GITHUB_RUN_ID: REGISTRY_RUN_ID,
+            RUNNER_TEMP,
+            HOME: dir,
+            PATH: `${bin}:/usr/bin:/bin`,
+          },
+        },
+      )
+    }
+    const registryCalls = readdirSync(calls)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((f) => readFileSync(join(calls, f), 'utf8').split('\n').slice(0, -1))
+      .map(([step, ...args]) => {
+        const words = args.filter((a) => a !== '--silent' && a !== '-s')
+        return { step: Number(step), args: words[0] === 'run' ? words.slice(1) : words }
+      })
+      .filter((c) => c.args[0] === 'registry')
+    const call = registryCalls[0] ?? { step: -1, args: [] }
+    // A path as the runner sees it: relative to the workspace, which the stand-in replaces.
+    const onRunner = (p: string | undefined): string =>
+      p === undefined
+        ? ''
+        : resolve(
+            RUNNER_WORKSPACE,
+            p.startsWith(ws) ? `${RUNNER_WORKSPACE}${p.slice(ws.length)}` : p,
+          )
+    const history = onRunner(flag(call.args, '--history'))
+    const out = onRunner(flag(call.args, '--out'))
+    const lastNight = `registry-history-${Number(REGISTRY_RUN_ID) - 1}`
+    const indexed = steps.map((s, i) => ({ s, i }))
+    const historyRestores = indexed
+      .filter(({ s }) => s.uses?.startsWith('actions/cache/restore@') === true)
+      .map(({ s, i }) => ({
+        i,
+        path: onRunner(withOf(s, 'path')),
+        candidates: [withOf(s, 'key'), ...withOf(s, 'restore-keys').split('\n')]
+          .map((c) => c.trim())
+          .filter(Boolean),
+      }))
+      .filter((r) => r.candidates.some((c) => c.startsWith('registry-history-')))
+
+    expect({
+      job: jobId === '' ? 'none' : 'one',
+      registryCalls: registryCalls.length,
+      manifest: onRunner(flag(call.args, '--manifest')),
+      restored: historyRestores.map((r) => ({
+        path: r.path,
+        beforeRun: r.i < call.step,
+        findsLastNight: r.candidates.some((c) => lastNight.startsWith(c)),
+      })),
+      saved: indexed
+        .filter(({ s }) => s.uses?.startsWith('actions/cache/save@') === true)
+        .map(({ s, i }) => ({
+          key: withOf(s, 'key'),
+          path: onRunner(withOf(s, 'path')),
+          afterRun: i > call.step,
+        })),
+      uploaded: indexed
+        .filter(
+          ({ s }) =>
+            s.uses?.startsWith('actions/upload-artifact@') === true &&
+            withOf(s, 'name') === 'registry-site',
+        )
+        .map(({ s }) => onRunner(withOf(s, 'path'))),
+    }).toEqual({
+      job: 'one',
+      registryCalls: 1,
+      manifest: resolve(RUNNER_WORKSPACE, 'registry/adapters.json'),
+      restored: [{ path: history, beforeRun: true, findsLastNight: true }],
+      saved: [{ key: `registry-history-${REGISTRY_RUN_ID}`, path: history, afterRun: true }],
+      uploaded: [out],
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// AC-9: the browser cache. The key is evaluated as the runner would: the steps before the cache step that set an
+// output run under bash in a scratch holding only the lockfile and the package manifests, and hashFiles() hashes the
+// scratch's files. It must move with the runner OS and with the Playwright version, and stay put when another
+// package moves, so a Playwright bump never restores old browsers and a routine bump keeps the cache.
+// ---------------------------------------------------------------------------------------------------------------
+
+const PLAYWRIGHT_INSTALL = /\bplaywright\s+install(?:-deps)?\b/
+const BROWSER_CACHE = '~/.cache/ms-playwright'
+const LOCKFILE = readFileSync(join(REPO, 'pnpm-lock.yaml'), 'utf8')
+const PLAYWRIGHT_VERSION = /'@playwright\/test@(\d+\.\d+\.\d+)'/.exec(LOCKFILE)?.[1] ?? ''
+const MANIFESTS = ['package.json', 'pnpm-workspace.yaml', 'tests/e2e/package.json']
+
+type Variant = { label: string; os: string; edit: (text: string) => string }
+const VARIANTS: Variant[] = [
+  { label: 'as committed', os: 'Linux', edit: (t) => t },
+  { label: 'on macOS', os: 'macOS', edit: (t) => t },
+  {
+    label: 'with Playwright bumped',
+    os: 'Linux',
+    edit: (t) => t.replaceAll(PLAYWRIGHT_VERSION, '1.99.0'),
+  },
+  {
+    label: 'with Vitest bumped',
+    os: 'Linux',
+    edit: (t) => t.replace(/(?<![\d.])3\.2\.4(?!\d)/g, '3.2.5'),
+  },
+]
+
+/** Each `playwright install` or `install-deps` in a script, from the subcommand on. */
+function playwrightInstalls(script: string): string[] {
+  return [...script.matchAll(/\bplaywright\s+(install(?:-deps)?\b[^\n;&|]*)/g)].map((m) =>
+    words(m[1]!).join(' '),
+  )
+}
+
+function playwrightJobs(workflow: Workflow): string[] {
+  return Object.keys(workflow.jobs).filter((id) =>
+    runs(workflow.jobs[id]!).some((script) => PLAYWRIGHT_INSTALL.test(script)),
+  )
+}
+
+function browserCache(job: Job): { index: number; step: Step } | undefined {
+  const steps = job.steps ?? []
+  const index = steps.findIndex(
+    (s) =>
+      /^actions\/cache(?:\/restore)?@/.test(s.uses ?? '') &&
+      text(s.with?.path)
+        .split('\n')
+        .map((p) => p.trim())
+        .includes(BROWSER_CACHE),
+  )
+  return index === -1 ? undefined : { index, step: steps[index]! }
+}
+
+const variantDirs = new Map<string, string>()
+function variantDir(variant: Variant): string {
+  const known = variantDirs.get(variant.label)
+  if (known !== undefined) return known
+  const dir = mkdtempSync(join(tmpdir(), 'nymbal-browser-cache-'))
+  scratchDirs.push(dir)
+  for (const file of ['pnpm-lock.yaml', ...MANIFESTS]) {
+    mkdirSync(dirname(join(dir, file)), { recursive: true })
+    writeFileSync(join(dir, file), variant.edit(readFileSync(join(REPO, file), 'utf8')))
+  }
+  variantDirs.set(variant.label, dir)
+  return dir
+}
+
+function hashFilesIn(dir: string, patterns: string[]): string {
+  const files = ['pnpm-lock.yaml', ...MANIFESTS]
+  const matched = files.filter((f) =>
+    patterns.some((p) =>
+      p.startsWith('**/') ? f === p.slice(3) || f.endsWith(`/${p.slice(3)}`) : f === p,
+    ),
+  )
+  if (matched.length === 0) return ''
+  const hash = createHash('sha256')
+  for (const f of matched.sort()) hash.update(readFileSync(join(dir, f)))
+  return hash.digest('hex')
+}
+
+const outputsRun = new Map<string, Record<string, string>>()
+/** The outputs a step's script writes to $GITHUB_OUTPUT, run in a variant's scratch. */
+function stepOutputs(
+  script: string,
+  env: Record<string, string>,
+  variant: Variant,
+): Record<string, string> {
+  const key = `${variant.label}\n${script}`
+  const known = outputsRun.get(key)
+  if (known !== undefined) return known
+  const dir = variantDir(variant)
+  const output = join(mkdtempSync(join(tmpdir(), 'nymbal-step-output-')), 'out')
+  scratchDirs.push(dirname(output))
+  writeFileSync(output, '')
+  const r = spawnSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', '-c', script], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH ?? '',
+      HOME: dir,
+      ...env,
+      RUNNER_OS: variant.os,
+      GITHUB_OUTPUT: output,
+    },
+  })
+  if (r.status !== 0) {
+    throw new Error(
+      `a step before the cache failed in a scratch holding the lockfile and manifests: ${r.stderr}`,
+    )
+  }
+  const out: Record<string, string> = {}
+  const lines = readFileSync(output, 'utf8').split('\n')
+  for (let k = 0; k < lines.length; k += 1) {
+    const heredoc = /^([^=<]+)<<(.+)$/.exec(lines[k]!)
+    if (heredoc !== null) {
+      const body: string[] = []
+      while (k + 1 < lines.length && lines[k + 1] !== heredoc[2]) body.push(lines[(k += 1)]!)
+      k += 1
+      out[heredoc[1]!] = body.join('\n')
+    } else {
+      const eq = lines[k]!.indexOf('=')
+      if (eq > 0) out[lines[k]!.slice(0, eq)] = lines[k]!.slice(eq + 1)
+    }
+  }
+  outputsRun.set(key, out)
+  return out
+}
+
+/** The browser cache's key for a job, as a variant's runner and files make it. */
+function browserCacheKey(workflow: Workflow, id: string, github: Ctx, variant: Variant): string {
+  const job = workflow.jobs[id]!
+  const cache = browserCache(job)!
+  const base: Ctx = {
+    github,
+    matrix: combinations(job)[0]!,
+    inputs: {},
+    vars: {},
+    secrets: {},
+    runner: { os: variant.os },
+  }
+  const steps: Record<string, { outputs: Record<string, string> }> = {}
+  const wfEnv = layer(workflow.env, { ...base, steps, env: {} })
+  const jobEnv = { ...wfEnv, ...layer(job.env, { ...base, steps, env: wfEnv }) }
+  const envOf = (step: Step): Record<string, string> => ({
+    ...jobEnv,
+    ...layer(step.env, { ...base, steps, env: jobEnv }),
+  })
+  for (const step of (job.steps ?? []).slice(0, cache.index)) {
+    const ctx = { ...base, steps, env: envOf(step) }
+    if (step.id === undefined || typeof step.run !== 'string' || !holds(step.if, ctx)) continue
+    steps[step.id] = { outputs: stepOutputs(substitute(step.run, ctx), ctx.env, variant) }
+  }
+  return substitute(text(cache.step.with?.key), {
+    ...base,
+    steps,
+    env: envOf(cache.step),
+    hashFiles: (patterns: string[]) => hashFilesIn(variantDir(variant), patterns),
+  })
+}
+
+const PLAYWRIGHT_WORKFLOWS: Array<{ file: string; github: Ctx }> = [
+  { file: WORKFLOW, github: DEV_PUSH },
+  { file: NIGHTLY, github: nightlyDispatch('dev', 'f') },
+]
+
+describe('AC-9: every Playwright job caches its browsers', () => {
+  it('AC-9: every job that installs Playwright restores ~/.cache/ms-playwright first, keyed on the runner OS and the Playwright version in the lockfile', () => {
+    expect(PLAYWRIGHT_VERSION, 'the lockfile pins @playwright/test').toMatch(/^\d+\.\d+\.\d+$/)
+    const outcomes: string[] = []
+    const expected: string[] = []
+    for (const { file, github } of PLAYWRIGHT_WORKFLOWS) {
+      const workflow = loadWorkflow(file)
+      for (const id of playwrightJobs(workflow)) {
+        const name = `${basename(file)} ${id}`
+        const good = `${name}: restored before the install; the key moves with the OS and Playwright, not with Vitest`
+        expected.push(good)
+        const job = workflow.jobs[id]!
+        const cache = browserCache(job)
+        const install = (job.steps ?? []).findIndex(
+          (s) => typeof s.run === 'string' && PLAYWRIGHT_INSTALL.test(s.run),
+        )
+        if (cache === undefined || cache.index > install) {
+          outcomes.push(`${name}: no ${BROWSER_CACHE} cache step before its first install`)
+          continue
+        }
+        const [linux, mac, bumped, other] = VARIANTS.map((v) =>
+          browserCacheKey(workflow, id, github, v),
+        )
+        outcomes.push(
+          linux !== '' && linux !== mac && linux !== bumped && linux === other
+            ? good
+            : `${name}: key "${linux}", on macOS "${mac}", Playwright bumped "${bumped}", Vitest bumped "${other}"`,
+        )
+      }
+    }
+    expect(expected.length, 'jobs that install Playwright').toBeGreaterThanOrEqual(13)
+    expect(outcomes).toEqual(expected)
+  })
+
+  it('AC-9: on a cache hit each of those jobs installs only the system libraries, and on a miss the browsers with them', () => {
+    const outcomes: string[] = []
+    const expected: string[] = []
+    for (const { file, github } of PLAYWRIGHT_WORKFLOWS) {
+      const workflow = loadWorkflow(file)
+      for (const id of playwrightJobs(workflow)) {
+        const name = `${basename(file)} ${id}`
+        expected.push(
+          `${name}: hit [install-deps chromium]; restore-key hit [install --with-deps chromium]; miss [install --with-deps chromium]`,
+        )
+        const cacheId = browserCache(workflow.jobs[id]!)?.step.id
+        if (cacheId === undefined) {
+          outcomes.push(`${name}: no browser cache step with an id, so no step reads its hit`)
+          continue
+        }
+        const installs = (hit: string): string => {
+          const executed = execute(workflow, github, {
+            steps: { [cacheId]: { outputs: { 'cache-hit': hit } } },
+          }).filter((r) => r.job === id)
+          return `[${[...new Set(executed.flatMap((r) => playwrightInstalls(r.script)))].join(', ')}]`
+        }
+        outcomes.push(
+          `${name}: hit ${installs('true')}; restore-key hit ${installs('false')}; miss ${installs('')}`,
+        )
+      }
+    }
+    expect(outcomes).toEqual(expected)
   })
 })
 
@@ -1160,6 +1947,190 @@ describe('dev CI runs the harness projects whatever changed', () => {
       }).steps.find((s) => s.name === 'tests')
       expect(leftOut(tests?.command ?? '', HARNESS_PROJECTS)).toEqual([])
     }
+  })
+})
+
+// The gate's tests step split over a matrix of shards: every shard runs the same tests call but for its `--shard`,
+// and shard 1 alone runs lint, typecheck and census trend besides, so each step runs once per push and every test
+// file in one shard.
+const SHARDED_JOB = 'gate-tests'
+
+type ShardCall = { shard: string; args: string[] }
+
+/** The gate.ts calls each combination of a job runs on an event, by the combination's `shard`. */
+function shardCalls(workflow: Workflow, github: Ctx, id: string): ShardCall[] {
+  return execute(workflow, github)
+    .filter((run) => run.job === id)
+    .flatMap((run) =>
+      [...run.script.matchAll(/scripts\/gate\.ts([^\n;&|]*)/g)].map((m) => ({
+        shard: run.matrix.shard ?? '',
+        args: words(m[1] ?? '').map((w) => expand(w, run, m.index)),
+      })),
+    )
+}
+
+const onlyOf = (args: string[]): string[] =>
+  (flag(args, '--only') ?? '')
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean)
+
+/** A call's `--shard` values, in either form, and its other arguments. */
+function shardFlags(args: string[]): { values: string[]; rest: string[] } {
+  const values: string[] = []
+  const rest: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!
+    if (arg === '--shard') {
+      values.push(args[i + 1] ?? '')
+      i += 1
+    } else if (arg.startsWith('--shard=')) values.push(arg.slice('--shard='.length))
+    else rest.push(arg)
+  }
+  return { values, rest }
+}
+
+/** The steps one combination of a job runs on an event: its `if` honoured, `with` values substituted. */
+function stepsRun(
+  workflow: Workflow,
+  github: Ctx,
+  id: string,
+  matrix: Record<string, string>,
+): Step[] {
+  const job = workflow.jobs[id] ?? {}
+  const base: Ctx = {
+    github,
+    matrix,
+    inputs: {},
+    vars: {},
+    secrets: {},
+    runner: { os: 'Linux' },
+    steps: {},
+  }
+  const wfEnv = layer(workflow.env, { ...base, env: {} })
+  const env = { ...wfEnv, ...layer(job.env, { ...base, env: wfEnv }) }
+  return (job.steps ?? [])
+    .filter((step) =>
+      holds(step.if, { ...base, env: { ...env, ...layer(step.env, { ...base, env }) } }),
+    )
+    .map((step) =>
+      step.with === undefined
+        ? step
+        : {
+            ...step,
+            with: Object.fromEntries(
+              Object.entries(step.with).map(([k, v]) => [k, substitute(text(v), { ...base, env })]),
+            ),
+          },
+    )
+}
+
+const bareCondition = (condition: string | undefined): string =>
+  (condition ?? '').replace(/^\s*\$\{\{\s*|\s*\}\}\s*$/g, '').trim()
+
+describe('AC-3: the workflow splits the Gate job without dropping a step', () => {
+  it('AC-3: on a push to dev, gate-tests runs shards 1..N, each the same tests call but for --shard=i/N, and shard 1 alone runs lint, typecheck and census trend', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    expect(Object.keys(ci.jobs), 'the single Gate job is gone').not.toContain('gate')
+    const matrix = ci.jobs[SHARDED_JOB]?.strategy?.matrix?.['shard']
+    const count = Array.isArray(matrix) ? matrix.length : 0
+    const shards =
+      ci.jobs[SHARDED_JOB] === undefined
+        ? []
+        : combinations(ci.jobs[SHARDED_JOB]).map((c) => c.shard ?? '')
+    expect(
+      shards.map(Number).sort((a, b) => a - b),
+      'each shard index 1..N once, N the matrix length',
+    ).toEqual(Array.from({ length: count }, (_, i) => i + 1))
+    expect(count, 'a split runs more than one shard').toBeGreaterThan(1)
+
+    const calls = shardCalls(ci, DEV_PUSH, SHARDED_JOB)
+    const testCalls = calls.filter((c) => onlyOf(c.args).includes('tests'))
+    expect(
+      testCalls.map((c) => `${c.shard}: --shard ${shardFlags(c.args).values.join(' ')}`).sort(),
+      'one tests call per shard, carrying its own i/N once',
+    ).toEqual(shards.map((s) => `${s}: --shard ${s}/${count}`).sort())
+    const rests = testCalls.map((c) => shardFlags(c.args).rest)
+    expect(rests, 'the shard calls differ in --shard alone').toEqual(rests.map(() => rests[0]))
+    const rest = rests[0] ?? []
+    expect({
+      full: rest.includes('--full'),
+      only: flag(rest, '--only'),
+      harness: flag(rest, '--harness'),
+      noBuild: rest.includes('--no-build'),
+      base: flag(rest, '--base'),
+    }).toEqual({
+      full: true,
+      only: 'tests',
+      harness: 'all',
+      noBuild: true,
+      base: DEV_PUSH.event.before,
+    })
+
+    expect(
+      calls
+        .filter((c) => !onlyOf(c.args).includes('tests'))
+        .map((c) => `shard ${c.shard}: ${onlyOf(c.args).sort().join(',')}`),
+      'the lint, typecheck and census trend call runs in shard 1 alone',
+    ).toEqual(['shard 1: census trend,lint,typecheck'])
+    const runsPerStep: Record<string, number> = {}
+    for (const c of calls)
+      for (const step of onlyOf(c.args)) runsPerStep[step] = (runsPerStep[step] ?? 0) + 1
+    expect(runsPerStep, 'each step once per push, tests once per shard').toEqual({
+      lint: 1,
+      typecheck: 1,
+      'census trend': 1,
+      tests: count,
+    })
+  })
+})
+
+describe('AC-4: each shard uses the build artefact and full history', () => {
+  it('AC-4: every gate-tests combination needs build, downloads build-output before its first gate.ts call, checks out with fetch-depth 0, and uploads reports/vitest.json as vitest-shard-<i> always, overwriting; the job keeps a timeout of at most 15 minutes and does not fail fast', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    expect(Object.keys(ci.jobs)).toContain(SHARDED_JOB)
+    const job = ci.jobs[SHARDED_JOB]!
+    const built = artefactName(uploadsOf(ci.jobs.build ?? {})[0] ?? {})
+    const shards = combinations(job).map((c) => c.shard ?? '')
+    const rows = shards.map((shard) => {
+      const steps = stepsRun(ci, DEV_PUSH, SHARDED_JOB, { shard })
+      const download = steps.findIndex(
+        (s) => s.uses?.startsWith('actions/download-artifact@') && s.with?.name === built,
+      )
+      const firstGate = steps.findIndex((s) => /scripts\/gate\.ts/.test(s.run ?? ''))
+      const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'))
+      const reports = steps.filter(
+        (s) =>
+          s.uses?.startsWith('actions/upload-artifact@') &&
+          (s.with?.path ?? '')
+            .split('\n')
+            .map((p) => p.trim())
+            .includes('reports/vitest.json'),
+      )
+      return {
+        shard,
+        needsBuild: needsOf(job).includes('build'),
+        downloadsBeforeGate: download !== -1 && firstGate !== -1 && download < firstGate,
+        fetchDepth: text(checkout?.with?.['fetch-depth']),
+        reports: reports.map((s) => ({
+          name: s.with?.name,
+          if: bareCondition(s.if),
+          overwrite: text(s.with?.['overwrite']),
+        })),
+      }
+    })
+    expect(rows).toEqual(
+      shards.map((shard) => ({
+        shard,
+        needsBuild: true,
+        downloadsBeforeGate: true,
+        fetchDepth: '0',
+        reports: [{ name: `vitest-shard-${shard}`, if: 'always()', overwrite: 'true' }],
+      })),
+    )
+    const timeout = Number(text((job as { 'timeout-minutes'?: Yaml })['timeout-minutes']))
+    expect(timeout).toBeLessThanOrEqual(15)
+    expect(text((job.strategy as Record<string, Yaml> | undefined)?.['fail-fast'])).toBe('false')
   })
 })
 
@@ -1204,12 +2175,7 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
         mailpitUrl: 'http://localhost:8025',
         noBuild: call.args.includes('--no-build'),
         artefactPresent: true,
-        sentinels:
-          modes.sentinels === 'impacted'
-            ? new Set(['S001'])
-            : modes.sentinels === 'all'
-              ? 'all'
-              : 'none',
+        sentinels: Array.isArray(modes.sentinels) ? new Set(modes.sentinels) : modes.sentinels,
         stryker: modes.stryker,
       }).steps
       for (const name of named(call).filter((n) => n === 'sentinels' || n === 'stryker')) {

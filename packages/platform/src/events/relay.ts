@@ -1,10 +1,16 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { EventBusAdapter, EventHandler, Logger } from '@nymbalhq/types'
+import {
+  HEALTH_CHECK_TIMEOUT_MS,
+  type EventBusAdapter,
+  type EventHandler,
+  type Logger,
+} from '@nymbalhq/types'
 import type { CommandStore } from '../db/command-store.js'
 import type { EventLogRepository, LoggedEvent } from '../repositories/event-log.js'
 import { outsideCorrelation } from './correlation.js'
 import { outsideActor } from '../audit/actor.js'
 import { outsideCommand } from '../audit/audit.js'
+import type { OutageReport } from './outage.js'
 
 /** Hands committed events from the log to the bus. */
 export interface Relay {
@@ -35,9 +41,17 @@ export interface CreateRelayOptions {
   retryDelayMs?: number
   /** The clock failures and retry waits are read from. */
   now?: () => Date
+  /**
+   * Asked once a pass, at its first failed delivery: a failure during an outage is not counted toward `maxAttempts`.
+   * Absent, no failure is an outage.
+   */
+  outage?: () => Promise<OutageReport>
+  /** How long the relay waits on `outage` before taking the pass as an outage (default the health check bound + 1 s). */
+  outageTimeoutMs?: number
 }
 
 const PAGE_SIZE = 100
+const NO_OUTAGE: OutageReport = { outage: false, down: [] }
 
 interface Deferred {
   promise: Promise<void>
@@ -64,6 +78,7 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   const intervalMs = opts.intervalMs ?? 10_000
   const retryDelayMs = opts.retryDelayMs ?? intervalMs
   const now = opts.now ?? (() => new Date())
+  const outageTimeoutMs = opts.outageTimeoutMs ?? HEALTH_CHECK_TIMEOUT_MS + 1000
   const logger = opts.logger.child({ component: 'event-relay' })
   // Set around each bus publish and each subscribed handler: a drain asked for by a subscriber (one that ran a
   // command) must not wait for the drain that is delivering to it.
@@ -76,12 +91,65 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   let timer: ReturnType<typeof setInterval> | undefined
   let stopped = false
 
-  async function deliver({ event, attempts }: LoggedEvent): Promise<void> {
+  /** The probe's answer, bounded by the relay itself: a probe that throws or does not settle in time is an outage. */
+  async function probe(): Promise<OutageReport> {
+    const ask = opts.outage
+    if (ask === undefined) return NO_OUTAGE
+    let bound: ReturnType<typeof setTimeout> | undefined
+    const timedOut = new Promise<OutageReport>((resolve) => {
+      bound = setTimeout(
+        () =>
+          resolve({
+            outage: true,
+            down: [{ name: 'probe', detail: `timed out after ${outageTimeoutMs} ms` }],
+          }),
+        outageTimeoutMs,
+      )
+    })
+    try {
+      return await Promise.race([Promise.resolve().then(ask), timedOut])
+    } catch (err) {
+      return {
+        outage: true,
+        down: [{ name: 'probe', detail: err instanceof Error ? err.message : String(err) }],
+      }
+    } finally {
+      clearTimeout(bound)
+    }
+  }
+
+  /** One probe for a whole pass, asked when it is first needed; an outage is logged once, naming every down subject. */
+  function outageOfPass(): () => Promise<OutageReport> {
+    let asked: Promise<OutageReport> | undefined
+    return () =>
+      (asked ??= probe().then((report) => {
+        if (report.outage) {
+          const named = report.down.map(({ name, detail }) => `${name} (${detail})`).join(', ')
+          logger.warn({ down: report.down }, `outage: ${named}`)
+        }
+        return report
+      }))
+  }
+
+  async function deliver(
+    { event, attempts }: LoggedEvent,
+    outage: () => Promise<OutageReport>,
+  ): Promise<void> {
     try {
       // Looked up on every call: a wrapper installed on the bus instance after construction must see the event.
       await delivering.run(true, () => opts.eventBus.publish(event))
     } catch (err) {
       const at = now()
+      if ((await outage()).outage) {
+        // The same wait the next counted failure would get, so an outage neither ages the event nor grows its wait.
+        const retryAt = new Date(at.getTime() + retryDelayMs * 2 ** attempts)
+        await store.transaction((tx) => eventLog.recordOutage(tx, event.id, retryAt))
+        logger.debug(
+          { err, eventId: event.id, eventType: event.type, retryAt: retryAt.toISOString() },
+          'event delivery failed during an outage; not counted, tried again from retryAt',
+        )
+        return
+      }
       const failures = attempts + 1
       // Backed off in the log, not in memory: every drain in between (each commit asks for one) and a restart see it.
       const retryAt = new Date(at.getTime() + retryDelayMs * 2 ** (failures - 1))
@@ -113,6 +181,7 @@ export function createRelay(opts: CreateRelayOptions): Relay {
   async function pass(): Promise<void> {
     try {
       let afterSeq = 0
+      const outage = outageOfPass()
       for (;;) {
         if (stopped) return
         const page = await store.read((tx) =>
@@ -121,7 +190,7 @@ export function createRelay(opts: CreateRelayOptions): Relay {
         for (const logged of page) {
           if (stopped) return
           afterSeq = logged.seq
-          await deliver(logged)
+          await deliver(logged, outage)
         }
         if (page.length < PAGE_SIZE) return
       }

@@ -3,6 +3,7 @@
 # defect: refresh accepts a revoked refresh token
 # where: packages/platform/src/services/auth-service.ts:216
 # killed-by: packages/platform/src/services/auth-service.test.ts
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/auth-service.test.ts
 diff --git a/packages/platform/src/services/auth-service.ts b/packages/platform/src/services/auth-service.ts
 --- a/packages/platform/src/services/auth-service.ts
 +++ b/packages/platform/src/services/auth-service.ts

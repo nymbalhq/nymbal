@@ -1,10 +1,9 @@
 // Reads: packages/platform/src/**, packages/sdk/src/**, packages/types/src/**, packages/config/src/**
-// Reads: packages/http/src/**, packages/adapter-stripe/src/**, packages/adapter-anthropic/src/**
-// Reads: packages/adapter-smtp/src/**, packages/doc-store-redis/src/**, packages/doc-store-postgres-jsonb/src/**
-// Reads: packages/event-bus-redis-streams/src/**, packages/media-s3/src/**, packages/security-cloudflare/src/**
+// Reads: packages/http/src/**, packages/adapters/**, registry/adapters.json
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FIRST_PARTY_ADAPTERS } from './adapter-table'
 
 /**
  * Architecture guard.
@@ -24,23 +23,16 @@ import { describe, expect, it } from 'vitest'
 // Resolve the repo root from this file's location: tests/architecture -> repo root.
 const REPO_ROOT = resolve(__dirname, '..', '..')
 
-// Packages whose source must never depend on a rendering framework.
+// Packages whose source must never depend on a rendering framework, by directory under packages/: the core, and every
+// first-party adapter (server-side packages all).
 const GUARDED_PACKAGES = [
   'platform',
   'sdk',
   'types',
   'config',
   'http',
-  'adapter-stripe',
-  'adapter-anthropic',
-  'adapter-smtp',
-  'doc-store-redis',
-  'doc-store-postgres-jsonb',
-  'event-bus-redis-streams',
-  'media-s3',
-  // The Cloudflare security adapter, a server-side package like the adapters above.
-  'security-cloudflare',
-] as const
+  ...FIRST_PARTY_ADAPTERS.map((a) => a.dir.replace(/^packages\//, '')),
+]
 
 // Rendering frameworks (and their renderers/runtimes) that must not appear.
 const FORBIDDEN_FRAMEWORKS = [
@@ -178,18 +170,21 @@ describe('architecture guard: core packages stay framework-agnostic', () => {
     const offenders: Offender[] = []
     let scannedFiles = 0
 
+    const unscanned: string[] = []
     for (const pkg of GUARDED_PACKAGES) {
-      const srcDir = join(REPO_ROOT, 'packages', pkg, 'src')
+      const srcDir = join(REPO_ROOT, 'packages', ...pkg.split('/'), 'src')
       const files = collectSourceFiles(srcDir)
+      if (files.length === 0) unscanned.push(pkg)
       scannedFiles += files.length
       for (const file of files) {
         offenders.push(...scanFile(file))
       }
     }
 
-    // Guard the guard: if we scanned nothing, the walk is broken and the test
-    // would pass vacuously. Fail loudly instead.
-    expect(scannedFiles).toBeGreaterThan(0)
+    // Guard the guard: a guarded package whose source the walk does not find (moved, renamed) would pass vacuously.
+    // Fail loudly instead.
+    expect(unscanned).toEqual([])
+    expect(scannedFiles).toBeGreaterThanOrEqual(GUARDED_PACKAGES.length)
 
     const report = offenders.map((o) => `  ${o.file}:${o.line} -> ${o.specifier}`).join('\n')
 

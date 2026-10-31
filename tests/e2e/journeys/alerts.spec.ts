@@ -23,10 +23,10 @@ import { upgraded } from '../support/server-rendered'
 
 // Back-in-stock and price-drop alerts on both templates. Each journey reads GET /api/capabilities and asserts the
 // branch it reports (@capabilities): on the native store, whose email only logs, there is no form and subscribe is
-// refused; on the custom-providers store, whose email is SMTP into Mailpit, a shopper subscribes from the product page,
-// confirms from the email, and is mailed once when the variant comes back, or when the admin lowers its price below
-// the last price the subscription was told. State moves only through the product's own routes: the admin stock
-// adjustment, the admin's product page, and the links in the mail.
+// refused; on the custom-providers store, whose email is Mailgun relaying into Mailpit, a shopper subscribes from the
+// product page, confirms from the email, and is mailed once when the variant comes back, or when the admin lowers its
+// price below the last price the subscription was told. State moves only through the product's own routes: the admin
+// stock adjustment, the admin's product page, and the links in the mail.
 
 const TAG = 'nymbal-notify-me'
 

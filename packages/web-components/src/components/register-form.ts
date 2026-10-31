@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/auth'
 import { css, html } from 'lit'
 import { baseStyles, propertiesOf, type ElementSchema } from '../base-element.js'
 import { NymbalFormElement, renderField } from '../form-element.js'

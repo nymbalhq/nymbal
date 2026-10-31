@@ -19,7 +19,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
-import { plan, run, type StepSpec } from '../../scripts/gate'
+import { plan, run, stepModes, type StepSpec } from '../../scripts/gate'
 
 // AC-4: the gate's stryker step fails when the fresh report has a file below the ratchet, and passes when it is equal
 // or above. The step is the one gate:full plans, run by the gate's own runner in a scratch copy of the repo's scripts
@@ -517,4 +517,75 @@ describe('AC-8: the ratchet step holds the integration ratchet to its own mutate
       ),
     )
   }, 120_000)
+})
+
+// AC-3: `--stryker` asks for a run that blocks, as `--only stryker` does. The step is the one the plan makes from the
+// command line's mode, run by the gate's runner in a scratch directory where `pnpm` is a stand-in: `exec stryker run`
+// exits 0, as a run with survivors does, and the ratchet check exits with RATCHET_EXIT. Each call is logged, so the
+// verdict is shown to come from the ratchet that ran after Stryker.
+
+const PNPM_STAND_IN = `#!/bin/sh
+echo "pnpm $*" >>"$SCRATCH_LOG"
+case "$*" in
+  "exec stryker run"*) exit 0 ;;
+  *"mutation:ratchet check --report"*) exit "$RATCHET_EXIT" ;;
+esac
+exit 97
+`
+
+describe('AC-3: --stryker blocks on the ratchet', () => {
+  it('AC-3: the step --stryker plans is red with exit 1 when the ratchet check fails after Stryker, and ok when it passes', async () => {
+    const { stryker } = stepModes({ stryker: true })
+    const steps = plan({
+      full: true,
+      base: 'HEAD',
+      changed: [FILE],
+      mutated: [FILE],
+      only: ['stryker'],
+      stryker,
+    }).steps
+    expect(steps.map((s) => [s.name, s.skip])).toEqual([['stryker', undefined]])
+    const outcomes = await Promise.all(
+      ['1', '0'].map(async (ratchetExit) => {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'nymbal-gate-stryker-mode-')))
+        created.push(dir)
+        mkdirSync(join(dir, 'bin'))
+        writeFileSync(join(dir, 'bin/pnpm'), PNPM_STAND_IN)
+        chmodSync(join(dir, 'bin/pnpm'), 0o755)
+        const logPath = join(dir, 'calls.log')
+        const logs: string[] = []
+        const result = await run(steps, {
+          cwd: dir,
+          budgetMs: 60_000,
+          log: (t) => logs.push(t),
+          env: {
+            ...process.env,
+            PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+            SCRATCH_LOG: logPath,
+            RATCHET_EXIT: ratchetExit,
+          },
+        })
+        const calls = existsSync(logPath)
+          ? readFileSync(logPath, 'utf8').split('\n').filter(Boolean)
+          : []
+        return {
+          status: result.steps[0]?.status,
+          exitCode: result.exitCode,
+          order: calls.map((c) =>
+            /stryker run/.test(c) ? 'stryker' : /ratchet/.test(c) ? 'ratchet' : c,
+          ),
+          log: logs.join(''),
+        }
+      }),
+    )
+    const detail = outcomes.map((o) => o.log).join('\n---\n')
+    expect(
+      outcomes.map((o) => [o.status, o.exitCode]),
+      `${steps[0]?.command}\n${detail}`,
+    ).toEqual([
+      ['red', 1],
+      ['ok', 0],
+    ])
+    for (const o of outcomes) expect(o.order, detail).toEqual(['stryker', 'ratchet'])
+  })
 })

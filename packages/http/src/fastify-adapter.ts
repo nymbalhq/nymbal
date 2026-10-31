@@ -1,4 +1,10 @@
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
+import Fastify, {
+  errorCodes,
+  type FastifyInstance,
+  type FastifyPluginAsync,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
 import { v7 as uuidv7 } from 'uuid'
@@ -34,8 +40,8 @@ export interface FastifyAdapterOptions {
   logger: Logger
   /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
   security: NymbalConfig['security']
-  /** Whether `X-Forwarded-For` sets the request IP. Off unless a trusted proxy sits in front. */
-  trustProxy?: boolean
+  /** Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default. */
+  trustProxy?: boolean | number
   cors?: CorsOptions
 }
 
@@ -83,13 +89,41 @@ export class FastifyHttpAdapter implements HttpAdapter {
       this.#app.initialConfig.onProtoPoisoning ?? 'error',
       this.#app.initialConfig.onConstructorPoisoning ?? 'error',
     )
+    const takesRawBody = (req: FastifyRequest): boolean =>
+      (req.routeOptions.config as { routeOptions?: RouteOptions } | undefined)?.routeOptions
+        ?.rawBody === true
     this.#app.removeContentTypeParser('application/json')
     this.#app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => {
       const buffer = body as Buffer
-      const config = req.routeOptions.config as { routeOptions?: RouteOptions } | undefined
-      if (config?.routeOptions?.rawBody === true) req.rawBody = buffer
+      if (takesRawBody(req)) req.rawBody = buffer
       parseJson(req, buffer.toString('utf8'), done)
     })
+    // Providers also post form-encoded, plain-text and other bodies, signing those bytes too, so a `rawBody` route
+    // takes every type, its body the UTF-8 text. Every other route answers as Fastify does by default: `text/plain` as
+    // a string, anything else (a bodied request with no Content-Type included) 415, and an unknown URL its 404.
+    const keepRawBody =
+      (elsewhere: 'text' | 'refuse') =>
+      (
+        req: FastifyRequest,
+        body: string | Buffer,
+        done: (err: Error | null, body?: unknown) => void,
+      ) => {
+        const buffer = body as Buffer
+        if (takesRawBody(req)) req.rawBody = buffer
+        else if (elsewhere === 'refuse' && !req.is404) {
+          done(new errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE(req.headers['content-type']))
+          return
+        }
+        done(null, buffer.toString('utf8'))
+      }
+    this.#app.removeContentTypeParser('text/plain')
+    this.#app.addContentTypeParser('text/plain', { parseAs: 'buffer' }, keepRawBody('text'))
+    this.#app.addContentTypeParser(
+      'application/x-www-form-urlencoded',
+      { parseAs: 'buffer' },
+      keepRawBody('refuse'),
+    )
+    this.#app.addContentTypeParser('*', { parseAs: 'buffer' }, keepRawBody('refuse'))
     // Fastify's `close()` waits for every open connection, and a stream never ends by itself. `preClose` runs after
     // Fastify answers new requests 503 and before `server.close()`, so no stream can hold the close once it has run.
     this.#app.addHook('preClose', async () => {
@@ -259,6 +293,14 @@ export class FastifyHttpAdapter implements HttpAdapter {
       },
       config: { routeOptions: options ?? {} },
     })
+  }
+
+  /** A Fastify plugin on this server, in a context of its own: how the storefront forward is added. */
+  registerPlugin(plugin: FastifyPluginAsync): void {
+    if (this.#started) {
+      throw new Error('Cannot register plugins after the server has started')
+    }
+    void this.#app.register(plugin)
   }
 
   registerMiddleware(middleware: MiddlewareHandler): void {

@@ -1,5 +1,6 @@
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
+import { slotFolder } from '@nymbalhq/config'
 import { loadProject } from '../utils/project.js'
 import { NymbalError } from '@nymbalhq/types'
 
@@ -12,7 +13,7 @@ export const configValidateCommand = defineCommand({
       console.log(pc.green(`✓ config valid`) + ` (${path})`)
       // eslint-disable-next-line no-console
       console.log(
-        `  template: ${config.template}, commandStore: ${config.infrastructure.commandStore}, documentStore: ${config.infrastructure.documentStore}, eventBus: ${config.infrastructure.eventBus}`,
+        `  template: ${config.template}, command store: ${config.infrastructure.commandStore}, ${slotFolder('documentStore')}: ${config.infrastructure.documentStore.provider}, ${slotFolder('eventBus')}: ${config.infrastructure.eventBus.provider}`,
       )
       process.exit(0)
     } catch (err) {

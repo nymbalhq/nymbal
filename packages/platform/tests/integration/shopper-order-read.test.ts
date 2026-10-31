@@ -7,8 +7,8 @@ import { adminClient, type AdminClient } from '../support/money.js'
 import { primedShopper } from '../support/security.js'
 
 // Orders placed over HTTP, by a guest and by a signed-in customer, left pending or paid: the cart token each checkout
-// records on its order is read back by no shopper route, by its owner or with the order's key. A stranger with no key
-// is not told the order exists. The admin read keeps the token.
+// records on its order is read back by no shopper route, by its owner or with a guest order's key (a signed-in
+// checkout answers none). A stranger with no key is not told the order exists. The admin read keeps the token.
 
 const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 
@@ -16,7 +16,7 @@ const CART_COOKIE = 'nymbal.cart'
 
 interface Placed {
   orderNumber: string
-  orderKey: string
+  orderKey?: string
   cartToken: string
   bearer?: string
 }
@@ -48,7 +48,7 @@ async function place(opts: { signedIn: boolean; pending: boolean }): Promise<Pla
   expect(added.status, JSON.stringify(added.body)).toBe(200)
   const cartToken = shop.jar.get(CART_COOKIE)
   expect(cartToken, 'the cart cookie').toBeDefined()
-  const checkout = await shop.call<{ orderNumber: string; orderStatus: string; orderKey: string }>(
+  const checkout = await shop.call<{ orderNumber: string; orderStatus: string; orderKey?: string }>(
     'POST',
     '/api/checkout',
     {
@@ -60,9 +60,10 @@ async function place(opts: { signedIn: boolean; pending: boolean }): Promise<Pla
   )
   expect(checkout.status, JSON.stringify(checkout.body)).toBe(200)
   expect(checkout.body.data!.orderStatus).toBe(opts.pending ? 'pending' : 'confirmed')
+  const orderKey = checkout.body.data!.orderKey
   return {
     orderNumber: checkout.body.data!.orderNumber,
-    orderKey: checkout.body.data!.orderKey,
+    ...(orderKey !== undefined && { orderKey }),
     cartToken: cartToken!,
     ...(bearer !== undefined && { bearer }),
   }
@@ -98,15 +99,16 @@ async function text(
 }
 
 describe('a placed order’s cart token', () => {
-  it('is in no shopper response: not GET /api/orders/:orderNumber read with its key or by its owner, nor GET /api/orders; a stranger with no key gets the not-found answer of a number no order has; the admin order read still carries it', async () => {
+  it('is in no shopper response: not GET /api/orders/:orderNumber read with a guest order’s key or by its owner, nor GET /api/orders; a stranger with no key gets the not-found answer of a number no order has; the admin order read still carries it', async () => {
     const reads: Array<{ label: string; path: string; bearer?: string; key?: string }> = []
     for (const o of placed) {
-      reads.push({
-        label: `${o.orderNumber} read with its key`,
-        path: `/api/orders/${o.orderNumber}`,
-        key: o.orderKey,
-      })
-      if (o.bearer !== undefined) {
+      if (o.bearer === undefined) {
+        reads.push({
+          label: `${o.orderNumber} read with its key`,
+          path: `/api/orders/${o.orderNumber}`,
+          key: o.orderKey!,
+        })
+      } else {
         reads.push(
           {
             label: `its owner reads ${o.orderNumber}`,

@@ -1,11 +1,12 @@
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { ConfigError } from '@nymbalhq/types'
 import { createNativeStubPaymentsAdapter } from '../../src/adapters/payments/native-stub.js'
 import { createApp, type NymbalApp } from '../../src/app.js'
+import { JWT_SECRET_ENV } from '../../src/auth-secret.js'
 import { createCommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
@@ -59,10 +60,19 @@ describe('production refusals at createApp', () => {
   const dirs: string[] = []
   const apps: NymbalApp[] = []
   const nodeEnv = process.env.NODE_ENV
+  const envSecret = process.env[JWT_SECRET_ENV]
+
+  // Every case names its secret in the config or means the schema default: a secret the shell exports would replace
+  // the default and turn a refusal into a start.
+  beforeEach(() => {
+    delete process.env[JWT_SECRET_ENV]
+  })
 
   afterEach(async () => {
     if (nodeEnv === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = nodeEnv
+    if (envSecret === undefined) delete process.env[JWT_SECRET_ENV]
+    else process.env[JWT_SECRET_ENV] = envSecret
     for (const app of apps.splice(0)) await app.stop()
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })

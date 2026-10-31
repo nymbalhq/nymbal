@@ -4,6 +4,7 @@ import type { Kernel } from './kernel.js'
 import type { RawReader } from './raw.js'
 import { login, primedShopper } from './security.js'
 import type { ShopResponse } from './shopper.js'
+import { unaudited } from './write-audit.js'
 
 // An admin over HTTP against a served kernel, and the money an order carries as a second connection reads it (the
 // `orders` amount columns and the `order_refunds` rows migration 0006 adds).
@@ -17,16 +18,18 @@ export async function adminClient(k: Kernel, baseUrl: string): Promise<AdminClie
   const email = `admin-${randomUUID()}@money.test`
   const password = 'correct-horse-battery'
   const now = new Date()
-  await k.store.transaction((tx) =>
-    k.repos.customer.insert(tx, {
-      id: randomUUID(),
-      email,
-      passwordHash: bcrypt.hashSync(password, 4),
-      roles: ['admin'],
-      requiresPasswordReset: false,
-      createdAt: now,
-      updatedAt: now,
-    }),
+  await unaudited(() =>
+    k.store.transaction((tx) =>
+      k.repos.customer.insert(tx, {
+        id: randomUUID(),
+        email,
+        passwordHash: bcrypt.hashSync(password, 4),
+        roles: ['admin'],
+        requiresPasswordReset: false,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    ),
   )
   const shop = await primedShopper(baseUrl)
   const answer = await login(baseUrl, shop.jar, { email, password })

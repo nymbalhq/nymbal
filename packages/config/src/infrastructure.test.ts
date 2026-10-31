@@ -4,10 +4,11 @@ import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterAll, describe, expect, it } from 'vitest'
 import { ConfigError } from '@nymbalhq/types'
-import { KNOWN_INFRASTRUCTURE, loadConfig } from './index.js'
+import { loadConfig } from './index.js'
 
-// AC-1: the config lists what is built and nothing else; any other value fails naming the slot and its list, and
-// `cloud` and `compute` fail saying they were removed.
+// AC-1: the config loads every value that is built and keeps it; `cloud` and `compute` fail saying they were removed,
+// and any other infrastructure key fails naming the known ones. documentStore, eventBus and media are blocks
+// (`{ provider }`); commandStore is a string.
 
 const SLOTS = ['commandStore', 'documentStore', 'eventBus', 'media'] as const
 type Slot = (typeof SLOTS)[number]
@@ -21,7 +22,6 @@ const SPEC_VALUES: Record<Slot, readonly string[]> = {
   media: ['local-fs', 's3'],
 }
 
-const EVERY_VALUE = new Set(Object.values(SPEC_VALUES).flat())
 const KNOWN_KEYS = new Set<string>([...SLOTS, 'redis', 's3'])
 
 const dirs: string[] = []
@@ -54,17 +54,20 @@ function configWith(infrastructure: Infrastructure): Record<string, unknown> {
 
 const BASE: Infrastructure = {
   commandStore: 'sqlite',
-  documentStore: 'in-memory',
-  eventBus: 'in-process',
+  documentStore: { provider: 'in-memory' },
+  eventBus: { provider: 'in-process' },
 }
+
+/** The value as the config writes it: commandStore a string, every other slot its block. */
+const written = (slot: Slot, value: string): unknown =>
+  slot === 'commandStore' ? value : { provider: value }
 
 /** The slot set to `value`, with the companions it requires so that only `value` is under test. */
 function cell(slot: Slot, value: string): Infrastructure {
-  const infra: Infrastructure = { ...BASE, [slot]: value }
-  if (infra['documentStore'] === 'postgres-jsonb') infra['commandStore'] = 'postgres'
-  if (infra['eventBus'] === 'redis-streams' && infra['documentStore'] === 'in-memory') {
-    infra['documentStore'] = 'redis'
-  }
+  const infra: Infrastructure = { ...BASE, [slot]: written(slot, value) }
+  if (slot === 'documentStore' && value === 'postgres-jsonb') infra['commandStore'] = 'postgres'
+  if (slot === 'eventBus' && value === 'redis-streams')
+    infra['documentStore'] = { provider: 'redis' }
   return infra
 }
 
@@ -95,32 +98,12 @@ function quoted(message: string, value: string): boolean {
   return [`'${value}'`, `"${value}"`, `\`${value}\``].some((q) => message.includes(q))
 }
 
-/** Value-shaped strings no slot lists: random names, and one-character typos of the listed ones. */
-const unknownValue = fc
-  .oneof(
-    fc.stringMatching(/^[a-z0-9][a-z0-9._-]{0,24}$/),
-    fc
-      .tuple(fc.constantFrom(...EVERY_VALUE), fc.stringMatching(/^[a-z0-9-]$/), fc.nat())
-      .map(([name, c, at]) => {
-        const i = at % (name.length + 1)
-        return `${name.slice(0, i)}${c}${name.slice(i)}`
-      }),
-  )
-  .filter((s) => !EVERY_VALUE.has(s))
-
 /** Key-shaped strings infrastructure does not know (cloud and compute have their own case). */
 const unknownKey = fc
   .stringMatching(/^[a-z][a-zA-Z0-9]{0,15}$/)
   .filter((k) => !KNOWN_KEYS.has(k) && k !== 'cloud' && k !== 'compute' && !(k in {}))
 
-describe('AC-1: the infrastructure config lists what is built, and nothing else', () => {
-  it('AC-1: KNOWN_INFRASTRUCTURE lists, per slot, exactly the known values', () => {
-    expect(Object.keys(KNOWN_INFRASTRUCTURE).sort()).toEqual([...SLOTS].sort())
-    for (const slot of SLOTS) {
-      expect([...KNOWN_INFRASTRUCTURE[slot]].sort(), slot).toEqual([...SPEC_VALUES[slot]].sort())
-    }
-  })
-
+describe('AC-1: the infrastructure config loads what is built', () => {
   it('AC-1: loadConfig accepts every slot × every known value and keeps the value it was given', async () => {
     const cells = SLOTS.flatMap((slot) => SPEC_VALUES[slot].map((value) => ({ slot, value })))
     expect(cells.length).toBe(Object.values(SPEC_VALUES).flat().length)
@@ -131,22 +114,8 @@ describe('AC-1: the infrastructure config lists what is built, and nothing else'
       expect(
         (loaded.config.infrastructure as Record<string, unknown>)[slot],
         `${slot}: ${value}`,
-      ).toBe(value)
+      ).toEqual(written(slot, value))
     }
-  })
-
-  it('AC-1: any other value fails loadConfig with a ConfigError naming the slot, the value and every known value for the slot', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.constantFrom(...SLOTS), unknownValue, async (slot, value) => {
-        const message = messageOf(await rejectionOf(configWith({ ...BASE, [slot]: value })))
-
-        expect(message).toMatch(new RegExp(`\\b${slot}\\b`))
-        expect(quoted(message, value), `the message quotes ${value}: ${message}`).toBe(true)
-        const unnamed = SPEC_VALUES[slot].filter((known) => !quoted(message, known))
-        expect(unnamed, message).toEqual([])
-      }),
-      { numRuns: 40 },
-    )
   })
 
   it.each(['cloud', 'compute'])(
@@ -166,7 +135,9 @@ describe('AC-1: the infrastructure config lists what is built, and nothing else'
   it('AC-1: any other unknown infrastructure key fails loadConfig with a ConfigError naming the key and the known slots', async () => {
     await fc.assert(
       fc.asyncProperty(unknownKey, async (key) => {
-        const message = messageOf(await rejectionOf(configWith({ ...BASE, [key]: 'in-memory' })))
+        const message = messageOf(
+          await rejectionOf(configWith({ ...BASE, [key]: { provider: 'in-memory' } })),
+        )
 
         expect(quoted(message, key), `the message quotes ${key}: ${message}`).toBe(true)
         const unnamed = SLOTS.filter((slot) => !message.includes(slot))
@@ -187,12 +158,17 @@ describe('AC-1: the infrastructure config lists what is built, and nothing else'
         SPEC_VALUES.documentStore.length *
         SPEC_VALUES.eventBus.length,
     )
+    const asBlocks = (combo: (typeof combos)[number]): Infrastructure => ({
+      commandStore: combo.commandStore,
+      documentStore: { provider: combo.documentStore },
+      eventBus: { provider: combo.eventBus },
+    })
     for (const combo of combos) {
       const jsonbOnSqlite =
         combo.documentStore === 'postgres-jsonb' && combo.commandStore !== 'postgres'
       const streamsOnMemory =
         combo.eventBus === 'redis-streams' && combo.documentStore === 'in-memory'
-      const error = await rejectionOf(configWith(combo))
+      const error = await rejectionOf(configWith(asBlocks(combo)))
       const label = JSON.stringify(combo)
 
       expect(error === null, `${label}: ${String((error as Error | null)?.message)}`).toBe(
@@ -202,22 +178,26 @@ describe('AC-1: the infrastructure config lists what is built, and nothing else'
 
     const jsonb = messageOf(
       await rejectionOf(
-        configWith({
-          commandStore: 'sqlite',
-          documentStore: 'postgres-jsonb',
-          eventBus: 'in-process',
-        }),
+        configWith(
+          asBlocks({
+            commandStore: 'sqlite',
+            documentStore: 'postgres-jsonb',
+            eventBus: 'in-process',
+          }),
+        ),
       ),
     )
     expect(jsonb).toContain('postgres-jsonb')
     expect(jsonb).toMatch(/\bcommandStore\b/)
     const streams = messageOf(
       await rejectionOf(
-        configWith({
-          commandStore: 'sqlite',
-          documentStore: 'in-memory',
-          eventBus: 'redis-streams',
-        }),
+        configWith(
+          asBlocks({
+            commandStore: 'sqlite',
+            documentStore: 'in-memory',
+            eventBus: 'redis-streams',
+          }),
+        ),
       ),
     )
     expect(streams).toContain('redis-streams')
@@ -226,9 +206,11 @@ describe('AC-1: the infrastructure config lists what is built, and nothing else'
 
   it('AC-1: a config with no media loads as local-fs, the same as one that names it', async () => {
     const implicit = await loadConfig(project(configWith(BASE)))
-    const explicit = await loadConfig(project(configWith({ ...BASE, media: 'local-fs' })))
+    const explicit = await loadConfig(
+      project(configWith({ ...BASE, media: { provider: 'local-fs' } })),
+    )
 
-    expect(implicit.config.infrastructure.media).toBe('local-fs')
+    expect(implicit.config.infrastructure.media).toEqual({ provider: 'local-fs' })
     expect(implicit.config.infrastructure).toEqual(explicit.config.infrastructure)
   })
 })

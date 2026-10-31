@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { HealthReport } from '@nymbalhq/types'
-import { createAdapter as createRedisDocStore } from '../../../doc-store-redis/src/index.js'
-import { createAdapter as createJsonbDocStore } from '../../../doc-store-postgres-jsonb/src/index.js'
-import { createAdapter as createRedisStreamsBus } from '../../../event-bus-redis-streams/src/index.js'
-import { createS3MediaStorage } from '../../../media-s3/src/index.js'
+import { createAdapter as createRedisDocStore } from '../../../adapters/document-store/redis/src/index.js'
+import { createAdapter as createJsonbDocStore } from '../../../adapters/document-store/postgres-jsonb/src/index.js'
+import { createAdapter as createRedisStreamsBus } from '../../../adapters/event-bus/redis-streams/src/index.js'
+import { createS3MediaStorage } from '../../../adapters/media/s3/src/index.js'
 import { deleteUnder, redisServerUrl, uniquePrefix } from '../../../../tests/support/redis'
 import { createPublicBucket, s3Endpoint, type TestBucket } from '../../../../tests/support/s3'
 import { InMemoryDocumentStore } from '../../src/document-store/in-memory.js'
@@ -129,7 +129,7 @@ afterAll(async () => {
 })
 
 describe('AC-3: primitives against the composed services report healthy when up and down within 6 s when unreachable', () => {
-  it('AC-3: doc-store-redis: healthy through a live connection; down within 6 s once its port refuses; no password in detail', async () => {
+  it('AC-3: document-store-redis: healthy through a live connection; down within 6 s once its port refuses; no password in detail', async () => {
     const password = secret('redispw')
     const proxy = await tcpProxy(new URL(redisUrl))
     const store = await createRedisDocStore({
@@ -177,7 +177,7 @@ describe('AC-3: primitives against the composed services report healthy when up 
     }
   }, 60_000)
 
-  it('AC-3: doc-store-postgres-jsonb: healthy on an initialized database; down within 6 s on a closed port; no user, password or query value in detail', async () => {
+  it('AC-3: document-store-postgres-jsonb: healthy on an initialized database; down within 6 s on a closed port; no user, password or query value in detail', async () => {
     const store = createJsonbDocStore({
       slot: 'documentStore',
       config: { postgresUrl: db.url, prefix: 'nymbal' },

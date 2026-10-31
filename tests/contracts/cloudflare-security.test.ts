@@ -5,12 +5,12 @@ import { AdapterError } from '@nymbalhq/types'
 import {
   startFakeCloudflare,
   type FakeCloudflare,
-} from '../../packages/security-cloudflare/src/tests/fake-cloudflare.js'
+} from '../../packages/adapters/security/cloudflare/src/tests/fake-cloudflare.js'
 import {
   TOKEN,
   adapterContext,
   securityConfig,
-} from '../../packages/security-cloudflare/src/tests/support.js'
+} from '../../packages/adapters/security/cloudflare/src/tests/support.js'
 
 // AC-8: the published SecurityAdapter contract passes for `cloudflare` against the fake Cloudflare API, the downtime
 // cases included: with the fake stopped, `validate()` rejects within the case time and `healthCheck()` reports down.

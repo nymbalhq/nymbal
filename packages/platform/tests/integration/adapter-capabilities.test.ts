@@ -12,7 +12,7 @@ import { adminClient } from '../support/money.js'
 
 // AC-4: app.capabilities() reports the eight commerce slots, security, documentStore, eventBus and media, each with the
 // adapter's own capabilities() answer, and for ai `none` no adapter at all (the admin AI route answers 503). Needs the
-// adapter packages built (the Stripe kernel loads @nymbalhq/adapter-stripe).
+// adapter packages built (the Stripe kernel loads @nymbalhq/payments-stripe).
 
 const COMMERCE = [
   'payments',

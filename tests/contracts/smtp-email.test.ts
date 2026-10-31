@@ -3,11 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runEmailContract } from '@nymbalhq/contract-tests'
 import { createLogger } from '@nymbalhq/platform'
 import type { EmailAdapter } from '@nymbalhq/types'
-import { createSmtpEmailAdapter } from '../../packages/adapter-smtp/src/index.js'
+import { createSmtpEmailAdapter } from '../../packages/adapters/email/smtp/src/index.js'
 import { fakeSmtpServer, type FakeSmtpServer } from '../support/smtp-server'
 import { closedPort, settleWithin } from '../support/tcp-proxy'
 
-// AC-5 on @nymbalhq/adapter-smtp, a bundled adapter with an external dependency: the published email suite runs
+// AC-5 on @nymbalhq/email-smtp, a bundled adapter with an external dependency: the published email suite runs
 // against an SMTP server in this process (healthy when up), and, given `unreachable` (the adapter pointed at a port
 // nobody listens on), its downtime cases. The case below holds the adapter itself to the bound: on a dead host
 // healthCheck says `down`, not `degraded`, within 6 s, and a send rejects within 6 s rather than waiting out
@@ -51,7 +51,7 @@ function on(port: number): EmailAdapter {
 
 runEmailContract('smtp', () => on(smtp!.port), { unreachable: () => on(deadPort) })
 
-describe('AC-5: adapter-smtp on a dead host', () => {
+describe('AC-5: email-smtp on a dead host', () => {
   it('AC-5: on a port nobody listens on, healthCheck reports down within 6 s and sendTransactional rejects within 6 s, where the live server takes the same send', async () => {
     const dead = on(deadPort)
     const live = on(smtp!.port)

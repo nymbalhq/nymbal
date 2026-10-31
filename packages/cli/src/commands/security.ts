@@ -1,6 +1,6 @@
 import { defineCommand } from 'citty'
 import type { NymbalConfig } from '@nymbalhq/config'
-import { createLogger, importProviderPackage } from '@nymbalhq/platform'
+import { createLogger, importAdapterModule } from '@nymbalhq/platform'
 import {
   errorText,
   type DriftReport,
@@ -124,9 +124,12 @@ async function runEdge(
           "set security.adapter to 'cloudflare' (nymbal add cloudflare) to manage them on a Cloudflare zone",
       )
     } else {
-      const mod = (await importProviderPackage(
+      const mod = (await importAdapterModule(
         'security',
-        'cloudflare',
+        {
+          provider: 'cloudflare',
+          ...(security.package !== undefined && { package: security.package }),
+        },
         process.env,
       )) as unknown as EdgeModule
       const adapter = (await mod.createAdapter({

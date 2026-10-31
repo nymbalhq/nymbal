@@ -6,7 +6,7 @@ import { gunzipSync } from 'node:zlib'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { NymbalEvent } from '../../packages/types/src/events/envelope.js'
-import { createS3ObjectWriter } from '../../packages/media-s3/src/index.js'
+import { createS3ObjectWriter } from '../../packages/adapters/media/s3/src/index.js'
 import {
   createCommandStore,
   type CommandStore,

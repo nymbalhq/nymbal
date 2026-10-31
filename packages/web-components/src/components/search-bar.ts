@@ -1,3 +1,4 @@
+import '@nymbalhq/sdk/ns/search'
 import { css, html, nothing } from 'lit'
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
 import { baseStyles, NymbalElement, propertiesOf, type ElementSchema } from '../base-element.js'

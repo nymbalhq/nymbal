@@ -22,7 +22,8 @@ import { audit } from '../audit/audit.js'
 import type { CommandStore, ReadTx, Tx } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
-import { hashOrderKey, isOrderKey } from '../order-access-key.js'
+import { hashOrderKey, isOrderKey, orderEmailMatches } from '../order-access-key.js'
+import type { OrderKeyState } from '../repositories/order-access-key.js'
 
 export interface OrderCreateDraftInput {
   orderId: string
@@ -59,8 +60,16 @@ export interface OrderService {
   getById(id: string): Promise<Order>
   getByOrderNumber(orderNumber: string): Promise<Order>
   listByCustomer(customerId: string): Promise<Order[]>
-  /** Whether `key` opens the order: one of its own keys, well formed. Another order's key opens nothing. */
+  /** Whether `key` opens the order now: one of its own keys, well formed and unexpired. */
   keyOpens(orderId: string, key: string): Promise<boolean>
+  /** What `key` does for the order at `now`: another order's key, or a malformed one, is `none`. */
+  keyState(orderId: string, key: string, now?: Date): Promise<OrderKeyState>
+  /**
+   * "Send me my order link": when the number and email name an order a confirmation is due for (confirmed or later),
+   * its order-placed email is sent again, with a fresh link for a guest's order. Anything else does nothing, and the
+   * caller is told nothing either way.
+   */
+  requestLink(orderNumber: string, email: string): Promise<void>
   updateStatus(id: string, toStatus: OrderStatus, actor: string, note?: string): Promise<Order>
   markShipped(id: string, trackingNumber: string, carrier: string, actor: string): Promise<Order>
   markDelivered(id: string, actor: string): Promise<Order>
@@ -88,8 +97,19 @@ export interface CreateOrderServiceDeps {
 export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
   const { store, repos, publisher } = deps
 
+  async function keyState(orderId: string, key: string, now: Date): Promise<OrderKeyState> {
+    if (!isOrderKey(key)) return 'none'
+    return store.read((tx) => repos.orderAccessKey.opens(tx, orderId, hashOrderKey(key), now))
+  }
+
   async function requireOrder(tx: ReadTx, id: string): Promise<Order> {
     const order = await repos.order.findById(tx, id)
+    if (!order) throw new NotFoundError('order', id)
+    return order
+  }
+
+  async function lockOrder(tx: Tx, id: string): Promise<Order> {
+    const order = await repos.order.lock(tx, id)
     if (!order) throw new NotFoundError('order', id)
     return order
   }
@@ -173,8 +193,19 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
       return store.read((tx) => repos.order.listByCustomer(tx, customerId))
     },
     async keyOpens(orderId, key) {
-      if (!isOrderKey(key)) return false
-      return store.read((tx) => repos.orderAccessKey.opens(tx, orderId, hashOrderKey(key)))
+      return (await keyState(orderId, key, new Date())) === 'open'
+    },
+    keyState(orderId, key, now = new Date()) {
+      return keyState(orderId, key, now)
+    },
+    async requestLink(orderNumber, email) {
+      const order = await store.read((tx) => repos.order.findByOrderNumber(tx, orderNumber))
+      if (order === null || NO_CONFIRMATION_DUE.has(order.status)) return
+      if (!orderEmailMatches(order.email, email)) return
+      await store.transaction(async () => {
+        audit.note('order.requestLink', [{ type: 'order', id: order.id }])
+        await publisher.publish(EVT_ORDER_CONFIRMATION_RESEND_REQUESTED, { orderId: order.id })
+      })
     },
     async updateStatus(id, toStatus, actor, note = '') {
       return store.transaction(async (tx) => {
@@ -192,7 +223,8 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async markShipped(id, trackingNumber, carrier, actor) {
       return store.transaction(async (tx) => {
         audit.note('order.ship', [{ type: 'order', id }])
-        const order = await requireOrder(tx, id)
+        // Under the row lock a second ship waits, then reads `shipped` and is refused: one shipment row per order.
+        const order = await lockOrder(tx, id)
         const fresh = await doTransition(
           tx,
           order,
@@ -200,6 +232,12 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           actor,
           `Shipped via ${carrier}: ${trackingNumber}`,
         )
+        await repos.orderShipment.record(tx, {
+          orderId: fresh.id,
+          carrier,
+          trackingNumber,
+          at: new Date(),
+        })
         await publisher.publish(EVT_ORDER_SHIPPED, {
           orderId: fresh.id,
           trackingNumber,
@@ -211,7 +249,8 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
     async markDelivered(id, actor) {
       return store.transaction(async (tx) => {
         audit.note('order.markDelivered', [{ type: 'order', id }])
-        const order = await requireOrder(tx, id)
+        // Under the row lock a tracking update and the admin's button cannot both move the order.
+        const order = await lockOrder(tx, id)
         const fresh = await doTransition(tx, order, 'delivered', actor, 'Delivered')
         await publisher.publish(EVT_ORDER_DELIVERED, { orderId: fresh.id })
         return fresh

@@ -71,7 +71,7 @@ export default [
   // E2E and scaffold tests reach the store through its own surface: a test that posts the payment webhook proves a
   // confirmation the product never gives. Kernel tests and the contract suites drive the hook on purpose.
   {
-    files: ['tests/e2e/**/*.ts', 'tests/scaffold/**/*.ts'],
+    files: ['tests/e2e/**/*.ts', 'tests/scaffold/**/*.ts', 'tests/scaffold-image/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -116,7 +116,7 @@ export default [
       '**/journeys/**/*.ts',
       '**/sentinels/**/*.ts',
     ],
-    ignores: ['tests/e2e/**', 'tests/scaffold/**'],
+    ignores: ['tests/e2e/**', 'tests/scaffold/**', 'tests/scaffold-image/**'],
     rules: {
       'no-restricted-syntax': ['error', ...LISTEN_LOCALHOST],
     },

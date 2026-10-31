@@ -2,7 +2,8 @@ import { connect, createServer, type Server, type Socket } from 'node:net'
 
 // A TCP proxy to a service, so a client that connects at construction (the Redis primitives) can be built while the
 // service is up and then left on a port that refuses: the way the health and contract tests make "unreachable".
-// `reopen()` listens on the same port again, so a test can see the client reconnect.
+// `reopen()` listens on the same port again, so a test can see the client reconnect. `hold()` makes it a service that
+// accepts and never answers: what reached the proxy stays there, and a new connection is accepted and left silent.
 
 export interface TcpProxy {
   port: number
@@ -12,15 +13,24 @@ export interface TcpProxy {
   close(): Promise<void>
   /** Listens on the same port again, forwarding as before. */
   reopen(): Promise<void>
+  /** Forwards nothing more either way, on open connections and new ones, which are accepted and held open. */
+  hold(): void
 }
 
 export async function tcpProxy(target: URL): Promise<TcpProxy> {
   const sockets = new Set<Socket>()
   let server: Server | null = null
   let port = 0
+  let holding = false
+  const pipes = new Set<() => void>()
 
   const listen = async (on: number): Promise<number> => {
     const s = createServer((client) => {
+      if (holding) {
+        sockets.add(client)
+        client.on('error', () => client.destroy()).on('close', () => sockets.delete(client))
+        return
+      }
       const upstream = connect(Number(target.port), target.hostname)
       sockets.add(client).add(upstream)
       const end = () => {
@@ -32,6 +42,12 @@ export async function tcpProxy(target: URL): Promise<TcpProxy> {
       client.on('error', end).on('close', end)
       upstream.on('error', end).on('close', end)
       client.pipe(upstream).pipe(client)
+      pipes.add(() => {
+        client.unpipe(upstream)
+        upstream.unpipe(client)
+        client.pause()
+        upstream.pause()
+      })
     })
     await new Promise<void>((resolve, reject) => {
       s.once('error', reject)
@@ -59,6 +75,11 @@ export async function tcpProxy(target: URL): Promise<TcpProxy> {
     },
     async reopen() {
       if (server === null) await listen(port)
+    },
+    hold() {
+      holding = true
+      for (const cut of pipes) cut()
+      pipes.clear()
     },
   }
 }

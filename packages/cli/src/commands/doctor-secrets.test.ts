@@ -7,6 +7,7 @@ import type { NymbalConfig } from '@nymbalhq/config'
 import repoConfig from '../../../../nymbal.config.js'
 import { formatDoctorReport } from './doctor-report.js'
 import { cliEnv, closedPort, doctorLines, runCli } from '../../../../tests/support/doctor.js'
+import { install, workspace } from '../../../../tests/support/project.js'
 
 // AC-6 (b): no secret is ever printed, by the text or the `--json` formatting, while every check is named and each
 // URL shows as `scheme://host:port/db`.
@@ -48,7 +49,7 @@ function made(c: Case) {
   ]
   const names = [
     'command store',
-    'primitive documentStore',
+    'primitive document-store',
     'slot payments',
     'slot email',
     'primitive media',
@@ -61,9 +62,9 @@ function made(c: Case) {
     ...repoConfig,
     infrastructure: {
       commandStore: 'postgres',
-      documentStore: 'redis',
-      eventBus: 'in-process',
-      media: 's3',
+      documentStore: { provider: 'redis' },
+      eventBus: { provider: 'in-process' },
+      media: { provider: 's3' },
       redis: { url: redisUrl, prefix: 'nymbal' },
       s3: { bucket: 'shop-media', region: 'eu-west-2' },
     },
@@ -129,6 +130,8 @@ describe('AC-6 (b): doctor prints no secret', () => {
   it('AC-6 (b): a CLI sample with real secrets in .env: doctor and doctor --json print none of them and report the command store down', async () => {
     const project = mkdtempSync(join(tmpdir(), 'nymbal-doctor-secrets-'))
     dirs.push(project)
+    // The packages the config names are installed, so their checks run with the secrets in hand.
+    install(project, workspace('@nymbalhq/payments-stripe', '@nymbalhq/document-store-redis'))
     const pgPassword = `pw${Date.now().toString(36)}Xq81LmZr`
     const pgQuery = `q${Date.now().toString(36)}Hy2Bv`
     const redisPassword = `rp${Date.now().toString(36)}Kd93Fz`
@@ -146,7 +149,11 @@ describe('AC-6 (b): doctor prints no secret', () => {
     )
     const raw = {
       ...repoConfig,
-      infrastructure: { commandStore: 'postgres', documentStore: 'redis', eventBus: 'in-process' },
+      infrastructure: {
+        commandStore: 'postgres',
+        documentStore: { provider: 'redis' },
+        eventBus: { provider: 'in-process' },
+      },
       commerce: {
         ...repoConfig.commerce,
         payments: { provider: 'stripe', config: { secretKey: '__STRIPE__' } },

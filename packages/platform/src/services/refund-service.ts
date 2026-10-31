@@ -96,7 +96,10 @@ export function settlementOf(
   return { status: answer.status, providerRefundId, mismatch: false }
 }
 
-/** Writes `refunded_minor` as Σ of the order's succeeded refunds. */
+/**
+ * Writes `refunded_minor` as Σ of the order's succeeded refunds, when that moves it: a refund that moved no money (failed
+ * or still pending) leaves the order row as it was, so it needs no order event. The caller holds the order's lock.
+ */
 export async function refreshRefunded(
   repos: Repositories,
   tx: Tx,
@@ -107,7 +110,10 @@ export async function refreshRefunded(
   const refundedMinor = refunds
     .filter((r) => r.status === 'succeeded')
     .reduce((sum, r) => sum + r.amountMinor, 0)
-  await repos.order.setRefunded(tx, orderId, refundedMinor, at)
+  const current = (await repos.order.findById(tx, orderId))!
+  if (current.refundedMinor !== refundedMinor) {
+    await repos.order.setRefunded(tx, orderId, refundedMinor, at)
+  }
   return { refunds, refundedMinor }
 }
 

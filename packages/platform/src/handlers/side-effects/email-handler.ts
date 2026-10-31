@@ -36,31 +36,42 @@ export interface RegisterEmailHandlerDeps {
   storeName: string
   /** The storefront's URL, with no trailing `/`; with none, the order-placed email links nowhere and mints no key. */
   storeUrl?: string
+  /** How long the email's order key opens the order on its own; 30 days when not given. */
+  keyLifetimeMs?: number
 }
+
+const DEFAULT_EMAIL_KEY_LIFETIME_MS = 30 * 24 * 3_600_000
 
 export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Promise<void> {
   const { eventBus, email, logger, processedEventRepo, orderRepo, orderAccessKeyRepo } = deps
   const { storeName, storeUrl } = deps
+  const keyLifetimeMs = deps.keyLifetimeMs ?? DEFAULT_EMAIL_KEY_LIFETIME_MS
 
   /**
-   * The order page's link, with a key of the email's own: only the hash of the checkout's key is stored, so the
-   * handler never has it.
+   * The order's page: a customer's in their account, with no key; a guest's with a key of the email's own, since only
+   * the hash of the checkout's key is stored, so the handler never has it.
    */
   async function orderLink(
     base: string,
     order: Order,
   ): Promise<{ orderUrl: string; orderLink: string }> {
-    const { key, hash } = mintOrderKey()
-    await orderAccessKeyRepo.store.transaction((tx) =>
-      orderAccessKeyRepo.insert(tx, {
-        id: uuidv7(),
-        orderId: order.id,
-        keyHash: hash,
-        purpose: 'email',
-        createdAt: new Date(),
-      }),
-    )
-    const orderUrl = `${base}/order/${encodeURIComponent(order.orderNumber)}?key=${key}`
+    const number = encodeURIComponent(order.orderNumber)
+    let orderUrl = `${base}/account/orders/${number}`
+    if (order.customerId === null) {
+      const { key, hash } = mintOrderKey()
+      const createdAt = new Date()
+      await orderAccessKeyRepo.store.transaction((tx) =>
+        orderAccessKeyRepo.insert(tx, {
+          id: uuidv7(),
+          orderId: order.id,
+          keyHash: hash,
+          purpose: 'email',
+          createdAt,
+          expiresAt: new Date(createdAt.getTime() + keyLifetimeMs),
+        }),
+      )
+      orderUrl = `${base}/order/${number}?key=${key}`
+    }
     return { orderUrl, orderLink: `\n\nView your order: ${orderUrl}` }
   }
 

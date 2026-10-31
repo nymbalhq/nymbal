@@ -1,8 +1,16 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
+import semver from 'semver'
 import { describe, expect, it, vi } from 'vitest'
 
 // AC-11, run by scripts/scaffold-clean.sh (and the CI job scaffold-clean) after it has scaffolded `shop` with
@@ -42,9 +50,11 @@ const address = {
 }
 
 interface Manifest {
+  name?: string
   version?: string
   packageManager?: string
   dependencies?: Record<string, string>
+  peerDependencies?: Record<string, string>
 }
 interface ProductDoc {
   slug: string
@@ -121,6 +131,47 @@ function installedNymbalVersions(root: string): Map<string, Set<string>> {
   }
   visitNodeModules(join(root, 'node_modules'))
   return found
+}
+
+/**
+ * The realpath of each installed copy of `name`'s package.json under `root`'s node_modules (npm's nested copies,
+ * pnpm's store entries and the links into them, yarn's), so two copies at one version are two and two links to one
+ * copy are one.
+ */
+function installedCopies(root: string, name: string): string[] {
+  const copies = new Set<string>()
+  const seen = new Set<string>()
+  const visitPackage = (pkgDir: string): void => {
+    let real: string
+    try {
+      real = realpathSync(pkgDir)
+    } catch {
+      return // a dangling link
+    }
+    if (seen.has(real)) return
+    seen.add(real)
+    const path = join(real, 'package.json')
+    if (existsSync(path) && manifest(path).name === name) copies.add(path)
+    const nested = join(real, 'node_modules')
+    if (existsSync(nested)) visitNodeModules(nested)
+  }
+  const visitNodeModules = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (entry === '.pnpm') {
+        for (const id of readdirSync(full)) {
+          const inner = join(full, id, 'node_modules')
+          if (existsSync(inner)) visitNodeModules(inner)
+        }
+      } else if (entry.startsWith('@')) {
+        for (const scoped of readdirSync(full)) visitPackage(join(full, scoped))
+      } else if (!entry.startsWith('.')) {
+        visitPackage(full)
+      }
+    }
+  }
+  visitNodeModules(join(root, 'node_modules'))
+  return [...copies].sort()
 }
 
 describe('AC-11: a clean-machine scaffold', () => {
@@ -374,29 +425,149 @@ describe('AC-7: a clean machine installs no provider SDK', () => {
     expect(installed.size).toBeGreaterThan(0)
     expect(PROVIDER_SDKS.filter((sdk) => installed.has(sdk))).toEqual([])
   })
+})
 
-  it('AC-7: with payments.provider changed to stripe, `npx nymbal dev --api-only` on a free port exits non-zero printing `npm install @nymbalhq/adapter-stripe stripe`', async () => {
+const STRIPE_PACKAGE = '@nymbalhq/payments-stripe'
+
+/** The scaffold's config with Stripe payments in place of native ones. */
+function withStripe(original: string): string {
+  return original.replace(
+    /payments:\s*\{\s*provider:\s*'native'\s*\}/,
+    "payments: { provider: 'stripe', config: { secretKey: 'sk_test_adapters', webhookSecret: 'whsec_adapters' } }",
+  )
+}
+
+/** The add and remove commands of the package manager the project's package.json records. */
+function packageManagerCommands(): { command: string; add: string[]; remove: string[] } {
+  const pm = manifest(join(DIR, 'package.json')).packageManager?.split('@')[0] ?? 'npm'
+  return pm === 'npm'
+    ? { command: 'npm', add: ['install'], remove: ['uninstall'] }
+    : { command: pm, add: ['add'], remove: ['remove'] }
+}
+
+/** Starts `npx nymbal dev --api-only` on `port` in the project; the returned stop kills its process group. */
+function serveApi(port: number): { output: () => string; stop: () => void } {
+  const env = { ...process.env }
+  for (const key of Object.keys(env)) {
+    if (
+      key === 'npm_config_user_agent' ||
+      key === 'npm_execpath' ||
+      key.startsWith('npm_lifecycle_')
+    ) {
+      delete env[key]
+    }
+  }
+  const child = spawn('npx', ['nymbal', 'dev', '--api-only', '--port', String(port)], {
+    cwd: DIR,
+    env,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()))
+  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()))
+  return {
+    output: () => output,
+    stop: () => {
+      try {
+        process.kill(-child.pid!, 'SIGKILL')
+      } catch {
+        // already gone
+      }
+    },
+  }
+}
+
+const TYPES_PACKAGE = '@nymbalhq/types'
+
+/**
+ * Run in the project's Node: Stripe's adapter built for the wrong slot, and whether what it throws is the `ConfigError`
+ * the project's own @nymbalhq/types exports, as the kernel's `instanceof` checks see it.
+ */
+const WRONG_SLOT_CHECK = [
+  `import { ConfigError } from '${TYPES_PACKAGE}'`,
+  `import { createAdapter } from '${STRIPE_PACKAGE}'`,
+  'let result = { thrown: false }',
+  'try {',
+  "  await createAdapter({ slot: 'email', env: {}, config: {} })",
+  '} catch (error) {',
+  '  result = { thrown: true, configError: error instanceof ConfigError, code: error?.code ?? null }',
+  '}',
+  'console.log(`WRONG-SLOT ${JSON.stringify(result)}`)',
+].join('\n')
+
+// AC-7: an adapter installs by its bare name, with no version to match the kernel's, and adds no second
+// @nymbalhq/types: it peers the project's, so an error it throws is the class the kernel checks for, and the store
+// boots on it. Last in the file: it installs Stripe's SDK, which AC-7 above holds a fresh project never has, and
+// removes both packages again when it is done.
+describe("AC-7: an adapter installed by name shares the project's @nymbalhq/types", () => {
+  it("AC-7: with payments.provider stripe, `nymbal dev --api-only` exits printing `npm install @nymbalhq/payments-stripe stripe`; after that install, with no version, one copy of @nymbalhq/types is installed (counted by realpath, not by version), the adapter peers it and does not depend on it, its wrong-slot error is instanceof the project's ConfigError, and GET /health answers 200", async () => {
     const path = join(DIR, 'nymbal.config.ts')
     const original = readFileSync(path, 'utf8')
-    const edited = original.replace(
-      /payments:\s*\{\s*provider:\s*'native'\s*\}/,
-      "payments: { provider: 'stripe', config: { secretKey: 'sk_test_adapters', webhookSecret: 'whsec_adapters' } }",
-    )
+    const edited = withStripe(original)
     expect(edited, 'the scaffold config names native payments').not.toBe(original)
+    const copies = installedCopies(DIR, TYPES_PACKAGE)
+    expect(copies, 'one installed copy of @nymbalhq/types').toHaveLength(1)
+    const typesVersion = manifest(copies[0]!).version ?? ''
+    const pm = packageManagerCommands()
+    let server: { output: () => string; stop: () => void } | undefined
     try {
       writeFileSync(path, edited)
-      const port = await freePort()
-      const run = await runInProject(
+      const missing = await runInProject(
         'npx',
-        ['nymbal', 'dev', '--api-only', '--port', String(port)],
+        ['nymbal', 'dev', '--api-only', '--port', String(await freePort())],
         60_000,
       )
 
-      expect(run.timedOut, `still serving after 60 s:\n${run.output.slice(-2000)}`).toBe(false)
-      expect(run.code).not.toBe(0)
-      expect(run.output).toContain('npm install @nymbalhq/adapter-stripe stripe')
+      expect(missing.timedOut, `still serving after 60 s:\n${missing.output.slice(-2000)}`).toBe(
+        false,
+      )
+      expect(missing.code).not.toBe(0)
+      expect(missing.output).toContain(`npm install ${STRIPE_PACKAGE} stripe`)
+
+      // The install line as printed: the adapter's name, no version.
+      const install = await runInProject(pm.command, [...pm.add, STRIPE_PACKAGE, 'stripe'], 180_000)
+      expect(install.code, install.output.slice(-2000)).toBe(0)
+
+      const adapter = manifest(join(DIR, 'node_modules', STRIPE_PACKAGE, 'package.json'))
+      expect(adapter.dependencies?.[TYPES_PACKAGE], 'the adapter depends on @nymbalhq/types').toBe(
+        undefined,
+      )
+      expect(
+        semver.satisfies(typesVersion, adapter.peerDependencies?.[TYPES_PACKAGE] ?? ''),
+        `installed ${TYPES_PACKAGE} ${typesVersion} against the adapter's peer ${adapter.peerDependencies?.[TYPES_PACKAGE]}`,
+      ).toBe(true)
+      expect(adapter.peerDependencies?.[TYPES_PACKAGE]).toBe(`^${typesVersion}`)
+      // The install added no copy, not even one at the same version: the one copy is the one there before.
+      expect(installedCopies(DIR, TYPES_PACKAGE)).toEqual(copies)
+
+      const check = await runInProject(
+        'node',
+        ['--input-type=module', '-e', WRONG_SLOT_CHECK],
+        60_000,
+      )
+      const line = check.output.split('\n').find((l) => l.startsWith('WRONG-SLOT '))
+      expect(line, check.output.slice(-2000)).toMatch(/^WRONG-SLOT /)
+      expect(JSON.parse(line!.slice('WRONG-SLOT '.length))).toEqual({
+        thrown: true,
+        configError: true,
+        code: 'adapter.wrong_slot',
+      })
+
+      const port = await freePort()
+      server = serveApi(port)
+      const served = server
+      await vi.waitFor(
+        async () => {
+          const res = await fetch(`http://localhost:${port}/health`)
+          expect(res.status, served.output().slice(-2000)).toBe(200)
+        },
+        { timeout: 90_000, interval: 500 },
+      )
     } finally {
+      server?.stop()
       writeFileSync(path, original)
+      await runInProject(pm.command, [...pm.remove, STRIPE_PACKAGE, 'stripe'], 180_000)
     }
-  }, 90_000)
+  }, 480_000)
 })

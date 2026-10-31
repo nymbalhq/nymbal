@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
-import { adminToken, orderNumberOf, ownProduct } from '../support/checkout'
+import { adminToken, ownProduct } from '../support/checkout'
 import { csrf } from '../support/csrf'
 import { formReady, signIn, submitSignInForm } from '../support/sign-in'
 
@@ -30,6 +30,17 @@ function newShopper(): Shopper {
 
 const onAccountHome = (url: URL): boolean => url.pathname.replace(/\/$/, '') === '/account'
 const onLogin = (url: URL): boolean => url.pathname.replace(/\/$/, '') === '/account/login'
+/** The account's order page, where a signed-in checkout lands: `/account/orders/<n>`, no key. */
+const onAccountOrder = (url: URL): boolean => /^\/account\/orders\/[^/]+\/?$/.test(url.pathname)
+
+function accountOrderNumberOf(page: Page): string {
+  const url = new URL(page.url())
+  const match = /^\/account\/orders\/([^/]+)\/?$/.exec(url.pathname)
+  if (match === null) throw new Error(`not on an account order page: ${page.url()}`)
+  if (url.searchParams.has('key'))
+    throw new Error(`the account order page carries a key: ${page.url()}`)
+  return decodeURIComponent(match[1]!)
+}
 
 /** Registers through the storefront's own form, so the token is wherever that template keeps it. */
 async function register(page: Page, shopper: Shopper): Promise<void> {
@@ -125,14 +136,14 @@ test.describe('Signed-in account', () => {
     await page.getByTestId('shipping-country').fill('GB')
     await page.getByTestId('shipping-continue').click()
     await page.getByTestId('place-order').click()
-    await page.waitForURL(/\/order\//, { timeout: 20_000 })
-    const confirmation = (await page.getByTestId('order-number').innerText()).trim()
-    const orderNumber = /(?:NYM|INT)-[A-Za-z0-9-]+/.exec(confirmation)?.[0]
-    expect(orderNumber, confirmation).toBeTruthy()
+    // A signed-in checkout lands on the account's own order page, with no key in its URL.
+    await page.waitForURL(onAccountOrder, { timeout: 20_000 })
+    const orderNumber = accountOrderNumberOf(page)
+    await expect(page.getByTestId('order-detail')).toContainText(orderNumber, { timeout: 10_000 })
 
     // Orders: the list shows that order number, and it opens by number to its detail.
     await page.goto('/account/orders')
-    await expect(page.getByTestId('orders-list')).toContainText(orderNumber!, { timeout: 10_000 })
+    await expect(page.getByTestId('orders-list')).toContainText(orderNumber, { timeout: 10_000 })
     await page.getByTestId(`order-${orderNumber}`).click()
     await page.waitForURL(
       (url) => url.pathname.replace(/\/$/, '') === `/account/orders/${orderNumber}`,
@@ -141,7 +152,7 @@ test.describe('Signed-in account', () => {
       },
     )
     const detail = page.getByTestId('order-detail')
-    await expect(detail).toContainText(orderNumber!, { timeout: 10_000 })
+    await expect(detail).toContainText(orderNumber, { timeout: 10_000 })
     await expect(detail).toContainText(productName)
     await expect(detail).toContainText(shipPostal)
   })
@@ -353,8 +364,8 @@ async function placeSignedIn(
   await page.getByTestId('shipping-country').fill('GB')
   await page.getByTestId('shipping-continue').click()
   await page.getByTestId('place-order').click()
-  await page.waitForURL(/\/order\//, { timeout: 20_000 })
-  return { orderNumber: orderNumberOf(page), productName, addressLine1 }
+  await page.waitForURL(onAccountOrder, { timeout: 20_000 })
+  return { orderNumber: accountOrderNumberOf(page), productName, addressLine1 }
 }
 
 test.describe('Another shopper’s order', () => {

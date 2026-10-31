@@ -14,7 +14,9 @@ import type {
   StoreCapabilities,
 } from '@nymbalhq/types'
 
-const API_URL = import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
+// Read at run time first: `nymbal start` gives the API's address when it starts the built storefront.
+const API_URL =
+  process.env.NYMBAL_API_URL ?? import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
 export async function fetchProducts(params?: {
   limit?: number
@@ -106,16 +108,24 @@ export async function fetchCategories(): Promise<Category[]> {
 }
 
 /**
- * The order its key opens, `key` being the confirmation URL's `?key=`. Null on a 404, which the API answers alike for
- * an unknown number and for an order read without its key; rejects when the API fails, so a failed read is a 500 and
+ * The order its key opens, `key` being the confirmation URL's `?key=`. `'expired'` when the API says the key has
+ * expired, so the page can ask for the order's email, which the browser sends itself: a read from this server would
+ * count every shopper's tries under the server's one address. Null on any other 404, which the API answers alike for
+ * an unknown number and an order read without its key; rejects when the API fails, so a failed read is a 500 and
  * never a not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
  */
-export async function fetchOrder(orderNumber: string, key?: string): Promise<ShopperOrder | null> {
+export async function fetchOrder(
+  orderNumber: string,
+  key?: string,
+): Promise<ShopperOrder | 'expired' | null> {
   const path = `/api/orders/${encodeURIComponent(orderNumber)}`
   const res = await fetch(`${API_URL}${path}`, {
     headers: key ? { [ORDER_KEY_HEADER]: key } : {},
   })
-  if (res.status === 404) return null
+  if (res.status === 404) {
+    const refusal = (await res.json().catch(() => null)) as { error?: { code?: string } } | null
+    return refusal?.error?.code === 'orders.key_expired' ? 'expired' : null
+  }
   if (!res.ok) throw new ApiUnavailableError(`GET ${path} answered ${res.status}`)
   const envelope = (await res.json()) as { data?: ShopperOrder | null }
   if (!envelope.data) throw new ApiUnavailableError(`GET ${path} answered no data`)

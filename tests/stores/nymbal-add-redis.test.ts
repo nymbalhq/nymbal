@@ -16,6 +16,7 @@ import {
   type DoctorLine,
 } from '../support/doctor'
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
+import { holdWorkspace } from '../support/workspace-lock'
 
 // A fresh Astro scaffold, made the scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with
 // --no-install, then `pnpm install`), runs on Redis after `nymbal add redis` alone. With REDIS_URL and a prefix of
@@ -28,7 +29,7 @@ import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 // Needs `pnpm build` and Redis (NYMBAL_TEST_REDIS_URL).
 //
 // AC-7 and AC-5 (a) on the same scaffold, the one place the Redis packages are in a project's own node_modules: after
-// `nymbal add redis`, `nymbal doctor` with REDIS_URL at a closed port exits 1, its `primitive documentStore` line is
+// `nymbal add redis`, `nymbal doctor` with REDIS_URL at a closed port exits 1, its `primitive document-store` line is
 // down naming redis and the host:port, and every other check still runs, with the names of the healthy run; with the
 // composed Redis it exits 0. `nymbal dev --api-only` there prints the summary naming the `redis` document store and no
 // DEBUG line. The recipe's variable is REDIS_URL.
@@ -60,6 +61,9 @@ interface ProductDoc {
 
 let lockfile: Buffer | null = null
 let created = false
+let release: (() => void) | null = null
+// The other scaffold store tests install into the same workspace: wait for theirs to finish.
+const LOCK_WAIT_MS = 1_200_000
 let api: ChildProcess | null = null
 let base = ''
 
@@ -166,6 +170,7 @@ async function stopApi(): Promise<void> {
 }
 
 beforeAll(async () => {
+  release = await holdWorkspace(LOCK_WAIT_MS)
   if (existsSync(DIR)) {
     throw new Error(
       `${DIR} exists: remove it first (this test scaffolds it and deletes it afterwards)`,
@@ -189,19 +194,23 @@ beforeAll(async () => {
   const installed = await sh('pnpm', ['install', '--no-frozen-lockfile', '--prefer-offline'], DIR)
   if (installed.code !== 0)
     throw new Error(`pnpm install failed:\n${installed.output.slice(-4000)}`)
-}, 600_000)
+}, LOCK_WAIT_MS + 600_000)
 
 afterAll(async () => {
-  await stopApi()
-  await deleteUnder(redisUrl, prefix)
-  if (created) rmSync(DIR, { recursive: true, force: true })
-  if (lockfile !== null && !readFileSync(LOCKFILE).equals(lockfile))
-    writeFileSync(LOCKFILE, lockfile)
-  // The install also re-linked the workspace's node_modules for the scaffold; put them back to the lockfile.
-  if (created) {
-    const synced = await sh('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], REPO)
-    if (synced.code !== 0)
-      throw new Error(`pnpm install --frozen-lockfile failed:\n${synced.output.slice(-4000)}`)
+  try {
+    await stopApi()
+    await deleteUnder(redisUrl, prefix)
+    if (created) rmSync(DIR, { recursive: true, force: true })
+    if (lockfile !== null && !readFileSync(LOCKFILE).equals(lockfile))
+      writeFileSync(LOCKFILE, lockfile)
+    // The install also re-linked the workspace's node_modules for the scaffold; put them back to the lockfile.
+    if (created) {
+      const synced = await sh('pnpm', ['install', '--frozen-lockfile', '--prefer-offline'], REPO)
+      if (synced.code !== 0)
+        throw new Error(`pnpm install --frozen-lockfile failed:\n${synced.output.slice(-4000)}`)
+    }
+  } finally {
+    release?.()
   }
 }, 360_000)
 
@@ -211,11 +220,11 @@ describe('AC-5: a fresh scaffold runs on Redis after `nymbal add redis`', () => 
     expect(added.code, added.output.slice(-4000)).toBe(0)
   }, 300_000)
 
-  it('AC-5: config:validate reports documentStore: redis and eventBus: redis-streams', async () => {
+  it('AC-5: config:validate reports document-store: redis and event-bus: redis-streams', async () => {
     const validated = await nymbal('config:validate')
     expect(validated.code, validated.output).toBe(0)
-    expect(validated.output).toContain('documentStore: redis')
-    expect(validated.output).toContain('eventBus: redis-streams')
+    expect(validated.output).toContain('document-store: redis')
+    expect(validated.output).toContain('event-bus: redis-streams')
   }, 60_000)
 
   it('AC-5: migrate, seed and dev --api-only start, and every listed product is a document under the prefix', async () => {
@@ -320,14 +329,14 @@ describe('AC-7: nymbal doctor and the dev summary on the scaffold after `nymbal 
 
   const names = (lines: DoctorLine[]) => lines.map((l) => l.name)
 
-  it('AC-7, AC-5 (a): with REDIS_URL at a closed port, doctor exits 1 and `primitive documentStore` is down naming redis and the host:port', async () => {
+  it('AC-7, AC-5 (a): with REDIS_URL at a closed port, doctor exits 1 and `primitive document-store` is down naming redis and the host:port', async () => {
     const port = await closedPort()
     const run = await sh(process.execPath, [bin(), 'doctor'], DIR, {
       ...storeEnv(),
       REDIS_URL: `redis://127.0.0.1:${port}`,
     })
     closed = { ...run, port }
-    const documentStore = doctorLines(run.output).find((l) => l.name === 'primitive documentStore')
+    const documentStore = doctorLines(run.output).find((l) => l.name === 'primitive document-store')
 
     expect(run.code, run.output.slice(-4000)).toBe(1)
     expect(documentStore?.status).toBe('down')
@@ -360,7 +369,7 @@ describe('AC-7: nymbal doctor and the dev summary on the scaffold after `nymbal 
       out.slice(-4000),
     ).toEqual([])
     expect(
-      linesNaming(out, 'documentStore', 'redis').length,
+      linesNaming(out, 'document-store', 'redis').length,
       out.slice(-4000),
     ).toBeGreaterThanOrEqual(1)
   }, 180_000)

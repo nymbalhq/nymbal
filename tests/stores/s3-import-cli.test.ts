@@ -6,10 +6,11 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { install, workspace } from '../support/project'
 import { anonymousGet, createPublicBucket, type TestBucket } from '../support/s3'
 import { startWooCommerceServer, type WooCommerceServer } from '../support/woocommerce-server'
 
-// AC-5: through the built CLI, a WooCommerce import into a store whose config sets only `media: 's3'` serves every
+// AC-5: through the built CLI, a WooCommerce import into a store whose config sets only `media: { provider: 's3' }` serves every
 // product image from the bucket. The bucket, endpoint and public URL reach the store through S3_BUCKET, S3_ENDPOINT
 // and S3_PUBLIC_URL only, and the credentials through AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (the SDK's chain), so
 // every fallback is exercised. The public URL names the same MinIO under its other loopback name, so a URL built from
@@ -49,7 +50,10 @@ afterAll(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-/** A project with only `infrastructure` set beyond the required blocks; its migrations are the kernel's. */
+/**
+ * A project with only `infrastructure` set beyond the required blocks; its migrations are the kernel's, and its
+ * node_modules holds the S3 media package when the media block names s3.
+ */
 function project(infrastructure: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 's3-cli-'))
   dirs.push(dir)
@@ -76,6 +80,8 @@ function project(infrastructure: Record<string, unknown>): string {
     `export default ${JSON.stringify(config, null, 2)}\n`,
   )
   symlinkSync(MIGRATIONS, join(dir, 'migrations'), 'dir')
+  const media = infrastructure['media'] as { provider?: string } | undefined
+  if (media?.provider === 's3') install(dir, workspace('@nymbalhq/media-s3'))
   return dir
 }
 
@@ -198,9 +204,9 @@ describe.runIf(process.env['NYMBAL_NIGHTLY'])(
     it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
       const dir = project({
         commandStore: 'sqlite',
-        documentStore: 'in-memory',
-        eventBus: 'in-process',
-        media: 's3',
+        documentStore: { provider: 'in-memory' },
+        eventBus: { provider: 'in-process' },
+        media: { provider: 's3' },
       })
       const publicUrl = `${otherLoopback(bucket.endpoint)}/${bucket.name}`
       const env = envFor(dir, {
@@ -236,8 +242,8 @@ describe.runIf(process.env['NYMBAL_NIGHTLY'])(
     it('AC-5: the same import with the default local-fs keeps /imported-media/... URLs, each a file under public/imported-media holding its source image’s bytes', async () => {
       const dir = project({
         commandStore: 'sqlite',
-        documentStore: 'in-memory',
-        eventBus: 'in-process',
+        documentStore: { provider: 'in-memory' },
+        eventBus: { provider: 'in-process' },
       })
       const env = envFor(dir)
 

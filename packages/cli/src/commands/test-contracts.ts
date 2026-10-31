@@ -3,8 +3,11 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { findConfigFile, loadConfig } from '@nymbalhq/config'
+import { findConfigFile, loadConfig, slotFolder, type NymbalConfig } from '@nymbalhq/config'
+import { checkAdapterModule, resolveChoice } from '@nymbalhq/platform'
+import type { Slot } from '@nymbalhq/types'
 import { isInstalled } from '../recipes/holders.js'
+import { slotNamed } from '../slot-names.js'
 
 /** A reason `test:contracts --package` cannot run, printed as its one line. */
 export class CertifyError extends Error {}
@@ -52,34 +55,61 @@ function resolveFrom(project: string, specifier: string, name: string, install: 
   }
 }
 
-/** The `config` record of the project's commerce slot that names `pkg`, or undefined when none does. */
-async function slotOptions(
+interface SlotBlock {
+  provider: string
+  package?: string | undefined
+  config?: Record<string, unknown> | undefined
+}
+
+/** Every slot of the config with its block: the commerce slots, the infrastructure blocks, and security. */
+function slotBlocks(config: NymbalConfig): Array<[Slot, SlotBlock]> {
+  const { commerce, infrastructure, security } = config
+  // `orders` sits beside the slots and is settings, not a slot.
+  const slots = Object.entries(commerce).filter(([name]) => name !== 'orders')
+  return [
+    ...(slots as Array<[Slot, SlotBlock]>),
+    ['documentStore', infrastructure.documentStore],
+    ['eventBus', infrastructure.eventBus],
+    ['media', infrastructure.media],
+    [
+      'security',
+      { provider: security.adapter, package: security.package, config: security.config },
+    ],
+  ]
+}
+
+/**
+ * The project's slot that loads `pkg`, as the kernel resolves it: its `package` names it (on a `custom` slot too), or
+ * its convention name is it. Undefined when the project has no config or no slot names the package.
+ */
+export async function pickSlot(
   project: string,
   pkg: string,
   slot: string | undefined,
-): Promise<Record<string, unknown> | undefined> {
+): Promise<{ slot: Slot; block: SlotBlock } | undefined> {
   if (findConfigFile(project) === null) return undefined
-  let commerce: Record<string, unknown>
+  let config: NymbalConfig
   try {
-    commerce = (await loadConfig(project)).config.commerce as unknown as Record<string, unknown>
+    config = (await loadConfig(project)).config
   } catch (err) {
     throw new CertifyError(`the project's config could not be loaded: ${messageOf(err)}`)
   }
-  const naming = Object.entries(commerce).filter(([, block]) => {
-    const b = block as { provider?: unknown; package?: unknown }
-    return b.provider === 'custom' && b.package === pkg
+  const naming = slotBlocks(config).filter(([name, block]) => {
+    const resolved = resolveChoice(name, block)
+    return block.package === pkg || (resolved.kind === 'package' && resolved.package === pkg)
   })
-  const picked = slot === undefined ? naming : naming.filter(([name]) => name === slot)
+  const wanted = slot === undefined ? undefined : slotNamed(slot)
+  const picked = slot === undefined ? naming : naming.filter(([name]) => name === wanted)
   if (slot !== undefined && picked.length === 0) {
-    throw new CertifyError(`no commerce slot '${slot}' with provider 'custom' names ${pkg}`)
+    throw new CertifyError(`no slot '${slot}' loads ${pkg}`)
   }
   if (picked.length > 1) {
     throw new CertifyError(
-      `${pkg} is named by the ${picked.map(([name]) => name).join(', ')} slots: pick one with --slot`,
+      `${pkg} is named by the ${picked.map(([name]) => slotFolder(name)).join(', ')} slots: pick one with --slot`,
     )
   }
-  const block = picked[0]?.[1] as { config?: Record<string, unknown> } | undefined
-  return block === undefined ? undefined : (block.config ?? {})
+  const found = picked[0]
+  return found === undefined ? undefined : { slot: found[0], block: found[1] }
 }
 
 /**
@@ -168,12 +198,20 @@ export async function certifyPackage(input: {
   } catch (err) {
     throw new CertifyError(`${pkg} could not be loaded: ${messageOf(err)}`)
   }
-  if (typeof mod.createAdapter !== 'function') {
+  const picked = await pickSlot(project, pkg, slot)
+  if (picked !== undefined) {
+    // The kernel's own check on load: a module for another slot or provider would never run there.
+    try {
+      checkAdapterModule(mod, picked.slot, picked.block.provider, pkg)
+    } catch (err) {
+      throw new CertifyError(messageOf(err))
+    }
+  } else if (typeof mod.createAdapter !== 'function') {
     throw new CertifyError(`${pkg} exports no createAdapter(options) function to certify`)
   }
   const createAdapter = mod.createAdapter as (options: unknown) => unknown
   const extra = mod.contractOptions ?? {}
-  const slotConfig = await slotOptions(project, pkg, slot)
+  const slotConfig = picked === undefined ? undefined : (picked.block.config ?? {})
   const fromSlot =
     slotConfig === undefined ? undefined : (withoutUndefined(slotConfig) as Record<string, unknown>)
   const options = fromSlot ?? extra.options ?? {}

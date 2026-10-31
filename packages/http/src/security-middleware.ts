@@ -86,7 +86,7 @@ export function createSecurityGuard(security: NymbalConfig['security']): Securit
     admit(ctx, options = {}) {
       const decision = isLogin(ctx)
         ? rateLimiter.full(ctx.path, loginKeys(ctx))
-        : rateLimiter.check(ctx.ip, ctx.path)
+        : rateLimiter.check(ctx.ip, ctx.path, ctx.headers)
       if (decision && !decision.allowed) {
         return applyHeaders(rateLimitResponse(decision, ctx))
       }

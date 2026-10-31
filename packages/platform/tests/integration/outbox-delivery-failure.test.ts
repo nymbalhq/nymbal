@@ -10,6 +10,7 @@ import {
 import { createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { eventRows, failPublishFor, maxSeq, type FailingBus } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
+import { unaudited } from '../support/write-audit.js'
 
 // AC-6 on SQLite: a bus publish that rejects keeps the event in the log and does not fail the committed command.
 // A later drain delivers it once; after five failed attempts it is dead and no drain hands it to the bus again.
@@ -81,18 +82,20 @@ describe('AC-6: delivery failure keeps the event and does not fail the command',
     failing = failPublishFor(k.eventBus, [EVT_PAYMENT_FAILED])
     const tag = randomUUID()
 
-    const [failedId, abandonedId] = await k.store.transaction(async () => {
-      const failed = await k.publisher.publish(EVT_PAYMENT_FAILED, {
-        paymentId: `pi_${tag}`,
-        orderId: '',
-        reason: 'card_declined',
-      })
-      const abandoned = await k.publisher.publish(EVT_CART_ABANDONED, {
-        cartId: `cart_${tag}`,
-        lastActivityAt: new Date().toISOString(),
-      })
-      return [failed.id, abandoned.id]
-    })
+    const [failedId, abandonedId] = await unaudited(() =>
+      k.store.transaction(async () => {
+        const failed = await k.publisher.publish(EVT_PAYMENT_FAILED, {
+          paymentId: `pi_${tag}`,
+          orderId: '',
+          reason: 'card_declined',
+        })
+        const abandoned = await k.publisher.publish(EVT_CART_ABANDONED, {
+          cartId: `cart_${tag}`,
+          lastActivityAt: new Date().toISOString(),
+        })
+        return [failed.id, abandoned.id]
+      }),
+    )
 
     const rows = await eventRows(raw, 'id IN (?, ?)', [failedId, abandonedId])
     expect(rows.map((r) => ({ id: r.id, delivered: r.deliveredAt != null }))).toEqual([

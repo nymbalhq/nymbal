@@ -68,6 +68,19 @@ async function apiOrder(
 /** A guest's read of its own order: the key the confirmation page's URL carries. */
 const keyHeader = (key: string) => ({ [ORDER_KEY_HEADER]: key })
 
+/** The order's id, from the admin's read: a key holder's read of the order carries none. */
+async function orderIdOf(
+  request: APIRequestContext,
+  token: string,
+  orderNumber: string,
+): Promise<string> {
+  const res = await request.get(`${API_URL}/api/admin/orders/${encodeURIComponent(orderNumber)}`, {
+    headers: { authorization: `Bearer ${token}` },
+  })
+  expect(res.status(), `GET /api/admin/orders/${orderNumber}: ${await res.text()}`).toBe(200)
+  return ((await res.json()) as { data: { id: string } }).data.id
+}
+
 /** One admin command on the order, through the admin API. */
 async function adminPost(
   request: APIRequestContext,
@@ -146,22 +159,23 @@ test.describe('The order timeline', () => {
     const { orderNumber, key } = await placeThroughCheckout(page, product, email('ac4'))
     const placed = await apiOrder(request, orderNumber, keyHeader(key))
     expect(placed.status, 'the stub captured the payment at checkout').toBe('confirmed')
+    const orderId = await orderIdOf(request, token, orderNumber)
 
-    await adminPost(request, token, placed.id, 'process')
-    await adminPost(request, token, placed.id, 'ship', {
+    await adminPost(request, token, orderId, 'process')
+    await adminPost(request, token, orderId, 'ship', {
       carrier: 'royal-mail',
       trackingNumber: `TRK-${randomUUID().slice(0, 8)}`,
     })
-    await adminPost(request, token, placed.id, 'mark-delivered')
+    await adminPost(request, token, orderId, 'mark-delivered')
     const part = Math.floor(placed.totalMinor / 4)
-    await adminPost(request, token, placed.id, 'refund', { amountMinor: part })
-    await adminPost(request, token, placed.id, 'refund', { amountMinor: part })
+    await adminPost(request, token, orderId, 'refund', { amountMinor: part })
+    await adminPost(request, token, orderId, 'refund', { amountMinor: part })
     const rest = await refundableMinor(request, token, orderNumber)
     expect(rest, 'what is left after two partial refunds').toBe(placed.totalMinor - 2 * part)
-    await adminPost(request, token, placed.id, 'refund', { amountMinor: rest })
+    await adminPost(request, token, orderId, 'refund', { amountMinor: rest })
     // The admin's routes read the command store, which holds every command's row once it answers; the served
     // timeline reads the read side, which has caught up once it has an entry for each lifecycle event in the log.
-    const lifecycle = await lifecycleKinds(request, token, placed.id)
+    const lifecycle = await lifecycleKinds(request, token, orderId)
     await expect
       .poll(async () => (await apiOrder(request, orderNumber, keyHeader(key))).timeline?.length, {
         timeout: 10_000,
@@ -192,7 +206,7 @@ test.describe('The order timeline', () => {
     expect(
       shown.map((e) => e.kind),
       'the admin history’s lifecycle events',
-    ).toEqual(await lifecycleKinds(request, token, placed.id))
+    ).toEqual(await lifecycleKinds(request, token, orderId))
   })
 
   // Kills: Next's wrapper keeping its first `entries` after `router.refresh()`, a re-render from a doc with the new
@@ -216,7 +230,7 @@ test.describe('The order timeline', () => {
     const pending = await apiOrder(request, orderNumber, keyHeader(key))
     expect(pending.status).toBe('pending')
 
-    await adminPost(request, token, pending.id, 'mark-paid')
+    await adminPost(request, token, await orderIdOf(request, token, orderNumber), 'mark-paid')
     await expect(labels).toHaveText(['Order placed', 'Payment received'], { timeout: 10_000 })
     await expect(page.getByTestId('order-heading')).toHaveText(/order confirmed/i)
     const served = await apiOrder(request, orderNumber, keyHeader(key))

@@ -5,6 +5,7 @@ import { EVT_ORDER_PAID, type TransactionalEmail } from '@nymbalhq/types'
 import { address, checkoutOf, createKernel, seedVariant, type Kernel } from '../support/kernel.js'
 import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
+import { unaudited } from '../support/write-audit.js'
 
 // AC-13 on SQLite, through the kernel's own bus and email handler: the `order-placed` email goes on payment, once per
 // order. A pending order sends nothing; its payment sends one; a second order.paid for the same order (a redelivered
@@ -54,12 +55,15 @@ describe('AC-13: one order-placed email per paid order (sqlite)', () => {
     totalMinor: number
     currency: string
   }): Promise<void> {
-    await k.publisher.publish(EVT_ORDER_PAID, {
-      orderId: started.orderId,
-      paymentIntentId: started.paymentIntent.id,
-      amountMinor: started.totalMinor,
-      currency: started.currency,
-    })
+    // A provider's repeat of the payment, appended by the test itself.
+    await unaudited(() =>
+      k.publisher.publish(EVT_ORDER_PAID, {
+        orderId: started.orderId,
+        paymentIntentId: started.paymentIntent.id,
+        amountMinor: started.totalMinor,
+        currency: started.currency,
+      }),
+    )
   }
 
   const orderPlacedTo = (to: string) =>

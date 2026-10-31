@@ -257,6 +257,7 @@ export const orderAccessKeys = sqliteTable(
     keyHash: text('key_hash').notNull(),
     purpose: text('purpose', { enum: ['checkout', 'email'] }).notNull(),
     createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
   },
   (t) => ({
     keyHashIdx: uniqueIndex('order_access_keys_key_hash_idx').on(t.keyHash),
@@ -498,6 +499,49 @@ export const alertSubscriptions = sqliteTable(
   }),
 )
 
+// --- Email suppressions ----------------------------------------------------
+
+/**
+ * One row per normalised address that hard-bounced or complained, which is sent no more alert mail. The first reason
+ * stays; `event_id` is the feedback event that suppressed it.
+ */
+export const emailSuppressions = sqliteTable(
+  'email_suppressions',
+  {
+    email: text('email').primaryKey(),
+    reason: text('reason').notNull(),
+    eventId: text('event_id').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    reasonCheck: check(
+      'email_suppressions_reason',
+      sql`${t.reason} IN ('hard_bounce', 'complaint')`,
+    ),
+  }),
+)
+
+// --- Order shipments -------------------------------------------------------
+
+/**
+ * The parcel each shipped order went out in, written by the ship action: how a carrier's tracking update finds its
+ * orders. `tracking_number` is normalised; one parcel may carry two orders, so it is not unique.
+ */
+export const orderShipments = sqliteTable(
+  'order_shipments',
+  {
+    orderId: text('order_id')
+      .primaryKey()
+      .references(() => orders.id),
+    carrier: text('carrier').notNull(),
+    trackingNumber: text('tracking_number').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => ({
+    trackingNumberIdx: index('order_shipments_tracking_number_idx').on(t.trackingNumber),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -518,4 +562,6 @@ export const schema = {
   settings,
   auditEntries,
   alertSubscriptions,
+  emailSuppressions,
+  orderShipments,
 }

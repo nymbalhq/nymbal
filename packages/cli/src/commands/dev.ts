@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
 import { KNOWN_PROVIDERS, type NymbalConfig } from '@nymbalhq/config'
-import type { CommerceSlot } from '@nymbalhq/types'
+import { ConfigError, type CommerceSlot } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
 import { createApp, createLogger, runSeed, sqliteFile, type NymbalApp } from '@nymbalhq/platform'
 import { createHttpServer } from '@nymbalhq/http'
@@ -168,6 +168,11 @@ export const devCommand = defineCommand({
       version,
       logger,
       ...(loaded.adapters !== undefined && { adapters: loaded.adapters }),
+    }).catch((error: unknown) => {
+      // A config mistake is the store developer's to fix: its message says how, a stack would bury it.
+      if (!(error instanceof ConfigError)) throw error
+      process.stderr.write(`${pc.red(error.message)}\n`)
+      process.exit(1)
     })
     const { platform } = app
 
