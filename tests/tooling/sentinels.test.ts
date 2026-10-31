@@ -515,6 +515,11 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/services/category-service.ts',
       marks: /publisher\.publish\(EVT_CATEGORY_UPDATED, \{ category: fresh \}\)/,
     },
+    I111: {
+      kind: 'injected',
+      path: 'packages/platform/src/repositories/order-sequence.ts',
+      marks: /set: \{ nextValue: sql`\$\{sqliteSchema\.orderSequences\.nextValue\} \+ 1` \}/,
+    },
   }
 
   function loadAll(): Array<{ file: string; sentinel: Sentinel }> {
@@ -527,7 +532,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I110, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I111, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {
