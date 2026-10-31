@@ -1,69 +1,47 @@
 // Reads: packages/adapters/**, packages/platform/package.json, packages/stack/package.json, packages/platform/src/**
+// Reads: packages/config/src/adapter-names.ts, registry/adapters.json
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ROOT as REPO_ROOT } from './adapter-table'
+import { ADAPTER_CATALOGUE, isCommerceSlot } from '../../packages/config/src/adapter-names'
+import { FIRST_PARTY_ADAPTERS, ROOT as REPO_ROOT } from './adapter-table'
 import type { Manifest } from './workspace-manifests'
 
-// AC-6: the kernel's manifest holds no provider SDK and links the seven adapter packages for its own tests; the stack
-// lists no adapter package; each adapter package peers its own SDK (one that talks HTTP itself peers nothing) and
-// @nymbalhq/types, and never names the kernel; no kernel source file imports a provider SDK. PUBLISHED_DIRS
-// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) list the seven as well.
+// AC-6: the kernel's manifest holds no commerce provider SDK and links every first-party adapter package for its own
+// tests; the stack lists no adapter package; each adapter package peers the SDK its catalogue entry names (one that
+// talks HTTP itself peers nothing) and @nymbalhq/types, and never names the kernel; no kernel source file imports a
+// commerce provider SDK. The adapters are the first-party ones registry/adapters.json lists; PUBLISHED_DIRS
+// (workspace-names.test.ts) and GUARDED_PACKAGES (architecture-guard.test.ts) read the same list.
 
 interface PackageManifest extends Manifest {
   optionalDependencies?: Record<string, string>
 }
 
-/** Each adapter package, its directory and the SDK range it peers. */
-const ADAPTERS = [
-  {
-    dir: 'packages/adapters/payments/stripe',
-    name: '@nymbalhq/payments-stripe',
-    sdk: 'stripe',
-    range: '^17.4.0',
-  },
-  {
-    dir: 'packages/adapters/ai/anthropic',
-    name: '@nymbalhq/ai-anthropic',
-    sdk: '@anthropic-ai/sdk',
-    range: '^0.39.0',
-  },
-  {
-    dir: 'packages/adapters/email/smtp',
-    name: '@nymbalhq/email-smtp',
-    sdk: 'nodemailer',
-    range: '^6.9.16',
-  },
-  {
-    dir: 'packages/adapters/email/mailgun',
-    name: '@nymbalhq/email-mailgun',
-    sdk: 'nodemailer',
-    range: '^6.9.16',
-  },
-  {
-    dir: 'packages/adapters/email/resend',
-    name: '@nymbalhq/email-resend',
-    sdk: 'nodemailer',
-    range: '^6.9.16',
-  },
-  {
-    dir: 'packages/adapters/email/ses',
-    name: '@nymbalhq/email-ses',
-    sdk: 'nodemailer',
-    range: '^6.9.16',
-  },
-] as const
+/** Each first-party adapter, with the SDK its catalogue entry says it peers (none for one that talks HTTP itself). */
+const ADAPTERS = FIRST_PARTY_ADAPTERS.map((a) => ({
+  ...a,
+  sdk: (ADAPTER_CATALOGUE[a.slot] as (typeof ADAPTER_CATALOGUE)[typeof a.slot] | undefined)?.[
+    a.provider
+  ]?.sdk,
+}))
 
-/** Each adapter package that peers no SDK: it only verifies and maps a provider's webhooks. */
-const SDK_FREE_ADAPTERS = [
-  { dir: 'packages/adapters/shipping/easypost', name: '@nymbalhq/shipping-easypost' },
-] as const
+/** The exact SDK range an adapter peers, where it is pinned, by package. */
+const SDK_RANGES: Readonly<Record<string, string>> = {
+  '@nymbalhq/payments-stripe': '^17.4.0',
+  '@nymbalhq/ai-anthropic': '^0.39.0',
+  '@nymbalhq/email-smtp': '^6.9.16',
+  '@nymbalhq/email-mailgun': '^6.9.16',
+  '@nymbalhq/email-resend': '^6.9.16',
+  '@nymbalhq/email-ses': '^6.9.16',
+}
 
-const SDKS: readonly string[] = ADAPTERS.map((a) => a.sdk)
-const ADAPTER_NAMES: readonly string[] = [
-  ...ADAPTERS.map((a) => a.name),
-  ...SDK_FREE_ADAPTERS.map((a) => a.name),
+/** The commerce adapters' SDKs, which no kernel or stack install may pull in (the kernel's own Postgres store peers pg). */
+const SDKS: readonly string[] = [
+  ...new Set(
+    ADAPTERS.flatMap((a) => (isCommerceSlot(a.slot) && a.sdk !== undefined ? [a.sdk] : [])),
+  ),
 ]
+const ADAPTER_NAMES: readonly string[] = ADAPTERS.map((a) => a.name)
 
 const DEPENDENCY_FIELDS = [
   'dependencies',
@@ -126,27 +104,46 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     ).toEqual([])
   })
 
-  it('AC-6: the kernel links the seven adapter packages for its own tests, as devDependencies at workspace:*', () => {
+  it('AC-6: the kernel links every first-party adapter package for its own tests, as devDependencies at workspace:*', () => {
     const platform = read('packages/platform')
 
     expect(ADAPTER_NAMES.filter((n) => platform.devDependencies?.[n] !== 'workspace:*')).toEqual([])
   })
 
-  for (const adapter of ADAPTERS) {
-    it(`AC-6: ${adapter.name} peers ${adapter.sdk} ${adapter.range} and @nymbalhq/types, and not the kernel`, () => {
+  for (const { sdk, ...adapter } of ADAPTERS.flatMap((a) =>
+    a.sdk === undefined ? [] : [{ ...a, sdk: a.sdk }],
+  )) {
+    it(`AC-6: ${adapter.name} peers ${sdk}, its catalogue SDK, and @nymbalhq/types, and not the kernel`, () => {
       expect(existsSync(join(REPO_ROOT, adapter.dir, 'package.json')), adapter.dir).toBe(true)
       const m = read(adapter.dir)
 
       expect(m.name).toBe(adapter.name)
-      expect(m.peerDependencies?.[adapter.sdk]).toBe(adapter.range)
+      expect(
+        Object.keys(m.peerDependencies ?? {}).filter((n) => !n.startsWith('@nymbalhq/')),
+      ).toEqual([sdk])
       expect(m.peerDependencies?.['@nymbalhq/types']).toMatch(TYPES_FLOOR)
       expect(listed(m, DEPENDENCY_FIELDS).filter((n) => n === '@nymbalhq/platform')).toEqual([])
       // The SDK is the project's to install: a regular dependency would put it in every tree that has the package.
-      expect(listed(m, ['dependencies', 'optionalDependencies']).filter(isSdk)).toEqual([])
+      expect(
+        listed(m, ['dependencies', 'optionalDependencies']).filter(
+          (n) => n === sdk || n.startsWith(`${sdk}/`) || isSdk(n),
+        ),
+      ).toEqual([])
     })
   }
 
-  for (const adapter of SDK_FREE_ADAPTERS) {
+  for (const [name, range] of Object.entries(SDK_RANGES)) {
+    it(`AC-6: ${name} peers its catalogue SDK at ${range}`, () => {
+      const adapter = ADAPTERS.find((a) => a.name === name)
+      const m = adapter === undefined ? undefined : read(adapter.dir)
+
+      expect(adapter?.sdk === undefined ? undefined : m?.peerDependencies?.[adapter.sdk]).toBe(
+        range,
+      )
+    })
+  }
+
+  for (const adapter of ADAPTERS.filter((a) => a.sdk === undefined)) {
     it(`AC-6: ${adapter.name} peers @nymbalhq/types alone, not the kernel, and lists no provider SDK`, () => {
       expect(existsSync(join(REPO_ROOT, adapter.dir, 'package.json')), adapter.dir).toBe(true)
       const m = read(adapter.dir)
@@ -158,7 +155,7 @@ describe('AC-6: provider SDKs live in adapter packages, never in the kernel', ()
     })
   }
 
-  it('AC-6: no file under packages/platform/src imports stripe, @anthropic-ai/sdk or nodemailer', () => {
+  it('AC-6: no file under packages/platform/src imports the SDK of a commerce adapter', () => {
     const root = join(REPO_ROOT, 'packages', 'platform', 'src')
     const files = sourceFiles(root)
     expect(files.length).toBeGreaterThan(0)

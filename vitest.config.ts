@@ -14,6 +14,8 @@ const SLOW_TOOLING = [
   'tests/tooling/harness-input-selection.test.ts',
   'tests/tooling/gate-base-env.test.ts',
   'tests/tooling/registry-run.test.ts',
+  'tests/tooling/new-adapter-scaffold.test.ts',
+  'tests/tooling/adapter-list.test.ts',
 ]
 
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock

@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process'
-import { relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Slot } from '../../packages/types/src/index'
 
-// The first-party adapters by slot: where each lived, where it lives now and its name, and the workspace as pnpm reads
-// it from the disk. This module imports nothing from the workspace expander, so the tests built on it judge that
-// expander instead of trusting it.
+// The first-party adapters by slot: the ones that moved (where each lived, where it lives now and its name), every one
+// registry/adapters.json lists, and the workspace as pnpm reads it from the disk. This module imports nothing from the
+// workspace expander, so the tests built on it judge that expander instead of trusting it.
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
@@ -166,16 +167,34 @@ export const RETIRED_NAMES: readonly string[] = MOVED_ADAPTERS.flatMap((a) =>
 /** A first-party adapter: its slot, provider, directory and package name. */
 export type FirstPartyAdapter = Pick<MovedAdapter, 'slot' | 'provider' | 'dir' | 'name'>
 
-/** Every first-party adapter: the twelve that moved, and those added at their convention home since. */
-export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = [
-  ...MOVED_ADAPTERS,
-  {
-    slot: 'search',
-    provider: 'algolia',
-    dir: 'packages/adapters/search/algolia',
-    name: '@nymbalhq/search-algolia',
-  },
-]
+interface RegistryEntry {
+  package: string
+  /** The slot as package names and folders spell it: `document-store`. */
+  slot: string
+  provider: string
+  tier: string
+}
+
+/** A slot folder back to the config's slot key: `document-store` is `documentStore`. */
+const slotKey = (folder: string): Slot =>
+  folder.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()) as Slot
+
+/**
+ * Every first-party adapter, as registry/adapters.json lists it: the one hand-kept list, so adding an adapter edits no
+ * test. Each is expected at its convention home, `packages/adapters/<slot folder>/<provider>`.
+ */
+export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = (
+  JSON.parse(readFileSync(join(ROOT, 'registry', 'adapters.json'), 'utf8')) as {
+    adapters: RegistryEntry[]
+  }
+).adapters
+  .filter((e) => e.tier === 'first-party')
+  .map((e) => ({
+    slot: slotKey(e.slot),
+    provider: e.provider,
+    dir: `packages/adapters/${e.slot}/${e.provider}`,
+    name: e.package,
+  }))
 
 export const ADAPTER_NAMES: readonly string[] = FIRST_PARTY_ADAPTERS.map((a) => a.name)
 

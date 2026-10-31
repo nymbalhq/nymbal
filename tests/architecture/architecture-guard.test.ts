@@ -1,5 +1,5 @@
 // Reads: packages/platform/src/**, packages/sdk/src/**, packages/types/src/**, packages/config/src/**
-// Reads: packages/http/src/**, packages/adapters/**
+// Reads: packages/http/src/**, packages/adapters/**, registry/adapters.json
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'

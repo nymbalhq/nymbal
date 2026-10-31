@@ -1,4 +1,4 @@
-// Reads: packages/**, pnpm-workspace.yaml, packages/config/src/adapter-names.ts
+// Reads: packages/**, pnpm-workspace.yaml, packages/config/src/adapter-names.ts, registry/adapters.json
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ import {
   pnpmPackageDirs,
 } from './adapter-table'
 
-// AC-2: each first-party adapter (the twelve that moved, and those added since) is a workspace member at
+// AC-2: each first-party adapter registry/adapters.json lists is a workspace member at
 // packages/adapters/<slotFolder>/<provider>/, named @nymbalhq/<slotFolder>-<provider>, with `repository.directory` its
 // own directory; none of the moved adapters' old directories is left, and every other package stays at packages/<name>. The slot folder is slotFolder of a catalogue
 // slot, and the provider one of that slot's catalogue entries.
@@ -50,7 +50,7 @@ const tracked = (dir: string): string[] =>
     .filter(Boolean)
 
 describe('AC-2: the adapters live by slot', () => {
-  it('AC-2: each of the thirteen first-party adapters is a workspace member at packages/adapters/<kebab slot>/<provider>, under its convention name', () => {
+  it('AC-2: each first-party adapter the registry lists is a workspace member at packages/adapters/<kebab slot>/<provider>, under its convention name', () => {
     const byDir = new Map(pnpmMembers().map((m) => [m.dir, m.name]))
     const wrong = FIRST_PARTY_ADAPTERS.filter((a) => byDir.get(a.dir) !== a.name).map(
       (a) => `${a.dir}: ${byDir.has(a.dir) ? `named ${byDir.get(a.dir)}` : 'not a member'}`,
@@ -104,8 +104,11 @@ describe('AC-2: the adapters live by slot', () => {
         !Object.hasOwn(ADAPTER_CATALOGUE[a.slot], a.provider)
       )
     }).map((a) => `${a.dir}: slot ${a.slot} → ${slotFolder(a.slot)}, provider ${a.provider}`)
+    // The contributor's guide and its skill sit beside the slot folders: a file or a dot-directory is not a slot.
     const folders = existsSync(join(ROOT, 'packages/adapters'))
-      ? readdirSync(join(ROOT, 'packages/adapters'))
+      ? readdirSync(join(ROOT, 'packages/adapters'), { withFileTypes: true })
+          .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+          .map((e) => e.name)
       : []
     const slotFolders = new Set((Object.keys(ADAPTER_CATALOGUE) as Slot[]).map(slotFolder))
 

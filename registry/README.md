@@ -19,11 +19,13 @@ If you have built an adapter, we would rather have it here than listed from else
 slot's contract suite on every change, so when a contract changes the adapter is updated in the same pull request. It
 is released and versioned with Nymbal, and the maintainers keep it working.
 
-1. Put it at `packages/adapters/<slot>/<provider>/`, named `@nymbalhq/<slot>-<provider>`. The nearest adapter of the
-   same slot (for example `packages/adapters/email/resend/`) is a good starting point to copy.
-2. Run its slot's contract suite against it with a test under `tests/contracts/`, as the other adapters do (see
-   `tests/contracts/algolia-search.test.ts`), and make sure `pnpm test` passes.
+1. Run `pnpm new-adapter <slot> <provider>` in a clone of this repository. It copies a working adapter of the same
+   slot to `packages/adapters/<slot>/<provider>/`, named `@nymbalhq/<slot>-<provider>`, with its contract runner, and
+   lists it here. An adapter you have already published moves in with `--from <dir>`.
+2. Replace the provider calls and the fake it is tested against, and make sure `pnpm gate` passes.
 3. Open a pull request. We will help with the rest.
+
+The [guide to adding an adapter](../packages/adapters/README.md) has the details.
 
 ## Getting listed
 

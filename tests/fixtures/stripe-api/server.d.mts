@@ -17,4 +17,7 @@ export interface StripeFake {
   close(): Promise<void>
 }
 
+/** The header a delivered webhook carries its signature in. */
+export const SIGNATURE_HEADER: string
+
 export function startStripeFake(options?: StripeFakeOptions): Promise<StripeFake>

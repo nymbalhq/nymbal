@@ -7,7 +7,11 @@ import { runPaymentsContract } from '@nymbalhq/contract-tests'
 import { createStripePaymentsAdapter } from '@nymbalhq/payments-stripe'
 import { createLogger } from '@nymbalhq/platform'
 import { PaymentError } from '@nymbalhq/types'
-import { startStripeFake, type StripeFake } from '../fixtures/stripe-api/server.mjs'
+import {
+  SIGNATURE_HEADER,
+  startStripeFake,
+  type StripeFake,
+} from '../fixtures/stripe-api/server.mjs'
 
 const SECRET_KEY = 'sk_test_mock'
 const WEBHOOK_SECRET = 'whsec_test_mock'
@@ -278,7 +282,7 @@ describe('the fake Stripe API delivers the webhook a confirm causes', () => {
       req.on('end', () => {
         deliveries.push({
           rawBody: Buffer.concat(chunks).toString('utf8'),
-          signature: String(req.headers['stripe-signature'] ?? ''),
+          signature: String(req.headers[SIGNATURE_HEADER] ?? ''),
         })
         res.writeHead(200, { 'content-type': 'application/json' }).end('{"received":true}')
       })

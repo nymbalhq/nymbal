@@ -30,7 +30,8 @@
     "gate:full": "tsx scripts/gate.ts --full",
     "stack": "tsx scripts/stack.ts",
     "perf:budgets": "tsx scripts/perf-budgets.ts",
-    "registry": "tsx --no-deprecation scripts/registry/run.ts"
+    "registry": "tsx --no-deprecation scripts/registry/run.ts",
+    "new-adapter": "tsx scripts/new-adapter.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

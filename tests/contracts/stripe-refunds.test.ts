@@ -34,7 +34,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** The intent id's prefix picks Stripe's answer: ok, a card error, an invalid request, or an API error. */
+/** The intent id's prefix picks Stripe's answer: ok, a card error, an invalid request, a key refused, or an API error. */
 async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const params = new URLSearchParams(await readBody(req))
   if (req.method !== 'POST' || req.url?.split('?')[0] !== '/v1/refunds') {
@@ -62,6 +62,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       res,
       400,
       { error: { type: 'invalid_request_error', code: 'charge_already_refunded', message: 'no' } },
+      noRetry,
+    )
+    return
+  }
+  // A bad or rotated key: Stripe answers 401 (or 403 for a restricted key) with an invalid_request_error body.
+  if (intent.startsWith('pi_auth_') || intent.startsWith('pi_forbidden_')) {
+    sendJson(
+      res,
+      intent.startsWith('pi_auth_') ? 401 : 403,
+      { error: { type: 'invalid_request_error', message: 'Invalid API Key provided' } },
       noRetry,
     )
     return
@@ -177,4 +187,16 @@ describe('Stripe adapter refunds (AC-4)', () => {
     expect(refused).toBe('payment.refund_unknown')
     expect(apiError).not.toBe('payment.refund_rejected')
   }, 20_000)
+
+  it('AC-4: a key Stripe refuses (401, 403) is refund_unknown even though the body says invalid_request_error', async () => {
+    const stripe = adapter()
+    for (const prefix of ['pi_auth_', 'pi_forbidden_']) {
+      const code = await codeOf(
+        stripe.refund(`${prefix}${randomUUID()}`, 500, 'requested_by_customer', {
+          idempotencyKey: randomUUID(),
+        }),
+      )
+      expect(code, prefix).toBe('payment.refund_unknown')
+    }
+  })
 })

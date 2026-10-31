@@ -70,6 +70,10 @@ tests/
 Every adapter that can fill a slot, first-party or third-party, is listed in the
 [adapter registry](./registry/README.md), with its tier and nightly status.
 
+To add one to this repository, `pnpm new-adapter <slot> <provider>` scaffolds it from a working adapter of the same
+slot; the [guide](./packages/adapters/README.md) covers the rest. Its Claude Code skill, `new-adapter`, loads when you
+start the agent in `packages/adapters`, run `/add-dir packages/adapters`, or have it read `packages/adapters/README.md`.
+
 ## Migrating from WooCommerce
 
 ```bash

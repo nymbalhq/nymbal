@@ -30,6 +30,9 @@ const requireStripe = createRequire(
 const StripeModule = requireStripe('stripe')
 const Stripe = StripeModule.default ?? StripeModule
 
+/** The header a delivered webhook carries its signature in. */
+export const SIGNATURE_HEADER = 'stripe-signature'
+
 const DEFAULT_SECRET_KEY = 'sk_test_mock'
 const API_VERSION = '2025-02-24.acacia'
 
@@ -103,7 +106,7 @@ export async function startStripeFake(options = {}) {
     try {
       const answer = await fetch(webhookUrl, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'stripe-signature': signature },
+        headers: { 'content-type': 'application/json', [SIGNATURE_HEADER]: signature },
         body: payload,
       })
       return { ok: answer.ok, status: answer.status, body: await answer.text() }

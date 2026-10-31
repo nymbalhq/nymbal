@@ -294,7 +294,6 @@ describe('AC-3: the real manifest matches the repo', () => {
     const workspace = workspaceAdapters()
 
     expect(listed).toEqual(workspace)
-    expect(workspace).toHaveLength(13)
   })
 
   it("AC-3: its first-party entries are exactly ADAPTER_CATALOGUE's entries that are not built in", () => {

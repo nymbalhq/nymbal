@@ -1,5 +1,5 @@
 // Reads: .changeset/config.json, package.json, packages/platform/package.json, packages/adapters/*/*/package.json
-// Reads: packages/adapters/*/*/CHANGELOG.md
+// Reads: packages/adapters/*/*/CHANGELOG.md, registry/adapters.json
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -50,7 +50,7 @@ const TYPES_MAJOR = Number(read('packages/types').version?.split('.')[0])
 const LITERAL_FLOOR = /^\^(\d+)\.\d+\.\d+$/
 
 describe('AC-4: the adapters peer @nymbalhq/types and version outside the fixed group', () => {
-  it("AC-4: each of the thirteen first-party adapters peers @nymbalhq/types at a literal caret floor on the workspace types' major, has it in devDependencies at workspace:* and not in dependencies", () => {
+  it("AC-4: each first-party adapter the registry lists peers @nymbalhq/types at a literal caret floor on the workspace types' major, has it in devDependencies at workspace:* and not in dependencies", () => {
     const manifests = FIRST_PARTY_ADAPTERS.map((a) => ({ name: a.name, m: read(a.dir) }))
     expect(TYPES_MAJOR).toBeGreaterThanOrEqual(1)
     const wrong = manifests.flatMap(({ name, m }) => [

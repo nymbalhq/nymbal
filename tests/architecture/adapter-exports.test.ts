@@ -1,14 +1,14 @@
-// Reads: packages/adapters/**, packages/config/src/adapter-names.ts
+// Reads: packages/adapters/**, packages/config/src/adapter-names.ts, registry/adapters.json
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { Slot } from '../../packages/types/src/index'
 import { ADAPTER_CATALOGUE, slotFolder } from '../../packages/config/src/adapter-names'
-import { ROOT, pnpmMembers } from './adapter-table'
+import { FIRST_PARTY_ADAPTERS, ROOT, pnpmMembers } from './adapter-table'
 
 // AC-5, the architecture half: each first-party adapter at packages/adapters/<folder>/<provider> exports `slot`, the
 // slot whose slotFolder is <folder>, and `provider`, <provider>, so the kernel's check on load passes for every one of
-// them and refuses any of them on another slot.
+// them and refuses any of them on another slot; the workspace adapters are the registry's first-party ones.
 
 describe('AC-5: every first-party adapter says what it serves', () => {
   it('AC-5: each workspace adapter exports the slot and provider of its folder', async () => {
@@ -33,6 +33,6 @@ describe('AC-5: every first-party adapter says what it serves', () => {
 
     expect(seen.filter((s) => s.folder.slot === undefined).map((s) => s.dir)).toEqual([])
     expect(seen.map((s) => [s.dir, s.exported])).toEqual(seen.map((s) => [s.dir, s.folder]))
-    expect(seen.length).toBe(13)
+    expect(seen.map((s) => s.dir).sort()).toEqual(FIRST_PARTY_ADAPTERS.map((a) => a.dir).sort())
   }, 60_000)
 })

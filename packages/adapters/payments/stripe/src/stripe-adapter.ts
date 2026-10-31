@@ -63,8 +63,12 @@ function refundStatus(status: string | null): Refund['status'] {
  * a timeout, a dropped connection) leaves the outcome unknown.
  */
 function isDefiniteRefusal(err: unknown): boolean {
-  const type = (err as { type?: unknown } | null)?.type
-  return type === 'StripeCardError' || type === 'StripeInvalidRequestError'
+  const e = err as { rawType?: unknown; statusCode?: unknown } | null
+  // A refused key (401, 403) says nothing about the refund, though its body's type is invalid_request_error: the
+  // status decides first, as it does in stripe-node.
+  if (e?.statusCode === 401 || e?.statusCode === 403) return false
+  // The API's error type (`raw.type`), which does not depend on the SDK's class names.
+  return e?.rawType === 'card_error' || e?.rawType === 'invalid_request_error'
 }
 
 function toIntent(intent: Stripe.PaymentIntent): PaymentIntent {
