@@ -24,6 +24,8 @@ export interface RebuildDeps {
   pageSize?: number
   /** Called before each page is read. */
   onPage?: (page: { model: ReadModelName; table: string; page: number }) => void | Promise<void>
+  /** Awaited once every model is collected, before a model is caught up and swapped, and after its swap. */
+  onPhase?: (phase: 'collected' | 'swapped', model: ReadModelName) => void | Promise<void>
 }
 
 /** What a rebuilder reads with: the command store in pages, each page a read of its own. */
