@@ -182,7 +182,7 @@ describe('AC-6 (a): doctor writes nothing to Postgres or Redis', () => {
         expect(check('command store')?.status === 'down').toBe(!shape.postgresUp)
         // A Redis store is down exactly when Redis is; postgres-jsonb warns it is not initialized on a live Postgres, and is
         // down (not checked) when the command store it shares is.
-        const docStore = check('primitive documentStore')
+        const docStore = check('primitive document-store')
         const seen =
           docStore?.status === 'down'
             ? 'down'
@@ -222,7 +222,7 @@ describe('AC-6 (a): doctor writes nothing to Postgres or Redis', () => {
     const status = (name: string) => lines.find((l) => l.name === name)?.status
 
     expect(
-      [status('command store'), status('primitive documentStore')],
+      [status('command store'), status('primitive document-store')],
       run.out.slice(-3000),
     ).toEqual(['ok', 'ok'])
     expect(await witnessState()).toEqual(before)

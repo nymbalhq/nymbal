@@ -49,7 +49,7 @@ function made(c: Case) {
   ]
   const names = [
     'command store',
-    'primitive documentStore',
+    'primitive document-store',
     'slot payments',
     'slot email',
     'primitive media',

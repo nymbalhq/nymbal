@@ -98,6 +98,9 @@ const infoArb = fc
 const columns = (line: string) => [...line].length
 const plain = (text: string) => text.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '')
 
+/** A primitive as the summary names it: its folder name (`document-store`), not its config key. */
+const folder = (key: string) => key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+
 function hasWord(line: string, token: string): boolean {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`(^|[\\s:,()\\[\\]|=])${escaped}($|[\\s:,()\\[\\]|=…])`).test(line)
@@ -134,8 +137,8 @@ describe('AC-1: renderDevSummary', () => {
 
         for (const { name, provider } of info.primitives) {
           expect(
-            lines.filter((l) => hasWord(l, name) && hasWord(l, provider)).length,
-            `a line names ${name} with ${provider}`,
+            lines.filter((l) => hasWord(l, folder(name)) && hasWord(l, provider)).length,
+            `a line names ${folder(name)} with ${provider}`,
           ).toBeGreaterThanOrEqual(1)
         }
 
@@ -163,6 +166,31 @@ describe('AC-1: renderDevSummary', () => {
         ).toEqual([])
       }),
       { numRuns: 200 },
+    )
+  })
+})
+
+describe('AC-2: the dev summary names primitives in kebab case', () => {
+  it('AC-2: given the primitives documentStore, eventBus and media, each row leads with document-store, event-bus or media and its provider, and no line names a primitive by its camelCase key', () => {
+    fc.assert(
+      fc.property(infoArb, ({ info }) => {
+        const lines = plain(renderDevSummary(info)).split('\n')
+        const rows = info.primitives.map(({ name, provider }) =>
+          lines.filter((l) => {
+            const words = l.trim().split(/\s+/)
+            return words[0] === folder(name) && words[1] === provider
+          }),
+        )
+
+        expect(
+          rows.map((r) => r.length),
+          'one row per primitive, led by its folder name',
+        ).toEqual(info.primitives.map(() => 1))
+        expect(lines.filter((l) => hasWord(l, 'documentStore') || hasWord(l, 'eventBus'))).toEqual(
+          [],
+        )
+      }),
+      { numRuns: 50 },
     )
   })
 })

@@ -6,6 +6,7 @@ import {
   BUILT_IN,
   KNOWN_PROVIDERS,
   nymbalConfigSchema,
+  slotFolder,
   type NymbalConfig,
   type Slot,
 } from '@nymbalhq/config'
@@ -178,13 +179,14 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
- * `primitive <name>` per primitive, and `events` (the event log's dead and retrying events).
+ * `primitive <name>` per primitive, and `events` (the event log's dead and retrying events). A slot is named as its
+ * folder is (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations', 'events']
   for (const { slot, provider } of commerceSlots(config)) {
     names.push(`slot ${slot}`)
-    if (hasPackage(slot as Slot, provider)) names.push(`package ${slot}`)
+    if (hasPackage(slot as Slot, provider)) names.push(`package ${slotFolder(slot as Slot)}`)
   }
   names.push('slot security')
   if (hasPackage('security', config.security.adapter)) names.push('package security')
@@ -193,10 +195,10 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     { provider?: string } | undefined
   >
   for (const primitive of PRIMITIVES) {
-    names.push(`primitive ${primitive}`)
+    names.push(`primitive ${slotFolder(primitive)}`)
     const provider = infra[primitive]?.provider ?? (primitive === 'media' ? 'local-fs' : undefined)
     if (provider !== undefined && hasPackage(primitive, provider))
-      names.push(`package ${primitive}`)
+      names.push(`package ${slotFolder(primitive)}`)
   }
   return names.sort()
 }

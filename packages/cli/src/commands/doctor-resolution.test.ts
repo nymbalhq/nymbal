@@ -128,7 +128,7 @@ describe('AC-9: doctor reports each slot as the kernel resolves it', () => {
   it('AC-9: a typo on a commerce slot, an infrastructure slot and security is down with the suggestion and no install verb', () => {
     const typos = [
       ['package email', 'smtp'],
-      ['package documentStore', 'redis'],
+      ['package document-store', 'redis'],
       ['package security', 'cloudflare'],
     ] as const
     for (const [name, suggestion] of typos) {
@@ -149,7 +149,7 @@ describe('AC-9: doctor reports each slot as the kernel resolves it', () => {
 })
 
 describe('AC-9: a missing catalogue package is down with the install line', () => {
-  it('AC-9: documentStore redis with @nymbalhq/document-store-redis not installed: package documentStore is down with the install line of the package and ioredis', async () => {
+  it('AC-9: documentStore redis with @nymbalhq/document-store-redis not installed: package document-store is down with the install line of the package and ioredis', async () => {
     const run = await doctor(
       {
         infrastructure: {
@@ -162,7 +162,7 @@ describe('AC-9: a missing catalogue package is down with the install line', () =
       },
       {},
     )
-    const pkg = line(run, 'package documentStore')
+    const pkg = line(run, 'package document-store')
 
     expect(run.code, run.out.slice(-3000)).toBe(1)
     expect(pkg?.status).toBe('down')

@@ -38,6 +38,7 @@ import {
   slotRecipe,
   slotsSetBy,
 } from '../recipes/index.js'
+import { slotNamed } from '../slot-names.js'
 
 /** What `nymbal add` adds: a recipe by name, a slot's provider, or a third-party adapter package. */
 export type AddTarget =
@@ -56,10 +57,6 @@ const SLOTS = Object.keys(ADAPTER_CATALOGUE) as Slot[]
 
 /** A scoped npm package name, `@scope/name`: how a third-party adapter is named. */
 const PACKAGE_NAME = /^@[a-z0-9-~][a-z0-9-._~]*\/[a-z0-9-~][a-z0-9-._~]*$/
-
-/** The slot `word` spells, as its folder name (`document-store`) or, silently, its config key (`documentStore`). */
-const slotNamed = (word: string): Slot | undefined =>
-  SLOTS.find((slot) => slot === word || slotFolder(slot) === word)
 
 const usageHint = (): string =>
   `nymbal add takes <recipe> (${knownRecipes().join(', ')}), <slot> <provider> or <package> (a scoped npm name, @scope/name)`

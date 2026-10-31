@@ -1,7 +1,13 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { ADAPTER_CATALOGUE, BUILT_IN, conventionPackage, suggestProvider } from '@nymbalhq/config'
+import {
+  ADAPTER_CATALOGUE,
+  BUILT_IN,
+  conventionPackage,
+  slotFolder,
+  suggestProvider,
+} from '@nymbalhq/config'
 import {
   ConfigError,
   type AdapterContext,
@@ -209,7 +215,7 @@ function importFailure(
   ) {
     // No first-party package has this name, so an install line would name nothing that can be installed.
     const suggestion = suggestProvider(slot, provider)
-    const unknown = `unknown ${slot === 'security' ? 'security adapter' : `${slot} provider`} '${provider}'`
+    const unknown = `unknown ${slot === 'security' ? 'security adapter' : `${slotFolder(slot)} provider`} '${provider}'`
     return new ConfigError(
       suggestion === undefined
         ? `${unknown}: no first-party adapter is named that; a third-party adapter is named with \`package:\``

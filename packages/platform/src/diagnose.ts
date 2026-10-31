@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { nymbalConfigSchema, slotFolder, type NymbalConfig } from '@nymbalhq/config'
 import {
   boundedHealthCheck,
   connectionSecrets,
@@ -210,7 +210,7 @@ export async function diagnose(
     if (resolution.kind !== 'package') continue
     const found = await within(timeoutMs, () => importAdapterModule(slot, choices[slot], env))
     packages.push({
-      name: `package ${slot}`,
+      name: `package ${slotFolder(slot)}`,
       status: found.ok ? 'ok' : 'down',
       detail: found.ok ? resolution.package : found.detail,
     })
@@ -415,12 +415,14 @@ export async function diagnose(
     const primitive = built[name]
     if (primitive === undefined) {
       primitives.push({
-        name: `primitive ${name}`,
+        name: `primitive ${slotFolder(name)}`,
         status: 'down',
         detail: primitiveFailures[name] ?? '',
       })
     } else {
-      primitives.push(fromReport(`primitive ${name}`, subject(name), await health(primitive)))
+      primitives.push(
+        fromReport(`primitive ${slotFolder(name)}`, subject(name), await health(primitive)),
+      )
     }
   }
 

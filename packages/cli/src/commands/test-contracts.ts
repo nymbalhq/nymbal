@@ -3,10 +3,11 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { findConfigFile, loadConfig, type NymbalConfig } from '@nymbalhq/config'
+import { findConfigFile, loadConfig, slotFolder, type NymbalConfig } from '@nymbalhq/config'
 import { checkAdapterModule, resolveChoice } from '@nymbalhq/platform'
 import type { Slot } from '@nymbalhq/types'
 import { isInstalled } from '../recipes/holders.js'
+import { slotNamed } from '../slot-names.js'
 
 /** A reason `test:contracts --package` cannot run, printed as its one line. */
 export class CertifyError extends Error {}
@@ -81,7 +82,7 @@ function slotBlocks(config: NymbalConfig): Array<[Slot, SlotBlock]> {
  * The project's slot that loads `pkg`, as the kernel resolves it: its `package` names it (on a `custom` slot too), or
  * its convention name is it. Undefined when the project has no config or no slot names the package.
  */
-async function pickSlot(
+export async function pickSlot(
   project: string,
   pkg: string,
   slot: string | undefined,
@@ -97,13 +98,14 @@ async function pickSlot(
     const resolved = resolveChoice(name, block)
     return block.package === pkg || (resolved.kind === 'package' && resolved.package === pkg)
   })
-  const picked = slot === undefined ? naming : naming.filter(([name]) => name === slot)
+  const wanted = slot === undefined ? undefined : slotNamed(slot)
+  const picked = slot === undefined ? naming : naming.filter(([name]) => name === wanted)
   if (slot !== undefined && picked.length === 0) {
     throw new CertifyError(`no slot '${slot}' loads ${pkg}`)
   }
   if (picked.length > 1) {
     throw new CertifyError(
-      `${pkg} is named by the ${picked.map(([name]) => name).join(', ')} slots: pick one with --slot`,
+      `${pkg} is named by the ${picked.map(([name]) => slotFolder(name)).join(', ')} slots: pick one with --slot`,
     )
   }
   const found = picked[0]
