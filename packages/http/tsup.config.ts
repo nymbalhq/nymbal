@@ -7,5 +7,12 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: 'node22',
-  external: ['@nymbalhq/types', '@nymbalhq/config', 'fastify', '@fastify/cookie', '@fastify/cors'],
+  external: [
+    '@nymbalhq/types',
+    '@nymbalhq/config',
+    'fastify',
+    '@fastify/cookie',
+    '@fastify/cors',
+    '@fastify/http-proxy',
+  ],
 })

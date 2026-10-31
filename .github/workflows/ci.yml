@@ -807,3 +807,54 @@ jobs:
         run: |
           scripts/scaffold-clean.sh "$TEMPLATE" | tee scaffold-clean.log
           grep '^scaffold-clean: ' scaffold-clean.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  scaffold-image:
+    name: Scaffold into an image and run it (${{ matrix.template }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [astro, nextjs]
+    env:
+      NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
+      NYMBAL_TEST_REDIS_URL: redis://localhost:6379
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: nymbal
+          POSTGRES_DB: nymbal
+        ports:
+          - '5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nymbal"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - '6379:6379'
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The script publishes to a local Verdaccio as scaffold-clean does, scaffolds outside the checkout, builds the
+      # store's image with `nymbal build --image`, and runs it against the Postgres and Redis services.
+      - name: Scaffold, build the image and run it
+        shell: bash
+        env:
+          TEMPLATE: ${{ matrix.template }}
+        run: |
+          scripts/scaffold-image.sh "$TEMPLATE" | tee scaffold-image.log
+          grep '^scaffold-image: ' scaffold-image.log | tail -1 >> "$GITHUB_STEP_SUMMARY"

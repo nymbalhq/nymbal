@@ -34,6 +34,7 @@
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
     "@fastify/cors": "^8.5.0",
+    "@fastify/http-proxy": "9.5.0",
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "fastify": "^4.28.1",

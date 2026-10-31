@@ -2,6 +2,8 @@ import { defineCommand, runMain, showUsage } from 'citty'
 import { getCliVersion } from './utils/version.js'
 import { devCommand } from './commands/dev.js'
 import { buildCommand } from './commands/build.js'
+import { startCommand } from './commands/start.js'
+import { deployCommand } from './commands/deploy.js'
 import { migrateCommand } from './commands/migrate.js'
 import { seedCommand } from './commands/seed.js'
 import { importCommand } from './commands/import.js'
@@ -38,6 +40,8 @@ const main = defineCommand({
   subCommands: {
     dev: devCommand,
     build: buildCommand,
+    start: startCommand,
+    deploy: deployCommand,
     migrate: migrateCommand,
     seed: seedCommand,
     import: importCommand,

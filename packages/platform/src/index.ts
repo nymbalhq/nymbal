@@ -21,7 +21,12 @@ export {
   type SqliteClient,
   type PostgresClient,
 } from './db/command-store.js'
-export { runMigrations, type MigrateOptions } from './db/migrate.js'
+export {
+  migrationState,
+  runMigrations,
+  type MigrateOptions,
+  type MigrationState,
+} from './db/migrate.js'
 // Legacy thin repositories (kept for seed + existing consumers).
 export {
   createProductRepository as createLegacyProductRepository,

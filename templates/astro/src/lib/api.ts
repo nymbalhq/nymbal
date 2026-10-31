@@ -14,7 +14,9 @@ import type {
   StoreCapabilities,
 } from '@nymbalhq/types'
 
-const API_URL = import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
+// Read at run time first: `nymbal start` gives the API's address when it starts the built storefront.
+const API_URL =
+  process.env.NYMBAL_API_URL ?? import.meta.env.NYMBAL_API_URL ?? 'http://localhost:3001'
 
 export async function fetchProducts(params?: {
   limit?: number

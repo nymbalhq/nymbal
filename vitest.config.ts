@@ -35,6 +35,20 @@ const scaffoldClean = process.env['NYMBAL_SCAFFOLD_DIR']
     ]
   : []
 
+// The same for the store's container image: it exists only when `scripts/scaffold-image.sh <astro|nextjs>` has built
+// the image and started its container (NYMBAL_IMAGE and the rest; the file throws at collection without them).
+const scaffoldImage = process.env['NYMBAL_IMAGE']
+  ? [
+      {
+        test: {
+          name: 'scaffold-image',
+          environment: 'node' as const,
+          include: ['tests/scaffold-image/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
+
 // Quarantined: each went red then green with no code change in a gate or CI. It runs in the `nightly` project
 // (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until it is fixed, and its home project leaves it out: through
 // that project's own `exclude` when it has one (cli), else behind `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the
@@ -328,6 +342,7 @@ export default defineConfig({
         },
       },
       ...scaffoldClean,
+      ...scaffoldImage,
       ...nightly,
       {
         test: {

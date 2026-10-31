@@ -1,6 +1,7 @@
 import Fastify, {
   errorCodes,
   type FastifyInstance,
+  type FastifyPluginAsync,
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify'
@@ -292,6 +293,14 @@ export class FastifyHttpAdapter implements HttpAdapter {
       },
       config: { routeOptions: options ?? {} },
     })
+  }
+
+  /** A Fastify plugin on this server, in a context of its own: how the storefront forward is added. */
+  registerPlugin(plugin: FastifyPluginAsync): void {
+    if (this.#started) {
+      throw new Error('Cannot register plugins after the server has started')
+    }
+    void this.#app.register(plugin)
   }
 
   registerMiddleware(middleware: MiddlewareHandler): void {
