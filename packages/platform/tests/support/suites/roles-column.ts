@@ -14,6 +14,7 @@ import { serveKernel } from '../http.js'
 import { createKernel, kernelConfig, MIGRATIONS_ROOT, type Kernel } from '../kernel.js'
 import { openRaw } from '../raw.js'
 import { login, metadataColumn, primedShopper, rolesColumn, tokenRoles } from '../security.js'
+import { unaudited } from '../write-audit.js'
 
 // AC-11 and AC-12 on one dialect. AC-11: migration 0004 backfills `customers.roles` from `metadata.roles`, keeping only
 // known roles, falling back to ['customer'], and removes the `roles` key from `metadata`. AC-12: after it, a `roles`
@@ -181,13 +182,15 @@ export function rolesColumnSuite(
       const password = 'correct-horse-battery'
 
       async function addRolesToMetadata(id: string): Promise<void> {
-        await k.store.transaction(async (tx) => {
-          const row = await k.repos.customer.findById(tx, id)
-          await k.repos.customer.update(tx, id, {
-            metadata: { ...row!.metadata, roles: ['admin'] },
-            updatedAt: new Date(),
-          })
-        })
+        await unaudited(() =>
+          k.store.transaction(async (tx) => {
+            const row = await k.repos.customer.findById(tx, id)
+            await k.repos.customer.update(tx, id, {
+              metadata: { ...row!.metadata, roles: ['admin'] },
+              updatedAt: new Date(),
+            })
+          }),
+        )
       }
 
       async function adminMe(accessToken: string): Promise<number> {
@@ -229,12 +232,14 @@ export function rolesColumnSuite(
           metadata: { roles: ['admin'] },
         })
         const hash = await bcrypt.hash(password, 4)
-        await k.store.transaction((tx) =>
-          k.repos.customer.update(tx, imported.id, {
-            passwordHash: hash,
-            requiresPasswordReset: false,
-            updatedAt: new Date(),
-          }),
+        await unaudited(() =>
+          k.store.transaction((tx) =>
+            k.repos.customer.update(tx, imported.id, {
+              passwordHash: hash,
+              requiresPasswordReset: false,
+              updatedAt: new Date(),
+            }),
+          ),
         )
 
         // An admin note write, which rewrites metadata wholesale with the roles key in it.

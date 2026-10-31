@@ -14,6 +14,10 @@ export default {
     'packages/platform/src/repositories/alert-subscription.ts',
     'packages/platform/src/services/recently-viewed-service.ts',
     'packages/platform/src/repositories/order-access-key.ts',
+    'packages/platform/src/events/relay.ts',
+    'packages/platform/src/events/publisher.ts',
+    'packages/platform/src/repositories/processed-event.ts',
+    'packages/platform/src/repositories/email-suppression.ts',
     'packages/platform/src/repositories/order-sequence.ts',
   ],
   ignorePatterns: [

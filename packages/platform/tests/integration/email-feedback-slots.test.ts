@@ -7,6 +7,7 @@ import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { createTestHooksAdapter, signedDelivery } from '../support/test-hooks.js'
 import { createTestMailAdapter, type TestMailAdapter } from '../support/test-mail.js'
+import { unaudited } from '../support/write-audit.js'
 
 // Only the email slot's own adapter can stop a store's alert mail: a bounce event of the email adapter's name that
 // comes from another slot, or that names an email adapter taking no webhooks, suppresses nobody. Read as outcomes: the
@@ -52,26 +53,28 @@ async function activeRow(k: Kernel, email: string) {
   })
   const variantId = product.variants[0]!.id
   const at = new Date()
-  const row = await k.store.transaction(async (tx) => {
-    const pending = await k.repos.alertSubscription.upsertPending(tx, {
-      id: randomUUID(),
-      email,
-      kind: 'back_in_stock',
-      variantId,
-      productId: product.id,
-      confirmToken: randomUUID(),
-      unsubscribeToken: randomUUID(),
-      origin: 'http://shop-a.test',
-      baselinePriceMinor: null,
-      at,
-    })
-    return k.repos.alertSubscription.update(
-      tx,
-      pending.id,
-      { status: 'active', updatedAt: at, confirmedAt: at },
-      ['pending'],
-    )
-  })
+  const row = await unaudited(() =>
+    k.store.transaction(async (tx) => {
+      const pending = await k.repos.alertSubscription.upsertPending(tx, {
+        id: randomUUID(),
+        email,
+        kind: 'back_in_stock',
+        variantId,
+        productId: product.id,
+        confirmToken: randomUUID(),
+        unsubscribeToken: randomUUID(),
+        origin: 'http://shop-a.test',
+        baselinePriceMinor: null,
+        at,
+      })
+      return k.repos.alertSubscription.update(
+        tx,
+        pending.id,
+        { status: 'active', updatedAt: at, confirmedAt: at },
+        ['pending'],
+      )
+    }),
+  )
   return { variantId, rowId: row!.id }
 }
 

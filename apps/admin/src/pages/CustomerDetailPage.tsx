@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Send } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -41,6 +41,9 @@ function NotesList({ notes }: { notes: NoteEntry[] }) {
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [noteBody, setNoteBody] = useState('')
+  // Set in the submit itself: `isPending` reaches the button only after a render, too late for a double click.
+  const submitting = useRef(false)
+  const [busy, setBusy] = useState(false)
 
   const { data: customerData, isLoading } = useCustomer(id ?? '')
   const { data: orders, isLoading: ordersLoading } = useCustomerOrders(id ?? '')
@@ -48,9 +51,16 @@ export function CustomerDetailPage() {
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!noteBody.trim() || !id) return
-    await addNote.mutateAsync({ customerId: id, body: noteBody.trim() })
-    setNoteBody('')
+    if (!noteBody.trim() || !id || submitting.current) return
+    submitting.current = true
+    setBusy(true)
+    try {
+      await addNote.mutateAsync({ customerId: id, body: noteBody.trim() })
+      setNoteBody('')
+    } finally {
+      submitting.current = false
+      setBusy(false)
+    }
   }
 
   if (isLoading) {
@@ -77,10 +87,7 @@ export function CustomerDetailPage() {
   const { customer, stats } = customerData
   const fullName =
     [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email
-  const notes =
-    ((customer as unknown as { notes?: typeof customer.metadata }).notes as
-      | NoteEntry[]
-      | undefined) ?? []
+  const notes = (customer.metadata.adminNotes as NoteEntry[] | undefined) ?? []
 
   return (
     <div className="space-y-5" data-testid={tid('customer', 'detail')}>
@@ -143,7 +150,7 @@ export function CustomerDetailPage() {
               <Button
                 type="submit"
                 size="icon"
-                disabled={!noteBody.trim() || addNote.isPending}
+                disabled={!noteBody.trim() || busy}
                 className="self-end h-9 w-9"
               >
                 <Send className="h-4 w-4" />

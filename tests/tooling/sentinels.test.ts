@@ -510,6 +510,11 @@ describe('AC-19: the real sentinel set', () => {
       path: 'packages/platform/src/routes/validated-adapter.ts',
       marks: /config\.route_schema_missing/,
     },
+    I110: {
+      kind: 'injected',
+      path: 'packages/platform/src/services/category-service.ts',
+      marks: /publisher\.publish\(EVT_CATEGORY_UPDATED, \{ category: fresh \}\)/,
+    },
   }
 
   function loadAll(): Array<{ file: string; sentinel: Sentinel }> {
@@ -522,7 +527,7 @@ describe('AC-19: the real sentinel set', () => {
       })
   }
 
-  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I109, each file named after its id', () => {
+  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I110, each file named after its id', () => {
     const all = loadAll()
     expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
     for (const { file, sentinel } of all) {

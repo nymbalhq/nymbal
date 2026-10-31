@@ -164,6 +164,8 @@ export default defineConfig({
           environment: 'node',
           include: ['packages/platform/tests/integration/**/*.test.ts'],
           exclude: [...configDefaults.exclude, PERF],
+          // Every transaction a test commits is checked for its event (tests/support/write-audit.ts).
+          setupFiles: ['packages/platform/tests/integration/write-audit.setup.ts'],
           testTimeout: 30000,
         },
       },

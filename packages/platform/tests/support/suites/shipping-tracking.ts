@@ -28,6 +28,7 @@ import {
   type SignedDelivery,
   type TrackingStatus,
 } from '../test-ship.js'
+import { unaudited } from '../write-audit.js'
 
 // Tracking updates from the store's shipping provider (`test-ship`, a custom shipping adapter) on one dialect, through
 // the served kernel's real routes: what the admin's ship action records, what a delivered update moves, what every
@@ -271,13 +272,15 @@ export function shippingTrackingSuite(
 
     /** A shipment row written through the repository, for an order the ship action never recorded. */
     async function recordShipment(orderId: string, trackingNumber: string): Promise<void> {
-      await k.store.transaction((tx) =>
-        k.repos.orderShipment.record(tx, {
-          orderId,
-          carrier: 'UPS',
-          trackingNumber,
-          at: new Date(),
-        }),
+      await unaudited(() =>
+        k.store.transaction((tx) =>
+          k.repos.orderShipment.record(tx, {
+            orderId,
+            carrier: 'UPS',
+            trackingNumber,
+            at: new Date(),
+          }),
+        ),
       )
     }
 

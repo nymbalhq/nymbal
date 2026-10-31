@@ -3,8 +3,12 @@
   "command": "pnpm mutation:integration",
   "total": 68,
   "files": {
+    "packages/platform/src/events/publisher.ts": 82.14,
+    "packages/platform/src/events/relay.ts": 77.78,
     "packages/platform/src/repositories/alert-subscription.ts": 60,
+    "packages/platform/src/repositories/email-suppression.ts": 51.43,
     "packages/platform/src/repositories/order-access-key.ts": 85.37,
+    "packages/platform/src/repositories/processed-event.ts": 59.18,
     "packages/platform/src/repositories/order-sequence.ts": 93.33,
     "packages/platform/src/services/alert-service.ts": 74.02,
     "packages/platform/src/services/recently-viewed-service.ts": 68.18

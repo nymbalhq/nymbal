@@ -9,6 +9,7 @@ import { createApp, type CreateAppOptions, type NymbalApp } from '../../src/app.
 import { createCommandStore } from '../../src/db/command-store.js'
 import { runMigrations } from '../../src/db/migrate.js'
 import { createLogger } from '../../src/logger.js'
+import { auditWrites } from './write-audit.js'
 
 // A kernel built from `src/` through createApp (repositories, services, projections and the in-process bus, no HTTP),
 // on a SQLite file in a temp dir or on a Postgres database the caller created. `target` is what a second connection
@@ -119,6 +120,8 @@ export async function createKernel(
   // No wait before a retry unless a test asks for one, so a test that drains by hand after a failure retries at once.
   const relay = { retryDelayMs: 0, ...opts.appOptions?.relay }
   const app = await createApp(config, { ...opts.appOptions, relay, ...storage, logger })
+  // Every transaction the test runs is checked for its event (write-audit.ts); boot's own writes are not.
+  auditWrites(app.platform.commandStore)
   return {
     dialect: opts.dialect,
     config,

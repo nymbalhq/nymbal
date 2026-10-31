@@ -14,6 +14,8 @@ import { runAsActor } from '../audit/actor.js'
 import { auditedCommand } from '../audit/audit.js'
 import { listAuditEntries } from '../repositories/audit-entry.js'
 import type { CommandStore } from '../db/command-store.js'
+import type { EventPublisher } from '../events/publisher.js'
+import { toCustomerSnapshot } from '../history/views.js'
 
 async function setup() {
   const commandStore = createCommandStore(
@@ -41,7 +43,7 @@ async function setup() {
     refreshTtl: '7d',
   })
   const customerService = createCustomerService({ repos, publisher, logger })
-  return { auth, customerService, eventBus, commandStore }
+  return { auth, customerService, eventBus, commandStore, repos, logger }
 }
 
 const addr = {
@@ -251,6 +253,87 @@ describe('CustomerService: audit notes', () => {
         subjects: [{ type: 'customer', id: customer.id }],
         outcome: 'refused',
         status: 404,
+      },
+    ])
+    await commandStore.close()
+  })
+})
+
+describe('CustomerService: admin notes', () => {
+  const first = {
+    body: 'Called about a late parcel',
+    actor: 'admin-1',
+    at: '2026-10-01T09:00:00.000Z',
+  }
+  const second = { body: 'Refund agreed', actor: 'admin-2', at: '2026-10-02T10:30:00.000Z' }
+
+  it('addNote appends each note to metadata.adminNotes in order, keeping the earlier ones', async () => {
+    const { auth, customerService, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'notes@test.com', password: 'password123' })
+    await customerService.addNote(customer.id, first)
+    expect((await customerService.getProfile(customer.id)).metadata.adminNotes).toEqual([first])
+    await customerService.addNote(customer.id, second)
+    expect((await customerService.getProfile(customer.id)).metadata.adminNotes).toEqual([
+      first,
+      second,
+    ])
+    await commandStore.close()
+  })
+
+  it('addNote publishes customer.updated carrying the snapshot of the customer as written', async () => {
+    const { auth, customerService, eventBus, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'noteevt@test.com', password: 'password123' })
+    const events: unknown[] = []
+    await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
+      events.push(e.payload)
+    })
+    await customerService.addNote(customer.id, first)
+    const profile = await customerService.getProfile(customer.id)
+    expect(events).toEqual([{ customerId: customer.id, customer: toCustomerSnapshot(profile) }])
+    await commandStore.close()
+  })
+
+  it('addNote keeps no note when publishing customer.updated fails, as both share one transaction', async () => {
+    const { auth, customerService, commandStore, repos, logger } = await setup()
+    const { customer } = await auth.register({ email: 'noterb@test.com', password: 'password123' })
+    await customerService.addNote(customer.id, first)
+    const failing = {
+      publish: async () => {
+        throw new Error('outbox unavailable')
+      },
+    } as unknown as EventPublisher
+    const withFailingPublisher = createCustomerService({ repos, publisher: failing, logger })
+    await expect(withFailingPublisher.addNote(customer.id, second)).rejects.toThrow(
+      'outbox unavailable',
+    )
+    expect((await customerService.getProfile(customer.id)).metadata.adminNotes).toEqual([first])
+    await commandStore.close()
+  })
+
+  it('addNote on an unknown customer throws the customer not-found error and publishes nothing', async () => {
+    const { customerService, eventBus, commandStore } = await setup()
+    const events: unknown[] = []
+    await eventBus.subscribe(EVT_CUSTOMER_UPDATED, (e) => {
+      events.push(e.payload)
+    })
+    const refusal = customerService.addNote('ghost', first)
+    await expect(refusal).rejects.toThrow(NotFoundError)
+    await expect(refusal).rejects.toThrow('customer not found: ghost')
+    expect(events).toEqual([])
+    await commandStore.close()
+  })
+
+  it('addNote under an actor with no opener leaves one applied customer.addNote entry naming the customer', async () => {
+    const { auth, customerService, commandStore } = await setup()
+    const { customer } = await auth.register({ email: 'noteaud@test.com', password: 'password123' })
+    await runAsActor(importer, () => customerService.addNote(customer.id, first))
+    expect(await noted(commandStore)).toEqual([
+      {
+        actor: importer,
+        command: 'customer.addNote',
+        subjects: [{ type: 'customer', id: customer.id }],
+        outcome: 'applied',
+        status: null,
       },
     ])
     await commandStore.close()

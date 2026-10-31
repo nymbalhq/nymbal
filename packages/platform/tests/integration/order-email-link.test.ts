@@ -13,6 +13,7 @@ import {
 } from '../support/kernel.js'
 import { eventRows } from '../support/outbox.js'
 import { openRaw, type RawReader } from '../support/raw.js'
+import { unaudited } from '../support/write-audit.js'
 
 // AC-4 on SQLite, through the kernel's own bus and email handler, with the email adapter's sends captured: with
 // `store.url` set, the order-placed email of a paid guest order links to `/order/<n>?key=<k>` on the storefront, and
@@ -81,12 +82,15 @@ async function secondPaid(
   r: Rig,
   started: { orderId: string; paymentIntent: { id: string }; totalMinor: number; currency: string },
 ): Promise<void> {
-  await r.k.publisher.publish(EVT_ORDER_PAID, {
-    orderId: started.orderId,
-    paymentIntentId: started.paymentIntent.id,
-    amountMinor: started.totalMinor,
-    currency: started.currency,
-  })
+  // A provider's repeat of the payment, appended by the test itself.
+  await unaudited(() =>
+    r.k.publisher.publish(EVT_ORDER_PAID, {
+      orderId: started.orderId,
+      paymentIntentId: started.paymentIntent.id,
+      amountMinor: started.totalMinor,
+      currency: started.currency,
+    }),
+  )
   await delivered(r)
 }
 

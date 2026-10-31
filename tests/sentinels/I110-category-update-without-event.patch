@@ -1,0 +1,18 @@
+# id: I110
+# kind: injected
+# defect: the category service updates a category row and publishes no category.updated.v1, so the transaction changes a domain row and appends no event, and the category read model never sees the change
+# where: packages/platform/src/services/category-service.ts:89-91
+# killed-by: packages/platform/tests/integration/write-audit.test.ts (AC-8)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/write-audit.test.ts
+diff --git a/packages/platform/src/services/category-service.ts b/packages/platform/src/services/category-service.ts
+--- a/packages/platform/src/services/category-service.ts
++++ b/packages/platform/src/services/category-service.ts
+@@ -88,7 +88,7 @@ export function createCategoryService(deps: {
+         if (!existing) throw new NotFoundError('category', id)
+         await repos.category.update(tx, id, input)
+         const fresh = (await repos.category.findById(tx, id)) as Category
+-        await publisher.publish(EVT_CATEGORY_UPDATED, { category: fresh })
++        void EVT_CATEGORY_UPDATED
+         return fresh
+       })
+     },

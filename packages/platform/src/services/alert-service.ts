@@ -1,6 +1,7 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_ALERT_CONFIRMED,
+  EVT_ALERT_REPEATED,
   EVT_ALERT_REQUESTED,
   EVT_ALERT_SENT,
   EVT_ALERT_UNSUBSCRIBED,
@@ -106,14 +107,16 @@ export function createAlertService(deps: CreateAlertServiceDeps): AlertService {
           baselinePriceMinor: kind === 'price_drop' ? variant.priceMinor : null,
           at: new Date(),
         })
-        if (row.status === 'pending') {
-          await publisher.publish(EVT_ALERT_REQUESTED, {
+        // A pending row owes a confirmation; an active one stands as it was, only its updated_at moved.
+        await publisher.publish(
+          row.status === 'pending' ? EVT_ALERT_REQUESTED : EVT_ALERT_REPEATED,
+          {
             subscriptionId: row.id,
             kind,
             variantId,
             productId: variant.productId,
-          })
-        }
+          },
+        )
         return { status: 'pending' as const }
       })
     },

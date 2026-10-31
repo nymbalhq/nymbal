@@ -19,12 +19,21 @@ export interface ProfileUpdate {
   phone?: string
 }
 
+/** An admin's note on a customer, kept in its metadata. */
+export interface CustomerNote {
+  body: string
+  actor: string
+  at: string
+}
+
 export interface CustomerService {
   getProfile(customerId: string): Promise<Customer>
   updateProfile(customerId: string, patch: ProfileUpdate): Promise<Customer>
   listAddresses(customerId: string): Promise<CustomerAddress[]>
   addAddress(customerId: string, addr: Omit<CustomerAddress, 'id'>): Promise<CustomerAddress>
   deleteAddress(customerId: string, addressId: string): Promise<void>
+  /** Appends `note` to the customer's admin notes. */
+  addNote(customerId: string, note: CustomerNote): Promise<void>
 }
 
 function stripPassword(c: Customer & { passwordHash: string }): Customer {
@@ -105,6 +114,18 @@ export function createCustomerService(deps: {
         }
         const now = new Date()
         await repos.customer.update(tx, customerId, { addresses, updatedAt: now })
+        await publishUpdated(tx, customerId)
+      })
+    },
+    async addNote(customerId, note) {
+      await store.transaction(async (tx) => {
+        const customer = await loadOrThrow(tx, customerId)
+        audit.note('customer.addNote', [{ type: 'customer', id: customerId }])
+        const notes = (customer.metadata.adminNotes as CustomerNote[] | undefined) ?? []
+        await repos.customer.update(tx, customerId, {
+          metadata: { ...customer.metadata, adminNotes: [...notes, note] },
+          updatedAt: new Date(),
+        })
         await publishUpdated(tx, customerId)
       })
     },

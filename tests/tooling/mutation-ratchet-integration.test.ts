@@ -39,10 +39,14 @@ const INTEGRATION_RATCHET = 'mutation-ratchet.integration.json'
 const UNIT_RATCHET = 'mutation-ratchet.json'
 const INTEGRATION = ['--config', INTEGRATION_CONFIG, '--ratchet', INTEGRATION_RATCHET]
 
-/** The five kernel files whose behaviour only the integration tests reach. */
-const FIVE = [
+/** The kernel files whose behaviour only the integration tests reach. */
+const INTEGRATION_FILES = [
+  'packages/platform/src/events/publisher.ts',
+  'packages/platform/src/events/relay.ts',
   'packages/platform/src/repositories/alert-subscription.ts',
+  'packages/platform/src/repositories/email-suppression.ts',
   'packages/platform/src/repositories/order-access-key.ts',
+  'packages/platform/src/repositories/processed-event.ts',
   'packages/platform/src/repositories/order-sequence.ts',
   'packages/platform/src/services/alert-service.ts',
   'packages/platform/src/services/recently-viewed-service.ts',
@@ -205,7 +209,7 @@ const UNIT_ENTRIES: Scores = Object.fromEntries(
 )
 
 /**
- * A git repository holding both Stryker configs (copies of this checkout's), the five integration-set sources and two
+ * A git repository holding both Stryker configs (copies of this checkout's), the integration-set sources and two
  * unit-only ones, the unit ratchet and an integration ratchet holding `integration`.
  */
 function gitScratch(integration: Scores, unit: Scores = UNIT_ENTRIES): string {
@@ -242,8 +246,8 @@ const writeReport = (dir: string, files: Record<string, Status[]>): string => {
 // ---------------------------------------------------------------------------------------------------------------
 
 describe('AC-1: the integration Stryker config and its test set', () => {
-  it('AC-1: the integration config mutates exactly the five files, each tracked and each in the unit mutate set, and runs its own Vitest config', async () => {
-    expect(SET).toEqual([...FIVE].sort())
+  it('AC-1: the integration config mutates exactly its nine files, each tracked and each in the unit mutate set, and runs its own Vitest config', async () => {
+    expect(SET).toEqual([...INTEGRATION_FILES].sort())
     const tracked = execFileSync('git', ['ls-files', '--', ...SET], { cwd: REPO, encoding: 'utf8' })
       .split('\n')
       .filter(Boolean)

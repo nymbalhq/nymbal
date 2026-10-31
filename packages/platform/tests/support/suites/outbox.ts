@@ -10,6 +10,7 @@ import {
 import { seedVariant, type Kernel } from '../kernel.js'
 import { eventRows, maxSeq, placeholders } from '../outbox.js'
 import { openRaw, type RawReader } from '../raw.js'
+import { unaudited } from '../write-audit.js'
 
 // AC-4 (atomic append) and AC-5 (no event lost under concurrency) on one dialect. The `events` table is read through a
 // second connection, so a row counts only once it is committed.
@@ -71,7 +72,7 @@ export function outboxSuite(
     })
 
     it('AC-4: a committed transaction leaves both rows in publish order (seq ascending), both delivered, in that order', async () => {
-      const ids = await k.store.transaction(publishTwo(randomUUID()))
+      const ids = await unaudited(() => k.store.transaction(publishTwo(randomUUID())))
 
       const rows = await eventRows(raw, `id IN (${placeholders(2)})`, ids)
       expect(rows.map((r) => r.id)).toEqual(ids)

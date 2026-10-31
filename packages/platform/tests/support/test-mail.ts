@@ -11,7 +11,8 @@ import type {
 // in `x-test-signature` (hex), in one of three encodings a real provider uses (a JSON body, a form post, and an
 // SNS-style `text/plain` notification whose `Message` is JSON). Each provider event becomes `test-mail.bounced.v1` or
 // `test-mail.complained.v1`, its fields handed on as the provider sent them, so a test chooses what the kernel must
-// refuse by what it signs. It captures every send. Injected as a `custom` email adapter; depends on nothing of the
+// refuse by what it signs. It captures every send. A failure switch takes the provider down (every send rejects and
+// the health check answers `down`) and back up. Injected as a `custom` email adapter; depends on nothing of the
 // kernel's, so the contract runner can build it.
 
 export const TEST_MAIL = 'test-mail'
@@ -55,6 +56,12 @@ export interface TestMailOptions {
 export interface TestMailAdapter extends EmailAdapter {
   /** Every send, in order. */
   readonly sent: TransactionalEmail[]
+  /** Every send refused while the provider was down, in order. */
+  readonly refused: TransactionalEmail[]
+  /** From now on every send rejects with `detail` and the health check answers `down` with it, until `up()`. */
+  down(detail?: string): void
+  /** Sends and the health check work again. */
+  up(): void
 }
 
 function signatureOf(rawBody: Buffer, secret: string): string {
@@ -115,10 +122,19 @@ export function createTestMailAdapter(opts: TestMailOptions = {}): TestMailAdapt
   const providerName = opts.providerName ?? TEST_MAIL
   const secret = opts.secret ?? TEST_MAIL_SECRET
   const sent: TransactionalEmail[] = []
+  const refused: TransactionalEmail[] = []
+  let outage: string | null = null
   return {
     kind: 'email',
     providerName,
     sent,
+    refused,
+    down(detail = `${providerName}: connection refused`) {
+      outage = detail
+    },
+    up() {
+      outage = null
+    },
     capabilities: () => ['transactional', 'webhooks'],
     producesEvents: [
       ...(opts.producesEvents ?? [`${providerName}.bounced.v1`, `${providerName}.complained.v1`]),
@@ -126,9 +142,15 @@ export function createTestMailAdapter(opts: TestMailOptions = {}): TestMailAdapt
     consumesEvents: [],
     async initialize() {},
     async healthCheck() {
-      return { status: 'healthy' as const }
+      return outage === null
+        ? { status: 'healthy' as const }
+        : { status: 'down' as const, detail: outage }
     },
     async sendTransactional(message) {
+      if (outage !== null) {
+        refused.push(message)
+        throw new Error(outage)
+      }
       sent.push(message)
       return { messageId: `${providerName}-${sent.length}`, accepted: true }
     },

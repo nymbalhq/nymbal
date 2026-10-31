@@ -50,6 +50,7 @@ export interface NymbalEventMap {
   [C.EVT_PAYMENT_REFUNDED]: P.PaymentRefundedV1Payload
 
   [C.EVT_ALERT_REQUESTED]: P.AlertRequestedV1Payload
+  [C.EVT_ALERT_REPEATED]: P.AlertRepeatedV1Payload
   [C.EVT_ALERT_CONFIRMED]: P.AlertConfirmedV1Payload
   [C.EVT_ALERT_UNSUBSCRIBED]: P.AlertUnsubscribedV1Payload
   [C.EVT_ALERT_SENT]: P.AlertSentV1Payload

@@ -1,5 +1,10 @@
 import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
-import { ConfigError, type CommerceSlot, type PaymentsAdapter } from '@nymbalhq/types'
+import {
+  ConfigError,
+  type CommerceSlot,
+  type HealthReport,
+  type PaymentsAdapter,
+} from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
 import type { ResolvePrimitivesOptions } from './platform.js'
 import { buildRepositories, type Repositories } from './repositories/index.js'
@@ -13,12 +18,14 @@ import {
   type AdapterRegistry,
   type InjectedAdapters,
 } from './adapters/registry.js'
+import { isNotConfigured } from './adapters/not-configured.js'
 import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
 import { scrubbingLogger } from './settings/secret-set.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
+import { createOutageProbe, type OutageSubject } from './events/outage.js'
 import { registerHandlers } from './handlers/register.js'
 import { READ_MODEL_NAMES, rebuild } from './read-models/index.js'
 import {
@@ -132,6 +139,58 @@ async function eventArchiveWriter(config: NymbalConfig): Promise<EventArchiveWri
   return mod.createS3ObjectWriter(options)
 }
 
+interface Checkable {
+  providerName?: unknown
+  healthCheck?(): Promise<HealthReport>
+}
+
+/**
+ * What the relay's outage probe checks: the primitives and every commerce slot a delivery can go through, each named
+ * by its slot with the provider in the detail. Security and ai are left out (no delivery goes through either), and a
+ * not-configured placeholder is too: it is down until a restart with its key, which is not an outage.
+ */
+function outageSubjects(
+  config: NymbalConfig,
+  platform: Platform,
+  adapters: AdapterRegistry,
+): OutageSubject[] {
+  const subject = (name: string, provider: string, adapter: Checkable): OutageSubject[] => {
+    if (isNotConfigured(adapter)) return []
+    if (typeof adapter.healthCheck !== 'function') return [{ name }]
+    const check = adapter.healthCheck.bind(adapter)
+    const named = (detail: string | undefined) => (detail ? `${provider}: ${detail}` : provider)
+    return [
+      {
+        name,
+        healthCheck: () =>
+          Promise.resolve()
+            .then(check)
+            .then(
+              (report) =>
+                report.status === 'down' ? { ...report, detail: named(report.detail) } : report,
+              (err: unknown) => {
+                throw new Error(named(err instanceof Error ? err.message : String(err)))
+              },
+            ),
+      },
+    ]
+  }
+  const { infrastructure } = config
+  return [
+    ...subject('eventBus', infrastructure.eventBus.provider, platform.eventBus),
+    ...subject('documentStore', infrastructure.documentStore.provider, platform.documentStore),
+    ...subject('media', infrastructure.media.provider, platform.media),
+    ...COMMERCE_SLOTS.filter((slot) => slot !== 'ai').flatMap((slot) => {
+      const adapter = adapters[slot] as Checkable
+      const provider =
+        typeof adapter.providerName === 'string'
+          ? adapter.providerName
+          : config.commerce[slot].provider
+      return subject(slot, provider, adapter)
+    }),
+  ]
+}
+
 export async function createApp(
   config: NymbalConfig,
   options: CreateAppOptions = {},
@@ -187,6 +246,7 @@ export async function createApp(
       eventLog: repos.eventLog,
       eventBus: platform.eventBus,
       logger,
+      outage: createOutageProbe(outageSubjects(config, platform, adapters)),
       ...options.relay,
     })
     const subscriberBus = deliveringBus(platform.eventBus, relay)

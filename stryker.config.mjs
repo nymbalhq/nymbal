@@ -11,6 +11,9 @@ export default {
   mutate: [
     'packages/platform/src/services/**/*.ts',
     'packages/platform/src/repositories/**/*.ts',
+    // Measured by the integration run alone (stryker.integration.config.mjs); held at 0 here.
+    'packages/platform/src/events/relay.ts',
+    'packages/platform/src/events/publisher.ts',
     '!**/*.test.ts',
     '!**/*.d.ts',
   ],

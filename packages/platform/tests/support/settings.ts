@@ -18,6 +18,7 @@ import { createLogger } from '../../src/logger.js'
 import { MIGRATIONS_ROOT, type Dialect } from './kernel.js'
 import { bytesOf, flipByte } from './bytes.js'
 import { shopper, type ShopResponse } from './shopper.js'
+import { auditWrites, unaudited } from './write-audit.js'
 
 export { bytesOf, flipByte }
 
@@ -241,6 +242,7 @@ export async function openStore(opts: {
     ...storage(opts.dialect, opts.target),
     logger: opts.logger ?? quiet(),
   })
+  auditWrites(app.platform.commandStore)
   for (let attempt = 0; ; attempt += 1) {
     const port = await freePort()
     const http = createHttpServer({
@@ -264,16 +266,18 @@ export async function openStore(opts: {
       const email = `settings-${randomUUID()}@settings.test`
       const password = 'correct-horse-battery'
       const now = new Date()
-      await app.platform.commandStore.transaction((tx) =>
-        app.repos.customer.insert(tx, {
-          id: randomUUID(),
-          email,
-          passwordHash: bcrypt.hashSync(password, 4),
-          roles,
-          requiresPasswordReset: false,
-          createdAt: now,
-          updatedAt: now,
-        }),
+      await unaudited(() =>
+        app.platform.commandStore.transaction((tx) =>
+          app.repos.customer.insert(tx, {
+            id: randomUUID(),
+            email,
+            passwordHash: bcrypt.hashSync(password, 4),
+            roles,
+            requiresPasswordReset: false,
+            createdAt: now,
+            updatedAt: now,
+          }),
+        ),
       )
       // One safe request primes the CSRF cookie the shopper then echoes on every unsafe one.
       const shop = shopper(baseUrl)
