@@ -50,9 +50,11 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
           .run()
         return
       }
+      // Stryker disable all: the Postgres dialect, which the SQLite integration run cannot reach; tests/postgres covers it
       await postgresDb(tx)
         .insert(postgresSchema.orderAccessKeys)
         .values({ ...row, createdAt: k.createdAt, expiresAt: k.expiresAt })
+      // Stryker restore all
     },
     async opens(tx, orderId, keyHash, now) {
       let expiresAt: number | undefined
@@ -65,6 +67,7 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
           .get()
         if (row !== undefined) expiresAt = Date.parse(row.expiresAt)
       } else {
+        // Stryker disable all: the Postgres dialect, which the SQLite integration run cannot reach; tests/postgres covers it
         const t = postgresSchema.orderAccessKeys
         const rows = await postgresDb(tx)
           .select({ expiresAt: t.expiresAt })
@@ -73,6 +76,7 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
           .limit(1)
         if (rows[0] !== undefined) expiresAt = rows[0].expiresAt.getTime()
       }
+      // Stryker restore all
       if (expiresAt === undefined) return 'none'
       return now.getTime() < expiresAt ? 'open' : 'expired'
     },
@@ -88,6 +92,7 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
           .all()
           .map((r) => r.id)
       } else {
+        // Stryker disable all: the Postgres dialect, which the SQLite integration run cannot reach; tests/postgres covers it
         const t = postgresSchema.orderAccessKeys
         const rows = await postgresDb(tx)
           .select({ id: t.id })
@@ -96,6 +101,7 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
           .orderBy(asc(t.createdAt), asc(t.id))
         ids = rows.map((r) => r.id)
       }
+      // Stryker restore all
       const stale = ids.slice(0, Math.max(0, ids.length - keep))
       if (stale.length === 0) return
       if (tx.kind === 'sqlite') {
@@ -103,8 +109,10 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
         sqliteDb(tx).delete(t).where(inArray(t.id, stale)).run()
         return
       }
+      // Stryker disable all: the Postgres dialect, which the SQLite integration run cannot reach; tests/postgres covers it
       const t = postgresSchema.orderAccessKeys
       await postgresDb(tx).delete(t).where(inArray(t.id, stale))
+      // Stryker restore all
     },
   }
 }

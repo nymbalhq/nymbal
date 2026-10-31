@@ -4,7 +4,7 @@
   "total": 68,
   "files": {
     "packages/platform/src/repositories/alert-subscription.ts": 60,
-    "packages/platform/src/repositories/order-access-key.ts": 69.23,
+    "packages/platform/src/repositories/order-access-key.ts": 85.37,
     "packages/platform/src/services/alert-service.ts": 74.02,
     "packages/platform/src/services/recently-viewed-service.ts": 68.18
   }
