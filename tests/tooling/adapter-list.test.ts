@@ -25,7 +25,10 @@ const readRegistry = (root: string): { adapters: RegistryEntry[] } =>
     adapters: RegistryEntry[]
   }
 
-const ARCHITECTURE = '--project architecture'
+// Each nested run is the whole architecture project beside the outer suite: two workers keep it from taking every core
+// of a four-core runner from the outer run's tests, and a test that makes two such runs gets twice one run's time.
+const ARCHITECTURE = '--project architecture --maxWorkers=2'
+const NESTED_RUN_MS = 120_000
 
 let copy = ''
 /** The architecture tests that fail in an unchanged copy (a copy has no origin remote, for one). */
@@ -34,7 +37,7 @@ let baseline = new Set<string>()
 beforeAll(async () => {
   copy = workTreeCopy()
   baseline = new Set(failedRows(await vitestReport(copy, ARCHITECTURE)).map(rowKey))
-}, 120_000)
+}, NESTED_RUN_MS)
 
 afterAll(removeCopies)
 
@@ -130,7 +133,7 @@ describe('AC-3: registry/adapters.json is the one list of first-party adapters',
       naming(added(unlisted), ['search/stray', '@nymbalhq/search-stray']).map(rowKey),
       `no failure the package adds names it:\n${added(unlisted).map(rowKey).join('\n')}`,
     ).not.toEqual([])
-  })
+  }, 2 * NESTED_RUN_MS)
 
   it('AC-3: no architecture or tooling test asserts the first-party or published package count, or spells it in a title', () => {
     const firstParty = readRegistry(REPO).adapters.filter((e) => e.tier === 'first-party').length
