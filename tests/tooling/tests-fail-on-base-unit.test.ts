@@ -1,7 +1,10 @@
 // Reads: nothing
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { EXCLUDED_PREFIXES, TEST_FILE } from '../../scripts/test-census'
 import {
+  addedTestCode,
+  failureLine,
   firstErrorLine,
   installBase,
   isDependencyLayoutPath,
@@ -266,6 +269,343 @@ describe('AC-27: the first error line is the first line of a real error shape, e
         (lines, blanks) => {
           const output = [...lines, ...Array<string>(blanks).fill('')].join('\n')
           expect(firstErrorLine(output)).toBe(lines[lines.length - 1]?.trim())
+        },
+      ),
+    )
+  })
+})
+
+// The added test-code set and the reason a `fails on base` line gives.
+// - `addedTestCode(nameStatus, untracked)`: the added files that are test code (a `test`, `tests`, `__tests__` or
+//   `fixtures` segment) but no test file themselves, so a new test's suites, helpers and fixtures are in the base
+//   worktree; product files and modified files never are. `nameStatus` is `git diff --name-status --no-renames
+//   --diff-filter=A <base>`.
+// - `failureLine(output)`: the note on a `fails on base` line. The outputs are what `node --test` (Node 26.12.1) and
+//   Vitest 3.2.4 really print, with the temporary directory shortened to /tmp/base.
+
+const MARKERS = ['test', 'tests', '__tests__', 'fixtures'] as const
+const WORD = fc
+  .stringMatching(/^[a-z][a-z0-9-]{0,6}$/)
+  .filter((word) => !(MARKERS as readonly string[]).includes(word))
+const DIRS = fc.array(WORD, { maxLength: 2 })
+const NAME = fc
+  .tuple(WORD, fc.constantFrom('ts', 'js', 'mjs', 'json', 'sql', 'txt'))
+  .map(([name, ext]) => `${name}.${ext}`)
+
+type Kind = 'test code' | 'product' | 'test file' | 'excluded'
+type Entry = { path: string; kind: Kind }
+
+const ENTRY: fc.Arbitrary<Entry> = fc.oneof(
+  fc
+    .tuple(DIRS, fc.constantFrom(...MARKERS), DIRS, NAME)
+    .map(([above, marker, below, name]) => [...above, marker, ...below, name].join('/'))
+    .filter((path) => !EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix)))
+    .map((path): Entry => ({ path, kind: 'test code' })),
+  fc
+    .tuple(DIRS, NAME)
+    .map(([dirs, name]): Entry => ({ path: [...dirs, name].join('/'), kind: 'product' })),
+  fc
+    .tuple(
+      DIRS,
+      fc.option(fc.constantFrom(...MARKERS)),
+      WORD,
+      fc.constantFrom('test.ts', 'spec.tsx', 'test.mjs', 'spec.js'),
+    )
+    .map(
+      ([dirs, marker, name, ext]): Entry => ({
+        path: [...dirs, ...(marker === null ? [] : [marker]), `${name}.${ext}`].join('/'),
+        kind: 'test file',
+      }),
+    ),
+  fc.tuple(fc.constantFrom(...EXCLUDED_PREFIXES), DIRS, NAME).map(
+    ([prefix, dirs, name]): Entry => ({
+      path: `${prefix}${[...dirs, name].join('/')}`,
+      kind: 'excluded',
+    }),
+  ),
+)
+
+/** How a path reaches the script: an `A` or `M` line of the name-status listing, or the untracked list. */
+const ITEM = fc.record({ entry: ENTRY, how: fc.constantFrom('A', 'M', 'untracked') })
+
+describe('AC-2: the added test-code set is every added suite, helper and fixture, and nothing else', () => {
+  it('AC-2: added and untracked test code is returned once, sorted; product, test files, modified and excluded paths never are (property)', () => {
+    fc.assert(
+      fc.property(
+        fc
+          .array(ITEM, { maxLength: 12 })
+          .chain((items) => fc.subarray(items).map((again) => [...items, ...again])),
+        (items) => {
+          const nameStatus = items
+            .filter((item) => item.how !== 'untracked')
+            .map((item) => `${item.how}\t${item.entry.path}\n`)
+            .join('')
+          const untracked = items
+            .filter((item) => item.how === 'untracked')
+            .map((item) => item.entry.path)
+          const added = new Set(
+            items
+              .filter((item) => item.entry.kind === 'test code' && item.how !== 'M')
+              .map((item) => item.entry.path),
+          )
+
+          expect(addedTestCode(nameStatus, untracked)).toEqual([...added].sort())
+        },
+      ),
+    )
+  })
+
+  it('AC-2: a new shared suite and fixture come in; its runner, the product module and a modified helper do not', () => {
+    const nameStatus = [
+      'A\tpackages/platform/tests/support/suites/order-sequence.ts',
+      'A\tpackages/platform/tests/integration/order-sequence.test.ts',
+      'A\tpackages/platform/src/db/order-sequence.ts',
+      'M\tpackages/platform/tests/support/db.ts',
+      'A\tpackages/sdk/src/__tests__/helpers/cart.ts',
+      'A\ttests/tooling/fixtures/census/strong.ts',
+      'A\ttests/sentinels/order-sequence.patch',
+      'A\tsrc/testing/clock.ts',
+      '',
+    ].join('\n')
+    const untracked = ['test/fixtures/data.json', 'src/divide.js', 'test/divide.test.js']
+
+    const added: string[] = addedTestCode(nameStatus, untracked)
+
+    expect(added).toEqual([
+      'packages/platform/tests/support/suites/order-sequence.ts',
+      'packages/sdk/src/__tests__/helpers/cart.ts',
+      'test/fixtures/data.json',
+    ])
+    expect(added.filter((path) => TEST_FILE.test(path))).toEqual([])
+  })
+})
+
+const NODE_ASSERTION = [
+  '✖ total counts each line by its quantity (1.016167ms)',
+  'ℹ tests 1',
+  'ℹ suites 0',
+  'ℹ pass 0',
+  'ℹ fail 1',
+  'ℹ cancelled 0',
+  'ℹ skipped 0',
+  'ℹ todo 0',
+  'ℹ duration_ms 59.721459',
+  '',
+  '✖ failing tests:',
+  '',
+  'test at test/runner.test.js:4:1',
+  '✖ total counts each line by its quantity (1.016167ms)',
+  '  AssertionError [ERR_ASSERTION]: total counts each line by its quantity',
+  '  ',
+  '  2 !== 6',
+  '  ',
+  '      at TestContext.<anonymous> (file:///tmp/base/test/support/suite.js:6:12)',
+  '      at Test.runInAsyncScope (node:async_hooks:226:14)',
+  '      at Test.run (node:internal/test_runner/test:1402:25)',
+  '      at Test.start (node:internal/test_runner/test:1262:17)',
+  '      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {',
+  '    generatedMessage: false,',
+  "    code: 'ERR_ASSERTION',",
+  '    actual: 2,',
+  '    expected: 6,',
+  "    operator: 'strictEqual',",
+  "    diff: 'simple'",
+  '  }',
+].join('\n')
+
+const NODE_MODULE_NOT_FOUND = [
+  'node:internal/modules/esm/resolve:241',
+  '    throw new ERR_MODULE_NOT_FOUND(',
+  '          ^',
+  '',
+  "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/tmp/base/src/divide.js' imported from /tmp/base/test/divide.test.js",
+  '    at finalizeResolution (node:internal/modules/esm/resolve:241:11)',
+  '    at moduleResolve (node:internal/modules/esm/resolve:846:10)',
+  '    at defaultResolve (node:internal/modules/esm/resolve:973:11)',
+  '    at ModuleJob.link (node:internal/modules/esm/module_job:389:17) {',
+  "  code: 'ERR_MODULE_NOT_FOUND',",
+  "  url: 'file:///tmp/base/src/divide.js'",
+  '}',
+  '',
+  'Node.js v26.12.1',
+  '✖ test/divide.test.js (49.268041ms)',
+  'ℹ tests 1',
+  'ℹ fail 1',
+  'ℹ duration_ms 54.860042',
+  '',
+  '✖ failing tests:',
+  '',
+  'test at test/divide.test.js:1:1',
+  '✖ test/divide.test.js (49.268041ms)',
+  "  'test failed'",
+].join('\n')
+
+const NODE_MISSING_EXPORT = [
+  'file:///tmp/base/test/noexport.test.js:2',
+  "import { divide } from '../src/math.js'",
+  '         ^^^^^^',
+  "SyntaxError: The requested module '../src/math.js' does not provide an export named 'divide'",
+  '    at #asyncInstantiate (node:internal/modules/esm/module_job:463:21)',
+  '    at async ModuleJob.run (node:internal/modules/esm/module_job:561:5)',
+  '',
+  'Node.js v26.12.1',
+  '✖ test/noexport.test.js (46.652875ms)',
+  'ℹ tests 1',
+  'ℹ fail 1',
+  '',
+  '✖ failing tests:',
+  '',
+  'test at test/noexport.test.js:1:1',
+  '✖ test/noexport.test.js (46.652875ms)',
+  "  'test failed'",
+].join('\n')
+
+const VITEST_ASSERTION = [
+  '',
+  ' RUN  v3.2.4 /tmp/base',
+  '',
+  ' ❯ test/assert.test.js (1 test | 1 failed) 5ms',
+  '   × value is two 4ms',
+  '     → expected 1 to be 2 // Object.is equality',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯',
+  '',
+  ' FAIL  test/assert.test.js > value is two',
+  'AssertionError: expected 1 to be 2 // Object.is equality',
+  '',
+  '- Expected',
+  '+ Received',
+  '',
+  '- 2',
+  '+ 1',
+  '',
+  ' ❯ test/assert.test.js:3:46',
+  "      1| import { test, expect } from 'vitest'",
+  "      2| import { value } from '../src/v.js'",
+  "      3| test('value is two', () => { expect(value()).toBe(2) })",
+  '       |                                              ^',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯',
+  '',
+  '',
+  ' Test Files  1 failed (1)',
+  '      Tests  1 failed (1)',
+  '   Start at  19:07:04',
+  '   Duration  273ms (transform 15ms, setup 0ms, collect 8ms, tests 5ms, environment 0ms, prepare 54ms)',
+  '',
+].join('\n')
+
+/** A thrown string: Vitest prints `Unknown Error:`, which is no error shape, so only the `→ ` line says why. */
+const VITEST_THROWN_STRING = [
+  '',
+  ' RUN  v3.2.4 /tmp/base',
+  '',
+  ' ❯ test/str.test.js (1 test | 1 failed) 1ms',
+  '   × throws a string 1ms',
+  '     → stock went negative',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯',
+  '',
+  ' FAIL  test/str.test.js > throws a string',
+  'Unknown Error: stock went negative',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯',
+  '',
+  '',
+  ' Test Files  1 failed (1)',
+  '      Tests  1 failed (1)',
+  '   Start at  19:09:15',
+  '   Duration  617ms (transform 22ms, setup 0ms, collect 19ms, tests 1ms, environment 0ms, prepare 107ms)',
+  '',
+].join('\n')
+
+const VITEST_MODULE_NOT_FOUND = [
+  '',
+  ' RUN  v3.2.4 /tmp/base',
+  '',
+  '',
+  '⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯',
+  '',
+  ' FAIL  test/missing.test.js [ test/missing.test.js ]',
+  "Error: Cannot find module '../src/divide.js' imported from '/tmp/base/test/missing.test.js'",
+  ' ❯ test/missing.test.js:2:31',
+  "      1| import { test, expect } from 'vitest'",
+  "      2| import { divide } from '../src/divide.js'",
+  '       |                               ^',
+  '',
+  'Caused by: Error: Failed to load url ../src/divide.js (resolved id: ../src/divide.js) in /tmp/base/test/missing.test.js. Does the file exist?',
+  ' ❯ loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51969:17',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯',
+  '',
+  '',
+  ' Test Files  1 failed (1)',
+  '      Tests  no tests',
+  '   Start at  19:07:04',
+  '   Duration  283ms (transform 12ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 54ms)',
+  '',
+].join('\n')
+
+describe('AC-6: the failure line is the error that failed the run, not a stack frame, a summary or `no output`', () => {
+  it("AC-6: node --test's assertion: its AssertionError line, not the closing brace firstErrorLine falls back to", () => {
+    expect(failureLine(NODE_ASSERTION)).toBe(
+      'AssertionError [ERR_ASSERTION]: total counts each line by its quantity',
+    )
+    expect(failureLine(NODE_ASSERTION)).not.toBe(firstErrorLine(NODE_ASSERTION))
+  })
+
+  it('AC-6: Node ESM missing module: the ERR_MODULE_NOT_FOUND line, not the `throw new` source line above it', () => {
+    expect(failureLine(NODE_MODULE_NOT_FOUND)).toBe(
+      "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/tmp/base/src/divide.js' imported from /tmp/base/test/divide.test.js",
+    )
+  })
+
+  it('AC-6: Node ESM missing named export: the SyntaxError line, not the source line or `test failed`', () => {
+    expect(failureLine(NODE_MISSING_EXPORT)).toBe(
+      "SyntaxError: The requested module '../src/math.js' does not provide an export named 'divide'",
+    )
+  })
+
+  it("AC-6: a Vitest assertion: its expectation, from the AssertionError or the `→ ` line, not the run's Duration", () => {
+    expect(failureLine(VITEST_ASSERTION)).toMatch(
+      /^(?:→ |AssertionError: )expected 1 to be 2 \/\/ Object\.is equality$/,
+    )
+  })
+
+  it('AC-6: Vitest with no error shape: the first `→ ` line, where firstErrorLine gives the Duration line', () => {
+    expect(failureLine(VITEST_THROWN_STRING)).toMatch(/^(?:→ )?stock went negative$/)
+    expect(firstErrorLine(VITEST_THROWN_STRING)).toMatch(/^Duration/)
+  })
+
+  it("AC-6: Vitest's missing module: its `Error: Cannot find module` line, not the `Caused by` below it", () => {
+    expect(failureLine(VITEST_MODULE_NOT_FOUND)).toBe(
+      "Error: Cannot find module '../src/divide.js' imported from '/tmp/base/test/missing.test.js'",
+    )
+  })
+
+  /** Real output lines that are no error shape, some with "error", `ERR_` or `Error` in them. */
+  const NOT_ERRORS = [
+    'packages/sdk build: ESM dist/error.js 1.20 KB',
+    ' WARN  1 deprecated subdependencies found: error-ex@1.3.2',
+    'Found 1 error in src/index.ts:1',
+    '  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);',
+    'Unknown Error: stock went negative',
+    '   Duration  617ms (transform 22ms, setup 0ms, collect 19ms, tests 1ms, environment 0ms, prepare 107ms)',
+    "  'test failed'",
+  ]
+  /** Real error lines that are neither `<Name>Error:` nor a `→ ` line: firstErrorLine's own shapes. */
+  const OTHER_ERRORS = [
+    "src/index.ts(1,23): error TS2307: Cannot find module '@nymbalhq/types'.",
+    '[ERR_PNPM_OUTDATED_LOCKFILE] Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json',
+    ' ERR_PNPM_LOCKFILE_BREAKING_CHANGE  Lockfile /tmp/base/pnpm-lock.yaml not compatible with current pnpm',
+  ]
+
+  it('AC-6: with no error line and no `→ ` line, it is firstErrorLine (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...NOT_ERRORS, ...OTHER_ERRORS, ''), { maxLength: 8 }),
+        (lines) => {
+          const output = lines.join('\n')
+          expect(failureLine(output)).toBe(firstErrorLine(output))
         },
       ),
     )
