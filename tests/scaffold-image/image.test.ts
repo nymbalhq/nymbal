@@ -8,17 +8,20 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { describe, expect, it, vi } from 'vitest'
 
-// AC-6, AC-7 and AC-8 on the built artefact, run by scripts/scaffold-image.sh <astro|nextjs> (and the CI job
+// AC-6, AC-7, AC-8 and AC-10 on the built artefact, run by scripts/scaffold-image.sh <astro|nextjs> (and the CI job
 // scaffold-image) as the vitest project `scaffold-image`, after it has scaffolded a store from the local registry,
-// set it on Postgres, the Redis document store and the Redis Streams bus, built its image with `nymbal build --image`,
-// run `nymbal migrate` and `nymbal seed` in it, and started `nymbal start` in a container on PORT=8080 with
-// NYMBAL_PUBLIC_URL at the host port it publishes. Left out of `pnpm test`: it throws without these.
+// set it on Postgres, the Redis document store, the Redis Streams bus and the stripe payments adapter pointed at the
+// fake Stripe API (tests/fixtures/stripe-api/server.mjs), built its image with `nymbal build --image`, run
+// `nymbal migrate` and `nymbal seed` in it, and started `nymbal start` in a container on PORT=8080 with
+// NODE_ENV=production and NYMBAL_PUBLIC_URL at the host port it publishes. Left out of `pnpm test`: it throws without
+// these.
 //
 //   NYMBAL_SCAFFOLD_DIR         the scaffolded project directory
 //   NYMBAL_IMAGE                the image `nymbal build --image` built
 //   NYMBAL_CONTAINER            the running container (started without --rm, so its exit code can be read)
 //   NYMBAL_STORE_URL            the container's published port on the host, http://localhost:<port>
 //   NYMBAL_IMAGE_DATABASE_URL   the container's Postgres database, as the host reaches it
+//   NYMBAL_STRIPE_API_URL       the fake Stripe API, as the host reaches it; it delivers the store's payment webhook
 //
 // The last test stops the container.
 
@@ -66,6 +69,27 @@ interface ProductDoc {
 
 function docker(args: string[]): string {
   return execFileSync('docker', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+}
+
+/** The value `name` has in the scaffold's .env, or undefined. */
+function dotEnv(name: string): string | undefined {
+  const match = new RegExp(`^\\s*${name}\\s*=\\s*(.*?)\\s*$`, 'm').exec(
+    readFileSync(join(SCAFFOLD, '.env'), 'utf8'),
+  )
+  return match?.[1]?.replace(/^(['"])(.*)\1$/, '$2')
+}
+
+/** The running container's environment, as `docker run` gave it. */
+function containerEnv(): Record<string, string> {
+  const entries = JSON.parse(
+    docker(['inspect', '-f', '{{json .Config.Env}}', CONTAINER!]),
+  ) as string[]
+  return Object.fromEntries(
+    entries.map((entry) => [
+      entry.slice(0, entry.indexOf('=')),
+      entry.slice(entry.indexOf('=') + 1),
+    ]),
+  )
 }
 
 /**
@@ -192,11 +216,15 @@ describe('AC-7: the image', () => {
     expect(pid1).toEqual(['node', 'node_modules/nymbal/bin/nymbal.mjs', 'start'])
   })
 
-  it("AC-7: no layer's history, no image config and no file in the image holds a value from the scaffold's .env, and no .env file or *.db is in the app directory", async () => {
+  it("AC-7: no layer's history, no image config and no file in the image holds a value from the scaffold's .env, the secrets key and the JWT secret among them, and no .env file or *.db is in the app directory", async () => {
     const values = envValues()
-    const key = /^\s*NYMBAL_SECRETS_KEY\s*=\s*(\S+)/m.exec(
-      readFileSync(join(SCAFFOLD, '.env'), 'utf8'),
-    )?.[1]
+    const key = dotEnv('NYMBAL_SECRETS_KEY')
+    const jwtSecret = dotEnv('NYMBAL_JWT_SECRET')
+    // Booleans, so a failure prints no .env value.
+    expect(
+      [key, jwtSecret].map((v) => v !== undefined && values.includes(v)),
+      'the searched values hold NYMBAL_SECRETS_KEY and NYMBAL_JWT_SECRET from .env',
+    ).toEqual([true, true])
     const history = docker(['history', '--no-trunc', '--format', '{{.CreatedBy}}', IMAGE!])
     const inspect = docker(['image', 'inspect', IMAGE!])
     const workdir = (
@@ -209,7 +237,6 @@ describe('AC-7: the image', () => {
     const appFiles = exportedPaths().filter((p) => p.startsWith(workdir))
     const inFiles = await exportedHolds(values)
 
-    expect(values).toContain(key)
     expect(values.filter((v) => history.includes(v) || inspect.includes(v))).toEqual([])
     expect(inFiles).toEqual([])
     expect(appFiles.filter((p) => /(^|\/)\.env[^/]*$/.test(p) || /\.db$/.test(p))).toEqual([])
@@ -218,7 +245,7 @@ describe('AC-7: the image', () => {
 })
 
 describe('AC-8: a checkout through the container', () => {
-  it("AC-8: on PORT=8080 behind the container's one port, a shopper adds a product and checks out: one order row in Postgres, stock down by the quantity, the cart empty, and the order page rendered in the container shows the order number", async () => {
+  it("AC-8: on PORT=8080 behind the container's one port, a shopper adds a product and checks out: one order row in Postgres, stock down by the quantity, the cart kept until it is paid, and the order page rendered in the container shows the order number", async () => {
     const api = apiClient()
     const qty = 2
     const listing = await products()
@@ -263,7 +290,8 @@ describe('AC-8: a checkout through the container', () => {
     expect(cartBefore.data.items.length).toBe(1)
     expect(checkout.status, JSON.stringify(checkout.data)).toBe(200)
     expect(rows.rows[0]!['n']).toBe(1)
-    expect(cartAfter.data?.items?.length ?? 0).toBe(cartBefore.data.items.length - 1)
+    // On a real payments provider the cart empties with the payment, not the checkout (AC-10 pays and sees it empty).
+    expect(cartAfter.data?.items?.length ?? 0).toBe(cartBefore.data.items.length)
     expect(page.status, html.slice(0, 500)).toBe(200)
     expect(html).toContain(checkout.data.orderNumber)
   }, 60_000)
@@ -293,6 +321,114 @@ describe('AC-8: a checkout through the container', () => {
     expect(srcs.length, 'the pages load scripts').toBeGreaterThan(0)
     expect([...pages, ...scripts].filter((text) => text.includes('localhost:3001'))).toEqual([])
   })
+})
+
+describe('AC-10: the image runs in production', () => {
+  it("AC-10: the container runs with NODE_ENV=production, the scaffold .env's NYMBAL_JWT_SECRET, NYMBAL_TRUST_PROXY_HOPS=1 and the Stripe keys as run-time environment, answers /ready 200, and names stripe as its payments client", async () => {
+    const env = containerEnv()
+    const jwtSecret = dotEnv('NYMBAL_JWT_SECRET')
+
+    expect(env['NODE_ENV']).toBe('production')
+    expect(jwtSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(env['NYMBAL_JWT_SECRET']).toBe(jwtSecret)
+    expect(env['NYMBAL_TRUST_PROXY_HOPS']).toBe('1')
+    expect(
+      ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'].filter((name) => (env[name] ?? '') === ''),
+    ).toEqual([])
+
+    const ready = await fetch(new URL('/ready', STORE))
+    const caps = (await (await fetch(new URL('/api/capabilities', STORE))).json()) as {
+      data: { payments: { client: { driver: string } | null } }
+    }
+    expect(ready.status).toBe(200)
+    expect(caps.data.payments.client?.driver).toBe('stripe')
+  })
+
+  it("AC-10: a shopper checks out through the container's port; the order read by its key is pending; after the shopper confirms at the fake Stripe API, which delivers the signed payment_intent.succeeded to the store, the order is paid in full, stock is down by the quantity, the cart is empty and the order page shows the number", async () => {
+    const stripeApi = process.env['NYMBAL_STRIPE_API_URL']
+    expect(stripeApi ?? '', 'scaffold-image.sh passes NYMBAL_STRIPE_API_URL').toMatch(
+      /^https?:\/\//,
+    )
+    const api = apiClient()
+    const qty = 2
+    const listing = await products()
+    const product = listing.find((p) => (p.variants?.[0]?.stock ?? 0) >= qty)!
+    const variantId = product.variants![0]!.id
+    const stockOf = async (): Promise<number> =>
+      (await api<ProductDoc>('GET', `/api/products/${product.slug}`)).data.variants!.find(
+        (v) => v.id === variantId,
+      )!.stock
+    const before = await stockOf()
+
+    await api('POST', '/api/cart/items', { variantId, qty })
+    const checkout = await api<{
+      orderNumber: string
+      orderKey: string
+      totalMinor: number
+      paymentIntent: { id: string; clientSecret: string; amountMinor: number }
+    }>('POST', '/api/checkout', {
+      email: `image-paid-${randomBytes(4).toString('hex')}@nymbal.dev`,
+      billingAddress: address,
+      shippingAddress: address,
+    })
+    const keyed = () =>
+      api<{ status: string }>('GET', `/api/orders/${checkout.data.orderNumber}`, undefined, {
+        'x-nymbal-order-key': checkout.data.orderKey,
+      })
+    const pending = await keyed()
+
+    // What Stripe.js sends for the shopper's card step: the publishable key and the intent's client secret.
+    const confirm = await fetch(
+      new URL(`/v1/payment_intents/${checkout.data.paymentIntent.id}/confirm`, stripeApi),
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer pk_test_image_proof',
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_secret: checkout.data.paymentIntent.clientSecret,
+        }).toString(),
+      },
+    )
+    const confirmed = (await confirm.json()) as { amount?: number; status?: string }
+    await vi.waitFor(
+      async () => {
+        expect((await keyed()).data.status).toBe('confirmed')
+      },
+      { timeout: 15_000, interval: 250 },
+    )
+    const client = new pg.Client({ connectionString: DATABASE_URL! })
+    await client.connect()
+    const row = (
+      await client
+        .query('SELECT status, captured_minor, total_minor FROM orders WHERE order_number = $1', [
+          checkout.data.orderNumber,
+        ])
+        .finally(() => client.end())
+    ).rows[0]!
+    const after = await stockOf()
+    const cart = await api<{ items: unknown[] }>('GET', '/api/cart')
+    const page = await fetch(
+      new URL(
+        `/order/${checkout.data.orderNumber}?key=${encodeURIComponent(checkout.data.orderKey)}`,
+        STORE,
+      ),
+    )
+    const html = await page.text()
+
+    expect(checkout.status, JSON.stringify(checkout.data)).toBe(200)
+    expect(pending.data.status).toBe('pending')
+    expect(confirm.status, JSON.stringify(confirmed)).toBe(200)
+    expect(confirmed.amount).toBe(checkout.data.totalMinor)
+    expect(row['status']).toBe('confirmed')
+    expect(row['total_minor']).toBe(checkout.data.totalMinor)
+    expect(row['captured_minor']).toBe(row['total_minor'])
+    expect(after).toBe(before - qty)
+    expect(cart.data?.items?.length ?? 0).toBe(0)
+    expect(page.status, html.slice(0, 500)).toBe(200)
+    expect(html).toContain(checkout.data.orderNumber)
+  }, 60_000)
 })
 
 interface Render {

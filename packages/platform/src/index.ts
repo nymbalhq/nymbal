@@ -83,6 +83,7 @@ export {
   type CapabilitySlot,
   type SlotCapabilities,
 } from './app.js'
+export { resolveAuthSecret, type AuthSecret } from './auth-secret.js'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {
   startInventoryReservationSweeper,

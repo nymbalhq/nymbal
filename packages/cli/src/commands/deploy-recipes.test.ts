@@ -9,6 +9,8 @@ import { flyRecipe, railwayRecipe } from './deploy.js'
 
 // AC-9: the Fly and Railway recipes deploy with readiness, migrations once per deploy and the secrets key from the
 // platform's secret store. AC-10 (unit half): no recipe file and no step holds a value from the project's .env.
+// AC-6: a config on the default JWT secret deploys with NYMBAL_JWT_SECRET from .env as a platform secret, never a
+// hand edit; both recipes trust one proxy hop through NYMBAL_TRUST_PROXY_HOPS.
 
 /** `start`'s shutdown bound when NYMBAL_SHUTDOWN_MS is unset. */
 const DEFAULT_SHUTDOWN_MS = 10_000
@@ -158,28 +160,35 @@ describe('AC-9: the Railway recipe', () => {
 
 const secret = fc.stringMatching(/^[A-Za-z0-9+/=_.:@-]{16,48}$/).filter((s) => new Set(s).size >= 8)
 
+/** `config` with these payments and, when given, its own JWT secret. */
+function variantOf(payments: 'native' | 'stripe', jwtSecret: string | undefined): NymbalConfig {
+  return {
+    ...config,
+    commerce: {
+      ...config.commerce,
+      payments: { ...config.commerce.payments, provider: payments },
+    },
+    security: {
+      ...config.security,
+      auth: { ...config.security.auth, ...(jwtSecret !== undefined && { jwtSecret }) },
+    },
+  }
+}
+
+const ownJwtSecret = fc.option(
+  fc.stringMatching(/^[A-Za-z0-9]{16,40}$/).filter((s) => new Set(s).size >= 6),
+  { nil: undefined },
+)
+
 describe('AC-9: what production refuses comes first', () => {
-  it('AC-9: with native payments or the default jwtSecret, each recipe names that change as a step before any platform step, and with neither it names none; an own jwtSecret is in no step', () => {
+  it('AC-9: with native payments, each recipe names that change as a step before any platform step, and with stripe it names none; no step asks for a hand edit of jwtSecret; an own jwtSecret is in no step', () => {
     fc.assert(
       fc.property(
         appName,
         fc.constantFrom('native', 'stripe'),
-        fc.option(
-          fc.stringMatching(/^[A-Za-z0-9]{16,40}$/).filter((s) => new Set(s).size >= 6),
-          { nil: undefined },
-        ),
+        ownJwtSecret,
         (name, payments, jwtSecret) => {
-          const variant: NymbalConfig = {
-            ...config,
-            commerce: {
-              ...config.commerce,
-              payments: { ...config.commerce.payments, provider: payments },
-            },
-            security: {
-              ...config.security,
-              auth: { ...config.security.auth, ...(jwtSecret !== undefined && { jwtSecret }) },
-            },
-          }
+          const variant = variantOf(payments, jwtSecret)
           const root = projectDir(name)
           for (const [tool, recipe] of [
             ['flyctl', flyRecipe({ name, root, config: variant })],
@@ -189,11 +198,10 @@ describe('AC-9: what production refuses comes first', () => {
             const before = recipe.steps.slice(0, first).join('\n')
 
             expect(first).toBeGreaterThanOrEqual(0)
-            expect([/payments provider/.test(before), /security\.auth\.jwtSecret/.test(before)]).toEqual(
-              [payments === 'native', jwtSecret === undefined],
-            )
+            expect(/payments provider/.test(before)).toBe(payments === 'native')
+            expect(recipe.steps.filter((step) => /<[^>]*jwtSecret[^>]*>/.test(step))).toEqual([])
             expect(
-              recipe.steps.slice(first).filter((step) => /payments provider|jwtSecret/.test(step)),
+              recipe.steps.slice(first).filter((step) => /payments provider/.test(step)),
             ).toEqual([])
             expect(
               recipe.steps.filter((step) => jwtSecret !== undefined && step.includes(jwtSecret)),
@@ -213,6 +221,7 @@ describe('AC-10: no .env value leaves .env', () => {
         appName,
         fc.record({
           NYMBAL_SECRETS_KEY: secret,
+          NYMBAL_JWT_SECRET: secret,
           DATABASE_URL: secret.map((s) => `postgres://shop:${s}@db.internal:5432/shop`),
           REDIS_URL: secret.map((s) => `redis://:${s}@cache.internal:6379/0`),
           NYMBAL_ADMIN_PASSWORD: secret,
@@ -230,6 +239,76 @@ describe('AC-10: no .env value leaves .env', () => {
         },
       ),
       { numRuns: 50 },
+    )
+  })
+})
+
+describe('AC-6: the JWT secret and the proxy hop count', () => {
+  it('AC-6: for any config, with the default secret each recipe sets NYMBAL_JWT_SECRET=<from .env> as a platform secret before its deploy step; with an own secret no step names NYMBAL_JWT_SECRET, and neither file nor any step holds the secret', () => {
+    fc.assert(
+      fc.property(
+        appName,
+        fc.constantFrom('native', 'stripe'),
+        ownJwtSecret,
+        (name, payments, jwtSecret) => {
+          const variant = variantOf(payments, jwtSecret)
+          const root = projectDir(name)
+          const fly = flyRecipe({ name, root, config: variant })
+          const railway = railwayRecipe({ name, root, config: variant })
+          const wanted = jwtSecret === undefined ? 1 : 0
+          const flyJwt = fly.steps.filter((step) => step.includes('NYMBAL_JWT_SECRET'))
+          const railwayJwt = railway.steps.filter((step) => step.includes('NYMBAL_JWT_SECRET'))
+          const flyAt = (pattern: RegExp) => fly.steps.findIndex((step) => pattern.test(step))
+          const railwayAt = (pattern: RegExp) =>
+            railway.steps.findIndex((step) => pattern.test(step))
+
+          expect(flyJwt).toHaveLength(wanted)
+          expect(
+            flyJwt.filter((step) =>
+              /^flyctl secrets set NYMBAL_JWT_SECRET=<from \.env>( .*)? --stage\b/.test(step),
+            ),
+          ).toHaveLength(wanted)
+          expect(railwayJwt).toHaveLength(wanted)
+          expect(
+            railwayJwt.filter((step) =>
+              /^railway variables .*--set '?NYMBAL_JWT_SECRET=<from \.env>'?( |$)/.test(step),
+            ),
+          ).toHaveLength(wanted)
+          // With no secret step its index is -1, before any deploy step as well.
+          expect([
+            flyAt(/NYMBAL_JWT_SECRET/) < flyAt(/^flyctl deploy\b/),
+            railwayAt(/NYMBAL_JWT_SECRET/) < railwayAt(/^railway up\b/),
+          ]).toEqual([true, true])
+          expect(fly.toml).not.toContain('NYMBAL_JWT_SECRET')
+          expect(railway.json).not.toContain('NYMBAL_JWT_SECRET')
+          const out = [fly.toml, railway.json, ...fly.steps, ...railway.steps]
+          expect(out.filter((text) => jwtSecret !== undefined && text.includes(jwtSecret))).toEqual(
+            [],
+          )
+        },
+      ),
+      { numRuns: 40 },
+    )
+  })
+
+  it('AC-6: for any app name, fly.toml sets NYMBAL_TRUST_PROXY_HOPS to 1 in [env], and the railway steps set it to 1 as a service variable before railway up', () => {
+    fc.assert(
+      fc.property(appName, fc.constantFrom('native', 'stripe'), (name, payments) => {
+        const root = projectDir(name)
+        const variant = variantOf(payments, undefined)
+        const fly = flyRecipe({ name, root, config: variant })
+        const railway = railwayRecipe({ name, root, config: variant })
+        const hopSteps = railway.steps.filter((step) => step.includes('NYMBAL_TRUST_PROXY_HOPS'))
+        const at = (pattern: RegExp) => railway.steps.findIndex((step) => pattern.test(step))
+
+        expect((parseToml(fly.toml) as FlyToml).env?.['NYMBAL_TRUST_PROXY_HOPS']).toBe('1')
+        expect(hopSteps).toHaveLength(1)
+        expect(hopSteps[0]).toMatch(
+          new RegExp(`^railway variables --service ${name} --set '?NYMBAL_TRUST_PROXY_HOPS=1'?$`),
+        )
+        expect(at(/^railway up\b/)).toBeGreaterThan(at(/NYMBAL_TRUST_PROXY_HOPS/))
+      }),
+      { numRuns: 30 },
     )
   })
 })

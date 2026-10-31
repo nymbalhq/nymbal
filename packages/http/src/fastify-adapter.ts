@@ -40,8 +40,8 @@ export interface FastifyAdapterOptions {
   logger: Logger
   /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
   security: NymbalConfig['security']
-  /** Whether `X-Forwarded-For` sets the request IP. Off unless a trusted proxy sits in front. */
-  trustProxy?: boolean
+  /** Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default. */
+  trustProxy?: boolean | number
   cors?: CorsOptions
 }
 

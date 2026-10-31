@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -8,9 +8,11 @@ import { main } from '../src/index.js'
 // AC-9: `create-nymbal-app` writes a fresh NYMBAL_SECRETS_KEY (32 bytes, canonical base64) into `.env` and never into
 // `.env.example`; two scaffolds of the same answers differ only in `.env`'s generated lines. The scaffold is read from
 // scaffold/templates (`pnpm build` first).
+// AC-5: `.env` also holds the store's own NYMBAL_JWT_SECRET (32 bytes, base64url), which the platform reads at run
+// time, so neither `.env.example` nor `nymbal.config.ts` names or holds it.
 
 const argv = (...args: string[]): string[] => ['node', 'create-nymbal-app', ...args]
-const GENERATED = new Set(['NYMBAL_SECRETS_KEY', 'NYMBAL_ADMIN_PASSWORD'])
+const GENERATED = new Set(['NYMBAL_SECRETS_KEY', 'NYMBAL_JWT_SECRET', 'NYMBAL_ADMIN_PASSWORD'])
 const scratch: string[] = []
 const originalCwd = process.cwd()
 const savedUa = process.env['npm_config_user_agent']
@@ -94,5 +96,36 @@ describe('AC-9: every scaffold gets its own secrets key', () => {
     expect(fixedLines(readFileSync(join(a, '.env'), 'utf8'))).toEqual(
       fixedLines(readFileSync(join(b, '.env'), 'utf8')),
     )
+  }, 60_000)
+})
+
+describe('AC-5: every scaffold gets its own JWT secret', () => {
+  it("AC-5: .env holds NYMBAL_JWT_SECRET as 32 bytes of base64url beside NYMBAL_SECRETS_KEY, two scaffolds' secrets differ from each other and from the key, .env is mode 0600, and neither .env.example nor nymbal.config.ts names or holds it", async () => {
+    const dirs = [await scaffoldOnce(), await scaffoldOnce()]
+    const read = dirs.map((dir) => {
+      const env = readFileSync(join(dir, '.env'), 'utf8')
+      return {
+        secret: dotEnvValue(env, 'NYMBAL_JWT_SECRET') ?? '',
+        key: dotEnvValue(env, 'NYMBAL_SECRETS_KEY') ?? '',
+        mode: statSync(join(dir, '.env')).mode & 0o777,
+        committed: ['.env.example', 'nymbal.config.ts'].map((file) =>
+          readFileSync(join(dir, file), 'utf8'),
+        ),
+      }
+    })
+
+    for (const { secret, key, mode, committed } of read) {
+      expect(secret).toMatch(/^[A-Za-z0-9_-]+$/)
+      const bytes = Buffer.from(secret, 'base64url')
+      expect(bytes.length).toBe(32)
+      expect(bytes.toString('base64url')).toBe(secret)
+      expect(key.length).toBeGreaterThan(0)
+      expect(secret).not.toBe(key)
+      expect(mode).toBe(0o600)
+      expect(
+        committed.filter((text) => text.includes('NYMBAL_JWT_SECRET') || text.includes(secret)),
+      ).toEqual([])
+    }
+    expect(read[0]!.secret).not.toBe(read[1]!.secret)
   }, 60_000)
 })

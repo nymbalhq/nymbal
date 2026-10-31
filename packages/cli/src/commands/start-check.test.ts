@@ -24,8 +24,11 @@ import { checkStartEnv } from './start.js'
 // the problem and binds nothing. The test holds PORT itself before spawning, so a start that bound first would print
 // EADDRINUSE instead of the problem. Spawns the built CLI (`pnpm build` first).
 
-/** Within this a start has run only its environment check: no adapter connect to a non-routable host answers so fast. */
-const CHECKED_WITHIN_MS = 2000
+/**
+ * Within this a start has run only its environment check: a connect to a non-routable host has no client timeout and
+ * waits on the OS's (over a minute). The margin is for a loaded machine, where the spawn alone has passed 2 s.
+ */
+const CHECKED_WITHIN_MS = 10_000
 
 let cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => {
@@ -45,7 +48,7 @@ async function holdPort(host: string): Promise<number> {
 }
 
 describe('AC-2: start refuses before it binds or builds', () => {
-  it('AC-2: commandStore postgres with DATABASE_URL at a non-routable address and NYMBAL_SECRETS_KEY missing exits 1 within 2 s, naming the key, on a port the test holds, with no storefront started', async () => {
+  it('AC-2: commandStore postgres with DATABASE_URL at a non-routable address and NYMBAL_SECRETS_KEY missing exits 1 within 10 s, naming the key, on a port the test holds, with no storefront started', async () => {
     const raw = storeConfig({ commandStore: 'postgres' })
     const project = storeProject(raw)
     cleanup.push(() => project.remove())
@@ -129,6 +132,8 @@ describe('AC-2: start refuses before it binds or builds', () => {
       env: startEnv({
         PORT: String(port),
         NODE_ENV: undefined,
+        // The default secret is refused only while no NYMBAL_JWT_SECRET replaces it; none is inherited here.
+        NYMBAL_JWT_SECRET: undefined,
         NYMBAL_STOREFRONT_ENTRY: stand.entry,
       }),
       timeoutMs: 30_000,

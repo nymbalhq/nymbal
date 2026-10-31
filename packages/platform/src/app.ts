@@ -21,7 +21,8 @@ import {
 import { isNotConfigured } from './adapters/not-configured.js'
 import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
-import { scrubbingLogger } from './settings/secret-set.js'
+import { addSecret, scrubbingLogger } from './settings/secret-set.js'
+import { JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
@@ -79,10 +80,14 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
- * tokens with the schema's published default secret. Checked on the resolved adapter, built or injected, before
- * anything opens the store.
+ * tokens with the schema's published default secret. Checked on the resolved adapter, built or injected, and the
+ * effective secret, before anything opens the store.
  */
-function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter): void {
+function refuseUnsafeProduction(
+  config: NymbalConfig,
+  payments: PaymentsAdapter,
+  jwtSecret: string,
+): void {
   if (process.env.NODE_ENV !== 'production') return
   const provider = config.commerce.payments.provider
   if (payments.providerName === 'native-stub') {
@@ -92,9 +97,9 @@ function refuseUnsafeProduction(config: NymbalConfig, payments: PaymentsAdapter)
       { code: 'config.production_stub_payments', context: { provider } },
     )
   }
-  if (config.security.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+  if (jwtSecret === DEFAULT_JWT_SECRET) {
     throw new ConfigError(
-      'security.auth.jwtSecret is the schema default; set a secret of your own for production.',
+      `security.auth.jwtSecret is the schema default and ${JWT_SECRET_ENV} is not set; set either to a secret of your own for production.`,
       { code: 'config.production_default_jwt_secret' },
     )
   }
@@ -201,6 +206,21 @@ export async function createApp(
   )
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
+  const jwt = resolveAuthSecret(config, process.env)
+  addSecret(jwt.secret)
+  const shadowed = process.env[JWT_SECRET_ENV]
+  if (jwt.source === 'config' && shadowed !== undefined && shadowed !== jwt.secret) {
+    logger.warn(
+      { variable: JWT_SECRET_ENV },
+      `security.auth.jwtSecret in the config is used; ${JWT_SECRET_ENV} is set and ignored`,
+    )
+  }
+  if (process.env.NODE_ENV === 'production' && jwt.secret.length < 32) {
+    logger.warn(
+      { source: jwt.source },
+      'the JWT secret is shorter than 32 characters; HS256 wants 256 bits (`openssl rand -base64 32`)',
+    )
+  }
   // Settings are read, through a read-only open closed again here, before any adapter is built: payments first.
   const settings = await loadBootSettings(config, {
     storage: {
@@ -216,7 +236,7 @@ export async function createApp(
     options.adapters,
     settings.values,
   )
-  refuseUnsafeProduction(config, payments)
+  refuseUnsafeProduction(config, payments, jwt.secret)
   const security = await resolveSecurityAdapter(config, adapterLogger)
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
@@ -276,6 +296,7 @@ export async function createApp(
       payments: adapters.payments,
       searchAdapter: adapters.search,
       email: adapters.email,
+      jwtSecret: jwt.secret,
     })
 
     await registerHandlers({
@@ -351,6 +372,7 @@ export async function createApp(
           eventBus: subscriberBus,
           publisher,
           settingsSlots: settings.slots,
+          jwtSecret: jwt.secret,
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
         })

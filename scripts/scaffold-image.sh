@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # scaffold-image.sh <astro|nextjs>: the image proof. Publishes every public package to a local registry at one
 # snapshot version (as scaffold-clean.sh does), scaffolds a store outside this checkout, puts it on Postgres, the Redis
-# document store and the Redis Streams bus with `nymbal add`, builds its image with `nymbal build --image`, runs
-# `nymbal migrate` and `nymbal seed` in it, starts `nymbal start` in a container on PORT=8080, and runs the
-# `scaffold-image` vitest project against the container's port. Needs Docker, and a Postgres and a Redis the containers
-# reach on the host: NYMBAL_TEST_POSTGRES_URL and NYMBAL_TEST_REDIS_URL, else this worktree's compose stack.
+# document store, the Redis Streams bus and the stripe payments adapter with `nymbal add`, points stripe at the fake
+# Stripe API (tests/fixtures/stripe-api/server.mjs, run here on the host), builds its image with `nymbal build --image`,
+# runs `nymbal migrate` and `nymbal seed` in it, starts `nymbal start` in a container on PORT=8080 with
+# NODE_ENV=production, and runs the `scaffold-image` vitest project against the container's port. Needs Docker, and a
+# Postgres and a Redis the containers reach on the host: NYMBAL_TEST_POSTGRES_URL and NYMBAL_TEST_REDIS_URL, else this
+# worktree's compose stack.
 #
 # It edits package versions, the generated scaffold and the lockfile in this checkout while it runs, and restores them
 # on exit.
@@ -25,6 +27,7 @@ registry_container=""
 store_container=""
 image=""
 database=""
+stripe_pid=""
 restore=0
 
 if [ -z "${NYMBAL_TEST_POSTGRES_URL:-}" ] || [ -z "${NYMBAL_TEST_REDIS_URL:-}" ]; then
@@ -53,6 +56,7 @@ cleanup() {
   local status=$?
   set +e
   [ -n "$store_container" ] && docker rm -f "$store_container" >/dev/null 2>&1
+  [ -n "$stripe_pid" ] && kill "$stripe_pid" >/dev/null 2>&1 && wait "$stripe_pid" 2>/dev/null
   [ -n "$image" ] && docker image rm -f "$image" >/dev/null 2>&1
   [ -n "$database" ] && psql_run "DROP DATABASE IF EXISTS \"$database\" WITH (FORCE)" >/dev/null 2>&1
   [ -n "$registry_container" ] && docker rm -f "$registry_container" >/dev/null 2>&1
@@ -126,11 +130,23 @@ echo "scaffold-image: snapshot $snapshot on $registry"
 (cd "$root" && pnpm build >/dev/null && pnpm --filter @nymbalhq/admin build >/dev/null && pnpm -r publish --no-git-checks --access public --tag latest --registry "$registry/" >"$work/publish.log" 2>&1) \
   || { tail -30 "$work/publish.log" >&2; echo "scaffold-image: publish failed" >&2; exit 1; }
 
-# ─── create, on Postgres and Redis ──────────────────────────────────────────────────────────────────────────────
+# ─── create, on Postgres, Redis and stripe ──────────────────────────────────────────────────────────────────────
 (cd "$parent" && npx --yes create-nymbal-app shop --template "$template" --yes)
 project="$parent/shop"
 # Config is code and bakes into the image, so the store's infrastructure is set before the build.
-(cd "$project" && npx nymbal add postgres && npx nymbal add redis)
+(cd "$project" && npx nymbal add postgres && npx nymbal add redis && npx nymbal add stripe)
+# Production refuses the stub payments adapter, so the store runs on stripe against the fake on this host's port. The
+# keys are run-time settings (container environment), never config.
+stripe_port="$(free_port)"
+node -e '
+const { readFileSync, writeFileSync } = require("node:fs")
+const [file, port] = process.argv.slice(1)
+const source = readFileSync(file, "utf8")
+const provider = /provider:\s*(["\x27])stripe\1/g
+const found = source.match(provider) ?? []
+if (found.length !== 1) { console.error(`scaffold-image: ${found.length} stripe providers in ${file}`); process.exit(1) }
+writeFileSync(file, source.replace(provider, `provider: "stripe", config: { host: "host.docker.internal", port: ${port}, protocol: "http" }`))
+' "$project/nymbal.config.ts" "$stripe_port"
 
 # ─── the image ──────────────────────────────────────────────────────────────────────────────────────────────────
 image="nymbal-scaffold-image-$template:${snapshot##*.}"
@@ -147,6 +163,9 @@ host_database_url="$(with_database "$postgres_url" "$database")"
 secrets_key="$(sed -n 's/^NYMBAL_SECRETS_KEY=//p' "$project/.env")"
 admin_email="$(sed -n 's/^NYMBAL_ADMIN_EMAIL=//p' "$project/.env")"
 admin_password="$(sed -n 's/^NYMBAL_ADMIN_PASSWORD=//p' "$project/.env")"
+jwt_secret="$(sed -n 's/^NYMBAL_JWT_SECRET=//p' "$project/.env")"
+[ -n "$jwt_secret" ] || { echo "scaffold-image: the scaffold's .env has no NYMBAL_JWT_SECRET" >&2; exit 1; }
+webhook_secret="whsec_$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
 store_port="$(free_port)"
 store_url="http://localhost:$store_port"
 cat > "$work/container.env" <<EOF
@@ -157,13 +176,25 @@ NYMBAL_SECRETS_KEY=$secrets_key
 NYMBAL_ADMIN_EMAIL=$admin_email
 NYMBAL_ADMIN_PASSWORD=$admin_password
 NYMBAL_PUBLIC_URL=$store_url
+NYMBAL_JWT_SECRET=$jwt_secret
+NYMBAL_TRUST_PROXY_HOPS=1
+STRIPE_SECRET_KEY=sk_test_mock
+STRIPE_WEBHOOK_SECRET=$webhook_secret
 PORT=8080
-NODE_ENV=staging
+NODE_ENV=production
 EOF
-# NODE_ENV=staging: in production the app refuses a fresh scaffold's stub payments and default JWT secret.
 in_image() { docker run --rm --add-host host.docker.internal:host-gateway --env-file "$work/container.env" "$image" "$@"; }
 in_image node node_modules/nymbal/bin/nymbal.mjs migrate
 in_image node node_modules/nymbal/bin/nymbal.mjs seed
+
+# The fake Stripe API on every host address (a container reaches the host through host-gateway, not loopback). A
+# shopper's confirm there posts the signed payment_intent.succeeded to the store, as Stripe does.
+node "$root/tests/fixtures/stripe-api/server.mjs" --host 0.0.0.0 --port "$stripe_port" \
+  --webhook-url "http://127.0.0.1:$store_port/api/webhooks/stripe" --webhook-secret "$webhook_secret" \
+  >"$work/stripe.out" 2>"$work/stripe.log" &
+stripe_pid=$!
+for _ in $(seq 1 40); do [ -s "$work/stripe.out" ] && break; sleep 0.25; done
+[ -s "$work/stripe.out" ] || { cat "$work/stripe.log" >&2; echo "scaffold-image: the fake Stripe API did not start" >&2; exit 1; }
 
 ready_start="$(now_ms)"
 store_container="$(docker run -d --add-host host.docker.internal:host-gateway --env-file "$work/container.env" \
@@ -185,8 +216,10 @@ ready_seconds="$(seconds_since "$ready_start")"
 # ─── the check ───────────────────────────────────────────────────────────────────────────────────────────────────
 if ! (cd "$root" && NYMBAL_SCAFFOLD_DIR="$project" NYMBAL_IMAGE="$image" NYMBAL_CONTAINER="$store_container" \
   NYMBAL_STORE_URL="$store_url" NYMBAL_IMAGE_DATABASE_URL="$host_database_url" \
+  NYMBAL_STRIPE_API_URL="http://127.0.0.1:$stripe_port" \
   pnpm vitest run --project scaffold-image); then
   docker logs "$store_container" 2>&1 | tail -40 >&2
+  tail -20 "$work/stripe.log" >&2
   exit 1
 fi
 

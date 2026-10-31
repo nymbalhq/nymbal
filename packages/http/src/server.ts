@@ -1,12 +1,13 @@
 import type { NymbalConfig } from '@nymbalhq/config'
-import type {
-  DocumentStoreAdapter,
-  HttpAdapter,
-  HttpMethod,
-  Logger,
-  MiddlewareHandler,
-  RouteHandler,
-  RouteOptions,
+import {
+  ConfigError,
+  type DocumentStoreAdapter,
+  type HttpAdapter,
+  type HttpMethod,
+  type Logger,
+  type MiddlewareHandler,
+  type RouteHandler,
+  type RouteOptions,
 } from '@nymbalhq/types'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 import { createHealthRoute } from './routes/health.js'
@@ -32,6 +33,26 @@ export interface HttpServer {
   stop(): Promise<void>
 }
 
+const TRUST_PROXY_HOPS_ENV = 'NYMBAL_TRUST_PROXY_HOPS'
+
+/**
+ * `http.trustProxy`, with NYMBAL_TRUST_PROXY_HOPS filling it when the config leaves it `false`: the hop count is the
+ * platform's, so it is set where the store runs, not in the config the image is built from. A set variable must be an
+ * integer of 0 or more, whatever the config holds; Fastify would trust nothing, silently, below 0.
+ */
+export function resolveTrustProxy(config: NymbalConfig, env: NodeJS.ProcessEnv): boolean | number {
+  const raw = env[TRUST_PROXY_HOPS_ENV]
+  const hops = raw === undefined ? undefined : /^\d+$/.test(raw.trim()) ? Number(raw) : NaN
+  if (hops !== undefined && !Number.isSafeInteger(hops)) {
+    throw new ConfigError(`${TRUST_PROXY_HOPS_ENV} must be a whole number of proxy hops, 0 or more`, {
+      code: 'config.trust_proxy_hops_invalid',
+      context: { variable: TRUST_PROXY_HOPS_ENV },
+    })
+  }
+  const configured = config.http.trustProxy
+  return configured === false && hops !== undefined ? hops : configured
+}
+
 export function createHttpServer(deps: HttpServerDeps): HttpServer {
   const { config, logger, documentStore, version } = deps
   if (config.http.adapter !== 'fastify') {
@@ -41,7 +62,7 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     logger,
     cors: config.http.cors,
     security: config.security,
-    trustProxy: config.http.trustProxy,
+    trustProxy: resolveTrustProxy(config, process.env),
   })
 
   const server: HttpServer = {

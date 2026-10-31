@@ -11,7 +11,12 @@ export {
   type SecurityGuard,
 } from './security-middleware.js'
 export { RateLimiter } from './rate-limit.js'
-export { createHttpServer, type HttpServer, type HttpServerDeps } from './server.js'
+export {
+  createHttpServer,
+  resolveTrustProxy,
+  type HttpServer,
+  type HttpServerDeps,
+} from './server.js'
 export { createHealthRoute } from './routes/health.js'
 export { createReadyRoute, type ReadyState } from './routes/ready.js'
 export {

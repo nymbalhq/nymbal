@@ -50,6 +50,8 @@ export interface RegisterAllRoutesDeps {
   publisher: EventPublisher
   /** The slots whose provider packages declare settings, as the store booted with them. */
   settingsSlots: readonly DeclaredSlot[]
+  /** The effective JWT secret (`resolveAuthSecret`), which signs the event-stream ticket as it signs tokens. */
+  jwtSecret: string
   /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
   adminRoot?: string | null | undefined
 }
@@ -194,7 +196,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   registerEventsSseRoute(adapter, {
     eventBus,
     documentStore,
-    ticketSecret: config.security.auth.jwtSecret,
+    ticketSecret: deps.jwtSecret,
   })
   registerInboundWebhookRoute(adapter, {
     adapters,

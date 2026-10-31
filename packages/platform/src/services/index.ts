@@ -66,10 +66,13 @@ export interface BuildServicesDeps {
   payments: PaymentsAdapter
   searchAdapter: SearchAdapter
   email: EmailAdapter
+  /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
+  jwtSecret: string
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, publisher, logger, payments, searchAdapter, email } = deps
+  const { config, store, repos, publisher, logger, payments, searchAdapter, email, jwtSecret } =
+    deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -126,7 +129,7 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       repos,
       publisher,
       logger: logger.child({ service: 'auth' }),
-      jwtSecret: config.security.auth.jwtSecret,
+      jwtSecret,
       accessTtl: config.security.auth.accessTtl,
       refreshTtl: config.security.auth.refreshTtl,
     }),

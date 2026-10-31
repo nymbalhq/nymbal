@@ -5,7 +5,7 @@ import { connect, createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import type { NymbalConfig } from '@nymbalhq/config'
 import { boundedHealthCheck, ConfigError, type HealthReport } from '@nymbalhq/types'
 import {
   createApp,
@@ -14,6 +14,7 @@ import {
   keyProblem,
   migrationState,
   readSecretsKey,
+  resolveAuthSecret,
   runMigrations,
   type CommandStore,
 } from '@nymbalhq/platform'
@@ -22,6 +23,7 @@ import {
   createReadyRoute,
   FastifyHttpAdapter,
   forwardToStorefront,
+  resolveTrustProxy,
   type ReadyState,
 } from '@nymbalhq/http'
 import { loadProject } from '../utils/project.js'
@@ -79,6 +81,18 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   } else if (publicOrigin(env['NYMBAL_PUBLIC_URL']) === null) {
     problems.push('NYMBAL_PUBLIC_URL must be an http or https origin with no path')
   }
+  // The app refuses a malformed NYMBAL_JWT_SECRET or NYMBAL_TRUST_PROXY_HOPS under any NODE_ENV, by the same check.
+  const refusal = <T>(check: () => T): T | undefined => {
+    try {
+      return check()
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error
+      problems.push(error.message)
+      return undefined
+    }
+  }
+  const jwt = refusal(() => resolveAuthSecret(config, env))
+  refusal(() => resolveTrustProxy(config, env))
   if (env['NODE_ENV'] === 'development') {
     problems.push('NODE_ENV is development: nymbal start runs in production; unset it')
   }
@@ -90,10 +104,10 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
           '(config.production_stub_payments): configure a real payments provider, such as `nymbal add stripe`',
       )
     }
-    if (config.security.auth.jwtSecret === DEFAULT_JWT_SECRET) {
+    if (jwt?.source === 'default') {
       problems.push(
         'security.auth.jwtSecret is the schema default (config.production_default_jwt_secret): ' +
-          'set a secret of your own in nymbal.config.ts',
+          'set NYMBAL_JWT_SECRET (create-nymbal-app writes one into .env) or a secret of your own in nymbal.config.ts',
       )
     }
   }

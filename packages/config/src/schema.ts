@@ -428,8 +428,13 @@ export const httpSchema = z.object({
   adapter: z.enum(['fastify', 'hono']).default('fastify'),
   port: z.number().int().positive().default(3001),
   host: z.string().default('0.0.0.0'),
-  /** Whether `X-Forwarded-For` sets the client IP the rate limiter keys on; only behind a proxy you run. */
-  trustProxy: z.boolean().default(false),
+  /**
+   * Which `X-Forwarded-For` entries set the client IP the rate limiter keys on. A number trusts that many proxy hops
+   * nearest the server (`1` behind one platform proxy); `0` trusts none. `true` trusts every entry, so a client's own
+   * left-most value wins: spoofable unless your proxy overwrites the header. Left at `false` (explicitly or not),
+   * NYMBAL_TRUST_PROXY_HOPS fills it at run time.
+   */
+  trustProxy: z.union([z.boolean(), z.number().int().min(0)]).default(false),
   cors: z
     .object({
       allowedOrigins: z

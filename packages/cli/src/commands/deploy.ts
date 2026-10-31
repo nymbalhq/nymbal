@@ -31,23 +31,22 @@ function usesRedis(config: NymbalConfig): boolean {
 }
 
 /**
- * What the config must change before its image can run in production, where the app refuses the stub payments and
- * the schema's JWT secret. Each is a step a live run stops at (`<…>`): the config is code, built into the image.
+ * What the config must change before its image can run in production, where the app refuses the stub payments. It is
+ * a step a live run stops at (`<…>`): the config is code, built into the image.
  */
 function prerequisites(config: NymbalConfig): string[] {
-  return [
-    ...(config.commerce.payments.provider === 'native'
-      ? [
-          '<first: configure a real payments provider (nymbal add stripe); production refuses the native stub>',
-        ]
-      : []),
-    ...(config.security.auth.jwtSecret === DEFAULT_JWT_SECRET
-      ? [
-          '<first: set security.auth.jwtSecret in nymbal.config.ts to a secret of your own; production refuses the default>',
-        ]
-      : []),
-  ]
+  return config.commerce.payments.provider === 'native'
+    ? ['<first: configure a real payments provider (nymbal add stripe); production refuses the native stub>']
+    : []
 }
+
+/** Whether the app signs tokens with NYMBAL_JWT_SECRET: the config names no secret of its own. */
+function jwtFromEnv(config: NymbalConfig): boolean {
+  return config.security.auth.jwtSecret === DEFAULT_JWT_SECRET
+}
+
+/** Fly's and Railway's edge proxy is one hop in front of the app. */
+const PROXY_HOPS = 1
 
 export function flyRecipe(project: DeployProject): { file: string; toml: string; steps: string[] } {
   const { name, config } = project
@@ -64,6 +63,7 @@ export function flyRecipe(project: DeployProject): { file: string; toml: string;
     '',
     '[env]',
     `  NYMBAL_PUBLIC_URL = "https://${name}.fly.dev"`,
+    `  NYMBAL_TRUST_PROXY_HOPS = "${PROXY_HOPS}"`,
     '',
     '[http_service]',
     '  internal_port = 3001',
@@ -93,6 +93,9 @@ export function flyRecipe(project: DeployProject): { file: string; toml: string;
         ]
       : []),
     `flyctl secrets set NYMBAL_SECRETS_KEY=${FROM_ENV} --app ${name} --stage`,
+    ...(jwtFromEnv(config)
+      ? [`flyctl secrets set NYMBAL_JWT_SECRET=${FROM_ENV} --app ${name} --stage`]
+      : []),
     `flyctl deploy --app ${name}`,
   ]
   return { file: join(project.root, 'fly.toml'), toml, steps }
@@ -134,6 +137,8 @@ export function railwayRecipe(project: DeployProject): {
       : []),
     `railway variables ${service} --set 'NYMBAL_PUBLIC_URL=https://\${{RAILWAY_PUBLIC_DOMAIN}}'`,
     `railway variables ${service} --set NYMBAL_SECRETS_KEY=${FROM_ENV}`,
+    ...(jwtFromEnv(config) ? [`railway variables ${service} --set NYMBAL_JWT_SECRET=${FROM_ENV}`] : []),
+    `railway variables ${service} --set NYMBAL_TRUST_PROXY_HOPS=${PROXY_HOPS}`,
     `railway domain ${service}`,
     `railway up ${service}`,
   ]
@@ -187,7 +192,9 @@ function runSteps(steps: string[], tool: string): void {
       const key = part.slice(0, at - 1)
       const value = process.env[key]
       if (value === undefined || value === '') {
-        process.stderr.write(`${pc.red(`${key} is not set in .env`)}\n`)
+        // A store scaffolded before create-nymbal-app wrote the JWT secret has none in .env.
+        const make = key === 'NYMBAL_JWT_SECRET' ? ': add one made by `openssl rand -base64 32`' : ''
+        process.stderr.write(`${pc.red(`${key} is not set in .env${make}`)}\n`)
         process.exit(1)
       }
       return `${key}=${value}`
