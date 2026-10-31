@@ -1,5 +1,6 @@
 // Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
 // Reads: .github/workflows/nightly-trigger.yml, pnpm-lock.yaml, tests/e2e/package.json
+// Reads: .github/workflows/registry.yml
 // Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
 // Reads: tests/perf/perf-budgets.test.ts
 import { createHash } from 'node:crypto'
@@ -9,12 +10,13 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import {
@@ -1359,19 +1361,30 @@ describe('AC-4: coverage runs nightly, not on a push', () => {
   })
 })
 
-type Recorded = { status: number; argv: string[]; token: string; repoKnown: boolean }
+type Recorded = { argv: string[]; token: string; repoKnown: boolean }
 
-/** Runs a step's script under bash with a `gh` on PATH that records its arguments, token and repository. */
-function runWithGh(run: Executed, repository: string, checkedOut: boolean): Recorded {
+/**
+ * Runs a step's script under bash with a `gh` on PATH that records, call by call, its arguments, token and
+ * repository. The script's exit status, and every `gh` call in the order made.
+ */
+function runWithGh(
+  run: Executed,
+  repository: string,
+  checkedOut: boolean,
+): { status: number; calls: Recorded[] } {
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-gh-stub-'))
   scratchDirs.push(dir)
+  const calls = join(dir, 'calls')
+  mkdirSync(calls)
   writeFileSync(
     join(dir, 'gh'),
     [
       '#!/usr/bin/env bash',
-      `printf '%s\\n' "$@" >"${dir}/argv"`,
-      `printf '%s' "\${GH_TOKEN:-\${GITHUB_TOKEN:-}}" >"${dir}/token"`,
-      `printf '%s' "\${GH_REPO:-}" >"${dir}/repo"`,
+      `n=$(ls "${calls}" | wc -l | tr -d ' ')`,
+      `mkdir "${calls}/$n"`,
+      `printf '%s\\n' "$@" >"${calls}/$n/argv"`,
+      `printf '%s' "\${GH_TOKEN:-\${GITHUB_TOKEN:-}}" >"${calls}/$n/token"`,
+      `printf '%s' "\${GH_REPO:-}" >"${calls}/$n/repo"`,
       '',
     ].join('\n'),
   )
@@ -1381,28 +1394,32 @@ function runWithGh(run: Executed, repository: string, checkedOut: boolean): Reco
     encoding: 'utf8',
     env: { ...run.env, HOME: dir, PATH: `${dir}:/usr/bin:/bin` },
   })
-  const read = (name: string): string => {
+  const read = (call: string, name: string): string => {
     try {
-      return readFileSync(join(dir, name), 'utf8')
+      return readFileSync(join(calls, call, name), 'utf8')
     } catch {
       return ''
     }
   }
-  const argv = read('argv').split('\n').slice(0, -1)
-  let repo = read('repo')
-  const kept: string[] = []
-  for (let k = 0; k < argv.length; k += 1) {
-    const arg = argv[k]!
-    if (arg === '--repo' || arg === '-R') repo = argv[(k += 1)] ?? ''
-    else if (arg.startsWith('--repo=')) repo = arg.slice('--repo='.length)
-    else kept.push(arg)
-  }
-  return {
-    status: r.status ?? -1,
-    argv: kept,
-    token: read('token'),
-    repoKnown: repo === repository || (repo === '' && checkedOut),
-  }
+  const recorded = readdirSync(calls)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((call) => {
+      const argv = read(call, 'argv').split('\n').slice(0, -1)
+      let repo = read(call, 'repo')
+      const kept: string[] = []
+      for (let k = 0; k < argv.length; k += 1) {
+        const arg = argv[k]!
+        if (arg === '--repo' || arg === '-R') repo = argv[(k += 1)] ?? ''
+        else if (arg.startsWith('--repo=')) repo = arg.slice('--repo='.length)
+        else kept.push(arg)
+      }
+      return {
+        argv: kept,
+        token: read(call, 'token'),
+        repoKnown: repo === repository || (repo === '' && checkedOut),
+      }
+    })
+  return { status: r.status ?? -1, calls: recorded }
 }
 
 const scratchDirs: string[] = []
@@ -1422,7 +1439,7 @@ describe("AC-5: the nightly is dev's, by dispatch", () => {
     }).toEqual({ events: ['workflow_dispatch'], names: branches.map((b) => `Nightly on ${b}`) })
   })
 
-  it("AC-5: nightly-trigger.yml runs on the 03:00 schedule alone, and its one step dispatches dev's nightly.yml with the GITHUB_TOKEN", () => {
+  it("AC-6: nightly-trigger.yml runs on the 03:00 schedule alone, and dispatches dev's nightly.yml then dev's registry.yml, both with the GITHUB_TOKEN", () => {
     const trigger = loadWorkflow(NIGHTLY_TRIGGER)
     const token = 'ghs_fixture-token'
     const github = {
@@ -1437,29 +1454,33 @@ describe("AC-5: the nightly is dev's, by dispatch", () => {
     }
     const runs = execute(trigger, github, { secrets: { GITHUB_TOKEN: token } })
     const schedule = (trigger.on as { schedule?: Array<{ cron?: string }> } | undefined)?.schedule
+    const stepsRun = runs.map((r) =>
+      runWithGh(
+        r,
+        github.repository,
+        (trigger.jobs[r.job]?.steps ?? []).some((s) => s.uses?.startsWith('actions/checkout@')),
+      ),
+    )
     expect({
       events: eventsOf(trigger),
       crons: (schedule ?? []).map((s) => s.cron),
-      actions: runs.map((r) => (trigger.jobs[r.job]?.permissions ?? trigger.permissions)?.actions),
-      dispatched: runs.map((r) =>
-        runWithGh(
-          r,
-          github.repository,
-          (trigger.jobs[r.job]?.steps ?? []).some((s) => s.uses?.startsWith('actions/checkout@')),
+      actions: [
+        ...new Set(
+          runs.map((r) => (trigger.jobs[r.job]?.permissions ?? trigger.permissions)?.actions),
         ),
-      ),
+      ],
+      failed: stepsRun.filter((s) => s.status !== 0).length,
+      dispatched: stepsRun.flatMap((s) => s.calls),
     }).toEqual({
       events: ['schedule'],
       crons: ['0 3 * * *'],
       actions: ['write'],
-      dispatched: [
-        {
-          status: 0,
-          argv: ['workflow', 'run', 'nightly.yml', '--ref', 'dev'],
-          token,
-          repoKnown: true,
-        },
-      ],
+      failed: 0,
+      dispatched: ['nightly.yml', 'registry.yml'].map((workflow) => ({
+        argv: ['workflow', 'run', workflow, '--ref', 'dev'],
+        token,
+        repoKnown: true,
+      })),
     })
   })
 
@@ -1479,6 +1500,196 @@ describe("AC-5: the nightly is dev's, by dispatch", () => {
     expect(lenient).toEqual(
       ['e2e-full', 'quarantine', ...coverageJobs(nightly, nightlyDispatch('dev', 'f'))].sort(),
     )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------
+// The registry nightly installs and certifies adapters nobody here wrote, so its job holds nothing their code could
+// use: no write permission, no secret, no persisted token, and no cache a job holding secrets would restore. Its one
+// saved cache is the status history, carried from night to night so the 7-day clock runs.
+// ---------------------------------------------------------------------------------------------------------------
+
+const REGISTRY = fileURLToPath(new URL('../../.github/workflows/registry.yml', import.meta.url))
+const REGISTRY_RUN_ID = '4242'
+const REGISTRY_DISPATCH: Ctx = {
+  event_name: 'workflow_dispatch',
+  base_ref: '',
+  ref: 'refs/heads/dev',
+  ref_name: 'dev',
+  sha: sha('d'),
+  repository: 'nymbalhq/nymbal',
+  run_id: REGISTRY_RUN_ID,
+  event: { inputs: {} },
+}
+const RUNNER_WORKSPACE = '/home/runner/work/nymbal/nymbal'
+const RUNNER_TEMP = '/home/runner/work/_temp'
+
+describe('AC-6: the registry workflow', () => {
+  it('AC-6: registry.yml runs on workflow_dispatch alone, in one job holding contents: read and nothing else, with a timeout, no secret, a checkout that keeps no token, and no setup-node or actions/cache@ cache', () => {
+    const workflow = loadWorkflow(REGISTRY)
+    const jobs = Object.values(workflow.jobs)
+    const steps = jobs.flatMap((j) => j.steps ?? [])
+    const using = (prefix: string) => steps.filter((s) => s.uses?.startsWith(prefix) === true)
+
+    expect({
+      events: eventsOf(workflow),
+      permissions: jobs.map((j) => j.permissions ?? workflow.permissions ?? null),
+      timeouts: jobs.map((j) => text((j as { 'timeout-minutes'?: Yaml })['timeout-minutes'])),
+      secrets: JSON.stringify(workflow).match(/\$\{\{[^}]*\bsecrets\b[^}]*\}\}/g) ?? [],
+      checkouts: using('actions/checkout@').map((s) => text(s.with?.['persist-credentials'])),
+      setupNodeCaches: using('actions/setup-node@').flatMap((s) =>
+        s.with?.['cache'] === undefined ? [] : [s.with['cache']],
+      ),
+      cacheSaveAndRestore: using('actions/cache@').map((s) => s.uses),
+    }).toEqual({
+      events: ['workflow_dispatch'],
+      permissions: [{ contents: 'read' }],
+      timeouts: ['90'],
+      secrets: [],
+      checkouts: ['false'],
+      setupNodeCaches: [],
+      cacheSaveAndRestore: [],
+    })
+  })
+
+  it("AC-6: registry.yml restores last night's history to the file pnpm registry reads on registry/adapters.json, saves only that file as registry-history-<run id> after the run, and uploads the run's output as registry-site", () => {
+    const workflow = loadWorkflow(REGISTRY)
+    const [jobId, job] = Object.entries(workflow.jobs)[0] ?? ['', { steps: [] } as Job]
+    const steps = job.steps ?? []
+    const base: Ctx = {
+      github: REGISTRY_DISPATCH,
+      matrix: {},
+      inputs: {},
+      vars: {},
+      secrets: {},
+      runner: { os: 'Linux', temp: RUNNER_TEMP },
+      steps: {},
+    }
+    const wfEnv = layer(workflow.env, { ...base, env: {} })
+    const jobEnv = { ...wfEnv, ...layer(job.env, { ...base, env: wfEnv }) }
+    const withOf = (step: Step, key: string): string => {
+      try {
+        return substitute(text(step.with?.[key]), { ...base, env: jobEnv }).trim()
+      } catch {
+        return ''
+      }
+    }
+
+    // Every run step under bash in a stand-in workspace, with a `pnpm` on PATH that records the step and its words.
+    const dir = mkdtempSync(join(tmpdir(), 'nymbal-registry-wf-'))
+    scratchDirs.push(dir)
+    const ws = join(dir, 'ws')
+    const bin = join(dir, 'bin')
+    const calls = join(dir, 'calls')
+    for (const d of [ws, bin, calls]) mkdirSync(d)
+    writeFileSync(
+      join(bin, 'pnpm'),
+      [
+        '#!/usr/bin/env bash',
+        `n=$(ls "${calls}" | wc -l | tr -d ' ')`,
+        `printf '%s\\n' "$REGISTRY_STEP" "$@" >"${calls}/$n"`,
+        '',
+      ].join('\n'),
+    )
+    chmodSync(join(bin, 'pnpm'), 0o755)
+    for (const [i, step] of steps.entries()) {
+      if (typeof step.run !== 'string') continue
+      const env = { ...jobEnv, ...layer(step.env, { ...base, env: jobEnv }) }
+      let runs = true
+      try {
+        runs = holds(step.if, { ...base, env })
+      } catch {
+        // A status function the evaluator does not know: on a night with no failure the step runs.
+      }
+      if (!runs) continue
+      spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-eo',
+          'pipefail',
+          '-c',
+          substitute(step.run.replace(/\\\n/g, ' '), { ...base, env }),
+        ],
+        {
+          cwd: ws,
+          encoding: 'utf8',
+          env: {
+            ...env,
+            REGISTRY_STEP: String(i),
+            GITHUB_WORKSPACE: ws,
+            GITHUB_RUN_ID: REGISTRY_RUN_ID,
+            RUNNER_TEMP,
+            HOME: dir,
+            PATH: `${bin}:/usr/bin:/bin`,
+          },
+        },
+      )
+    }
+    const registryCalls = readdirSync(calls)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((f) => readFileSync(join(calls, f), 'utf8').split('\n').slice(0, -1))
+      .map(([step, ...args]) => {
+        const words = args.filter((a) => a !== '--silent' && a !== '-s')
+        return { step: Number(step), args: words[0] === 'run' ? words.slice(1) : words }
+      })
+      .filter((c) => c.args[0] === 'registry')
+    const call = registryCalls[0] ?? { step: -1, args: [] }
+    // A path as the runner sees it: relative to the workspace, which the stand-in replaces.
+    const onRunner = (p: string | undefined): string =>
+      p === undefined
+        ? ''
+        : resolve(
+            RUNNER_WORKSPACE,
+            p.startsWith(ws) ? `${RUNNER_WORKSPACE}${p.slice(ws.length)}` : p,
+          )
+    const history = onRunner(flag(call.args, '--history'))
+    const out = onRunner(flag(call.args, '--out'))
+    const lastNight = `registry-history-${Number(REGISTRY_RUN_ID) - 1}`
+    const indexed = steps.map((s, i) => ({ s, i }))
+    const historyRestores = indexed
+      .filter(({ s }) => s.uses?.startsWith('actions/cache/restore@') === true)
+      .map(({ s, i }) => ({
+        i,
+        path: onRunner(withOf(s, 'path')),
+        candidates: [withOf(s, 'key'), ...withOf(s, 'restore-keys').split('\n')]
+          .map((c) => c.trim())
+          .filter(Boolean),
+      }))
+      .filter((r) => r.candidates.some((c) => c.startsWith('registry-history-')))
+
+    expect({
+      job: jobId === '' ? 'none' : 'one',
+      registryCalls: registryCalls.length,
+      manifest: onRunner(flag(call.args, '--manifest')),
+      restored: historyRestores.map((r) => ({
+        path: r.path,
+        beforeRun: r.i < call.step,
+        findsLastNight: r.candidates.some((c) => lastNight.startsWith(c)),
+      })),
+      saved: indexed
+        .filter(({ s }) => s.uses?.startsWith('actions/cache/save@') === true)
+        .map(({ s, i }) => ({
+          key: withOf(s, 'key'),
+          path: onRunner(withOf(s, 'path')),
+          afterRun: i > call.step,
+        })),
+      uploaded: indexed
+        .filter(
+          ({ s }) =>
+            s.uses?.startsWith('actions/upload-artifact@') === true &&
+            withOf(s, 'name') === 'registry-site',
+        )
+        .map(({ s }) => onRunner(withOf(s, 'path'))),
+    }).toEqual({
+      job: 'one',
+      registryCalls: 1,
+      manifest: resolve(RUNNER_WORKSPACE, 'registry/adapters.json'),
+      restored: [{ path: history, beforeRun: true, findsLastNight: true }],
+      saved: [{ key: `registry-history-${REGISTRY_RUN_ID}`, path: history, afterRun: true }],
+      uploaded: [out],
+    })
   })
 })
 

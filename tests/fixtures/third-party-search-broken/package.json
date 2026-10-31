@@ -1,0 +1,21 @@
+{
+  "name": "@acme/nymbal-search-broken",
+  "version": "1.0.0",
+  "description": "Test fixture: a third-party search adapter that ignores the cursor, with lifecycle scripts that must never run",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    }
+  },
+  "files": [
+    "index.js"
+  ],
+  "scripts": {
+    "install": "node -e \"const fs=require('fs'),path=require('path');for(const d of new Set([process.cwd(),process.env.INIT_CWD||process.cwd()]))fs.writeFileSync(path.join(d,'script-ran-install'),'')\"",
+    "prepare": "node -e \"const fs=require('fs'),path=require('path');for(const d of new Set([process.cwd(),process.env.INIT_CWD||process.cwd()]))fs.writeFileSync(path.join(d,'script-ran-prepare'),'')\"",
+    "prepack": "node -e \"const fs=require('fs'),path=require('path');for(const d of new Set([process.cwd(),process.env.INIT_CWD||process.cwd()]))fs.writeFileSync(path.join(d,'script-ran-prepack'),'')\""
+  }
+}

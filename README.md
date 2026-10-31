@@ -65,6 +65,11 @@ tests/
   architecture/     architecture guard (no rendering frameworks in the kernel)
 ```
 
+## Adapters
+
+Every adapter that can fill a slot, first-party or third-party, is listed in the
+[adapter registry](./registry/README.md), with its tier and nightly status.
+
 ## Migrating from WooCommerce
 
 ```bash

@@ -1,0 +1,16 @@
+{
+  "name": "@acme/nymbal-search-hanging",
+  "version": "1.0.0",
+  "description": "Test fixture: a third-party search adapter whose createAdapter never returns",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    }
+  },
+  "files": [
+    "index.js"
+  ]
+}

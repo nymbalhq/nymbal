@@ -1,0 +1,57 @@
+name: Registry
+run-name: Registry on ${{ github.ref_name }}
+
+# Dispatched each night by nightly-trigger.yml: certifies every third-party adapter in registry/adapters.json and builds
+# the status page. Their code runs here, so the job holds nothing it could use: read-only contents, no secret, no
+# persisted token, and no cache saved but the status history, which a job holding secrets never restores. The adapters
+# themselves run in containers (scripts/registry/run.ts).
+on:
+  workflow_dispatch:
+
+jobs:
+  registry:
+    name: Certify the listed adapters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Find the pnpm store
+        id: store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      # Restore only: the store is never saved from this job.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.store.outputs.path }}
+          key: node-cache-${{ runner.os }}-x64-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: node-cache-${{ runner.os }}-x64-pnpm-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Restore the status history
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/registry/history.json
+          key: registry-history-${{ github.run_id }}
+          restore-keys: registry-history-
+      - name: Certify and build the status page
+        run: >-
+          pnpm registry --manifest registry/adapters.json --history "$RUNNER_TEMP/registry/history.json"
+          --out "$RUNNER_TEMP/registry/site"
+      - name: Save the status history
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/registry/history.json
+          key: registry-history-${{ github.run_id }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: registry-site
+          path: ${{ runner.temp }}/registry/site
+          if-no-files-found: error

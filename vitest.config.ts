@@ -8,11 +8,12 @@ const NESTED_VITEST_RUNS = [
   'tests/contracts/contract-breakers.test.ts',
 ]
 
-// Each runs the real Vitest over copies of the work tree, about 100 s together: the plain gate never runs them
-// (scripts/gate.ts), gate:full and dev CI do.
+// Each runs the real Vitest over copies of the work tree, or the registry run in Docker (Linux only): the plain gate
+// never runs them (scripts/gate.ts), gate:full and dev CI do.
 const SLOW_TOOLING = [
   'tests/tooling/harness-input-selection.test.ts',
   'tests/tooling/gate-base-env.test.ts',
+  'tests/tooling/registry-run.test.ts',
 ]
 
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock
