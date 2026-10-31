@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import {
   postgresDb,
   sqliteDb,
@@ -16,44 +16,32 @@ export interface OrderSequenceRepository extends StoreRepository {
 export function createOrderSequenceRepository(store: CommandStore): OrderSequenceRepository {
   return {
     store,
+    // One upsert: on a fresh store a read finds no row to lock, so concurrent first allocations would each insert it.
+    // The value handed out is the one the row held before this call (startFrom on the first).
     async nextSequence(tx, startFrom = 1000): Promise<number> {
       if (tx.kind === 'sqlite') {
-        const client = sqliteDb(tx)
-        const row = client
-          .select()
-          .from(sqliteSchema.orderSequences)
-          .where(eq(sqliteSchema.orderSequences.id, 1))
+        const row = sqliteDb(tx)
+          .insert(sqliteSchema.orderSequences)
+          .values({ id: 1, nextValue: startFrom + 1 })
+          .onConflictDoUpdate({
+            target: sqliteSchema.orderSequences.id,
+            set: { nextValue: sql`${sqliteSchema.orderSequences.nextValue} + 1` },
+          })
+          .returning({ nextValue: sqliteSchema.orderSequences.nextValue })
           .get()
-        if (!row) {
-          const next = startFrom + 1
-          client.insert(sqliteSchema.orderSequences).values({ id: 1, nextValue: next }).run()
-          return startFrom
-        }
-        const current = row.nextValue
-        client
-          .update(sqliteSchema.orderSequences)
-          .set({ nextValue: current + 1 })
-          .where(eq(sqliteSchema.orderSequences.id, 1))
-          .run()
-        return current
+        return row.nextValue - 1
       }
-      const client = postgresDb(tx)
-      const [row] = await client
-        .select()
-        .from(postgresSchema.orderSequences)
-        .where(eq(postgresSchema.orderSequences.id, 1))
-        .for('update')
-      if (!row) {
-        const next = startFrom + 1
-        await client.insert(postgresSchema.orderSequences).values({ id: 1, nextValue: next })
-        return startFrom
-      }
-      const current = row.nextValue
-      await client
-        .update(postgresSchema.orderSequences)
-        .set({ nextValue: sql`${postgresSchema.orderSequences.nextValue} + 1` })
-        .where(eq(postgresSchema.orderSequences.id, 1))
-      return current
+      // Stryker disable all: the Postgres dialect, which the SQLite integration run cannot reach; tests/postgres covers it
+      const [row] = await postgresDb(tx)
+        .insert(postgresSchema.orderSequences)
+        .values({ id: 1, nextValue: startFrom + 1 })
+        .onConflictDoUpdate({
+          target: postgresSchema.orderSequences.id,
+          set: { nextValue: sql`${postgresSchema.orderSequences.nextValue} + 1` },
+        })
+        .returning({ nextValue: postgresSchema.orderSequences.nextValue })
+      return row!.nextValue - 1
+      // Stryker restore all
     },
   }
 }

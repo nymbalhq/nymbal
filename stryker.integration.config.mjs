@@ -14,6 +14,7 @@ export default {
     'packages/platform/src/repositories/alert-subscription.ts',
     'packages/platform/src/services/recently-viewed-service.ts',
     'packages/platform/src/repositories/order-access-key.ts',
+    'packages/platform/src/repositories/order-sequence.ts',
   ],
   ignorePatterns: [
     '/*',

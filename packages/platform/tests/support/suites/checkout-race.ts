@@ -12,6 +12,7 @@ import { shopper } from '../shopper.js'
 const CONTENDERS = 50
 const UNITS = 3
 const RUNS = 5
+const FIRST_CHECKOUTS = 8
 
 interface RunSummary {
   run: number
@@ -212,6 +213,79 @@ export function checkoutRaceSuite(
           stock: 0,
         })),
       )
+    }, 90_000)
+  })
+
+  // With one variant the stock decrement serialises the contenders before the order number is allocated. Shoppers of
+  // distinct products reach the allocation together, and on a fresh store the counter row does not exist yet.
+  describe(`AC-3: ${FIRST_CHECKOUTS} first checkouts of distinct products on a fresh store`, () => {
+    let store: TestStore
+    let raw: RawReader
+    let stop: () => Promise<void>
+
+    beforeAll(async () => {
+      const started = await start()
+      store = started.store
+      raw = started.raw
+      stop = started.stop
+    }, 90_000)
+
+    afterAll(async () => {
+      await stop?.()
+    })
+
+    it(`AC-3: ${FIRST_CHECKOUTS} shoppers, each with their own product in their cart, check out at once as a fresh store's first checkouts: all answer 200, with ${FIRST_CHECKOUTS} distinct order numbers and ${FIRST_CHECKOUTS} order rows`, async () => {
+      const tag = randomUUID()
+      const shoppers = await Promise.all(
+        Array.from({ length: FIRST_CHECKOUTS }, async (_, i) => {
+          const product = await store.app.services.product.create({
+            slug: `first-${i}-${tag}`,
+            name: `First ${i}`,
+            description: '',
+            status: 'active',
+            variants: [
+              {
+                sku: `FIRST-${i}-${tag}`,
+                name: 'Default',
+                priceMinor: 1500,
+                stock: 5,
+                options: [],
+              },
+            ],
+          })
+          const s = shopper(store.baseUrl)
+          const cart = await s.call('GET', '/api/cart')
+          expect(cart.status, JSON.stringify(cart.body)).toBe(200)
+          const item = await s.call('POST', '/api/cart/items', {
+            variantId: product.variants[0]!.id,
+            qty: 1,
+          })
+          expect(item.status, JSON.stringify(item.body)).toBe(200)
+          return s
+        }),
+      )
+      expect(await raw.count('orders'), 'no order placed before the race').toBe(0)
+
+      const outcome = await race(
+        async (i) => {
+          const res = await shoppers[i]!.call<{ orderNumber: string }>('POST', '/api/checkout', {
+            email: `first-${i}-${tag}+stub-pending@txn.test`,
+            billingAddress: address,
+            shippingAddress: address,
+          })
+          if (res.status !== 200) throw { status: res.status, body: res.body } satisfies Loss
+          return res.body.data!.orderNumber
+        },
+        { contenders: FIRST_CHECKOUTS },
+      )
+
+      expect(outcome.lost, 'checkouts that did not answer 200').toEqual([])
+      expect(new Set(outcome.won).size).toBe(FIRST_CHECKOUTS)
+      const rows = await raw.rows<{ order_number: string }>(
+        'SELECT order_number FROM orders WHERE email LIKE ?',
+        [`%-${tag}+stub-pending@%`],
+      )
+      expect(rows.map((r) => r.order_number).sort()).toEqual([...outcome.won].sort())
     }, 90_000)
   })
 }

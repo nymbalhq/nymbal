@@ -12,6 +12,7 @@ export default defineConfig({
       'packages/platform/tests/integration/recently-viewed-*.test.ts',
       'packages/platform/tests/integration/order-access*.test.ts',
       'packages/platform/tests/integration/order-key-*.test.ts',
+      'packages/platform/tests/integration/order-sequence*.test.ts',
       'packages/platform/tests/integration/admin-variant-price.test.ts',
     ],
     testTimeout: 30000,
