@@ -66,7 +66,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-playwright": "2.12.1",
     "fast-check": "^4.10.2",
-    "happy-dom": "^16.0.0",
+    "happy-dom": "^20.8.9",
     "jsdom": "^29.0.2",
     "lighthouse": "12.6.1",
     "prettier": "^3.3.3",

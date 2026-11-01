@@ -359,6 +359,9 @@ export default defineConfig({
         },
       },
       {
+        // These tests import modules they write under the OS temp directory, outside the workspace root that Vite
+        // serves from by default.
+        server: { fs: { strict: false } },
         test: {
           name: 'tooling',
           environment: 'node',
@@ -368,6 +371,7 @@ export default defineConfig({
         },
       },
       {
+        server: { fs: { strict: false } },
         test: {
           name: 'tooling-slow',
           environment: 'node',

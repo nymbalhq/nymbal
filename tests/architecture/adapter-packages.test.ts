@@ -25,14 +25,17 @@ const ADAPTERS = FIRST_PARTY_ADAPTERS.map((a) => ({
   ]?.sdk,
 }))
 
+/** Every nodemailer major the SMTP send path works on, so a store can take nodemailer's security fixes. */
+const NODEMAILER = '^6.9.16 || ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0'
+
 /** The exact SDK range an adapter peers, where it is pinned, by package. */
 const SDK_RANGES: Readonly<Record<string, string>> = {
   '@nymbalhq/payments-stripe': '^17.4.0',
   '@nymbalhq/ai-anthropic': '^0.39.0',
-  '@nymbalhq/email-smtp': '^6.9.16',
-  '@nymbalhq/email-mailgun': '^6.9.16',
-  '@nymbalhq/email-resend': '^6.9.16',
-  '@nymbalhq/email-ses': '^6.9.16',
+  '@nymbalhq/email-smtp': NODEMAILER,
+  '@nymbalhq/email-mailgun': NODEMAILER,
+  '@nymbalhq/email-resend': NODEMAILER,
+  '@nymbalhq/email-ses': NODEMAILER,
 }
 
 /** The commerce adapters' SDKs, which no kernel or stack install may pull in (the kernel's own Postgres store peers pg). */
