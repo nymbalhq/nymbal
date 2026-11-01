@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/payments-stripe",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Stripe payments for Nymbal: the `stripe` payments provider",
   "license": "MIT",
   "repository": {

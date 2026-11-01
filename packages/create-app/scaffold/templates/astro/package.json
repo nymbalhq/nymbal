@@ -17,14 +17,14 @@
     "seed": "nymbal seed"
   },
   "dependencies": {
-    "nymbal": "1.4.0",
-    "@nymbalhq/config": "1.4.0",
-    "@nymbalhq/platform": "1.4.0",
-    "@nymbalhq/stack": "1.4.0",
+    "nymbal": "1.5.0",
+    "@nymbalhq/config": "1.5.0",
+    "@nymbalhq/platform": "1.5.0",
+    "@nymbalhq/stack": "1.5.0",
     "@astrojs/node": "^11.1.8",
-    "@nymbalhq/sdk": "1.4.0",
-    "@nymbalhq/types": "1.4.0",
-    "@nymbalhq/web-components": "1.4.0",
+    "@nymbalhq/sdk": "1.5.0",
+    "@nymbalhq/types": "1.5.0",
+    "@nymbalhq/web-components": "1.5.0",
     "astro": "^7.4.0"
   },
   "devDependencies": {
@@ -33,26 +33,26 @@
   },
   "pnpm": {
     "overrides": {
-      "nymbal": "1.4.0",
-      "@nymbalhq/config": "1.4.0",
-      "@nymbalhq/http": "1.4.0",
-      "@nymbalhq/platform": "1.4.0",
-      "@nymbalhq/react": "1.4.0",
-      "@nymbalhq/sdk": "1.4.0",
-      "@nymbalhq/stack": "1.4.0",
-      "@nymbalhq/types": "1.4.0",
-      "@nymbalhq/web-components": "1.4.0"
+      "nymbal": "1.5.0",
+      "@nymbalhq/config": "1.5.0",
+      "@nymbalhq/http": "1.5.0",
+      "@nymbalhq/platform": "1.5.0",
+      "@nymbalhq/react": "1.5.0",
+      "@nymbalhq/sdk": "1.5.0",
+      "@nymbalhq/stack": "1.5.0",
+      "@nymbalhq/types": "1.5.0",
+      "@nymbalhq/web-components": "1.5.0"
     }
   },
   "overrides": {
-    "nymbal": "1.4.0",
-    "@nymbalhq/config": "1.4.0",
-    "@nymbalhq/http": "1.4.0",
-    "@nymbalhq/platform": "1.4.0",
-    "@nymbalhq/react": "1.4.0",
-    "@nymbalhq/sdk": "1.4.0",
-    "@nymbalhq/stack": "1.4.0",
-    "@nymbalhq/types": "1.4.0",
-    "@nymbalhq/web-components": "1.4.0"
+    "nymbal": "1.5.0",
+    "@nymbalhq/config": "1.5.0",
+    "@nymbalhq/http": "1.5.0",
+    "@nymbalhq/platform": "1.5.0",
+    "@nymbalhq/react": "1.5.0",
+    "@nymbalhq/sdk": "1.5.0",
+    "@nymbalhq/stack": "1.5.0",
+    "@nymbalhq/types": "1.5.0",
+    "@nymbalhq/web-components": "1.5.0"
   }
 }

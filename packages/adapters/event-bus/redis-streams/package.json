@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/event-bus-redis-streams",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "The Redis Streams event bus for Nymbal: `infrastructure.eventBus: { provider: 'redis-streams' }`",
   "license": "MIT",
   "repository": {

@@ -1,5 +1,26 @@
 # @nymbalhq/contract-tests
 
+## 1.5.0
+
+### Minor Changes
+
+- 965b85a: Email adapters can report bounces and complaints from `receiveWebhook` as `<provider>.bounced.v1` and
+  `<provider>.complained.v1`; a hard bounce or a complaint stops alert mail to that address. Webhooks may be
+  form-encoded or plain text. `runEmailFeedbackContract` certifies an email adapter's bounces and complaints.
+- d9c8c5a: Shipping adapters can report tracking updates from `receiveWebhook` as `<provider>.tracking.v1`; a delivered update
+  marks the shipped order delivered. `runShippingTrackingContract` certifies a shipping adapter's tracking updates.
+  Breaking for a kernel composed by hand: `registerHandlers` takes `orders` (the order service).
+
+### Patch Changes
+
+- Updated dependencies [f05e635]
+- Updated dependencies [0b51500]
+- Updated dependencies [965b85a]
+- Updated dependencies [c778b26]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+  - @nymbalhq/types@1.5.0
+
 ## 1.4.0
 
 ### Minor Changes

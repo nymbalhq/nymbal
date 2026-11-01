@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/email-smtp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "SMTP email for Nymbal: the `smtp` email provider (nodemailer)",
   "license": "MIT",
   "repository": {

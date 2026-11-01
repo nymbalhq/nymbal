@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/email-resend",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Resend email for Nymbal: the `resend` email provider (SMTP relay, bounce and complaint webhooks)",
   "license": "MIT",
   "repository": {

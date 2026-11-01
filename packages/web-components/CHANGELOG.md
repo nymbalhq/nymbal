@@ -1,5 +1,32 @@
 # @nymbalhq/web-components
 
+## 1.5.0
+
+### Minor Changes
+
+- c778b26: Order links now expire (48 hours from checkout, 30 days from the email). After that the shopper enters their email,
+  or asks for a new link. Signed-in shoppers go to their account's order page.
+
+  Breaking: an order read with its key no longer returns `billingAddress`, phones or `customerId`, and `ShopperOrder`
+  makes every field the confirmation page does not show optional.
+
+### Patch Changes
+
+- d0b44ed: Storefront client bundles are about 30 bytes smaller (the document-order collator is made on first use), and the
+  web components and React wrappers build to the same bytes every time.
+- 439c2aa: The storefront client can be built from `@nymbalhq/sdk/core` plus the `@nymbalhq/sdk/ns/*` namespaces a page uses; the
+  Astro template does so. A store's own element that reads `client.cart`, `client.checkout` or another store namespace
+  imports its `@nymbalhq/sdk/ns/<name>` module.
+- Updated dependencies [f05e635]
+- Updated dependencies [0b51500]
+- Updated dependencies [965b85a]
+- Updated dependencies [c778b26]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+- Updated dependencies [439c2aa]
+  - @nymbalhq/types@1.5.0
+  - @nymbalhq/sdk@1.5.0
+
 ## 1.4.0
 
 ### Minor Changes

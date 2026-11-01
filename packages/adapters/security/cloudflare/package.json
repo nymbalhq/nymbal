@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/security-cloudflare",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Cloudflare WAF for Nymbal: the `cloudflare` security adapter, with rules applied by command",
   "license": "MIT",
   "repository": {

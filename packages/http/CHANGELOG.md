@@ -1,5 +1,40 @@
 # @nymbalhq/http
 
+## 1.5.0
+
+### Minor Changes
+
+- 5db4e1b: `nymbal build --image` builds your store into one container image; `nymbal start` runs it in production on one port
+  (`PORT`, with `NYMBAL_PUBLIC_URL` set), answers `/ready` and drains on SIGTERM; `nymbal deploy fly|railway --dry-run`
+  writes `fly.toml` or `railway.json` and prints the deploy steps. New Astro stores read `NYMBAL_API_URL` at run time.
+- ca1a5f6: A new store runs in production with no config edit: `NYMBAL_JWT_SECRET` (written into `.env` by `create-nymbal-app`,
+  set as a platform secret by `nymbal deploy`) signs tokens when the config names no `security.auth.jwtSecret`.
+  `http.trustProxy` takes a hop count, and `NYMBAL_TRUST_PROXY_HOPS` sets it at run time (the deploy recipes set 1), so
+  rate limits key on the shopper behind the platform's proxy, not on the proxy or a forged `X-Forwarded-For`.
+  Breaking: `registerAllRoutes` needs `jwtSecret` (`resolveAuthSecret(config, process.env).secret`).
+- c778b26: Order links now expire (48 hours from checkout, 30 days from the email). After that the shopper enters their email,
+  or asks for a new link. Signed-in shoppers go to their account's order page.
+
+  Breaking: an order read with its key no longer returns `billingAddress`, phones or `customerId`, and `ShopperOrder`
+  makes every field the confirmation page does not show optional.
+
+### Patch Changes
+
+- Updated dependencies [f05e635]
+- Updated dependencies [0b51500]
+- Updated dependencies [bb453b8]
+- Updated dependencies [59e1639]
+- Updated dependencies [965b85a]
+- Updated dependencies [ca1a5f6]
+- Updated dependencies [95dad2e]
+- Updated dependencies [c778b26]
+- Updated dependencies [a67f867]
+- Updated dependencies [ab6c631]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+  - @nymbalhq/config@1.5.0
+  - @nymbalhq/types@1.5.0
+
 ## 1.4.0
 
 ### Minor Changes

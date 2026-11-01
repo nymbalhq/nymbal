@@ -1,5 +1,33 @@
 # @nymbalhq/importers
 
+## 0.3.4
+
+### Patch Changes
+
+- Updated dependencies [6c85536]
+- Updated dependencies [f05e635]
+- Updated dependencies [d2513b9]
+- Updated dependencies [0b51500]
+- Updated dependencies [bb453b8]
+- Updated dependencies [5db4e1b]
+- Updated dependencies [39c852e]
+- Updated dependencies [eed87ad]
+- Updated dependencies [59e1639]
+- Updated dependencies [965b85a]
+- Updated dependencies [ca1a5f6]
+- Updated dependencies [95dad2e]
+- Updated dependencies [733d4b1]
+- Updated dependencies [c778b26]
+- Updated dependencies [0b51500]
+- Updated dependencies [86724f2]
+- Updated dependencies [a67f867]
+- Updated dependencies [ab6c631]
+- Updated dependencies [d9c8c5a]
+- Updated dependencies [d0b44ed]
+  - @nymbalhq/platform@1.5.0
+  - @nymbalhq/config@1.5.0
+  - @nymbalhq/types@1.5.0
+
 ## 0.3.3
 
 ### Patch Changes

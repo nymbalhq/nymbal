@@ -1,5 +1,35 @@
 # @nymbalhq/types
 
+## 1.5.0
+
+### Minor Changes
+
+- f05e635: Any provider name loads `@nymbalhq/<slot>-<provider>`, or the package its block names with `package:` (`security`
+  too), so a third-party adapter needs no Nymbal release; a mistyped provider gets "did you mean", not an install line.
+  Breaking: write `documentStore: { provider: 'redis' }` for `documentStore: 'redis'`, and the same for `eventBus` and
+  `media`.
+  Breaking: `@nymbalhq/config` `KNOWN_INFRASTRUCTURE` is now `ADAPTER_CATALOGUE` and `COMMAND_STORES`; `@nymbalhq/platform`
+  `PROVIDER_PACKAGES` and `importProviderPackage` are now `resolveChoice` and `importAdapterModule`; error code
+  `config.security_adapter_unknown` is now `adapter.provider_unknown`.
+- 0b51500: A subscribe for a stock or price alert that is already active is logged as `alert.repeated.v1`; nothing is sent.
+- 965b85a: Email adapters can report bounces and complaints from `receiveWebhook` as `<provider>.bounced.v1` and
+  `<provider>.complained.v1`; a hard bounce or a complaint stops alert mail to that address. Webhooks may be
+  form-encoded or plain text. `runEmailFeedbackContract` certifies an email adapter's bounces and complaints.
+- c778b26: Order links now expire (48 hours from checkout, 30 days from the email). After that the shopper enters their email,
+  or asks for a new link. Signed-in shoppers go to their account's order page.
+
+  Breaking: an order read with its key no longer returns `billingAddress`, phones or `customerId`, and `ShopperOrder`
+  makes every field the confirmation page does not show optional.
+
+- d9c8c5a: Shipping adapters can report tracking updates from `receiveWebhook` as `<provider>.tracking.v1`; a delivered update
+  marks the shipped order delivered. `runShippingTrackingContract` certifies a shipping adapter's tracking updates.
+  Breaking for a kernel composed by hand: `registerHandlers` takes `orders` (the order service).
+
+### Patch Changes
+
+- d0b44ed: Storefront client bundles are about 30 bytes smaller (the document-order collator is made on first use), and the
+  web components and React wrappers build to the same bytes every time.
+
 ## 1.4.0
 
 ### Minor Changes
