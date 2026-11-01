@@ -210,6 +210,52 @@ test.describe('Admin at Pixel 7', () => {
     }
   })
 
+  // Kills: Recent Orders in an `overflow-hidden` card with no scroll wrapper, which holds the page to 412 px (so the
+  // test above passes) by clipping the Time column out of reach.
+  test('AC-1: the dashboard’s Recent Orders is a focusable horizontal scroll region whose Time column, scrolled to the end, lies inside it, and axe finds no unfocusable scroll region', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000)
+    const guest = await playwrightRequest.newContext()
+    try {
+      await placeOrder(guest)
+    } finally {
+      await guest.dispose()
+    }
+    await signIn(page)
+    await page.goto('')
+
+    const region = page.getByTestId('admin-dashboard-recent-orders')
+    const time = region.getByRole('columnheader', { name: 'Time' })
+    await expect(time).toBeAttached({ timeout: 15_000 })
+    expect(await region.evaluate((el) => getComputedStyle(el).overflowX)).toBe('auto')
+
+    await region.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth
+    })
+    const box = await region.boundingBox()
+    const header = await time.boundingBox()
+    expect(box, 'the region has a box').not.toBeNull()
+    expect(header, 'the Time header has a box').not.toBeNull()
+    // Sub-pixel layout: half a pixel of rounding either way.
+    expect(
+      header!.x + header!.width,
+      'Time header’s right edge vs the region’s',
+    ).toBeLessThanOrEqual(box!.x + box!.width + 0.5)
+    expect(header!.x, 'Time header’s left edge vs the region’s').toBeGreaterThanOrEqual(
+      box!.x - 0.5,
+    )
+
+    await region.focus()
+    await expect(region).toBeFocused()
+
+    const AxeBuilder = (await import('@axe-core/playwright')).default
+    const results = await new AxeBuilder({ page })
+      .withRules(['scrollable-region-focusable'])
+      .analyze()
+    expect(results.violations.map((v) => v.nodes.map((n) => n.target))).toEqual([])
+  })
+
   test('AC-3: the sidebar is closed on a phone, the menu button opens it, and choosing Orders lands on the orders list and closes it', async ({
     page,
   }) => {

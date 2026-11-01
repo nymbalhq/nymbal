@@ -40,6 +40,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   const queryClient = useQueryClient()
   const clientRef = useRef<ReturnType<typeof createSseClient> | null>(null)
   const pushEvent = useEventTicker((s) => s.pushEvent)
+  const setConnected = useEventTicker((s) => s.setConnected)
 
   useEffect(() => {
     if (!isAuthenticated()) return
@@ -51,7 +52,13 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
         handleEvent(type, payload)
         pushEvent(type, getTickerLabel({ type, payload } as DomainEvent))
       },
-      { onConnected: () => void resyncLiveQueries(queryClient) },
+      {
+        onConnected: () => {
+          setConnected(true)
+          void resyncLiveQueries(queryClient)
+        },
+        onDisconnected: () => setConnected(false),
+      },
     )
 
     clientRef.current = sseClient
@@ -60,8 +67,9 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
     return () => {
       sseClient.disconnect()
       clientRef.current = null
+      setConnected(false)
     }
-  }, [queryClient, pushEvent])
+  }, [queryClient, pushEvent, setConnected])
 
   return <>{children}</>
 }

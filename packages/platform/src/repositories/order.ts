@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, notInArray } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, notInArray, sql } from 'drizzle-orm'
 import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -12,6 +12,16 @@ import * as sqliteSchema from '../db/schema/sqlite.js'
 import * as postgresSchema from '../db/schema/postgres.js'
 import type { KeysetPage } from './page.js'
 import { parseJson, fromTimestamp } from './json.js'
+
+export interface CustomerOrderTotals {
+  orderCount: number
+  /** Σ (captured − refunded): the money the store kept. */
+  keptMinor: number
+  /** Orders that captured any money. */
+  capturedCount: number
+  firstAt: string | null
+  lastAt: string | null
+}
 
 export interface OrderInsert {
   id: string
@@ -87,6 +97,8 @@ export interface OrderRepository extends StoreRepository {
   /** The newest order the cart became: neither pending nor cancelled. */
   findLastConvertedByCartToken(tx: ReadTx, cartToken: string): Promise<Order | null>
   listByCustomer(tx: ReadTx, customerId: string, limit?: number): Promise<Order[]>
+  /** Totals over every order the customer has, however many. */
+  totalsByCustomer(tx: ReadTx, customerId: string): Promise<CustomerOrderTotals>
   list(
     tx: ReadTx,
     opts?: { status?: OrderStatus; limit?: number; offset?: number },
@@ -232,6 +244,39 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .orderBy(desc(postgresSchema.orders.createdAt))
         .limit(limit)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
+    },
+    async totalsByCustomer(tx, customerId) {
+      const o = tx.kind === 'sqlite' ? sqliteSchema.orders : postgresSchema.orders
+      const columns = {
+        orderCount: sql<number | string>`count(*)`,
+        keptMinor: sql<number | string | null>`sum(${o.capturedMinor} - ${o.refundedMinor})`,
+        capturedCount: sql<
+          number | string | null
+        >`sum(case when ${o.capturedMinor} > 0 then 1 else 0 end)`,
+        // Decoded as the column is: node-postgres under drizzle answers timestamps as raw text.
+        firstAt: sql`min(${o.createdAt})`.mapWith(o.createdAt),
+        lastAt: sql`max(${o.createdAt})`.mapWith(o.createdAt),
+      }
+      const row =
+        tx.kind === 'sqlite'
+          ? sqliteDb(tx)
+              .select(columns)
+              .from(sqliteSchema.orders)
+              .where(eq(sqliteSchema.orders.customerId, customerId))
+              .get()
+          : (
+              await postgresDb(tx)
+                .select(columns)
+                .from(postgresSchema.orders)
+                .where(eq(postgresSchema.orders.customerId, customerId))
+            )[0]
+      return {
+        orderCount: Number(row?.orderCount ?? 0),
+        keptMinor: Number(row?.keptMinor ?? 0),
+        capturedCount: Number(row?.capturedCount ?? 0),
+        firstAt: row?.firstAt == null ? null : fromTimestamp(row.firstAt),
+        lastAt: row?.lastAt == null ? null : fromTimestamp(row.lastAt),
+      }
     },
     async listPage(tx, page) {
       if (tx.kind === 'sqlite') {

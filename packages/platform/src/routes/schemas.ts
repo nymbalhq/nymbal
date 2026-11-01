@@ -557,7 +557,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: customers
   'GET /api/admin/customers': {
     name: 'admin.customers.list',
-    description: 'List customers who have ordered, filtered and sorted.',
+    description: 'List customers, filtered and sorted.',
     query: z.object({ q: queryValue, sort: queryValue, ...paging }),
   },
   'GET /api/admin/customers/:id': {

@@ -17,6 +17,33 @@ function EventTypeColor(type: string): string {
   return 'bg-zinc-100 text-zinc-600 border-zinc-200'
 }
 
+/** Live only while the realtime stream is confirmed; the pulse would otherwise claim updates that are not coming. */
+function LiveBadge() {
+  const connected = useEventTicker((s) => s.connected)
+  return (
+    <span
+      className="flex items-center gap-1.5 shrink-0"
+      data-testid={tid('topbar', 'live')}
+      data-state={connected ? 'live' : 'offline'}
+    >
+      <span className="relative flex h-2 w-2">
+        {connected && (
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+        )}
+        <span
+          className={cn(
+            'relative inline-flex h-2 w-2 rounded-full',
+            connected ? 'bg-green-500' : 'bg-zinc-300',
+          )}
+        />
+      </span>
+      <span className="font-medium text-[10px] uppercase tracking-wider text-zinc-400">
+        {connected ? 'Live' : 'Offline'}
+      </span>
+    </span>
+  )
+}
+
 function LiveTicker() {
   const events = useEventTicker((s) => s.events)
   const tickerRef = useRef<HTMLDivElement>(null)
@@ -32,15 +59,7 @@ function LiveTicker() {
   if (recent.length === 0) {
     return (
       <div className="flex items-center gap-2 text-xs text-zinc-400">
-        <span className="flex items-center gap-1.5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-          </span>
-          <span className="font-medium text-[10px] uppercase tracking-wider text-zinc-400">
-            Live
-          </span>
-        </span>
+        <LiveBadge />
         <span className="text-zinc-300">—</span>
         <span className="text-zinc-400">No recent events</span>
       </div>
@@ -49,15 +68,7 @@ function LiveTicker() {
 
   return (
     <div className="flex items-center gap-2 overflow-hidden" ref={tickerRef}>
-      <span className="flex items-center gap-1.5 shrink-0">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-        </span>
-        <span className="font-medium text-[10px] uppercase tracking-wider text-zinc-400 shrink-0">
-          Live
-        </span>
-      </span>
+      <LiveBadge />
       {/* Clipped, not scrollable: a scroll region would need its own tab stop, and the
           three newest events are a glance, not something to page through. */}
       <div className="flex min-w-0 items-center gap-2 overflow-hidden">

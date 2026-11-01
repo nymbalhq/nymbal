@@ -5,20 +5,40 @@ import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useMe } from '@/hooks/useMe'
+import { useEventTicker } from '@/realtime/handlers'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
+import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
 import type { Order } from '@nymbalhq/types'
 import type { InventoryRow } from '@/types'
 
+/** Live only while the realtime stream is confirmed, as the top bar's badge. */
 function LiveIndicator() {
+  const connected = useEventTicker((s) => s.connected)
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-600">
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+        connected
+          ? 'bg-green-50 border-green-200 text-green-600'
+          : 'bg-zinc-50 border-zinc-200 text-zinc-500',
+      )}
+      data-testid={tid('dashboard', 'live')}
+      data-state={connected ? 'live' : 'offline'}
+    >
       <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+        {connected && (
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+        )}
+        <span
+          className={cn(
+            'relative inline-flex h-1.5 w-1.5 rounded-full',
+            connected ? 'bg-green-500' : 'bg-zinc-300',
+          )}
+        />
       </span>
-      Live
+      {connected ? 'Live' : 'Offline'}
     </span>
   )
 }
@@ -75,9 +95,7 @@ export function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-zinc-900">
-            {me?.storeName ?? 'Dashboard'}
-          </h1>
+          <h1 className="text-lg font-semibold text-zinc-900">{me?.storeName ?? 'Dashboard'}</h1>
           <p className="text-sm text-zinc-500">Today's performance at a glance</p>
         </div>
         <LiveIndicator />
@@ -136,44 +154,62 @@ export function DashboardPage() {
                 description="Orders will appear here as they come in."
               />
             ) : (
-              <table className="w-full text-sm">
-                <thead className="border-b border-zinc-100">
-                  <tr>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">Order</th>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">Customer</th>
-                    <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">Status</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-medium uppercase tracking-wider text-zinc-400">Total</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-medium uppercase tracking-wider text-zinc-400">Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.recentOrders.map((order: Order) => (
-                    <tr
-                      key={order.id}
-                      className="cursor-pointer border-b border-zinc-50 last:border-0 hover:bg-zinc-50 transition-colors"
-                      onClick={() => navigate(`/orders/${order.orderNumber}`)}
-                    >
-                      <td className="px-4 py-2.5">
-                        <span className="font-mono text-sm font-medium text-blue-600">
-                          #{order.orderNumber}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-zinc-600 truncate max-w-[160px]">
-                        {order.email}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <OrderStatusBadge status={order.status} size="sm" />
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-sm text-zinc-700">
-                        {formatMoney(order.totalMinor, order.currency)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-xs text-zinc-400">
-                        {formatRelative(order.createdAt)}
-                      </td>
+              <div
+                className="overflow-x-auto"
+                role="region"
+                tabIndex={0}
+                aria-label="Recent orders"
+                data-testid={tid('dashboard', 'recent-orders')}
+              >
+                <table className="w-full text-sm">
+                  <thead className="border-b border-zinc-100">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                        Order
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                        Customer
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                        Status
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                        Total
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                        Time
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {data.recentOrders.map((order: Order) => (
+                      <tr
+                        key={order.id}
+                        className="cursor-pointer border-b border-zinc-50 last:border-0 hover:bg-zinc-50 transition-colors"
+                        onClick={() => navigate(`/orders/${order.orderNumber}`)}
+                      >
+                        <td className="px-4 py-2.5">
+                          <span className="font-mono text-sm font-medium text-blue-600">
+                            #{order.orderNumber}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-zinc-600 truncate max-w-[160px]">
+                          {order.email}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <OrderStatusBadge status={order.status} size="sm" />
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-sm text-zinc-700">
+                          {formatMoney(order.totalMinor, order.currency)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-xs text-zinc-400">
+                          {formatRelative(order.createdAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -229,7 +265,7 @@ export function DashboardPage() {
                       <span
                         className={cn(
                           'font-mono text-sm font-semibold',
-                          row.status === 'out_of_stock' ? 'text-red-600' : 'text-amber-600'
+                          row.status === 'out_of_stock' ? 'text-red-600' : 'text-amber-600',
                         )}
                       >
                         {row.stock}

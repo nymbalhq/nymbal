@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useIntentKey } from '@/hooks/useIntentKey'
 import type { OrderHistoryEntry } from '@nymbalhq/types'
@@ -57,6 +57,14 @@ export function useOrderNotes(orderId: string) {
   })
 }
 
+/**
+ * A refused move means the page's copy of the order is stale (another admin or a webhook moved it): read it again
+ * rather than wait for the realtime stream. The mutation knows the order's id, not the number the detail is keyed by.
+ */
+function refetchRefusedOrder(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: ['orders', 'detail'] })
+}
+
 export function useUpdateOrderStatus() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -96,15 +104,19 @@ export function useCancelOrder() {
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
+    onError: () => refetchRefusedOrder(queryClient),
   })
 }
 
 /** Records a payment taken outside the store: a manual capture of the order's total, which confirms it. */
 export function useMarkPaidOrder() {
   const queryClient = useQueryClient()
+  const [idempotencyKey, renewKey] = useIntentKey()
   return useMutation({
     mutationFn: ({ orderId, note }: { orderId: string; note?: string }) =>
-      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-paid`, note ? { note } : {}),
+      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-paid`, note ? { note } : {}, {
+        idempotencyKey,
+      }),
     onSuccess: (updatedOrder) => {
       queryClient.setQueryData(
         ['orders', 'detail', updatedOrder.orderNumber],
@@ -114,14 +126,19 @@ export function useMarkPaidOrder() {
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
+    onError: () => refetchRefusedOrder(queryClient),
+    onSettled: renewKey,
   })
 }
 
 export function useMarkDeliveredOrder() {
   const queryClient = useQueryClient()
+  const [idempotencyKey, renewKey] = useIntentKey()
   return useMutation({
     mutationFn: (orderId: string) =>
-      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-delivered`),
+      api.post<AdminOrder>(`/api/admin/orders/${orderId}/mark-delivered`, undefined, {
+        idempotencyKey,
+      }),
     onSuccess: (updatedOrder) => {
       queryClient.setQueryData(
         ['orders', 'detail', updatedOrder.orderNumber],
@@ -129,11 +146,14 @@ export function useMarkDeliveredOrder() {
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
+    onError: () => refetchRefusedOrder(queryClient),
+    onSettled: renewKey,
   })
 }
 
 export function useShipOrder() {
   const queryClient = useQueryClient()
+  const [idempotencyKey, renewKey] = useIntentKey()
   return useMutation({
     mutationFn: ({
       orderId,
@@ -143,7 +163,12 @@ export function useShipOrder() {
       orderId: string
       trackingNumber: string
       carrier: string
-    }) => api.post<AdminOrder>(`/api/admin/orders/${orderId}/ship`, { trackingNumber, carrier }),
+    }) =>
+      api.post<AdminOrder>(
+        `/api/admin/orders/${orderId}/ship`,
+        { trackingNumber, carrier },
+        { idempotencyKey },
+      ),
     onSuccess: (updatedOrder) => {
       queryClient.setQueryData(
         ['orders', 'detail', updatedOrder.orderNumber],
@@ -151,6 +176,8 @@ export function useShipOrder() {
       )
       queryClient.invalidateQueries({ queryKey: ['orders', 'list'] })
     },
+    onError: () => refetchRefusedOrder(queryClient),
+    onSettled: renewKey,
   })
 }
 

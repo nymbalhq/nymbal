@@ -1,7 +1,8 @@
-import { NotFoundError, type HttpAdapter, type Customer, type Order } from '@nymbalhq/types'
+import { NotFoundError, type HttpAdapter, type Customer } from '@nymbalhq/types'
 import type { OrderService } from '../services/order-service.js'
 import type { CustomerNote, CustomerService } from '../services/customer-service.js'
 import type { Repositories } from '../repositories/index.js'
+import type { CustomerOrderTotals } from '../repositories/order.js'
 import { ok, fail, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 import { answerAsOf, answerHistory, atOf } from '../history/http.js'
@@ -24,35 +25,15 @@ export interface RegisterAdminCustomersRoutesDeps {
   history: HistoryReader
 }
 
-function computeStats(orders: Order[]): CustomerStats {
-  if (orders.length === 0) {
-    return {
-      orderCount: 0,
-      lifetimeRevenueMinor: 0,
-      avgOrderValueMinor: 0,
-      firstOrderAt: null,
-      lastOrderAt: null,
-    }
-  }
-  const sorted = [...orders].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  )
-  const paidStatuses = new Set([
-    'confirmed',
-    'processing',
-    'shipped',
-    'delivered',
-    'partially_refunded',
-  ])
-  const lifetimeRevenueMinor = orders
-    .filter((o) => paidStatuses.has(o.status))
-    .reduce((sum, o) => sum + o.totalMinor, 0)
+function statsOf(totals: CustomerOrderTotals): CustomerStats {
   return {
-    orderCount: orders.length,
-    lifetimeRevenueMinor,
-    avgOrderValueMinor: orders.length > 0 ? Math.round(lifetimeRevenueMinor / orders.length) : 0,
-    firstOrderAt: sorted[0]?.createdAt ?? null,
-    lastOrderAt: sorted[sorted.length - 1]?.createdAt ?? null,
+    orderCount: totals.orderCount,
+    lifetimeRevenueMinor: totals.keptMinor,
+    // Over the orders that took money: an abandoned pending order does not pull the average down.
+    avgOrderValueMinor:
+      totals.capturedCount > 0 ? Math.round(totals.keptMinor / totals.capturedCount) : 0,
+    firstOrderAt: totals.firstAt,
+    lastOrderAt: totals.lastAt,
   }
 }
 
@@ -86,17 +67,10 @@ export function registerAdminCustomersRoutes(
         const limit = limitRaw ? Math.min(parseInt(limitRaw, 10) || 50, 200) : 50
         const offset = offsetRaw ? parseInt(offsetRaw, 10) || 0 : 0
 
-        // Use order list to discover customers (v0.1 approach)
-        const customerResults = await store.read(async (tx) => {
-          const allOrders = await repos.order.list(tx, { limit: 500 })
-          const customerIdSet = new Set<string>()
-          for (const o of allOrders) {
-            if (o.customerId) customerIdSet.add(o.customerId)
-          }
-          return Promise.all([...customerIdSet].map((id) => repos.customer.findById(tx, id)))
-        })
-        let customers: Customer[] = customerResults
-          .filter((c): c is NonNullable<typeof c> => c !== null)
+        // Every shopper account, ordered or not; staff accounts share the table and are not customers.
+        const rows = await store.read((tx) => repos.customer.list(tx))
+        let customers: Customer[] = rows
+          .filter((c) => c.roles.includes('customer'))
           .map(({ passwordHash: _pw, ...rest }) => rest)
 
         // q filter
@@ -141,13 +115,11 @@ export function registerAdminCustomersRoutes(
         if (at !== undefined) return answerAsOf(history, at, () => historySubject(id), notFound(id))
         const found = await store.read(async (tx) => {
           const raw = await repos.customer.findById(tx, id)
-          return raw ? { raw, orders: await repos.order.listByCustomer(tx, id) } : null
+          return raw ? { raw, totals: await repos.order.totalsByCustomer(tx, id) } : null
         })
         if (!found) return fail('customers.not_found', `Customer not found: ${id}`, 404)
         const { passwordHash: _pw, ...customer } = found.raw
-        const { orders } = found
-        const stats = computeStats(orders)
-        return ok({ customer, stats })
+        return ok({ customer, stats: statsOf(found.totals) })
       } catch (err) {
         return renderError(err)
       }
