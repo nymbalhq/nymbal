@@ -1,8 +1,6 @@
-import { randomUUID } from 'node:crypto'
-import { devices, request as playwrightRequest, type APIRequestContext } from '@playwright/test'
+import { devices } from '@playwright/test'
 import { expect, test } from '../support/fixtures'
-import { API_URL, csrf } from '../support/csrf'
-import { adminToken, ownProduct } from '../support/checkout'
+import { shopperWithOrder } from '../support/checkout'
 import { signIn } from '../support/sign-in'
 
 // AC-1: at Pixel 7 (412 px) a signed-in shopper's account pages are no wider than the viewport. On Astro the account
@@ -15,50 +13,6 @@ const { defaultBrowserType: _browser, ...pixel7 } = devices['Pixel 7']
 
 const PASSWORD = 'TestPassword123!'
 
-/** A registered shopper with one order of a product of this test's own, through the API. */
-async function shopperWithOrder(
-  request: APIRequestContext,
-): Promise<{ email: string; firstName: string; orderNumber: string }> {
-  const product = await ownProduct(request, await adminToken(request), 5)
-  const tag = randomUUID().slice(0, 8)
-  // 34 characters with an unbroken local part: a 28-character one already ran past the viewport on the dashboard.
-  const email = `phonewidthshopper${tag}@e2e.test`
-  const firstName = `Ada${tag}`
-  const shopper = await playwrightRequest.newContext()
-  try {
-    const reg = await shopper.post(`${API_URL}/api/auth/register`, {
-      headers: await csrf(shopper),
-      data: { email, password: PASSWORD, firstName, lastName: 'Phonewidth' },
-    })
-    expect(reg.ok(), `POST /api/auth/register: ${await reg.text()}`).toBe(true)
-    const { accessToken } = ((await reg.json()) as { data: { accessToken: string } }).data
-    const auth = { authorization: `Bearer ${accessToken}` }
-    const add = await shopper.post(`${API_URL}/api/cart/items`, {
-      headers: { ...(await csrf(shopper)), ...auth },
-      data: { variantId: product.variantId, qty: 1 },
-    })
-    expect(add.ok(), `POST /api/cart/items: ${await add.text()}`).toBe(true)
-    const address = {
-      firstName,
-      lastName: 'Phonewidth',
-      addressLine1: '7 Narrow Street',
-      city: 'Bristol',
-      region: 'Avon',
-      postalCode: 'BS1 5TT',
-      country: 'GB',
-    }
-    const checkout = await shopper.post(`${API_URL}/api/checkout`, {
-      headers: { ...(await csrf(shopper)), ...auth },
-      data: { email, billingAddress: address, shippingAddress: address },
-    })
-    expect(checkout.ok(), `POST /api/checkout: ${await checkout.text()}`).toBe(true)
-    const { orderNumber } = ((await checkout.json()) as { data: { orderNumber: string } }).data
-    return { email, firstName, orderNumber }
-  } finally {
-    await shopper.dispose()
-  }
-}
-
 test.describe('Account at Pixel 7', () => {
   test.use(pixel7)
 
@@ -67,7 +21,7 @@ test.describe('Account at Pixel 7', () => {
     request,
   }) => {
     test.setTimeout(90_000)
-    const shopper = await shopperWithOrder(request)
+    const shopper = await shopperWithOrder(request, PASSWORD)
 
     await signIn(page, shopper.email, PASSWORD)
     await page.waitForURL((url) => url.pathname.replace(/\/$/, '') === '/account', {

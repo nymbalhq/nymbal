@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { APIRequestContext, Page } from '@playwright/test'
+import { request as playwrightRequest, type APIRequestContext, type Page } from '@playwright/test'
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './admin'
 import { API_URL, csrf } from './csrf'
 import { expect } from './fixtures'
@@ -49,6 +49,62 @@ export async function ownProduct(
     })
     .toBe(200)
   return product
+}
+
+/**
+ * A registered shopper with one order of a product of its own, through the API. The email is 34 characters with an
+ * unbroken local part, so a page that shows it cannot wrap it to fit a phone (a 28-character one already ran past the
+ * viewport on the account dashboard).
+ */
+export async function shopperWithOrder(
+  request: APIRequestContext,
+  password: string,
+): Promise<{
+  email: string
+  firstName: string
+  orderNumber: string
+  customerId: string
+  product: OwnProduct
+}> {
+  const product = await ownProduct(request, await adminToken(request), 5)
+  const tag = randomUUID().slice(0, 8)
+  const email = `phonewidthshopper${tag}@e2e.test`
+  const firstName = `Ada${tag}`
+  const shopper = await playwrightRequest.newContext()
+  try {
+    const reg = await shopper.post(`${API_URL}/api/auth/register`, {
+      headers: await csrf(shopper),
+      data: { email, password, firstName, lastName: 'Phonewidth' },
+    })
+    expect(reg.ok(), `POST /api/auth/register: ${await reg.text()}`).toBe(true)
+    const { accessToken, customer } = (
+      (await reg.json()) as { data: { accessToken: string; customer: { id: string } } }
+    ).data
+    const auth = { authorization: `Bearer ${accessToken}` }
+    const add = await shopper.post(`${API_URL}/api/cart/items`, {
+      headers: { ...(await csrf(shopper)), ...auth },
+      data: { variantId: product.variantId, qty: 1 },
+    })
+    expect(add.ok(), `POST /api/cart/items: ${await add.text()}`).toBe(true)
+    const address = {
+      firstName,
+      lastName: 'Phonewidth',
+      addressLine1: '7 Narrow Street',
+      city: 'Bristol',
+      region: 'Avon',
+      postalCode: 'BS1 5TT',
+      country: 'GB',
+    }
+    const checkout = await shopper.post(`${API_URL}/api/checkout`, {
+      headers: { ...(await csrf(shopper)), ...auth },
+      data: { email, billingAddress: address, shippingAddress: address },
+    })
+    expect(checkout.ok(), `POST /api/checkout: ${await checkout.text()}`).toBe(true)
+    const { orderNumber } = ((await checkout.json()) as { data: { orderNumber: string } }).data
+    return { email, firstName, orderNumber, customerId: customer.id, product }
+  } finally {
+    await shopper.dispose()
+  }
 }
 
 /** The variant's stock as the storefront API serves it. */

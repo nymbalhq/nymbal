@@ -1144,8 +1144,6 @@ export type PlanInput = {
    * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
    */
   buildStale?: boolean | undefined
-  /** `--rerun-red`: the tests step runs these tests alone (when any), and Playwright only its last failures. */
-  rerun?: { tests: RedTest[] } | undefined
   /** `--shard <i>/<n>`: the tests step runs Vitest's shard i of n, when it runs every test. */
   shard?: Shard | undefined
 }
@@ -1172,37 +1170,15 @@ function checkedShard(shard: Shard): Shard {
   return shard
 }
 
-/** A Vitest test by file (from the root) and full name (describe titles and its own, joined by spaces). */
-export type RedTest = { file: string; name: string }
-
-/** What `--rerun-red` reads back: every gate run writes it. `e2e[target]` is true when that E2E step was red. */
+/** What every gate run writes: each step's status and milliseconds, in plan order, and the first red step. */
 export type LastRun = {
   sha: string
-  diffHash: string
   steps: Record<string, StepStatus>
-  vitest: RedTest[]
-  e2e: Record<string, boolean>
-  /** Each step's milliseconds, in plan order, and the first red step: what gate-runs.tsv keeps per run. */
   stepsMs: Record<string, number>
   redStep: string | null
 }
 
 const LAST_RUN = 'reports/last-run.json'
-const RERUN_REPORT = 'reports/vitest-rerun.json'
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** Vitest on the red files, filtered to the red tests by full name (the name `-t` matches starts with the file's). */
-function rerunTestsCommand(red: RedTest[]): string {
-  const files = [...new Set(red.map((t) => t.file))].map(shellWord).join(' ')
-  const names = [...new Set(red.map((t) => escapeRegExp(t.name)))].join('|')
-  return (
-    `pnpm run test ${files} -t ${shellWord(`(?:^|\\s)(?:${names})$`)} ` +
-    `--reporter=default --reporter=json --outputFile.json=${RERUN_REPORT}`
-  )
-}
 
 const SCRIPT = 'node_modules/.bin/tsx scripts/gate.ts'
 /** The `test` script's filters (package.json), which the plain gate's `vitest related` run repeats. */
@@ -1233,7 +1209,7 @@ function withHolds(steps: StepSpec[]): StepSpec[] {
         : step,
   )
 }
-/** Where the tests step's Vitest JSON goes: test-quality reads it, and `--rerun-red` finds the red tests in it. */
+/** Where the tests step's Vitest JSON goes: test-quality reads it. */
 const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
 /** Left by scripts/e2e-server.mjs when a server outlived its shutdown. */
@@ -1379,16 +1355,12 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // imports runs the kit's own tests as well.
   const kit = input.proofKitPackages ?? ['packages/proof-kit']
   const kitChanged = buildInputs.some((path) => kit.some((dir) => path.startsWith(`${dir}/`)))
-  const red = input.rerun?.tests ?? []
   // The timing-bound tests run in steps of their own. When `--only` leaves those steps out (CI's jobs name theirs), the
   // tests and integration-postgres steps run them, as they did before the steps existed.
   const picked = (name: string): boolean => input.only === undefined || input.only.includes(name)
   const perfApart = picked('perf') ? ` --exclude ${PERF_FILE}` : ''
-  // CI splits a run of every test over a matrix of jobs; the changed and rerun selections are local and run whole.
-  const shardPart =
-    shard === undefined || input.rerun !== undefined
-      ? ''
-      : ` --shard=${shard.index}/${shard.count}`
+  // CI splits a run of every test over a matrix of jobs; the changed selection is local and runs whole.
+  const shardPart = shard === undefined ? '' : ` --shard=${shard.index}/${shard.count}`
   // The harness projects are most of the suite's file time and move only with the harness: unless a harness path
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
@@ -1433,24 +1405,22 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
         idle: true,
       }
   const tests: StepSpec =
-    red.length > 0
-      ? { name: 'tests', command: `${baseEnv}${rerunTestsCommand(red)}`, ...buildNeeds }
-      : selection.mode === 'none'
-        ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
-        : selection.mode === 'changed'
-          ? {
-              name: 'tests',
-              // One process and one report: the changed paths' related tests and the harness tests reading them.
-              command:
-                `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
-                (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
-              ...buildNeeds,
-            }
-          : {
-              name: 'tests',
-              command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
-              ...buildNeeds,
-            }
+    selection.mode === 'none'
+      ? { name: 'tests', command: 'true', skip: selection.reason, idle: true }
+      : selection.mode === 'changed'
+        ? {
+            name: 'tests',
+            // One process and one report: the changed paths' related tests and the harness tests reading them.
+            command:
+              `${baseEnv}${changedApart}pnpm exec vitest related --run ${TEST_SCRIPT_FILTERS} --passWithNoTests${perfApart} ${VITEST_JSON} ${related}` +
+              (kitChanged ? ` && ${baseEnv}pnpm exec vitest run --project proof-kit` : ''),
+            ...buildNeeds,
+          }
+        : {
+            name: 'tests',
+            command: `${baseEnv}${harnessApart}pnpm run test${perfApart} ${VITEST_JSON}${shardPart}`,
+            ...buildNeeds,
+          }
   const steps: StepSpec[] = [
     { name: 'lint', command: 'pnpm lint' },
     // Every mutate-set file has a ratchet entry and every entry names a file, before anything slow runs: a missing
@@ -1514,12 +1484,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const e2eNeeds = stores === 'sqlite-memory' ? ['build'] : ['build', 'compose up']
   // Visual baselines are linux/chromium: on another platform every @visual test would fail on the missing baseline.
   const grep = process.platform === 'linux' ? '' : ' --grep-invert @visual'
-  const lastFailed = input.rerun === undefined ? '' : ' --last-failed'
-  // `--last-failed` reads `.last-run.json` from the output dir, so each project keeps its own or the last one wins.
+  // Each target keeps its own output dir, so one target's results never overwrite another's.
   const e2e = (target: string): string =>
     e2eCommand(
       target,
-      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}${lastFailed}`,
+      `${slotEnv}${storeEnv}CI=1 NYMBAL_E2E_TARGET=${target} pnpm --filter @nymbalhq/e2e exec playwright test --project ${target} --output test-results/${target}${grep}`,
     )
   const chosen = input.sentinels ?? 'all'
   const sentinels: StepSpec =
@@ -1812,120 +1781,24 @@ export function releaseInUse(root: string, stopHolder = true): InUse | undefined
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The last run, and --rerun-red
+// The last run
 // ---------------------------------------------------------------------------------------------------------------
 
-/** A hash of the work tree against HEAD, untracked files included: equal hashes mean nothing was edited between. */
-function diffHash(root: string): string {
-  const hash = createHash('sha256')
-  hash.update(git(root, ['rev-parse', 'HEAD']))
-  hash.update(git(root, ['diff', 'HEAD', '--binary']))
-  for (const path of lines(git(root, ['ls-files', '--others', '--exclude-standard'])).sort()) {
-    const absolute = resolve(root, path)
-    hash.update(`\0${path}\0`)
-    if (existsSync(absolute) && statSync(absolute).isFile()) hash.update(readFileSync(absolute))
-  }
-  return hash.digest('hex')
-}
-
-function testsWith(root: string, report: VitestReport | undefined, status: string): RedTest[] {
-  return (report?.testResults ?? []).flatMap((file) =>
-    (file.assertionResults ?? [])
-      .filter((t) => t.status === status)
-      .map((t) => ({ file: relative(root, file.name), name: t.fullName ?? t.title ?? '' })),
-  )
-}
-
-function writeLastRun(root: string, steps: Step[], startedMs: number): void {
-  const status = (name: string): StepStatus | undefined =>
-    steps.find((s) => s.name === name)?.status
-  const last: LastRun = {
-    sha: git(root, ['rev-parse', 'HEAD']).trim(),
-    diffHash: diffHash(root),
+/** reports/last-run.json's record; the Stop hook reads its `stepsMs` and `redStep` (.claude/hooks/lib.sh). */
+export function lastRunRecord(sha: string, steps: Step[]): LastRun {
+  return {
+    sha,
     steps: Object.fromEntries(steps.map((s) => [s.name, s.status])),
     stepsMs: Object.fromEntries(steps.map((s) => [s.name, s.ms])),
     redStep: steps.find((s) => s.status === 'red')?.name ?? null,
-    vitest:
-      status('tests') === 'red'
-        ? testsWith(
-            root,
-            freshReport<VitestReport>(resolve(root, VITEST_REPORT), startedMs),
-            'failed',
-          )
-        : [],
-    e2e: Object.fromEntries(
-      steps
-        .filter((s) => s.name.startsWith('e2e '))
-        .map((s) => [s.name.slice(4), s.status === 'red']),
-    ),
   }
+}
+
+function writeLastRun(root: string, steps: Step[]): void {
+  const last = lastRunRecord(git(root, ['rev-parse', 'HEAD']).trim(), steps)
   const target = resolve(root, LAST_RUN)
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, `${JSON.stringify(last, null, 2)}\n`)
-}
-
-function readLastRun(root: string): LastRun {
-  const path = resolve(root, LAST_RUN)
-  if (!existsSync(path)) throw new Error(`--rerun-red: no ${LAST_RUN}; run the gate first`)
-  return JSON.parse(readFileSync(path, 'utf8')) as LastRun
-}
-
-/** The steps that were red last time, in plan order; a need on a step that is not re-run was met then. */
-function redSteps(steps: StepSpec[], last: LastRun): StepSpec[] {
-  const kept = steps.filter((s) => last.steps[s.name] === 'red')
-  const names = new Set(kept.map((s) => s.name))
-  return kept.map((s) => {
-    const { needs, ...rest } = s
-    const still = (needs ?? []).filter((n) => names.has(n))
-    return still.length > 0 ? { ...rest, needs: still } : rest
-  })
-}
-
-/**
- * Prints the re-run's rows, a `flaky:` line for each test that went green on an unchanged tree, and the count. It
- * returns 1 whatever ran: a re-run of part of the gate is never its verdict.
- */
-function reportRerun(root: string, result: RunResult, last: LastRun, startedMs: number): number {
-  const green: string[] = []
-  const red: string[] = []
-  const flakyCandidates: string[] = []
-  for (const step of result.steps) {
-    if (step.name === 'tests' && last.vitest.length > 0) {
-      const passed = testsWith(
-        root,
-        freshReport<VitestReport>(resolve(root, RERUN_REPORT), startedMs),
-        'passed',
-      )
-      for (const t of last.vitest) {
-        const unit = `${t.file} > ${t.name}`
-        if (passed.some((p) => p.file === t.file && p.name === t.name)) {
-          green.push(unit)
-          flakyCandidates.push(unit)
-        } else red.push(unit)
-      }
-      continue
-    }
-    if (step.status === 'ok') {
-      green.push(step.name)
-      if (step.name.startsWith('e2e ')) flakyCandidates.push(step.name)
-    } else red.push(step.name)
-  }
-  // A red step this plan does not have (a gate:full step re-run without --full) did not go green.
-  const ran = new Set(result.steps.map((s) => s.name))
-  const absent = Object.keys(last.steps).filter((n) => last.steps[n] === 'red' && !ran.has(n))
-  red.push(...absent)
-  const unchanged = diffHash(root) === last.diffHash
-  const out = [
-    ...(green.length + red.length === 0 ? ['nothing was red in the last run'] : []),
-    ...(absent.length > 0
-      ? [`not re-run: ${absent.join(', ')} (not in this plan; add --full)`]
-      : []),
-    ...result.report.split('\n').slice(0, -1),
-    ...(unchanged ? flakyCandidates.map((unit) => `flaky: ${unit}`) : []),
-    `rerun: ${green.length} green, ${red.length} red, not a gate verdict`,
-  ]
-  process.stdout.write(`${out.join('\n')}\n`)
-  return 1
 }
 
 /**
@@ -1989,7 +1862,6 @@ async function main(argv: string[]): Promise<number> {
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
       stores: { type: 'string' },
-      'rerun-red': { type: 'boolean', default: false },
       shard: { type: 'string' },
     },
   })
@@ -2091,9 +1963,6 @@ async function main(argv: string[]): Promise<number> {
   if (values.harness !== 'all' && values.harness !== 'changed') {
     throw new Error(`--harness takes all or changed, not "${values.harness}"`)
   }
-  const rerun = values['rerun-red']
-  if (rerun && only !== undefined)
-    throw new Error('--rerun-red runs what was red; it takes no --only')
   const shard = values.shard === undefined ? undefined : parseShard(values.shard)
   const inUse = checkoutInUse(root)
   if (inUse !== undefined) {
@@ -2103,7 +1972,6 @@ async function main(argv: string[]): Promise<number> {
     )
     return 1
   }
-  const last = rerun ? readLastRun(root) : undefined
   const base = resolveBase(root, values.base)
   const noBase = base === emptyTree(root)
   const startedMs = Date.now()
@@ -2151,19 +2019,15 @@ async function main(argv: string[]): Promise<number> {
     relatedPaths,
     buildStale,
     ...(shard === undefined ? {} : { shard }),
-    ...(last === undefined
-      ? {}
-      : { rerun: { tests: last.steps.tests === 'red' ? last.vitest : [] } }),
   })
-  const { budgetMs } = planned
-  const steps = last === undefined ? planned.steps : redSteps(planned.steps, last)
+  const { budgetMs, steps } = planned
   const testsStep = steps.find((step) => step.name === 'tests')
   if (shard !== undefined && testsStep !== undefined && !testsStep.command.includes(' --shard=')) {
     process.stderr.write(
-      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not ${rerun ? '--rerun-red' : 'the changed tests'}\n`,
+      `gate: --shard ${values.shard} is ignored: it slices a run of every test, not the changed tests\n`,
     )
   }
-  if (values.full && only === undefined && last === undefined) {
+  if (values.full && only === undefined) {
     // The report reads what the steps above wrote, so it runs last and is part of the verdict.
     steps.push({
       name: 'test-quality report',
@@ -2174,8 +2038,7 @@ async function main(argv: string[]): Promise<number> {
     process.stderr.write(text)
   }
   const result = await run(steps, { cwd: root, budgetMs, log })
-  if (last !== undefined) return reportRerun(root, result, last, startedMs)
-  writeLastRun(root, result.steps, startedMs)
+  writeLastRun(root, result.steps)
   // A selected step skipped because a precondition failed (a URL unset, the artefact missing, a need left out)
   // proves nothing: the run is red, and the rows say why. A skip with nothing to do (no changed file to mutate,
   // services or build supplied from outside) is not.

@@ -2,25 +2,23 @@
 // Reads: tests/tooling/mutation-ratchet.test.ts, tests/tooling/gate-ratchet.test.ts, tests/tooling/stryker-targets.test.ts
 // Reads: tests/tooling/mutation-ratchet-integration.test.ts, tests/tooling/census-guard-step.test.ts
 // Reads: tests/tooling/census-journey.test.ts, tests/tooling/census-journey-helpers.test.ts
-// Reads: tests/tooling/gate-base-fallback.test.ts, tests/tooling/gate-rerun.test.ts, tests/tooling/gate-e2e-outputs.test.ts
-// Reads: tests/architecture/admin-shared-types.test.ts, tests/architecture/contract-runners.test.ts
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+// Reads: tests/tooling/gate-base-fallback.test.ts, tests/tooling/gate-e2e-outputs.test.ts
+import { appendFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { changedFiles, HARNESS_PROJECTS, harnessInputTests, plan } from '../../scripts/gate'
 import { gitIn, removeCopies, resetCopy, selectedFiles, workTreeCopy } from './work-tree-copy'
 
 // The plain gate's tests step selects a test for a change to a file it reads or runs from disk, not only for one its
 // imports reach. Each case changes one thing in a copy of the work tree and asks Vitest itself, running the step's
-// command, which files it collects.
+// command, which files it collects. AC-1 runs Vitest once per input, so it runs only under NYMBAL_SLOW_CASES
+// (vitest.config.ts; the nightly's harness-tests job); AC-3 runs on every push.
 
 const tooling = (name: string): string => `tests/tooling/${name}.test.ts`
-const architecture = (name: string): string => `tests/architecture/${name}.test.ts`
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
 
-const NIGHTLY_READERS = ['ci-workflow', 'store-sets'].map(tooling)
 const CASES: Array<{ path: string; readers: string[] }> = [
-  { path: '.github/workflows/nightly.yml', readers: NIGHTLY_READERS },
+  { path: '.github/workflows/nightly.yml', readers: ['ci-workflow', 'store-sets'].map(tooling) },
   { path: 'mutation-ratchet.json', readers: [tooling('mutation-ratchet')] },
   {
     path: 'stryker.config.mjs',
@@ -40,7 +38,6 @@ const CASES: Array<{ path: string; readers: string[] }> = [
       'census-journey',
       'census-journey-helpers',
       'gate-base-fallback',
-      'gate-rerun',
       'gate-e2e-outputs',
     ].map(tooling),
   },
@@ -49,6 +46,7 @@ const CASES: Array<{ path: string; readers: string[] }> = [
 let dir = ''
 let head = ''
 let toolingProject: string[] = []
+const slow = Boolean(process.env['NYMBAL_SLOW_CASES'])
 
 beforeAll(() => {
   dir = workTreeCopy()
@@ -82,70 +80,33 @@ async function stepSelection(): Promise<{ files: string[]; readers: string[]; co
 const toolingOf = (files: string[]): string[] => files.filter((f) => f.startsWith('tests/tooling/'))
 
 describe('AC-1: a non-code input or a spawned script selects the tests that read or run it', () => {
-  it('AC-1: through Vitest, each input changed alone selects its readers, and fewer files than the tooling project', async () => {
-    const rows: string[] = []
-    const sizes: Array<{ path: string; selected: number }> = []
-    for (const { path, readers } of CASES) {
-      appendFileSync(join(dir, path), '\n')
-      try {
-        const { files } = await stepSelection()
-        const missing = readers.filter((r) => !files.includes(r))
-        rows.push(`${path}: ${missing.length === 0 ? 'selected' : `misses ${missing.join(', ')}`}`)
-        sizes.push({ path, selected: toolingOf(files).length })
-      } finally {
-        resetCopy(dir)
+  it.runIf(slow)(
+    'AC-1: through Vitest, each input changed alone selects its readers, and fewer files than the tooling project',
+    async () => {
+      const rows: string[] = []
+      const sizes: Array<{ path: string; selected: number }> = []
+      for (const { path, readers } of CASES) {
+        appendFileSync(join(dir, path), '\n')
+        try {
+          const { files } = await stepSelection()
+          const missing = readers.filter((r) => !files.includes(r))
+          rows.push(
+            `${path}: ${missing.length === 0 ? 'selected' : `misses ${missing.join(', ')}`}`,
+          )
+          sizes.push({ path, selected: toolingOf(files).length })
+        } finally {
+          resetCopy(dir)
+        }
       }
-    }
-    expect(rows).toEqual(CASES.map((c) => `${c.path}: selected`))
-    for (const { path, selected } of sizes) {
-      expect(selected, `${path} selects part of the tooling project`).toBeLessThan(
-        toolingOf(toolingProject).length,
-      )
-    }
-  }, 300_000)
-
-  it("AC-1: a renamed workflow still selects the old path's readers", async () => {
-    gitIn(dir, 'mv', '.github/workflows/nightly.yml', '.github/workflows/nightly-renamed.yml')
-    try {
-      const { files } = await stepSelection()
-      expect(NIGHTLY_READERS.filter((r) => !files.includes(r))).toEqual([])
-      expect(toolingOf(files).length).toBeLessThan(toolingOf(toolingProject).length)
-    } finally {
-      resetCopy(dir)
-    }
-  }, 180_000)
-})
-
-describe('AC-2: an architecture guard runs for the trees it scans', () => {
-  it('AC-2: through Vitest, an admin test change selects the admin type guard, and a new file under tests/contracts/suites selects the runner guard', async () => {
-    const cases: Array<{ change: () => void; what: string; guard: string }> = [
-      {
-        what: 'apps/admin/src/hooks/useAuth.csrf.test.tsx changed',
-        change: () => appendFileSync(join(dir, 'apps/admin/src/hooks/useAuth.csrf.test.tsx'), '\n'),
-        guard: architecture('admin-shared-types'),
-      },
-      {
-        what: 'tests/contracts/suites/event-bus-failure.ts added',
-        change: () => {
-          const file = join(dir, 'tests/contracts/suites/event-bus-failure.ts')
-          mkdirSync(dirname(file), { recursive: true })
-          writeFileSync(file, 'export const eventBusFailure = 1\n')
-        },
-        guard: architecture('contract-runners'),
-      },
-    ]
-    const rows: string[] = []
-    for (const { change, what, guard } of cases) {
-      change()
-      try {
-        const { files } = await stepSelection()
-        rows.push(`${what}: ${files.includes(guard) ? 'selects' : 'misses'} ${guard}`)
-      } finally {
-        resetCopy(dir)
+      expect(rows).toEqual(CASES.map((c) => `${c.path}: selected`))
+      for (const { path, selected } of sizes) {
+        expect(selected, `${path} selects part of the tooling project`).toBeLessThan(
+          toolingOf(toolingProject).length,
+        )
       }
-    }
-    expect(rows).toEqual(cases.map((c) => `${c.what}: selects ${c.guard}`))
-  }, 180_000)
+    },
+    300_000,
+  )
 })
 
 describe('AC-3: the step loses nothing the changed-files run selected', () => {

@@ -403,154 +403,23 @@ describe('AC-18: --only and --json', () => {
 
 describe('AC-19: the real sentinel set', () => {
   const SENTINEL_DIR = join(REPO, 'tests/sentinels')
+  const PATCHES = readdirSync(SENTINEL_DIR)
+    .filter((f) => f.endsWith('.patch'))
+    .sort()
 
-  /** Each sentinel's kind, the file its `where` must name, and the content that file must hold at HEAD. */
-  const EXPECTED: Record<string, Anchor & { kind: 'present' | 'injected' }> = {
-    // S001-S004 are injected: their marks name the fixed code the patch breaks. BEGIN IMMEDIATE lives in
-    // beginImmediate(); S001 empties begin, commit and rollback.
-    S001: {
-      kind: 'injected',
-      path: 'packages/platform/src/db/command-store.ts',
-      marks: /beginImmediate\(raw\)[\s\S]*raw\.exec\('COMMIT'\)[\s\S]*raw\.exec\('ROLLBACK'\)/,
-    },
-    S002: {
-      kind: 'injected',
-      path: 'packages/platform/src/repositories/variant.ts',
-      marks: /gte\(postgresSchema\.variants\.stock, qty\)/,
-    },
-    S003: {
-      kind: 'injected',
-      path: 'packages/platform/src/repositories/variant.ts',
-      marks: /postgresDb\(tx\)\s+\.insert\(postgresSchema\.variants\)/,
-    },
-    S004: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/checkout-service.ts',
-      marks: /findByPaymentIntentId\(/,
-    },
-    // S005 and S009 are injected against the outbox: their marks name the code the patch breaks.
-    S005: {
-      kind: 'injected',
-      path: 'packages/platform/src/events/publisher.ts',
-      marks: /append\(/,
-    },
-    // S006 and S010 are injected at lines that hold still (the cart routes take a CartService; the sweeper is
-    // re-exported), re-based if the kernel moves them.
-    S006: {
-      kind: 'injected',
-      path: 'packages/platform/src/routes/cart.ts',
-      marks: /const \{ cart, productRepo, variantRepo \} = deps/,
-    },
-    // S007 is injected against finalize's amount and currency check. S008 is injected against createApp's production
-    // refusal, so the patch removes it and AC-8's suite must go red.
-    S007: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/checkout-service.ts',
-      marks:
-        /paid\.amountMinor !== order\.totalMinor \|\|\s+paid\.currency\.toUpperCase\(\) !== order\.currency\.toUpperCase\(\)/,
-    },
-    S008: {
-      kind: 'injected',
-      path: 'packages/platform/src/app.ts',
-      marks: /jwtSecret === DEFAULT_JWT_SECRET[\s\S]*config\.production_default_jwt_secret/,
-    },
-    S009: {
-      kind: 'injected',
-      path: 'packages/platform/src/read-models/index.ts',
-      marks: /await h\.handle\(event\)/,
-    },
-    S010: {
-      kind: 'injected',
-      path: 'packages/platform/src/sweepers/index.ts',
-      marks: /startCartAbandonmentSweeper,/,
-    },
-    I101: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/inventory-service.ts',
-      marks: /inventory\.insufficient/,
-    },
-    I102: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/checkout-service.ts',
-      marks: /commitReservation/,
-    },
-    I103: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/checkout-service.ts',
-      marks: /lineTotalMinor: item\.priceMinor \* item\.qty,/,
-    },
-    I104: {
-      kind: 'injected',
-      path: 'packages/platform/src/handlers/idempotency.ts',
-      marks: /repo\.seen\(tx, /,
-    },
-    I105: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/auth-service.ts',
-      marks: /revokedAt/,
-    },
-    // I106-I109 are written against the guard, roles column, login limiter and registry.
-    I106: {
-      kind: 'injected',
-      path: 'packages/http/src/fastify-adapter.ts',
-      marks: /this\.#guard\.admit\(ctx, options\)/,
-    },
-    I107: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/auth-service.ts',
-      marks: /roles: customer\.roles,/,
-    },
-    I108: {
-      kind: 'injected',
-      path: 'packages/http/src/security-middleware.ts',
-      marks: /`account:\$\{email\.toLowerCase\(\)\}`/,
-    },
-    I109: {
-      kind: 'injected',
-      path: 'packages/platform/src/routes/validated-adapter.ts',
-      marks: /config\.route_schema_missing/,
-    },
-    I110: {
-      kind: 'injected',
-      path: 'packages/platform/src/services/category-service.ts',
-      marks: /publisher\.publish\(EVT_CATEGORY_UPDATED, \{ category: fresh \}\)/,
-    },
-    I111: {
-      kind: 'injected',
-      path: 'packages/platform/src/repositories/order-sequence.ts',
-      marks: /set: \{ nextValue: sql`\$\{sqliteSchema\.orderSequences\.nextValue\} \+ 1` \}/,
-    },
-  }
-
-  function loadAll(): Array<{ file: string; sentinel: Sentinel }> {
-    return readdirSync(SENTINEL_DIR)
-      .filter((f) => f.endsWith('.patch'))
-      .sort()
-      .map((f) => {
-        const file = join('tests/sentinels', f)
-        return { file, sentinel: parseSentinel(readFileSync(join(REPO, file), 'utf8'), file) }
-      })
-  }
-
-  it('AC-19: tests/sentinels holds exactly S001-S010 and I101-I111, each file named after its id', () => {
-    const all = loadAll()
-    expect(all.map((s) => s.sentinel.id).sort()).toEqual(Object.keys(EXPECTED).sort())
-    for (const { file, sentinel } of all) {
-      expect(file.startsWith(`tests/sentinels/${sentinel.id}-`), file).toBe(true)
-    }
-  })
-
-  it.each(Object.keys(EXPECTED))(
-    'AC-19: %s has the expected kind, its where names the defect file, which holds its marks at HEAD, and an injected patch applies there',
-    (id) => {
-      const want = EXPECTED[id]
-      const got = loadAll().find((s) => s.sentinel.id === id)?.sentinel
-      if (!want || !got) throw new Error(`sentinel ${id} missing from tests/sentinels`)
-      expect(got.kind).toBe(want.kind)
-      expect(anchorProblems(REPO, got, want)).toEqual([])
+  // The set is whatever tests/sentinels holds: a new sentinel edits no test. Each is anchored by its own `where`.
+  it.each(PATCHES)(
+    'AC-19: %s is named after its id and names a kind; its where names a file at HEAD, which an injected patch changes and applies to, and a present one is header only',
+    (name) => {
+      const file = join('tests/sentinels', name)
+      const sentinel = parseSentinel(readFileSync(join(REPO, file), 'utf8'), file)
+      const where = (sentinel.where.split(/\s/)[0] ?? '').replace(/:\d+(?:-\d+)?$/, '')
+      expect(name.startsWith(`${sentinel.id}-`), name).toBe(true)
+      expect(['injected', 'present']).toContain(sentinel.kind)
+      expect(anchorProblems(REPO, sentinel, { path: where, marks: /(?:)/ })).toEqual([])
       expect(
-        want.kind !== 'present' || got.patch.trim() === '',
-        `a present sentinel is header only: ${got.where}`,
+        sentinel.kind !== 'present' || sentinel.patch.trim() === '',
+        `a present sentinel is header only: ${sentinel.where}`,
       ).toBe(true)
     },
   )

@@ -10,12 +10,14 @@ const NESTED_VITEST_RUNS = [
 
 // Each runs the real Vitest over copies of the work tree, or the registry run in Docker (Linux only): the plain gate
 // never runs them (scripts/gate.ts), gate:full and dev CI do.
+//
+// Slow, not flaky: a case too costly for every push runs only under NYMBAL_SLOW_CASES=1, in its home project, behind
+// `it.runIf(process.env['NYMBAL_SLOW_CASES'])`. The nightly's harness-tests job sets it, so a red there fails the run
+// (harness-input-selection, new-adapter-scaffold and mutation-integration-selection hold such cases).
 const SLOW_TOOLING = [
   'tests/tooling/harness-input-selection.test.ts',
-  'tests/tooling/gate-base-env.test.ts',
   'tests/tooling/registry-run.test.ts',
   'tests/tooling/new-adapter-scaffold.test.ts',
-  'tests/tooling/adapter-list.test.ts',
 ]
 
 // Timing-bound: each asserts wall-clock bounds, so each is a project of its own that the gate runs under the quiet lock

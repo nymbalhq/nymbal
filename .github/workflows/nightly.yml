@@ -156,11 +156,14 @@ jobs:
 
   harness-tests:
     # A push runs the harness's own test projects only when a harness path changed; this runs the gate's tests step
-    # whole, those projects included, so a product change that breaks one shows within a night.
+    # whole, those projects included, so a product change that breaks one shows within a night. NYMBAL_SLOW_CASES adds
+    # the cases too slow for a push (vitest.config.ts).
     name: Gate — tests, the harness projects included
     runs-on: ubuntu-24.04
     needs: [build]
     timeout-minutes: 45
+    env:
+      NYMBAL_SLOW_CASES: '1'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -186,13 +189,12 @@ jobs:
           retention-days: 7
 
   e2e-full:
-    # The push runs the desktop projects; this job adds the mobile ones. A mobile red is a screenshot to look at, not
-    # a blocker: it is logged and never holds a merge.
+    # The push runs the desktop projects; this job adds the mobile ones. A phone-width red fails the run; a visual red
+    # is a screenshot to look at, not a blocker: it is logged and never holds a merge.
     name: E2E — ${{ matrix.target }}, mobile
     runs-on: ubuntu-24.04
     needs: [build]
     timeout-minutes: 45
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -230,8 +232,12 @@ jobs:
       - name: Install Playwright system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
+      - name: Phone width
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile --grep @phone-width
       - name: Visual, mobile
-        run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile
+        if: always()
+        continue-on-error: true
+        run: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile --grep @visual
       - name: Upload the Playwright results
         if: always()
         uses: actions/upload-artifact@v7

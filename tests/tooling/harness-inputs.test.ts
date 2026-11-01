@@ -333,15 +333,11 @@ describe('AC-5: the plain gate keeps a reader’s project and runs it in the sam
     expect(relatedArgs(testsCommand({ changed, inputReaders: [] }))).toEqual([...changed].sort())
   })
 
-  it('AC-5: every command of the plain gate’s tests step carries GATE_BASE=<base>, the kit chain and --rerun-red too; with no base none does', () => {
+  it('AC-5: every command of the plain gate’s tests step carries GATE_BASE=<base>, the kit chain too; with no base none does', () => {
     const shapes: Array<{ label: string; input: Partial<PlanInput> }> = [
       { label: 'changed', input: { changed: [KERNEL] } },
       { label: 'changed, kit chain', input: { changed: [KIT] } },
       { label: 'all', input: { changed: ['package.json', KERNEL] } },
-      {
-        label: 'rerun-red',
-        input: { rerun: { tests: [{ file: 'tests/tooling/gate.test.ts', name: 'a b' }] } },
-      },
     ]
     const bases = shapes.map(({ label, input }) => ({
       label,
@@ -381,12 +377,12 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
   const projectOf = (file: string): string =>
     file.startsWith('tests/architecture/') ? 'architecture' : 'tooling'
 
-  it('AC-5: for any readers, the all, none and --rerun-red commands, every --harness all command and every gate:full command whose readers’ projects run anyway equal those with none; a gate:full that leaves a reader’s project out keeps it and changes nothing else; the plain ones carry GATE_BASE and gate:full’s do not', () => {
+  it('AC-5: for any readers, the all and none commands, every --harness all command and every gate:full command whose readers’ projects run anyway equal those with none; a gate:full that leaves a reader’s project out keeps it and changes nothing else; the plain ones carry GATE_BASE and gate:full’s do not', () => {
     fc.assert(
       fc.property(
         fc.subarray(READER_POOL, { minLength: 1 }),
         fc.constantFrom(...CHANGE_SETS),
-        fc.constantFrom('plain', 'rerun', 'full', 'harness all'),
+        fc.constantFrom('plain', 'full', 'harness all'),
         (readers, changed, shape) => {
           const input: PlanInput = {
             full: shape === 'full' || shape === 'harness all',
@@ -394,9 +390,6 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
             changed,
             mutated: [],
             ...(shape === 'harness all' ? { harness: 'all' as const } : {}),
-            ...(shape === 'rerun'
-              ? { rerun: { tests: [{ file: 'tests/tooling/gate.test.ts', name: 'a b' }] } }
-              : {}),
           }
           // The plain gate's changed-mode run takes readers by design (the AC-5 tests above).
           const comparable =

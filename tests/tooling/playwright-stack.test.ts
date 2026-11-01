@@ -503,7 +503,6 @@ const CAPABILITY_JOURNEYS = [
   'bounce-stops-alerts.spec.ts AC-6',
   'carrier-delivers.spec.ts AC-6',
   'browse-sort.spec.ts AC-4',
-  'browse-sort.spec.ts AC-7',
   'browse.spec.ts AC-3',
   'order-key-expiry.spec.ts AC-7',
   'order-key-expiry.spec.ts AC-9',

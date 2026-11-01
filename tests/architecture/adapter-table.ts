@@ -167,12 +167,17 @@ export const RETIRED_NAMES: readonly string[] = MOVED_ADAPTERS.flatMap((a) =>
 /** A first-party adapter: its slot, provider, directory and package name. */
 export type FirstPartyAdapter = Pick<MovedAdapter, 'slot' | 'provider' | 'dir' | 'name'>
 
-interface RegistryEntry {
+export interface RegistryEntry {
   package: string
   /** The slot as package names and folders spell it: `document-store`. */
   slot: string
   provider: string
   tier: string
+}
+
+/** registry/adapters.json, as far as these tests read it. */
+export interface Registry {
+  adapters: RegistryEntry[]
 }
 
 /** A slot folder back to the config's slot key: `document-store` is `documentStore`. */
@@ -183,18 +188,43 @@ const slotKey = (folder: string): Slot =>
  * Every first-party adapter, as registry/adapters.json lists it: the one hand-kept list, so adding an adapter edits no
  * test. Each is expected at its convention home, `packages/adapters/<slot folder>/<provider>`.
  */
-export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = (
-  JSON.parse(readFileSync(join(ROOT, 'registry', 'adapters.json'), 'utf8')) as {
-    adapters: RegistryEntry[]
-  }
-).adapters
-  .filter((e) => e.tier === 'first-party')
-  .map((e) => ({
-    slot: slotKey(e.slot),
-    provider: e.provider,
-    dir: `packages/adapters/${e.slot}/${e.provider}`,
-    name: e.package,
-  }))
+export function firstPartyAdapters(registry: Registry): FirstPartyAdapter[] {
+  return registry.adapters
+    .filter((e) => e.tier === 'first-party')
+    .map((e) => ({
+      slot: slotKey(e.slot),
+      provider: e.provider,
+      dir: `packages/adapters/${e.slot}/${e.provider}`,
+      name: e.package,
+    }))
+}
+
+export const FIRST_PARTY_ADAPTERS: readonly FirstPartyAdapter[] = firstPartyAdapters(
+  JSON.parse(readFileSync(join(ROOT, 'registry', 'adapters.json'), 'utf8')) as Registry,
+)
+
+/**
+ * Where the registry's first-party adapters and the workspace disagree, one line per adapter, naming its package and
+ * directory: an entry with no member at its home under its name, and a member under packages/adapters/ no entry lists.
+ */
+export function registryDisagreements(
+  listed: readonly FirstPartyAdapter[],
+  members: ReadonlyArray<Pick<PnpmMember, 'name' | 'dir'>>,
+): string[] {
+  const byDir = new Map(members.map((m) => [m.dir, m.name]))
+  const homes = new Set(listed.map((a) => a.dir))
+  return [
+    ...listed
+      .filter((a) => byDir.get(a.dir) !== a.name)
+      .map(
+        (a) =>
+          `${a.name} (${a.dir}): registry/adapters.json lists it, but ${byDir.has(a.dir) ? `the member there is ${byDir.get(a.dir)}` : 'no workspace member is there'}`,
+      ),
+    ...members
+      .filter((m) => m.dir.startsWith('packages/adapters/') && !homes.has(m.dir))
+      .map((m) => `${m.name} (${m.dir}): a workspace adapter registry/adapters.json does not list`),
+  ]
+}
 
 export const ADAPTER_NAMES: readonly string[] = FIRST_PARTY_ADAPTERS.map((a) => a.name)
 

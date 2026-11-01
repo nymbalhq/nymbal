@@ -885,4 +885,43 @@ describe('check --static: unit test files beside the mutate set', () => {
     const r = await cliIn(dir, ['check', '--static'])
     expect(r.code, r.output).toBe(0)
   })
+
+  // CI exports GATE_BASE, the pushed branch's previous tip, to every step, and the plain gate runs its tests with it.
+  // In a scratch repository that sha names no commit: a script reading it for another config went red only in CI.
+  it('GATE_BASE is the base of the unit ratchet alone: a sha that does not resolve fails the default config naming it, and leaves another config’s run as it is without it', async () => {
+    const dir = gitScratch(ENTRIES)
+    writeFileSync(
+      join(dir, 'stryker.integration.config.mjs'),
+      readFileSync(join(dir, 'stryker.config.mjs'), 'utf8'),
+    )
+    writeFileSync(
+      join(dir, 'mutation-ratchet.integration.json'),
+      readFileSync(join(dir, 'mutation-ratchet.json'), 'utf8'),
+    )
+    const missing = 'f'.repeat(40)
+    const integration = [
+      'check',
+      '--static',
+      '--config',
+      'stryker.integration.config.mjs',
+      '--ratchet',
+      'mutation-ratchet.integration.json',
+    ]
+
+    const unit = await cliIn(dir, ['check', '--static'], { GATE_BASE: missing })
+    const other = await cliIn(dir, integration, { GATE_BASE: missing })
+    const otherWithout = await cliIn(dir, integration)
+
+    expect(unit.code, unit.output).toBe(2)
+    expect(unit.output).toContain(`--base ${missing} does not resolve`)
+    expect(other.code, other.output).toBe(0)
+    expect(other.output).not.toContain(missing)
+    // Node's own warnings carry the process id: the script's lines are compared.
+    const said = (output: string): string[] =>
+      output.split('\n').filter((l) => !/^\(node:\d+\)|^\(Use `node /.test(l))
+    expect({ code: other.code, said: said(other.output) }).toEqual({
+      code: otherWithout.code,
+      said: said(otherWithout.output),
+    })
+  })
 })

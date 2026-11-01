@@ -190,13 +190,16 @@ test.describe('Browse: sort', () => {
     ).data
     expect(categories.length).toBeGreaterThan(0)
 
-    for (const path of ['/products', `/category/${categories[0]!.slug}`]) {
-      await openListing(page, path)
-      const offered = await page
+    const offered = (): Promise<string[]> =>
+      page
         .getByTestId('sort-dropdown')
         .locator('option')
         .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value))
-      expect(offered, path).toEqual(sortKeys)
+    for (const path of ['/products', `/category/${categories[0]!.slug}`]) {
+      await page.goto(path)
+      // The dropdown's options as they settle, not as they stand at a fixed moment: a dev server's first render of a
+      // page can come well after its load.
+      await expect.poll(offered, { message: path, timeout: GRID_TIMEOUT }).toEqual(sortKeys)
     }
   })
 
@@ -222,7 +225,7 @@ test.describe('Browse: sort', () => {
     }).toPass({ timeout: GRID_TIMEOUT })
   })
 
-  test('AC-7: choosing each key catalog.sortKeys offers renders the grid in the order GET /api/products?sort=<key> returns @capabilities', async ({
+  test('AC-7: choosing each key catalog.sortKeys offers renders the grid in the order GET /api/products?sort=<key> returns', async ({
     page,
     request,
   }) => {

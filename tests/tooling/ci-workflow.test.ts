@@ -1290,20 +1290,48 @@ const truthyText = (v: unknown): boolean => {
   return holds(text(v), { github: {}, matrix: {}, inputs: {}, vars: {}, secrets: {}, env: {} })
 }
 
-// Only these never brake a merge: the quarantined tests and the mobile E2E, non-blocking by the harness's own rules.
-describe('the nightly blocks on every job but two', () => {
-  it('in nightly.yml, quarantine and e2e-full continue on error, and no other job or step does', () => {
+// Only these never brake a merge: the quarantined tests and the mobile visual baselines, non-blocking by the harness's
+// own rules. The phone-width journeys and the slow harness cases are checks moved off the push, so a red fails the run.
+describe('the nightly blocks on every job but the quarantine and every step but the mobile visuals', () => {
+  it('in nightly.yml, the quarantine job and e2e-full’s @visual-only step continue on error, and no other job or step does; e2e-full runs @phone-width in a step that does not', () => {
     const nightly = loadWorkflow(NIGHTLY)
     const lenient = Object.entries(nightly.jobs)
       .flatMap(([id, job]) =>
         truthyText(job['continue-on-error'])
           ? [id]
-          : (job.steps ?? []).flatMap((s, i) =>
-              truthyText(s['continue-on-error']) ? [`${id} (step ${i})`] : [],
+          : (job.steps ?? []).flatMap((s) =>
+              truthyText(s['continue-on-error']) ? [`${id}: ${s.run ?? s.uses ?? ''}`] : [],
             ),
       )
       .sort()
-    expect(lenient).toEqual(['e2e-full', 'quarantine'])
+    expect(lenient).toEqual([
+      'e2e-full: pnpm --filter @nymbalhq/e2e exec playwright test --project ${{ matrix.target }}-mobile --grep @visual',
+      'quarantine',
+    ])
+    const strict = (nightly.jobs['e2e-full']?.steps ?? []).filter(
+      (s) => !truthyText(s['continue-on-error']) && /\bplaywright\s+test\b/.test(s.run ?? ''),
+    )
+    expect(strict.map((s) => /--grep(?:=|\s+)@phone-width\b/.test(s.run ?? ''))).toEqual([true])
+  })
+
+  it('on a nightly dispatch, every gate.ts tests call runs with NYMBAL_SLOW_CASES=1 in a job that does not continue on error, and the quarantine job does not set it', () => {
+    const nightly = loadWorkflow(NIGHTLY)
+    const runs = execute(nightly, NIGHTLY_EVENTS[1]!.github)
+    const testsRuns = runs.filter((r) =>
+      [...r.script.matchAll(/scripts\/gate\.ts([^\n;&|]*)/g)].some((m) =>
+        onlyOf(words(m[1] ?? '')).includes('tests'),
+      ),
+    )
+    expect(testsRuns.length, 'gate.ts calls that run the tests step').toBeGreaterThan(0)
+    expect(
+      testsRuns.map((r) => ({
+        slow: r.env.NYMBAL_SLOW_CASES,
+        lenient: truthyText(nightly.jobs[r.job]?.['continue-on-error']),
+      })),
+    ).toEqual(testsRuns.map(() => ({ slow: '1', lenient: false })))
+    const quarantine = runs.filter((r) => r.job === 'quarantine')
+    expect(quarantine.length).toBeGreaterThan(0)
+    expect(quarantine.filter((r) => r.env.NYMBAL_SLOW_CASES !== undefined)).toEqual([])
   })
 })
 

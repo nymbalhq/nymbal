@@ -91,7 +91,7 @@ const overrideSqlitePath = (process.env.NYMBAL_E2E_OVERRIDE_SQLITE_PATH ??= join
 ))
 
 // Where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and the key
-// prefix it makes for the run), so the rebuild journey runs `nymbal replay` against that same store.
+// prefix it makes for the run), so a journey reaches that same store (support/order-keys.ts).
 const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
   tmpdir(),
   `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
@@ -272,7 +272,7 @@ export default defineConfig({
     {
       name: 'astro',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override|@mail-outage/,
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: astroURL,
@@ -281,7 +281,7 @@ export default defineConfig({
     {
       name: 'nextjs',
       testIgnore: ['**/journeys/admin/**'],
-      grepInvert: /@nosearch|@override|@mail-outage/,
+      grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: nextjsURL,
@@ -355,6 +355,8 @@ export default defineConfig({
         baseURL: nextjsOverrideURL,
       },
     },
+    // The phone projects: the visual baselines at Pixel 7, and the @phone-width journeys, which hold every page of a
+    // surface to the phone's width and run on no desktop project.
     {
       name: 'astro-mobile',
       testIgnore: ['**/journeys/admin/**'],
@@ -362,7 +364,7 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: astroURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
     {
       name: 'nextjs-mobile',
@@ -371,11 +373,12 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: nextjsURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
     {
       name: 'admin',
       testMatch: ['**/journeys/admin/**/*.spec.ts'],
+      grepInvert: /@phone-width/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: adminURL,
@@ -388,7 +391,7 @@ export default defineConfig({
         ...devices['Pixel 7'],
         baseURL: adminURL,
       },
-      grep: /@visual/,
+      grep: /@visual|@phone-width/,
     },
   ],
   ...(isCI ? { webServer: servers() } : {}),
