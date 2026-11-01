@@ -15,12 +15,12 @@ export const CORRELATION = 'x-correlation-id'
 /** A well-formed Idempotency-Key. */
 export const KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
-/** A shopper whose jar holds the CSRF cookie: one safe request makes the guard mint it. */
+/** A shopper whose jar holds the CSRF cookie, from `GET /api/csrf`, the one answer that sets it. */
 async function primed(baseUrl: string) {
   const shop = shopper(baseUrl)
-  const res = await shop.call('GET', '/health')
+  const res = await shop.call('GET', '/api/csrf')
   if (!shop.jar.has('nymbal.csrf'))
-    throw new Error(`GET /health (${res.status}) set no CSRF cookie`)
+    throw new Error(`GET /api/csrf (${res.status}) set no CSRF cookie`)
   return shop
 }
 

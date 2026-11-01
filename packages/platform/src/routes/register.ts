@@ -34,6 +34,7 @@ import { registerAdminStaticRoute } from './admin-static.js'
 import { registerEventsSseRoute } from './events-sse.js'
 import { registerInboundWebhookRoute } from './webhooks-inbound.js'
 import { validatedAdapter } from './validated-adapter.js'
+import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
@@ -100,7 +101,8 @@ function commandOf(method: string, path: string): string | null | undefined {
 /**
  * Every handler runs as its request's actor. A route that runs a command runs it as one audited command; an admin
  * write with an `Idempotency-Key` runs once per key (a malformed key is refused before anything runs). It wraps each
- * handler before `validatedAdapter` does, so the schema runs first and a request it refuses never reaches a command.
+ * handler before `validatedAdapter` does, so the schema runs first and a request it refuses never reaches a command;
+ * it passes the handler's auth gate on, so the gate runs before both.
  */
 function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter {
   return {
@@ -111,7 +113,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
       adapter.registerRoute(
         method,
         path,
-        (ctx) => {
+        withGate((ctx) => {
           const actor = actorOf(ctx.auth)
           return runAsActor(actor, async () => {
             const keyed = adminWrite ? idempotencyKeyOf(ctx) : { key: undefined }
@@ -126,7 +128,7 @@ function auditedAdapter(adapter: HttpAdapter, store: CommandStore): HttpAdapter 
               run,
             )
           })
-        },
+        }, gateOf(handler)),
         options,
       )
     },

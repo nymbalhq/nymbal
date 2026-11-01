@@ -39,9 +39,12 @@ export interface SecurityGuard {
    * Returns the refusal, or null when the request may proceed.
    */
   admit(ctx: RequestContext, options?: RouteOptions): ResponseEnvelope | null
-  /** Runs on the handler's answer: security headers, the CSRF cookie, and the outcome of a failure-counted login. */
+  /**
+   * Runs on the handler's answer: security headers and the outcome of a failure-counted login. It sets no CSRF
+   * cookie: parallel first requests would each mint a different one, and the browser would keep whichever came last.
+   */
   finish(ctx: RequestContext, envelope: ResponseEnvelope): ResponseEnvelope
-  /** `GET /api/csrf`: the request's CSRF cookie, or a new one set on the response. */
+  /** `GET /api/csrf`, the only answer that sets the CSRF cookie: the request's own, or a new one set on the response. */
   issueToken(ctx: RequestContext): ResponseEnvelope
   reset(): void
 }
@@ -115,12 +118,7 @@ export function createSecurityGuard(security: NymbalConfig['security']): Securit
           )
         } else rateLimiter.hit(ctx.path, keys)
       }
-      const finished = applyHeaders(envelope)
-      const setsCsrf = finished.cookies?.some((cookie) => cookie.name === CSRF_COOKIE) ?? false
-      if (security.csrf && !ctx.cookies[CSRF_COOKIE] && !setsCsrf) {
-        finished.cookies = [...(finished.cookies ?? []), csrfCookie(newToken())]
-      }
-      return finished
+      return applyHeaders(envelope)
     },
 
     issueToken(ctx) {

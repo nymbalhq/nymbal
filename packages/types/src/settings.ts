@@ -24,11 +24,14 @@ export interface SettingsListing {
   slots: SettingsSlotView[]
 }
 
-/** What a `PUT` or `DELETE` of a field answers: the change applies at the next start. */
+/**
+ * What a `PUT` or `DELETE` of a field answers: the change applies at the next start. `source` is where the field
+ * comes from afterwards: a `DELETE` of a row the config or environment shadows leaves that source.
+ */
 export interface SettingWriteResult {
   slot: string
   path: string
   state: 'unset' | 'set'
-  source: 'settings' | null
+  source: SettingSourceName | null
   restartRequired: true
 }

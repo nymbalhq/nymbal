@@ -7,14 +7,14 @@ export const CSRF_COOKIE = 'nymbal.csrf'
 export const CSRF_HEADER = 'x-csrf-token'
 
 /**
- * A shopper whose jar holds the `nymbal.csrf` cookie. The guard mints it on any response that lacks one, so one safe
- * request primes the jar; the shopper then echoes it in `x-csrf-token` on every request.
+ * A shopper whose jar holds the `nymbal.csrf` cookie. Only `GET /api/csrf` sets it, as a browser client fetches it;
+ * the shopper then echoes it in `x-csrf-token` on every request.
  */
 export async function primedShopper(baseUrl: string, jar: CookieJar = new Map()) {
   const shop = shopper(baseUrl, jar)
-  const primed = await shop.call('GET', '/health')
+  const primed = await shop.call('GET', '/api/csrf')
   if (!jar.has(CSRF_COOKIE)) {
-    throw new Error(`GET /health (${primed.status}) set no ${CSRF_COOKIE} cookie`)
+    throw new Error(`GET /api/csrf (${primed.status}) set no ${CSRF_COOKIE} cookie`)
   }
   return shop
 }

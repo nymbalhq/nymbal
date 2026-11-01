@@ -81,6 +81,10 @@ export class FastifyHttpAdapter implements HttpAdapter {
     })
     this.#app.addHook('onSend', async (req, reply, payload) => {
       reply.header(CORRELATION_ID_HEADER, req.correlationId)
+      // An API answer that chooses no caching of its own is shopper state: a disk-cached cart would come back on Back.
+      if (req.url.startsWith('/api/') && !reply.hasHeader('cache-control')) {
+        reply.header('cache-control', 'no-store')
+      }
       return payload
     })
     // A signed webhook is verified against the bytes sent, so a route registered with `rawBody` keeps them. The

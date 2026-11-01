@@ -4,6 +4,7 @@ import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 import type { AlertKind } from '../alerts.js'
+import type { SettingSourceName } from '../settings.js'
 
 export interface ProductSnapshot extends Product {
   variants: Variant[]
@@ -260,5 +261,5 @@ export interface AdapterErrorV1Payload {
 export interface SettingsChangedV1Payload {
   slot: string
   path: string
-  source: 'settings' | null
+  source: SettingSourceName | null
 }

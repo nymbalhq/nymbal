@@ -279,9 +279,9 @@ export async function openStore(opts: {
           }),
         ),
       )
-      // One safe request primes the CSRF cookie the shopper then echoes on every unsafe one.
+      // `GET /api/csrf` sets the CSRF cookie the shopper then echoes on every unsafe one.
       const shop = shopper(baseUrl)
-      await shop.call('GET', '/health')
+      await shop.call('GET', '/api/csrf')
       const answer = await shop.call<{ accessToken: string }>('POST', '/api/auth/login', {
         email,
         password,

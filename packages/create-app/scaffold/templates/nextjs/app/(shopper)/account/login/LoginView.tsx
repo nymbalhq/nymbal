@@ -6,12 +6,12 @@ import Link from 'next/link'
 import { LoginForm } from '@nymbalhq/react'
 import styles from '@/styles/pages/account.module.css'
 
-/** `serverHtml` is the form as the server rendered it, `redirect` where to go once signed in (page.tsx). */
-export function LoginView({ serverHtml, redirect }: { serverHtml: string; redirect?: string }) {
+/** `serverHtml` is the form as the server rendered it, `target` the store path to go to once signed in (page.tsx). */
+export function LoginView({ serverHtml, target }: { serverHtml: string; target: string }) {
   const router = useRouter()
   const onSignedIn = useCallback(() => {
-    router.push(redirect ?? '/account')
-  }, [router, redirect])
+    router.push(target)
+  }, [router, target])
 
   return (
     <div className={styles.authPage}>
