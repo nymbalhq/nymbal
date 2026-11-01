@@ -281,6 +281,14 @@ export function isBuildInput(path: string): boolean {
   )
 }
 
+/** A file the admin's build reads: its source, page, public assets, manifest, and build configs; tests aside. */
+export function isAdminBuildInput(path: string): boolean {
+  if (TEST_FILE.test(path)) return false
+  return /^apps\/admin\/(?:src\/|public\/|index\.html$|package\.json$|(?:vite|tailwind|postcss)\.config\.[cm]?[jt]s$|tsconfig[^/]*\.json$)/.test(
+    path,
+  )
+}
+
 /**
  * The packages under `packages/`, at any depth, with their manifests: the workspace members when `root` is a
  * workspace, else (a tree with no `pnpm-workspace.yaml`, so no nested glob) each `packages/<name>` on the disk.
@@ -1144,6 +1152,12 @@ export type PlanInput = {
    * inputs (`buildIsCurrent`), as after a merge of dev. False when not given.
    */
   buildStale?: boolean | undefined
+  /**
+   * The plain gate builds the admin too: apps/admin/dist is there but was built from other admin inputs than the work
+   * tree holds (`adminBuildIsCurrent`), so a walk or a gate:full --no-build would serve the old admin. False when not
+   * given.
+   */
+  adminStale?: boolean | undefined
   /** `--shard <i>/<n>`: the tests step runs Vitest's shard i of n, when it runs every test. */
   shard?: Shard | undefined
 }
@@ -1214,14 +1228,19 @@ const VITEST_REPORT = 'reports/vitest.json'
 const VITEST_JSON = `--reporter=default --reporter=json --outputFile.json=${VITEST_REPORT}`
 /** Left by scripts/e2e-server.mjs when a server outlived its shutdown. */
 const SHUTDOWN_REPORT = 'reports/e2e-shutdown.json'
+/** The admin's build, which `pnpm build` (packages/** only) leaves out. */
+const ADMIN_BUILD = 'pnpm --filter @nymbalhq/admin build'
+/** The page the API serves the admin from. */
+const ADMIN_INDEX = 'apps/admin/dist/index.html'
 /** The build output each E2E target serves itself. The templates run as dev servers; the API serves the admin. */
 const E2E_SERVES: Record<string, string[]> = {
   astro: [],
   nextjs: [],
-  admin: ['apps/admin/dist/index.html'],
-  // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it.
-  'astro-custom': [],
-  'nextjs-custom': [],
+  admin: [ADMIN_INDEX],
+  // The custom-providers fixture store (tests/e2e/fixtures/custom-providers) with each template on it; its alert and
+  // resend journeys sign in to the admin that store's API serves.
+  'astro-custom': [ADMIN_INDEX],
+  'nextjs-custom': [ADMIN_INDEX],
   // The custom store's API alone, for the mail outage journey.
   'mail-outage': [],
   // The no-search fixture store (tests/e2e/fixtures/no-search) with each template on it.
@@ -1332,6 +1351,7 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   const buildInputs = changed.filter(isBuildInput)
   const stamp = `${SCRIPT} build-stamp`
   const builds = buildInputs.length > 0 || input.buildStale === true
+  const adminBuilds = input.adminStale === true
   const build: StepSpec = full
     ? input.noBuild === true
       ? {
@@ -1341,9 +1361,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
           idle: true,
         }
       : // `pnpm build` covers packages/** only; the admin E2E serves apps/admin/dist, which a fresh checkout lacks.
-        { name: 'build', command: `pnpm build && pnpm --filter @nymbalhq/admin build && ${stamp}` }
-    : builds
-      ? { name: 'build', command: `pnpm build && ${stamp}` }
+        { name: 'build', command: `pnpm build && ${ADMIN_BUILD} && ${stamp} --admin` }
+    : builds || adminBuilds
+      ? {
+          name: 'build',
+          command: [
+            ...(builds ? ['pnpm build'] : []),
+            ...(adminBuilds ? [ADMIN_BUILD, `${stamp} --admin`] : [stamp]),
+          ].join(' && '),
+        }
       : {
           name: 'build',
           command: 'true',
@@ -1365,8 +1391,11 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // changed, the plain gate leaves them out and gate:full leaves out the tooling ones; dev CI asks for all of them with
   // `--harness all`. vitest.config.ts drops them: Vitest ORs repeated `--project` filters, so a negation beside
   // `pnpm test`'s `!integration-*` would run every project, the service-backed ones included.
+  // Both sides of a rename: `git mv scripts/x.ts tools/x.ts` moves a harness path although its new name is not one.
   const harnessKept =
-    input.harness === 'all' || input.noBase === true || changed.some(isHarnessPath)
+    input.harness === 'all' ||
+    input.noBase === true ||
+    [...changed, ...(input.relatedPaths ?? [])].some(isHarnessPath)
   const harnessSkipped = harnessKept ? [] : full ? FULL_GATE_HARNESS_PROJECTS : HARNESS_PROJECTS
   const skipEnv = (projects: string[]): string =>
     projects.length === 0 ? '' : `NYMBAL_VITEST_SKIP_PROJECTS=${projects.join(',')} `
@@ -1656,20 +1685,20 @@ export function artefactPresent(root: string): boolean {
 const BUILD_STAMP = 'reports/build-stamp.json'
 
 /**
- * A hash of the package build inputs (`isBuildInput`) in the work tree: each blob's id and path. A clean input is
- * HEAD's blob; a modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id
- * committing them records, so output built from a dirty tree still matches once that tree is committed.
+ * A hash of the build inputs under `dir` in the work tree: each blob's id and path. A clean input is HEAD's blob; a
+ * modified, staged or untracked one is the blob `git hash-object` gives its bytes, which is the id committing them
+ * records, so output built from a dirty tree still matches once that tree is committed.
  */
-export function buildInputsStamp(root: string): string {
+function inputsStamp(root: string, dir: string, isInput: (path: string) => boolean): string {
   const blobs = new Map<string, string>()
-  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', 'packages']))) {
+  for (const line of lines(git(root, ['ls-tree', '-r', 'HEAD', '--', dir]))) {
     const [meta, path] = line.split('\t')
-    if (path !== undefined && isBuildInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
+    if (path !== undefined && isInput(path)) blobs.set(path, meta?.split(' ')[2] ?? '')
   }
   const dirty = [
-    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', 'packages'])),
-    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', 'packages'])),
-  ].filter(isBuildInput)
+    ...lines(git(root, ['diff', '--name-only', '--no-renames', 'HEAD', '--', dir])),
+    ...lines(git(root, ['ls-files', '--others', '--exclude-standard', '--', dir])),
+  ].filter(isInput)
   const present = dirty.filter((path) => existsSync(resolve(root, path)))
   for (const path of dirty) blobs.delete(path)
   if (present.length > 0) {
@@ -1681,12 +1710,34 @@ export function buildInputsStamp(root: string): string {
   return hash.digest('hex')
 }
 
-/** Records the build inputs the packages were just built from (the build step's last command). */
-export function writeBuildStamp(root: string): void {
+/** The package build inputs (`isBuildInput`) as `inputsStamp` hashes them. */
+export function buildInputsStamp(root: string): string {
+  return inputsStamp(root, 'packages', isBuildInput)
+}
+
+/** The admin's build inputs (`isAdminBuildInput`) as `inputsStamp` hashes them. */
+export function adminInputsStamp(root: string): string {
+  return inputsStamp(root, 'apps/admin', isAdminBuildInput)
+}
+
+type BuildStamp = { inputs?: string | null; admin?: string | null }
+
+function readBuildStamp(root: string): BuildStamp | undefined {
+  const path = resolve(root, BUILD_STAMP)
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as BuildStamp) : undefined
+}
+
+/**
+ * Records the build inputs the packages were just built from (the build step's last command), and with `admin` the
+ * admin's as well; without it the admin's entry is the one the last admin build recorded.
+ */
+export function writeBuildStamp(root: string, admin = false): void {
   const inputs = buildInputsStamp(root)
+  const adminInputs = admin ? adminInputsStamp(root) : (readBuildStamp(root)?.admin ?? null)
   const target = resolve(root, BUILD_STAMP)
   mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, `${JSON.stringify({ inputs, at: new Date().toISOString() }, null, 2)}\n`)
+  const stamp = { inputs, admin: adminInputs, at: new Date().toISOString() }
+  writeFileSync(target, `${JSON.stringify(stamp, null, 2)}\n`)
 }
 
 /**
@@ -1697,10 +1748,18 @@ export function writeBuildStamp(root: string): void {
 export function buildIsCurrent(root: string): boolean {
   if (buildingPackages(root).length === 0) return true
   if (!packagesBuilt(root)) return false
-  const path = resolve(root, BUILD_STAMP)
-  if (!existsSync(path)) return false
-  const stamp = JSON.parse(readFileSync(path, 'utf8')) as { inputs?: string | null }
-  return stamp.inputs === buildInputsStamp(root)
+  const stamp = readBuildStamp(root)
+  return stamp !== undefined && stamp.inputs === buildInputsStamp(root)
+}
+
+/**
+ * Whether apps/admin/dist can stand for the admin's source in the work tree: it is built and the stamp names the
+ * admin's inputs as they are now. A tree with no admin has nothing stale.
+ */
+export function adminBuildIsCurrent(root: string): boolean {
+  if (!existsSync(resolve(root, 'apps/admin/package.json'))) return true
+  if (!existsSync(resolve(root, ADMIN_INDEX))) return false
+  return readBuildStamp(root)?.admin === adminInputsStamp(root)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1861,6 +1920,7 @@ async function main(argv: string[]): Promise<number> {
       'perf-bytes': { type: 'boolean', default: false },
       harness: { type: 'string', default: 'changed' },
       check: { type: 'boolean', default: false },
+      admin: { type: 'boolean', default: false },
       stores: { type: 'string' },
       shard: { type: 'string' },
     },
@@ -1873,18 +1933,25 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   if (subcommand === 'build-stamp') {
-    // `--check` answers whether the packages' build output stands for HEAD, for whoever would otherwise rebuild.
+    // `--check` answers whether the packages' and the admin's build output stand for HEAD, for whoever would otherwise
+    // rebuild; `--admin` records that the admin was built as well.
     if (!values.check) {
-      writeBuildStamp(root)
+      writeBuildStamp(root, values.admin)
       return 0
     }
     const current = buildIsCurrent(root)
+    const admin = adminBuildIsCurrent(root)
     process.stdout.write(
       current
         ? 'build: the package build output matches HEAD\n'
         : 'build: the package build output is stale or unstamped; run pnpm build\n',
     )
-    return current ? 0 : 1
+    if (!admin) {
+      process.stdout.write(
+        `build: the admin build output (apps/admin/dist) is stale, missing or unstamped; run ${ADMIN_BUILD} && pnpm exec tsx scripts/gate.ts build-stamp --admin\n`,
+      )
+    }
+    return current && admin ? 0 : 1
   }
   if (subcommand === 'chaos-off') {
     await mailpitChaosOff(process.env.NYMBAL_TEST_MAILPIT_URL ?? MAILPIT_URL)
@@ -1983,6 +2050,9 @@ async function main(argv: string[]): Promise<number> {
     values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
   const remeasured = moved.filter((path) => mutated.includes(path))
   const buildStale = !values.full && !buildIsCurrent(root)
+  // A stale admin build is rebuilt; a missing one is left to whoever serves it (the walk's check, gate:full's build).
+  const adminStale =
+    !values.full && existsSync(resolve(root, ADMIN_INDEX)) && !adminBuildIsCurrent(root)
   const postgresUrl = process.env.NYMBAL_TEST_POSTGRES_URL
   const mailpitUrl = process.env.NYMBAL_TEST_MAILPIT_URL
   const redisUrl = process.env.NYMBAL_TEST_REDIS_URL
@@ -2018,6 +2088,7 @@ async function main(argv: string[]): Promise<number> {
     inputReaders,
     relatedPaths,
     buildStale,
+    adminStale,
     ...(shard === undefined ? {} : { shard }),
   })
   const { budgetMs, steps } = planned

@@ -16,6 +16,8 @@ export default {
     'packages/platform/src/events/publisher.ts',
     '!**/*.test.ts',
     '!**/*.d.ts',
+    // Type tests (`expectTypeOf`): tsc checks them, nothing runs them, so every mutant would survive.
+    '!**/*.test-d.ts',
   ],
   // An allowlist: every root entry is left out except the platform package and the root configs it builds with.
   // Workspace dependencies resolve through the node_modules links Stryker adds to the sandbox.

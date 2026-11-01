@@ -612,5 +612,6 @@ describe('AC-2: applyRecipeToConfig on generated scaffold configs', () => {
         expect(applied.changed.length, recipe.name).toBeGreaterThan(0)
       }
     }
-  })
+    // About 3 s alone; a full gate's load has pushed it past the 5 s default.
+  }, 30_000)
 })

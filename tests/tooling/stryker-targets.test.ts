@@ -25,6 +25,14 @@ async function wholeSet(): Promise<string[]> {
   return (await mutateSet(REPO, tracked)).sort()
 }
 
+describe('the mutate set', () => {
+  it('holds only source: no unit test or type test file, which no mutant run can kill', async () => {
+    const whole = await wholeSet()
+    expect(whole).toContain(SOURCE)
+    expect(whole.filter((path) => /\.test(?:-d)?\.ts$/.test(path))).toEqual([])
+  })
+})
+
 describe('strykerTargets', () => {
   it('a source change plus a platform unit-test change targets the whole mutate set', async () => {
     const whole = await wholeSet()

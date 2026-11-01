@@ -183,6 +183,28 @@ const hasTwoDecimals = (x: number): boolean => Math.abs(x * 100 - Math.round(x *
 
 // ---------------------------------------------------------------------------------------------------------------
 
+describe('run through a symlinked scripts/ (a linked worktree)', () => {
+  it('answers as it does from its real path: a usage error exits 2, never a silent 0', async () => {
+    const dir = scratch()
+    execFileSync('ln', ['-s', join(REPO, 'scripts'), join(dir, 'scripts')])
+    const [linked, direct] = await Promise.all([
+      new Promise<{ code: number | null; stderr: string }>((resolve) => {
+        execFile(
+          TSX,
+          [join(dir, 'scripts/mutation-ratchet.ts')],
+          { cwd: REPO },
+          (error, _o, stderr) =>
+            resolve({ code: error === null ? 0 : (error.code as number), stderr }),
+        )
+      }),
+      cli([]),
+    ])
+    expect(direct.code).toBe(2)
+    expect(linked.code, linked.stderr).toBe(direct.code)
+    expect(linked.stderr).toMatch(/^usage: mutation-ratchet\.ts/m)
+  })
+})
+
 describe('AC-1: scoreByFile', () => {
   it('AC-1: property: each file scores (killed+timeout)/(killed+timeout+survived+noCoverage)x100 to two decimals, other statuses ignored, no valid mutants means absent; timeouts with no kill score 0', async () => {
     const { scoreByFile } = await ratchetModule()

@@ -58,6 +58,9 @@ describe('AC-6: the check is red for each way a declaration goes wrong', () => {
     { fixture: 'nothing-relative', checks: ['iii'], names: ['nothing', 'readFileSync'] },
     { fixture: 'nothing-no-cwd', checks: ['iii'], names: ['nothing', 'execFileSync'] },
     { fixture: 'nothing-dirname', checks: ['iii'], names: ['nothing', 'readFileSync'] },
+    { fixture: 'nothing-url-parent', checks: ['iii'], names: ['nothing', 'readdirSync'] },
+    { fixture: 'nothing-url-sibling', checks: ['iii'], names: ['nothing', 'readFileSync'] },
+    { fixture: 'nothing-url-template', checks: ['iii'], names: ['nothing', 'readFileSync'] },
     {
       fixture: 'tooling-product',
       as: 'tests/tooling/tooling-product.test.ts',
@@ -69,7 +72,7 @@ describe('AC-6: the check is red for each way a declaration goes wrong', () => {
     { fixture: 'honest-nothing', checks: [], names: [] },
   ]
 
-  it('AC-6: a missing line, a glob matching nothing, nothing beside a read (direct, through a helper, from a root with no trailing slash, by a cwd-relative path, by a spawn with no cwd, from import.meta.dirname) and a tooling product glob each fail, naming the file and the glob; a ** glob reaches dot-directories', () => {
+  it('AC-6: a missing line, a glob matching nothing, nothing beside a read (direct, through a helper, from a root with no trailing slash, by a cwd-relative path, by a spawn with no cwd, from import.meta.dirname, from any relative URL on import.meta.url) and a tooling product glob each fail, naming the file and the glob; a ** glob reaches dot-directories', () => {
     const results = CASES.map(({ fixture, as, names }) => {
       const file = `${FIXTURES}/${fixture}.fixture.ts`
       const judged = as ?? file

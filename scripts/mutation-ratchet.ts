@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
@@ -451,7 +451,12 @@ async function main(argv: string[]): Promise<number> {
       )
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Real paths on both sides: run through a symlinked scripts/ (a linked worktree), the unresolved path never matches and
+// the check would exit 0 having done nothing.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code

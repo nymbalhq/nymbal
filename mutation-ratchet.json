@@ -29,7 +29,6 @@
     "packages/platform/src/repositories/review.ts": 0,
     "packages/platform/src/repositories/settings.ts": 70.59,
     "packages/platform/src/repositories/stock-adjustment.ts": 80.95,
-    "packages/platform/src/repositories/tx-required.test-d.ts": 0,
     "packages/platform/src/repositories/variant.ts": 42.2,
     "packages/platform/src/services/alert-service.ts": 0,
     "packages/platform/src/services/alert-token.ts": 100,

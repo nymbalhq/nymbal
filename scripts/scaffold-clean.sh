@@ -91,9 +91,9 @@ export npm_config_cache="$work/npm-cache"
 
 # ─── publish every public package at one snapshot version ───────────────────────────────────────────────────────
 # One list of member manifests, at any depth, for both the backup and the stamping, so the exit trap restores exactly
-# what was stamped.
+# what was stamped. The lockfile too: pnpm rewrites it for the stamped versions.
 (cd "$root" && node scripts/workspace-packages.ts --manifests) > "$work/manifests"
-tar -cf "$work/backup.tar" -C "$root" $(cat "$work/manifests") packages/create-app/scaffold
+tar -cf "$work/backup.tar" -C "$root" $(cat "$work/manifests") packages/create-app/scaffold pnpm-lock.yaml
 restore=1
 
 snapshot="$(cd "$root" && MANIFESTS="$work/manifests" node -e '
