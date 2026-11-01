@@ -105,6 +105,8 @@ export interface CheckoutState {
   /** What the server said about the payment; `succeeded` only once the order is paid. */
   paymentStatus: 'idle' | 'processing' | 'requires_action' | 'succeeded' | 'failed'
   error: string | null
+  /** The API's code for `error` (`auth.token_invalid`, …), null when the error came from no API answer. */
+  errorCode: string | null
   order: { orderId: string; orderNumber: string; paymentIntent: PaymentIntent } | null
   /** The order this cart already became, when the server refused a resubmit and named it. */
   placedOrderNumber: string | null

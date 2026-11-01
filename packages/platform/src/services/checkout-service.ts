@@ -90,7 +90,11 @@ export interface CheckoutService {
    * there is an order, a history note) and leaves the order as it was. Joins the caller's transaction.
    */
   finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult>
-  cancel(orderId: string, reason: string): Promise<void>
+  /**
+   * Cancels an order and gives back the stock it still holds, in one transaction under the order's row lock. `actor`
+   * names who cancelled in the order's history.
+   */
+  cancel(orderId: string, reason: string, actor?: string): Promise<Order>
 }
 
 /** The admin's side of a checkout: a payment taken outside the store. */
@@ -599,10 +603,18 @@ export function createCheckoutService(
     return { orderNumber: order.orderNumber, finalized: true }
   }
 
-  /** Releases a pending order's reservations and cancels it. Joins the caller's transaction. */
-  async function cancelDraft(orderId: string, reason: string): Promise<void> {
-    await store.transaction(async (tx) => {
-      const order = await repos.order.findById(tx, orderId)
+  /**
+   * Releases an order's held reservations and cancels it; a refused cancel rolls the release back with it. Joins the
+   * caller's transaction.
+   */
+  async function cancelDraft(
+    orderId: string,
+    reason: string,
+    actor = CANCEL_ACTOR,
+  ): Promise<Order> {
+    return store.transaction(async (tx) => {
+      // The order's row before its reservations, the order a confirm takes them in: the two wait, never deadlock.
+      const order = await repos.order.lock(tx, orderId)
       if (!order) throw new NotFoundError('order', orderId)
       const metadata = order.metadata as Partial<DraftMetadata>
       const reservationIds = Array.isArray(metadata.reservationIds)
@@ -612,7 +624,7 @@ export function createCheckoutService(
       for (const rid of reservationIds) {
         await inventory.releaseReservation(rid, 'cancelled')
       }
-      await orders.cancel(orderId, reason, CANCEL_ACTOR)
+      return orders.cancel(orderId, reason, actor)
     })
   }
 
@@ -856,8 +868,11 @@ export function createCheckoutService(
     tx: Tx,
     paymentIntentId: string,
     paid: CapturedPayment,
-    order: Order | null,
+    loaded: Order | null,
   ): Promise<FinalizeResult> {
+    // The order's row before its reservations, the order a cancel takes them in, so the two never deadlock. The row
+    // read under the lock decides, so an order a racing cancel already released never takes its stock again.
+    const order = loaded === null ? null : await repos.order.lock(tx, loaded.id)
     const outcome = (order: Order | null, reason: string) =>
       recordOutcome(tx, paymentIntentId, order, reason)
     if (order === null || order.status !== 'pending') {
@@ -868,10 +883,13 @@ export function createCheckoutService(
       paid.amountMinor !== order.totalMinor ||
       paid.currency.toUpperCase() !== order.currency.toUpperCase()
     ) {
-      return outcome(
+      return recordOutcome(
+        tx,
+        paymentIntentId,
         order,
-        `amount_mismatch: paid ${paid.amountMinor} ${paid.currency.toUpperCase()}, ` +
-          `due ${order.totalMinor} ${order.currency.toUpperCase()}`,
+        'amount_mismatch',
+        `paid ${formatMoney(paid.amountMinor, paid.currency)}, ` +
+          `due ${formatMoney(order.totalMinor, order.currency)}`,
       )
     }
     try {
@@ -928,8 +946,8 @@ export function createCheckoutService(
 
     finalize,
 
-    async cancel(orderId, reason) {
-      await cancelDraft(orderId, reason)
+    async cancel(orderId, reason, actor) {
+      return cancelDraft(orderId, reason, actor)
     },
 
     async markPaid(orderId, actor, note) {

@@ -27,6 +27,11 @@ export interface RequestOptions {
    * 10 s with the original 401.
    */
   authRefresh?: boolean
+  /**
+   * Sent with a customer's bearer, never sent again without one: when the 401's refresh leaves no token, the 401 is
+   * thrown. For a request the API would otherwise answer as a guest (a checkout begin).
+   */
+  keepIdentity?: boolean
 }
 
 /**
@@ -91,8 +96,13 @@ export class FetchClient {
 
     if (response.status === 401 && this.onUnauthorized && options.authRefresh !== true) {
       const pending = this.refreshing
-      const retry = async () =>
-        this.parseResponse<T>((await this.doFetch(method, path, body, options)).response)
+      const retry = async () => {
+        // Sent as a customer, and the refresh left no token: sent again it would act as a guest.
+        if (options.keepIdentity === true && bearer !== null && this.getAccessToken() === null) {
+          return this.parseResponse<T>(response)
+        }
+        return this.parseResponse<T>((await this.doFetch(method, path, body, options)).response)
+      }
       if (pending === null && this.getAccessToken() !== bearer) {
         // A refresh that ended after this was sent has replaced its token already.
         return retry()

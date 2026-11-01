@@ -1664,11 +1664,14 @@ describe('AC-1: the moved views carry the interface the templates call them by',
 // submits (Enter in a field submits `closest('form')`, which does not cross a shadow boundary), and its summary is
 // built as the cart page's is, with names as text.
 describe('AC-1: nymbal-checkout meets the foundation', () => {
-  it('AC-1: nymbal-checkout’s schema: reactName Checkout, one attribute (cart, json), nymbal:checkout:placed as onPlaced with { orderNumber: string; orderKey?: string }, a payment slot, children passed through', () => {
+  it('AC-1: nymbal-checkout’s schema: reactName Checkout, two attributes (cart, json; sign-in-href, string), nymbal:checkout:placed as onPlaced with { orderNumber: string; orderKey?: string }, a payment slot, children passed through', () => {
     const schema = schemaOf(customElements.get('nymbal-checkout'))
     expect(schema, 'nymbal-checkout is defined with a static schema').toBeDefined()
     expect(schema?.reactName).toBe('Checkout')
-    expect(schema?.attributes).toEqual([{ name: 'cart', prop: 'cart', type: 'json' }])
+    expect(schema?.attributes).toEqual([
+      { name: 'cart', prop: 'cart', type: 'json' },
+      { name: 'sign-in-href', prop: 'signInHref', type: 'string' },
+    ])
     expect(schema?.events).toContainEqual({
       name: 'nymbal:checkout:placed',
       prop: 'onPlaced',

@@ -1,6 +1,5 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
-  AuthError,
   type DocumentStoreAdapter,
   type HttpAdapter,
   type RequestContext,
@@ -15,6 +14,7 @@ import {
 } from '../read-models/recently-viewed.js'
 import type { RecentlyViewedService } from '../services/recently-viewed-service.js'
 import type { AfterSignIn } from './auth.js'
+import { refuseLapsedBearer } from './auth-middleware.js'
 import { ok, renderError } from './envelope.js'
 
 export const VISITOR_COOKIE = 'nymbal.visitor'
@@ -45,15 +45,6 @@ function visitorOf(ctx: RequestContext): string | undefined {
   return id !== undefined && UUID.test(id) ? id : undefined
 }
 
-/**
- * A bearer the auth middleware could not verify (expired, or signed with another secret) is refused rather than read
- * as a guest: the client refreshes and retries as the customer, so a signed-in shopper's views never go to a visitor.
- */
-function lapsedBearer(ctx: RequestContext): ResponseEnvelope | undefined {
-  if (ctx.headers.authorization === undefined || ctx.auth?.userId !== undefined) return undefined
-  return renderError(new AuthError('token_invalid', 'the access token is not valid'))
-}
-
 /** The sign-in hook that moves the visitor's views to the customer and ends the visitor. */
 export function foldViewsOnSignIn(recentlyViewed: RecentlyViewedService): AfterSignIn {
   return async (ctx, customerId) => {
@@ -82,7 +73,7 @@ export function registerRecentlyViewedRoutes(
 
   adapter.registerRoute('POST', '/api/recently-viewed', async (ctx) => {
     try {
-      const refused = lapsedBearer(ctx)
+      const refused = refuseLapsedBearer(ctx)
       if (refused !== undefined) return refused
       const agent = ctx.headers['user-agent']
       if (typeof agent === 'string' && BOT.test(agent)) return { status: 204 }
@@ -102,7 +93,7 @@ export function registerRecentlyViewedRoutes(
 
   adapter.registerRoute('GET', '/api/recently-viewed', async (ctx) => {
     try {
-      const refused = lapsedBearer(ctx)
+      const refused = refuseLapsedBearer(ctx)
       if (refused !== undefined) return refused
       const visitorId = visitorOf(ctx)
       const customerId = ctx.auth?.userId

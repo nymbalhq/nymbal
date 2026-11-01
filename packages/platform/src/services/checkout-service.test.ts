@@ -34,6 +34,7 @@ import { createCartService } from './cart-service.js'
 import { createCheckoutService } from './checkout-service.js'
 import { createNativeStubPaymentsAdapter } from '../adapters/payments/native-stub.js'
 import { createLogger } from '../logger.js'
+import { formatMoney } from '../money.js'
 import { v7 as uuidv7 } from 'uuid'
 
 async function setup() {
@@ -922,7 +923,7 @@ describe('CheckoutService.finalize: check order and recorded outcomes', () => {
       expect(result).toEqual({
         orderNumber: started.orderNumber,
         finalized: false,
-        reason: `amount_mismatch: paid ${amountMinor} ${currency.toUpperCase()}, due ${due} GBP`,
+        reason: 'amount_mismatch',
       })
     }
     await fc.assert(
@@ -958,6 +959,67 @@ describe('CheckoutService.finalize: check order and recorded outcomes', () => {
     expect(orderPaid?.currency).toBe(started.currency)
     expect(await stockOf(env, variantId)).toBe(stockBefore)
     expect(await commitsOf(env, variantId)).toHaveLength(1)
+    await env.commandStore.close()
+  })
+
+  // Defect: the merchant's note carries minor units (`paid 1250 GBP, due 3750 GBP`), or the machine reason carries the
+  // amounts.
+  it('AC-10: property: a mismatched capture’s history note shows both amounts as money, and payment.failed and finalize carry the bare reason amount_mismatch; the order, stock and reservations stay as they were', async () => {
+    const env = await setup()
+    const { started, variants } = await placeOrder(env, [{ priceMinor: 1250, stock: 9, qty: 3 }])
+    const variantId = variants[0]!.id
+    const due = started.totalMinor
+    const orderCurrency = started.currency
+    const stockBefore = await stockOf(env, variantId)
+    const heldBefore = await reservationsOf(env, variantId)
+    const digitRuns = (text: string) => text.match(/\d+/g) ?? []
+
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 0, max: 10 * due }),
+        fc.constantFrom('GBP', 'gbp', 'USD', 'JPY'),
+        async (amountMinor, currency) => {
+          fc.pre(amountMinor !== due || currency.toUpperCase() !== orderCurrency.toUpperCase())
+          const historyBefore = await historyOf(env, started.orderId)
+          const failedBefore = await events(env, EVT_PAYMENT_FAILED, started.orderId)
+
+          const result = await env.checkout.finalize(started.paymentIntent.id, {
+            amountMinor,
+            currency,
+          })
+
+          const added = (await historyOf(env, started.orderId)).filter(
+            (h) => !historyBefore.some((b) => b.id === h.id),
+          )
+          const paidShown = formatMoney(amountMinor, currency)
+          const dueShown = formatMoney(due, orderCurrency)
+          expect(added.map((h) => h.note)).toEqual([
+            `captured payment not applied: amount_mismatch (paid ${paidShown}, due ${dueShown})`,
+          ])
+          // The only digits in the note are the formatted amounts': a minor-unit amount appears only where its money
+          // reads the same (¥1,250 for 1250 JPY).
+          expect(digitRuns(added[0]!.note)).toEqual([
+            ...digitRuns(paidShown),
+            ...digitRuns(dueShown),
+          ])
+          expect(result).toEqual({
+            orderNumber: started.orderNumber,
+            finalized: false,
+            reason: 'amount_mismatch',
+          })
+          const failed = await events(env, EVT_PAYMENT_FAILED, started.orderId)
+          expect(failed.slice(failedBefore.length).map((p) => p.reason)).toEqual([
+            'amount_mismatch',
+          ])
+        },
+      ),
+      { numRuns: 30 },
+    )
+
+    expect((await orderOf(env, started.orderId)).status).toBe('pending')
+    expect(await stockOf(env, variantId)).toBe(stockBefore)
+    expect(await reservationsOf(env, variantId)).toEqual(heldBefore)
+    expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
     await env.commandStore.close()
   })
 
@@ -1764,7 +1826,7 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
     expect(started.orderStatus).toBe('cancelled')
     expect((await orderOf(env, started.orderId)).status).toBe('cancelled')
     expect(started.payment.status).toBe('failed')
-    expect(started.payment.reason).toMatch(/^amount_mismatch: /)
+    expect(started.payment.reason).toBe('amount_mismatch')
     expect(await stockOf(env, variants[0]!.id)).toBe(line.stock)
     expect(await events(env, EVT_ORDER_PAID, started.orderId)).toHaveLength(0)
     await env.commandStore.close()

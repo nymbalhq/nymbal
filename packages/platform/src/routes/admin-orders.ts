@@ -8,7 +8,7 @@ import {
 } from '@nymbalhq/types'
 import type { ReadTx } from '../db/command-store.js'
 import type { OrderService } from '../services/order-service.js'
-import type { ManualPayments } from '../services/checkout-service.js'
+import type { CheckoutService, ManualPayments } from '../services/checkout-service.js'
 import { orderPayment, type RefundService } from '../services/refund-service.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, fail, renderError } from './envelope.js'
@@ -26,7 +26,7 @@ export interface NoteEntry {
 
 export interface RegisterAdminOrdersRoutesDeps {
   order: OrderService
-  checkout: ManualPayments
+  checkout: ManualPayments & Pick<CheckoutService, 'cancel'>
   refund: RefundService
   repos: Repositories
   history: HistoryReader
@@ -218,7 +218,8 @@ export function registerAdminOrdersRoutes(
         if (!id) return fail('admin.invalid', 'id required', 400)
         const body = ctx.body as { reason?: string } | undefined
         const reason = body?.reason ?? 'Cancelled by admin'
-        const fresh = await order.cancel(id, reason, `admin:${ctx.auth!.userId}`)
+        // The checkout's cancel: the stock a pending order holds goes back at once, not at the reservation's expiry.
+        const fresh = await checkout.cancel(id, reason, `admin:${ctx.auth!.userId}`)
         return ok(await adminOrder(fresh))
       } catch (err) {
         return renderError(err)

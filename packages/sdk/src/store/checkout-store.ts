@@ -13,6 +13,7 @@ const INITIAL_STATE: CheckoutState = {
   shippingMethod: null,
   paymentStatus: 'idle',
   error: null,
+  errorCode: null,
   order: null,
   placedOrderNumber: null,
   placedOrderKey: null,
@@ -75,12 +76,13 @@ export function createCheckoutStore(adapter: CommerceAdapter, cart?: CartStore):
   async function submitPayment(): Promise<CheckoutResult | null> {
     const state = store.getState()
     if (!state.shippingAddress || !state.billingAddress) {
-      store.setState({ error: 'Shipping and billing addresses are required' })
+      store.setState({ error: 'Shipping and billing addresses are required', errorCode: null })
       return null
     }
     store.setState({
       paymentStatus: 'processing',
       error: null,
+      errorCode: null,
       placedOrderNumber: null,
       placedOrderKey: null,
     })
@@ -111,6 +113,7 @@ export function createCheckoutStore(adapter: CommerceAdapter, cart?: CartStore):
       store.setState({
         paymentStatus: 'failed',
         error: err instanceof Error ? err.message : String(err),
+        errorCode: err instanceof NymbalApiError ? err.code : null,
         ...placed,
       })
       // A refusal naming an order: the cart became (or is becoming) that order on the server.

@@ -1,6 +1,7 @@
 import { type Address, type HttpAdapter } from '@nymbalhq/types'
 import type { CheckoutService } from '../services/checkout-service.js'
 import { ok, fail, renderError } from './envelope.js'
+import { refuseLapsedBearer } from './auth-middleware.js'
 
 const CART_COOKIE = 'nymbal.cart'
 
@@ -13,6 +14,9 @@ interface BeginBody {
 
 export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutService): void {
   adapter.registerRoute('POST', '/api/checkout', async (ctx) => {
+    // A lapsed bearer read as a guest would place the customer's order as a guest's.
+    const refused = refuseLapsedBearer(ctx)
+    if (refused) return refused
     try {
       const body = ctx.body as BeginBody | undefined
       const cartToken = ctx.cookies[CART_COOKIE]

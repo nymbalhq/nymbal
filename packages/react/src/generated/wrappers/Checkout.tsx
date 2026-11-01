@@ -6,7 +6,7 @@ import { NymbalCheckout } from '@nymbalhq/web-components/elements/nymbal-checkou
 declare module 'react' {
   namespace JSX {
     interface IntrinsicElements {
-      'nymbal-checkout': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'cart'> & { 'cart'?: string | undefined }
+      'nymbal-checkout': Omit<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>, 'cart' | 'sign-in-href'> & { 'cart'?: string | undefined; 'sign-in-href'?: string | undefined }
     }
   }
 }
@@ -20,6 +20,7 @@ function useDefine(element: { define(): void }): void {
 
 interface CheckoutOwnProps {
   cart?: unknown
+  signInHref?: string
   onPlaced?: (event: CustomEvent<{ orderNumber: string; orderKey?: string }>) => void
   className?: string
   style?: React.CSSProperties
@@ -50,7 +51,7 @@ export const Checkout = /* @__PURE__ */ forwardRef<HTMLElement, CheckoutProps>(
     useDefine(NymbalCheckout)
 
     return (
-      <nymbal-checkout ref={ref as React.Ref<HTMLElement>} {...{ 'CART': props.cart === undefined ? undefined : JSON.stringify(props.cart) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-checkout ref={ref as React.Ref<HTMLElement>} {...{ 'CART': props.cart === undefined ? undefined : JSON.stringify(props.cart), 'sign-in-href': props.signInHref }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

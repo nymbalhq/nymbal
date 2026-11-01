@@ -904,3 +904,155 @@ describe('AC-6: the placed event carries the order key', () => {
     )
   }, 90_000)
 })
+
+// ─── AC-8 ───────────────────────────────────────────────────────────────────
+
+// AC-8: a signed-in shopper whose session ended before Place Order. The order request is refused with
+// auth.token_invalid and the SDK has dropped the token, so a second press would go out as a guest: Place Order stays
+// disabled, and the shopper is sent to sign in again, back to /checkout. Any other refusal is a failure as before.
+describe('AC-8: a session that has ended at Place Order', () => {
+  const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your order.'
+  const SIGN_IN = '/account/login?redirect=%2Fcheckout'
+  const refusal = fc.constantFrom(
+    'auth.token_invalid',
+    'auth.token_invalid',
+    'checkout.invalid',
+    'inventory.insufficient',
+    'checkout.payment_in_progress',
+  )
+
+  it('AC-8: property: a refusal with auth.token_invalid shows the session-expired message and a checkout-sign-in link back to /checkout, places nothing, keeps the shopper on the payment step with their entries, and k more presses submit nothing; any other refusal shows its own message and the next press submits again', async () => {
+    await fc.assert(
+      fc.asyncProperty(shopper, refusal, k, async (s, code, presses) => {
+        document.body.innerHTML = ''
+        const r = await rig()
+        const message = `Refused (${code})`
+        r.answerCreate(() => Promise.reject(new NymbalApiError(code, message, 401)))
+        await walkToPayment(r, s)
+        await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+        const placeOrder = () => byTestId<HTMLButtonElement>(r.el, 'place-order')
+        const signIn = () => deepAll(rootOf(r.el), '[data-testid="checkout-sign-in"]')
+        const ended = code === 'auth.token_invalid'
+
+        await nextFrame()
+        click(placeOrder(), 1)
+        await vi.waitFor(() => expect(r.creates(), 'the order request').toBe(1))
+        await afterFrame(r.el)
+
+        expect(errorText(r.el), `checkout-error after ${code}`).toBe(
+          ended ? SESSION_EXPIRED : message,
+        )
+        expect(
+          signIn().map((a) => a.getAttribute('href')),
+          'checkout-sign-in',
+        ).toEqual(ended ? [SIGN_IN] : [])
+        expect(calls(r.log, 'placed')).toEqual([])
+        expect(byTestId(r.el, 'checkout-step-payment').getAttribute('aria-current')).toBe('step')
+        expect(byTestId(r.el, 'checkout-payment').hidden).toBe(false)
+        const { email, shippingAddress, billingAddress } = r.store.getState()
+        expect({ email, shippingAddress, billingAddress }, 'the shopper’s entries').toEqual({
+          email: s.email,
+          shippingAddress: s.shipping,
+          billingAddress: s.billingSame ? s.shipping : s.billing,
+        })
+        expect(placeOrder().disabled, 'place-order after the refusal').toBe(ended)
+
+        // After an ended session, k more presses (and submits of the form); after any other refusal, one.
+        const more = ended ? presses : 1
+        const submitted = calls(r.log, 'submitPayment').length
+        for (let i = 0; i < more; i += 1) {
+          await nextFrame()
+          click(placeOrder(), 1)
+          formOf(placeOrder()).requestSubmit()
+        }
+        await afterFrame(r.el)
+        await vi.waitFor(() =>
+          expect(
+            calls(r.log, 'submitPayment').length - submitted,
+            `submits from ${more} more presses`,
+          ).toBe(ended ? 0 : 1),
+        )
+        expect(r.creates() - 1).toBe(calls(r.log, 'submitPayment').length - submitted)
+        expect(calls(r.log, 'placed')).toEqual([])
+      }),
+      { numRuns: 12, endOnFailure: true },
+    )
+  }, 90_000)
+
+  it('AC-8: sign-in-href names where checkout-sign-in goes', async () => {
+    const r = await rig()
+    const href = '/members/sign-in?next=%2Fcheckout'
+    r.el.setAttribute('sign-in-href', href)
+    r.answerCreate(() =>
+      Promise.reject(
+        new NymbalApiError('auth.token_invalid', 'the access token is not valid', 401),
+      ),
+    )
+    await walkToPayment(r, SHOPPER)
+    await vi.waitFor(() => expect(r.pay.status).toBe('ready'))
+    await nextFrame()
+    click(byTestId<HTMLButtonElement>(r.el, 'place-order'), 1)
+    await vi.waitFor(() => expect(r.creates()).toBe(1))
+    await afterFrame(r.el)
+
+    expect(
+      deepAll(rootOf(r.el), '[data-testid="checkout-sign-in"]').map((a) => a.getAttribute('href')),
+    ).toEqual([href])
+  })
+})
+
+// ─── AC-11 ──────────────────────────────────────────────────────────────────
+
+// AC-11: an order that needs the payment confirmed on the page (requires_action) is never left for its order page
+// unpaid because nothing on the page can confirm it. Only a payment element that says there is nothing to confirm (no
+// client half) lets the order through unconfirmed.
+describe('AC-11: requires_action with nothing on the page to take the payment', () => {
+  const NO_PAYMENT = 'Payment could not be taken on this page. Please reload and try again.'
+
+  const pages = {
+    'no nymbal-payment-element': (r: Rig) => r.pay.remove(),
+    'a nymbal-payment-element with no confirm method (never upgraded)': (r: Rig) =>
+      Object.defineProperty(r.pay, 'confirm', { value: undefined, configurable: true }),
+  }
+
+  for (const [page, strip] of Object.entries(pages)) {
+    it(`AC-11: with ${page}, checkout-error says the payment could not be taken, no nymbal:checkout:placed fires, markConfirmed is never called, and Place Order is enabled again`, async () => {
+      const r = await rig()
+      strip(r)
+      r.answerCreate(() => Promise.resolve(result('NYM-P420-1', 'requires_action')))
+      await walkToPayment(r, SHOPPER)
+      const placeOrder = () => byTestId<HTMLButtonElement>(r.el, 'place-order')
+
+      await nextFrame()
+      click(placeOrder(), 1)
+      await vi.waitFor(() => expect(r.creates()).toBe(1))
+      await afterFrame(r.el)
+
+      expect(errorText(r.el)).toBe(NO_PAYMENT)
+      expect(calls(r.log, 'placed')).toEqual([])
+      expect(calls(r.log, 'markConfirmed')).toEqual([])
+      expect(placeOrder().disabled).toBe(false)
+      // Enabled for real: the next press asks the server again.
+      r.answerCreate(() => Promise.resolve(result('NYM-P420-2', 'requires_action')))
+      await nextFrame()
+      click(placeOrder(), 1)
+      await vi.waitFor(() => expect(r.creates()).toBe(2))
+      await afterFrame(r.el)
+      expect(calls(r.log, 'placed')).toEqual([])
+    })
+  }
+
+  it('AC-11: a nymbal-payment-element with no client half (no driver) has nothing to confirm, so the order is placed as before', async () => {
+    const r = await rig({ pay: document.createElement(PAYMENT) })
+    r.answerCreate(() => Promise.resolve(result('NYM-P420-3', 'requires_action')))
+    await walkToPayment(r, SHOPPER)
+
+    await nextFrame()
+    click(byTestId<HTMLButtonElement>(r.el, 'place-order'), 1)
+    await vi.waitFor(() => expect(calls(r.log, 'placed')).toHaveLength(1))
+
+    expect(calls(r.log, 'placed').map((e) => e.args[0])).toEqual(['NYM-P420-3'])
+    expect(calls(r.log, 'markConfirmed')).toEqual([])
+    expect(errorText(r.el)).toBe('')
+  })
+})

@@ -105,7 +105,10 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
 
     checkout: {
       create(details: CheckoutDetails) {
-        return fetchClient.request<CheckoutResult>('POST', '/api/checkout', details)
+        // Placed as the signed-in customer or refused: never re-sent as a guest after a failed refresh.
+        return fetchClient.request<CheckoutResult>('POST', '/api/checkout', details, {
+          keepIdentity: true,
+        })
       },
     },
 

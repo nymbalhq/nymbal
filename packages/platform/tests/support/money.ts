@@ -10,18 +10,24 @@ import { unaudited } from './write-audit.js'
 // `orders` amount columns and the `order_refunds` rows migration 0006 adds).
 
 export interface AdminClient {
+  /** The admin's customer id: an admin action records its actor as `admin:<userId>`. */
+  userId: string
   call<T>(method: string, path: string, body?: unknown): Promise<ShopResponse<T>>
 }
 
 /** An admin account of its own (roles ['admin']), signed in over HTTP; every call carries its bearer token. */
-export async function adminClient(k: Kernel, baseUrl: string): Promise<AdminClient> {
+export async function adminClient(
+  k: Pick<Kernel, 'store' | 'repos'>,
+  baseUrl: string,
+): Promise<AdminClient> {
   const email = `admin-${randomUUID()}@money.test`
   const password = 'correct-horse-battery'
   const now = new Date()
+  const userId = randomUUID()
   await unaudited(() =>
     k.store.transaction((tx) =>
       k.repos.customer.insert(tx, {
-        id: randomUUID(),
+        id: userId,
         email,
         passwordHash: bcrypt.hashSync(password, 4),
         roles: ['admin'],
@@ -36,6 +42,7 @@ export async function adminClient(k: Kernel, baseUrl: string): Promise<AdminClie
   if (answer.status !== 200) throw new Error(`admin login: ${JSON.stringify(answer.body)}`)
   const token = answer.body.data!.accessToken
   return {
+    userId,
     call: (method, path, body) =>
       shop.call(method, path, body, { headers: { authorization: `Bearer ${token}` } }),
   }
