@@ -158,6 +158,12 @@ function described(what: string, detail: string | undefined): string {
   return detail === undefined || detail === '' ? what : `${what}: ${detail}`
 }
 
+/**
+ * The native slots that query the command store. Their healthCheck answers ok without touching it, so with the store
+ * down they would read ok while every request they serve fails.
+ */
+const OVER_THE_COMMAND_STORE: ReadonlySet<CommerceSlot> = new Set(['search', 'reviews'])
+
 function notChecked(prerequisite: string): string {
   return `not checked: ${prerequisite} down`
 }
@@ -377,6 +383,10 @@ export async function diagnose(
   }
   for (const slot of COMMERCE_SLOTS) {
     const provider = providers[slot]
+    if (provider === 'native' && OVER_THE_COMMAND_STORE.has(slot) && commandStore === undefined) {
+      slots.push({ name: `slot ${slot}`, status: 'down', detail: notChecked('command store') })
+      continue
+    }
     const adapter = await within(timeoutMs, async (): Promise<Checkable | null> => {
       checkInjectedSlot(config, slot, injected)
       const settings = await settingsOf(slot)

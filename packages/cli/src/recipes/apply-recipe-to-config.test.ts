@@ -457,6 +457,93 @@ describe('AC-2: applyRecipeToConfig on generated scaffold configs', () => {
     )
   }, 120_000)
 
+  it('AC-2: a key the developer added beside an object the recipe wrote leaves a rerun a no-op, not a conflict', async () => {
+    const plain = await scaffoldConfig({
+      name: 'Extra Key Shop',
+      directory: 'shop',
+      currency: 'GBP',
+      template: 'astro',
+      seedDemo: false,
+    })
+    const extras = [
+      '      userTimeout: 30,\n',
+      "      fromEnv: Number(process.env['SHOP_X'] ?? 1),\n",
+    ]
+    let checked = 0
+    for (const recipe of recipes) {
+      const once = sourceOf(applyRecipeToConfig(plain, recipe, { force: false }), recipe.name)
+      for (const { path, value } of recipe.set) {
+        if (typeof value !== 'object' || isEnvRef(value)) continue
+        const [parent, key] = path.split('.') as [string, string]
+        const parentAt = once.source.indexOf(`\n  ${parent}: {\n`)
+        const open = `\n    ${key}: {\n`
+        const keyAt = once.source.indexOf(open, parentAt)
+        expect(keyAt, `${recipe.name} wrote ${path} as an object`).toBeGreaterThan(parentAt)
+        const cut = keyAt + open.length
+        for (const extra of extras) {
+          const edited = once.source.slice(0, cut) + extra + once.source.slice(cut)
+          const again = applyRecipeToConfig(edited, recipe, { force: false })
+          expect(again, `${recipe.name} ${path} with ${extra.trim()}`).toEqual({
+            source: edited,
+            changed: [],
+          })
+
+          // The converse: beside the same extra key, a recipe-owned value changed by hand is still a conflict.
+          const owned = `\n      ${Object.keys(value)[0]!}: `
+          const ownedAt = edited.indexOf(owned, cut)
+          expect(ownedAt, `${recipe.name} wrote ${path}'s first key`).toBeGreaterThan(cut)
+          const lineEnd = edited.indexOf('\n', ownedAt + 1)
+          const changedLine = edited
+            .slice(ownedAt, lineEnd)
+            .replace(/'[^']*'/, "'changed-by-hand'")
+          expect(changedLine, 'the owned value was a string literal').not.toBe(
+            edited.slice(ownedAt, lineEnd),
+          )
+          const handEdited = edited.slice(0, ownedAt) + changedLine + edited.slice(lineEnd)
+          const refused = applyRecipeToConfig(handEdited, recipe, { force: false })
+          if (!('conflict' in refused))
+            throw new Error(`${recipe.name} ${path} with ${extra.trim()}: no conflict`)
+          expect(refused.conflict.path).toBe(path)
+          expect(JSON.stringify(refused.conflict.current)).toContain('changed-by-hand')
+        }
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(0)
+  }, 60_000)
+
+  it('AC-2: a spread after the keys of an object the recipe wrote makes a rerun a conflict, since it can override them', async () => {
+    const plain = await scaffoldConfig({
+      name: 'Spread Shop',
+      directory: 'shop',
+      currency: 'GBP',
+      template: 'astro',
+      seedDemo: false,
+    })
+    let checked = 0
+    for (const recipe of recipes) {
+      const once = sourceOf(applyRecipeToConfig(plain, recipe, { force: false }), recipe.name)
+      for (const { path, value } of recipe.set) {
+        if (typeof value !== 'object' || isEnvRef(value)) continue
+        const [parent, key] = path.split('.') as [string, string]
+        const parentAt = once.source.indexOf(`\n  ${parent}: {\n`)
+        const open = `\n    ${key}: {\n`
+        const keyAt = once.source.indexOf(open, parentAt)
+        expect(keyAt, `${recipe.name} wrote ${path} as an object`).toBeGreaterThan(parentAt)
+        const close = once.source.indexOf('\n    }', keyAt + open.length)
+        expect(close, `${recipe.name} closed ${path}`).toBeGreaterThan(keyAt)
+        const edited =
+          once.source.slice(0, close) + '\n      ...override,' + once.source.slice(close)
+        const again = applyRecipeToConfig(edited, recipe, { force: false })
+        if (!('conflict' in again)) throw new Error(`${recipe.name} ${path}: no conflict`)
+        expect(again.conflict.path).toBe(path)
+        expect(JSON.stringify(again.conflict.current)).toContain('...override')
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(0)
+  }, 60_000)
+
   it('AC-2: a config that is not an object literal is refused, "edit by hand", with the set paths', () => {
     const generated = [
       "import { defineConfig } from '@nymbalhq/config'\nimport { build } from './config-parts'\n\nexport default defineConfig(build())\n",

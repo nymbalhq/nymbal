@@ -312,6 +312,13 @@ describe('scaffold() output', () => {
         expect(existsSync(resolve(outDir, '.env.example'))).toBe(true)
         expect(existsSync(resolve(outDir, '_dot.env.example'))).toBe(false)
       })
+
+      it('AC-1: with the AI slot off in nymbal.config.ts, .env.example names no AI key', async () => {
+        const config = await readFile(resolve(outDir, 'nymbal.config.ts'), 'utf8')
+        const example = await readFile(resolve(outDir, '.env.example'), 'utf8')
+        expect(config).toContain("ai: { provider: 'none' }")
+        expect(example).not.toMatch(/ANTHROPIC/)
+      })
     })
   }
 })
