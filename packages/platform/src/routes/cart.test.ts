@@ -1,6 +1,14 @@
+import fc from 'fast-check'
 import { describe, it, expect, vi } from 'vitest'
-import { registerCartRoutes, type RegisterCartRoutesDeps } from './cart.js'
-import type { HttpAdapter, RouteHandler, Cart, CartItem } from '@nymbalhq/types'
+import { mergeCartOnSignIn, registerCartRoutes, type RegisterCartRoutesDeps } from './cart.js'
+import type {
+  HttpAdapter,
+  RequestContext,
+  ResponseCookie,
+  RouteHandler,
+  Cart,
+  CartItem,
+} from '@nymbalhq/types'
 
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()
@@ -102,12 +110,15 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
       clear: vi.fn().mockResolvedValue(makeCart()),
       merge: vi.fn().mockResolvedValue(makeCart()),
       attachCustomer: vi.fn().mockResolvedValue(makeCart()),
+      signIn: vi.fn().mockResolvedValue(null),
     },
     productRepo: {
       store: stubStore,
       findById: vi.fn().mockResolvedValue({
         id: 'prod-1',
+        slug: 'test-product',
         name: 'Test Product',
+        status: 'active',
         media: [],
       }),
     } as unknown as RegisterCartRoutesDeps['productRepo'],
@@ -119,6 +130,7 @@ function makeDeps(overrides?: Partial<RegisterCartRoutesDeps>): RegisterCartRout
         name: 'Default',
         priceMinor: 1000,
         stock: 10,
+        status: 'active',
       }),
     } as unknown as RegisterCartRoutesDeps['variantRepo'],
     ...overrides,
@@ -166,6 +178,7 @@ describe('POST /api/cart/items', () => {
           name: 'Default',
           priceMinor: 1000,
           stock: 2,
+          status: 'active',
         }),
       } as unknown as RegisterCartRoutesDeps['variantRepo'],
     })
@@ -259,5 +272,88 @@ describe('DELETE /api/cart', () => {
     expect((resp.body as { data: Cart }).data.items).toEqual([])
     expect((await cartOf('cart-a')).items).toEqual([])
     expect(await cartOf('cart-b')).toEqual(otherBefore)
+  })
+})
+
+/** A request as the auth routes hand it to an after-sign-in hook: only its cookies matter here. */
+function signInRequest(cookies: Record<string, string>): RequestContext {
+  const logger = {
+    trace() {},
+    debug() {},
+    info() {},
+    warn() {},
+    error() {},
+    child() {
+      return logger
+    },
+  }
+  return {
+    method: 'POST',
+    path: '/api/auth/login',
+    url: 'http://localhost/api/auth/login',
+    params: {},
+    query: {},
+    body: null,
+    headers: {},
+    cookies,
+    requestId: 'test-req',
+    correlationId: 'test-corr',
+    logger,
+    ip: '127.0.0.1',
+  } as unknown as RequestContext
+}
+
+describe('the cart’s after-sign-in hook', () => {
+  /** The cart cookie GET /api/cart sets for a new cart with this token: the shape a cart cookie has. */
+  async function routeCookieFor(token: string): Promise<ResponseCookie | undefined> {
+    const deps = makeDeps()
+    deps.cart.getOrCreate = vi.fn().mockResolvedValue(makeCart({ token }))
+    const { adapter, invoke } = makeAdapter()
+    registerCartRoutes(adapter, deps)
+    const resp = await invoke('GET', '/api/cart')
+    return (resp.cookies as ResponseCookie[] | undefined)?.find((c) => c.name === 'nymbal.cart')
+  }
+
+  // Kills: the hook reading another cookie or dropping the customer, a result's token not sent, and a cookie for a
+  // cart the customer cannot have (another customer's) left in the browser after a null result.
+  it('AC-8: property: the hook answers the cart cookie naming the cart signIn returns for the request’s nymbal.cart and the customer, shaped as the cart route sets it; on a null result it expires the cookie the request carried (path /, Max-Age 0), and answers none when it carried none', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.option(fc.uuid(), { nil: undefined }),
+        fc.uuid(),
+        fc.boolean(),
+        async (guestToken, customerId, found) => {
+          // signIn as a function of what it is given, so the token sent back proves both arguments reached it.
+          const resultOf = (guest: string | undefined, customer: string): Cart | null =>
+            found
+              ? makeCart({ token: `${guest ?? 'none'}:${customer}`, customerId: customer })
+              : null
+          const cart = {
+            ...makeDeps().cart,
+            signIn: async (guest: string | undefined, customer: string) =>
+              resultOf(guest, customer),
+          }
+          const request = signInRequest(
+            guestToken === undefined ? {} : { 'nymbal.cart': guestToken },
+          )
+
+          const answered = await mergeCartOnSignIn(cart)(request, customerId)
+
+          const cartCookies = answered.filter((c: ResponseCookie) => c.name === 'nymbal.cart')
+          const result = resultOf(guestToken, customerId)
+          // A result's cookie is compared whole; an expiry by its path and Max-Age alone (its value is not the point).
+          const shape = (c: ResponseCookie | undefined) =>
+            result === null ? { path: c?.path, maxAge: c?.maxAge } : c
+          const expected =
+            result !== null
+              ? [await routeCookieFor(result.token)]
+              : guestToken === undefined
+                ? []
+                : [{ path: '/', maxAge: 0 }]
+          expect(cartCookies.map(shape)).toEqual(expected)
+        },
+      ),
+      { numRuns: 60 },
+    )
   })
 })

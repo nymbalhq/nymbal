@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
 import type { Cart, CartItem } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -30,6 +30,8 @@ export interface CartRepository extends StoreRepository {
   /** `findByToken`, holding the row for the rest of the transaction so concurrent commands on the cart queue behind
    *  this one (Postgres `FOR UPDATE`; SQLite's `BEGIN IMMEDIATE` already holds the database). */
   lock(tx: Tx, token: string): Promise<Cart | null>
+  /** The customer's most recently written cart that is still live at `at`; holds nothing. */
+  findLiveByCustomer(tx: ReadTx, customerId: string, at: Date): Promise<Cart | null>
   /** Inserts the cart, or replaces an expired row on its token. A live row on the token is left as it is and
    *  returned with `created: false`. */
   create(tx: Tx, cart: Cart): Promise<{ cart: Cart; created: boolean }>
@@ -159,6 +161,27 @@ export function createCartRepository(store: CommandStore): CartRepository {
     store,
     findByToken,
     lock,
+    async findLiveByCustomer(tx, customerId, at) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.carts
+        const row = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(and(eq(t.customerId, customerId), gt(t.expiresAt, at.toISOString())))
+          .orderBy(desc(t.updatedAt))
+          .limit(1)
+          .get()
+        return row ? rowToCart('sqlite', row as Record<string, unknown>) : null
+      }
+      const t = postgresSchema.carts
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(and(eq(t.customerId, customerId), gt(t.expiresAt, at)))
+        .orderBy(desc(t.updatedAt))
+        .limit(1)
+      return row ? rowToCart('postgres', row as Record<string, unknown>) : null
+    },
     async create(tx, cart) {
       let inserted: Record<string, unknown> | undefined
       if (tx.kind === 'sqlite') {

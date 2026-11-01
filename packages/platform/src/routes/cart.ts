@@ -1,5 +1,6 @@
 import { type HttpAdapter, type ResponseCookie, type ResponseEnvelope } from '@nymbalhq/types'
-import type { CartService } from '../services/cart-service.js'
+import { isSellable, type CartService } from '../services/cart-service.js'
+import type { AfterSignIn } from './auth.js'
 import type { ProductRepository } from '../repositories/product.js'
 import type { VariantRepository } from '../repositories/variant.js'
 import { ok, fail, renderError } from './envelope.js'
@@ -27,6 +28,21 @@ function cookie(token: string): ResponseCookie[] {
       maxAge: 60 * 60 * 24 * 30,
     },
   ]
+}
+
+/** Ends the browser's cart, as logout does and a sign-in does for a cart that is not the customer's to keep. */
+export function expiredCartCookie(): ResponseCookie {
+  return { name: CART_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true }
+}
+
+/** The sign-in hook that folds the browser's guest cart into the customer's and points the cookie at the result. */
+export function mergeCartOnSignIn(cart: CartService): AfterSignIn {
+  return async (ctx, customerId) => {
+    const guestToken = ctx.cookies[CART_COOKIE]
+    const result = await cart.signIn(guestToken, customerId)
+    if (result !== null) return cookie(result.token)
+    return guestToken === undefined ? [] : [expiredCartCookie()]
+  }
 }
 
 export interface RegisterCartRoutesDeps {
@@ -59,21 +75,24 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const qty = body.qty ?? 1
       const { variantId } = body
       const variant = await variantRepo.store.read((tx) => variantRepo.findById(tx, variantId))
-      if (!variant) return fail('cart.variant_missing', 'variant not found', 404)
+      const product =
+        variant &&
+        (await productRepo.store.read((tx) => productRepo.findById(tx, variant.productId)))
+      // What is not for sale answers as an unknown id does, so a draft's existence is not disclosed.
+      if (!variant || !product || !isSellable(variant, product)) {
+        return fail('cart.variant_missing', 'variant not found', 404)
+      }
       if (variant.stock < qty) {
         return fail('cart.out_of_stock', 'insufficient stock', 409, {
           variantId: variant.id,
           available: variant.stock,
         })
       }
-      const product = await productRepo.store.read((tx) =>
-        productRepo.findById(tx, variant.productId),
-      )
-      if (!product) return fail('cart.product_missing', 'product not found', 404)
       const token = ctx.cookies[CART_COOKIE] ?? (await cart.getOrCreate()).token
       const updated = await cart.addItem(token, {
         variantId: variant.id,
         productId: product.id,
+        productSlug: product.slug,
         productName: product.name,
         variantName: variant.name,
         priceMinor: variant.priceMinor,

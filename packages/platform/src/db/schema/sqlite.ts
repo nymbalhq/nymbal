@@ -349,6 +349,10 @@ export const carts = sqliteTable(
   (t) => ({
     expiresIdx: index('carts_expires_idx').on(t.expiresAt),
     updatedIdx: index('carts_updated_idx').on(t.updatedAt),
+    // The sign-in's lookup of a customer's cart; guest carts, most of the table, carry no customer.
+    customerIdx: index('carts_customer_idx')
+      .on(t.customerId)
+      .where(sql`${t.customerId} IS NOT NULL`),
   }),
 )
 

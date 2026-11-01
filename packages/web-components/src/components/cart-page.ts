@@ -248,9 +248,11 @@ export class NymbalCartPage extends NymbalElement {
             />`
           : html`<div part="item-image" aria-hidden="true"></div>`}
         <div part="item-info">
-          <a part="item-name" href="/product/${encodeURIComponent(item.productId)}"
-            >${item.productName}</a
-          >
+          ${item.productSlug === undefined
+            ? html`<span part="item-name">${item.productName}</span>`
+            : html`<a part="item-name" href="/product/${encodeURIComponent(item.productSlug)}"
+                >${item.productName}</a
+              >`}
           ${item.variantName ? html`<span part="item-variant">${item.variantName}</span>` : nothing}
           <span part="item-price">${formatPrice(item.priceMinor, currency)} each</span>
           <button

@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from 'zod'
-import { PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import { CART_LINE_MAX_QTY, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 
 /**
  * The input of one route: what `registerAllRoutes` parses before the handler runs, and what a tool definition is
@@ -202,14 +202,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
     name: 'cart.addItem',
     command: null,
     description: 'Add a quantity of a variant to the cart.',
-    body: z.object({ variantId: id, qty: z.number().int().positive().optional() }),
+    // Strict: an unknown key (`quantity`) is refused rather than stripped, which would add 1.
+    body: z
+      .object({ variantId: id, qty: z.number().int().min(1).max(CART_LINE_MAX_QTY).optional() })
+      .strict(),
   },
   'PATCH /api/cart/items/:variantId': {
     name: 'cart.updateItem',
     command: null,
     description: 'Set the quantity of a variant in the cart.',
     params: variantIdParams,
-    body: z.object({ qty: z.number().int().nonnegative() }),
+    body: z.object({ qty: z.number().int().min(0).max(CART_LINE_MAX_QTY) }).strict(),
   },
   'DELETE /api/cart/items/:variantId': {
     name: 'cart.removeItem',

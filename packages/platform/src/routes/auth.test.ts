@@ -298,6 +298,23 @@ describe('POST /api/auth/logout', () => {
     expect(cleared.maxAge).toBe(0)
     expect(cleared.maxAge).toBeLessThan(set.maxAge)
   })
+
+  // Kills: logout ending the session and the visitor but leaving the cart cookie, so the next person on the device
+  // is served the cart a sign-in attached to the customer.
+  it('AC-11: logout expires the cart cookie the request carried: nymbal.cart at path /, Max-Age 0, beside the refresh cookie', async () => {
+    type Cookie = { name: string; value: string; path?: string; maxAge?: number }
+    const { adapter, invoke } = makeAdapter()
+    registerAuthRoutes(adapter, makeAuthService(), '7d')
+    const held = { 'nymbal.refresh': 'refresh-tok', 'nymbal.cart': 'customer-cart' }
+
+    const resp = await invoke('POST', '/api/auth/logout', { cookies: held })
+
+    const answered = (resp.cookies ?? []) as Cookie[]
+    const expired = answered.filter((c) => c.maxAge === 0).map((c) => c.name)
+    expect(expired).toEqual(expect.arrayContaining(Object.keys(held)))
+    const cart = answered.find((c) => c.name === 'nymbal.cart')
+    expect([cart?.path, cart?.maxAge]).toEqual(['/', 0])
+  })
 })
 
 describe('AC-6: the after-sign-in hooks', () => {

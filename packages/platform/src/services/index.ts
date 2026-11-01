@@ -5,7 +5,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import { createProductService, type ProductService } from './product-service.js'
 import { createCategoryService, type CategoryService } from './category-service.js'
-import { createCartService, type CartService } from './cart-service.js'
+import { createCartCatalogue, createCartService, type CartService } from './cart-service.js'
 import { createCustomerService, type CustomerService } from './customer-service.js'
 import { createAuthService, parseDurationToMs, type AuthService } from './auth-service.js'
 import { createOrderService, type OrderService } from './order-service.js'
@@ -93,6 +93,8 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
     publisher,
     logger: logger.child({ service: 'cart' }),
     currency: config.store.currency,
+    catalogue: createCartCatalogue(repos),
+    pendingOrders: repos.order,
   })
   const checkout = createCheckoutService({
     store,

@@ -134,6 +134,13 @@
       "when": 1793344408253,
       "tag": "0018_order_key_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793507532518,
+      "tag": "0019_carts_customer_idx",
+      "breakpoints": true
     }
   ]
 }

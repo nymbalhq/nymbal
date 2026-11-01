@@ -140,6 +140,15 @@ export class CheckoutError extends NymbalError {
   }
 }
 
+/** A cart command that would take a line above `max`; `onCart` is what the line held before it. */
+export class CartLimitError extends NymbalError {
+  constructor(variantId: string, max: number, onCart: number) {
+    super('cart.qty_limit', `a cart line holds at most ${max}`, {
+      context: { variantId, max, onCart },
+    })
+  }
+}
+
 export class StatusTransitionError extends NymbalError {
   constructor(
     entity: string,

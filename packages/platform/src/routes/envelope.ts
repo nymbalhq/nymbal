@@ -1,4 +1,5 @@
 import {
+  CartLimitError,
   CheckoutError,
   HttpError,
   NotFoundError,
@@ -62,7 +63,7 @@ function errorEnvelope(err: unknown): ResponseEnvelope<Envelope<never>> {
   if (err instanceof NotFoundError) {
     return fail(err.code, err.message, 404, err.context)
   }
-  if (err instanceof ValidationError) {
+  if (err instanceof ValidationError || err instanceof CartLimitError) {
     return fail(err.code, err.message, 400, err.context)
   }
   // A transition the table forbids, or money that does not allow the command: the caller's to fix, never a fault.

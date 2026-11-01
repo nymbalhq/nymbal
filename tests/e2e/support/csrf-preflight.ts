@@ -13,16 +13,21 @@ export async function assertCsrfEnforced(): Promise<void> {
     const products = await context.get(`${API_URL}/api/products?limit=20`)
     expect(products.ok(), 'GET /api/products should succeed').toBe(true)
     const body = (await products.json()) as {
-      data: { items: Array<{ variants?: Array<{ id: string; stock: number }> }> }
+      data: {
+        items: Array<{ status?: string; variants?: Array<{ id: string; stock: number }> }>
+      }
     }
     // The local store persists across runs and checkout journeys drain it, so the first variant may be sold out; an
-    // out-of-stock 409 would hide whether the paired write passed the CSRF check.
+    // out-of-stock 409 would hide whether the paired write passed the CSRF check. Admin journeys create draft
+    // products the list still serves, and the cart refuses a draft's variant with 404.
     const qty = 1
-    const variants = body.data.items.flatMap((p) => p.variants ?? [])
+    const variants = body.data.items
+      .filter((p) => p.status === 'active')
+      .flatMap((p) => p.variants ?? [])
     const inStock = variants.find((v) => v.stock >= qty)
     expect(
       inStock,
-      `no variant on the first products page has stock >= ${qty} (${variants.length} variants seen); reseed the store`,
+      `no variant of an active product on the first products page has stock >= ${qty} (${variants.length} such variants seen); reseed the store`,
     ).toBeTruthy()
     const variantId = inStock?.id
 

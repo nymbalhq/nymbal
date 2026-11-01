@@ -22,7 +22,7 @@ import {
 } from '@nymbalhq/types'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
-import { createCommandStore } from '../db/command-store.js'
+import { createCommandStore, type ReadTx } from '../db/command-store.js'
 import { runMigrations } from '../db/migrate.js'
 import { buildRepositories } from '../repositories/index.js'
 import { createEventPublisher, createRelay } from '../index.js'
@@ -77,6 +77,10 @@ async function setup() {
     publisher,
     logger,
     currency: 'GBP',
+    // Sells every variant: these tests' carts hold only the products they create.
+    catalogue: {
+      sellable: async (_tx: ReadTx, variantIds: readonly string[]) => new Set(variantIds),
+    },
   })
   const checkout = createCheckoutService({
     store: commandStore,

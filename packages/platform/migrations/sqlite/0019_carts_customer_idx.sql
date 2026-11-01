@@ -1,0 +1,1 @@
+CREATE INDEX `carts_customer_idx` ON `carts` (`customer_id`) WHERE "carts"."customer_id" IS NOT NULL;

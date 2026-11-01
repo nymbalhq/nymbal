@@ -8,6 +8,7 @@ import {
 import { parseDurationToMs, type AuthService } from '../services/auth-service.js'
 import { ok, fail, renderError } from './envelope.js'
 import { expiredVisitorCookie } from './recently-viewed.js'
+import { expiredCartCookie } from './cart.js'
 
 /** Runs once a login or register has succeeded; the cookies it answers join the response. */
 export type AfterSignIn = (ctx: RequestContext, customerId: string) => Promise<ResponseCookie[]>
@@ -43,11 +44,12 @@ function refreshCookies(token: string, maxAgeSeconds: number): ResponseCookie[] 
   ]
 }
 
-/** Logout ends the browser's visitor too, so the next person on a shared device starts with no list. */
+/** Logout ends the browser's visitor and cart too, so the next person on a shared device starts with neither. */
 function expiredCookies(): ResponseCookie[] {
   return [
     { name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true },
     expiredVisitorCookie(),
+    expiredCartCookie(),
   ]
 }
 

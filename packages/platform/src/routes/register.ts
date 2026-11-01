@@ -25,7 +25,7 @@ import { registerAuthRoutes } from './auth.js'
 import { registerProductRoutes } from './products.js'
 import { registerCapabilitiesRoute } from './capabilities.js'
 import { registerCategoryRoutes } from './categories.js'
-import { registerCartRoutes } from './cart.js'
+import { mergeCartOnSignIn, registerCartRoutes } from './cart.js'
 import { registerCheckoutRoutes } from './checkout.js'
 import { registerOrderRoutes } from './orders.js'
 import { registerCustomerRoutes } from './customers.js'
@@ -157,8 +157,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
-  // The cart merge, when it is wired, is one more hook here.
-  const afterSignIn = [foldViewsOnSignIn(services.recentlyViewed)]
+  const afterSignIn = [foldViewsOnSignIn(services.recentlyViewed), mergeCartOnSignIn(services.cart)]
   registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn)
   registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
