@@ -1,5 +1,0 @@
-import { it } from 'vitest'
-
-throw new Error('fixture: this suite crashes while loading')
-
-it('never runs', () => {})

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
@@ -377,7 +378,10 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
   const commands = (input: PlanInput): string[] =>
     plan(input).steps.map((s) => `${s.name}: ${s.command}`)
 
-  it('AC-5: for any readers, the all, none and --rerun-red commands and every gate:full and --harness all command equal those with none; the plain ones carry GATE_BASE and gate:full’s do not', () => {
+  const projectOf = (file: string): string =>
+    file.startsWith('tests/architecture/') ? 'architecture' : 'tooling'
+
+  it('AC-5: for any readers, the all, none and --rerun-red commands, every --harness all command and every gate:full command whose readers’ projects run anyway equal those with none; a gate:full that leaves a reader’s project out keeps it and changes nothing else; the plain ones carry GATE_BASE and gate:full’s do not', () => {
     fc.assert(
       fc.property(
         fc.subarray(READER_POOL, { minLength: 1 }),
@@ -394,24 +398,76 @@ describe('AC-5: readers change no other command, and gate:full carries no GATE_B
               ? { rerun: { tests: [{ file: 'tests/tooling/gate.test.ts', name: 'a b' }] } }
               : {}),
           }
-          const independent =
-            input.full ||
-            shape === 'rerun' ||
+          // The plain gate's changed-mode run takes readers by design (the AC-5 tests above).
+          const comparable =
+            shape !== 'plain' ||
             changed.includes('package.json') ||
             changed.every((p) => p.endsWith('.md'))
-          if (!independent) return
+          if (!comparable) return
+          const testsOf = (cs: string[]): string =>
+            (cs.find((c) => c.startsWith('tests: ')) ?? '').slice('tests: '.length)
+          const othersOf = (cs: string[]): string[] => cs.filter((c) => !c.startsWith('tests: '))
           const without = commands({ ...input, inputReaders: [] })
-          expect(commands({ ...input, inputReaders: readers })).toEqual(without)
-          const tests = (without.find((c) => c.startsWith('tests: ')) ?? '').slice('tests: '.length)
+          const withReaders = commands({ ...input, inputReaders: readers })
+          const tests = testsOf(without)
+          const left = leftOut(tests, HARNESS_PROJECTS)
+          // Only a gate:full that runs the changed harness keeps a reader's project it would leave out.
+          const kept =
+            shape === 'full'
+              ? [...new Set(readers.map(projectOf))].filter((p) => left.includes(p))
+              : []
+          expect(othersOf(withReaders)).toEqual(othersOf(without))
+          expect(leftOut(testsOf(withReaders), HARNESS_PROJECTS)).toEqual(
+            left.filter((p) => !kept.includes(p)),
+          )
+          expect(testsOf(withReaders) === tests).toBe(kept.length === 0)
           // The plain gate's Vitest run starts with the base; gate:full's commands carry none at all.
           const runs = !input.full && tests !== 'true'
           const first = envWords(tests)[0] ?? []
           expect(first.findIndex(([name]) => name === 'GATE_BASE')).toBe(runs ? 0 : -1)
           expect(first.find(([name]) => name === 'GATE_BASE')?.[1] ?? null).toBe(runs ? BASE : null)
-          expect(input.full ? without.filter((c) => c.includes('GATE_BASE=')) : []).toEqual([])
+          expect(
+            input.full ? [...without, ...withReaders].filter((c) => c.includes('GATE_BASE=')) : [],
+          ).toEqual([])
         },
       ),
       { numRuns: 120 },
     )
   })
+})
+
+describe('AC-5: a gate:full that runs only the changed harness keeps the projects of the tests reading the change', () => {
+  const REPO = fileURLToPath(new URL('../../', import.meta.url))
+
+  /** The projects gate:full's tests step collects, through vitest list, for a change in this checkout. */
+  async function fullProjects(changed: string[]): Promise<{ readers: string[]; listed: string[] }> {
+    const readers = harnessInputTests(REPO, changed)
+    const step = plan({
+      full: true,
+      base: BASE,
+      changed,
+      mutated: [],
+      harness: 'changed',
+      inputReaders: readers,
+    }).steps.find((s) => s.name === 'tests')
+    if (step === undefined) throw new Error('no tests step')
+    const { env, projects, excludes } = vitestFilters(step.command)
+    const listed = await listedProjects(
+      [...projects.flatMap((p) => ['--project', p]), ...excludes.flatMap((e) => ['--exclude', e])],
+      env,
+    )
+    return { readers, listed }
+  }
+
+  it('AC-5: through vitest list, a change to registry/adapters.json keeps tooling, and a kernel change no tooling test reads leaves it out', async () => {
+    const registry = await fullProjects(['registry/adapters.json'])
+    const kernel = await fullProjects([KERNEL])
+    expect(registry.readers.filter((f) => f.startsWith('tests/tooling/'))).toContain(
+      'tests/tooling/adapter-list.test.ts',
+    )
+    expect(registry.listed).toContain('tooling')
+    expect(kernel.readers.filter((f) => f.startsWith('tests/tooling/'))).toEqual([])
+    expect(kernel.listed).not.toContain('tooling')
+    expect(kernel.listed).toEqual(registry.listed.filter((p) => p !== 'tooling'))
+  }, 120_000)
 })

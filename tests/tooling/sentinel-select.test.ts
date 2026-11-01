@@ -1,5 +1,5 @@
 // Reads: scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts, tests/sentinels/**
-// Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, packages/*/package.json
+// Reads: .github/workflows/ci.yml, packages/*/package.json
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import fc from 'fast-check'
@@ -12,8 +12,7 @@ import { parseYaml } from './workflow-yaml'
 // Sentinels by id. The plan takes `sentinels: 'all' | 'none' | Set<string>`: a set runs `pnpm sentinels --only` with
 // exactly its ids, and the empty set skips as `none` does. The CLI's `--sentinels all|none|<id>[,<id>…]` runs the ids
 // as given, whatever changed; `--only sentinels` alone runs every one; an id that is not in tests/sentinels/ is refused
-// before any step runs, naming it and every known id. ci.yml's sentinel job passes `all` on a push, and the nightly
-// keeps `all`.
+// before any step runs, naming it and every known id. ci.yml's sentinel job passes `all` on a push and on a dispatch.
 
 afterEach(cleanupScratch)
 
@@ -281,21 +280,17 @@ function sentinelsArgs(file: string, job: string, runs: RegExp, event: string): 
   return args
 }
 
-// CI runs on pushes only, so every CI sentinel run is a push's: all.
-describe('AC-4: a push and the nightly run all sentinels', () => {
-  it("AC-4: ci.yml's sentinel job passes all on push; nightly.yml's gate:full passes all", () => {
+// CI runs on a push and on the release's dispatch; each runs every sentinel.
+describe('AC-4: a push and a dispatch run all sentinels', () => {
+  it("AC-4: ci.yml's sentinel job passes all on a push and on a workflow_dispatch", () => {
     const ci = (event: string): string[] =>
       sentinelsArgs('.github/workflows/ci.yml', 'sentinels', /scripts\/gate\.ts/, event)
-    const nightly = (event: string): string[] =>
-      sentinelsArgs('.github/workflows/nightly.yml', 'gate-full', /\bgate:full\b/, event)
     expect({
-      'ci push': ci('push'),
-      'nightly schedule': nightly('schedule'),
-      'nightly workflow_dispatch': nightly('workflow_dispatch'),
+      push: ci('push'),
+      workflow_dispatch: ci('workflow_dispatch'),
     }).toEqual({
-      'ci push': ['all'],
-      'nightly schedule': ['all'],
-      'nightly workflow_dispatch': ['all'],
+      push: ['all'],
+      workflow_dispatch: ['all'],
     })
   })
 })

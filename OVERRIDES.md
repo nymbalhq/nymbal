@@ -59,15 +59,15 @@ layer (`scaffold/project/astro/`) rather than the template layer, and carries th
 `<div hidden data-nymbal-marker="nymbal:project-override homepage"></div>` plus a visibly
 customised section heading. (The marker is a real hidden element, not an HTML comment:
 Astro's compiler strips bare comments adjacent to component invocations during SSR, so a
-`<!-- … -->` marker would never reach the served HTML the scaffold-smoke job greps for.)
+`<!-- … -->` marker would never reach the served HTML.)
 It exists so that:
 
 - every fresh project demonstrates the override model working on day one — the first file
   a developer opens is already an example of "this file is mine, the template default was
   shadowed";
-- the resolution order is continuously exercised in CI, not just documented. The
-  scaffold-smoke job curls the running storefront and greps for the marker, proving the
-  project layer won at runtime.
+- the resolution order is continuously exercised in CI, not just documented: the guard
+  tests below check the scaffolded files, and CI scaffolds a store from a clean machine and
+  serves its homepage.
 
 ## The proof: the override guard test
 
@@ -84,9 +84,7 @@ The override model is guarded by tests in
   that once shipped a scaffold with zero `.astro` files).
 
 If resolution ever breaks — the template default winning over a project file, or the
-project layer being deleted by the scaffold sync — these tests fail. The CI
-scaffold-smoke job additionally verifies the override end-to-end against a live dev
-server for both the marker and the storefront markers (`hero-section`, `product-card-`).
+project layer being deleted by the scaffold sync — these tests fail.
 
 ## Design decision: scaffold-time overlay, not runtime route injection
 

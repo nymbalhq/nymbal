@@ -467,12 +467,11 @@ describe('override resolution (project layer wins)', () => {
   })
 
   // The project layer's homepage renders the featured grid and the category nav as the elements
-  // (`nymbal-product-grid`, whose cards keep the `product-card-` test id the smoke check greps for, and
+  // (`nymbal-product-grid`, whose cards keep the `product-card-` test id the E2E journeys find, and
   // `nymbal-category-nav`) and imports no deleted component: an import of one fails the scaffolded project's build.
   it('AC-6: override homepage keeps the smoke-check and E2E markers intact: the hero, the featured grid as nymbal-product-grid and the category nav as nymbal-category-nav, and every component it imports exists in the scaffolded project', async () => {
     const index = await readFile(resolve(outDir, 'src', 'pages', 'index.astro'), 'utf8')
-    // tools/scaffold-smoke-check.mjs greps served HTML for "hero-section" and
-    // "product-card-" — the override must keep rendering the hero and the grid's cards.
+    // The E2E journeys find "hero-section" and "product-card-" in served HTML: the override must keep rendering the hero and the grid's cards.
     expect(index).toContain('<HeroSection')
     expect(index).toContain('nymbal-product-grid')
     expect(index).toContain('nymbal-category-nav')

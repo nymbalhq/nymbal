@@ -139,7 +139,7 @@ describe('AC-3: every package name the kernel and the CLI import is a workspace 
     // (`changeset --empty`, whose frontmatter has no line), which names none.
     const empty = (f: string): boolean => /^---\n---(\n|$)/.test(read(f))
     expect(files.filter((f) => !empty(f) && frontmatterKeys(read(f)).length === 0)).toEqual([])
-    expect(keys.length).toBeGreaterThanOrEqual(files.length)
+    expect(keys.length).toBeGreaterThanOrEqual(files.filter((f) => !empty(f)).length)
   })
 })
 

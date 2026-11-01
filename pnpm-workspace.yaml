@@ -6,7 +6,7 @@ packages:
   - "tools/*"
   - "tests/*"
   # Scaffold smoke-test projects (create-nymbal-app output). These are throwaway
-  # directories created in the repo root by CI scaffold-smoke and local launch
+  # directories created in the repo root by the store tests (tests/stores) and local launch
   # proofs. They must be workspace members so `pnpm install` links the unpublished
   # @nymbalhq/* packages into them (the scaffold pins ^0.1.0, which only resolves
   # via the workspace). They are git-ignored; this glob never matches committed code.

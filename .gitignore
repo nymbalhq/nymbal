@@ -22,7 +22,7 @@ test-results/
 .lighthouseci/
 
 # Scaffold smoke-test projects (create-nymbal-app output) — throwaway dirs
-# created in the repo root by CI scaffold-smoke and local launch proofs. They
+# created in the repo root by the store tests (tests/stores) and local launch proofs. They
 # are listed as workspace members in pnpm-workspace.yaml so `pnpm install` can
 # link the unpublished @nymbalhq/* packages into them, but they must never be
 # committed.

@@ -85,7 +85,7 @@ if (sharedWorkers !== undefined && !/^[1-9]\d*$/.test(sharedWorkers)) {
   throw new Error(`NYMBAL_VITEST_MAX_WORKERS must be a positive integer; got "${sharedWorkers}"`)
 }
 
-// Set by the coverage job (ci.yml), whose instrumented runs are three to four times slower than the gate's: each
+// Set by the sentinel runs (scripts/sentinels.ts), which run nearly the whole suite at once under load: each
 // project's own timeouts, or Vitest's defaults where it sets none, are multiplied. A CLI --testTimeout would replace
 // the longer budgets some projects set instead.
 const timeoutScale = Number(process.env['NYMBAL_TEST_TIMEOUT_SCALE'] ?? 1)

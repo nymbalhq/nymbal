@@ -1133,8 +1133,8 @@ export type PlanInput = {
    */
   harness?: 'all' | 'changed' | undefined
   /**
-   * Harness test files that read a changed file outside their imports (`harnessInputTests`): the plain gate's
-   * `changed` run takes them beside the changed paths and keeps their projects. None when not given.
+   * Harness test files that read a changed file outside their imports (`harnessInputTests`): gate:full and the plain
+   * gate's `changed` run keep their projects, and the latter takes them beside the changed paths. None when not given.
    */
   inputReaders?: string[] | undefined
   /** The paths that run hands `vitest related`: `changed` with both sides of each rename. `changed` when not given. */
@@ -1401,15 +1401,15 @@ export function plan(input: PlanInput): { steps: StepSpec[]; budgetMs: number } 
   // The plain gate never runs the slow harness projects, unless `--harness all` asks for every one.
   const plainApart = (projects: string[]): string[] =>
     full || input.harness === 'all' ? projects : [...projects, ...SLOW_HARNESS_PROJECTS]
-  const harnessApart = skipEnv(plainApart(harnessSkipped))
-  // A harness test that reads a changed file keeps its project, and `vitest related` is handed the test itself.
+  // A harness test that reads a changed file keeps its project: gate:full runs that project whole, the plain gate's
+  // `vitest related` is handed the test itself.
   const readers = input.inputReaders ?? []
   const readerProjects = new Set<string>(
     readers.map((file) => (file.startsWith('tests/architecture/') ? 'architecture' : 'tooling')),
   )
-  const changedApart = skipEnv(
-    plainApart(harnessSkipped.filter((project) => !readerProjects.has(project))),
-  )
+  const readersKept = harnessSkipped.filter((project) => !readerProjects.has(project))
+  const harnessApart = skipEnv(plainApart(full ? readersKept : harnessSkipped))
+  const changedApart = skipEnv(plainApart(readersKept))
   // CI exports the pushed branch's previous tip as GATE_BASE to every step; the plain gate hands its Vitest runs its
   // own base the same way, so a script that reads it fails here as it would there.
   const baseEnv = full || input.noBase === true ? '' : `GATE_BASE=${shellWord(base)} `
@@ -2109,7 +2109,7 @@ async function main(argv: string[]): Promise<number> {
   const startedMs = Date.now()
   const changed = changedFiles(root, base)
   const relatedPaths = changedFiles(root, base, { renames: false })
-  const inputReaders = values.full ? [] : harnessInputTests(root, relatedPaths)
+  const inputReaders = harnessInputTests(root, relatedPaths)
   const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
   const mutated =
     values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []

@@ -130,7 +130,10 @@ export function addedTestCode(nameStatus: string, untracked: readonly string[]):
     .filter(
       (path) =>
         !TEST_FILE.test(path) &&
-        path.split('/').slice(0, -1).some((segment) => TEST_CODE_SEGMENTS.has(segment)) &&
+        path
+          .split('/')
+          .slice(0, -1)
+          .some((segment) => TEST_CODE_SEGMENTS.has(segment)) &&
         !EXCLUDED_PREFIXES.some((prefix) => path.startsWith(prefix)),
     )
     .sort()
@@ -583,23 +586,27 @@ export function render({ results, baseFailure, noBase }: Report): string {
   if (noBase === true)
     return 'tests-fail-on-base: HEAD is a root commit; no base to judge test files against'
   if (results.length === 0) return 'tests-fail-on-base: the change adds no test files'
-  const judged = results.filter((r) => r.verdict !== 'not judged')
-  const unjudged = results.filter((r) => r.verdict === 'not judged')
-  const lines = judged.map((r) => {
+  const line = (r: Judgement): string => {
     const verdict = r.verdict === 'fails under sentinel' ? `${r.verdict} ${r.sentinel}` : r.verdict
     return `${verdict}: ${r.path}${r.note === undefined ? '' : ` (${r.note})`}`
-  })
-  for (const r of unjudged) lines.push(`not judged: ${r.path} (${r.note})`)
-  const violations = results.filter((r) => r.verdict === 'PASSES ON BASE').length
-  lines.push(
-    `tests-fail-on-base: ${results.length} added, ${violations} violation(s), ${unjudged.length} not judged`,
-  )
+  }
+  const violations = results.filter((r) => r.verdict === 'PASSES ON BASE')
+  const unjudged = results.filter((r) => r.verdict === 'not judged')
+  const held = results.filter((r) => !violations.includes(r) && !unjudged.includes(r))
+  const lines = [...held.map(line), ...unjudged.map(line)]
+  // What fails the step comes last, beside the count, so a log cut to its last lines still shows it: the base's
+  // output tail, then why the base failed, then each violation.
   if (baseFailure !== undefined) {
     lines.push(
-      `failed: ${BASE_DID_NOT_BUILD}${baseFailure.reason}; the last ${baseFailure.tail.length} line(s) of its output:`,
-      ...baseFailure.tail.map((line) => `  | ${line}`),
+      `the base's output, its last ${baseFailure.tail.length} line(s):`,
+      ...baseFailure.tail.map((text) => `  | ${text}`),
+      `failed: ${BASE_DID_NOT_BUILD}${baseFailure.reason}`,
     )
   }
+  lines.push(
+    ...violations.map(line),
+    `tests-fail-on-base: ${results.length} added, ${violations.length} violation(s), ${unjudged.length} not judged`,
+  )
   return lines.join('\n')
 }
 

@@ -22,6 +22,9 @@ env:
   # The base every gate.ts call diffs against: on a push the previous tip of the pushed branch, so one merge's own
   # changes; a dispatch carries no `before`, so it names its base.
   GATE_BASE: ${{ github.event.before || inputs.base }}
+  # The harness's own test projects (scripts, workflows, the gate): a push runs them only when a harness path changed,
+  # as the local gate does; a dispatch (the release's) runs them whatever changed, and so does the nightly.
+  GATE_HARNESS: ${{ github.event_name == 'workflow_dispatch' && 'all' || 'changed' }}
 
 jobs:
   build:
@@ -81,11 +84,11 @@ jobs:
           name: build-output
       - name: Gate — lint, typecheck, census trend
         if: matrix.shard == 1
-        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,census trend" --harness all --no-build --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only "lint,typecheck,census trend" --no-build --base "$GATE_BASE"
       - name: Gate — tests
         # A red static step in shard 1 still leaves that shard's test verdict.
         if: ${{ !cancelled() }}
-        run: pnpm exec tsx scripts/gate.ts --full --only tests --harness all --no-build --shard ${{ matrix.shard }}/3 --base "$GATE_BASE"
+        run: pnpm exec tsx scripts/gate.ts --full --only tests --harness "$GATE_HARNESS" --no-build --shard ${{ matrix.shard }}/3 --base "$GATE_BASE"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -160,11 +163,17 @@ jobs:
             reports/perf-budgets.json
           if-no-files-found: warn
 
+  # The service-backed gate steps, one a combination so they run side by side; the SQLite integration and contract
+  # projects, which need no service, ride the lightest one.
   integration:
-    name: Integration — Postgres, Redis, contracts
+    name: Integration — ${{ matrix.step }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        step: [integration-postgres, integration-stores, proof-kit-services]
     env:
       NYMBAL_TEST_POSTGRES_URL: postgres://postgres:nymbal@localhost:5432/nymbal
       NYMBAL_TEST_MAILPIT_URL: http://localhost:18025
@@ -221,18 +230,23 @@ jobs:
           name: build-output
       # MinIO for the S3 media suites. A service container cannot pass it `server /data`, so it is started here.
       - name: MinIO
+        if: matrix.step == 'integration-stores'
         run: |
           docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
             pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372 server /data
           timeout 60 sh -c 'until curl -fsS http://localhost:9000/minio/health/live; do sleep 1; done' \
             || { docker logs minio; exit 1; }
       - name: Postgres integration
+        if: matrix.step == 'integration-postgres'
         run: pnpm exec tsx scripts/gate.ts --full --only integration-postgres --no-build --services external --base "$GATE_BASE"
-      - name: Proof kit services (Postgres race, Mailpit sink)
-        run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
       - name: Document stores and event bus on Redis and Postgres JSONB, the kernel on them, the E2E harness, nymbal add redis on a scaffold
+        if: matrix.step == 'integration-stores'
         run: pnpm exec tsx scripts/gate.ts --full --only integration-stores --no-build --services external --base "$GATE_BASE"
+      - name: Proof kit services (Postgres race, Mailpit sink)
+        if: matrix.step == 'proof-kit-services'
+        run: pnpm exec tsx scripts/gate.ts --full --only proof-kit-services --no-build --services external --base "$GATE_BASE"
       - name: Platform and importers integration, contracts
+        if: matrix.step == 'proof-kit-services'
         run: pnpm vitest run --project platform-integration --project importers-integration --project contracts-native
 
   mutation:
@@ -364,8 +378,21 @@ jobs:
       - name: Install Playwright system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Astro (functional, visual, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro" --no-build --base "$GATE_BASE"
+      # Then the @nosearch journeys on the no-search fixture store (its header renders no search bar) and the @override
+      # journeys with the project-elements fixture as the template's elements entry: each a short target of its own.
+      - name: Astro (functional, visual, a11y), then with no search and with a project element override
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro,e2e astro-nosearch,e2e astro-override" --no-build --base "$GATE_BASE"
+      # Each target's Playwright JSON report: a test that passed only on a retry is `flaky` there, and only there.
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-astro
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e-nextjs:
     name: E2E — Next.js
@@ -403,8 +430,18 @@ jobs:
       - name: Install Playwright system libraries
         if: steps.browsers.outputs.cache-hit == 'true'
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Next.js (functional, visual, a11y)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs" --no-build --base "$GATE_BASE"
+      - name: Next.js (functional, visual, a11y), then with no search and with a project element override
+        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs,e2e nextjs-nosearch,e2e nextjs-override" --no-build --base "$GATE_BASE"
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-nextjs
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e-admin:
     name: E2E — Admin
@@ -444,6 +481,16 @@ jobs:
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Admin (functional, visual, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e admin" --no-build --base "$GATE_BASE"
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-admin
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
 
   # The same journeys on the custom-providers fixture store (search and payments swapped for custom adapters), in
   # jobs of their own so the native ones keep their time.
@@ -502,6 +549,16 @@ jobs:
         run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       - name: Astro on custom providers (functional, a11y)
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-custom" --services external --no-build --base "$GATE_BASE"
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-reports-astro-custom
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
@@ -559,247 +616,16 @@ jobs:
       # The mail outage journey turns this job's Mailpit's Chaos on, so it runs here, after the other target is done.
       - name: Next.js on custom providers (functional, a11y), then a mail outage
         run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-custom,e2e mail-outage" --services external --no-build --base "$GATE_BASE"
-
-  # The no-search fixture store (its search reports no capability), whose header must render no search bar; only the
-  # journeys tagged @nosearch run there.
-  e2e-astro-nosearch:
-    name: E2E — Astro with no search
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
+      - name: Upload the Playwright reports
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          fetch-depth: 0
-          lfs: true
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - name: Playwright version
-        id: playwright
-        run: |
-          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - name: Install Playwright browsers
-        if: steps.browsers.outputs.cache-hit != 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Install Playwright system libraries
-        if: steps.browsers.outputs.cache-hit == 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Astro with no search (@nosearch)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-nosearch" --no-build --base "$GATE_BASE"
-
-  e2e-nextjs-nosearch:
-    name: E2E — Next.js with no search
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          lfs: true
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - name: Playwright version
-        id: playwright
-        run: |
-          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - name: Install Playwright browsers
-        if: steps.browsers.outputs.cache-hit != 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Install Playwright system libraries
-        if: steps.browsers.outputs.cache-hit == 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Next.js with no search (@nosearch)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-nosearch" --no-build --base "$GATE_BASE"
-
-  # The project-elements fixture (tests/e2e/fixtures/override-elements) as each template's elements entry, which
-  # overrides nymbal-mini-cart on the server and in the browser; only the journeys tagged @override run there.
-  e2e-astro-override:
-    name: E2E — Astro with a project element override
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          lfs: true
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - name: Playwright version
-        id: playwright
-        run: |
-          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - name: Install Playwright browsers
-        if: steps.browsers.outputs.cache-hit != 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Install Playwright system libraries
-        if: steps.browsers.outputs.cache-hit == 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Astro with the override fixture (@override)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e astro-override" --no-build --base "$GATE_BASE"
-
-  e2e-nextjs-override:
-    name: E2E — Next.js with a project element override
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          lfs: true
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - name: Playwright version
-        id: playwright
-        run: |
-          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: browsers
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - name: Install Playwright browsers
-        if: steps.browsers.outputs.cache-hit != 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
-      - name: Install Playwright system libraries
-        if: steps.browsers.outputs.cache-hit == 'true'
-        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
-      - name: Next.js with the override fixture (@override)
-        run: pnpm exec tsx scripts/gate.ts --full --only "e2e nextjs-override" --no-build --base "$GATE_BASE"
-
-  scaffold-smoke:
-    name: Scaffold smoke test
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: [build]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8
-        with:
-          name: build-output
-      - name: Scaffold Astro project
-        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-astro --template astro --yes --no-install
-      - name: Install Astro scaffold deps
-        run: pnpm install --no-frozen-lockfile
-        working-directory: smoke-astro
-      - name: Migrate database (Astro)
-        run: pnpm exec nymbal migrate
-        working-directory: smoke-astro
-      - name: Seed demo content (Astro)
-        run: pnpm exec nymbal seed
-        working-directory: smoke-astro
-      - name: Start the API (Astro)
-        run: |
-          pnpm exec nymbal dev --api-only &
-          echo "ASTRO_API_PID=$!" >> "$GITHUB_ENV"
-        working-directory: smoke-astro
-      - name: Wait for the API (Astro)
-        run: npx wait-on http://localhost:3001/health --timeout 60000
-      - name: Start Astro dev server
-        run: |
-          pnpm dev --ignore-lock &
-          echo "ASTRO_WEB_PID=$!" >> "$GITHUB_ENV"
-        working-directory: smoke-astro
-      - name: Wait for Astro dev server
-        run: npx wait-on http://localhost:4321 --timeout 60000
-      - name: Verify project override is live (Astro)
-        run: curl -fsS http://localhost:4321/ | grep "nymbal:project-override homepage"
-      - name: Smoke check Astro
-        run: node tools/scaffold-smoke-check.mjs --port 4321
-      - name: Stop Astro dev server and API
-        run: |
-          kill "$ASTRO_WEB_PID"
-          kill "$ASTRO_API_PID"
-      - name: Scaffold Next.js project
-        run: pnpm exec node packages/create-app/bin/create-nymbal-app.mjs smoke-nextjs --template nextjs --yes --no-install
-      - name: Install Next.js scaffold deps
-        run: pnpm install --no-frozen-lockfile
-        working-directory: smoke-nextjs
-      - name: Migrate database (Next.js)
-        run: pnpm exec nymbal migrate
-        working-directory: smoke-nextjs
-      - name: Seed demo content (Next.js)
-        run: pnpm exec nymbal seed
-        working-directory: smoke-nextjs
-      - name: Start the API (Next.js)
-        run: |
-          pnpm exec nymbal dev --api-only &
-          echo "NEXTJS_API_PID=$!" >> "$GITHUB_ENV"
-        working-directory: smoke-nextjs
-      - name: Wait for the API (Next.js)
-        run: npx wait-on http://localhost:3001/health --timeout 60000
-      - name: Start Next.js dev server
-        run: |
-          pnpm dev &
-          echo "NEXTJS_WEB_PID=$!" >> "$GITHUB_ENV"
-        working-directory: smoke-nextjs
-      - name: Wait for Next.js dev server
-        run: npx wait-on http://localhost:3000 --timeout 60000
-      - name: Smoke check Next.js
-        run: node tools/scaffold-smoke-check.mjs --port 3000
-      - name: Stop Next.js dev server and API
-        run: |
-          kill "$NEXTJS_WEB_PID"
-          kill "$NEXTJS_API_PID"
+          name: e2e-reports-nextjs-custom
+          path: |
+            reports/e2e-*.json
+            !reports/e2e-shutdown.json
+          if-no-files-found: warn
+          retention-days: 7
 
   scaffold-clean:
     name: Scaffold from a clean machine (${{ matrix.template }})

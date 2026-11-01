@@ -18,7 +18,7 @@ const tooling = (name: string): string => `tests/tooling/${name}.test.ts`
 const architecture = (name: string): string => `tests/architecture/${name}.test.ts`
 const PERF = 'packages/platform/tests/integration/search-performance.test.ts'
 
-const NIGHTLY_READERS = ['ci-workflow', 'sentinel-select', 'store-sets'].map(tooling)
+const NIGHTLY_READERS = ['ci-workflow', 'store-sets'].map(tooling)
 const CASES: Array<{ path: string; readers: string[] }> = [
   { path: '.github/workflows/nightly.yml', readers: NIGHTLY_READERS },
   { path: 'mutation-ratchet.json', readers: [tooling('mutation-ratchet')] },

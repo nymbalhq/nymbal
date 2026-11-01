@@ -18,7 +18,7 @@ import {
 import { deleteUnder, keysUnder, redis, redisServerUrl } from '../support/redis'
 import { holdWorkspace } from '../support/workspace-lock'
 
-// A fresh Astro scaffold, made the scaffold-smoke way (in the checkout as smoke-astro, a workspace member, with
+// A fresh Astro scaffold (made in the checkout as smoke-astro, a workspace member, with
 // --no-install, then `pnpm install`), runs on Redis after `nymbal add redis` alone. With REDIS_URL and a prefix of
 // this run's own, `nymbal migrate`, `nymbal seed` and `nymbal dev --api-only` start; config:validate reports the Redis
 // document store and Redis Streams bus; the seeded products and the order a cart and checkout over the API create are
