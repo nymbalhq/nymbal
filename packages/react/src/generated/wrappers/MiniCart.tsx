@@ -36,16 +36,6 @@ export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.count !== undefined) {
-      el.setAttribute('count', String(props.count))
-    } else {
-      el.removeAttribute('count')
-    }
-  }, [props.count])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onClick) return
     const handler = props.onClick as EventListener
     el.addEventListener('nymbal:mini-cart:clicked', handler)
@@ -55,7 +45,7 @@ export const MiniCart = /* @__PURE__ */ forwardRef<HTMLElement, MiniCartProps>(
     useDefine(NymbalMiniCart)
 
     return (
-      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} count={props.count} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-mini-cart ref={ref as React.Ref<HTMLElement>} {...{ 'COUNT': props.count }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

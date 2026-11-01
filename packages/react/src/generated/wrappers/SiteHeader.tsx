@@ -40,42 +40,12 @@ export const SiteHeader = /* @__PURE__ */ forwardRef<HTMLElement, SiteHeaderProp
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.links !== undefined) {
-      el.setAttribute('links', JSON.stringify(props.links))
-    } else {
-      el.removeAttribute('links')
-    }
-  }, [props.links])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.logo !== undefined) {
-      el.setAttribute('logo', String(props.logo))
-    } else {
-      el.removeAttribute('logo')
-    }
-  }, [props.logo])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.accountHref !== undefined) {
-      el.setAttribute('account-href', String(props.accountHref))
-    } else {
-      el.removeAttribute('account-href')
-    }
-  }, [props.accountHref])
-
 
 
     useDefine(NymbalSiteHeader)
 
     return (
-      <nymbal-site-header ref={ref as React.Ref<HTMLElement>} links={props.links === undefined ? undefined : JSON.stringify(props.links)} logo={props.logo} account-href={props.accountHref} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-site-header ref={ref as React.Ref<HTMLElement>} {...{ 'LINKS': props.links === undefined ? undefined : JSON.stringify(props.links), 'LOGO': props.logo, 'account-href': props.accountHref }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

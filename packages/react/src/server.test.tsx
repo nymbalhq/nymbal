@@ -29,8 +29,13 @@ function innerOf(html: string, tag: string): string | null {
   return match?.[1] ?? null
 }
 
-/** The opening tag of `html`. */
-const openingTag = (html: string): string => html.slice(0, html.indexOf('>') + 1)
+/** The attributes of `html`'s opening tag, each name lower-cased as an HTML parser reads it, to its raw value. */
+const openingAttributes = (html: string): Map<string, string> =>
+  new Map(
+    [...html.slice(0, html.indexOf('>') + 1).matchAll(/\s([^\s=>]+)="([^"]*)"/g)].map(
+      ([, name, value]) => [name!.toLowerCase(), value!],
+    ),
+  )
 
 const occurrences = (html: string, needle: string): number => html.split(needle).length - 1
 
@@ -97,10 +102,10 @@ describe('AC-7: a wrapper given serverHtml renders it on its own tag', () => {
         }),
       )
       expect(innerOf(out, c.tag), c.wrapper).toBe(expected)
-      const open = openingTag(out)
+      const open = openingAttributes(out)
       for (const [name, value] of Object.entries(c.attributes)) {
         const escaped = value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
-        expect(open, `${c.wrapper} [${name}]`).toContain(`${name}="${escaped}"`)
+        expect(open.get(name), `${c.wrapper} [${name}]`).toBe(escaped)
       }
     }
     // The line the checkout and cart page were given is in what they render.

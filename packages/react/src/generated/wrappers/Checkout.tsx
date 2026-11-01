@@ -41,16 +41,6 @@ export const Checkout = /* @__PURE__ */ forwardRef<HTMLElement, CheckoutProps>(
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.cart !== undefined) {
-      el.setAttribute('cart', JSON.stringify(props.cart))
-    } else {
-      el.removeAttribute('cart')
-    }
-  }, [props.cart])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onPlaced) return
     const handler = props.onPlaced as EventListener
     el.addEventListener('nymbal:checkout:placed', handler)
@@ -60,7 +50,7 @@ export const Checkout = /* @__PURE__ */ forwardRef<HTMLElement, CheckoutProps>(
     useDefine(NymbalCheckout)
 
     return (
-      <nymbal-checkout ref={ref as React.Ref<HTMLElement>} cart={props.cart === undefined ? undefined : JSON.stringify(props.cart)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-checkout ref={ref as React.Ref<HTMLElement>} {...{ 'CART': props.cart === undefined ? undefined : JSON.stringify(props.cart) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

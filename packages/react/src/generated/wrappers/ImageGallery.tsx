@@ -33,22 +33,12 @@ export const ImageGallery = /* @__PURE__ */ forwardRef<HTMLElement, ImageGallery
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.images !== undefined) {
-      el.setAttribute('images', JSON.stringify(props.images))
-    } else {
-      el.removeAttribute('images')
-    }
-  }, [props.images])
-
 
 
     useDefine(NymbalImageGallery)
 
     return (
-      <nymbal-image-gallery ref={ref as React.Ref<HTMLElement>} images={props.images === undefined ? undefined : JSON.stringify(props.images)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-image-gallery ref={ref as React.Ref<HTMLElement>} {...{ 'IMAGES': props.images === undefined ? undefined : JSON.stringify(props.images) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

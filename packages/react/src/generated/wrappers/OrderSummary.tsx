@@ -39,82 +39,12 @@ export const OrderSummary = /* @__PURE__ */ forwardRef<HTMLElement, OrderSummary
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.items !== undefined) {
-      el.setAttribute('items', JSON.stringify(props.items))
-    } else {
-      el.removeAttribute('items')
-    }
-  }, [props.items])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.subtotalMinor !== undefined) {
-      el.setAttribute('subtotal-minor', String(props.subtotalMinor))
-    } else {
-      el.removeAttribute('subtotal-minor')
-    }
-  }, [props.subtotalMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.discountMinor !== undefined) {
-      el.setAttribute('discount-minor', String(props.discountMinor))
-    } else {
-      el.removeAttribute('discount-minor')
-    }
-  }, [props.discountMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.shippingMinor !== undefined) {
-      el.setAttribute('shipping-minor', String(props.shippingMinor))
-    } else {
-      el.removeAttribute('shipping-minor')
-    }
-  }, [props.shippingMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.taxMinor !== undefined) {
-      el.setAttribute('tax-minor', String(props.taxMinor))
-    } else {
-      el.removeAttribute('tax-minor')
-    }
-  }, [props.taxMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.totalMinor !== undefined) {
-      el.setAttribute('total-minor', String(props.totalMinor))
-    } else {
-      el.removeAttribute('total-minor')
-    }
-  }, [props.totalMinor])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.currency !== undefined) {
-      el.setAttribute('currency', String(props.currency))
-    } else {
-      el.removeAttribute('currency')
-    }
-  }, [props.currency])
-
 
 
     useDefine(NymbalOrderSummary)
 
     return (
-      <nymbal-order-summary ref={ref as React.Ref<HTMLElement>} items={props.items === undefined ? undefined : JSON.stringify(props.items)} subtotal-minor={props.subtotalMinor} discount-minor={props.discountMinor} shipping-minor={props.shippingMinor} tax-minor={props.taxMinor} total-minor={props.totalMinor} currency={props.currency} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-order-summary ref={ref as React.Ref<HTMLElement>} {...{ 'ITEMS': props.items === undefined ? undefined : JSON.stringify(props.items), 'subtotal-minor': props.subtotalMinor, 'discount-minor': props.discountMinor, 'shipping-minor': props.shippingMinor, 'tax-minor': props.taxMinor, 'total-minor': props.totalMinor, 'CURRENCY': props.currency }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

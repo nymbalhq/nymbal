@@ -36,16 +36,6 @@ export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormPr
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.customer !== undefined) {
-      el.setAttribute('customer', JSON.stringify(props.customer))
-    } else {
-      el.removeAttribute('customer')
-    }
-  }, [props.customer])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onSaved) return
     const handler = props.onSaved as EventListener
     el.addEventListener('nymbal:profile:saved', handler)
@@ -55,7 +45,7 @@ export const ProfileForm = /* @__PURE__ */ forwardRef<HTMLElement, ProfileFormPr
     useDefine(NymbalProfileForm)
 
     return (
-      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} customer={props.customer === undefined ? undefined : JSON.stringify(props.customer)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-profile-form ref={ref as React.Ref<HTMLElement>} {...{ 'CUSTOMER': props.customer === undefined ? undefined : JSON.stringify(props.customer) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

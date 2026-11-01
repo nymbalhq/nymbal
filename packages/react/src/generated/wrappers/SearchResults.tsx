@@ -34,32 +34,12 @@ export const SearchResults = /* @__PURE__ */ forwardRef<HTMLElement, SearchResul
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.results !== undefined) {
-      el.setAttribute('results', JSON.stringify(props.results))
-    } else {
-      el.removeAttribute('results')
-    }
-  }, [props.results])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.query !== undefined) {
-      el.setAttribute('query', String(props.query))
-    } else {
-      el.removeAttribute('query')
-    }
-  }, [props.query])
-
 
 
     useDefine(NymbalSearchResults)
 
     return (
-      <nymbal-search-results ref={ref as React.Ref<HTMLElement>} results={props.results === undefined ? undefined : JSON.stringify(props.results)} query={props.query} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-search-results ref={ref as React.Ref<HTMLElement>} {...{ 'RESULTS': props.results === undefined ? undefined : JSON.stringify(props.results), 'QUERY': props.query }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

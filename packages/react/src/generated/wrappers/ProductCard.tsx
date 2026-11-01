@@ -34,32 +34,12 @@ export const ProductCard = /* @__PURE__ */ forwardRef<HTMLElement, ProductCardPr
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.product !== undefined) {
-      el.setAttribute('product', JSON.stringify(props.product))
-    } else {
-      el.removeAttribute('product')
-    }
-  }, [props.product])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.eager) {
-      el.setAttribute('eager', '')
-    } else {
-      el.removeAttribute('eager')
-    }
-  }, [props.eager])
-
 
 
     useDefine(NymbalProductCard)
 
     return (
-      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} eager={props.eager ? '' : undefined} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-product-card ref={ref as React.Ref<HTMLElement>} {...{ 'PRODUCT': props.product === undefined ? undefined : JSON.stringify(props.product), 'EAGER': props.eager ? '' : undefined }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

@@ -38,36 +38,6 @@ export const QuantitySelector = /* @__PURE__ */ forwardRef<HTMLElement, Quantity
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.value !== undefined) {
-      el.setAttribute('value', String(props.value))
-    } else {
-      el.removeAttribute('value')
-    }
-  }, [props.value])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.min !== undefined) {
-      el.setAttribute('min', String(props.min))
-    } else {
-      el.removeAttribute('min')
-    }
-  }, [props.min])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.max !== undefined) {
-      el.setAttribute('max', String(props.max))
-    } else {
-      el.removeAttribute('max')
-    }
-  }, [props.max])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onQuantityChange) return
     const handler = props.onQuantityChange as EventListener
     el.addEventListener('nymbal:quantity:changed', handler)
@@ -77,7 +47,7 @@ export const QuantitySelector = /* @__PURE__ */ forwardRef<HTMLElement, Quantity
     useDefine(NymbalQuantitySelector)
 
     return (
-      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} value={props.value} min={props.min} max={props.max} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-quantity-selector ref={ref as React.Ref<HTMLElement>} {...{ 'VALUE': props.value, 'MIN': props.min, 'MAX': props.max }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

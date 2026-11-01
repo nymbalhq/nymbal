@@ -33,22 +33,12 @@ export const CategoryNav = /* @__PURE__ */ forwardRef<HTMLElement, CategoryNavPr
     const innerRef = useRef<HTMLElement>(null)
     const ref = (forwardedRef ?? innerRef) as React.RefObject<HTMLElement | null>
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.categories !== undefined) {
-      el.setAttribute('categories', JSON.stringify(props.categories))
-    } else {
-      el.removeAttribute('categories')
-    }
-  }, [props.categories])
-
 
 
     useDefine(NymbalCategoryNav)
 
     return (
-      <nymbal-category-nav ref={ref as React.Ref<HTMLElement>} categories={props.categories === undefined ? undefined : JSON.stringify(props.categories)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-category-nav ref={ref as React.Ref<HTMLElement>} {...{ 'CATEGORIES': props.categories === undefined ? undefined : JSON.stringify(props.categories) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

@@ -37,26 +37,6 @@ export const SearchBar = /* @__PURE__ */ forwardRef<HTMLElement, SearchBarProps>
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.placeholder !== undefined) {
-      el.setAttribute('placeholder', String(props.placeholder))
-    } else {
-      el.removeAttribute('placeholder')
-    }
-  }, [props.placeholder])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.debounceMs !== undefined) {
-      el.setAttribute('debounce-ms', String(props.debounceMs))
-    } else {
-      el.removeAttribute('debounce-ms')
-    }
-  }, [props.debounceMs])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onSearchSelect) return
     const handler = props.onSearchSelect as EventListener
     el.addEventListener('nymbal:search:selected', handler)
@@ -66,7 +46,7 @@ export const SearchBar = /* @__PURE__ */ forwardRef<HTMLElement, SearchBarProps>
     useDefine(NymbalSearchBar)
 
     return (
-      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} placeholder={props.placeholder} debounce-ms={props.debounceMs} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-search-bar ref={ref as React.Ref<HTMLElement>} {...{ 'PLACEHOLDER': props.placeholder, 'debounce-ms': props.debounceMs }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

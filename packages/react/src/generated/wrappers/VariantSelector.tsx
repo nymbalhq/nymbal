@@ -36,16 +36,6 @@ export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSe
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.product !== undefined) {
-      el.setAttribute('product', JSON.stringify(props.product))
-    } else {
-      el.removeAttribute('product')
-    }
-  }, [props.product])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onVariantSelected) return
     const handler = props.onVariantSelected as EventListener
     el.addEventListener('nymbal:variant:selected', handler)
@@ -55,7 +45,7 @@ export const VariantSelector = /* @__PURE__ */ forwardRef<HTMLElement, VariantSe
     useDefine(NymbalVariantSelector)
 
     return (
-      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} product={props.product === undefined ? undefined : JSON.stringify(props.product)} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-variant-selector ref={ref as React.Ref<HTMLElement>} {...{ 'PRODUCT': props.product === undefined ? undefined : JSON.stringify(props.product) }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}

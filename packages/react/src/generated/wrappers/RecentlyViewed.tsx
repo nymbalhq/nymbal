@@ -37,26 +37,6 @@ export const RecentlyViewed = /* @__PURE__ */ forwardRef<HTMLElement, RecentlyVi
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (props.current !== undefined) {
-      el.setAttribute('current', String(props.current))
-    } else {
-      el.removeAttribute('current')
-    }
-  }, [props.current])
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    if (props.limit !== undefined) {
-      el.setAttribute('limit', String(props.limit))
-    } else {
-      el.removeAttribute('limit')
-    }
-  }, [props.limit])
-
-  useEffect(() => {
-    const el = ref.current
     if (!el || !props.onLoaded) return
     const handler = props.onLoaded as EventListener
     el.addEventListener('nymbal:recently-viewed:loaded', handler)
@@ -66,7 +46,7 @@ export const RecentlyViewed = /* @__PURE__ */ forwardRef<HTMLElement, RecentlyVi
     useDefine(NymbalRecentlyViewed)
 
     return (
-      <nymbal-recently-viewed ref={ref as React.Ref<HTMLElement>} current={props.current} limit={props.limit} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
+      <nymbal-recently-viewed ref={ref as React.Ref<HTMLElement>} {...{ 'CURRENT': props.current, 'LIMIT': props.limit }} className={props.className} style={props.style} slot={props.slot} data-testid={props['data-testid']}
         // The server render goes on the tag itself: a full load parses its template into the shadow root, which React
         // does not see, and a soft navigation's innerHTML leaves it for the element to upgrade.
         dangerouslySetInnerHTML={props.serverHtml === undefined ? undefined : { __html: props.serverHtml }}
