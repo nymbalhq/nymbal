@@ -24,6 +24,9 @@ import {
   wire,
 } from '../tests/order-routes.js'
 
+// Each property drives the routes dozens of times; a loaded CI runner took 9 s where a laptop takes 0.3 s.
+const PROPERTY_TIMEOUT_MS = 30_000
+
 function makeAdapter() {
   const routes = new Map<string, RouteHandler>()
   const adapter: HttpAdapter = {
@@ -510,7 +513,7 @@ describe('AC-1: an order is read with a key that opens it or by its owner, and i
       ),
       { numRuns: 30 },
     )
-  })
+  }, PROPERTY_TIMEOUT_MS)
 })
 
 describe('shopper order responses', () => {
@@ -624,5 +627,5 @@ describe('shopper order responses', () => {
       ),
       { numRuns: 25 },
     )
-  })
+  }, PROPERTY_TIMEOUT_MS)
 })
