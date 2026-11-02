@@ -66,6 +66,24 @@ export class NymbalMiniCart extends NymbalElement {
     return [this.client.cart]
   }
 
+  override connectedCallback(): void {
+    super.connectedCallback()
+    if (this.hasClient) window.addEventListener('pageshow', this.onPageShow)
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback()
+    window.removeEventListener('pageshow', this.onPageShow)
+  }
+
+  /**
+   * A page restored from the back/forward cache runs no module code again, so its cart store still holds the count from
+   * when the shopper left. A first load is the template's to read.
+   */
+  private readonly onPageShow = (event: Event): void => {
+    if ((event as PageTransitionEvent).persisted === true) void this.client.cart.load()
+  }
+
   protected override storeSettled(): void {
     this.count = undefined
   }

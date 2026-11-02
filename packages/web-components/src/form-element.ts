@@ -1,4 +1,4 @@
-import { html, nothing, type TemplateResult } from 'lit'
+import { html, noChange, nothing, type TemplateResult } from 'lit'
 import { NymbalElement } from './base-element.js'
 
 export interface FieldSpec {
@@ -12,7 +12,10 @@ export interface FieldSpec {
   disabled?: boolean
   minlength?: number
   placeholder?: string
-  /** Set on the input when it changes, so typing is kept across renders. */
+  /**
+   * Set on the input when it changes. Without one no render writes the input, so what a shopper typed into the server's
+   * field before the element upgraded stands.
+   */
   value?: string
 }
 
@@ -31,7 +34,7 @@ export function renderField(f: FieldSpec): TemplateResult {
         minlength=${f.minlength ?? nothing}
         ?required=${f.required ?? false}
         ?disabled=${f.disabled ?? false}
-        .value=${f.value ?? ''}
+        .value=${f.value ?? noChange}
         data-testid=${f.id}
       />
     </div>
@@ -48,6 +51,8 @@ export abstract class NymbalFormElement extends NymbalElement {
   protected notice: string | null = null
   /** Keeps the submit disabled after a success, for a form whose page navigates away on it. */
   protected readonly lockOnSuccess: boolean = false
+  /** Whether `pending` is the lock a success left rather than a call in flight; only that lock gives way to a restore. */
+  private lockedAfterSuccess = false
 
   /** Reads the fields and makes the call; it must call the SDK before its first `await`. */
   protected abstract send(): Promise<void>
@@ -73,7 +78,26 @@ export abstract class NymbalFormElement extends NymbalElement {
 
   private settle(error: string | null): void {
     this.pending = error === null && this.lockOnSuccess
+    this.lockedAfterSuccess = this.pending
     this.error = error
+    this.requestUpdate()
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback()
+    window.addEventListener('pageshow', this.onPageShow)
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback()
+    window.removeEventListener('pageshow', this.onPageShow)
+  }
+
+  /** Back to a page the browser kept in its back/forward cache: the success that locked the form left that page. */
+  private readonly onPageShow = (event: Event): void => {
+    if ((event as PageTransitionEvent).persisted !== true || !this.lockedAfterSuccess) return
+    this.pending = false
+    this.lockedAfterSuccess = false
     this.requestUpdate()
   }
 
@@ -86,8 +110,6 @@ export abstract class NymbalFormElement extends NymbalElement {
   }
 
   protected renderError(): TemplateResult | typeof nothing {
-    return this.error === null
-      ? nothing
-      : html`<div part="error" role="alert">${this.error}</div>`
+    return this.error === null ? nothing : html`<div part="error" role="alert">${this.error}</div>`
   }
 }

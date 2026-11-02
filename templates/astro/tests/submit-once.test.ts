@@ -114,3 +114,82 @@ describe('AC-1: submitOnce runs one handler call at a time and unlocks unless th
     )
   })
 })
+
+// AC-3: a page the browser restores from its back/forward cache (Back after an alert's Confirm or Stop left it) is
+// usable again. A `pageshow` whose `persisted` is true releases the lock a handler's 'leaving' left, and only that
+// lock: the guard of a handler still in flight stands, and a button submitOnce did not lock is not touched. A first
+// load's `pageshow` changes nothing.
+
+/** What the browser raises on `window` when it shows a page: `persisted` is true for one restored from its cache. */
+function pageshow(persisted: boolean): void {
+  window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }))
+}
+
+describe('AC-3: submitOnce releases a leaving lock when the browser restores the page, and nothing else', () => {
+  it('AC-3: property: after a leaving resolve, a restore enables the button and the next submit runs the handler once whatever arrives while it is in flight; a first load’s pageshow keeps the lock; a restore during a call changes nothing', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(extraArb, { minLength: 1, maxLength: 5 }),
+        extraArb,
+        fc.array(extraArb, { minLength: 1, maxLength: 5 }),
+        async (whileFirstInFlight, next, whileNextInFlight) => {
+          const { form, button } = mountForm()
+          // A second form on the page whose button the page itself disabled; submitOnce never locked it.
+          form.insertAdjacentHTML(
+            'afterend',
+            '<form id="untouched-form"><button type="submit" disabled>Send</button></form>',
+          )
+          const untouched = document.getElementById('untouched-form') as HTMLFormElement
+          const untouchedButton = untouched.querySelector('button') as HTMLButtonElement
+          submitOnce(untouched, () => undefined)
+
+          const answers: Deferred[] = []
+          submitOnce(form, () => {
+            const answer = deferred()
+            answers.push(answer)
+            return answer.promise
+          })
+
+          // A restore while the first call is in flight: its guard stands.
+          button.click()
+          await drainMicrotasks()
+          pageshow(true)
+          expect(button.disabled, 'disabled while the first call is in flight').toBe(true)
+          for (const kind of whileFirstInFlight) fire(kind, form, button)
+          await drainMicrotasks()
+          expect(answers, 'handler runs while the first is in flight').toHaveLength(1)
+
+          // The handler leaves: the form stays locked.
+          answers[0]!.resolve('leaving')
+          await drainMicrotasks()
+          expect(button.disabled).toBe(true)
+
+          // A first load's pageshow keeps the lock.
+          pageshow(false)
+          form.requestSubmit()
+          await drainMicrotasks()
+          expect(button.disabled, 'locked after a pageshow that is no restore').toBe(true)
+          expect(answers, 'handler runs while locked').toHaveLength(1)
+
+          // Back restores the page: the next submit runs the handler once, however many follow while it runs.
+          pageshow(true)
+          expect(button.disabled, 'enabled once the page is restored').toBe(false)
+          expect(untouchedButton.disabled, 'a button submitOnce did not lock').toBe(true)
+          fire(next, form, button)
+          for (const kind of whileNextInFlight) fire(kind, form, button)
+          await drainMicrotasks()
+          pageshow(true)
+          for (const kind of whileNextInFlight) fire(kind, form, button)
+          await drainMicrotasks()
+          expect(answers, 'handler runs after the restore').toHaveLength(2)
+          expect(button.disabled, 'disabled while the next call is in flight').toBe(true)
+
+          answers[1]!.resolve(undefined)
+          await drainMicrotasks()
+          expect(button.disabled, 'released by a resolve without leaving').toBe(false)
+        },
+      ),
+      { numRuns: 60 },
+    )
+  })
+})

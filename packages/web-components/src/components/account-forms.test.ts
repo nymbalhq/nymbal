@@ -398,3 +398,94 @@ describe('nymbal-register-form asks for the password twice', () => {
     )
   })
 })
+
+// AC-2: a sign-in or register page the browser restores from its back/forward cache (Back after the redirect) is
+// usable again: the lock a success left gives way to a `pageshow` whose `persisted` is true, and only that lock; the
+// guard of a call still in flight stands. A first load's `pageshow` changes nothing.
+
+/** What the browser raises on `window` when it shows a page: `persisted` is true for one restored from its cache. */
+function pageshow(persisted: boolean): void {
+  window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted }))
+}
+
+/** The SDK method each locking form calls. */
+const LOCKING_METHOD: Record<string, string> = {
+  'nymbal-login-form': 'login',
+  'nymbal-register-form': 'register',
+}
+
+describe('a form that locked on success works again when the browser restores its page', () => {
+  for (const form of CASES.filter((c) => c.locksOnSuccess === true)) {
+    it(`AC-2: property: ${form.tag}: a restore re-enables ${form.submitTestId} with its idle label and k = 1-5 submits then make one call with the form’s fields; a first load’s pageshow leaves it locked; a restore while the first call is in flight leaves it disabled and still one call`, async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          form.fields,
+          fc.integer({ min: 1, max: 5 }),
+          fc.integer({ min: 1, max: 5 }),
+          async (fields, k, inFlightSubmits) => {
+            document.body.innerHTML = ''
+            const client = setupMockClient()
+            const calls: unknown[][] = []
+            const answers: Deferred[] = []
+            auth(client)[LOCKING_METHOD[form.tag]!] = async (...args: unknown[]) => {
+              calls.push(args)
+              const answer = deferred()
+              answers.push(answer)
+              await answer.promise
+              auth(client).setState({ customer: CUSTOMER, isAuthenticated: true })
+            }
+
+            const el = document.createElement(form.tag)
+            document.body.appendChild(el)
+            await flush(el)
+            for (const [id, value] of Object.entries(fields)) type(el, id, value)
+            await flush(el)
+            const submit = () => deepByTestId<HTMLButtonElement>(el, form.submitTestId)
+            const idleLabel = submit().textContent?.trim()
+            const formEl = submit().closest('form')!
+
+            // A restore while the first call is in flight: its guard stands.
+            submit().click()
+            await flush(el)
+            pageshow(true)
+            await flush(el)
+            expect(submit().disabled, 'disabled while the first call is in flight').toBe(true)
+            for (let i = 0; i < inFlightSubmits; i += 1) formEl.requestSubmit()
+            await flush(el)
+            expect(calls, `${inFlightSubmits} submits while in flight`).toHaveLength(1)
+
+            // The call succeeds: the page leaves, so the form locks.
+            answers[0]!.resolve()
+            await flush(el)
+            expect(submit().disabled, 'locked after a success').toBe(true)
+
+            // A first load's pageshow keeps the lock.
+            pageshow(false)
+            await flush(el)
+            formEl.requestSubmit()
+            await flush(el)
+            expect(submit().disabled, 'still locked after a pageshow that is no restore').toBe(true)
+            expect(calls, 'no call while locked').toHaveLength(1)
+
+            // Back restores the page: the lock is gone and the next k submits make one call.
+            pageshow(true)
+            await flush(el)
+            expect(submit().disabled, 'enabled once the page is restored').toBe(false)
+            expect(submit().textContent?.trim()).toBe(idleLabel)
+            // Rapid: the click, then k - 1 submits in the same task, before any render.
+            submit().click()
+            for (let i = 1; i < k; i += 1) formEl.requestSubmit()
+            await flush(el)
+            expect(calls, `${k} submits after the restore`).toHaveLength(2)
+            expect(calls[1]).toEqual(form.args(fields))
+            expect(calls[1]).toEqual(calls[0])
+            expect(submit().disabled, 'disabled while the second call is in flight').toBe(true)
+            answers[1]!.resolve()
+            await flush(el)
+          },
+        ),
+        { numRuns: 10 },
+      )
+    }, 30_000)
+  }
+})
