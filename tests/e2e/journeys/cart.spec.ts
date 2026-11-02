@@ -1,7 +1,8 @@
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 import { adminToken, ownProduct } from '../support/checkout'
 import { API_URL } from '../support/csrf'
-import { expect, test } from '../support/fixtures'
+import { blockExternalRequests, expect, test } from '../support/fixtures'
+import { noScript } from '../support/server-rendered'
 
 interface ApiCart {
   data: { items: Array<{ variantId: string; productName: string; qty: number }> }
@@ -157,5 +158,76 @@ test.describe('Cart page element', () => {
     )
     expect(summary, 'cart-summary inside nymbal-cart-page').not.toBeNull()
     expect(summary).toContain(subtotal)
+  })
+})
+
+const CART_COOKIE = 'nymbal.cart'
+
+async function holdsCartCookie(context: BrowserContext): Promise<boolean> {
+  return (await context.cookies()).some((cookie) => cookie.name === CART_COOKIE)
+}
+
+/**
+ * What a shopper with an empty cart sees on /cart: "Your cart is empty", one visible Continue Shopping going to
+ * /products, and no "Loading your cart..." left on the page.
+ */
+async function expectEmptyCartShown(page: Page, how: string): Promise<void> {
+  await expect(page.getByText('Your cart is empty').filter({ visible: true }), how).toHaveCount(1, {
+    timeout: 10_000,
+  })
+  await expect(
+    page.getByTestId('continue-shopping').filter({ visible: true }),
+    `${how}: Continue Shopping`,
+  ).toHaveAttribute('href', '/products')
+  await expect(page.getByText('Loading your cart'), `${how}: the loading shell`).toBeHidden()
+}
+
+test.describe('Cart page without a cart cookie', () => {
+  test('AC-6: a browser with no nymbal.cart cookie sees the empty cart on /cart with JavaScript off, and with it on once its own cart read answers, and GET /api/cart from that browser has no lines', async ({
+    browser,
+  }, testInfo) => {
+    test.setTimeout(60_000)
+    const off = await noScript(browser, testInfo)
+    try {
+      expect(await holdsCartCookie(off), 'the JS-off context starts with no cart cookie').toBe(
+        false,
+      )
+      const page = await off.newPage()
+      await blockExternalRequests(page)
+      const res = await page.goto('/cart')
+      expect(res?.status(), 'GET /cart').toBe(200)
+      await expectEmptyCartShown(page, 'JavaScript off')
+    } finally {
+      await off.close()
+    }
+
+    const baseURL = testInfo.project.use.baseURL
+    const on = await browser.newContext(baseURL === undefined ? {} : { baseURL })
+    try {
+      expect(await holdsCartCookie(on), 'the JS-on context starts with no cart cookie').toBe(false)
+      const page = await on.newPage()
+      await blockExternalRequests(page)
+      const read = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'GET' &&
+          r.url().startsWith(API_URL) &&
+          new URL(r.url()).pathname === '/api/cart',
+        { timeout: 15_000 },
+      )
+      await page.goto('/cart')
+      expect((await read).status(), "the browser's own GET /api/cart").toBe(200)
+      await expectEmptyCartShown(page, 'JavaScript on')
+
+      const res = await on.request.get(`${API_URL}/api/cart`)
+      expect(res.status(), 'GET /api/cart from the same browser').toBe(200)
+      const cart = ((await res.json()) as ApiCartLines).data
+      await expect(
+        page.locator('[data-testid^="cart-item-"]'),
+        'the page shows the lines GET /api/cart holds',
+      ).toHaveCount(cart.items.length)
+      expect(cart.items, 'lines in the cart the page showed as empty').toEqual([])
+    } finally {
+      await on.close()
+    }
   })
 })
