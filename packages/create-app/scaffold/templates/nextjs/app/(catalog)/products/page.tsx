@@ -10,20 +10,22 @@ export const metadata: Metadata = {
   description: 'Browse our full collection of products.',
 }
 
-// The page reads `?sort=`, so it renders per request; said here, the build does not render it with the API down. Its
-// catalog reads still go through Next's data cache.
+// The page reads `?sort=` and `?category=`, so it renders per request; said here, the build does not render it with
+// the API down. Its catalog reads still go through Next's data cache.
 export const dynamic = 'force-dynamic'
 
 interface ProductsPageProps {
-  searchParams: Promise<{ sort?: string | string[] }>
+  searchParams: Promise<{ sort?: string | string[]; category?: string | string[] }>
 }
 
 const CRUMBS = [{ label: 'Home', href: '/' }, { label: 'Products' }]
 
 export default async function ProductsPage({ searchParams }: ProductsPageProps) {
   const capabilities = await fetchCapabilities()
-  const sort = sortFromSearchParams(await searchParams, capabilities?.catalog)
-  const { items, nextCursor, facets } = await fetchProducts({ limit: 24, sort })
+  const params = await searchParams
+  const sort = sortFromSearchParams(params, capabilities?.catalog)
+  const category = (Array.isArray(params.category) ? params.category[0] : params.category) || undefined
+  const { items, nextCursor, facets } = await fetchProducts({ limit: 24, category, sort })
   const cards = items.map(cardProductOf)
   // The first card's image is the page's LCP, and the preload scanner never reaches it inside the grid's shadow root:
   // a preload link, which React hoists into the head, starts it.
@@ -46,6 +48,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
       <h1 className={styles.pageTitle}>All Products</h1>
       <ListingControls
         sort={sort}
+        category={category}
         facets={facets ?? []}
         sortKeys={capabilities?.catalog.sortKeys ?? []}
         defaultSort={capabilities?.catalog.defaultSort}

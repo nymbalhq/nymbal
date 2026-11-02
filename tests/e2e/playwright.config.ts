@@ -273,7 +273,8 @@ export default defineConfig({
   projects: [
     {
       name: 'astro',
-      testIgnore: ['**/journeys/admin/**'],
+      // The Next dev server with its API stopped is a journey of the Next template's alone.
+      testIgnore: ['**/journeys/admin/**', '**/journeys/next-dev-api-down.spec.ts'],
       grepInvert: /@nosearch|@override|@mail-outage|@phone-width/,
       use: {
         ...devices['Desktop Chrome'],

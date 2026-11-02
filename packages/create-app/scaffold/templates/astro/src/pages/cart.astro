@@ -1,20 +1,31 @@
 ---
 import NymbalElement from '@nymbalhq/web-components/astro'
 import BaseLayout from '../layouts/BaseLayout.astro'
-import { fetchCart } from '../lib/api'
+import { cartPageCart, hasCartCookie } from '../lib/api'
 
 // The shopper's own cart: no shared cache may keep it for the next visitor.
 Astro.response.headers.set('Cache-Control', 'no-store')
 
-const cart = await fetchCart(Astro.request.headers.get('cookie'))
+const cookie = Astro.request.headers.get('cookie')
+const cart = await cartPageCart(cookie)
+// Without the cookie this server cannot tell an empty cart from one the browser holds for an API on another host, so
+// the empty cart is for a browser without JavaScript; with it, the element's own read decides.
+const noCookie = !hasCartCookie(cookie)
+const shown = noCookie ? null : cart
 ---
 
-<BaseLayout title="Your Cart | Nymbal" description="Review the items in your cart." cart={cart}>
+<BaseLayout title="Your Cart | Nymbal" description="Review the items in your cart." cart={shown}>
   <div class="container section" data-testid="cart-page">
     <NymbalElement
       tag="nymbal-cart-page"
-      attributes={cart === null ? {} : { cart: JSON.stringify(cart) }}
+      attributes={shown === null ? {} : { cart: JSON.stringify(shown) }}
     />
+    {noCookie && (
+      <noscript>
+        <style is:inline>nymbal-cart-page:not([cart]) { display: none; }</style>
+        <NymbalElement tag="nymbal-cart-page" attributes={{ cart: JSON.stringify(cart) }} />
+      </noscript>
+    )}
   </div>
 </BaseLayout>
 

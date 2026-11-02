@@ -5,10 +5,11 @@ import styles from '@/styles/pages/error.module.css'
 
 interface ErrorProps {
   error: Error & { digest?: string }
-  reset: () => void
+  /** Fetches the failed segment again and renders it; `reset` would render the failed payload again. */
+  retry: () => void
 }
 
-export default function ErrorPage({ error: _error, reset }: ErrorProps) {
+export default function ErrorPage({ error: _error, retry }: ErrorProps) {
   return (
     <main id="main" className={styles.page}>
       <div className={styles.wrapper}>
@@ -35,7 +36,12 @@ export default function ErrorPage({ error: _error, reset }: ErrorProps) {
           <Link href="/" className={styles.homeLink}>
             Go Home
           </Link>
-          <button type="button" className={styles.retryButton} onClick={reset}>
+          <button
+            type="button"
+            className={styles.retryButton}
+            onClick={() => retry()}
+            data-testid="error-retry"
+          >
             Try Again
           </button>
         </div>

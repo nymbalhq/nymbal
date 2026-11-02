@@ -247,6 +247,20 @@ export async function fetchCart(cookie: string | null): Promise<CartProjection |
   }
 }
 
+/** Whether a request's Cookie header carries the shopper's `nymbal.cart` cookie. */
+export function hasCartCookie(cookie: string | null): boolean {
+  return cartToken(cookie) !== null
+}
+
+/**
+ * The cart the cart page renders from: the empty cart without a `nymbal.cart` cookie, since the cart lives behind it,
+ * else `fetchCart`'s answer, where null (a failed read) is an unknown cart and never shown as empty.
+ */
+export async function cartPageCart(cookie: string | null): Promise<CartProjection | null> {
+  if (!hasCartCookie(cookie)) return { items: [], subtotalMinor: 0, currency: '', itemCount: 0 }
+  return fetchCart(cookie)
+}
+
 /** The search the search page shows for `q` (and its category), as the search store would hold it. */
 export async function fetchSearch(
   q: string,
