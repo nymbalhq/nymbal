@@ -12,8 +12,9 @@ const UPDATE_POSTGRES =
   'UPDATE order_access_keys SET expires_at = $1 WHERE order_id = (SELECT id FROM orders WHERE order_number = $2)'
 
 /**
- * The store variables the native API was started with, as scripts/e2e-server.mjs recorded them: on a Postgres store
- * set its DATABASE_URL names a database of the run's own, which only the API's record knows.
+ * The store variables the run's API (the native store's, or the custom store's on its targets) was started with, as
+ * scripts/e2e-server.mjs recorded them: on a Postgres store set its DATABASE_URL names a database of the run's own,
+ * which only the API's record knows.
  */
 function apiStoreEnv(): Record<string, string> {
   const file = process.env.NYMBAL_E2E_STORE_ENV_FILE

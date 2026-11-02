@@ -10,6 +10,7 @@ import {
 } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
+import { lapseStoredToken } from '../support/lapsed-token'
 import { signIn } from '../support/sign-in'
 
 // AC-9 on both templates (the astro and nextjs projects run this file): a signed-in shopper reaches Place Order with an
@@ -19,7 +20,6 @@ import { signIn } from '../support/sign-in'
 // would be missing from their account), and keeps the cart.
 
 const PASSWORD = 'TestPassword123!'
-const TOKEN_KEY = 'nymbal.auth.accessToken'
 const REFRESH_COOKIE = 'nymbal.refresh'
 const SESSION_EXPIRED = 'Your session has expired. Sign in again to place your order.'
 const SIGN_IN = '/account/login?redirect=%2Fcheckout'
@@ -42,24 +42,6 @@ async function signedInAtPayment(page: Page, product: OwnProduct, email: string)
   })
   await openCheckout(page, product)
   await walkToPayment(page, email)
-}
-
-/** The stored access token, its expiry put an hour in the past: a token the API refuses as it refuses a lapsed one. */
-async function lapseStoredToken(page: Page): Promise<void> {
-  await page.evaluate((key) => {
-    const token = localStorage.getItem(key)
-    if (token === null) throw new Error('no access token is stored: is the shopper signed in?')
-    const [header, payload, signature] = token.split('.')
-    const claims = JSON.parse(atob(payload!.replace(/-/g, '+').replace(/_/g, '/'))) as {
-      exp: number
-    }
-    claims.exp = Math.floor(Date.now() / 1000) - 3600
-    const lapsed = btoa(JSON.stringify(claims))
-      .replace(/=+$/, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-    localStorage.setItem(key, `${header}.${lapsed}.${signature}`)
-  }, TOKEN_KEY)
 }
 
 /** The order numbers `GET /api/orders` lists for the customer, signed in afresh through the API. */

@@ -1,12 +1,14 @@
 'use client'
 
-import { useRef, useState, type FormEvent } from 'react'
+import { useActionState, useRef, useState, type FormEvent } from 'react'
 import { NymbalApiError } from '@nymbalhq/sdk'
 import type { ShopperOrder } from '@nymbalhq/types'
 import { getNymbalClient } from '@/lib/client'
 import styles from '@/styles/pages/error.module.css'
+import { orderPageAction } from './actions'
 import { OrderNotFound } from './OrderNotFound'
 import { OrderView } from './OrderView'
+import { OwnerRedirect } from './OwnerRedirect'
 
 type State =
   | { kind: 'idle' | 'sending' | 'limited' | 'failed' | 'not-found' }
@@ -15,7 +17,8 @@ type State =
 /**
  * The order's key has expired: the shopper gives the order's email to open it. The browser reads the order with the
  * email in a header, so it never lands in a page URL and each shopper's tries count against their own address, not
- * the storefront server's. One request per click: a second submit while one is out is ignored.
+ * the storefront server's. One request per click: a second submit while one is out is ignored. Without the script,
+ * this form and the not-found state's link form post to one action state, whose answer picks what the page shows.
  */
 export function OrderEmailPrompt({
   orderNumber,
@@ -25,6 +28,7 @@ export function OrderEmailPrompt({
   orderKey: string
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' })
+  const [served, formAction] = useActionState(orderPageAction, null)
   const inFlight = useRef(false)
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -47,10 +51,28 @@ export function OrderEmailPrompt({
   }
 
   if (state.kind === 'opened') return <OrderView order={state.order} />
-  if (state.kind === 'not-found') return <OrderNotFound />
+  if (served?.kind === 'opened') {
+    return (
+      <OrderView
+        order={served.order}
+        timelineHtml={served.timelineHtml}
+        summaryHtml={served.summaryHtml}
+      />
+    )
+  }
+  const notFound =
+    state.kind === 'not-found' ||
+    served?.kind === 'not-found' ||
+    served?.kind === 'link-sent' ||
+    served?.kind === 'link-limited'
+  if (notFound) return <OrderNotFound link={[served, formAction]} />
   return (
     <div className={styles.page}>
-      <form method="post" onSubmit={onSubmit} className={styles.wrapper}>
+      <OwnerRedirect />
+      <form action={formAction} onSubmit={onSubmit} className={styles.wrapper}>
+        <input type="hidden" name="intent" value="open" />
+        <input type="hidden" name="orderNumber" value={orderNumber} />
+        <input type="hidden" name="key" value={orderKey} />
         <h1 className={styles.title}>Open your order</h1>
         <p className={styles.message}>
           This order link has expired. Enter the email you gave at checkout to open the order.
@@ -66,7 +88,7 @@ export function OrderEmailPrompt({
             data-testid="order-email-input"
           />
         </div>
-        {state.kind === 'limited' && (
+        {(state.kind === 'limited' || served?.kind === 'open-limited') && (
           <p className={styles.message} data-testid="order-email-limited">
             Too many tries for now. Please try again in a while.
           </p>

@@ -32,11 +32,13 @@ const nextConfig = {
     }
   },
   // The order page's URL carries the order's key; no request from it, nor from its not-found render, may refer it on.
+  // `strict-origin` sends the origin alone: a form posted to the page's server action keeps its Origin, which Next
+  // checks, where `no-referrer` would send `Origin: null` and the action would be refused.
   async headers() {
     return [
       {
         source: '/order/:orderNumber',
-        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+        headers: [{ key: 'Referrer-Policy', value: 'strict-origin' }],
       },
     ]
   },

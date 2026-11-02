@@ -6,7 +6,12 @@ import type {
   ProductSearchResult,
   ReviewsListResult,
 } from '@nymbalhq/sdk'
-import { DEFAULT_PRODUCT_SORT, ORDER_KEY_HEADER, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
+import {
+  DEFAULT_PRODUCT_SORT,
+  ORDER_EMAIL_HEADER,
+  ORDER_KEY_HEADER,
+  PRODUCT_SORT_KEYS,
+} from '@nymbalhq/types'
 import type {
   AlertKind,
   Cart,
@@ -121,10 +126,9 @@ export async function fetchCategories(): Promise<Category[]> {
 
 /**
  * The order its key opens, `key` being the confirmation URL's `?key=`. `'expired'` when the API says the key has
- * expired, so the page can ask for the order's email, which the browser sends itself: a read from this server would
- * count every shopper's tries under the server's one address. Null on any other 404, which the API answers alike for
- * an unknown number and an order read without its key; rejects when the API fails, so the order page's failed read is
- * a 500 and never a not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
+ * expired, so the page can ask for the order's email. Null on any other 404, which the API answers alike for an
+ * unknown number and an order read without its key; rejects when the API fails, so the order page's failed read is a
+ * 500 and never a not-found page for an order the shopper has. The key goes in a header, never in the API's URL.
  */
 export async function loadOrder(
   orderNumber: string,
@@ -143,6 +147,62 @@ export async function loadOrder(
   const envelope = (await res.json()) as { data?: ShopperOrder | null }
   if (!envelope.data) throw new Error(`[api] GET ${url} answered no data`)
   return envelope.data
+}
+
+// The two calls below serve the order page's forms only when its script did not run. With the script, the browser
+// sends them itself, so each shopper's tries count against their own address and not, as here, against this server's.
+
+/**
+ * The order its expired key opens beside the order's email; `'not-found'` when the email does not open it (the API's
+ * unknown-number 404), `'limited'` on the API's 429; rejects on any other failure. The email goes in a header.
+ */
+export async function openExpiredOrder(
+  orderNumber: string,
+  key: string,
+  email: string,
+): Promise<ShopperOrder | 'not-found' | 'limited'> {
+  const url = `${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { [ORDER_KEY_HEADER]: key, [ORDER_EMAIL_HEADER]: email },
+  })
+  if (res.status === 404) return 'not-found'
+  if (res.status === 429) return 'limited'
+  if (!res.ok) throw new Error(`[api] GET ${url} answered ${res.status}`)
+  const envelope = (await res.json()) as { data?: ShopperOrder | null }
+  if (!envelope.data) throw new Error(`[api] GET ${url} answered no data`)
+  return envelope.data
+}
+
+const CSRF_COOKIE = 'nymbal.csrf'
+const CSRF_HEADER = 'x-csrf-token'
+
+/**
+ * Asks the API to mail the order's link to the order's email; `'sent'` whatever matched (the API answers alike),
+ * `'limited'` on its 429; rejects on any other failure. The route is CSRF-checked, so the token `GET /api/csrf` gives
+ * goes back as both its cookie and its header.
+ */
+export async function requestOrderLink(
+  orderNumber: string,
+  email: string,
+): Promise<'sent' | 'limited'> {
+  const issued = await fetch(`${API_URL}/api/csrf`, { cache: 'no-store' })
+  if (!issued.ok) throw new Error(`[api] GET /api/csrf answered ${issued.status}`)
+  const { token } = ((await issued.json()) as { data: { token: string } }).data
+  const res = await fetch(`${API_URL}/api/orders/link`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+      cookie: `${CSRF_COOKIE}=${token}`,
+      [CSRF_HEADER]: token,
+    },
+    body: JSON.stringify({ orderNumber, email }),
+    cache: 'no-store',
+  })
+  if (res.status === 202) return 'sent'
+  if (res.status === 429) return 'limited'
+  throw new Error(`[api] POST /api/orders/link answered ${res.status}`)
 }
 
 export async function fetchReviews(productId: string): Promise<ReviewsListResult> {

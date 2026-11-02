@@ -90,8 +90,9 @@ const overrideSqlitePath = (process.env.NYMBAL_E2E_OVERRIDE_SQLITE_PATH ??= join
   `nymbal-e2e-override-${Date.now()}-${process.pid}.db`,
 ))
 
-// Where scripts/e2e-server.mjs records the store variables it starts the native API with (the database and the key
-// prefix it makes for the run), so a journey reaches that same store (support/order-keys.ts).
+// Where scripts/e2e-server.mjs records the store variables it starts the run's API with (the database and the key
+// prefix it makes for the run), so a journey reaches that same store (support/order-keys.ts). The native and the
+// custom store's APIs both write it: an invocation starts one of the two, never both (servers() below).
 const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
   tmpdir(),
   `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
@@ -131,6 +132,7 @@ const customApiServer = {
     NYMBAL_SQLITE_PATH: customSqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroCustomURL, nextjsCustomURL),
     NYMBAL_E2E_SMTP_PORT: mailpitSmtpPort,
+    NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }

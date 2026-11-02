@@ -6,6 +6,7 @@ import {
   adminToken,
   keyedOrderPath,
   openCheckout,
+  ORDER_KEY_HEADER,
   orderKeyOf,
   orderNumberOf,
   ownProduct,
@@ -14,13 +15,17 @@ import {
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
 import { expireOrderKeys } from '../support/order-keys'
+import { noScript } from '../support/server-rendered'
 import { formReady } from '../support/sign-in'
+import { formatPrice } from '../support/variants'
 
 // An order's key stops opening it on its own (48 hours from checkout, 30 days from the email); keys are expired here by
 // backdating their rows (support/order-keys.ts), the store's own clock untouched. Past expiry the keyed page asks for
 // the order's email, which reaches the API only in a header, never in a page URL; the order page's not-found state
 // offers "send me my order link", which answers the same whatever matched and, on the Mailpit store, mails a fresh
 // link. A signed-in checkout lands on the account's order page with no key. Each new form submits once per click.
+// With JavaScript off both forms still work: the order page's own server answers their POST. With it on, they go from
+// the browser to the API, as before, so each shopper's tries count against their own address.
 
 const ORDER_EMAIL_HEADER = 'x-nymbal-order-email'
 const SHIPPING_LINE = '12 Checkout Row'
@@ -46,6 +51,14 @@ async function placeAsGuest(page: Page, request: APIRequestContext, buyer: strin
 
 /** A paid guest order placed through the store's API, as a shopper's earlier visit left it. */
 async function apiGuestOrder(request: APIRequestContext, buyer: string): Promise<string> {
+  return (await apiGuestPlaced(request, buyer)).orderNumber
+}
+
+/** A guest order placed through the store's API, with the key its checkout answered and its product's name. */
+async function apiGuestPlaced(
+  request: APIRequestContext,
+  buyer: string,
+): Promise<{ orderNumber: string; key: string; productName: string }> {
   const product = await ownProduct(request, await adminToken(request), 5)
   const added = await request.post(`${API_URL}/api/cart/items`, {
     headers: await csrf(request),
@@ -66,7 +79,30 @@ async function apiGuestOrder(request: APIRequestContext, buyer: string): Promise
     data: { email: buyer, billingAddress: address, shippingAddress: address },
   })
   expect(res.ok(), `POST /api/checkout: ${await res.text()}`).toBe(true)
-  return ((await res.json()) as { data: { orderNumber: string } }).data.orderNumber
+  const placed = ((await res.json()) as { data: { orderNumber: string; orderKey?: string } }).data
+  if (placed.orderKey === undefined) throw new Error(`${placed.orderNumber}: no orderKey answered`)
+  return { orderNumber: placed.orderNumber, key: placed.orderKey, productName: product.name }
+}
+
+interface ApiOrder {
+  orderNumber: string
+  totalMinor: number
+  currency: string
+  lineItems: Array<{ productName: string }>
+}
+
+/** The order as `GET /api/orders/:n` gives it to its expired key beside its email. */
+async function apiOrderByEmail(
+  request: APIRequestContext,
+  orderNumber: string,
+  key: string,
+  address: string,
+): Promise<ApiOrder> {
+  const res = await request.get(`${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`, {
+    headers: { [ORDER_KEY_HEADER]: key, [ORDER_EMAIL_HEADER]: address },
+  })
+  expect(res.status(), `GET /api/orders/${orderNumber} by email: ${await res.text()}`).toBe(200)
+  return ((await res.json()) as { data: ApiOrder }).data
 }
 
 /** Every URL the page's main frame has been at, from now on. */
@@ -380,5 +416,262 @@ test.describe('Order key lifetime', () => {
     } finally {
       await page.context().close()
     }
+  })
+})
+
+/** The not-found state's answer to a link request, and whether its form is gone. */
+async function linkAnswer(page: Page): Promise<string> {
+  const sent = page.getByTestId('order-link-sent')
+  await expect(sent, 'the link request is answered').toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('order-link-submit'), 'the link form, once answered').toBeHidden()
+  return (await sent.innerText()).trim()
+}
+
+test.describe('Order access with JavaScript off, and the browser path with it on', () => {
+  // Kills: the prompt's POST answered as the plain page, so the prompt comes back; a Next prompt with no server path;
+  // an order opened by the server with an empty summary (Next's wrappers fill it from server HTML only).
+  test('AC-1: with JavaScript off, the expired /order/<n>?key=<k> shows the email prompt; the order’s email in another case opens the order at the same path, with a line’s product name and the order’s total in nymbal-order-summary; no URL the page was at carries the email', async ({
+    request,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const buyer = email('nojs-open')
+    const placed = await apiGuestPlaced(request, buyer)
+    expect(
+      await expireOrderKeys(placed.orderNumber),
+      `${placed.orderNumber}: key rows expired`,
+    ).toBeGreaterThanOrEqual(1)
+    const order = await apiOrderByEmail(request, placed.orderNumber, placed.key, buyer)
+
+    const context = await noScript(browser, testInfo)
+    try {
+      const page = await context.newPage()
+      const urls = visited(page)
+      await page.goto(keyedOrderPath(placed.orderNumber, placed.key))
+      await expect(page.getByTestId('order-email-input'), 'the expired key’s prompt').toBeVisible({
+        timeout: 15_000,
+      })
+      await expect(page.getByTestId('order-number')).toHaveCount(0)
+
+      await submitEmail(page, buyer.toUpperCase())
+      await expect(page.getByTestId('order-number'), 'the order’s email, upper-cased').toHaveText(
+        placed.orderNumber,
+        { timeout: 15_000 },
+      )
+      expect(new URL(page.url()).pathname, 'the opened order’s path').toBe(
+        `/order/${encodeURIComponent(placed.orderNumber)}`,
+      )
+      const summary = page.locator('nymbal-order-summary').filter({ visible: true })
+      await expect(summary, 'a line’s product name').toContainText(order.lineItems[0]!.productName)
+      await expect(summary, 'the order’s total').toContainText(
+        formatPrice(order.totalMinor, order.currency),
+      )
+      expect(
+        carryingEmail([...urls, page.url()], buyer),
+        'URLs carrying the order’s email',
+      ).toEqual([])
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Kills: the not-found state left `hidden` on the expired page, or reachable only by a browser state, so a no-JS
+  // shopper with the wrong email has no way to a fresh link.
+  test('AC-2: with JavaScript off, another email on the expired page shows the not-found state with “send me my order link”, and none of the order’s email or shipping line', async ({
+    request,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const buyer = email('nojs-wrong')
+    const placed = await apiGuestPlaced(request, buyer)
+    await expireOrderKeys(placed.orderNumber)
+
+    const context = await noScript(browser, testInfo)
+    try {
+      const page = await context.newPage()
+      const urls = visited(page)
+      await page.goto(keyedOrderPath(placed.orderNumber, placed.key))
+      await expect(page.getByTestId('order-email-input')).toBeVisible({ timeout: 15_000 })
+      const other = email('nojs-other')
+      await submitEmail(page, other)
+
+      await linkFormShown(page)
+      await expect(page.getByTestId('order-email-input'), 'the prompt, once answered').toBeHidden()
+      await expect(page.getByTestId('order-number')).toHaveCount(0)
+      const html = await page.content()
+      const leaked = [buyer, SHIPPING_LINE].filter((secret) =>
+        html.toLowerCase().includes(secret.toLowerCase()),
+      )
+      expect(leaked, 'the order’s details in the not-found state').toEqual([])
+      expect(carryingEmail([...urls, page.url()], other), 'URLs carrying the typed email').toEqual(
+        [],
+      )
+    } finally {
+      await context.close()
+    }
+  })
+
+  // Kills: "send me my order link" with only a script handler, so with JavaScript off nothing is sent; an answer that
+  // differs by whether the email matched.
+  test('AC-3: with JavaScript off, “send me my order link” on /order/<n> answers order-link-sent alike for a wrong email and the order’s email; on the Mailpit store the order’s email alone brings one more confirmation, whose /order/<n>?key=<k> opens the order in a new browser @capabilities', async ({
+    request,
+    browser,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name.startsWith('nextjs'),
+      'Next answers notFound() with an empty error shell its script fills, so with JavaScript off the bare not-found page has no form',
+    )
+    test.setTimeout(150_000)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect((await storeCapabilities(request)).email.delivers, 'the store delivers mail').toBe(
+      delivering,
+    )
+    const buyer = email('nojs-link')
+    const orderNumber = await apiGuestOrder(request, buyer)
+    const mail = delivering ? await mailbox() : null
+    if (mail !== null) await mail.waitFor(buyer, 1)
+    const earlier = mail === null ? [] : await confirmationsTo(mail, buyer, orderNumber)
+
+    const context = await noScript(browser, testInfo)
+    const wrong = email('nojs-link-wrong')
+    try {
+      const page = await context.newPage()
+      const urls = visited(page)
+      const answers: string[] = []
+      for (const address of [wrong, buyer]) {
+        const res = await page.goto(`/order/${encodeURIComponent(orderNumber)}`)
+        expect(res?.status(), `/order/${orderNumber} with no key`).toBe(404)
+        await requestLink(page, orderNumber, address)
+        answers.push(await linkAnswer(page))
+      }
+      expect(answers[1], 'the answer to the order’s email, beside a wrong one’s').toBe(answers[0])
+      expect(
+        carryingEmail([...urls, page.url()], buyer),
+        'URLs carrying the order’s email',
+      ).toEqual([])
+    } finally {
+      await context.close()
+    }
+
+    if (mail !== null) {
+      await mail.waitFor(buyer, earlier.length + 1)
+      const confirmations = await confirmationsTo(mail, buyer, orderNumber)
+      expect(confirmations.length, 'confirmations after the two link requests').toBe(
+        earlier.length + 1,
+      )
+      expect((await mail.messages(wrong)).length, 'mail to the wrong email').toBe(0)
+      const fresh = confirmations.filter((m) => !earlier.some((e) => e.text === m.text))
+      const links = linksIn(fresh[0]!).filter(
+        (u) => u.pathname === `/order/${encodeURIComponent(orderNumber)}`,
+      )
+      expect(links.length, `order links in "${fresh[0]!.text}"`).toBe(1)
+      const elsewhere = await freshBrowser(browser, testInfo)
+      try {
+        await elsewhere.goto(links[0]!.pathname + links[0]!.search)
+        await expect(elsewhere.getByTestId('order-number')).toHaveText(orderNumber, {
+          timeout: 15_000,
+        })
+      } finally {
+        await elsewhere.context().close()
+      }
+    }
+  })
+
+  // Kills: the link POST landing on the expired URL and answered with its idle prompt (Next's page renders the prompt
+  // there while the link form's own state is lost; Astro's server re-reads the expired key).
+  test('AC-4: with JavaScript off, on the expired page another email shows the not-found state, then “send me my order link” with n and the order’s email answers order-link-sent at /order/<n>?key=<k>, not the prompt; on the Mailpit store one more confirmation reaches the order’s email @capabilities', async ({
+    request,
+    browser,
+  }, testInfo) => {
+    test.setTimeout(150_000)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect((await storeCapabilities(request)).email.delivers, 'the store delivers mail').toBe(
+      delivering,
+    )
+    const buyer = email('nojs-expired-link')
+    const placed = await apiGuestPlaced(request, buyer)
+    const mail = delivering ? await mailbox() : null
+    if (mail !== null) await mail.waitFor(buyer, 1)
+    const earlier =
+      mail === null ? 0 : (await confirmationsTo(mail, buyer, placed.orderNumber)).length
+    await expireOrderKeys(placed.orderNumber)
+
+    const context = await noScript(browser, testInfo)
+    try {
+      const page = await context.newPage()
+      const urls = visited(page)
+      await page.goto(keyedOrderPath(placed.orderNumber, placed.key))
+      await expect(page.getByTestId('order-email-input')).toBeVisible({ timeout: 15_000 })
+      await submitEmail(page, email('nojs-expired-other'))
+      await requestLink(page, placed.orderNumber, buyer)
+      await linkAnswer(page)
+
+      const at = new URL(page.url())
+      expect(
+        { path: at.pathname, key: at.searchParams.get('key') },
+        'where the link request is answered',
+      ).toEqual({ path: `/order/${encodeURIComponent(placed.orderNumber)}`, key: placed.key })
+      await expect(page.getByTestId('order-email-input'), 'the prompt, after the link').toBeHidden()
+      expect(
+        carryingEmail([...urls, page.url()], buyer),
+        'URLs carrying the order’s email',
+      ).toEqual([])
+    } finally {
+      await context.close()
+    }
+
+    if (mail !== null) {
+      await mail.waitFor(buyer, earlier + 1)
+      expect(
+        (await confirmationsTo(mail, buyer, placed.orderNumber)).length,
+        'confirmations after the link request',
+      ).toBe(earlier + 1)
+    }
+  })
+
+  // Kills: the script's path moved to the storefront's server, or the server path also run when the script handled
+  // the submit, so every shopper's tries count against the server's one address.
+  test('AC-5: with JavaScript on, the expired prompt’s submit reads the order from the browser with the typed email in x-nymbal-order-email, the link form’s submit is the browser’s POST /api/orders/link, and the page sends no POST to its own path', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    const buyer = email('js-path')
+    const placed = await apiGuestPlaced(request, buyer)
+    await expireOrderKeys(placed.orderNumber)
+    const orderPath = `/order/${encodeURIComponent(placed.orderNumber)}`
+    const requests: Request[] = []
+    page.on('request', (r) => requests.push(r))
+
+    await page.goto(keyedOrderPath(placed.orderNumber, placed.key))
+    await page.waitForLoadState('load')
+    await expect(page.getByTestId('order-email-input')).toBeVisible({ timeout: 15_000 })
+    const other = email('js-path-other')
+    await submitEmail(page, other)
+    await requestLink(page, placed.orderNumber, buyer)
+    await expect(page.getByTestId('order-link-sent')).toBeVisible({ timeout: 15_000 })
+    await page.waitForLoadState('networkidle')
+
+    const api = new URL(API_URL).origin
+    const sent = requests
+      .filter((r) => isSubmission(r, orderPath))
+      .map((r) => {
+        const url = new URL(r.url())
+        return {
+          method: r.method(),
+          origin: url.origin,
+          path: url.pathname,
+          email: r.headers()[ORDER_EMAIL_HEADER] ?? null,
+        }
+      })
+    expect(sent, 'the submissions the page sent').toEqual([
+      {
+        method: 'GET',
+        origin: api,
+        path: `/api/orders/${encodeURIComponent(placed.orderNumber)}`,
+        email: other,
+      },
+      { method: 'POST', origin: api, path: '/api/orders/link', email: null },
+    ])
   })
 })
