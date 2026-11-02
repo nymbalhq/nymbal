@@ -168,11 +168,15 @@ async function holdsCartCookie(context: BrowserContext): Promise<boolean> {
 }
 
 /**
- * What a shopper with an empty cart sees on /cart: "Your cart is empty", one visible Continue Shopping going to
- * /products, and no "Loading your cart..." left on the page.
+ * What a shopper with an empty cart sees on /cart: "Your cart is empty" in the cart page (the closed cart drawer, off
+ * screen, says it too), one visible Continue Shopping going to /products, and no "Loading your cart..." left on the
+ * page.
  */
 async function expectEmptyCartShown(page: Page, how: string): Promise<void> {
-  await expect(page.getByText('Your cart is empty').filter({ visible: true }), how).toHaveCount(1, {
+  await expect(
+    page.locator('nymbal-cart-page').getByText('Your cart is empty').filter({ visible: true }),
+    how,
+  ).toHaveCount(1, {
     timeout: 10_000,
   })
   await expect(
