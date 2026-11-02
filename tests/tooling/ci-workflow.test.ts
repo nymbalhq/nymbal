@@ -1,6 +1,6 @@
 // Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
 // Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
-// Reads: tests/perf/perf-budgets.test.ts
+// Reads: tests/perf/perf-budgets.test.ts, tests/sentinels/*.patch
 import { spawnSync } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, matchesGlob } from 'node:path'
@@ -15,6 +15,7 @@ import {
   resolveBase,
   stepModes,
 } from '../../scripts/gate'
+import { loadSentinels } from '../../scripts/sentinels'
 import { childEnv, cleanupScratch, git, REPO, scratchRepo } from './scratch-gate'
 import { leftOut } from './vitest-filters'
 
@@ -1765,6 +1766,90 @@ describe('dev CI asks for the sentinels and stryker steps it names, and the muta
       )
     }
   })
+})
+
+// A runner has no browser until a step installs one, so every step that drives one (a `playwright test` call, a
+// gate.ts e2e step, or a sentinel whose suite is a Playwright journey) follows Chromium's install in its job, on a
+// browser-cache miss (the browser and its system libraries) and on a hit (the libraries; the browser is restored).
+const PLAYWRIGHT_SUITE = /\bplaywright\s+test\b/
+const INSTALLS_BROWSER = /\bplaywright\s+install(?!-)[^\n;&|]*\bchromium\b/
+const INSTALLS_LIBS =
+  /\bplaywright\s+(?:install-deps|install\s[^\n;&|]*--with-deps)\b[^\n;&|]*\bchromium\b/
+const SENTINELS = loadSentinels(join(REPO, 'tests/sentinels'))
+
+/** The ids of the steps that cache the Playwright browsers, each reporting `hit` as its cache-hit output. */
+function browserCache(workflow: Workflow, hit: boolean): Ctx {
+  const ids = Object.values(workflow.jobs)
+    .flatMap((job) => job.steps ?? [])
+    .filter((s) => s.uses?.startsWith('actions/cache@') && /ms-playwright/.test(s.with?.path ?? ''))
+    .flatMap((s) => (s.id === undefined ? [] : [s.id]))
+  return Object.fromEntries(ids.map((id) => [id, { outputs: { 'cache-hit': String(hit) } }]))
+}
+
+/** Why a run script needs a browser, or undefined when it does not. */
+function drivesBrowser(run: Executed): string | undefined {
+  if (PLAYWRIGHT_SUITE.test(run.script)) return 'playwright test'
+  for (const m of run.script.matchAll(
+    /(?:scripts\/gate\.ts|\bpnpm\s+(?:run\s+)?gate:full)([^\n;&|]*)/g,
+  )) {
+    const args = words(m[1] ?? '').map((w) => expand(w, run, m.index))
+    const only = (flag(args, '--only') ?? '').split(',').map((n) => n.trim())
+    const e2e = only.find((n) => /^e2e\b/.test(n))
+    if (e2e !== undefined) return `gate.ts ${e2e}`
+    const { sentinels } = stepModes({ only, sentinels: flag(args, '--sentinels') })
+    const browsing = SENTINELS.filter(
+      (s) =>
+        (sentinels === 'all' || (Array.isArray(sentinels) && sentinels.includes(s.id))) &&
+        PLAYWRIGHT_SUITE.test(s.suite ?? ''),
+    )
+    if (browsing.length > 0) return `sentinels ${browsing.map((s) => s.id).join(',')}`
+  }
+  return undefined
+}
+
+describe('every job that drives a browser installs Chromium first, on a cache hit and a miss', () => {
+  const cases = [
+    ...CI_EVENTS.map((e) => ({ label: `ci.yml on ${e.label}`, file: WORKFLOW, github: e.github })),
+    ...NIGHTLY_EVENTS.map((e) => ({
+      label: `nightly.yml on ${e.label}`,
+      file: NIGHTLY,
+      github: e.github,
+    })),
+  ]
+
+  it('a sentinel runs a Playwright journey for its suite, and ci.yml’s sentinels job is held to this', () => {
+    expect(SENTINELS.filter((s) => PLAYWRIGHT_SUITE.test(s.suite ?? '')).length).toBeGreaterThan(0)
+    const jobs = execute(loadWorkflow(WORKFLOW), DEV_PUSH)
+      .filter((r) => drivesBrowser(r)?.startsWith('sentinels') === true)
+      .map((r) => r.job)
+    expect(jobs).toContain('sentinels')
+  })
+
+  it.each(cases.flatMap((c) => [true, false].map((hit) => ({ ...c, hit }))))(
+    '$label, browser cache hit: $hit',
+    ({ file, github, hit }) => {
+      const workflow = loadWorkflow(file)
+      const groups = new Map<string, Executed[]>()
+      for (const run of execute(workflow, github, { steps: browserCache(workflow, hit) })) {
+        const key = `${run.job} ${JSON.stringify(run.matrix)}`
+        groups.set(key, [...(groups.get(key) ?? []), run])
+      }
+      const missing: string[] = []
+      for (const [key, group] of groups) {
+        const at = group.findIndex((r) => drivesBrowser(r) !== undefined)
+        if (at === -1) continue
+        const before = group.slice(0, at).map((r) => r.script)
+        const why = drivesBrowser(group[at]!)!
+        if (!before.some((s) => INSTALLS_LIBS.test(s))) {
+          missing.push(`${key}: ${why} without Chromium's system libraries`)
+        }
+        if (!hit && !before.some((s) => INSTALLS_BROWSER.test(s))) {
+          missing.push(`${key}: ${why} without Chromium`)
+        }
+      }
+      expect(missing).toEqual([])
+    },
+  )
 })
 
 // Each nightly mutation run is held to its own ratchet. The check step's `run`, as the simulated event executes it,
