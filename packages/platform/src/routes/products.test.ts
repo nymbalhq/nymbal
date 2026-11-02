@@ -109,3 +109,83 @@ describe('GET /api/products/:id/reviews', () => {
     expect(body.data.items).toHaveLength(0)
   })
 })
+
+describe('GET /api/products/search: the category facet', () => {
+  it('AC-10: resolves the facet’s category ids with one categoriesById call and never pages categories: with 1, 3 and 10 pages of categories and an id with no category, the facet is the known ones in the adapter’s order with its counts, and categories is queried 0 times', async () => {
+    const PAGE = 500
+    for (const pages of [1, 3, 10]) {
+      const documentStore = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
+      const count = PAGE * (pages - 1) + 1 + Math.floor(PAGE / 2)
+      const categories = Array.from({ length: count }, (_, i) => ({
+        id: `cat-id-${i}`,
+        slug: `cat-${i}`,
+        name: `Category ${i}`,
+        storeId: 'test',
+        position: i,
+      }))
+      for (const c of categories) await documentStore.put('categories', c.slug, c)
+      await documentStore.put('products', 'lamp', { id: 'p-lamp', slug: 'lamp', name: 'Lamp' })
+
+      let categoryQueries = 0
+      const query = documentStore.query.bind(documentStore)
+      documentStore.query = (async (collection: string, params: Parameters<typeof query>[1]) => {
+        if (collection === 'categories') categoryQueries += 1
+        return query(collection, params)
+      }) as typeof documentStore.query
+
+      const last = categories[categories.length - 1]!
+      const first = categories[0]!
+      const middle = categories[Math.floor(categories.length / 2)]!
+      const counts = [
+        { value: last.id, count: 5 },
+        { value: 'deleted-category', count: 4 },
+        { value: first.id, count: 3 },
+        { value: middle.id, count: 1 },
+      ]
+      const byId = new Map(categories.map((c) => [c.id, { id: c.id, slug: c.slug, name: c.name }]))
+      const lookups: string[][] = []
+      const categoriesById = async (ids: readonly string[]) => {
+        lookups.push([...ids])
+        return new Map(ids.flatMap((id) => (byId.has(id) ? [[id, byId.get(id)!] as const] : [])))
+      }
+
+      const { adapter, invoke } = makeAdapter()
+      registerProductRoutes(
+        adapter,
+        documentStore,
+        'test',
+        undefined,
+        {
+          products: async () => ({
+            items: [{ id: 'p-lamp', type: 'product', fields: { slug: 'lamp' } }],
+            total: 13,
+            nextCursor: null,
+          }),
+        },
+        () => true,
+        async (field) => ({ field, label: field, values: counts }),
+        categoriesById,
+      )
+
+      const resp = await invoke('GET', '/api/products/search', { q: 'lamp' })
+      expect(resp.status, `${pages} pages`).toBe(200)
+      const facets = (resp.body as { data: { facets: unknown[] } }).data.facets
+      expect(facets, `${pages} pages: the facet`).toEqual([
+        {
+          field: 'category',
+          label: 'Category',
+          values: [last, first, middle].map((c) => ({
+            value: c.slug,
+            label: c.name,
+            count: counts.find((v) => v.value === c.id)!.count,
+          })),
+        },
+      ])
+      expect(categoryQueries, `${pages} pages: queries of categories`).toBe(0)
+      expect(lookups.length, `${pages} pages: categoriesById calls`).toBe(1)
+      expect([...lookups[0]!].sort(), `${pages} pages: the ids looked up`).toEqual(
+        counts.map((v) => v.value).sort(),
+      )
+    }
+  })
+})

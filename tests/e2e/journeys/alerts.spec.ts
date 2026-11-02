@@ -104,18 +104,16 @@ const ADMIN_BASE = `${API_URL}/admin/`
 const pounds = (minor: number): string => `£${(minor / 100).toFixed(2)}`
 
 /**
- * Opens the product in the admin's product page, sets the variant's price on the Variants tab (pressing Add Variant
- * first when asked) and saves; answers the save's PATCH status and echoed correlation id.
+ * Opens the product in the admin's product page, sets the variant's price on the Variants tab and saves; answers the
+ * save's PATCH status and echoed correlation id.
  */
 async function saveAdminPrice(
   admin: Page,
   product: OwnProduct,
   priceMinor: number,
-  opts: { addRow?: boolean } = {},
 ): Promise<{ status: number; correlationId: string }> {
   await admin.goto(new URL(`products/${product.slug}`, ADMIN_BASE).href)
   await admin.getByTestId('admin-product-tab-variants').click()
-  if (opts.addRow === true) await admin.getByRole('button', { name: /Add Variant/ }).click()
   await admin
     .getByTestId(`admin-product-variant-price-${product.variantId}`)
     .fill((priceMinor / 100).toFixed(2))
@@ -345,7 +343,7 @@ test.describe('back-in-stock alerts', () => {
 })
 
 test.describe('price-drop alerts', () => {
-  test('AC-6: on the Mailpit store, a price lowered in the admin’s product page (after Add Variant) saves, is served and logged with both prices, and mails each confirmed price-drop subscriber once naming both prices; the confirmation and confirm page name the price drop, never back in stock; an unsubscribed address, a rise and a return to the last alerted price mail nothing @capabilities', async ({
+  test('AC-6: on the Mailpit store, a price lowered in the admin’s product page saves, is served and logged with both prices, and mails each confirmed price-drop subscriber once naming both prices; the confirmation and confirm page name the price drop, never back in stock; an unsubscribed address, a rise and a return to the last alerted price mail nothing @capabilities', async ({
     page,
     request,
   }, testInfo) => {
@@ -387,11 +385,11 @@ test.describe('price-drop alerts', () => {
     // B, the control, through the API.
     await confirmedThroughApi(request, mail, origin, b, product, 'price_drop')
 
-    // The admin on the custom API: a row added, the existing variant's price lowered, saved.
+    // The admin on the custom API: the variant's price lowered, saved.
     const admin = await page.context().newPage()
     await signInAsAdmin(admin, ADMIN_BASE)
     const lower = start - 400
-    const first = await saveAdminPrice(admin, product, lower, { addRow: true })
+    const first = await saveAdminPrice(admin, product, lower)
     expect(first.status, 'the save’s PATCH').toBe(200)
 
     await mail.waitFor(a, 2)

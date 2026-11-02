@@ -11,6 +11,7 @@ import type { Repositories } from '../repositories/index.js'
 import type { EventPublisher } from '../events/publisher.js'
 import type { DeclaredSlot } from '../settings/load.js'
 import { runWithCorrelation } from '../events/correlation.js'
+import { categoriesOf } from '../read-models/sources.js'
 import type { CommandStore } from '../db/command-store.js'
 import { actorOf, runAsActor } from '../audit/actor.js'
 import {
@@ -169,6 +170,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     services.search,
     () => adapters.search.capabilities().includes('facet'),
     (field, params) => adapters.search.facet(field, params),
+    (ids) => repos.category.store.read((tx) => categoriesOf(tx, repos, ids)),
   )
   registerCartRoutes(adapter, {
     cart: services.cart,

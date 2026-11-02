@@ -86,10 +86,12 @@ export function ProductEditPage() {
       const created = await createProduct.mutateAsync({ product: form, idempotencyKey })
       navigate(`/products/${created.slug}`)
     } else if (existingProduct) {
-      // Only the product's own variants: the server refuses an id it does not have, and rows the table added are not
-      // saved by this form.
+      // The update keeps each own variant's prices and nothing else of it.
       const own = new Set(existingProduct.variants.map((v) => v.id))
-      const data = { ...form, variants: (form.variants ?? []).filter((v) => own.has(v.id)) }
+      const variants = (form.variants ?? [])
+        .filter((v) => own.has(v.id))
+        .map(({ id, priceMinor, compareAtPriceMinor }) => ({ id, priceMinor, compareAtPriceMinor }))
+      const data = { ...form, variants }
       await updateProduct.mutateAsync({ id: existingProduct.id, data, idempotencyKey })
       setIsDirty(false)
     }
@@ -259,6 +261,7 @@ export function ProductEditPage() {
                   variants={form.variants ?? []}
                   onChange={(v: Variant[]) => update('variants', v)}
                   currency={currency}
+                  existing={!isNew}
                 />
               </div>
             </TabsContent>

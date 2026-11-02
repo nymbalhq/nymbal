@@ -11,7 +11,7 @@ import {
   type SearchAdapter,
 } from '@nymbalhq/types'
 import type { Repositories } from '../../repositories/index.js'
-import { buildSearchDoc } from '../../read-models/builders.js'
+import { buildSearchDoc, listedSnapshot } from '../../read-models/builders.js'
 import { productSnapshot } from '../../read-models/sources.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
@@ -26,8 +26,9 @@ export interface RegisterSearchHandlerDeps extends SearchHandlerDeps {
 }
 
 /**
- * The search index, from the product's rows at handle time. Derived state: indexing and removing by id is idempotent,
- * so no processed-event record is kept, and a rebuild refills it.
+ * The search index, from the product's rows at handle time: a product the storefront does not serve is removed.
+ * Derived state: indexing and removing by id is idempotent, so no processed-event record is kept, and a rebuild
+ * refills it.
  */
 export function searchHandler(deps: SearchHandlerDeps): DerivedHandler[] {
   const { search, repos, logger } = deps
@@ -48,11 +49,11 @@ export function searchHandler(deps: SearchHandlerDeps): DerivedHandler[] {
   ) => {
     if (skips(event)) return
     const { id } = event.payload.product
-    const snapshot = await repos.product.store.read(async (tx) => {
+    const listed = await repos.product.store.read(async (tx) => {
       const product = await repos.product.findById(tx, id)
-      return product ? productSnapshot(tx, repos, product) : null
+      return product ? listedSnapshot(await productSnapshot(tx, repos, product)) : null
     })
-    if (snapshot) await search.index([buildSearchDoc(snapshot)])
+    if (listed) await search.index([buildSearchDoc(listed)])
     else await search.remove([id])
   }
 

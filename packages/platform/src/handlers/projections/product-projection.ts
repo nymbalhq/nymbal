@@ -19,6 +19,7 @@ import {
 import type { Repositories } from '../../repositories/index.js'
 import {
   buildProductDoc,
+  listedSnapshot,
   productByCategoryKey,
   productWrites,
   PRODUCTS,
@@ -43,7 +44,10 @@ export interface RegisterProductProjectionDeps extends ProductProjectionDeps {
 }
 
 export interface ProductReprojector {
-  /** Rebuilds the product's documents from its rows as they are now; a product that is gone is left to its delete. */
+  /**
+   * Rebuilds the product's documents from its rows as they are now, or removes them when it is not listed; a product
+   * that is gone is left to its delete.
+   */
   reproject(productId: string): Promise<void>
   /** Removes the product's documents, by slug. */
   remove(slug: string): Promise<void>
@@ -62,11 +66,21 @@ export function productReprojector(deps: ProductProjectionDeps): ProductReprojec
     return (existing?.categories ?? []).map((c) => productByCategoryKey(c.slug, slug))
   }
 
+  async function remove(slug: string): Promise<void> {
+    for (const key of await filedUnder(slug)) {
+      await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
+    }
+    await documentStore.delete(PRODUCTS, slug)
+    logger.debug({ slug }, 'product projection deleted')
+  }
+
   return {
     async reproject(productId) {
       const loaded = await repos.product.store.read((tx) => loadProduct(tx, repos, productId))
       if (!loaded) return
-      const doc = buildProductDoc(loaded.snapshot, loaded.categories, { storeId, currency, logger })
+      const listed = listedSnapshot(loaded.snapshot)
+      if (!listed) return remove(loaded.snapshot.slug)
+      const doc = buildProductDoc(listed, loaded.categories, { storeId, currency, logger })
       const writes = productWrites(doc)
       const kept = new Set(writes.map((w) => w.key))
       const stale = (await filedUnder(doc.slug)).filter((key) => !kept.has(key))
@@ -74,13 +88,7 @@ export function productReprojector(deps: ProductProjectionDeps): ProductReprojec
       for (const key of stale) await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
       logger.debug({ slug: doc.slug }, 'product projected')
     },
-    async remove(slug) {
-      for (const key of await filedUnder(slug)) {
-        await documentStore.delete(PRODUCTS_BY_CATEGORY, key)
-      }
-      await documentStore.delete(PRODUCTS, slug)
-      logger.debug({ slug }, 'product projection deleted')
-    },
+    remove,
   }
 }
 

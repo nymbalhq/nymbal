@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,11 @@ interface VariantTableProps {
   variants: Variant[]
   onChange: (variants: Variant[]) => void
   currency: string
+  /**
+   * An existing product's save keeps only price: SKU, name, stock and status read as text (stock links to the variant
+   * in Inventory), and rows are neither added nor removed.
+   */
+  existing?: boolean
 }
 
 function createEmptyVariant(productId: string): Variant {
@@ -42,7 +48,13 @@ interface EditableVariant extends Variant {
   _priceDisplay: string
 }
 
-export function VariantTable({ productId, variants, onChange, currency }: VariantTableProps) {
+export function VariantTable({
+  productId,
+  variants,
+  onChange,
+  currency,
+  existing = false,
+}: VariantTableProps) {
   const [editing, setEditing] = useState<EditableVariant[]>(
     variants.map((v) => ({
       ...v,
@@ -110,7 +122,7 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
             {editing.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-3 py-6 text-center text-sm text-zinc-400">
-                  No variants yet. Add one below.
+                  {existing ? 'No variants.' : 'No variants yet. Add one below.'}
                 </td>
               </tr>
             )}
@@ -121,20 +133,28 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
                 data-testid={tid('product', 'variant-row', variant.id)}
               >
                 <td className="px-3 py-2">
-                  <Input
-                    value={variant.sku}
-                    onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
-                    placeholder="SKU-001"
-                    className="h-7 font-mono text-xs w-28"
-                  />
+                  {existing ? (
+                    <span className="font-mono text-xs">{variant.sku}</span>
+                  ) : (
+                    <Input
+                      value={variant.sku}
+                      onChange={(e) => updateVariant(variant.id, 'sku', e.target.value)}
+                      placeholder="SKU-001"
+                      className="h-7 font-mono text-xs w-28"
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
-                  <Input
-                    value={variant.name}
-                    onChange={(e) => updateVariant(variant.id, 'name', e.target.value)}
-                    placeholder="Variant name"
-                    className="h-7 text-xs"
-                  />
+                  {existing ? (
+                    <span className="text-xs">{variant.name}</span>
+                  ) : (
+                    <Input
+                      value={variant.name}
+                      onChange={(e) => updateVariant(variant.id, 'name', e.target.value)}
+                      placeholder="Variant name"
+                      className="h-7 text-xs"
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center justify-end gap-1">
@@ -154,38 +174,55 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <Input
-                    type="number"
-                    value={variant.stock}
-                    onChange={(e) =>
-                      updateVariant(variant.id, 'stock', parseInt(e.target.value) || 0)
-                    }
-                    className="h-7 w-16 text-right font-mono text-xs ml-auto"
-                    min={0}
-                  />
+                  {existing ? (
+                    <Link
+                      to={`/inventory?q=${encodeURIComponent(variant.sku)}`}
+                      data-testid={tid('product', 'variant-stock', variant.id)}
+                      title="Adjust stock in Inventory"
+                      className="font-mono text-xs text-zinc-700 underline underline-offset-2 hover:text-zinc-900"
+                    >
+                      {variant.stock}
+                    </Link>
+                  ) : (
+                    <Input
+                      type="number"
+                      value={variant.stock}
+                      onChange={(e) =>
+                        updateVariant(variant.id, 'stock', parseInt(e.target.value) || 0)
+                      }
+                      className="h-7 w-16 text-right font-mono text-xs ml-auto"
+                      min={0}
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
-                  <Select
-                    value={variant.status}
-                    onValueChange={(v) => updateVariant(variant.id, 'status', v)}
-                  >
-                    <SelectTrigger className="h-7 w-24 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {existing ? (
+                    <span className="text-xs capitalize">{variant.status}</span>
+                  ) : (
+                    <Select
+                      value={variant.status}
+                      onValueChange={(v) => updateVariant(variant.id, 'status', v)}
+                    >
+                      <SelectTrigger className="h-7 w-24 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </td>
                 <td className="px-3 py-2">
-                  <button
-                    onClick={() => removeVariant(variant.id)}
-                    className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                    title="Remove variant"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {!existing && (
+                    <button
+                      onClick={() => removeVariant(variant.id)}
+                      className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                      title="Remove variant"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -198,10 +235,12 @@ export function VariantTable({ productId, variants, onChange, currency }: Varian
           {editing.length} variant{editing.length !== 1 ? 's' : ''}
           {editing.length > 0 && <> · Total stock: {editing.reduce((a, v) => a + v.stock, 0)}</>}
         </p>
-        <Button variant="outline" size="sm" onClick={addVariant} className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          Add Variant
-        </Button>
+        {!existing && (
+          <Button variant="outline" size="sm" onClick={addVariant} className="gap-1.5">
+            <Plus className="h-3.5 w-3.5" />
+            Add Variant
+          </Button>
+        )}
       </div>
     </div>
   )
