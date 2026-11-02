@@ -85,13 +85,32 @@ function defineAll(): void {
 }
 
 /**
+ * A comment (a quote in it opens no string), a quoted string (a backslash escapes the next character), or a whitespace
+ * run, as a browser tokenises CSS. An unclosed comment or string runs to the end.
+ */
+const CSS_TOKEN =
+  /(\/\*[\s\S]*?(?:\*\/|$))|("(?:[^"\\]|\\[\s\S])*(?:"|$)|'(?:[^'\\]|\\[\s\S])*(?:'|$))|\s+/g
+
+/** Each whitespace run outside a string made one space, none at the ends; a string is a value and stays as written. */
+function compactCss(css: string): string {
+  return css.replace(
+    CSS_TOKEN,
+    (token, comment: string | undefined, string: string | undefined, at: number) => {
+      if (string !== undefined) return string
+      if (comment !== undefined) return comment.replace(/\s+/g, ' ')
+      return at === 0 || at + token.length === css.length ? '' : ' '
+    },
+  )
+}
+
+/**
  * The elements' styles, with their indentation collapsed: written for reading, they would otherwise be bytes a page
  * downloads before its first paint, once per element.
  */
 function compactStyles(html: string): string {
   return html.replace(
-    /<style>([^<]*)<\/style>/g,
-    (_, css: string) => `<style>${css.replace(/\s+/g, ' ').trim()}</style>`,
+    /<style>([\s\S]*?)<\/style>/g,
+    (_, css: string) => `<style>${compactCss(css)}</style>`,
   )
 }
 

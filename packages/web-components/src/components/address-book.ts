@@ -103,9 +103,8 @@ export class NymbalAddressBook extends NymbalFormElement {
   private listed: CustomerAddress[] | null = null
   private loadFailed = false
 
-  override connectedCallback(): void {
-    super.connectedCallback()
-    if (this.hasClient) void this.load()
+  protected override clientConnected(): void {
+    void this.load()
   }
 
   /** The list's answer settles the book: the addresses a server gave give way to it. */
