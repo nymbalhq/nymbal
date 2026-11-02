@@ -498,6 +498,7 @@ const CAPABILITY_JOURNEYS = [
   'alerts.spec.ts AC-7',
   'alerts.spec.ts AC-9',
   'alerts.spec.ts AC-10',
+  'alerts.spec.ts AC-10',
   'alerts.spec.ts AC-11',
   'bounce-stops-alerts.spec.ts AC-6',
   'bounce-stops-alerts.spec.ts AC-6',
@@ -596,9 +597,9 @@ describe('the mail outage journey runs on the mail-outage project alone', () => 
 
   it('mail-outage lists exactly the one @mail-outage journey', () => {
     const rows = listed.get('mail-outage') ?? []
-    expect(rows.map((row) => [row.file, journeyKey(row), row.tags.includes('mail-outage')])).toEqual(
-      [['mail-outage.spec.ts', 'mail-outage.spec.ts AC-11', true]],
-    )
+    expect(
+      rows.map((row) => [row.file, journeyKey(row), row.tags.includes('mail-outage')]),
+    ).toEqual([['mail-outage.spec.ts', 'mail-outage.spec.ts AC-11', true]])
   })
 
   it.each(NATIVE)('%s lists journeys, none of them tagged mail-outage', (project) => {

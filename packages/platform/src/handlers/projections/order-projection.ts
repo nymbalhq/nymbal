@@ -19,6 +19,7 @@ import {
 import type { OrderRepository } from '../../repositories/order.js'
 import type { OrderHistoryRepository } from '../../repositories/order-history.js'
 import { orderWrites } from '../../read-models/builders.js'
+import { settle } from '../../read-models/settle.js'
 import { loadOrderDoc } from '../../read-models/sources.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
 
@@ -39,10 +40,11 @@ export function orderProjection(deps: OrderProjectionDeps): DerivedHandler[] {
   const repos = { order: orderRepo, orderHistory: orderHistoryRepo }
 
   async function reproject(orderId: string): Promise<void> {
-    const doc = await orderRepo.store.read((tx) => loadOrderDoc(tx, repos, orderId))
-    if (!doc) return
-    for (const w of orderWrites(doc)) await documentStore.put(w.collection, w.key, w.doc)
-    logger.debug({ orderNumber: doc.orderNumber, status: doc.status }, 'order projected')
+    await settle(documentStore, `order ${orderId}`, async () => {
+      const doc = await orderRepo.store.read((tx) => loadOrderDoc(tx, repos, orderId))
+      return { puts: doc ? orderWrites(doc) : [] }
+    })
+    logger.debug({ orderId }, 'order projected')
   }
 
   const onPlaced: EventHandler<OrderPlacedV1Payload> = (event) => reproject(event.payload.order.id)

@@ -172,6 +172,65 @@ describe('event log: retention', () => {
     expect(deleted).toBe(6 - left.length)
   })
 
+  it('AC-5: property: deleteDeliveredBefore leaves every row that is delivered and dead, at any delivered age, and deletes exactly the delivered, not-dead rows delivered before the cutoff, counting only those', async () => {
+    const arbRow = fc.record({
+      delivered: fc.option(fc.integer({ min: 0, max: 20 }), { nil: null }),
+      dead: fc.boolean(),
+    })
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(arbRow, { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 0, max: 21 }),
+        async (specs, cutoff) => {
+          const env = await setup()
+          try {
+            const events = specs.map((_, i) => makeEvent('order.created.v1', { i }))
+            await env.append(events)
+            await env.store.transaction(async (tx) => {
+              for (const [i, spec] of specs.entries()) {
+                const id = events[i]!.id
+                if (spec.delivered !== null) {
+                  await env.log.markDelivered(tx, [id], minutes(spec.delivered))
+                }
+                if (spec.dead) await env.log.recordFailure(tx, id, minutes(spec.delivered ?? 0), 1)
+              }
+            })
+            const goes = (spec: (typeof specs)[number]): boolean =>
+              spec.delivered !== null && !spec.dead && spec.delivered < cutoff
+
+            const deleted = await env.store.transaction((tx) =>
+              env.log.deleteDeliveredBefore(tx, minutes(cutoff)),
+            )
+            const left = new Set(ids(await env.all()))
+
+            expect(
+              events.map((e) => left.has(e.id)),
+              `kept, cutoff at minute ${cutoff}: ${JSON.stringify(specs)}`,
+            ).toEqual(specs.map((spec) => !goes(spec)))
+            expect(deleted, 'the count deleteDeliveredBefore answers').toBe(
+              specs.length - left.size,
+            )
+          } finally {
+            await env.store.close()
+          }
+        },
+      ),
+      {
+        numRuns: 40,
+        examples: [
+          [
+            [
+              { delivered: 1, dead: true },
+              { delivered: 2, dead: false },
+              { delivered: 12, dead: true },
+            ],
+            10,
+          ],
+        ],
+      },
+    )
+  })
+
   it('deleteSeqs deletes only the named rows that are delivered and not dead, and counts them', async () => {
     const env = await setup()
     const rows = await retentionLog(env)

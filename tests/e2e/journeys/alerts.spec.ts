@@ -340,6 +340,58 @@ test.describe('back-in-stock alerts', () => {
     )
     expect(confirmations).toEqual([1, 1])
   })
+
+  test('AC-10: on the Mailpit store, a second notify-me submit for the same address and variant after a reload, while the first confirmation is new and unconfirmed, puts no second confirmation in Mailpit, and the first one’s confirm link and button still confirm @capabilities', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000)
+    const caps = await storeCapabilities(request)
+    const delivering = isCustomProject(testInfo.project.name)
+    expect(delivers(caps), JSON.stringify(caps)).toBe(delivering)
+    const token = await adminToken(request)
+    const product = await ownProduct(request, token, 0)
+
+    if (!delivering) {
+      await page.goto(`/product/${product.slug}`)
+      await hydrated(page)
+      expect(await page.locator(TAG).count()).toBe(0)
+      return
+    }
+
+    const mail = await mailbox()
+    const tag = randomUUID().slice(0, 8)
+    const again = address('again', tag)
+
+    await subscribeFromPage(page, product, again)
+    const first = await confirmation(mail, again)
+
+    await page.reload()
+    await hydrated(page)
+    await page.locator(TAG).getByTestId('notify-me-email').fill(again)
+    await page.locator(TAG).getByTestId('notify-me-submit').click()
+    await expect(page.locator(TAG).getByTestId('notify-me-notice')).toHaveText(
+      'Check your inbox to confirm.',
+    )
+
+    // A marker's confirmation, asked for after the second submit, has arrived: a second one to the address would too.
+    const marker = address('again-marker', tag)
+    const sub = await subscribeThroughApi(
+      request,
+      storefrontOrigin(testInfo),
+      marker,
+      product.variantId,
+    )
+    expect(sub.status, sub.text).toBe(202)
+    await mail.waitFor(marker, 1)
+
+    const confirmations = (await mail.messages(again)).filter(isConfirmation)
+    expect(confirmations.length, `confirmations to ${again}`).toBe(1)
+    await openAndPress(page, linkTo(first, '/alerts/confirm').href)
+    await expect(
+      page.getByTestId('alert-confirmed').locator(`a[href$="/product/${product.slug}"]`),
+    ).toHaveCount(1)
+  })
 })
 
 test.describe('price-drop alerts', () => {

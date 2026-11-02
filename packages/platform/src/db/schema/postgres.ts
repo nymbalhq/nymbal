@@ -489,6 +489,8 @@ export const alertSubscriptions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    /** When its last confirmation was sent; a repeat subscribe within the interval sends none. */
+    confirmationSentAt: timestamp('confirmation_sent_at', { withTimezone: true }),
   },
   (t) => ({
     addressUnique: uniqueIndex('alert_subscriptions_address_unique').on(

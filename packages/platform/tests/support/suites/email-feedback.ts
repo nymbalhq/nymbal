@@ -598,12 +598,14 @@ export function emailFeedbackSuite(dialect: Kernel['dialect'], options: EmailFee
           const subscribeModel = (who: number, alert: AlertKind) => {
             const row = model[who]![alert]
             if (row.state === 'active') return
+            // No clock moves here, so a pending row already mailed its confirmation is inside the interval.
+            const throttled = row.state === 'pending' && row.tokenMailed
             if (row.state === 'none' || row.state === 'fired') {
               row.tokenMailed = false
               if (alert === 'price_drop' && row.state === 'none') row.baseline = price
             }
             row.state = 'pending'
-            if (!suppressed(who)) {
+            if (!suppressed(who) && !throttled) {
               row.confirmations += 1
               row.tokenMailed = true
             }

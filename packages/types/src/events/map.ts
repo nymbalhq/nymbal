@@ -54,6 +54,7 @@ export interface NymbalEventMap {
   [C.EVT_ALERT_CONFIRMED]: P.AlertConfirmedV1Payload
   [C.EVT_ALERT_UNSUBSCRIBED]: P.AlertUnsubscribedV1Payload
   [C.EVT_ALERT_SENT]: P.AlertSentV1Payload
+  [C.EVT_ALERT_CONFIRMATION_SENT]: P.AlertConfirmationSentV1Payload
 
   [C.EVT_ADAPTER_ERROR]: P.AdapterErrorV1Payload
   [C.EVT_SETTINGS_CHANGED]: P.SettingsChangedV1Payload
