@@ -7,8 +7,9 @@ import {
   seedVariant,
   type Kernel,
   type Seeded,
-} from '../../tests/support/kernel.js'
-import { createCartService } from './cart-service.js'
+} from '../support/kernel.js'
+import { unaudited } from '../support/write-audit.js'
+import { createCartService } from '../../src/services/cart-service.js'
 
 // signIn(guestToken, customerId) on the cart service the kernel wires (its catalogue and the order lookup rule 5
 // needs come from services/index.ts): which cart the customer has after a sign-in, for each shape of guest cart G and
@@ -216,13 +217,16 @@ describe('signIn', () => {
         qty: 1,
       })
     }
-    await k.store.transaction(async (tx) => {
-      const at = new Date()
-      await k.repos.variant.update(tx, inactive.variantId, { status: 'inactive', updatedAt: at })
-      await k.repos.product.setStatus(tx, draft.productId, 'draft', at)
-      await k.repos.product.setStatus(tx, archived.productId, 'archived', at)
-      await k.repos.product.delete(tx, orphaned.productId)
-    })
+    // The test's own catalogue changes, written straight through the repositories with no events.
+    await unaudited(() =>
+      k.store.transaction(async (tx) => {
+        const at = new Date()
+        await k.repos.variant.update(tx, inactive.variantId, { status: 'inactive', updatedAt: at })
+        await k.repos.product.setStatus(tx, draft.productId, 'draft', at)
+        await k.repos.product.setStatus(tx, archived.productId, 'archived', at)
+        await k.repos.product.delete(tx, orphaned.productId)
+      }),
+    )
     const orphanVariant = await k.store.read((tx) =>
       k.repos.variant.findById(tx, orphaned.variantId),
     )

@@ -291,7 +291,7 @@ describe('AC-1: the integration Stryker config and its test set', () => {
     )
   })
 
-  it('AC-1: Vitest collects under the integration config exactly what its globs match: each glob matches a file under the integration tests, and none matches a test that fails in the sandbox', async () => {
+  it('AC-1: Vitest collects under the integration config exactly what its globs match: each glob matches a file under the integration tests or a unit test beside a mutated file, and none matches a test that fails in the sandbox', async () => {
     const globs = includeGlobs()
     expect(globs.length, 'the config has include globs').toBeGreaterThanOrEqual(1)
     const matched = new Map(globs.map((glob) => [glob, globSync(glob, { cwd: REPO }).sort()]))
@@ -300,9 +300,14 @@ describe('AC-1: the integration Stryker config and its test set', () => {
       'globs that match no file',
     ).toEqual([])
     const union = [...new Set([...matched.values()].flat())].sort()
+    // Besides the integration tests, only unit tests that sit beside a mutated file.
+    const mutatedDirs = new Set(SET.map((file) => dirname(file)))
     expect(
-      union.filter((p) => !p.startsWith('packages/platform/tests/integration/')),
-      'matched outside the integration tests',
+      union.filter(
+        (p) =>
+          !p.startsWith('packages/platform/tests/integration/') && !mutatedDirs.has(dirname(p)),
+      ),
+      'matched outside the integration tests and the mutated files’ directories',
     ).toEqual([])
     const collected = await vitestFiles(['--config', INTEGRATION_VITEST])
     expect(collected, 'what Vitest itself collects').toEqual(union)

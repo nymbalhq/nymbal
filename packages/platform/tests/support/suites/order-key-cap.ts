@@ -138,7 +138,12 @@ export function orderKeyCapSuite(dialect: Kernel['dialect'], start: () => Promis
             before,
           )
         }),
-        { numRuns: 6 },
+        {
+          numRuns: 6,
+          // Six generated runs can all stay at or under the cap (the generator leans to small counts), so each kind
+          // of mint is also taken past it every run.
+          examples: [[{ pending: true, again: 8 }], [{ pending: false, again: 6 }]],
+        },
       )
     }, 120_000)
   })

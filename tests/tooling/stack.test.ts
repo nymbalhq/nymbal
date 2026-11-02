@@ -23,6 +23,16 @@ const STACK_URL = pathToFileURL(STACK_PATH).href
 // Loaded in each test, so that each names its own failure while the module is missing.
 const loadStack = () => import('../../scripts/stack')
 
+// The Fetch standard's bad ports, which Chromium (net/base/port_util.cc) and Firefox refuse with ERR_UNSAFE_PORT: a
+// storefront on one cannot be opened by the E2E browser.
+const BROWSER_BAD_PORTS = [
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102,
+  103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465,
+  512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993,
+  995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
+  6669, 6679, 6697, 10080,
+]
+
 const created: string[] = []
 afterEach(() => {
   for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true })
@@ -220,6 +230,19 @@ describe('AC-1: stackBlock gives each slot a disjoint block of ports', () => {
         expect(Math.max(...own)).toBeLessThanOrEqual(65535)
       }),
     )
+  })
+
+  it('no port of any slot 0..MAX_SLOT is a port the browser refuses to connect to', async () => {
+    const { stackBlock, MAX_SLOT } = await loadStack()
+    const refused = new Set(BROWSER_BAD_PORTS)
+    const hits: string[] = []
+    for (let slot = 0; slot <= MAX_SLOT; slot++) {
+      for (const field of PORT_FIELDS) {
+        const port = stackBlock(slot)[field]
+        if (refused.has(port)) hits.push(`slot ${slot} ${field} ${port}`)
+      }
+    }
+    expect(hits).toEqual([])
   })
 
   it.each([10, -1, 1.5])('AC-1: stackBlock(%s) throws a RangeError', async (slot) => {

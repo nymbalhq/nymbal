@@ -112,7 +112,9 @@ export function eventBusFailureCases(make: Build<EventBusAdapter>, opts: Deliver
         await closing([bus], async () => {
           const type = 'contract.failure.v1'
           const ran = { a: 0, b: 0, c: 0 }
-          const finished: Record<'b' | 'c', number | undefined> = { b: undefined, c: undefined }
+          // In the order it happened. An order, not a duration: a timer can fire a few ms early by the wall clock on
+          // a loaded machine, and a publish that settles before the slow handler finishes is wrong at any speed.
+          const marks: string[] = []
           await bus.subscribe(
             type,
             async () => {
@@ -126,7 +128,7 @@ export function eventBusFailureCases(make: Build<EventBusAdapter>, opts: Deliver
             async () => {
               ran.b += 1
               await delay(SLOW_HANDLER_MS)
-              finished.b = Date.now()
+              marks.push('b finished')
             },
             { name: 'contract-failure-b' },
           )
@@ -134,7 +136,7 @@ export function eventBusFailureCases(make: Build<EventBusAdapter>, opts: Deliver
             type,
             async () => {
               ran.c += 1
-              finished.c = Date.now()
+              marks.push('c finished')
             },
             { name: 'contract-failure-c' },
           )
@@ -143,14 +145,14 @@ export function eventBusFailureCases(make: Build<EventBusAdapter>, opts: Deliver
           })
           const e = event(type)
 
-          const outcome = await settled(bus.publish(e))
+          const outcome = await settled(bus.publish(e).finally(() => marks.push('publish settled')))
 
           expect(ran).toEqual({ a: 1, b: 1, c: 1 })
-          expect(finished.b, 'the slow handler finished before the rejection').toBeLessThanOrEqual(
-            outcome.at,
-          )
-          expect(finished.c).toBeLessThanOrEqual(outcome.at)
-          expect(outcome.ms).toBeGreaterThanOrEqual(SLOW_HANDLER_MS - 10)
+          expect(
+            [...marks.slice(0, 2)].sort(),
+            'the other named handlers finished before the publish settled',
+          ).toEqual(['b finished', 'c finished'])
+          expect(marks.slice(2)).toEqual(['publish settled'])
 
           const rebuilt: string[] = []
           await bus.subscribe(

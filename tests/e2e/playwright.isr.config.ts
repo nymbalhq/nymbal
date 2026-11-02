@@ -8,7 +8,7 @@ import { stack } from '../../scripts/stack'
 // `next start` and stops and starts that API. So this config starts no web server: the test owns every process, and
 // the build's exit status is the test's to read. It must not share the prod suite's servers or `.next`, so it has its
 // own ports: the slot's API and Next ports plus 50, which no other field of the slot uses (scripts/stack.ts: slot 0
-// spans 3000-3041 and 4321-4361 within each hundred). In a linked worktree on slot 1 the API is 3151 and Next 3150.
+// spans 3000-3041 and 4321-4371 within each hundred). In a linked worktree on slot 1 the API is 3151 and Next 3150.
 //
 // Run: pnpm --filter @nymbalhq/e2e exec playwright test -c playwright.isr.config.ts
 

@@ -14,7 +14,7 @@ export const SLOT0_PORTS = {
   nextjsNoSearch: 3020,
   // The project-elements fixture's store and its two storefronts.
   overrideApi: 3041,
-  astroOverride: 4361,
+  astroOverride: 4371,
   nextjsOverride: 3040,
   walkApi: 3031,
   walkAstro: 4351,

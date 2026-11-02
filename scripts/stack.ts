@@ -60,7 +60,7 @@ const SLOT0: Record<PortField, number> = {
   nextjsNoSearch: 3020,
   // The project-elements fixture's store (tests/e2e/fixtures/override-elements), each template on it.
   overrideApi: 3041,
-  astroOverride: 4361,
+  astroOverride: 4371,
   nextjsOverride: 3040,
   walkApi: 3031,
   walkAstro: 4351,
