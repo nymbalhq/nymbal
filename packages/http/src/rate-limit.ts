@@ -43,6 +43,8 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/checkout': { requests: 30, window: '1m', action: 'block' },
   // Each agent request runs a tool, which is also held to its own route's rule.
   '/api/mcp': { requests: 120, window: '1m', action: 'block' },
+  // A UCP tool is not a route: each request counts once here, however many routes its tool runs.
+  '/api/ucp/mcp': { requests: 120, window: '1m', action: 'block' },
 }
 
 interface Bucket {

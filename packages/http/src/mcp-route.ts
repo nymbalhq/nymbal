@@ -29,6 +29,19 @@ export interface MountMcpDeps {
   version?: string
 }
 
+export interface ToolEndpointDeps {
+  path: string
+  surface: ToolSurface
+  verify: MountMcpDeps['verify']
+  origins: readonly string[]
+  /**
+   * Whether each call is also held to its tool's route's rate rule. A tool that is a route says yes; a tool that is
+   * not (a UCP tool) counts once, against the endpoint's rule.
+   */
+  admitTools: boolean
+  version?: string
+}
+
 /** What one HTTP request hands the per-request MCP server: who calls, and the rate rule of each tool's route. */
 interface RequestState {
   auth: RequestAuth | undefined
@@ -99,16 +112,12 @@ function toolServer(surface: ToolSurface, state: RequestState, version: string):
 }
 
 /**
- * `POST /api/mcp`, Streamable HTTP over the app's tool surface. It reads no cookie, so it takes no CSRF token; in its
- * place an `Origin` other than the store's own is refused, a bearer that does not verify is refused, and the endpoint
- * and each tool's route are held to their rate rules. Mounted after `attachHttp`, beside the routes it registered.
+ * An MCP endpoint over Streamable HTTP at `deps.path`, serving a tool surface. It reads no cookie, so it takes no CSRF
+ * token; in its place an `Origin` other than the store's own is refused, a bearer that does not verify is refused, and
+ * the endpoint (and, under `admitTools`, each tool's route) is held to its rate rule.
  */
-export async function mountMcp(server: HttpServer, deps: MountMcpDeps): Promise<void> {
-  if (!deps.enabled) return
-  const surface = deps.app.mcp
-  if (surface === undefined) {
-    throw new Error('mountMcp needs the tool surface attachHttp builds: call attachHttp first')
-  }
+export async function mountToolEndpoint(server: HttpServer, deps: ToolEndpointDeps): Promise<void> {
+  const { surface } = deps
   const adapter = server.adapter
   // The SDK hands a request's server factory only what `fetch` was given as `authInfo`, so the verified caller and
   // the request's rate admission ride there; the bearer itself does not.
@@ -143,6 +152,7 @@ export async function mountMcp(server: HttpServer, deps: MountMcpDeps): Promise<
       auth,
       ip: ctx.ip,
       admit(tool) {
+        if (!deps.admitTools) return null
         const refused = adapter.guard.admit(
           {
             ...ctx,
@@ -182,6 +192,26 @@ export async function mountMcp(server: HttpServer, deps: MountMcpDeps): Promise<
   }
 
   for (const method of ['POST', 'GET', 'DELETE'] as const) {
-    adapter.registerWebRoute(method, MCP_PATH, serve, { csrf: false })
+    adapter.registerWebRoute(method, deps.path, serve, { csrf: false })
   }
+}
+
+/**
+ * `POST /api/mcp`: the app's routes as tools, each call held to its route's rate rule as well as the endpoint's.
+ * Mounted after `attachHttp`, beside the routes it registered.
+ */
+export async function mountMcp(server: HttpServer, deps: MountMcpDeps): Promise<void> {
+  if (!deps.enabled) return
+  const surface = deps.app.mcp
+  if (surface === undefined) {
+    throw new Error('mountMcp needs the tool surface attachHttp builds: call attachHttp first')
+  }
+  await mountToolEndpoint(server, {
+    path: MCP_PATH,
+    surface,
+    verify: deps.verify,
+    origins: deps.origins,
+    admitTools: true,
+    ...(deps.version !== undefined && { version: deps.version }),
+  })
 }

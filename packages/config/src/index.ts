@@ -20,6 +20,7 @@ export { loadConfig, findConfigFile, type LoadedConfig } from './load.js'
 export { PUBLIC_URL_ENV, secureCookies } from './secure-cookies.js'
 export {
   DEFAULT_JWT_SECRET,
+  DEFAULT_AGENT_CRAWLERS,
   nymbalConfigSchema,
   storeSchema,
   infrastructureSchema,

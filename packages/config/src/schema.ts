@@ -480,8 +480,34 @@ export const eventsSchema = z
 const MCP_WRITES = ['proposal', 'apply'] as const
 
 /**
+ * The AI crawlers `robots.txt` names and allows by default, each as its vendor documents it:
+ * - GPTBot, OAI-SearchBot, ChatGPT-User: https://platform.openai.com/docs/bots
+ * - ClaudeBot, Claude-User, Claude-SearchBot:
+ *   https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+ * - PerplexityBot, Perplexity-User: https://docs.perplexity.ai/guides/bots
+ * - Google-Extended: https://developers.google.com/search/docs/crawling-indexing/google-common-crawlers
+ * - Applebot-Extended: https://support.apple.com/en-us/119829
+ */
+export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
+  'GPTBot',
+  'OAI-SearchBot',
+  'ChatGPT-User',
+  'ClaudeBot',
+  'Claude-User',
+  'Claude-SearchBot',
+  'PerplexityBot',
+  'Perplexity-User',
+  'Google-Extended',
+  'Applebot-Extended',
+])
+
+const CRAWL_OTHERS = ['allow', 'disallow'] as const
+
+/**
  * How agents reach the store. `mcp.writes: 'proposal'` hands a command tool's validated input to the proposal sink
- * and runs nothing; `'apply'` runs it as the route would.
+ * and runs nothing; `'apply'` runs it as the route would. `ucp` is the Universal Commerce Protocol profile and its
+ * MCP endpoint; `links` are the legal pages a UCP checkout names. `crawl` is what `robots.txt`, `llms.txt` and the
+ * product feed serve.
  */
 export const agentsSchema = z
   .object({
@@ -496,6 +522,40 @@ export const agentsSchema = z
                 : undefined,
           })
           .default('proposal'),
+      })
+      .strict()
+      .prefault({}),
+    ucp: z
+      .object({
+        enabled: z.boolean().default(true),
+        links: z
+          .array(
+            z
+              .object({
+                type: z.string().min(1),
+                url: z.string().url(),
+                title: z.string().optional(),
+              })
+              .strict(),
+          )
+          .default([]),
+      })
+      .strict()
+      .prefault({}),
+    crawl: z
+      .object({
+        robots: z.boolean().default(true),
+        llms: z.boolean().default(true),
+        feed: z.boolean().default(true),
+        allow: z.array(z.string().min(1)).default(() => [...DEFAULT_AGENT_CRAWLERS]),
+        others: z
+          .enum(CRAWL_OTHERS, {
+            error: (issue) =>
+              issue.code === 'invalid_value'
+                ? `must be 'allow' or 'disallow', not ${JSON.stringify(issue.input)}`
+                : undefined,
+          })
+          .default('allow'),
       })
       .strict()
       .prefault({}),

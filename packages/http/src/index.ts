@@ -25,4 +25,17 @@ export {
   type StorefrontForwardOptions,
 } from './storefront-forward.js'
 export { createProductsRoute, type ProductListItem } from './routes/products.js'
-export { mountMcp, MCP_PATH, type MountMcpDeps } from './mcp-route.js'
+export {
+  mountMcp,
+  mountToolEndpoint,
+  MCP_PATH,
+  type MountMcpDeps,
+  type ToolEndpointDeps,
+} from './mcp-route.js'
+export {
+  mountAgentSurfaces,
+  UCP_MCP_PATH,
+  HANDOFF_PATH,
+  FEED_PATH,
+  type MountAgentSurfacesDeps,
+} from './agent-surface.js'

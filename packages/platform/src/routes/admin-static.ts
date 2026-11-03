@@ -19,6 +19,9 @@ const MIME = new Map<string, string>([
   ['.ttf', 'font/ttf'],
 ])
 
+/** Where the admin is served; robots.txt keeps crawlers out of it. */
+export const ADMIN_BASE_PATH = '/admin'
+
 const BUILD_HINT =
   'The Nymbal admin is not built. Run `pnpm --filter @nymbalhq/admin build` in the Nymbal repository, ' +
   'or install the `@nymbalhq/admin` package beside `nymbal`.\n'
@@ -50,7 +53,7 @@ async function fileWithin(root: string, requestPath: string): Promise<string | n
  * with how to build it.
  */
 export function registerAdminStaticRoute(adapter: HttpAdapter, root: string | null): void {
-  adapter.registerRoute('GET', '/admin', async () => ({
+  adapter.registerRoute('GET', ADMIN_BASE_PATH, async () => ({
     status: 308,
     headers: { Location: '/admin/' },
     body: undefined,

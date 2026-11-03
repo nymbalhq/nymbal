@@ -37,11 +37,12 @@ import {
   type SweeperHandle,
 } from './sweepers/index.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
-import type { HttpAdapter, ToolSurface } from '@nymbalhq/types'
+import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
 import { RouteTable, recordingAdapter } from './mcp/route-table.js'
 import { toolsOf } from './mcp/registry.js'
 import { createInvoker } from './mcp/invoke.js'
 import { returningSink, type ProposalSink } from './mcp/proposals.js'
+import { createAgentSurfaces } from './agents/surfaces.js'
 
 export interface NymbalApp {
   platform: Platform
@@ -58,6 +59,8 @@ export interface NymbalApp {
   attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
   /** The API's routes as agent tools, run in process through the handlers `attachHttp` registered; set by it. */
   readonly mcp: ToolSurface | undefined
+  /** The agent surfaces (UCP) and crawl files, over `mcp`; set by `attachHttp` once `mcp` is. */
+  readonly agents: AgentSurfaces | undefined
   /** Each slot's provider and its adapter's own `capabilities()`; an ai slot of `none` offers nothing. */
   capabilities(): CapabilitiesReport
   stop(): Promise<void>
@@ -363,6 +366,7 @@ export async function createApp(
 
     const proposalSink = options.proposalSink ?? returningSink(logger.child({ layer: 'mcp' }))
     let mcp: ToolSurface | undefined
+    let agents: AgentSurfaces | undefined
     const app: NymbalApp = {
       platform,
       repos,
@@ -402,9 +406,27 @@ export async function createApp(
           sink: proposalSink,
           logger,
         })
+        agents = createAgentSurfaces({
+          config,
+          mcp,
+          variants: (variantId) =>
+            platform.commandStore.read(async (tx) => {
+              const variant = await repos.variant.findById(tx, variantId)
+              if (variant === null) return null
+              return (await repos.product.findById(tx, variant.productId))?.slug ?? null
+            }),
+          // A cart a customer has claimed is theirs, no longer the agent's to read or hand on.
+          cart: async (token) => {
+            const cart = await services.cart.get(token)
+            return cart === null || cart.customerId === null ? cart : null
+          },
+        })
       },
       get mcp() {
         return mcp
+      },
+      get agents() {
+        return agents
       },
       capabilities() {
         const commerce = Object.fromEntries(

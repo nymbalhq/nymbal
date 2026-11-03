@@ -12,7 +12,7 @@ import {
   sqliteFile,
   type NymbalApp,
 } from '@nymbalhq/platform'
-import { createHttpServer, mountMcp } from '@nymbalhq/http'
+import { createHttpServer, mountAgentSurfaces, mountMcp } from '@nymbalhq/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
 import { findFreePort } from '../utils/port.js'
@@ -250,8 +250,18 @@ export const devCommand = defineCommand({
       enabled: config.agents.mcp.enabled,
       version,
     })
-    await http.start()
     const apiUrl = `http://localhost:${config.http.port}`
+    // The storefront's port is chosen after the API starts, so the agent surfaces read it per request. The one this
+    // process started wins over `store.url`, which a scaffold sets to the default port even when another is taken.
+    let storefrontUrl: string | undefined
+    await mountAgentSurfaces(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      urls: () => ({ api: apiUrl, storefront: storefrontUrl ?? config.store.url }),
+      version,
+    })
+    await http.start()
     const printSummary = (storefront: DevSummaryInfo['storefront']) => {
       // eslint-disable-next-line no-console
       console.log(
@@ -304,7 +314,7 @@ export const devCommand = defineCommand({
     // monorepo layout falls back to a pnpm --filter on the template package.
     const launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
 
-    const storefrontUrl = `http://localhost:${storefrontPort}`
+    storefrontUrl = `http://localhost:${storefrontPort}`
     const templateProc = run(launch.command, launch.args, {
       cwd: launch.cwd,
       env: storefrontEnv(config, apiUrl, storefrontPort),

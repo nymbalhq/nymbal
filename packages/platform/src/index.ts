@@ -78,6 +78,9 @@ export { toolsOf, jsonSchemaOf, toolName } from './mcp/registry.js'
 export { RouteTable, recordingAdapter } from './mcp/route-table.js'
 export { createInvoker, type InvokerDeps } from './mcp/invoke.js'
 export { returningSink, type Proposal, type ProposalSink } from './mcp/proposals.js'
+export { ucpProfile, UCP_VERSION } from './agents/profile.js'
+export { agentNameOf } from './agents/agent-name.js'
+export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
 export {
   createApp,
   type NymbalApp,

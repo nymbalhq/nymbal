@@ -48,7 +48,10 @@ async function openStore(writes?: 'apply'): Promise<Store> {
   const kernel = await createKernel({
     dialect: 'sqlite',
     ...(writes !== undefined && {
-      configure: (config) => ({ ...config, agents: { mcp: { enabled: true, writes } } }),
+      configure: (config) => ({
+        ...config,
+        agents: { ...config.agents, mcp: { enabled: true, writes } },
+      }),
     }),
     appOptions: { proposalSink: sink.sink },
   })

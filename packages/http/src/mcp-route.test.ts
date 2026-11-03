@@ -245,7 +245,7 @@ describe('AC-9: POST /api/mcp', () => {
   it('AC-9: with agents.mcp.enabled false, POST /api/mcp answers 404 while the store serves its routes', async () => {
     const store = await served((config) => ({
       ...config,
-      agents: { mcp: { ...config.agents.mcp, enabled: false } },
+      agents: { ...config.agents, mcp: { ...config.agents.mcp, enabled: false } },
     }))
 
     const mcp = await initialize(store)

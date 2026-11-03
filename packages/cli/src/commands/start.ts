@@ -23,6 +23,7 @@ import {
   createReadyRoute,
   FastifyHttpAdapter,
   forwardToStorefront,
+  mountAgentSurfaces,
   mountMcp,
   resolveTrustProxy,
   type ReadyState,
@@ -353,6 +354,13 @@ export const startCommand = defineCommand({
       verify: (token) => app.services.auth.verifyAccessToken(token),
       origins: config.http.cors.allowedOrigins,
       enabled: config.agents.mcp.enabled,
+      version,
+    })
+    await mountAgentSurfaces(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      urls: () => ({ api: publicUrl, storefront: publicUrl }),
       version,
     })
     if (!(http.adapter instanceof FastifyHttpAdapter)) {
