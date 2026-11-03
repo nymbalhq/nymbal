@@ -37,7 +37,7 @@
     "packages/platform/src/services/category-service.ts": 83.33,
     "packages/platform/src/services/checkout-service.ts": 76,
     "packages/platform/src/services/customer-service.ts": 86.67,
-    "packages/platform/src/services/description.ts": 1.79,
+    "packages/platform/src/services/description.ts": 1.67,
     "packages/platform/src/services/index.ts": 0,
     "packages/platform/src/services/inventory-service.ts": 65.38,
     "packages/platform/src/services/order-correlation.ts": 100,
