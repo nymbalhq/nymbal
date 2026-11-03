@@ -5,6 +5,7 @@ import {
   type AiAdapter,
 } from '@nymbalhq/types'
 import { createAnthropicAiAdapter, type AnthropicAiAdapterConfig } from './anthropic-adapter.js'
+import { timeoutOf } from './chat.js'
 
 /** What this package serves: the kernel refuses it on any other slot or provider. */
 export const slot = 'ai'
@@ -19,8 +20,8 @@ export const settings: AdapterSetting[] = [
 ]
 
 /**
- * The kernel's entry: `ai: { provider: 'anthropic', config: { apiKey?, model?, baseUrl? } }`, the key falling back to
- * ANTHROPIC_API_KEY.
+ * The kernel's entry: `ai: { provider: 'anthropic', config: { apiKey?, model?, baseUrl?, timeoutMs? } }`, the key
+ * falling back to ANTHROPIC_API_KEY.
  */
 export function createAdapter(ctx: AdapterContext): AiAdapter {
   if (ctx.slot !== 'ai') {
@@ -37,6 +38,7 @@ export function createAdapter(ctx: AdapterContext): AiAdapter {
       typeof apiKey === 'string' && apiKey !== '' ? apiKey : (ctx.env['ANTHROPIC_API_KEY'] ?? ''),
     ...(typeof model === 'string' && { model }),
     ...(typeof baseUrl === 'string' && baseUrl !== '' && { baseUrl }),
+    timeoutMs: timeoutOf(ctx.config['timeoutMs']),
     logger: ctx.logger,
   })
 }

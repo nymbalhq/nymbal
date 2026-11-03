@@ -30,7 +30,7 @@ const SLOTS: readonly Slot[] = [...COMMERCE, 'documentStore', 'eventBus', 'media
 const KNOWN_BEFORE: Record<(typeof COMMERCE)[number], readonly string[]> = {
   payments: ['native', 'stripe'],
   email: ['native', 'smtp', 'mailgun', 'resend', 'ses'],
-  ai: ['none', 'anthropic'],
+  ai: ['none', 'anthropic', 'openai'],
   reviews: ['native'],
   search: ['native', 'algolia'],
   analytics: ['native'],

@@ -263,10 +263,41 @@ export interface TaxAdapter extends CommerceAdapter {
 
 // --- AI --------------------------------------------------------------------
 
+/** One turn of a conversation. The first turn is the user's. */
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatOptions {
+  /** Instructions for the whole conversation, sent in the provider's own system field. */
+  system?: string
+  /** The most tokens the answer may take; 1024 when omitted. */
+  maxTokens?: number
+}
+
+/** Why the answer ended: complete, cut at `maxTokens`, or anything else the provider reported. */
+export type ChatStopReason = 'end' | 'max_tokens' | 'other'
+
+export interface ChatResult {
+  text: string
+  stopReason: ChatStopReason
+  /** 0 where the provider reports none. */
+  usage: { inputTokens: number; outputTokens: number }
+  /** The model as the provider reports it. */
+  model: string
+}
+
 export interface AiAdapter extends CommerceAdapter {
   readonly kind: 'ai'
   embed(texts: string[]): Promise<number[][]>
+  /** The text `chat` answers to a single user turn. */
   complete(prompt: string, opts?: { maxTokens?: number }): Promise<string>
+  /**
+   * One request to the provider. Refused input, a provider failure and a timeout reject with an `AdapterError` whose
+   * context is `{ provider, status? }` and which never carries the key.
+   */
+  chat(messages: readonly ChatMessage[], opts?: ChatOptions): Promise<ChatResult>
 }
 
 /** The adapter interface each commerce slot takes: what a project injects for a slot whose provider is `custom`. */

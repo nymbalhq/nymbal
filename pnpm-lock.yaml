@@ -180,6 +180,9 @@ importers:
       '@nymbalhq/ai-anthropic':
         specifier: workspace:*
         version: link:packages/adapters/ai/anthropic
+      '@nymbalhq/ai-openai':
+        specifier: workspace:*
+        version: link:packages/adapters/ai/openai
       '@nymbalhq/config':
         specifier: workspace:*
         version: link:packages/config
@@ -414,6 +417,24 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@nymbalhq/types':
+        specifier: workspace:*
+        version: link:../../../types
+      '@typescript/native':
+        specifier: npm:typescript@^7.0.2
+        version: typescript@7.0.2
+      tsup:
+        specifier: ^9.0.0
+        version: 9.0.0(@typescript/typescript6@6.0.2)(jiti@2.6.1)(postcss@8.5.30)(tsx@4.21.0)(yaml@2.9.1)
+      typescript:
+        specifier: npm:@typescript/typescript6@^6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.17)(happy-dom@20.14.6)(jiti@2.6.1)(jsdom@29.0.2)(lightningcss@1.33.0)(supports-color@7.2.0)(tsx@4.21.0)(yaml@2.9.1)
+
+  packages/adapters/ai/openai:
+    devDependencies:
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../../../types
@@ -961,6 +982,9 @@ importers:
       '@nymbalhq/ai-anthropic':
         specifier: workspace:*
         version: link:../adapters/ai/anthropic
+      '@nymbalhq/ai-openai':
+        specifier: workspace:*
+        version: link:../adapters/ai/openai
       '@nymbalhq/document-store-postgres-jsonb':
         specifier: workspace:*
         version: link:../adapters/document-store/postgres-jsonb

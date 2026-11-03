@@ -38,6 +38,7 @@
     "@lhci/cli": "0.15.1",
     "@modelcontextprotocol/client": "^2.4.0",
     "@nymbalhq/ai-anthropic": "workspace:*",
+    "@nymbalhq/ai-openai": "workspace:*",
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/document-store-postgres-jsonb": "workspace:*",
     "@nymbalhq/document-store-redis": "workspace:*",

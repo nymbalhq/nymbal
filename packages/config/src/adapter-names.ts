@@ -43,7 +43,7 @@ export const ADAPTER_CATALOGUE: Readonly<Record<Slot, Readonly<Record<string, Ca
   analytics: { native: builtIn },
   shipping: { native: builtIn, easypost: {} },
   tax: { native: builtIn },
-  ai: { none: builtIn, anthropic: { sdk: '@anthropic-ai/sdk' } },
+  ai: { none: builtIn, anthropic: { sdk: '@anthropic-ai/sdk' }, openai: {} },
   documentStore: {
     'in-memory': builtIn,
     redis: { sdk: 'ioredis' },

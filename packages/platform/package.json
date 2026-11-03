@@ -60,6 +60,7 @@
   },
   "devDependencies": {
     "@nymbalhq/ai-anthropic": "workspace:*",
+    "@nymbalhq/ai-openai": "workspace:*",
     "@nymbalhq/document-store-postgres-jsonb": "workspace:*",
     "@nymbalhq/document-store-redis": "workspace:*",
     "@nymbalhq/email-mailgun": "workspace:*",

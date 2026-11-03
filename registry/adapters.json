@@ -8,6 +8,13 @@
       "source": { "dir": "packages/adapters/ai/anthropic" }
     },
     {
+      "package": "@nymbalhq/ai-openai",
+      "slot": "ai",
+      "provider": "openai",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/ai/openai" }
+    },
+    {
       "package": "@nymbalhq/document-store-postgres-jsonb",
       "slot": "document-store",
       "provider": "postgres-jsonb",

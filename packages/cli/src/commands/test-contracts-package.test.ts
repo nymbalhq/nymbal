@@ -20,6 +20,8 @@ import { afterAll, describe, expect, it } from 'vitest'
 // AC-6: `nymbal test:contracts --package <pkg>` in a scratch project outside the monorepo, on the third-party fixture
 // tests/fixtures/third-party-search: the well-behaved fixture is certified, the same package configured to ignore the
 // cursor is not, and a bad setup exits 1 with one line. Nothing in the project changes but `.nymbal/contracts/`.
+// AC-12: an ai package (tests/fixtures/third-party-ai) is certified with the ai suite, and its variant that drops the
+// system prompt is not.
 // Spawns the built CLI (`pnpm build` first).
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -52,6 +54,8 @@ interface Scratch {
   slotPackage?: string
   /** The whole search block, in place of the `custom` one naming `slotPackage`. */
   search?: Record<string, unknown>
+  /** The whole ai block, in place of `none`. */
+  ai?: Record<string, unknown>
   /** Linked into node_modules, by name. */
   links: Record<string, string>
 }
@@ -61,6 +65,9 @@ function link(project: string, name: string, target: string): void {
   mkdirSync(dirname(at), { recursive: true })
   symlinkSync(target, at, 'dir')
 }
+
+const AI_FIXTURE = join(REPO, 'tests', 'fixtures', 'third-party-ai')
+const AI_PKG = '@acme/nymbal-ai'
 
 const CONFIG_SOURCE = '<slot config source>'
 
@@ -106,7 +113,7 @@ function scratchProject(s: Scratch): string {
           analytics: { provider: 'native' },
           shipping: { provider: 'native' },
           tax: { provider: 'native' },
-          ai: { provider: 'none' },
+          ai: s.ai ?? { provider: 'none' },
         },
         http: { adapter: 'fastify' },
         deployment: { strategy: 'standard' },
@@ -359,4 +366,50 @@ describe('AC-10: test:contracts picks the slot the kernel would load the package
     expect(run.lines[0]).toMatch(/\bsearch\b/)
     expect(CERTIFIED.test(run.out) || NOT_CERTIFIED.test(run.out)).toBe(false)
   }, 90_000)
+})
+
+describe('AC-12: test:contracts --package certifies an ai adapter with the ai suite', () => {
+  it(
+    'AC-12: the third-party ai fixture on a custom ai slot is certified (`certified … (ai): N cases passed`, the eval set among them); the same package with ignoreSystem is not, failing only the system-prompt case',
+    () => {
+      const links = {
+        vitest: VITEST,
+        '@nymbalhq/contract-tests': CONTRACT_TESTS,
+        [AI_PKG]: AI_FIXTURE,
+      }
+      const aiSlot = (config: Record<string, unknown>) => ({
+        provider: 'custom',
+        package: AI_PKG,
+        config,
+      })
+      const good = scratchProject({
+        links,
+        search: { provider: 'native' },
+        ai: aiSlot({ ignoreSystem: false }),
+      })
+      const bad = scratchProject({
+        links,
+        search: { provider: 'native' },
+        ai: aiSlot({ ignoreSystem: true }),
+      })
+
+      const certified = certify(good, AI_PKG)
+      const refused = certify(bad, AI_PKG)
+
+      const passed = CERTIFIED.exec(certified.out)
+      const failed = NOT_CERTIFIED.exec(refused.out)
+      expect(certified.status, certified.out.slice(-3000)).toBe(0)
+      expect(passed?.slice(1, 3), certified.out.slice(-3000)).toEqual([AI_PKG, 'ai'])
+      expect(Number(passed?.[3])).toBeGreaterThanOrEqual(4)
+
+      expect(refused.status, refused.out.slice(-3000)).toBe(1)
+      expect(failed?.slice(1, 3), refused.out.slice(-3000)).toEqual([AI_PKG, 'ai'])
+      expect([Number(failed?.[3]), Number(failed?.[4])]).toEqual([1, Number(passed?.[3])])
+      expect(
+        refused.lines.filter((l) => /upper case/i.test(l) && /×|✗|✕|fail/i.test(l)).length,
+        refused.out.slice(-3000),
+      ).toBeGreaterThan(0)
+    },
+    2 * CERTIFY_WITHIN_MS + 30_000,
+  )
 })
