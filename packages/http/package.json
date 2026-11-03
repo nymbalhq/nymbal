@@ -33,8 +33,8 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",
-    "@fastify/cors": "^11.3.1",
-    "@fastify/http-proxy": "^11.6.5",
+    "@fastify/cors": "^11.4.0",
+    "@fastify/http-proxy": "^11.6.6",
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "@nymbalhq/config": "workspace:*",

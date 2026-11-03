@@ -848,11 +848,11 @@ importers:
         specifier: ^11.1.5
         version: 11.1.5
       '@fastify/cors':
-        specifier: ^11.3.1
-        version: 11.3.1
+        specifier: ^11.4.0
+        version: 11.4.0
       '@fastify/http-proxy':
-        specifier: ^11.6.5
-        version: 11.6.5
+        specifier: ^11.6.6
+        version: 11.6.6
       '@modelcontextprotocol/node':
         specifier: ^2.1.2
         version: 2.1.2(@modelcontextprotocol/server@2.4.0)
@@ -2746,8 +2746,8 @@ packages:
   '@fastify/cookie@11.1.5':
     resolution: {integrity: sha512-hs7e0otf7n/lJMpt63EFdQb5/u8kO6DeexEtLPVTybSdItC6SwJ1O0vtTyWvKNR70LZcHLlsUr/y3jFpqtyWRA==}
 
-  '@fastify/cors@11.3.1':
-    resolution: {integrity: sha512-gZXNzd6FLHzOIfvoK4+Az3Wko2V6Y0MIsLxpyo4AEYl7a9q1JBPwPaxLea4nkr++8FCiJiPpYYo6E02uZW0dqw==}
+  '@fastify/cors@11.4.0':
+    resolution: {integrity: sha512-+P4+RIRx5I3rkC1QttZ9gqSJ3AHrsM4PrZF6bpgbElt86n7gOBiHL3J0H3moVSyfc+vvvNto+Ay1LmG7ZQ37pA==}
 
   '@fastify/deepmerge@3.2.4':
     resolution: {integrity: sha512-kc8GQq5gX9RRhw0rov3DMrN8wS8yRlxJRdDzsYwwdBV/wazuVgc/1K7CKL90tlvu3RlHan6Y0R0aE3nJtBz2eQ==}
@@ -2761,8 +2761,8 @@ packages:
   '@fastify/forwarded@3.1.2':
     resolution: {integrity: sha512-89WiRG+hW3VQSfCwg4Hb8b43PeyEX15K5+lEfsZ4EUth/FyOjS/lv8HsVuswUNXWiSnxMGNouE/fq/0w3VumHQ==}
 
-  '@fastify/http-proxy@11.6.5':
-    resolution: {integrity: sha512-jbIRrLDNGaHfRRMwL4g4SI6P0SYh0T8Kecc53qKiPynq38iC+fqSjaERKDfqSsW1DG7DPn92KJeu0nqpxf/KsQ==}
+  '@fastify/http-proxy@11.6.6':
+    resolution: {integrity: sha512-7RJWEBD9eLKtH5NUPFvrQF/pF8q84O5pvN1E7C7jJ59B8V3MTmE5nqDRHmi+BpowABQAYwZiyuZFFAG7cMjOvw==}
 
   '@fastify/merge-json-schemas@0.2.2':
     resolution: {integrity: sha512-d/gx9sRbUCVgGRGzma46wLcwiY8noTqO2Nmjg/vbTARxHRE5bdh5PIL8s97Lt1X7ScRWRW52eVYxwIoPwIdVUA==}
@@ -2770,8 +2770,8 @@ packages:
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
 
-  '@fastify/reply-from@12.8.0':
-    resolution: {integrity: sha512-gxlp+UxL57S6js52TQYFv841zwpI/VzaAFTMhuXl6xAlXHcxYN4NYGbn+SodrJvBS9DuIuLyJbwLkeVABG82jw==}
+  '@fastify/reply-from@12.8.1':
+    resolution: {integrity: sha512-tiWScAbzVww3SeTB1bvBQ95xfUp9dTWEFtT9IHZRi4uhpbLu61vLZTJCO3trkTZ2T4FbFMI1iH7tTUMP8NoI/A==}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -10103,7 +10103,7 @@ snapshots:
       cookie: 2.0.1
       fastify-plugin: 6.0.1
 
-  '@fastify/cors@11.3.1':
+  '@fastify/cors@11.4.0':
     dependencies:
       fastify-plugin: 6.0.1
       toad-cache: 3.7.0
@@ -10118,9 +10118,9 @@ snapshots:
 
   '@fastify/forwarded@3.1.2': {}
 
-  '@fastify/http-proxy@11.6.5':
+  '@fastify/http-proxy@11.6.6':
     dependencies:
-      '@fastify/reply-from': 12.8.0
+      '@fastify/reply-from': 12.8.1
       fast-querystring: 1.1.2
       fastify-plugin: 6.0.1
       ws: 8.22.0
@@ -10137,7 +10137,7 @@ snapshots:
       '@fastify/forwarded': 3.1.2
       ipaddr.js: 2.5.0
 
-  '@fastify/reply-from@12.8.0':
+  '@fastify/reply-from@12.8.1':
     dependencies:
       '@fastify/error': 4.2.1
       end-of-stream: 1.4.5

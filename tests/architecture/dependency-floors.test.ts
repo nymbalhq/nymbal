@@ -12,10 +12,10 @@ import { REPO_ROOT, workspaceMembers, type Manifest } from './workspace-manifest
 
 const FLOORS: Readonly<Record<string, string>> = {
   fastify: '5.12.6',
-  '@fastify/http-proxy': '11.6.5',
-  '@fastify/reply-from': '12.8.0',
+  '@fastify/http-proxy': '11.6.6',
+  '@fastify/reply-from': '12.8.1',
   '@fastify/cookie': '11.0.0',
-  '@fastify/cors': '11.3.1',
+  '@fastify/cors': '11.4.0',
   'drizzle-orm': '0.45.2',
   zod: '4.6.6',
 }
