@@ -4,9 +4,11 @@ export const HEADER = {
   logo: 'Nymbal',
   accountHref: '/account',
   links: [
-    { href: '/products', label: 'Shop' },
-    { href: '/products?category=new', label: 'New Arrivals' },
-    { href: '/products?category=sale', label: 'Sale' },
+    { href: '/category/apparel', label: 'Apparel' },
+    { href: '/category/home', label: 'Home' },
+    { href: '/category/electronics', label: 'Electronics' },
+    { href: '/category/books', label: 'Books' },
+    { href: '/products', label: 'All Products' },
   ],
 }
 
@@ -15,8 +17,10 @@ export const FOOTER_COLUMNS = [
     heading: 'Shop',
     links: [
       { href: '/products', label: 'All Products' },
-      { href: '/products?category=new', label: 'New Arrivals' },
-      { href: '/products?category=sale', label: 'Sale' },
+      { href: '/category/apparel', label: 'Apparel' },
+      { href: '/category/home', label: 'Home' },
+      { href: '/category/electronics', label: 'Electronics' },
+      { href: '/category/books', label: 'Books' },
     ],
   },
   {

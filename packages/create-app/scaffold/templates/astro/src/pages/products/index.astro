@@ -9,9 +9,10 @@ import { fetchProducts, fetchCategories, fetchCapabilities, sortFromUrl } from '
 const capabilities = await fetchCapabilities()
 const sortKeys = capabilities?.catalog.sortKeys ?? []
 const sort = sortFromUrl(Astro.url, capabilities?.catalog)
+const category = Astro.url.searchParams.get('category') || undefined
 
 const [productResult, categories] = await Promise.all([
-  fetchProducts({ limit: 24, sort }),
+  fetchProducts({ limit: 24, category, sort }),
   fetchCategories(),
 ])
 

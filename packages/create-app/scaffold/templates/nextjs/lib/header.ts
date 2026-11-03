@@ -1,3 +1,4 @@
+import { unstable_rethrow } from 'next/navigation'
 import { fetchCapabilities } from '@/lib/api'
 import { HEADER } from '@/lib/chrome'
 import { renderElement } from '@/lib/render'
@@ -36,4 +37,18 @@ export function siteHeader(
 export async function canSearch(): Promise<boolean> {
   const capabilities = await fetchCapabilities()
   return capabilities?.search.capabilities.includes('search') ?? false
+}
+
+/**
+ * Whether a shopper's page shows the search bar: no bar when the capabilities read fails. A shopper's page renders per
+ * request, so the fallback is never cached; a catalog page's header uses `canSearch`, which rejects instead.
+ */
+export async function shopperCanSearch(): Promise<boolean> {
+  try {
+    return await canSearch()
+  } catch (err) {
+    unstable_rethrow(err)
+    console.error('[header] capabilities read failed; no search bar', err)
+    return false
+  }
 }
