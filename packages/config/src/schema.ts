@@ -477,6 +477,31 @@ export const eventsSchema = z
   })
   .strict()
 
+const MCP_WRITES = ['proposal', 'apply'] as const
+
+/**
+ * How agents reach the store. `mcp.writes: 'proposal'` hands a command tool's validated input to the proposal sink
+ * and runs nothing; `'apply'` runs it as the route would.
+ */
+export const agentsSchema = z
+  .object({
+    mcp: z
+      .object({
+        enabled: z.boolean().default(true),
+        writes: z
+          .enum(MCP_WRITES, {
+            error: (issue) =>
+              issue.code === 'invalid_value'
+                ? `must be 'proposal' or 'apply', not ${JSON.stringify(issue.input)}`
+                : undefined,
+          })
+          .default('proposal'),
+      })
+      .strict()
+      .prefault({}),
+  })
+  .strict()
+
 export const nymbalConfigSchema = z
   .object({
     store: storeSchema,
@@ -492,6 +517,7 @@ export const nymbalConfigSchema = z
       autoUpdates: false,
     }),
     events: eventsSchema.prefault({}),
+    agents: agentsSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
     const archiveBucket = cfg.events.archive?.bucket

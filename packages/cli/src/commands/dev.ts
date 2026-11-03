@@ -5,7 +5,7 @@ import { KNOWN_PROVIDERS, type NymbalConfig } from '@nymbalhq/config'
 import { ConfigError, type CommerceSlot } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
 import { createApp, createLogger, runSeed, sqliteFile, type NymbalApp } from '@nymbalhq/platform'
-import { createHttpServer } from '@nymbalhq/http'
+import { createHttpServer, mountMcp } from '@nymbalhq/http'
 import { run } from '../utils/spawn.js'
 import { getCliVersion } from '../utils/version.js'
 import { findFreePort } from '../utils/port.js'
@@ -203,6 +203,13 @@ export const devCommand = defineCommand({
     })
     const adminRoot = resolveAdminRoot()
     await app.attachHttp(http.adapter, { adminRoot })
+    await mountMcp(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      enabled: config.agents.mcp.enabled,
+      version,
+    })
     await http.start()
     const apiUrl = `http://localhost:${config.http.port}`
     const printSummary = (storefront: DevSummaryInfo['storefront']) => {

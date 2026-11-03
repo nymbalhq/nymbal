@@ -31,6 +31,7 @@ export {
   featuresSchema,
   eventsSchema,
   eventArchiveSchema,
+  agentsSchema,
   type NymbalConfig,
   type NymbalConfigInput,
 } from './schema.js'

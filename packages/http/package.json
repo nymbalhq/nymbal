@@ -35,12 +35,15 @@
     "@fastify/cookie": "^11.1.5",
     "@fastify/cors": "^11.3.1",
     "@fastify/http-proxy": "^11.6.5",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "fastify": "^5.12.7",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "@types/uuid": "^10.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "tsup": "^9.0.0",

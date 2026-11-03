@@ -125,6 +125,15 @@ create_start="$(now_ms)"
 (cd "$parent" && npx --yes create-nymbal-app shop --template "$template" --yes)
 create_seconds="$(seconds_since "$create_start")"
 project="$parent/shop"
+# The agent proof places an order, which a store's default proposal-only writes would hold back.
+node -e '
+const { readFileSync, writeFileSync } = require("node:fs")
+const path = process.argv[1]
+const source = readFileSync(path, "utf8")
+const end = source.lastIndexOf("\n})")
+if (end < 0) throw new Error(`no closing defineConfig in ${path}`)
+writeFileSync(path, `${source.slice(0, end)}\n\n  agents: { mcp: { writes: "apply" } },${source.slice(end)}`)
+' "$project/nymbal.config.ts"
 
 # ─── first serve ─────────────────────────────────────────────────────────────────────────────────────────────────
 store_port="$(free_port)"
@@ -154,3 +163,7 @@ if ! (cd "$root" && NYMBAL_SCAFFOLD_DIR="$project" NYMBAL_STORE_URL="$store_url"
 fi
 
 echo "scaffold-clean: $template create+install $create_seconds s, first serve $serve_seconds s"
+if [ -f "$parent/mcp-proof" ]; then
+  cat "$parent/mcp-proof"
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then cat "$parent/mcp-proof" >>"$GITHUB_STEP_SUMMARY"; fi
+fi

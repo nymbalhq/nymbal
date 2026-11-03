@@ -74,6 +74,10 @@ export {
 export { registerAllRoutes, type RegisterAllRoutesDeps } from './routes/register.js'
 export { registerAlertRoutes, type RegisterAlertRoutesDeps } from './routes/alerts.js'
 export { routeSchemas, type RouteSchema } from './routes/schemas.js'
+export { toolsOf, jsonSchemaOf, toolName } from './mcp/registry.js'
+export { RouteTable, recordingAdapter } from './mcp/route-table.js'
+export { createInvoker, type InvokerDeps } from './mcp/invoke.js'
+export { returningSink, type Proposal, type ProposalSink } from './mcp/proposals.js'
 export {
   createApp,
   type NymbalApp,

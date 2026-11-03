@@ -22,9 +22,20 @@ export interface RouteSchema {
    * the service commits its own steps around the provider call, so what it holds is committed before money moves.
    */
   provider?: true
+  /**
+   * Kept from agents: the route mints or clears credentials, streams, takes provider-signed bytes, serves files,
+   * records a browser's views or spends the store's AI key.
+   */
+  tool?: false
+  /**
+   * The cookies a route reads its caller's state from, as the tool arguments that carry it instead: argument name to
+   * cookie name. An agent holds no cookie jar, so the cart travels as a `cart` handle.
+   */
+  handles?: Record<string, string>
 }
 
 const id = z.string().min(1)
+const cartHandle = { cart: 'nymbal.cart' }
 /** A query value as the HTTP layer hands it over: repeated keys arrive as an array. */
 const queryValue = z.union([z.string(), z.array(z.string())]).optional()
 const paging = { limit: queryValue, offset: queryValue }
@@ -98,6 +109,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Auth
   'POST /api/auth/register': {
     name: 'auth.register',
+    tool: false,
     command: 'customer.register',
     description: 'Create a customer account and sign it in.',
     body: z.object({
@@ -110,18 +122,21 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/auth/login': {
     name: 'auth.login',
+    tool: false,
     command: null,
     description: 'Sign a customer in with email and password.',
     body: z.object({ email: z.string().min(1), password: z.string().min(1) }),
   },
   'POST /api/auth/refresh': {
     name: 'auth.refresh',
+    tool: false,
     command: null,
     description: 'Exchange a refresh token for a new access token.',
     body: optionalRefresh,
   },
   'POST /api/auth/logout': {
     name: 'auth.logout',
+    tool: false,
     command: null,
     description: 'Revoke the refresh token and clear its cookie.',
     body: optionalRefresh,
@@ -196,10 +211,12 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Cart
   'GET /api/cart': {
     name: 'cart.get',
+    handles: cartHandle,
     description: 'Get the current cart, creating one when there is none.',
   },
   'POST /api/cart/items': {
     name: 'cart.addItem',
+    handles: cartHandle,
     command: null,
     description: 'Add a quantity of a variant to the cart.',
     // Strict: an unknown key (`quantity`) is refused rather than stripped, which would add 1.
@@ -209,6 +226,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'PATCH /api/cart/items/:variantId': {
     name: 'cart.updateItem',
+    handles: cartHandle,
     command: null,
     description: 'Set the quantity of a variant in the cart.',
     params: variantIdParams,
@@ -216,12 +234,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'DELETE /api/cart/items/:variantId': {
     name: 'cart.removeItem',
+    handles: cartHandle,
     command: null,
     description: 'Remove a variant from the cart.',
     params: variantIdParams,
   },
   'DELETE /api/cart': {
     name: 'cart.clear',
+    handles: cartHandle,
     command: null,
     description: 'Remove every item from the cart.',
   },
@@ -229,6 +249,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Checkout and orders
   'POST /api/checkout': {
     name: 'checkout.begin',
+    handles: cartHandle,
     command: 'checkout.place',
     description: 'Place an order for the cart and start its payment.',
     body: z.object({
@@ -262,12 +283,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Recently viewed: the viewer is the bearer's customer or the visitor cookie's, never one the request names.
   'POST /api/recently-viewed': {
     name: 'recentlyViewed.record',
+    tool: false,
     command: null,
     description: 'Record that the shopper viewed a product.',
     body: z.object({ productId: id }),
   },
   'GET /api/recently-viewed': {
     name: 'recentlyViewed.list',
+    tool: false,
     description: "List the shopper's recently viewed products, newest first.",
   },
 
@@ -519,6 +542,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'POST /api/admin/products/:id/enhance': {
     name: 'admin.products.enhance',
+    tool: false,
     command: null,
     description: 'Suggest copy for one product field with the AI adapter.',
     params: idParams,
@@ -605,11 +629,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: live events
   'POST /api/admin/events/ticket': {
     name: 'admin.events.ticket',
+    tool: false,
     command: null,
     description: 'Issue a one-time ticket for the admin event stream.',
   },
   'GET /api/admin/events': {
     name: 'admin.events.stream',
+    tool: false,
     description: 'Stream order, payment and inventory events to the admin (SSE).',
     query: z.object({ ticket: queryValue }),
   },
@@ -632,6 +658,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/activity/export': {
     name: 'admin.activity.export',
+    tool: false,
     description: 'Export audit entries oldest first as NDJSON.',
     query: z.object({ since: queryValue, until: queryValue, correlation: queryValue }),
   },
@@ -639,6 +666,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Webhooks
   'POST /api/webhooks/:adapter': {
     name: 'webhooks.receive',
+    tool: false,
     // The route opens its own audit command: payment.finalize for a payments delivery, webhook.receive otherwise.
     command: null,
     description:
@@ -651,14 +679,17 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // The admin SPA, served when attachHttp is given an admin root (or NYMBAL_ADMIN_DIST is set)
   'GET /admin': {
     name: 'admin.app.redirect',
+    tool: false,
     description: 'Redirect to the admin app.',
   },
   'GET /admin/': {
     name: 'admin.app.index',
+    tool: false,
     description: 'Serve the admin app.',
   },
   'GET /admin/*': {
     name: 'admin.app.asset',
+    tool: false,
     description: 'Serve the admin app and its assets.',
     params: z.object({ '*': z.string().optional() }),
   },

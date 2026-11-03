@@ -2,7 +2,6 @@ import type { NymbalConfig } from '@nymbalhq/config'
 import {
   ConfigError,
   type DocumentStoreAdapter,
-  type HttpAdapter,
   type HttpMethod,
   type Logger,
   type MiddlewareHandler,
@@ -21,7 +20,7 @@ export interface HttpServerDeps {
 }
 
 export interface HttpServer {
-  adapter: HttpAdapter
+  adapter: FastifyHttpAdapter
   registerRoute(
     method: HttpMethod,
     path: string,

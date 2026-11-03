@@ -114,3 +114,45 @@ export interface HttpAdapter {
   start(port: number, host?: string): Promise<void>
   stop(): Promise<void>
 }
+
+/** A JSON Schema whose root is an object, as an MCP tool's `inputSchema` must be. */
+export interface JsonSchemaObject {
+  type: 'object'
+  properties?: Record<string, unknown>
+  required?: string[]
+  [keyword: string]: unknown
+}
+
+/** Who a tool runs for: the verified bearer's user (none for an anonymous agent) and the agent's client info. */
+export interface Caller {
+  auth?: RequestAuth
+  agent: { name: string; version?: string }
+  /** The address the agent's request came from, for the route's rate rule. */
+  ip?: string
+}
+
+/**
+ * One route of the API as an agent tool. `scope` is the least caller the route's gate admits; `kind` is `read` for a
+ * GET, `session` for a write that changes nothing audited (the cart), `command` for an audited command.
+ */
+export interface ToolDefinition {
+  name: string
+  title: string
+  description: string
+  inputSchema: JsonSchemaObject
+  scope: 'public' | 'customer' | 'admin'
+  kind: 'read' | 'session' | 'command'
+  route: { method: HttpMethod; path: string; command: string | null | undefined }
+}
+
+export interface ToolResult {
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent?: Record<string, unknown>
+  isError?: boolean
+}
+
+/** The tools a store serves to agents; the transports (HTTP, stdio) bind it. */
+export interface ToolSurface {
+  list(caller: Caller): ToolDefinition[]
+  call(name: string, args: unknown, caller: Caller): Promise<ToolResult>
+}

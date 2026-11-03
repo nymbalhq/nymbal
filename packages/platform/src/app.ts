@@ -37,7 +37,11 @@ import {
   type SweeperHandle,
 } from './sweepers/index.js'
 import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
-import type { HttpAdapter } from '@nymbalhq/types'
+import type { HttpAdapter, ToolSurface } from '@nymbalhq/types'
+import { RouteTable, recordingAdapter } from './mcp/route-table.js'
+import { toolsOf } from './mcp/registry.js'
+import { createInvoker } from './mcp/invoke.js'
+import { returningSink, type ProposalSink } from './mcp/proposals.js'
 
 export interface NymbalApp {
   platform: Platform
@@ -52,6 +56,8 @@ export interface NymbalApp {
    * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
    */
   attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
+  /** The API's routes as agent tools, run in process through the handlers `attachHttp` registered; set by it. */
+  readonly mcp: ToolSurface | undefined
   /** Each slot's provider and its adapter's own `capabilities()`; an ai slot of `none` offers nothing. */
   capabilities(): CapabilitiesReport
   stop(): Promise<void>
@@ -76,6 +82,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   adapters?: InjectedAdapters
   /** How the event relay retries a failed delivery (`createRelay`). */
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
+  /** Where a command tool's call goes under `agents.mcp.writes: 'proposal'`; by default it is logged and kept nowhere. */
+  proposalSink?: ProposalSink
 }
 
 /**
@@ -352,6 +360,8 @@ export async function createApp(
       }),
     ]
 
+    const proposalSink = options.proposalSink ?? returningSink(logger.child({ layer: 'mcp' }))
+    let mcp: ToolSurface | undefined
     const app: NymbalApp = {
       platform,
       repos,
@@ -362,9 +372,10 @@ export async function createApp(
       async attachHttp(adapter, options = {}) {
         await adapters.security.applyMiddleware(adapter, config.security)
         const { registerAllRoutes } = await import('./routes/register.js')
+        const table = new RouteTable()
         registerAllRoutes({
           config,
-          adapter,
+          adapter: recordingAdapter(table, adapter),
           services,
           adapters,
           repos,
@@ -376,6 +387,16 @@ export async function createApp(
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
         })
+        mcp = createInvoker({
+          table,
+          tools: toolsOf(table),
+          writes: config.agents.mcp.writes,
+          sink: proposalSink,
+          logger,
+        })
+      },
+      get mcp() {
+        return mcp
       },
       capabilities() {
         const commerce = Object.fromEntries(

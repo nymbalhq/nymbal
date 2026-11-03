@@ -23,6 +23,7 @@ import {
   createReadyRoute,
   FastifyHttpAdapter,
   forwardToStorefront,
+  mountMcp,
   resolveTrustProxy,
   type ReadyState,
 } from '@nymbalhq/http'
@@ -347,6 +348,13 @@ export const startCommand = defineCommand({
     })
     http.registerRoute('GET', '/ready', createReadyRoute(probe))
     await app.attachHttp(http.adapter, { adminRoot: resolveAdminRoot() })
+    await mountMcp(http, {
+      app,
+      verify: (token) => app.services.auth.verifyAccessToken(token),
+      origins: config.http.cors.allowedOrigins,
+      enabled: config.agents.mcp.enabled,
+      version,
+    })
     if (!(http.adapter instanceof FastifyHttpAdapter)) {
       throw new Error('nymbal start needs the fastify http adapter')
     }

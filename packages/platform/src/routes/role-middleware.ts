@@ -7,8 +7,13 @@ import {
 } from '@nymbalhq/types'
 import { fail } from './envelope.js'
 
-/** The refusal for a caller who fails a route's gate, or null when the caller passes it. */
-export type Gate = (ctx: RequestContext) => ResponseEnvelope | null
+/**
+ * The refusal for a caller who fails a route's gate, or null when the caller passes it. `scope` is the least caller
+ * it admits: `customer` for any signed-in user, a role's name for that role.
+ */
+export type Gate = ((ctx: RequestContext) => ResponseEnvelope | null) & {
+  readonly scope?: 'customer' | Role
+}
 
 const GATE = Symbol('nymbal.route-gate')
 
@@ -28,8 +33,10 @@ export function withGate<T>(handler: RouteHandler<T>, gate: Gate | undefined): R
   return handler
 }
 
-const signedIn: Gate = (ctx) =>
+const refuseAnonymous = (ctx: RequestContext): ResponseEnvelope | null =>
   ctx.auth?.userId ? null : fail('auth.unauthorized', 'Authentication required', 401)
+
+const signedIn: Gate = Object.assign(refuseAnonymous, { scope: 'customer' as const })
 
 function gated<T>(gate: Gate, handler: RouteHandler<T>): RouteHandler<T> {
   return withGate<T>((ctx) => gate(ctx as RequestContext) ?? handler(ctx), gate)
@@ -40,9 +47,12 @@ export function requireAuth<T = unknown>(handler: RouteHandler<T>): RouteHandler
 }
 
 export function requireRole<T = unknown>(role: Role, handler: RouteHandler<T>): RouteHandler<T> {
-  const hasRole: Gate = (ctx) =>
-    signedIn(ctx) ??
-    (ctx.auth?.roles?.includes(role) ? null : fail('auth.forbidden', `Role required: ${role}`, 403))
+  const hasRole: Gate = Object.assign(
+    (ctx: RequestContext) =>
+      refuseAnonymous(ctx) ??
+      (ctx.auth?.roles?.includes(role) ? null : fail('auth.forbidden', `Role required: ${role}`, 403)),
+    { scope: role },
+  )
   return gated(hasRole, handler)
 }
 

@@ -165,6 +165,50 @@ export class FastifyHttpAdapter implements HttpAdapter {
     return this.#boundPort
   }
 
+  /** The guard every route passes, for a mounted handler that admits a request it serves on a route's behalf. */
+  get guard(): SecurityGuard {
+    return this.#guard
+  }
+
+  /**
+   * A route whose handler answers a web-standard `Response` (the MCP endpoint's SDK), or an envelope when it refuses.
+   * It passes the guard and the middlewares as every route does.
+   */
+  registerWebRoute(
+    method: HttpMethod,
+    path: string,
+    handler: (ctx: RequestContext) => Promise<Response | ResponseEnvelope>,
+    options?: RouteOptions,
+  ): void {
+    if (this.#started) {
+      throw new Error('Cannot register routes after the server has started')
+    }
+    this.#app.route({
+      method,
+      url: path,
+      handler: async (req, reply) => {
+        const ctx = this.#buildContext(req, false)
+        const refused = this.#guard.admit(ctx, options)
+        if (refused) return this.#applyEnvelope(reply, refused)
+        let answer: Response | ResponseEnvelope
+        try {
+          answer = await this.#runMiddlewaresThen(ctx, handler)
+        } catch (err) {
+          answer = this.#renderError(err, ctx)
+        }
+        if (!(answer instanceof Response)) {
+          return this.#applyEnvelope(reply, this.#guard.finish(ctx, answer))
+        }
+        const { headers } = this.#guard.finish(ctx, { status: answer.status })
+        for (const [name, value] of Object.entries({ ...this.#defaultHeaders, ...headers })) {
+          reply.header(name, value)
+        }
+        return reply.send(answer)
+      },
+      config: { routeOptions: options ?? {} },
+    })
+  }
+
   registerRoute(
     method: HttpMethod,
     path: string,
@@ -346,7 +390,10 @@ export class FastifyHttpAdapter implements HttpAdapter {
     this.#started = false
   }
 
-  async #runMiddlewaresThen(ctx: RequestContext, handler: RouteHandler): Promise<ResponseEnvelope> {
+  async #runMiddlewaresThen<T extends Response | ResponseEnvelope>(
+    ctx: RequestContext,
+    handler: (ctx: RequestContext) => Promise<T> | T,
+  ): Promise<T | ResponseEnvelope> {
     for (const mw of this.#middlewares) {
       const out = await mw(ctx)
       if (out) return out

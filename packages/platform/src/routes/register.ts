@@ -65,7 +65,10 @@ function correlatedAdapter(adapter: HttpAdapter): HttpAdapter {
       adapter.registerRoute(
         method,
         path,
-        (ctx) => runWithCorrelation(ctx.correlationId, () => handler(ctx)),
+        withGate(
+          (ctx) => runWithCorrelation(ctx.correlationId, () => handler(ctx)),
+          gateOf(handler),
+        ),
         options,
       )
     },
