@@ -90,6 +90,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
           stock: String(variant.stock ?? 0),
         }).__html
       : undefined,
+    reviews: renderNymbal('nymbal-review-list', {
+      reviews: JSON.stringify(reviews),
+      rating: JSON.stringify(product.rating ?? null),
+    }).__html,
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
@@ -169,12 +173,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
         <section className={styles.reviewsSection}>
           <h2 className={styles.reviewsTitle}>Customer Reviews</h2>
-          <ReviewList
-            reviews={reviews}
-            serverHtml={
-              renderNymbal('nymbal-review-list', { reviews: JSON.stringify(reviews) }).__html
-            }
-          />
+          <ReviewList reviews={reviews} rating={product.rating} serverHtml={serverHtml.reviews} />
           {acceptsReviews(capabilities) && (
             <ReviewForm
               className={styles.reviewForm}

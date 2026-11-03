@@ -14,6 +14,7 @@ import {
 } from '@nymbalhq/types'
 import type { SearchService } from '../services/search-service.js'
 import { ok, renderError, fail } from './envelope.js'
+import { withRatings } from './product-ratings.js'
 
 const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
   newest: { field: 'createdAt', direction: 'desc' },
@@ -136,7 +137,7 @@ export function registerProductRoutes(
         .filter(Boolean)
       const products = await Promise.all(slugs.map((slug) => documentStore.get('products', slug)))
       // A hit whose product is gone is dropped from the page; the total is the index's.
-      const items = products.filter(Boolean)
+      const items = await withRatings(reviewsAdapter, products.filter(Boolean), ctx.logger)
       const facets =
         canFacet() &&
         searchFacet !== undefined &&
@@ -179,7 +180,8 @@ export function registerProductRoutes(
             ...(cursor !== undefined && { cursor }),
           }))
 
-      if (!canFacet()) return ok({ items: result.items, nextCursor: result.nextCursor })
+      const items = await withRatings(reviewsAdapter, result.items, ctx.logger)
+      if (!canFacet()) return ok({ items, nextCursor: result.nextCursor })
       // Facets come from the full catalogue, never the page: a page holds only some of each category (the newest
       // products lead the default order), so its counts would understate what a filter returns.
       const allResult = await documentStore.query('products', {
@@ -187,7 +189,7 @@ export function registerProductRoutes(
         limit: 1000,
       })
       const categoryFacet = buildCategoryFacet(allResult.items as Array<Record<string, unknown>>)
-      return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
+      return ok({ items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
       return renderError(err, ctx.logger)
     }
@@ -199,7 +201,8 @@ export function registerProductRoutes(
       if (!slug) return fail('products.slug_required', 'slug param required', 400)
       const doc = await documentStore.get('products', slug)
       if (!doc) throw new NotFoundError('product', slug)
-      return ok(doc)
+      const [rated] = await withRatings(reviewsAdapter, [doc], ctx.logger)
+      return ok(rated)
     } catch (err) {
       return renderError(err, ctx.logger)
     }

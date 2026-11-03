@@ -30,6 +30,12 @@ export interface PublicReviewsResult {
   nextCursor: string | null
 }
 
+/** A product's rating as the product routes serve it: the average to one decimal and the approved review count. */
+export interface ProductRating {
+  average: number
+  count: number
+}
+
 export interface AggregateRating {
   productId: string
   average: number

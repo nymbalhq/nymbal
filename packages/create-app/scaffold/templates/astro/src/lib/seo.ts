@@ -39,6 +39,16 @@ export function productJsonLd(product: DenormalisedProduct, baseUrl: string) {
         : 'https://schema.org/OutOfStock',
       offerCount: product.variants?.length ?? 1,
     },
+    // None without an approved review: a zero-count aggregateRating is invalid structured data.
+    ...(product.rating?.count && {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: product.rating.average,
+        reviewCount: product.rating.count,
+        bestRating: 5,
+        worstRating: 1,
+      },
+    }),
   }
 }
 

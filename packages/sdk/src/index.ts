@@ -78,6 +78,7 @@ export type {
 export type {
   StoreCapabilities,
   PaymentClient,
+  ProductRating,
   ProductSortKey,
   PublicReview,
   PublicReviewsResult as ReviewsListResult,

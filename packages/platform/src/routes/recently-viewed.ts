@@ -5,6 +5,7 @@ import {
   type RequestContext,
   type ResponseCookie,
   type ResponseEnvelope,
+  type ReviewsAdapter,
 } from '@nymbalhq/types'
 import type { ProductRepository } from '../repositories/product.js'
 import {
@@ -16,6 +17,7 @@ import type { RecentlyViewedService } from '../services/recently-viewed-service.
 import type { AfterSignIn, SecureCookies } from './auth.js'
 import { refuseLapsedBearer } from './auth-middleware.js'
 import { ok, renderError } from './envelope.js'
+import { withRatings } from './product-ratings.js'
 
 export const VISITOR_COOKIE = 'nymbal.visitor'
 
@@ -64,6 +66,8 @@ export interface RegisterRecentlyViewedRoutesDeps {
   productRepo: ProductRepository
   /** The config's `events.retentionDays`: the list reaches no further back than the log does. */
   retentionDays: number
+  /** Where each product's rating comes from; without it every item is served `rating: null`. */
+  reviews?: ReviewsAdapter
   now?: () => Date
   secureCookies?: SecureCookies
 }
@@ -110,10 +114,11 @@ export function registerRecentlyViewedRoutes(
           : visitorId !== undefined
             ? viewerKey({ kind: 'visitor', id: visitorId })
             : null
-      const items = await readRecentlyViewed(
+      const viewed = await readRecentlyViewed(
         { documentStore, repos: { product: productRepo }, retentionDays, now },
         viewer,
       )
+      const items = await withRatings(deps.reviews, viewed, ctx.logger)
       return { ...ok({ items }), headers: NOT_STORED } as ResponseEnvelope
     } catch (err) {
       return renderError(err, ctx.logger)

@@ -444,8 +444,15 @@ const pageItem = fc.record({
   imageUrl: fc.constantFrom('', 'https://example.test/line.jpg'),
 })
 
+// A served rating: the API rounds the average to one decimal and serves none for a product without approved reviews.
+const productRating = fc.record({
+  average: fc.integer({ min: 10, max: 50 }).map((tenths) => tenths / 10),
+  count: fc.integer({ min: 0, max: 100_000 }),
+})
+
 const cardProduct = fc.record({
   id: word,
+  rating: fc.option(productRating),
   slug: word,
   name: word,
   priceMinor: fc.option(fc.integer({ min: 0, max: 100_000 })),
@@ -766,6 +773,7 @@ const FIXED: Record<Tag, State[]> = {
         product: JSON.stringify(card({ priceMinor: null, priceRange: null, currency: null })),
       },
     }),
+    state({ attrs: { product: JSON.stringify(card({ rating: { average: 4.5, count: 2 } })) } }),
   ],
   'nymbal-search-results': [
     state(),
@@ -959,6 +967,29 @@ const FIXED: Record<Tag, State[]> = {
     state({ attrs: { reviews: JSON.stringify([]) } }),
     state({
       attrs: {
+        reviews: JSON.stringify([
+          {
+            id: 'r1',
+            productId: 'p1',
+            rating: 4,
+            title: 'Good',
+            body: 'Solid mug.',
+            submittedAt: '2026-10-22T00:00:00.000Z',
+          },
+          {
+            id: 'r2',
+            productId: 'p1',
+            rating: 2,
+            title: 'Meh',
+            body: 'Chipped.',
+            submittedAt: '2026-10-21T00:00:00.000Z',
+          },
+        ]),
+      },
+    }),
+    state({
+      attrs: {
+        rating: JSON.stringify({ average: 3, count: 2 }),
         reviews: JSON.stringify([
           {
             id: 'r1',
@@ -1320,7 +1351,13 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
       }),
       { maxLength: 4, selector: (r) => r.id },
     )
-    .map((reviews) => state({ attrs: { reviews: JSON.stringify(reviews) } })),
+    .chain((reviews) =>
+      fc
+        .option(productRating)
+        .map((rating) =>
+          state({ attrs: { reviews: JSON.stringify(reviews), rating: JSON.stringify(rating) } }),
+        ),
+    ),
   'nymbal-review-form': fc
     .record({ phase: fc.option(fc.constantFrom(...PHASES)), signed: fc.boolean() })
     .map(({ phase, signed }) =>
@@ -1604,7 +1641,10 @@ const INTERFACE: Array<{
     tag: 'nymbal-review-list',
     reactName: 'ReviewList',
     events: [],
-    attributes: [{ name: 'reviews', type: 'json' }],
+    attributes: [
+      { name: 'reviews', type: 'json' },
+      { name: 'rating', type: 'json' },
+    ],
   },
   {
     tag: 'nymbal-review-form',

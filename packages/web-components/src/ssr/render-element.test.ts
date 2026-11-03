@@ -68,6 +68,12 @@ const JSON_VALUES: Record<string, fc.Arbitrary<unknown>> = {
   'nymbal-site-footer columns': columns('p-'),
   'nymbal-category-nav categories': categories('p-'),
   'nymbal-review-list reviews': reviews('p-'),
+  'nymbal-review-list rating': fc.option(
+    fc.record({
+      average: fc.integer({ min: 10, max: 50 }).map((tenths) => tenths / 10),
+      count: fc.integer({ min: 0, max: 1000 }),
+    }),
+  ),
   'nymbal-order-summary items': summaryLines('p-'),
   'nymbal-order-timeline entries': timelineEntries(),
 }

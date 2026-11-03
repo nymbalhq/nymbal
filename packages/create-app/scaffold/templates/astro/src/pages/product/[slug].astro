@@ -117,7 +117,10 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
 
     <section class="pdp-reviews">
       <h2 class="pdp-reviews-title">Customer Reviews</h2>
-      <NymbalElement tag="nymbal-review-list" attributes={{ reviews: JSON.stringify(reviews) }} />
+      <NymbalElement
+        tag="nymbal-review-list"
+        attributes={{ reviews: JSON.stringify(reviews), rating: JSON.stringify(product.rating ?? null) }}
+      />
       {acceptsReviews(capabilities) && (
         <NymbalElement tag="nymbal-review-form" attributes={{ class: 'pdp-review-form', 'product-id': product.id }} />
       )}

@@ -228,7 +228,24 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .where(eq(postgresSchema.reviews.id, id))
     },
     async aggregateByProduct(tx, productId) {
-      const approved = await this.listByProduct(tx, productId, 'approved', 1000)
+      // One row per distinct rating among the approved reviews, however many reviews there are.
+      let groups: Array<{ rating: unknown; n: unknown }>
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        groups = sqliteDb(tx)
+          .select({ rating: t.rating, n: sql<number>`count(*)` })
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.moderationStatus, 'approved')))
+          .groupBy(t.rating)
+          .all()
+      } else {
+        const t = postgresSchema.reviews
+        groups = await postgresDb(tx)
+          .select({ rating: t.rating, n: sql<string>`count(*)` })
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.moderationStatus, 'approved')))
+          .groupBy(t.rating)
+      }
       const histogram: Record<'1' | '2' | '3' | '4' | '5', number> = {
         '1': 0,
         '2': 0,
@@ -237,14 +254,17 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         '5': 0,
       }
       let total = 0
-      for (const r of approved) {
+      let count = 0
+      for (const g of groups) {
+        const rating = Number(g.rating)
+        const n = Number(g.n)
         const bucket = String(
-          Math.max(1, Math.min(5, Math.round(r.rating))),
+          Math.max(1, Math.min(5, Math.round(rating))),
         ) as keyof typeof histogram
-        histogram[bucket] += 1
-        total += r.rating
+        histogram[bucket] += n
+        total += rating * n
+        count += n
       }
-      const count = approved.length
       const average = count === 0 ? 0 : total / count
       return { average, count, histogram }
     },

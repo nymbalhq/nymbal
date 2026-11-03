@@ -191,6 +191,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     documentStore,
     productRepo: repos.product,
     retentionDays: config.events.retentionDays,
+    reviews: adapters.reviews,
     secureCookies: secure,
   })
   registerCheckoutRoutes(adapter, services.checkout)

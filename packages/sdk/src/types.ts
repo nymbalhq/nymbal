@@ -7,6 +7,7 @@ import type {
   Order,
   OrderStatus,
   PaymentIntent,
+  ProductRating,
   ProductSortKey,
   VariantOption,
 } from '@nymbalhq/types'
@@ -41,6 +42,8 @@ export interface DenormalisedProduct {
   categories: Array<{ id: string; name: string; slug: string }>
   createdAt: string
   updatedAt: string
+  /** Served by the product routes, not stored: null when the product has no approved review. */
+  rating?: ProductRating | null
 }
 
 // --- Store state types -----------------------------------------------------

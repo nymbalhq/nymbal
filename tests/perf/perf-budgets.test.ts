@@ -16,10 +16,11 @@ import {
 // the real run (both templates, as committed), which is the last to write reports/perf-budgets.json, so the report
 // is the real one.
 // - AC-2: the fixture run fails on its page alone, and scriptBytes is the gzip sum of the page's scripts.
-// - AC-4: every page is in the run and within budget, and Astro `/` ships no more script bytes than at d2d900b
-//   (tests/perf/fixtures/astro-home-d2d900b.json).
-// The maintainers moved the reference twice on purpose: from 606e5aa (26,413 B) to 75989c8 (27,224 B) for the
-// recently viewed list, and to d2d900b (27,272 B) for the guest order link in the shared client chunk.
+// - AC-4: every page is in the run and within budget, and Astro `/` ships no more script bytes than at 13a4e78
+//   (tests/perf/fixtures/astro-home-13a4e78.json).
+// The maintainers moved the reference three times on purpose: from 606e5aa (26,413 B) to 75989c8 (27,224 B) for the
+// recently viewed list, to d2d900b (27,272 B) for the guest order link in the shared client chunk, and to 13a4e78
+// (27,583 B) for the product card's rating.
 // Then the bytes runs, without Lighthouse (`--bytes`, reports/perf-bytes.json):
 // - AC-5: gate:full's perf-bytes step, planned by plan() and run by the gate's runner in this checkout, is ok, and
 //   gives each of the ten pages the scriptBytes the Lighthouse run measured;
@@ -39,7 +40,7 @@ const RUN_TIMEOUT_MS = 20 * 60_000
 const FROM_ENV = (process.env.NYMBAL_PERF_BUDGETS_ARGS ?? '').split(/\s+/).filter(Boolean)
 const baseline = JSON.parse(
   readFileSync(
-    fileURLToPath(new URL('./fixtures/astro-home-d2d900b.json', import.meta.url)),
+    fileURLToPath(new URL('./fixtures/astro-home-13a4e78.json', import.meta.url)),
     'utf8',
   ),
 ) as { commit: string; scriptBytes: number }

@@ -1,4 +1,5 @@
-import { css, html } from 'lit'
+import { css, html, nothing } from 'lit'
+import type { ProductRating } from '@nymbalhq/types'
 import {
   baseStyles,
   NymbalElement,
@@ -6,14 +7,19 @@ import {
   propertiesOf,
   type ElementSchema,
 } from '../base-element.js'
+import { reviewsOf, shownRating, stars } from '../rating.js'
 
 const SCHEMA: ElementSchema = {
   tag: 'nymbal-review-list',
   reactName: 'ReviewList',
-  // A product's approved reviews, as `GET /api/products/:id/reviews` serves them.
-  attributes: [{ name: 'reviews', prop: 'reviews', type: 'json' }],
+  // A product's approved reviews, as `GET /api/products/:id/reviews` serves them, and its `rating` as the product
+  // routes serve it.
+  attributes: [
+    { name: 'reviews', prop: 'reviews', type: 'json' },
+    { name: 'rating', prop: 'rating', type: 'json' },
+  ],
   events: [],
-  parts: ['list', 'review', 'rating', 'empty'],
+  parts: ['summary', 'list', 'review', 'rating', 'empty'],
   slots: ['empty'],
   children: false,
 }
@@ -39,12 +45,19 @@ function dateOf(iso: string): string {
   return Number.isNaN(date.getTime()) ? '' : DATE.format(date)
 }
 
-function stars(rating: number): string {
-  const filled = Math.max(0, Math.min(5, Math.round(rating)))
-  return '★'.repeat(filled) + '☆'.repeat(5 - filled)
+/** The product's stars, average and review count, above its reviews. */
+function summaryOf(r: ProductRating | null) {
+  if (r === null) return nothing
+  return html`<p part="summary">
+    <span class="stars" aria-hidden="true">${stars(r.average)}</span>
+    ${r.average.toFixed(1)} out of 5 · ${reviewsOf(r.count)}
+  </p>`
 }
 
-/** A product's reviews, each with its rating, date, title and text; an invitation when there are none. */
+/**
+ * A product's rating summary, then its reviews, each with its rating, date, title and text; an invitation when there
+ * are none.
+ */
 export class NymbalReviewList extends NymbalElement {
   static override schema = SCHEMA
   static override properties = propertiesOf(SCHEMA)
@@ -71,7 +84,13 @@ export class NymbalReviewList extends NymbalElement {
         align-items: center;
         margin-bottom: var(--nymbal-spacing-sm, 0.5rem);
       }
-      [part~='rating'] {
+      [part~='summary'] {
+        margin: 0 0 var(--nymbal-spacing-lg, 1.5rem);
+        font-size: var(--nymbal-font-size-sm, 0.875rem);
+        font-weight: var(--nymbal-font-weight-medium, 500);
+      }
+      [part~='rating'],
+      .stars {
         letter-spacing: 0.1em;
         color: var(--nymbal-color-warning, #d97706);
       }
@@ -95,15 +114,18 @@ export class NymbalReviewList extends NymbalElement {
   ]
 
   declare reviews: unknown
+  declare rating: unknown
 
   protected override render() {
     const reviews = parsedJson<Review[]>(this, 'reviews', this.reviews)
+    const summary = summaryOf(shownRating(parsedJson<unknown>(this, 'rating', this.rating)))
     if (!Array.isArray(reviews) || reviews.length === 0) {
-      return html`<p part="empty">
-        <slot name="empty">No reviews yet. Be the first to review this product.</slot>
-      </p>`
+      return html`${summary}<p part="empty">
+          <slot name="empty">No reviews yet. Be the first to review this product.</slot>
+        </p>`
     }
     return html`
+      ${summary}
       <div part="list" data-testid="review-list">
         ${reviews.map(
           (r) => html`
