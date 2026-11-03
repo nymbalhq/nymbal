@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, it, expect, afterEach } from 'vitest'
 import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
@@ -87,6 +88,34 @@ describe('FastifyHttpAdapter CORS', () => {
     expect(res.status).toBe(204)
     expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000')
     expect(res.headers.get('access-control-allow-methods')).toBeTruthy()
+  })
+
+  it('AC-4: a preflight from an allowed origin asking for PATCH, PUT or DELETE answers 204 with that method allowed', async () => {
+    const { port } = await startAdapter({
+      allowedOrigins: ['http://localhost:4321'],
+      credentials: true,
+    })
+    await fc.assert(
+      fc.asyncProperty(fc.constantFrom('PATCH', 'PUT', 'DELETE'), async (method) => {
+        const res = await fetch(`http://127.0.0.1:${port}/api/test`, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: 'http://localhost:4321',
+            'Access-Control-Request-Method': method,
+            'Access-Control-Request-Headers': 'content-type',
+          },
+        })
+        const allowed = (res.headers.get('access-control-allow-methods') ?? '')
+          .split(',')
+          .map((m) => m.trim().toUpperCase())
+
+        expect(res.status).toBe(204)
+        expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:4321')
+        expect(allowed).toContain(method)
+        expect(allowed).toEqual(expect.arrayContaining(['PATCH', 'PUT', 'DELETE']))
+      }),
+      { numRuns: 9 },
+    )
   })
 
   it('does not add CORS headers when allowedOrigins is empty', async () => {

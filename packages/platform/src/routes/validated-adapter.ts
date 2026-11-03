@@ -10,7 +10,7 @@ import { gateOf } from './role-middleware.js'
 import { routeSchemas, type RouteSchema } from './schemas.js'
 
 interface Issue {
-  path: Array<string | number>
+  path: PropertyKey[]
   message: string
 }
 

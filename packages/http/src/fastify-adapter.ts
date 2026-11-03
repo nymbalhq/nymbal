@@ -45,6 +45,19 @@ export interface FastifyAdapterOptions {
   cors?: CorsOptions
 }
 
+/**
+ * Fastify refuses a numeric trustProxy, failing closed against X-Forwarded-* headers spoofed by a client that reaches
+ * the server directly (GHSA-3m5p-2c4r-xxw2). The function keeps Nymbal's hop-count contract: hop 0 is the socket peer,
+ * so `hop < n` trusts the peer and the n-1 X-Forwarded-For entries nearest it. A client that reaches the API directly
+ * can still spoof those entries; trust by proxy address would close that.
+ */
+function trustedHops(
+  trustProxy: boolean | number,
+): boolean | ((address: string, hop: number) => boolean) {
+  if (typeof trustProxy !== 'number') return trustProxy
+  return (_address, hop) => hop < trustProxy
+}
+
 /** How long a stream ended at shutdown may take to flush before its socket is destroyed regardless. */
 const STREAM_END_BOUND_MS = 500
 
@@ -65,7 +78,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
     this.#guard = createSecurityGuard(options.security)
     this.#app = Fastify({
       logger: false,
-      trustProxy: options.trustProxy ?? false,
+      trustProxy: trustedHops(options.trustProxy ?? false),
       disableRequestLogging: true,
       // Fastify's default takes `req.id` from an inbound `request-id` header, unvalidated; the id is always ours.
       requestIdHeader: false,

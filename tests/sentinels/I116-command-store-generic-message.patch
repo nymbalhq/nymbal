@@ -1,0 +1,23 @@
+# id: I116
+# kind: injected
+# defect: the commandStore enum loses its custom error, so an unknown command store is refused with the schema library's generic message that names neither the value given nor the command stores there are
+# where: packages/config/src/schema.ts:44
+# killed-by: packages/config/src/command-store-message.test.ts (commandStore 'mysql' fails with exactly the message naming 'mysql' and the command stores)
+# suite: pnpm vitest run --project config packages/config/src/command-store-message.test.ts
+diff --git a/packages/config/src/schema.ts b/packages/config/src/schema.ts
+--- a/packages/config/src/schema.ts
++++ b/packages/config/src/schema.ts
+@@ -41,12 +41,7 @@
+   slot: InfrastructureSlot,
+   values: V,
+ ) {
+-  return z.enum(values, {
+-    error: (issue) =>
+-      issue.code === 'invalid_value'
+-        ? `unknown ${slot} '${String(issue.input)}'; the ${slot} values are ${quotedList(values)}`
+-        : undefined,
+-  })
++  return z.enum(values)
+ }
+ 
+ /**

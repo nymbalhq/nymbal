@@ -59,6 +59,11 @@ describe('nymbalConfigSchema', () => {
     cfg.security.rateLimit = { bad_key: { requests: 10, window: '60s', action: 'block' } }
     const result = nymbalConfigSchema.safeParse(cfg)
     expect(result.success).toBe(false)
+    const issues = result.success ? [] : result.error.issues
+    const atKey = issues.filter((i) => i.path.join('.') === 'security.rateLimit.bad_key')
+    expect(atKey.map((i) => i.message)).toEqual([
+      'rate limit keys must start with "/" and use only letters, numbers, -, _, /, *, :',
+    ])
   })
 
   it('applies header defaults', () => {

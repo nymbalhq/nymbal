@@ -86,7 +86,7 @@ const productFields = {
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   media: z.array(productMedia).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   categoryIds: z.array(z.string()).optional(),
 }
 
@@ -524,7 +524,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
     params: idParams,
     body: z.object({
       field: z.enum(['description', 'alt', 'title', 'seoDescription']),
-      context: z.record(z.string()).optional(),
+      context: z.record(z.string(), z.string()).optional(),
     }),
   },
 

@@ -316,6 +316,103 @@ describe('AC-11: the forward to the storefront is faithful', () => {
   })
 })
 
+// AC-2: a client's `Connection` header names hop-by-hop headers for the next hop to drop. Dropping the forward's own
+// Host and X-Forwarded-* after it sets them would hand the storefront the internal origin to build its URLs on.
+const FORWARDED_HEADERS = [
+  'host',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+  'x-forwarded-for',
+] as const
+
+/** What the storefront saw of the four headers the forward sets. */
+function forwardedOf(seen: Seen | undefined): Record<string, string | undefined> {
+  const h = seen?.headers ?? {}
+  return Object.fromEntries(
+    FORWARDED_HEADERS.map((name) => [name, h[name] === undefined ? undefined : String(h[name])]),
+  )
+}
+
+describe('AC-2: a Connection header naming the forwarded headers does not strip them', () => {
+  it('AC-2: for any non-empty subset of Host and X-Forwarded-* named in Connection, the storefront sees the public host, its scheme and the client address, as it does without the header', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const origin = new URL(PUBLIC_URL)
+    let run = 0
+    await fc.assert(
+      fc.asyncProperty(
+        fc.shuffledSubarray([...FORWARDED_HEADERS], { minLength: 1 }),
+        async (listed) => {
+          run += 1
+          const plainUrl = `/page?run=${run}&connection=none`
+          const listedUrl = `/page?run=${run}&connection=listed`
+          const plain = await call(`${base}${plainUrl}`)
+          const withList = await call(`${base}${listedUrl}`, {
+            headers: { connection: listed.join(', ') },
+          })
+          const seenPlain = forwardedOf(up.seen.find((s) => s.url === plainUrl))
+          const seenListed = forwardedOf(up.seen.find((s) => s.url === listedUrl))
+
+          expect(plain.status).toBe(200)
+          expect(withList.status).toBe(plain.status)
+          expect(seenListed).toEqual(seenPlain)
+          expect(seenListed['host']).toBe(origin.host)
+          expect(seenListed['x-forwarded-host']).toBe(origin.host)
+          expect(seenListed['x-forwarded-proto']).toBe(origin.protocol.slice(0, -1))
+          expect(seenListed['x-forwarded-for']?.split(',').at(-1)?.trim()).toBe('127.0.0.1')
+        },
+      ),
+      { numRuns: 15 },
+    )
+  })
+
+  it('AC-2: `Connection: x-forwarded-host, x-forwarded-proto` still reaches the storefront with the public host and scheme', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const origin = new URL(PUBLIC_URL)
+
+    const res = await call(`${base}/product/linen-shirt`, {
+      headers: { connection: 'x-forwarded-host, x-forwarded-proto' },
+    })
+    const seen = forwardedOf(up.seen.find((s) => s.url === '/product/linen-shirt'))
+
+    expect(res.status).toBe(200)
+    expect(seen['host']).toBe(origin.host)
+    expect(seen['x-forwarded-host']).toBe(origin.host)
+    expect(seen['x-forwarded-proto']).toBe(origin.protocol.slice(0, -1))
+  })
+})
+
+// AC-3: a request line under /api/ whose percent-encoding does not decode is the API's to refuse; it must not fall
+// through to the storefront's wildcard.
+describe('AC-3: a malformed /api/ URL is refused by the API', () => {
+  it('AC-3: /api/ targets with a bad percent-encoding answer 400 JSON FST_ERR_BAD_URL and never reach the storefront', async () => {
+    const up = await startUpstream()
+    const { base } = await serve(up.port)
+    const malformed = fc.oneof(
+      fc.constantFrom('/api/%E0%A4%A', '/api/%zz'),
+      fc
+        .tuple(
+          fc.stringMatching(/^[a-z0-9-]{0,8}(\/[a-z0-9-]{1,8}){0,2}$/),
+          fc.constantFrom('%zz', '%g1', '%E0%A4%A', '%C3', '%FF', '%E0%A4', '%'),
+        )
+        .map(([path, bad]) => `/api/${path}${bad}`),
+    )
+    await fc.assert(
+      fc.asyncProperty(malformed, async (target) => {
+        const res = await call(`${base}${target}`)
+
+        expect(res.status).toBe(400)
+        expect(res.headers['content-type']).toMatch(/^application\/json/)
+        expect((JSON.parse(res.body.toString()) as { code?: string }).code).toBe('FST_ERR_BAD_URL')
+      }),
+      { numRuns: 30 },
+    )
+
+    expect(up.seen.filter((s) => s.url.startsWith('/api'))).toEqual([])
+  })
+})
+
 describe('AC-5: the forward drains', () => {
   it('AC-5: after refuse() a new page request answers 503 and never reaches the upstream, the API still answers, the forward in flight completes, and drained() resolves true only once it has', async () => {
     const up = await startUpstream()

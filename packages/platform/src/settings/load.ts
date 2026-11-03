@@ -35,9 +35,17 @@ export async function declaredSlots(
   return out
 }
 
-/** A store from before migration 0008 has no `settings` relation: it holds no settings. */
+/**
+ * A store from before migration 0008 has no `settings` relation: it holds no settings. drizzle wraps a node-postgres
+ * error in its own, the driver's as `cause`; better-sqlite3's arrive unwrapped.
+ */
 export function isMissingSettingsTable(error: unknown): boolean {
-  const e = error as { code?: unknown; message?: unknown } | null
+  const e = error as { cause?: unknown } | null
+  return isMissingRelation(e) || isMissingRelation(e?.cause)
+}
+
+function isMissingRelation(error: unknown): boolean {
+  const e = error as { code?: unknown; message?: unknown } | null | undefined
   if (e?.code === '42P01') return true
   return typeof e?.message === 'string' && /no such table: settings\b/.test(e.message)
 }

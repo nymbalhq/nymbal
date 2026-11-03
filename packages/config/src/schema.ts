@@ -42,12 +42,10 @@ function infrastructureValue<const V extends readonly [string, ...string[]]>(
   values: V,
 ) {
   return z.enum(values, {
-    errorMap: (issue, ctx) =>
-      issue.code === z.ZodIssueCode.invalid_enum_value
-        ? {
-            message: `unknown ${slot} '${String(issue.received)}'; the ${slot} values are ${quotedList(values)}`,
-          }
-        : { message: ctx.defaultError },
+    error: (issue) =>
+      issue.code === 'invalid_value'
+        ? `unknown ${slot} '${String(issue.input)}'; the ${slot} values are ${quotedList(values)}`
+        : undefined,
   })
 }
 
@@ -141,12 +139,10 @@ function infrastructureBlock(slot: BlockSlot) {
         config: z.record(z.string(), z.unknown()).optional(),
       },
       {
-        errorMap: (issue, ctx) =>
-          issue.code === z.ZodIssueCode.invalid_type && typeof ctx.data === 'string'
-            ? {
-                message: `infrastructure.${slot} takes a block: write { provider: '${ctx.data}' }`,
-              }
-            : { message: ctx.defaultError },
+        error: (issue) =>
+          issue.code === 'invalid_type' && typeof issue.input === 'string'
+            ? `infrastructure.${slot} takes a block: write { provider: '${issue.input}' }`
+            : undefined,
       },
     )
     .superRefine((block, ctx) => {
@@ -216,12 +212,10 @@ export const s3Schema = z
       forcePathStyle: z.boolean().optional(),
     },
     {
-      errorMap: (issue, ctx) =>
-        issue.code === z.ZodIssueCode.unrecognized_keys
-          ? {
-              message: `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`,
-            }
-          : { message: ctx.defaultError },
+      error: (issue) =>
+        issue.code === 'unrecognized_keys'
+          ? `unknown infrastructure.s3 key${issue.keys.length > 1 ? 's' : ''} ${quotedList(issue.keys)}; the s3 keys are ${quotedList(S3_KEYS)}, and credentials come from the AWS SDK (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, a profile or a role), never the config`
+          : undefined,
     },
   )
   .strict()
@@ -237,10 +231,8 @@ export const infrastructureSchema = z
       s3: s3Schema.optional(),
     },
     {
-      errorMap: (issue, ctx) =>
-        issue.code === z.ZodIssueCode.unrecognized_keys
-          ? { message: unrecognizedInfrastructureKeys(issue.keys) }
-          : { message: ctx.defaultError },
+      error: (issue) =>
+        issue.code === 'unrecognized_keys' ? unrecognizedInfrastructureKeys(issue.keys) : undefined,
     },
   )
   .strict()
@@ -298,6 +290,8 @@ const securityFields = z.object({
         message: 'rate limit keys must start with "/" and use only letters, numbers, -, _, /, *, :',
       }),
       rateLimitRuleSchema,
+      // Zod 4 reports a bad key as "Invalid key in record" and nests the key schema's message; surface that message.
+      { error: (issue) => (issue.code === 'invalid_key' ? issue.issues[0]?.message : undefined) },
     )
     .default({}),
   botProtection: z
@@ -315,7 +309,7 @@ const securityFields = z.object({
       referrerPolicy: z.string().default('strict-origin-when-cross-origin'),
       xFrameOptions: z.enum(['deny', 'sameorigin']).default('deny'),
     })
-    .default({}),
+    .prefault({}),
   csrf: z.boolean().default(true),
   auth: z
     .object({
@@ -329,7 +323,7 @@ const securityFields = z.object({
         .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "7d"')
         .default('7d'),
     })
-    .default({}),
+    .prefault({}),
   cloudflare: cloudflareSchema.optional(),
   geo: z
     .object({
@@ -419,9 +413,9 @@ export const commerceSchema = z.object({
             .regex(/^\d+(ms|s|m|h|d)$/, 'TTL must look like "30d"')
             .default('30d'),
         })
-        .default({}),
+        .prefault({}),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export const httpSchema = z.object({
@@ -442,7 +436,7 @@ export const httpSchema = z.object({
         .default(['http://localhost:3000', 'http://localhost:4321']),
       credentials: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}),
 })
 
 export const deploymentSchema = z.object({
@@ -497,7 +491,7 @@ export const nymbalConfigSchema = z
       heartbeat: false,
       autoUpdates: false,
     }),
-    events: eventsSchema.default({}),
+    events: eventsSchema.prefault({}),
   })
   .superRefine((cfg, ctx) => {
     const archiveBucket = cfg.events.archive?.bucket
