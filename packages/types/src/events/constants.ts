@@ -65,6 +65,8 @@ export const EVT_ALERT_REPEATED = 'alert.repeated.v1'
 export const EVT_ALERT_CONFIRMED = 'alert.confirmed.v1'
 export const EVT_ALERT_UNSUBSCRIBED = 'alert.unsubscribed.v1'
 export const EVT_ALERT_SENT = 'alert.sent.v1'
+/** A pending subscription's confirmation was sent; another goes only once the confirmation interval has passed. */
+export const EVT_ALERT_CONFIRMATION_SENT = 'alert.confirmation_sent.v1'
 
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
@@ -116,6 +118,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ALERT_CONFIRMED,
   EVT_ALERT_UNSUBSCRIBED,
   EVT_ALERT_SENT,
+  EVT_ALERT_CONFIRMATION_SENT,
   EVT_ADAPTER_ERROR,
   EVT_SETTINGS_CHANGED,
 ] as const

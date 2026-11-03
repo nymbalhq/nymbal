@@ -16,7 +16,7 @@ import {
 import { formatMoney } from '../../money.js'
 import type { AlertSubscription } from '../../repositories/alert-subscription.js'
 import type { Repositories } from '../../repositories/index.js'
-import type { AlertService } from '../../services/alert-service.js'
+import { confirmationDue, type AlertService } from '../../services/alert-service.js'
 
 /**
  * The handler name of every alert email's record, keyed `<event id>:<subscription id>`: a redelivered event finds the
@@ -51,13 +51,14 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
   const skipped = (subscriptionId: string, eventId: string) =>
     logger.info({ subscriptionId, eventId }, 'alert mail skipped: the address is suppressed')
 
-  // A confirmation goes only to a row still waiting for one: a row confirmed or left since is sent nothing.
+  // A confirmation goes only to a row still waiting for one: a row confirmed or left since is sent nothing, and a row
+  // sent one within the interval (by another request's event) is sent nothing more.
   const onRequested: EventHandler<AlertRequestedV1Payload> = async (event) => {
     const key = `${event.id}:${event.payload.subscriptionId}`
     const found = await store.read(async (tx) => {
       if (await repos.processedEvent.seen(tx, HANDLER, key)) return null
       const row = await repos.alertSubscription.findById(tx, event.payload.subscriptionId)
-      if (row === null || row.status !== 'pending') return null
+      if (row === null || row.status !== 'pending' || !confirmationDue(row, new Date())) return null
       if (await repos.emailSuppression.isSuppressed(tx, row.email)) return 'suppressed' as const
       const product = await repos.product.findById(tx, row.productId)
       return product === null ? null : { row, product }
@@ -71,29 +72,36 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       to: row.email,
       vars: { storeName, productName: product.name, productUrl, confirmUrl, unsubscribeUrl },
     })
-    await store.transaction((tx) =>
-      repos.processedEvent.markProcessed(tx, HANDLER, key, new Date()),
-    )
+    await store.transaction(async (tx) => {
+      const at = new Date()
+      await repos.processedEvent.markProcessed(tx, HANDLER, key, at)
+      await alerts.recordConfirmationSent(tx, row, event, at)
+    })
   }
 
   // Each row is mailed and recorded on its own: one refused address neither stops nor repeats another's alert, and keeps
   // its status (and a price-drop row its baseline). Any refused row fails the delivery, so the event is retried; the
-  // retry finds the mailed rows' keys and mails only the refused ones.
+  // retry finds the mailed rows' keys and mails only the refused ones. Each row is read again just before its send, so
+  // one unsubscribed (or already told a lower price) since the list was read is passed over.
   async function fanOut(
     event: NymbalEvent<unknown>,
-    rows: AlertSubscription[],
+    listed: AlertSubscription[],
     what: { alert: string; next: string },
+    due: (row: AlertSubscription) => boolean,
     message: (row: AlertSubscription) => Omit<TransactionalEmail, 'to'>,
   ): Promise<void> {
     const failed: string[] = []
-    for (const row of rows) {
-      const key = `${event.id}:${row.id}`
-      const skip = await store.read(async (tx) => {
+    for (const { id } of listed.filter(due)) {
+      const key = `${event.id}:${id}`
+      const current = await store.read(async (tx) => {
         if (await repos.processedEvent.seen(tx, HANDLER, key)) return 'sent'
-        return (await repos.emailSuppression.isSuppressed(tx, row.email)) ? 'suppressed' : null
+        const row = await repos.alertSubscription.findById(tx, id)
+        if (row === null || !due(row)) return 'gone'
+        return (await repos.emailSuppression.isSuppressed(tx, row.email)) ? 'suppressed' : row
       })
-      if (skip === 'suppressed') skipped(row.id, event.id)
-      if (skip !== null) continue
+      if (current === 'suppressed') skipped(id, event.id)
+      if (typeof current === 'string') continue
+      const row = current
       try {
         await email.sendTransactional({ ...message(row), to: row.email })
         await store.transaction(async (tx) => {
@@ -122,7 +130,8 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       product: await repos.product.findById(tx, productId),
     }))
     if (product === null) return
-    await fanOut(event, rows, { alert: 'back-in-stock', next: 'restock' }, (row) => {
+    const due = (row: AlertSubscription) => row.status === 'active'
+    await fanOut(event, rows, { alert: 'back-in-stock', next: 'restock' }, due, (row) => {
       const { productUrl, unsubscribeUrl } = links(row, product)
       return {
         template: 'alert-back-in-stock',
@@ -140,12 +149,11 @@ export async function registerAlertHandler(deps: RegisterAlertHandlerDeps): Prom
       product: await repos.product.findById(tx, productId),
     }))
     if (product === null) return
-    const due = rows.filter(
-      (row) => row.baselinePriceMinor !== null && priceMinor < row.baselinePriceMinor,
-    )
+    const due = (row: AlertSubscription) =>
+      row.status === 'active' && row.baselinePriceMinor !== null && priceMinor < row.baselinePriceMinor
     const previousPriceFormatted = formatMoney(previousPriceMinor, currency)
     const priceFormatted = formatMoney(priceMinor, currency)
-    await fanOut(event, due, { alert: 'price-drop', next: 'drop' }, (row) => {
+    await fanOut(event, rows, { alert: 'price-drop', next: 'drop' }, due, (row) => {
       const { productUrl, unsubscribeUrl } = links(row, product)
       return {
         template: 'alert-price-drop',

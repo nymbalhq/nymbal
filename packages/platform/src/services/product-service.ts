@@ -160,9 +160,10 @@ export function createProductService(deps: CreateProductServiceDeps): ProductSer
       return store.transaction(async (tx) => {
         audit.note('product.update', [{ type: 'product', id }])
         const product = await requireProduct(tx, id)
-        // Every listed variant is checked before anything is written, so a refusal changes nothing.
+        // Every listed variant is checked before anything is written, so a refusal changes nothing. The rows are held
+        // so a concurrent update compares and logs against the price this one writes, not the one both read.
         const current = new Map(
-          (await repos.variant.findByProduct(tx, product.id)).map((v) => [v.id, v]),
+          (await repos.variant.lockByProduct(tx, product.id)).map((v) => [v.id, v]),
         )
         for (const item of input.variants ?? []) {
           if (!current.has(item.id)) {

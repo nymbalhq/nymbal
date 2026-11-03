@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import type { ProductSnapshot } from '@nymbalhq/types'
+import type { ProductSnapshot, Variant } from '@nymbalhq/types'
 
 interface ProductFilters {
   status?: string | undefined
@@ -40,6 +40,11 @@ export function useCreateProduct() {
   })
 }
 
+/** The update's body: a variant is its id and prices, the only fields the update writes. */
+export type ProductPatch = Omit<Partial<ProductSnapshot>, 'variants'> & {
+  variants?: Array<Pick<Variant, 'id' | 'priceMinor' | 'compareAtPriceMinor'>>
+}
+
 export function useUpdateProduct() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -49,7 +54,7 @@ export function useUpdateProduct() {
       idempotencyKey,
     }: {
       id: string
-      data: Partial<ProductSnapshot>
+      data: ProductPatch
       idempotencyKey?: string
     }) =>
       api.patch<ProductSnapshot>(

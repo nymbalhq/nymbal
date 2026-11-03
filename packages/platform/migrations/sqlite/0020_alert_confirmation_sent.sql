@@ -1,0 +1,1 @@
+ALTER TABLE `alert_subscriptions` ADD `confirmation_sent_at` text;

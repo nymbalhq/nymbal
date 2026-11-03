@@ -10,6 +10,12 @@ const CLIENT_KEY = Symbol.for('nymbal.client')
  */
 const settledStores = new WeakSet<object>()
 
+/**
+ * Elements connected while no client was registered, each with what connects it to one. Both templates run a
+ * project's elements entry before `registerClient`, so an element defined there connects first.
+ */
+const awaitingClient = new Map<object, () => void>()
+
 export function registerClient(client: NymbalClient): void {
   ;(globalThis as Record<symbol, unknown>)[CLIENT_KEY] = client
   // A store the page builds after this (its first read) is subscribed then; reading one here would build it.
@@ -18,6 +24,25 @@ export function registerClient(client: NymbalClient): void {
       if ((store.getState() as { loading?: unknown }).loading !== true) settledStores.add(store)
     })
   })
+  const waiting = [...awaitingClient.values()]
+  awaitingClient.clear()
+  // One element's failure (a project override that throws) must not leave the rest of the page unconnected.
+  for (const connect of waiting) {
+    try {
+      connect()
+    } catch (error) {
+      reportError(error)
+    }
+  }
+}
+
+/** Runs `connect` when a client is registered, unless `stopAwaitingClient` comes first. */
+export function awaitClient(element: object, connect: () => void): void {
+  awaitingClient.set(element, connect)
+}
+
+export function stopAwaitingClient(element: object): void {
+  awaitingClient.delete(element)
 }
 
 /** Whether a registered client's store has had a settled update since the client was registered. */

@@ -141,6 +141,13 @@
       "when": 1793507532124,
       "tag": "0019_carts_customer_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1793605266500,
+      "tag": "0020_alert_confirmation_sent",
+      "breakpoints": true
     }
   ]
 }

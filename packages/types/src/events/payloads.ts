@@ -249,6 +249,12 @@ export interface AlertSentV1Payload {
    */
   triggerEventId: string
 }
+export interface AlertConfirmationSentV1Payload {
+  subscriptionId: string
+  kind: AlertKind
+  /** The alert.requested.v1 the confirmation answered. */
+  requestEventId: string
+}
 
 export interface AdapterErrorV1Payload {
   adapterType: string

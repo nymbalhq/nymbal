@@ -204,7 +204,7 @@ async function drainedOut(k: Kernel, raw: RawReader, clock: { offset: number }):
 }
 
 describe('AC-4: an email outage loses no send', () => {
-  it('AC-4: property: with the email adapter down across generated command sequences (paid checkouts, registrations, alert requests and restocks) and the relay clock moved past 3 × the full backoff window, then the adapter up and the log drained: no events row is dead, every row is delivered, one order-placed email per paid order, one welcome per customer, one confirmation per alert request and one alert per alert.sent.v1, none twice, every send refused in the outage made once after it, and every read model equals a fresh rebuild', async () => {
+  it('AC-4: property: with the email adapter down across generated command sequences (paid checkouts, registrations, alert requests and restocks) and the relay clock moved past 3 × the full backoff window, then the adapter up and the log drained: no events row is dead, every row is delivered, one order-placed email per paid order, one welcome per customer, one confirmation per requested alert row within the throttle interval and one alert per alert.sent.v1, none twice, every send refused in the outage made once after it, and every read model equals a fresh rebuild', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(op, { minLength: 0, maxLength: 6 }), async (tail) => {
         const mail: TestMailAdapter = createTestMailAdapter()
@@ -285,9 +285,13 @@ describe('AC-4: an email outage loses no send', () => {
               )
             ).map((r) => [r.id, r.email]),
           )
+          // The confirmation throttle runs on the wall clock, which a run never moves past its interval: a row
+          // requested more than once (a repeat while its first confirmation was refused) is mailed once.
           expect(sorted(mailed('alert-confirm').map((m) => m.to))).toEqual(
             sorted(
-              payloads('alert.requested.v1').map((p) => subscribers.get(p['subscriptionId']!)),
+              [...new Set(payloads('alert.requested.v1').map((p) => p['subscriptionId']!))].map(
+                (id) => subscribers.get(id),
+              ),
             ),
           )
           expect(sorted(mailed('alert-back-in-stock').map((m) => m.to))).toEqual(

@@ -119,7 +119,9 @@ export class NymbalProductFilter extends NymbalElement {
   private _shown: ReturnType<NymbalProductFilter['shown']> = { facets: [], checked: () => false }
 
   protected override willUpdate(_changed: PropertyValues): void {
-    this._shown = this.shown()
+    const shown = this.shown()
+    // A facet with no values offers nothing to choose: a search whose hits carry no category answers one.
+    this._shown = { ...shown, facets: shown.facets.filter((f) => f.values.length > 0) }
     this.toggleAttribute('empty', this._shown.facets.length === 0)
   }
 

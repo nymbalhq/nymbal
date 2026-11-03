@@ -11,6 +11,7 @@ import type {
   SearchDocument,
   VariantOption,
 } from '@nymbalhq/types'
+import { isSellable } from '../services/cart-service.js'
 import { orderTimeline } from './order-timeline.js'
 
 // One pure builder per read-model document. The live projections and the rebuilders both call these, on the entity
@@ -128,6 +129,15 @@ function variantOptions(raw: unknown, sku: string, logger: Logger | undefined): 
   }
   if (!Array.isArray(value)) return []
   return value.filter(isVariantOption).map((o) => ({ name: o.name, value: o.value }))
+}
+
+/**
+ * What the storefront may serve of a product: null unless it is active, otherwise the product with only the variants a
+ * cart can take. The product and search documents are built from this alone.
+ */
+export function listedSnapshot(p: ProductSnapshot): ProductSnapshot | null {
+  if (p.status !== 'active') return null
+  return { ...p, variants: p.variants.filter((v) => isSellable(v, p)) }
 }
 
 /** The product's document. A category id with no row in `categories` is left out of `categories`. */

@@ -66,9 +66,8 @@ export class NymbalMiniCart extends NymbalElement {
     return [this.client.cart]
   }
 
-  override connectedCallback(): void {
-    super.connectedCallback()
-    if (this.hasClient) window.addEventListener('pageshow', this.onPageShow)
+  protected override clientConnected(): void {
+    window.addEventListener('pageshow', this.onPageShow)
   }
 
   override disconnectedCallback(): void {

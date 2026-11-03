@@ -483,6 +483,8 @@ export const alertSubscriptions = sqliteTable(
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
     confirmedAt: text('confirmed_at'),
+    /** When its last confirmation was sent; a repeat subscribe within the interval sends none. */
+    confirmationSentAt: text('confirmation_sent_at'),
   },
   (t) => ({
     addressUnique: uniqueIndex('alert_subscriptions_address_unique').on(

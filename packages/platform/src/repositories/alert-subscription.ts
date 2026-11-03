@@ -28,6 +28,8 @@ export interface AlertSubscription {
   createdAt: Date
   updatedAt: Date
   confirmedAt: Date | null
+  /** When its last confirmation was sent; null on a new or reissued row. */
+  confirmationSentAt: Date | null
 }
 
 /** A subscribe request: a new row's values, of which a row already there takes only what its status allows. */
@@ -57,9 +59,11 @@ export interface AlertSubscriptionRepository extends StoreRepository {
   /**
    * One write on the unique (email, variant, kind): a new row is `pending`; a `pending` row takes the request's origin;
    * an `unsubscribed` or `fired` row returns to `pending` with the request's origin, confirm token and baseline (its
-   * unsubscribe token is kept); an `active` row only has `updated_at` touched. Answers the row after the write.
+   * unsubscribe token is kept) and no confirmation sent; an `active` row only has `updated_at` touched. Answers the
+   * row after the write.
    */
   upsertPending(tx: Tx, request: AlertSubscriptionRequest): Promise<AlertSubscription>
+  markConfirmationSent(tx: Tx, id: string, at: Date): Promise<void>
   findById(tx: ReadTx, id: string): Promise<AlertSubscription | null>
   findByConfirmToken(tx: ReadTx, token: string): Promise<AlertSubscription | null>
   findByUnsubscribeToken(tx: ReadTx, token: string): Promise<AlertSubscription | null>
@@ -84,6 +88,8 @@ function fromSqlite(row: SqliteRow): AlertSubscription {
     createdAt: new Date(row.createdAt),
     updatedAt: new Date(row.updatedAt),
     confirmedAt: row.confirmedAt === null ? null : new Date(row.confirmedAt),
+    confirmationSentAt:
+      row.confirmationSentAt === null ? null : new Date(row.confirmationSentAt),
   }
 }
 
@@ -120,6 +126,7 @@ export function createAlertSubscriptionRepository(
         confirmToken: sql`CASE WHEN ${reissue(t)} THEN excluded.confirm_token ELSE ${t.confirmToken} END`,
         baselinePriceMinor: sql`CASE WHEN ${reissue(t)} THEN excluded.baseline_price_minor ELSE ${t.baselinePriceMinor} END`,
         confirmedAt: sql`CASE WHEN ${keep(t)} THEN ${t.confirmedAt} ELSE NULL END`,
+        confirmationSentAt: sql`CASE WHEN ${reissue(t)} THEN NULL ELSE ${t.confirmationSentAt} END`,
         updatedAt: sql`excluded.updated_at`,
       })
       const values = {
@@ -134,6 +141,7 @@ export function createAlertSubscriptionRepository(
         origin: r.origin,
         baselinePriceMinor: r.baselinePriceMinor,
         confirmedAt: null,
+        confirmationSentAt: null,
       }
       if (tx.kind === 'sqlite') {
         const at = r.at.toISOString()
@@ -151,6 +159,17 @@ export function createAlertSubscriptionRepository(
         .onConflictDoUpdate({ target: [p.email, p.variantId, p.kind], set: set(p) })
         .returning()
       return fromPostgres(row!)
+    },
+    async markConfirmationSent(tx, id, at) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx)
+          .update(s)
+          .set({ confirmationSentAt: at.toISOString() })
+          .where(eq(s.id, id))
+          .run()
+        return
+      }
+      await postgresDb(tx).update(p).set({ confirmationSentAt: at }).where(eq(p.id, id))
     },
     findById: (tx, id) => findOne(tx, (t) => eq(t.id, id)),
     findByConfirmToken: (tx, token) => findOne(tx, (t) => eq(t.confirmToken, token)),

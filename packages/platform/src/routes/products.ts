@@ -44,32 +44,21 @@ function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
   }
 }
 
+/** A category's facet fields, by id; an id with no category is absent. */
+export type CategoriesById = (
+  ids: readonly string[],
+) => Promise<ReadonlyMap<string, { id: string; slug: string; name: string }>>
+
 /** The search's category counts in the listing's facet shape: field `category`, slug values, name labels. */
 async function searchCategoryFacet(
   facet: SearchAdapter['facet'],
-  documentStore: DocumentStoreAdapter,
-  storeName: string,
+  categoriesById: CategoriesById,
   query: string,
   filters: Record<string, unknown> | undefined,
 ): Promise<Facet> {
   const counts = await facet('categoryIds', { query, ...(filters !== undefined && { filters }) })
-  // Categories are keyed by slug, so the facet's ids are found by walking the store's pages until each is seen.
-  const wanted = new Set(counts.values.map((v) => v.value))
-  const byId = new Map<string, { id: string; slug: string; name: string }>()
-  let cursor: string | undefined
-  while (byId.size < wanted.size) {
-    const page = await documentStore.query<{ id: string; slug: string; name: string }>(
-      'categories',
-      {
-        partitionKey: { field: 'storeId', value: storeName },
-        limit: 500,
-        ...(cursor !== undefined && { cursor }),
-      },
-    )
-    for (const c of page.items) if (wanted.has(c.id)) byId.set(c.id, c)
-    if (page.nextCursor === null) break
-    cursor = page.nextCursor
-  }
+  // One lookup by id, whatever the store's size: the index may hold the id of a category since deleted.
+  const byId = await categoriesById(counts.values.map((v) => v.value))
   return {
     field: 'category',
     label: 'Category',
@@ -98,6 +87,8 @@ export function registerProductRoutes(
   canFacet: () => boolean = () => true,
   /** The search adapter's facet, for the search route's category counts within the query. */
   searchFacet?: SearchAdapter['facet'],
+  /** The categories the search facet's ids name. */
+  categoriesById?: CategoriesById,
 ): void {
   adapter.registerRoute('GET', '/api/products/search', async (ctx) => {
     try {
@@ -131,8 +122,11 @@ export function registerProductRoutes(
       // A hit whose product is gone is dropped from the page; the total is the index's.
       const items = products.filter(Boolean)
       const facets =
-        canFacet() && searchFacet !== undefined && searchResult.total > 0
-          ? [await searchCategoryFacet(searchFacet, documentStore, storeName, q, filters)]
+        canFacet() &&
+        searchFacet !== undefined &&
+        categoriesById !== undefined &&
+        searchResult.total > 0
+          ? [await searchCategoryFacet(searchFacet, categoriesById, q, filters)]
           : []
       return ok({ items, nextCursor: searchResult.nextCursor, total: searchResult.total, facets })
     } catch (err) {

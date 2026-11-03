@@ -1,6 +1,7 @@
 import { request as playwrightRequest } from '@playwright/test'
-import { expect } from './fixtures'
+import { adminToken, ownProduct } from './checkout'
 import { API_URL, csrf } from './csrf'
+import { expect } from './fixtures'
 
 /**
  * AC-10 preflight: the API the suite runs against refuses a bare cart write with 403 `csrf.invalid`, and takes the
@@ -13,21 +14,16 @@ export async function assertCsrfEnforced(): Promise<void> {
     const products = await context.get(`${API_URL}/api/products?limit=20`)
     expect(products.ok(), 'GET /api/products should succeed').toBe(true)
     const body = (await products.json()) as {
-      data: {
-        items: Array<{ status?: string; variants?: Array<{ id: string; stock: number }> }>
-      }
+      data: { items: Array<{ variants?: Array<{ id: string; stock: number }> }> }
     }
     // The local store persists across runs and checkout journeys drain it, so the first variant may be sold out; an
-    // out-of-stock 409 would hide whether the paired write passed the CSRF check. Admin journeys create draft
-    // products the list still serves, and the cart refuses a draft's variant with 404.
+    // out-of-stock 409 would hide whether the paired write passed the CSRF check.
     const qty = 1
-    const variants = body.data.items
-      .filter((p) => p.status === 'active')
-      .flatMap((p) => p.variants ?? [])
+    const variants = body.data.items.flatMap((p) => p.variants ?? [])
     const inStock = variants.find((v) => v.stock >= qty)
     expect(
       inStock,
-      `no variant of an active product on the first products page has stock >= ${qty} (${variants.length} such variants seen); reseed the store`,
+      `no variant on the first products page has stock >= ${qty} (${variants.length} variants seen); reseed the store`,
     ).toBeTruthy()
     const variantId = inStock?.id
 
@@ -41,6 +37,42 @@ export async function assertCsrfEnforced(): Promise<void> {
     })
     expect(paired.status()).toBeLessThan(300)
     expect(paired.status()).not.toBe(bare.status())
+  } finally {
+    await context.dispose()
+  }
+}
+
+/**
+ * A product of its own, created active with stock and then unpublished, so it would be the newest in-stock product
+ * on the first products page if the list still served it. Resolves once the read side has taken the unpublish: the
+ * slug is gone, or (where the list still serves drafts) served as a draft.
+ */
+export async function unpublishedNewest(): Promise<{ slug: string; variantId: string }> {
+  const context = await playwrightRequest.newContext()
+  try {
+    const token = await adminToken(context)
+    const product = await ownProduct(context, token, 5)
+    const auth = { authorization: `Bearer ${token}` }
+    const read = await context.get(`${API_URL}/api/admin/products/${product.slug}`, {
+      headers: auth,
+    })
+    expect(read.status(), `GET /api/admin/products/${product.slug}`).toBe(200)
+    const { id } = ((await read.json()) as { data: { id: string } }).data
+    const unpublished = await context.post(`${API_URL}/api/admin/products/${id}/unpublish`, {
+      headers: { ...(await csrf(context)), ...auth },
+    })
+    expect(unpublished.status(), await unpublished.text()).toBe(200)
+    await expect
+      .poll(
+        async () => {
+          const res = await context.get(`${API_URL}/api/products/${product.slug}`)
+          if (res.status() === 404) return 'gone'
+          return ((await res.json()) as { data: { status: string } }).data.status
+        },
+        { timeout: 10_000 },
+      )
+      .not.toBe('active')
+    return { slug: product.slug, variantId: product.variantId }
   } finally {
     await context.dispose()
   }
