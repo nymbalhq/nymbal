@@ -8,15 +8,37 @@ import { REPO_ROOT } from './workspace-manifests'
 // A signature checked with `===` or `!==` leaks, by its timing, how much of a forged one is right. Every non-test
 // source file under packages/ that computes an HMAC imports `timingSafeEqual` from node:crypto and calls it.
 
-const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', 'tests', '__tests__', 'fixtures'])
+// Test directories and dot-directories are skipped: other suites create and delete scratch trees under them
+// (`test/.tmp-scaffold`) while this one walks.
+const SKIP_DIRS = new Set([
+  'node_modules',
+  'dist',
+  'coverage',
+  'test',
+  'tests',
+  '__tests__',
+  'fixtures',
+])
 const SOURCE = /\.(?:[cm]?ts|tsx)$/
 const NOT_SOURCE = /\.(?:test|spec)\.[cm]?tsx?$|\.d\.ts$|\.test-d\.ts$/
 
+/** `read()`, or undefined when its path was removed after it was listed. */
+function unlessGone<T>(read: () => T): T | undefined {
+  try {
+    return read()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
+
 function sourceFiles(dir: string): string[] {
   const out: string[] = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of unlessGone(() => readdirSync(dir, { withFileTypes: true })) ?? []) {
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) out.push(...sourceFiles(join(dir, entry.name)))
+      if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
+        out.push(...sourceFiles(join(dir, entry.name)))
+      }
     } else if (SOURCE.test(entry.name) && !NOT_SOURCE.test(entry.name)) {
       out.push(join(dir, entry.name))
     }
@@ -31,8 +53,10 @@ interface CryptoUse {
 }
 
 /** What a file does with node:crypto: an HMAC call, and whether it imports and calls `timingSafeEqual`. */
-function cryptoUse(path: string): CryptoUse {
-  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+function cryptoUse(path: string): CryptoUse | undefined {
+  const text = unlessGone(() => readFileSync(path, 'utf8'))
+  if (text === undefined) return undefined
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true)
   const use: CryptoUse = {
     callsHmac: false,
     importsTimingSafeEqual: false,
@@ -82,9 +106,10 @@ function cryptoUse(path: string): CryptoUse {
 
 describe('AC-19: every HMAC check is constant time', () => {
   it('AC-19: every non-test source file under packages/ that calls createHmac imports and calls timingSafeEqual', () => {
-    const hmacFiles = sourceFiles(join(REPO_ROOT, 'packages'))
-      .map((path) => ({ file: relative(REPO_ROOT, path), use: cryptoUse(path) }))
-      .filter((f) => f.use.callsHmac)
+    const hmacFiles = sourceFiles(join(REPO_ROOT, 'packages')).flatMap((path) => {
+      const use = cryptoUse(path)
+      return use?.callsHmac === true ? [{ file: relative(REPO_ROOT, path), use }] : []
+    })
 
     expect(hmacFiles.map((f) => f.file)).toContain('packages/platform/src/routes/events-sse.ts')
     expect(

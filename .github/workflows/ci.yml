@@ -271,14 +271,25 @@ jobs:
           name: build-output
       - uses: actions/cache@v6
         with:
-          path: reports/mutation/stryker-incremental.json
+          # The .commit file names the commit the report was measured at. A failed job saves nothing, so the next run
+          # may restore an older report; the gate then mutates every file changed since that commit, not only since
+          # GATE_BASE.
+          path: |
+            reports/mutation/stryker-incremental.json
+            reports/mutation/stryker-incremental.commit
           # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward. A
           # ratchet change keeps the chain: the gate measures the files whose entry moved afresh, dropping their
           # cached statuses, and the nightly full run stays the ground truth for the rest.
-          key: stryker-incremental-v2-${{ github.sha }}
-          restore-keys: stryker-incremental-v2-
+          key: stryker-incremental-v3-${{ github.sha }}
+          restore-keys: stryker-incremental-v3-
       - name: Mutation
         run: pnpm exec tsx scripts/gate.ts --full --only stryker --no-build --base "$GATE_BASE"
+      # Only after a passing Mutation step, as the cache is saved only then: the stamp names the saved report's commit.
+      - name: Stamp the incremental report
+        run: |
+          if [ -f reports/mutation/stryker-incremental.json ]; then
+            git rev-parse HEAD > reports/mutation/stryker-incremental.commit
+          fi
 
   sentinels:
     name: Sentinels and tests-fail-on-base

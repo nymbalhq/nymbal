@@ -1070,12 +1070,51 @@ function ratchetChangesSince(root: string, base: string): string[] {
 /** Stryker's own default, when its config names no incremental file. */
 const STRYKER_INCREMENTAL_DEFAULT = 'reports/stryker-incremental.json'
 
+async function incrementalReport(root: string): Promise<string> {
+  return resolve(root, (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT)
+}
+
+/**
+ * Beside the incremental report: the commit the report's statuses were measured at. CI's mutation job writes it after
+ * a passing stryker step, as its cache is saved only then.
+ */
+function incrementalStamp(report: string): string {
+  return `${report.replace(/\.json$/, '')}.commit`
+}
+
+/**
+ * The changed paths and moved ratchet entries the stryker step selects by. The incremental report holds statuses
+ * from the commit its stamp names, and CI saves it only when the job passes, so after a red run that commit is
+ * older than `base`: a file changed in between, outside `--mutate`, would be reported with statuses from before
+ * its change. So whatever changed since the stamp counts too. A stamp naming no commit here leaves the report's age
+ * unknown, and every tracked file counts as changed.
+ */
+export async function strykerChanges(
+  root: string,
+  base: string,
+  changed: string[],
+): Promise<{ changed: string[]; moved: string[] }> {
+  const moved = ratchetChangesSince(root, base)
+  const stampPath = incrementalStamp(await incrementalReport(root))
+  if (!existsSync(stampPath)) return { changed, moved }
+  const stamp = readFileSync(stampPath, 'utf8').trim()
+  const at = /^[0-9a-f]{40}$/i.test(stamp) ? commitOf(root, stamp) : undefined
+  if (at === undefined) {
+    process.stderr.write(
+      `stryker: the incremental report's commit ${stamp || '(empty)'} is not in this clone; the whole mutate set is measured\n`,
+    )
+    return { changed: [...new Set([...changed, ...lines(git(root, ['ls-files']))])], moved }
+  }
+  if (at === base) return { changed, moved }
+  return {
+    changed: [...new Set([...changed, ...changedFiles(root, at)])].sort(),
+    moved: [...new Set([...moved, ...ratchetChangesSince(root, at)])],
+  }
+}
+
 /** Drops `files` from Stryker's incremental report, so its next run measures their mutants afresh. */
 async function pruneIncremental(root: string, files: string[]): Promise<void> {
-  const report = resolve(
-    root,
-    (await strykerConfig(root)).incrementalFile ?? STRYKER_INCREMENTAL_DEFAULT,
-  )
+  const report = await incrementalReport(root)
   if (!existsSync(report)) {
     process.stderr.write(`stryker: no incremental report at ${relative(root, report)} to prune\n`)
     return
@@ -2045,9 +2084,15 @@ async function main(argv: string[]): Promise<number> {
   const changed = changedFiles(root, base)
   const relatedPaths = changedFiles(root, base, { renames: false })
   const inputReaders = harnessInputTests(root, relatedPaths)
-  const moved = values.full && strykerMode !== 'off' ? ratchetChangesSince(root, base) : []
+  const forStryker =
+    values.full && strykerMode !== 'off'
+      ? await strykerChanges(root, base, changed)
+      : { changed: [], moved: [] }
+  const moved = forStryker.moved
   const mutated =
-    values.full && strykerMode !== 'off' ? await strykerTargets(root, changed, moved) : []
+    values.full && strykerMode !== 'off'
+      ? await strykerTargets(root, forStryker.changed, moved)
+      : []
   const remeasured = moved.filter((path) => mutated.includes(path))
   const buildStale = !values.full && !buildIsCurrent(root)
   // A stale admin build is rebuilt; a missing one is left to whoever serves it (the walk's check, gate:full's build).
