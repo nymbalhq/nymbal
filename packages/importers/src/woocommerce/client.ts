@@ -128,13 +128,22 @@ export interface WcReview {
   date_created: string
 }
 
+export interface WooCommerceClientOptions {
+  /** The clock each request is timed on (`requestStats`). */
+  now?: () => number
+}
+
 export class WooCommerceClient {
   private readonly base: string
   private readonly auth: string
+  private readonly now: () => number
+  /** Every request sent so far, retries included, and their summed wall time. */
+  readonly requestStats = { count: 0, ms: 0 }
 
-  constructor(creds: WooCommerceCredentials) {
+  constructor(creds: WooCommerceCredentials, opts: WooCommerceClientOptions = {}) {
     this.base = creds.url.replace(/\/$/, '') + '/wp-json/wc/v3'
     this.auth = `Basic ${Buffer.from(`${creds.consumerKey}:${creds.consumerSecret}`).toString('base64')}`
+    this.now = opts.now ?? (() => performance.now())
   }
 
   async healthCheck(): Promise<void> {
@@ -144,10 +153,30 @@ export class WooCommerceClient {
     }
   }
 
-  async getTotal(resource: string, params: Record<string, string> = {}): Promise<number> {
+  /** A list's total from a one-item page; null when the endpoint refuses, fails, or answers with no list. */
+  async getTotal(resource: string, params: Record<string, string> = {}): Promise<number | null> {
     const url = this.buildUrl(resource, { ...params, per_page: '1', page: '1' })
-    const res = await this.fetchWithRetry(url)
-    return parseInt(res.headers.get('X-WP-Total') ?? '0', 10)
+    const answer = await this.getList(url)
+    if (answer === null) return null
+    const total = parseInt(answer.res.headers.get('X-WP-Total') ?? '', 10)
+    return Number.isNaN(total) ? answer.items.length : total
+  }
+
+  /** The length of an unpaginated list; null when the endpoint refuses, fails, or answers with no list. */
+  async getListLength(resource: string): Promise<number | null> {
+    const answer = await this.getList(this.base + resource)
+    return answer === null ? null : answer.items.length
+  }
+
+  private async getList(url: string): Promise<{ res: Response; items: unknown[] } | null> {
+    try {
+      const res = await this.fetchWithRetry(url)
+      if (!res.ok) return null
+      const items: unknown = await res.json()
+      return Array.isArray(items) ? { res, items } : null
+    } catch {
+      return null
+    }
   }
 
   async *paginate<T>(
@@ -196,7 +225,14 @@ export class WooCommerceClient {
   }
 
   private async fetchWithRetry(url: string, attempt = 0): Promise<Response> {
-    const res = await fetch(url, { headers: { Authorization: this.auth } })
+    const started = this.now()
+    let res: Response
+    try {
+      res = await fetch(url, { headers: { Authorization: this.auth } })
+    } finally {
+      this.requestStats.count++
+      this.requestStats.ms += this.now() - started
+    }
     if (res.status === 429 && attempt < 3) {
       const retryAfter = parseInt(res.headers.get('Retry-After') ?? '5', 10)
       await sleep(retryAfter * 1000)

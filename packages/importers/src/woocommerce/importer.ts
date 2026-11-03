@@ -15,6 +15,7 @@ import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
 import { downloadProductImages } from './media.js'
 import { runEnrichment } from './enrichment.js'
+import { categoryRefs, orderRefs, productRefs, reviewRefs } from './refs.js'
 import type { ReviewsAdapter } from '@nymbalhq/types'
 
 export interface WooCommerceImporterDeps {
@@ -90,7 +91,8 @@ export async function runWooCommerceImport(
 
       for (const wc of page.items) {
         if (state.wcToNymbalCategory[wc.id]) continue
-        const nymbalParentId = wc.parent ? state.wcToNymbalCategory[wc.parent] : undefined
+        const { parentWcId } = categoryRefs(wc)
+        const nymbalParentId = parentWcId ? state.wcToNymbalCategory[parentWcId] : undefined
         try {
           const category = await services.category.create(mapCategory(wc, nymbalParentId))
           state.wcToNymbalCategory[wc.id] = category.id
@@ -126,9 +128,10 @@ export async function runWooCommerceImport(
         page.items,
         async (wc) => {
           if (state.wcToNymbalProduct[wc.id]) return
+          const refs = productRefs(wc, seenSlugs)
 
           let variations: WcVariation[] = []
-          if (wc.type === 'variable' && wc.variations.length > 0) {
+          if (refs.isVariable && refs.variationCount > 0) {
             try {
               variations = await client.getProductVariations(wc.id)
             } catch {
@@ -136,22 +139,18 @@ export async function runWooCommerceImport(
             }
           }
 
-          const categoryIds = wc.categories
-            .map((c) => state.wcToNymbalCategory[c.id])
+          const categoryIds = refs.categoryWcIds
+            .map((id) => state.wcToNymbalCategory[id])
             .filter((id): id is string => Boolean(id))
 
-          const slug = wc.slug || wc.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-          const suffix = seenSlugs.has(slug) ? String(wc.id) : ''
-          seenSlugs.add(slug)
-
-          const mediaItems = await downloadProductImages(wc.images, slug, media, (err) => {
+          const mediaItems = await downloadProductImages(refs.imageSources, refs.rawSlug, media, (err) => {
             state.errors.push({ phase: 'media', id: String(wc.id), error: String(err) })
             emit({ kind: 'error', phase: 'media', id: String(wc.id), message: String(err) })
           })
 
           try {
             const snap = await services.product.create(
-              mapProduct(wc, variations, categoryIds, mediaItems, suffix),
+              mapProduct(wc, variations, categoryIds, mediaItems, refs.slugSuffix),
             )
             state.wcToNymbalProduct[wc.id] = snap.id
             state.importedIds.products.push(snap.id)
@@ -221,13 +220,14 @@ export async function runWooCommerceImport(
         page.items,
         async (wc) => {
           if (state.wcToNymbalProduct[wc.id]) return
-          const nymbalCustomerId = wc.customer_id
-            ? (state.wcToNymbalCustomer[wc.customer_id] ?? null)
+          const { customerWcId, lineProductWcIds } = orderRefs(wc)
+          const nymbalCustomerId = customerWcId
+            ? (state.wcToNymbalCustomer[customerWcId] ?? null)
             : null
           const productIdMap: Record<number, string> = {}
-          for (const li of wc.line_items) {
-            const nid = state.wcToNymbalProduct[li.product_id]
-            if (nid) productIdMap[li.product_id] = nid
+          for (const productWcId of lineProductWcIds) {
+            const nid = state.wcToNymbalProduct[productWcId]
+            if (nid) productIdMap[productWcId] = nid
           }
           try {
             const order = await services.order.importOrder(
@@ -262,7 +262,7 @@ export async function runWooCommerceImport(
       total = page.total
 
       for (const wc of page.items) {
-        const nymbalProductId = state.wcToNymbalProduct[wc.product_id]
+        const nymbalProductId = state.wcToNymbalProduct[reviewRefs(wc).productWcId]
         if (!nymbalProductId) continue
         try {
           const result = await adapters.reviews.submitReview(

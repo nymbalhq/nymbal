@@ -6,6 +6,21 @@ import { createApp, newCorrelationId, runAsActor, runWithCorrelation } from '@ny
 import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
+import { runImportPlan } from './import-plan.js'
+
+const IMPORT_ENTITIES = ['categories', 'products', 'customers', 'orders', 'reviews'] as const satisfies readonly ImportEntity[]
+
+function printProgress(event: ProgressEvent): void {
+  if (event.kind === 'phase') {
+    console.log(p.cyan(`  → ${event.phase}`))
+  } else if (event.kind === 'progress') {
+    const pct = Math.round((event.done / event.total) * 100)
+    process.stdout.write(`\r  ${event.entity}: ${event.done}/${event.total} (${pct}%)  `)
+    if (event.done === event.total) process.stdout.write('\n')
+  } else if (event.kind === 'error') {
+    console.log(p.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`))
+  }
+}
 
 export const importCommand = defineCommand({
   meta: {
@@ -51,6 +66,12 @@ export const importCommand = defineCommand({
     concurrency: {
       type: 'string',
       description: 'Parallel import workers (default: 4)',
+    },
+    'dry-run': {
+      type: 'boolean',
+      description:
+        'Read the source and write nymbal-import-plan.json and .md (counts, collisions, unmapped fields, estimate); import nothing',
+      default: false,
     },
   },
   async run({ args }) {
@@ -108,7 +129,13 @@ export const importCommand = defineCommand({
     // ── Resolve entity list ───────────────────────────────────────────────────
     let entityList: ImportEntity[]
     if (args.entities) {
-      entityList = args.entities.split(',').map((e) => e.trim()) as ImportEntity[]
+      const names = args.entities.split(',').map((e) => e.trim())
+      const unknown = names.filter((e) => !(IMPORT_ENTITIES as readonly string[]).includes(e))
+      if (unknown.length > 0) {
+        console.error(`Unknown entity: ${unknown.join(', ')}. Choose from ${IMPORT_ENTITIES.join(', ')}.`)
+        process.exit(1)
+      }
+      entityList = names as ImportEntity[]
     } else {
       entityList = ['categories', 'products', 'customers', 'orders']
     }
@@ -116,6 +143,20 @@ export const importCommand = defineCommand({
     const concurrency = parseInt(String(args.concurrency ?? '4'), 10)
     const aiEnabled = args.ai !== false
     const gdprEnabled = args.gdpr !== false
+
+    if (args['dry-run']) {
+      await runImportPlan({
+        config,
+        projectRoot,
+        statePath,
+        credentials: { url: storeUrl, consumerKey, consumerSecret },
+        entities: entityList,
+        gdpr: gdprEnabled,
+        concurrency,
+        onProgress: printProgress,
+      })
+      return
+    }
 
     // ── Bootstrap app ─────────────────────────────────────────────────────────
     const loadSpin = spinner()
@@ -144,17 +185,7 @@ export const importCommand = defineCommand({
             repos: app.repos,
             adapters: { ai: app.adapters.ai, reviews: app.adapters.reviews },
             media: app.platform.media,
-            onProgress(event: ProgressEvent) {
-              if (event.kind === 'phase') {
-                console.log(p.cyan(`  → ${event.phase}`))
-              } else if (event.kind === 'progress') {
-                const pct = Math.round((event.done / event.total) * 100)
-                process.stdout.write(`\r  ${event.entity}: ${event.done}/${event.total} (${pct}%)  `)
-                if (event.done === event.total) process.stdout.write('\n')
-              } else if (event.kind === 'error') {
-                console.log(p.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`))
-              }
-            },
+            onProgress: printProgress,
           },
         )),
       )

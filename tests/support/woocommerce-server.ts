@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url'
 // An HTTP WooCommerce REST API (wp-json/wc/v3) over the importer's fixtures, for imports run through the CLI, where a
 // fetch mock cannot reach. Every product's images are rewritten to images this server serves, `imagesPerProduct` of
 // them, each with bytes and a content type of its own, so a test can tell which source image a stored object came
-// from. Any request without Basic credentials is refused, as WooCommerce does.
+// from. Any request without Basic credentials is refused, as WooCommerce does. Every request is logged (method and
+// path). By default customers, orders and reviews are empty and coupons, taxes and shipping zones answer 404; a test
+// that needs them says what they answer.
 
 const FIXTURES = fileURLToPath(
   new URL('../../packages/importers/tests/integration/fixtures', import.meta.url),
@@ -35,16 +37,41 @@ export interface ServedProduct {
   images: ServedImage[]
 }
 
+export interface ServedRequest {
+  method: string
+  /** The pathname, without the query. */
+  path: string
+}
+
+/** A probe's answer: a list total in `X-WP-Total`, a JSON body as is, or a bare status. */
+export type ProbeAnswer = { total: number } | { body: unknown } | { status: number }
+
+export interface WooCommerceServerOptions {
+  imagesPerProduct?: number
+  /** Served after the fixture categories. */
+  extraCategories?: Array<Record<string, unknown>>
+  /** Served after the fixture products; their images are rewritten as the fixtures' are. */
+  extraProducts?: Array<Record<string, unknown>>
+  customers?: Array<Record<string, unknown>>
+  orders?: Array<Record<string, unknown>>
+  reviews?: Array<Record<string, unknown>>
+  coupons?: ProbeAnswer
+  taxes?: ProbeAnswer
+  shippingZones?: ProbeAnswer
+}
+
 export interface WooCommerceServer {
   /** The store URL to pass as `--url`: the API is under `${url}/wp-json/wc/v3`. */
   url: string
   products: ServedProduct[]
   /** Every image, by its `src`. */
   images: Map<string, ServedImage>
+  /** Every request the server answered, in order; a test may empty it (`requests.length = 0`). */
+  requests: ServedRequest[]
   close(): Promise<void>
 }
 
-function fixture(name: string): Array<Record<string, unknown>> {
+export function fixture(name: string): Array<Record<string, unknown>> {
   return JSON.parse(readFileSync(join(FIXTURES, `${name}.json`), 'utf8')) as Array<
     Record<string, unknown>
   >
@@ -61,14 +88,15 @@ function bytesFor(src: string, index: number): Uint8Array {
 }
 
 export async function startWooCommerceServer(
-  opts: { imagesPerProduct?: number } = {},
+  opts: WooCommerceServerOptions = {},
 ): Promise<WooCommerceServer> {
   const perProduct = opts.imagesPerProduct ?? 2
-  const categories = fixture('categories')
+  const categories = [...fixture('categories'), ...(opts.extraCategories ?? [])]
   const variations = fixture('variations')
-  const rawProducts = fixture('products')
+  const rawProducts = [...fixture('products'), ...(opts.extraProducts ?? [])]
   const images = new Map<string, ServedImage>()
   const products: ServedProduct[] = []
+  const requests: ServedRequest[] = []
   let served: Array<Record<string, unknown>> = []
 
   const send = (res: ServerResponse, status: number, body: unknown, total?: number) => {
@@ -79,8 +107,16 @@ export async function startWooCommerceServer(
     res.end(JSON.stringify(body))
   }
 
+  const probe = (res: ServerResponse, answer: ProbeAnswer | undefined) => {
+    if (answer === undefined) return send(res, 404, { code: 'rest_no_route' })
+    if ('total' in answer) return send(res, 200, answer.total > 0 ? [{ id: 1 }] : [], answer.total)
+    if ('body' in answer) return send(res, 200, answer.body)
+    return send(res, answer.status, { code: 'woocommerce_rest_cannot_view' })
+  }
+
   const handle = (req: IncomingMessage, res: ServerResponse) => {
     const u = new URL(req.url ?? '/', 'http://fixture.invalid')
+    requests.push({ method: req.method ?? 'GET', path: u.pathname })
     const image = images.get(`${base}${u.pathname}`)
     if (image !== undefined) {
       res.writeHead(200, {
@@ -101,7 +137,12 @@ export async function startWooCommerceServer(
     if (path === '/products/categories') return list(categories)
     if (path === '/products') return list(served)
     if (/^\/products\/\d+\/variations$/.test(path)) return list(variations)
-    if (path === '/customers' || path === '/orders' || path === '/products/reviews') return list([])
+    if (path === '/customers') return list(opts.customers ?? [])
+    if (path === '/orders') return list(opts.orders ?? [])
+    if (path === '/products/reviews') return list(opts.reviews ?? [])
+    if (path === '/coupons') return probe(res, opts.coupons)
+    if (path === '/taxes') return probe(res, opts.taxes)
+    if (path === '/shipping/zones') return probe(res, opts.shippingZones)
     return send(res, 404, { code: 'rest_no_route' })
   }
 
@@ -142,6 +183,7 @@ export async function startWooCommerceServer(
     url: base,
     products,
     images,
+    requests,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections()

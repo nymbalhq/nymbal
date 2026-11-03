@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { MediaStorage } from '@nymbalhq/types'
+import { imageSources } from './refs.js'
 
 const TIMEOUT_MS = 15_000
 const SUPPORTED_TYPES: Record<string, string> = {
@@ -60,8 +61,7 @@ export async function downloadProductImages(
   onStoreError: (error: unknown) => void,
 ): Promise<DownloadedMedia[]> {
   const results: DownloadedMedia[] = []
-  for (const img of images) {
-    if (!img.src) continue
+  for (const img of imageSources(images)) {
     let downloaded: DownloadedMedia | null
     try {
       downloaded = await downloadImage(img.src, img.alt, storage, `products/${productSlug}`)
