@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { serveKernel, type ServedKernel } from '../support/http.js'
@@ -6,9 +7,10 @@ import { createKernel, withoutAuthRateRules } from '../support/kernel.js'
 import { openRaw, type RawReader } from '../support/raw.js'
 import { login, primedShopper } from '../support/security.js'
 
-// AC-5 and AC-6 on a served kernel (SQLite) with no user rule for `/api/auth/login`, so the built-in default (10 per
-// 15m, block) applies, keyed by IP and by the lowercased email; failures count, a success clears the email bucket
-// only, and the IP bucket expires with its window.
+// AC-1, AC-5 and AC-6 on a served kernel (SQLite) with no user rule for `/api/auth/login`, so the built-in default
+// (10 per 15m, block) applies. Only the address bucket refuses: failures count under the address and under the
+// lowercased email, a success clears the email's count only, and the address bucket expires with its window. Failures
+// for one email from other addresses never refuse its owner.
 
 const PASSWORD = 'correct-horse-battery'
 const WRONG = 'wrong-password'
@@ -37,6 +39,15 @@ async function registered(s: ServedKernel): Promise<{ email: string; id: string 
   const email = `login-${randomUUID()}@security.test`
   const { customer } = await s.kernel.services.auth.register({ email, password: PASSWORD })
   return { email, id: customer.id }
+}
+
+/**
+ * The built-in login limits behind one proxy hop: the socket peer (127.0.0.1) is the proxy, and the X-Forwarded-For
+ * entry it appended is the client.
+ */
+function oneHop(c: NymbalConfig): NymbalConfig {
+  const base = withoutAuthRateRules(c)
+  return { ...base, http: { ...base.http, trustProxy: 1 } }
 }
 
 function eventsNaming(raw: RawReader, email: string): Promise<number> {
@@ -133,13 +144,94 @@ describe('login rate limit (built-in default)', () => {
     })
   })
 
-  it('AC-6a: with trustProxy true, eleven wrong logins for one email from eleven X-Forwarded-For addresses give 429 on the 11th; eleven wrong logins for eleven emails from eleven addresses all answer 401', async () => {
-    const trusting = (c: NymbalConfig): NymbalConfig => {
-      const base = withoutAuthRateRules(c)
-      return { ...base, http: { ...base.http, trustProxy: true } }
-    }
-    await withServed(trusting, async (s) => {
-      const customer = await registered(s)
+  it('AC-1: with trustProxy 1, for 1 to 10 attacker addresses sharing ten wrong logins for one email, the owner signing in from an eleventh address answers 200 with a new session, and a further wrong login for that email from an attacker address answers 401, or 429 only when that address holds ten failures of its own', async () => {
+    await withServed(oneHop, async (s, raw) => {
+      const shop = await primedShopper(s.baseUrl)
+      let run = 0
+      await fc.assert(
+        fc.asyncProperty(fc.integer({ min: 1, max: LIMIT }), async (spread) => {
+          run += 1
+          const owner = await registered(s)
+          const attackers = Array.from({ length: spread }, (_, i) => `10.30.${run}.${i + 1}`)
+          const failuresAt = new Map<string, number>()
+          const wrong: number[] = []
+          for (let i = 0; i < LIMIT; i += 1) {
+            const from = attackers[i % spread]!
+            const answer = await login(
+              s.baseUrl,
+              shop.jar,
+              // The account count is the lowercased email's, so the case changes nothing.
+              { email: i % 2 === 0 ? owner.email : owner.email.toUpperCase(), password: WRONG },
+              { 'x-forwarded-for': from },
+            )
+            wrong.push(answer.status)
+            failuresAt.set(from, (failuresAt.get(from) ?? 0) + 1)
+          }
+          const sessionsBefore = await raw.count('refresh_tokens', 'customer_id = ?', [owner.id])
+          const signIn = await login(
+            s.baseUrl,
+            shop.jar,
+            { email: owner.email, password: PASSWORD },
+            { 'x-forwarded-for': `10.31.${run}.1` },
+          )
+          const sessionsAfter = await raw.count('refresh_tokens', 'customer_id = ?', [owner.id])
+          const again = await login(
+            s.baseUrl,
+            shop.jar,
+            { email: owner.email, password: WRONG },
+            { 'x-forwarded-for': attackers[0]! },
+          )
+
+          expect(wrong).toEqual(wrong.map(() => 401))
+          expect(signIn.status, JSON.stringify(signIn.body)).toBe(200)
+          expect(signIn.body.data?.customer.id).toBe(owner.id)
+          expect(sessionsAfter).toBe(sessionsBefore + 1)
+          expect(again.status).toBe(failuresAt.get(attackers[0]!)! >= LIMIT ? 429 : 401)
+        }),
+        { numRuns: 4, examples: [[1], [2], [LIMIT]] },
+      )
+    })
+  }, 90_000)
+
+  it("AC-1: with trustProxy 1, ten wrong logins from one address across ten emails make that address's eleventh login, the right password included, 429 rate_limit.block, while the same account signs in from another address", async () => {
+    await withServed(oneHop, async (s) => {
+      const owner = await registered(s)
+      const shop = await primedShopper(s.baseUrl)
+      const sprayer = '10.32.0.1'
+
+      const sprayed: number[] = []
+      for (let i = 0; i < LIMIT; i += 1) {
+        const answer = await login(
+          s.baseUrl,
+          shop.jar,
+          { email: `spray1-${i}-${randomUUID()}@security.test`, password: WRONG },
+          { 'x-forwarded-for': sprayer },
+        )
+        sprayed.push(answer.status)
+      }
+      const fromSprayer = await login(
+        s.baseUrl,
+        shop.jar,
+        { email: owner.email, password: PASSWORD },
+        { 'x-forwarded-for': sprayer },
+      )
+      const fromElsewhere = await login(
+        s.baseUrl,
+        shop.jar,
+        { email: owner.email, password: PASSWORD },
+        { 'x-forwarded-for': '10.32.0.2' },
+      )
+
+      expect(sprayed).toEqual(sprayed.map(() => 401))
+      expect(fromSprayer.status, JSON.stringify(fromSprayer.body)).toBe(429)
+      expect(fromSprayer.body.error?.code).toBe('rate_limit.block')
+      expect(Number(fromSprayer.headers.get('retry-after'))).toBeGreaterThanOrEqual(1)
+      expect(fromElsewhere.status, JSON.stringify(fromElsewhere.body)).toBe(200)
+    })
+  })
+
+  it('AC-6a: with trustProxy 1, eleven wrong logins for eleven emails from eleven X-Forwarded-For addresses all answer 401', async () => {
+    await withServed(oneHop, async (s) => {
       const shop = await primedShopper(s.baseUrl)
 
       const control: number[] = []
@@ -153,20 +245,6 @@ describe('login rate limit (built-in default)', () => {
         control.push(answer.status)
       }
       expect(control).toEqual(Array.from({ length: LIMIT + 1 }, () => 401))
-
-      const oneEmail: number[] = []
-      for (let i = 0; i <= LIMIT; i += 1) {
-        const answer = await login(
-          s.baseUrl,
-          shop.jar,
-          // The per-account key is the lowercased email, so the case changes nothing.
-          { email: i % 2 === 0 ? customer.email : customer.email.toUpperCase(), password: WRONG },
-          { 'x-forwarded-for': `10.2.0.${i + 1}` },
-        )
-        oneEmail.push(answer.status)
-      }
-      expect(oneEmail.slice(0, LIMIT)).toEqual(Array.from({ length: LIMIT }, () => 401))
-      expect(oneEmail[LIMIT]).toBe(429)
     })
   })
 

@@ -4,7 +4,7 @@ import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
 import NymbalElement from '@nymbalhq/web-components/astro'
 import type { ShopperOrder } from '@nymbalhq/types'
-import { fetchOrder, openExpiredOrder, requestOrderLink } from '../../lib/api'
+import { fetchOrder, openExpiredOrder, requestOrderLink, shopperHeaders } from '../../lib/api'
 import { isPaid, orderHeading } from '../../lib/order-status'
 
 // The URL carries the order's key (`?key=`), so nothing this page links to or loads may be told the URL: a header,
@@ -27,10 +27,19 @@ let read: ShopperOrder | 'expired' | null
 let emailLimited = false
 let link: 'idle' | 'sent' | 'limited' = 'idle'
 if (intent === 'link') {
-  link = await requestOrderLink(posted('orderNumber'), posted('email'))
+  link = await requestOrderLink(
+    posted('orderNumber'),
+    posted('email'),
+    shopperHeaders(Astro.request.headers),
+  )
   read = null
 } else if (intent === 'open' && key !== undefined) {
-  const opened = await openExpiredOrder(orderNumber!, key, posted('email'))
+  const opened = await openExpiredOrder(
+    orderNumber!,
+    key,
+    posted('email'),
+    shopperHeaders(Astro.request.headers),
+  )
   emailLimited = opened === 'limited'
   read = opened === 'limited' ? 'expired' : opened === 'not-found' ? null : opened
 } else {

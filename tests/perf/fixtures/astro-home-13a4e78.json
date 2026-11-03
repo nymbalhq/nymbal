@@ -1,8 +1,0 @@
-{
-  "commit": "13a4e78",
-  "template": "astro",
-  "page": "home",
-  "url": "/",
-  "scriptBytes": 27583,
-  "method": "Measured on 2026-11-04 by pnpm perf:budgets --bytes --template astro: the Astro template built for production (astro build) and served by astro preview against a seeded API; each script request Lighthouse's mobile load of / makes is fetched again, and scriptBytes is the sum of gzip(body) at zlib's default level. astro preview does not compress, so the wire size is the raw size. 311 B over d2d900b (27,272 B): the product card's rating (its stars, average and review count, the rating part's styles, and the rating helpers it shares with the review list), in the chunk that defines the card. Measured the same way, ac55979 ships 27,222 B on /, so the rating is 361 B of it; no other script on / changed."
-}

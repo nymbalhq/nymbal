@@ -55,6 +55,12 @@ interface Bucket {
 /** The map size that triggers the first sweep of expired buckets. */
 const PRUNE_THRESHOLD = 1024
 
+/**
+ * Checkouts count per (address, cart) at the checkout rule's count, so shoppers behind one proxy do not refuse each
+ * other's, and per address at this multiple of it, since carts are free to mint.
+ */
+export const CHECKOUT_ADDRESS_CEILING = 10
+
 export class RateLimiter {
   readonly #rules: ParsedRule[]
   readonly #buckets = new Map<string, Bucket>()
@@ -71,30 +77,32 @@ export class RateLimiter {
     }))
   }
 
+  /** Counts this request under `key` and refuses past the rule's count, times `scale` for a key that pools several. */
   check(
-    ip: string,
+    key: string,
     path: string,
     headers: Readonly<Record<string, unknown>> = {},
+    scale = 1,
   ): RateLimitDecision | null {
     const rule = this.#ruleFor(path, headers)
     if (!rule) return null
-    const key = `${rule.pattern}|${ip}`
+    const bucketKey = `${rule.pattern}|${key}`
     const now = Date.now()
-    const bucket = this.#buckets.get(key)
+    const bucket = this.#buckets.get(bucketKey)
     if (!bucket || bucket.resetAt <= now) {
-      this.#open(key, now, rule.windowMs)
+      this.#open(bucketKey, now, rule.windowMs)
       return { allowed: true, action: rule.action }
     }
     bucket.count += 1
-    if (bucket.count > rule.requests) {
+    if (bucket.count > rule.requests * scale) {
       return { allowed: false, action: rule.action, retryAfter: retryAfter(bucket, now) }
     }
     return { allowed: true, action: rule.action }
   }
 
   /**
-   * For a route that counts failures only: refuses when any of `keys` (an IP, an account) already holds the rule's
-   * full count, without counting this request. `hit` and `clear` record the outcome once the handler has answered.
+   * For a route that counts failures only: refuses when any of `keys` already holds the rule's full count, without
+   * counting this request. `hit` and `clear` record the outcome once the handler has answered.
    */
   full(path: string, keys: string[]): RateLimitDecision | null {
     const rule = this.#ruleFor(path)
@@ -109,19 +117,31 @@ export class RateLimiter {
     return { allowed: true, action: rule.action }
   }
 
-  hit(path: string, keys: string[]): void {
+  /** Counts one under each of `keys`; returns each bucket's count after it, in the order of `keys`. */
+  hit(path: string, keys: string[]): number[] {
     const rule = this.#ruleFor(path)
-    if (!rule) return
+    if (!rule) return []
     const now = Date.now()
-    for (const key of keys) {
+    return keys.map((key) => {
       const bucketKey = `${rule.pattern}|${key}`
       const bucket = this.#buckets.get(bucketKey)
       if (!bucket || bucket.resetAt <= now) {
         this.#open(bucketKey, now, rule.windowMs)
-      } else {
-        bucket.count += 1
+        return 1
       }
-    }
+      bucket.count += 1
+      return bucket.count
+    })
+  }
+
+  /** The count the rule for `path` allows per window, or undefined when no rule applies. */
+  requests(path: string): number | undefined {
+    return this.#ruleFor(path)?.requests
+  }
+
+  /** The buckets held, expired ones not yet swept included. */
+  get size(): number {
+    return this.#buckets.size
   }
 
   clear(path: string, keys: string[]): void {

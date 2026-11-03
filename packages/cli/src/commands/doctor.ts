@@ -6,6 +6,7 @@ import { errorText, HEALTH_CHECK_TIMEOUT_MS } from '@nymbalhq/types'
 import { loadProject } from '../utils/project.js'
 import { resolveMigrations } from './migrate.js'
 import { formatDoctorReport } from './doctor-report.js'
+import { trustProxyCheck } from './doctor-trust-proxy.js'
 
 function timeoutOf(flag: string | undefined): number {
   if (flag === undefined || flag.trim() === '') return HEALTH_CHECK_TIMEOUT_MS
@@ -57,6 +58,7 @@ export const doctorCommand = defineCommand({
             timeoutMs,
             ...migrationsOf(loaded.projectRoot),
           })
+    if (!('error' in loaded)) report.checks.push(trustProxyCheck(loaded.config, process.env))
     const text = formatDoctorReport(report, {
       json: args.json,
       config: 'error' in loaded ? undefined : loaded.config,

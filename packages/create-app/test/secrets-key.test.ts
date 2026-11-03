@@ -12,7 +12,12 @@ import { main } from '../src/index.js'
 // time, so neither `.env.example` nor `nymbal.config.ts` names or holds it.
 
 const argv = (...args: string[]): string[] => ['node', 'create-nymbal-app', ...args]
-const GENERATED = new Set(['NYMBAL_SECRETS_KEY', 'NYMBAL_JWT_SECRET', 'NYMBAL_ADMIN_PASSWORD'])
+const GENERATED = new Set([
+  'NYMBAL_SECRETS_KEY',
+  'NYMBAL_JWT_SECRET',
+  'NYMBAL_ADMIN_EMAIL',
+  'NYMBAL_ADMIN_PASSWORD',
+])
 const scratch: string[] = []
 const originalCwd = process.cwd()
 const savedUa = process.env['npm_config_user_agent']

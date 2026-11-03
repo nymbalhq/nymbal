@@ -97,6 +97,12 @@ export const ORDER_KEY_HEADER = 'x-nymbal-order-key'
 /** The request header that carries the order's email beside an expired order key. Never a query parameter either. */
 export const ORDER_EMAIL_HEADER = 'x-nymbal-order-email'
 
+/**
+ * The API's attestation of a shopper's address on a page request it forwards to the storefront. The storefront server
+ * echoes it on the API calls it makes for that shopper, so they count against the shopper's address, not its own.
+ */
+export const SHOPPER_ATTESTATION_HEADER = 'x-nymbal-shopper'
+
 /** Who took the money: the payments provider, the merchant recording an offline payment, or an imported history. */
 export type CaptureMethod = 'provider' | 'manual' | 'import'
 

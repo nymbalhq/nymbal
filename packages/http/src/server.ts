@@ -37,7 +37,8 @@ const TRUST_PROXY_HOPS_ENV = 'NYMBAL_TRUST_PROXY_HOPS'
 /**
  * `http.trustProxy`, with NYMBAL_TRUST_PROXY_HOPS filling it when the config leaves it `false`: the hop count is the
  * platform's, so it is set where the store runs, not in the config the image is built from. A set variable must be an
- * integer of 0 or more, whatever the config holds; Fastify would trust nothing, silently, below 0.
+ * integer of 0 or more, whatever the config holds; Fastify would trust nothing, silently, below 0. `true` trusts every
+ * hop, so any client chooses its own address: production refuses it.
  */
 export function resolveTrustProxy(config: NymbalConfig, env: NodeJS.ProcessEnv): boolean | number {
   const raw = env[TRUST_PROXY_HOPS_ENV]
@@ -49,7 +50,17 @@ export function resolveTrustProxy(config: NymbalConfig, env: NodeJS.ProcessEnv):
     })
   }
   const configured = config.http.trustProxy
-  return configured === false && hops !== undefined ? hops : configured
+  const resolved = configured === false && hops !== undefined ? hops : configured
+  if (resolved === true && env.NODE_ENV === 'production') {
+    throw new ConfigError(
+      `http.trustProxy: true trusts every X-Forwarded-For hop, so a client can choose its own address; set http.trustProxy or ${TRUST_PROXY_HOPS_ENV} to the number of proxies in front`,
+      {
+        code: 'config.trust_proxy_true_production',
+        context: { variable: TRUST_PROXY_HOPS_ENV },
+      },
+    )
+  }
+  return resolved
 }
 
 export function createHttpServer(deps: HttpServerDeps): HttpServer {

@@ -7,7 +7,8 @@ import { checkStartEnv } from './start.js'
 // `nymbal start` checks its environment in one pass before it builds anything, and names every problem by its
 // variable, never by its value. In production it also names the config the app would refuse while it is built: the
 // default JWT secret only when NYMBAL_JWT_SECRET does not replace it. A malformed NYMBAL_JWT_SECRET or
-// NYMBAL_TRUST_PROXY_HOPS fails the app's boot whatever NODE_ENV is, so start names it whatever NODE_ENV is.
+// NYMBAL_TRUST_PROXY_HOPS fails the app's boot whatever NODE_ENV is, so start names it whatever NODE_ENV is; an
+// `http.trustProxy: true` fails it in production only, and start names the hop count to set instead.
 
 const VARIABLES = [
   'DATABASE_URL',
@@ -71,6 +72,8 @@ const caseArb = fc
     envJwtShort: fc.stringMatching(/^[A-Za-z0-9_-]{8,15}$/).filter((s) => new Set(s).size >= 6),
     hops: fc.constantFrom('unset', 'valid', 'bad'),
     hopsValid: fc.integer({ min: 0, max: 4 }),
+    trustProxy: fc.constantFrom('default', 'true', 'hops'),
+    trustProxyHops: fc.integer({ min: 0, max: 4 }),
     hopsBad: fc.oneof(
       fc.constantFrom('1.5', '-1', 'x', '2.0e1x', 'one'),
       fc.stringMatching(/^[a-z]{8,14}$/).filter((s) => new Set(s).size >= 6),
@@ -125,7 +128,11 @@ function made(c: Case): {
       tax: { provider: 'native' },
       ai: { provider: 'none' },
     },
-    http: { adapter: 'fastify' },
+    http: {
+      adapter: 'fastify',
+      ...(c.trustProxy === 'true' && { trustProxy: true }),
+      ...(c.trustProxy === 'hops' && { trustProxy: c.trustProxyHops }),
+    },
     deployment: { strategy: 'standard' },
   })
   const databaseUrl =
@@ -185,7 +192,9 @@ function made(c: Case): {
     else if (malformedJwt) optional.push('security.auth.jwtSecret')
   }
   if (malformedJwt) expected.push('NYMBAL_JWT_SECRET')
-  if (c.hops === 'bad') expected.push('NYMBAL_TRUST_PROXY_HOPS')
+  if (c.hops === 'bad' || (c.nodeEnv === 'production' && c.trustProxy === 'true')) {
+    expected.push('NYMBAL_TRUST_PROXY_HOPS')
+  }
   const values = [
     ...Object.values(c.noise),
     configRedisUrl,
@@ -238,23 +247,24 @@ describe('AC-1: checkStartEnv names every problem at once', () => {
 })
 
 describe('AC-4: start agrees with the app on the JWT secret and the proxy hop count', () => {
-  it("AC-4: under production, start names the default secret exactly when the app's resolveAuthSecret resolves to the default, names NYMBAL_JWT_SECRET exactly when it throws (an own config secret beside it included), and names NYMBAL_TRUST_PROXY_HOPS exactly when the server's resolveTrustProxy throws, with no value in any line", async () => {
+  it("AC-4: under production, start names the default secret exactly when the app's resolveAuthSecret resolves to the default, names NYMBAL_JWT_SECRET exactly when it throws (an own config secret beside it included), and lists the server's resolveTrustProxy refusal, word for word, exactly when it throws, which a malformed NYMBAL_TRUST_PROXY_HOPS or an http.trustProxy of true makes it do, with no value in any line", async () => {
     const { resolveAuthSecret } = (await import('@nymbalhq/platform')) as unknown as {
       resolveAuthSecret: (config: NymbalConfig, env: NodeJS.ProcessEnv) => { source: string }
     }
     const { resolveTrustProxy } = (await import('@nymbalhq/http')) as unknown as {
       resolveTrustProxy: (config: NymbalConfig, env: NodeJS.ProcessEnv) => boolean | number
     }
-    /** Whether the app refuses: a ConfigError. Anything else is the test's own failure and propagates. */
-    const throws = (fn: () => unknown): boolean => {
+    /** The app's refusal: a ConfigError's message, or null. Anything else is the test's own failure and propagates. */
+    const refusal = (fn: () => unknown): string | null => {
       try {
         fn()
-        return false
+        return null
       } catch (error) {
-        if (error instanceof ConfigError) return true
+        if (error instanceof ConfigError) return error.message
         throw error
       }
     }
+    const throws = (fn: () => unknown): boolean => refusal(fn) !== null
 
     fc.assert(
       fc.property(caseArb, (c) => {
@@ -262,7 +272,8 @@ describe('AC-4: start agrees with the app on the JWT secret and the proxy hop co
         const lines: string[] = checkStartEnv(config, env)
         const reported = lines.flatMap(kinds)
         const secretRefused = throws(() => resolveAuthSecret(config, env))
-        const hopsRefused = throws(() => resolveTrustProxy(config, env))
+        const hopsRefusal = refusal(() => resolveTrustProxy(config, env))
+        const hopsRefused = hopsRefusal !== null
 
         // Beside a refused variable the app's verdict on the default is unknown, so it is not compared.
         const onDefault = secretRefused ? null : resolveAuthSecret(config, env).source === 'default'
@@ -270,6 +281,8 @@ describe('AC-4: start agrees with the app on the JWT secret and the proxy hop co
         expect(reported.includes('NYMBAL_JWT_SECRET')).toBe(secretRefused)
         expect(secretRefused ? null : reported.includes('security.auth.jwtSecret')).toBe(onDefault)
         expect(reported.includes('NYMBAL_TRUST_PROXY_HOPS')).toBe(hopsRefused)
+        expect(hopsRefusal !== null && lines.includes(hopsRefusal)).toBe(hopsRefused)
+        expect(hopsRefused).toBe(c.hops === 'bad' || c.trustProxy === 'true')
         expect(values.filter((value) => lines.some((line) => line.includes(value)))).toEqual([])
       }),
       { numRuns: 300 },

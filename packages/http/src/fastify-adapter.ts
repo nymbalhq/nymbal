@@ -30,6 +30,7 @@ import {
 } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
+import { createShopperAttestation, type ShopperAttestation } from './shopper-attestation.js'
 
 export interface CorsOptions {
   allowedOrigins: string[]
@@ -40,7 +41,10 @@ export interface FastifyAdapterOptions {
   logger: Logger
   /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
   security: NymbalConfig['security']
-  /** Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default. */
+  /**
+   * Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default; left
+   * unset, the first request that carries the header logs a warning. An explicit `0` says no proxy is in front.
+   */
   trustProxy?: boolean | number
   cors?: CorsOptions
   /** Whether the CSRF cookie carries `Secure`: `secureCookies(config, env)`. */
@@ -67,6 +71,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
   readonly #app: FastifyInstance
   readonly #logger: Logger
   readonly #guard: SecurityGuard
+  readonly #attestation: ShopperAttestation = createShopperAttestation()
   readonly #middlewares: MiddlewareHandler[] = []
   readonly #defaultHeaders: Record<string, string> = {}
   /** Ends each open stream for shutdown; a stream removes itself once its close callbacks have run. */
@@ -74,10 +79,15 @@ export class FastifyHttpAdapter implements HttpAdapter {
   #started = false
   #stopping = false
   #boundPort = 0
+  #warnedForwardedFor = false
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
-    this.#guard = createSecurityGuard(options.security, options.secureCookies)
+    this.#guard = createSecurityGuard(options.security, {
+      attestation: this.#attestation,
+      secureCookies: options.secureCookies ?? false,
+    })
+    const noHopSet = options.trustProxy === undefined || options.trustProxy === false
     this.#app = Fastify({
       logger: false,
       trustProxy: trustedHops(options.trustProxy ?? false),
@@ -93,6 +103,15 @@ export class FastifyHttpAdapter implements HttpAdapter {
       const inbound = req.headers[CORRELATION_ID_HEADER]
       if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
       else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
+      if (noHopSet && !this.#warnedForwardedFor && req.headers['x-forwarded-for'] !== undefined) {
+        this.#warnedForwardedFor = true
+        this.#logger
+          .child({ requestId: req.id, correlationId: req.correlationId })
+          .warn(
+            { header: 'x-forwarded-for', variable: 'NYMBAL_TRUST_PROXY_HOPS' },
+            'X-Forwarded-For arrives but no proxy hop is trusted: every shopper shares one rate-limit bucket; set NYMBAL_TRUST_PROXY_HOPS',
+          )
+      }
     })
     this.#app.addHook('onSend', async (req, reply, payload) => {
       reply.header(CORRELATION_ID_HEADER, req.correlationId)
@@ -165,6 +184,14 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   get boundPort(): number {
     return this.#boundPort
+  }
+
+  /**
+   * A token for `ip` that this adapter's guard, and no other, accepts in `x-nymbal-shopper` for the next minute: the
+   * storefront forward's proof of the shopper's address.
+   */
+  attestShopper(ip: string): string {
+    return this.#attestation.mint(ip)
   }
 
   /** The guard every route passes, for a mounted handler that admits a request it serves on a route's behalf. */

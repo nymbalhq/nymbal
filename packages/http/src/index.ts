@@ -10,7 +10,9 @@ export {
   CSRF_HEADER,
   type SecurityGuard,
 } from './security-middleware.js'
-export { RateLimiter } from './rate-limit.js'
+export { SHOPPER_ATTESTATION_HEADER } from '@nymbalhq/types'
+export { CHECKOUT_ADDRESS_CEILING, RateLimiter } from './rate-limit.js'
+export { createShopperAttestation, type ShopperAttestation } from './shopper-attestation.js'
 export {
   createHttpServer,
   resolveTrustProxy,

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http'
 import type { Socket } from 'node:net'
 import fc from 'fast-check'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { securitySchema } from '@nymbalhq/config'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 import { forwardToStorefront } from './storefront-forward.js'
@@ -465,5 +465,74 @@ describe('AC-5: the forward drains', () => {
     expect(render.status).toBe(200)
     expect(await forward.drained(1000)).toBe(true)
     expect(forward.inFlight()).toBe(0)
+  })
+})
+
+// AC-8: the forward tells the storefront who the shopper is in a form only this API can have made: the client address
+// the API resolved, attested under the adapter's own key. Whatever a client sends in that header is replaced. The clock
+// is pinned so the adapter's own attestation of an address, made by the test, is the token the forward sent.
+const SHOPPER_HEADER = 'x-nymbal-shopper'
+const CLIENT = '203.0.113.9'
+
+async function serveAttested(upstreamPort: number, trustProxy: number) {
+  const adapter = new FastifyHttpAdapter({ logger, security, trustProxy })
+  forwardToStorefront(adapter, { port: upstreamPort, publicUrl: PUBLIC_URL })
+  await adapter.start(0, '127.0.0.1')
+  cleanup.push(() => adapter.stop())
+  return { base: `http://127.0.0.1:${adapter.boundPort}`, adapter }
+}
+
+describe('AC-8: the forward attests the shopper address to the storefront', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  for (const [trustProxy, resolved] of [
+    [0, '127.0.0.1'],
+    [1, CLIENT],
+  ] as const) {
+    it(`AC-8: at trustProxy ${trustProxy} the storefront receives x-nymbal-shopper equal to the adapter's attestation of ${resolved}, the address the API resolved, and of no other`, async () => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'))
+      const up = await startUpstream()
+      const { base, adapter } = await serveAttested(up.port, trustProxy)
+
+      const res = await call(`${base}/attested?tp=${trustProxy}`, {
+        headers: { 'x-forwarded-for': CLIENT },
+      })
+      const seen = up.seen.find((s) => s.url === `/attested?tp=${trustProxy}`)
+      const other = trustProxy === 0 ? CLIENT : '127.0.0.1'
+
+      expect(res.status).toBe(200)
+      // `<ip>~<expiresMs>~<mac>`: the address the token is for, before the adapter confirms it is its own.
+      expect(String(seen?.headers[SHOPPER_HEADER]).split('~')[0]).toBe(resolved)
+      expect(seen?.headers[SHOPPER_HEADER]).toBe(adapter.attestShopper(resolved))
+      expect(seen?.headers[SHOPPER_HEADER]).not.toBe(adapter.attestShopper(other))
+    })
+  }
+
+  it("AC-8: an inbound x-nymbal-shopper on the page request, the adapter's own token for another address included, is replaced by the attestation of the client's address", async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-03T12:00:00.000Z'))
+    const up = await startUpstream()
+    const { base, adapter } = await serveAttested(up.port, 1)
+    const forgedFor = '198.51.100.7'
+    const inbound = [
+      adapter.attestShopper(forgedFor),
+      `${forgedFor}~${Date.now() + 60_000}~${'A'.repeat(43)}`,
+      'not-a-token',
+    ]
+
+    const received: unknown[] = []
+    for (const [i, value] of inbound.entries()) {
+      const url = `/replaced?i=${i}`
+      const res = await call(`${base}${url}`, {
+        headers: { 'x-forwarded-for': CLIENT, [SHOPPER_HEADER]: value },
+      })
+      expect(res.status).toBe(200)
+      received.push(up.seen.find((s) => s.url === url)?.headers[SHOPPER_HEADER])
+    }
+
+    expect(received).toEqual(inbound.map(() => adapter.attestShopper(CLIENT)))
   })
 })

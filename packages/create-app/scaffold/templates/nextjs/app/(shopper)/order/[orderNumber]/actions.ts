@@ -1,7 +1,8 @@
 'use server'
 
+import { headers } from 'next/headers'
 import type { ShopperOrder } from '@nymbalhq/types'
-import { openExpiredOrder, requestOrderLink } from '@/lib/api'
+import { openExpiredOrder, requestOrderLink, shopperHeaders } from '@/lib/api'
 import { renderNymbal } from '@/lib/render'
 import { summaryAttributes } from './OrderView'
 
@@ -27,14 +28,20 @@ export async function orderPageAction(
   _previous: OrderPageState | null,
   form: FormData,
 ): Promise<OrderPageState> {
+  const forwarded = shopperHeaders(await headers())
   if (field(form, 'intent') === 'link') {
-    const answer = await requestOrderLink(field(form, 'orderNumber'), field(form, 'email'))
+    const answer = await requestOrderLink(
+      field(form, 'orderNumber'),
+      field(form, 'email'),
+      forwarded,
+    )
     return { kind: answer === 'sent' ? 'link-sent' : 'link-limited' }
   }
   const read = await openExpiredOrder(
     field(form, 'orderNumber'),
     field(form, 'key'),
     field(form, 'email'),
+    forwarded,
   )
   if (read === 'not-found') return { kind: 'not-found' }
   if (read === 'limited') return { kind: 'open-limited' }

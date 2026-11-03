@@ -1,7 +1,7 @@
 ---
 import '../../styles/pages/error.css'
 import BaseLayout from '../../layouts/BaseLayout.astro'
-import { unsubscribeAlert } from '../../lib/api'
+import { shopperHeaders, unsubscribeAlert } from '../../lib/api'
 
 // Opening the link only shows the button, so a mail scanner that fetches it stops nothing. The press posts the token
 // back here, and this server posts it on to the API, which holds no CSRF cookie.
@@ -9,7 +9,8 @@ const pressed = Astro.request.method === 'POST'
 const token = pressed
   ? String((await Astro.request.formData()).get('token') ?? '')
   : (Astro.url.searchParams.get('token') ?? '')
-const stopped = pressed && token !== '' ? await unsubscribeAlert(token) : false
+const stopped =
+  pressed && token !== '' ? await unsubscribeAlert(token, shopperHeaders(Astro.request.headers)) : false
 ---
 
 <BaseLayout title="Back-in-stock alert | Nymbal" description="Stop a back-in-stock alert.">

@@ -1,0 +1,18 @@
+# id: I108
+# kind: injected
+# defect: the login limiter refuses on the account's failure count instead of the address's, so failures from other addresses lock the owner out and one address spraying many emails is never refused
+# where: packages/http/src/security-middleware.ts:140
+# killed-by: packages/platform/tests/integration/login-rate-limit.test.ts (AC-1)
+# suite: pnpm vitest run --project platform-integration packages/platform/tests/integration/login-rate-limit.test.ts
+diff --git a/packages/http/src/security-middleware.ts b/packages/http/src/security-middleware.ts
+--- a/packages/http/src/security-middleware.ts
++++ b/packages/http/src/security-middleware.ts
+@@ -137,7 +137,7 @@ export function createSecurityGuard(
+     admit(ctx, options = {}) {
+       const ip = clientIp(ctx)
+       const decision = isLogin(ctx)
+-        ? rateLimiter.full(ctx.path, [ip])
++        ? rateLimiter.full(ctx.path, [`account:${loginAccount(ctx) ?? ip}`])
+         : isCheckout(ctx)
+           ? checkCheckout(ctx, ip)
+           : rateLimiter.check(ip, ctx.path, ctx.headers)

@@ -179,8 +179,9 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
- * `primitive <name>` per primitive, and `events` (the event log's dead and retrying events). A slot is named as its
- * folder is (`document-store`), never by its config key.
+ * `primitive <name>` per primitive, `events` (the event log's dead and retrying events) and `trust proxy` (the hop
+ * count the server reads client addresses through). A slot is named as its folder is (`document-store`), never by its
+ * config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations', 'events']
@@ -200,6 +201,7 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     if (provider !== undefined && hasPackage(primitive, provider))
       names.push(`package ${slotFolder(primitive)}`)
   }
+  names.push('trust proxy')
   return names.sort()
 }
 

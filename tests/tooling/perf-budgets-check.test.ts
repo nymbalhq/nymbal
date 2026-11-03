@@ -263,7 +263,7 @@ describe('AC-7: checkBudgets options', () => {
   })
 
   it('AC-7: every SCRIPT_REFERENCES file parses to { commit, template, page, scriptBytes } and holds its page to those bytes', () => {
-    expect(SCRIPT_REFERENCES).toContain('tests/perf/fixtures/astro-home-13a4e78.json')
+    expect(SCRIPT_REFERENCES).toContain('tests/perf/fixtures/astro-home-cfc530f.json')
     for (const path of SCRIPT_REFERENCES) {
       const parsed = JSON.parse(readFileSync(join(REPO, path), 'utf8')) as Reference
       const reference: Reference = {

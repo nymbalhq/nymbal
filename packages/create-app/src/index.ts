@@ -45,9 +45,29 @@ interface AdminCredentials {
   password: string
 }
 
-/** A fresh admin password per project (128 bits, base64url), so no two stores share the seed's default. */
-function newAdminCredentials(): AdminCredentials {
-  return { email: 'admin@nymbal.local', password: randomBytes(16).toString('base64url') }
+const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567'
+
+/**
+ * An admin address no other store shares, so an attacker does not start from a known login: eight base32 characters
+ * (40 bits). It receives no mail; the merchant reads it from `.env` and the outro.
+ */
+export function randomAdminEmail(): string {
+  const bits = randomBytes(5).readUIntBE(0, 5)
+  let local = ''
+  for (let i = 7; i >= 0; i--) local += BASE32[Math.floor(bits / 32 ** i) % 32]
+  return `admin-${local}@nymbal.local`
+}
+
+/** Why `value` is not an admin email (one `@` with text either side, no whitespace), or undefined when it is one. */
+export function adminEmailProblem(value: string | undefined): string | undefined {
+  return /^[^\s@]+@[^\s@]+$/.test(value ?? '')
+    ? undefined
+    : 'Enter an email address, such as you@shop.com'
+}
+
+/** The admin account the seed creates: the given address or a random one, and a fresh password (128 bits). */
+function newAdminCredentials(email: string = randomAdminEmail()): AdminCredentials {
+  return { email, password: randomBytes(16).toString('base64url') }
 }
 
 /**
@@ -165,6 +185,7 @@ export interface CliFlags {
   yes: boolean
   /** Present (false) only with `--no-install`. */
   install?: boolean
+  adminEmail?: string
 }
 
 /** A command-line flag that is missing its value or names a value outside the allowed set. */
@@ -180,7 +201,10 @@ function oneOf<T extends string>(flag: string, value: string, allowed: readonly 
   throw new CliFlagError(`Unknown ${flag} "${value}". Allowed: ${allowed.join(', ')}`)
 }
 
-/** Parses process.argv (node and script first): --name, --template and --currency take `--flag v` or `--flag=v`. */
+/**
+ * Parses process.argv (node and script first): --name, --template, --currency and --admin-email take `--flag v` or
+ * `--flag=v`.
+ */
 export function parseCliFlags(argv: string[]): CliFlags {
   const flags: CliFlags = { yes: false }
   const args = argv.slice(2)
@@ -195,7 +219,7 @@ export function parseCliFlags(argv: string[]): CliFlags {
       flags.install = false
       continue
     }
-    const match = /^--(name|template|currency)(?:=(.*))?$/s.exec(arg)
+    const match = /^--(name|template|currency|admin-email)(?:=(.*))?$/s.exec(arg)
     if (match) {
       const flag = match[1]!
       let value = match[2]
@@ -208,7 +232,12 @@ export function parseCliFlags(argv: string[]): CliFlags {
       }
       if (flag === 'name') flags.name = value
       else if (flag === 'template') flags.template = oneOf('--template', value, TEMPLATES)
-      else flags.currency = oneOf('--currency', value, CURRENCIES)
+      else if (flag === 'currency') flags.currency = oneOf('--currency', value, CURRENCIES)
+      else {
+        const problem = adminEmailProblem(value)
+        if (problem) throw new CliFlagError(`Invalid --admin-email "${value}". ${problem}`)
+        flags.adminEmail = value
+      }
     } else if (!arg.startsWith('-') && positional === undefined) {
       positional = arg
     }
@@ -256,7 +285,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
       await mkdir(targetDir, { recursive: true })
     }
     await scaffold(targetDir, answers)
-    const admin = newAdminCredentials()
+    const admin = newAdminCredentials(flags.adminEmail)
     await writeAdminEnv(targetDir, admin)
     process.stdout.write(`Created ${answers.directory}\n`)
     if (flags.install !== false) {
@@ -279,6 +308,16 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
       })) as string | symbol)
 
   if (isCancel(name)) return cancel('Cancelled')
+
+  const adminEmail = flags.adminEmail
+    ? flags.adminEmail
+    : ((await text({
+        message: 'Admin email',
+        initialValue: randomAdminEmail(),
+        validate: adminEmailProblem,
+      })) as string | symbol)
+
+  if (isCancel(adminEmail)) return cancel('Cancelled')
 
   type Currency = 'GBP' | 'USD' | 'EUR'
   const currencyOptions: { value: Currency; label: string }[] = [
@@ -346,7 +385,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
   note(pc.dim(`Scaffolding into ${targetDir}`), 'Creating project')
 
   await scaffold(targetDir, answers)
-  const admin = newAdminCredentials()
+  const admin = newAdminCredentials(String(adminEmail).trim())
   await writeAdminEnv(targetDir, admin)
 
   if (shouldInstall) {

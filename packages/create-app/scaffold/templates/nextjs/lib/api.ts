@@ -11,6 +11,7 @@ import {
   ORDER_EMAIL_HEADER,
   ORDER_KEY_HEADER,
   PRODUCT_SORT_KEYS,
+  SHOPPER_ATTESTATION_HEADER,
 } from '@nymbalhq/types'
 import type {
   AlertKind,
@@ -149,8 +150,14 @@ export async function loadOrder(
   return envelope.data
 }
 
-// The two calls below serve the order page's forms only when its script did not run. With the script, the browser
-// sends them itself, so each shopper's tries count against their own address and not, as here, against this server's.
+// The two calls below serve the order page's forms only when its script did not run. From this server they count
+// against the shopper's address only when they echo the attestation the API sent with the page (`shopperHeaders`).
+
+/** The page request's `x-nymbal-shopper`, set by the API that forwarded it; `{}` when no API forwarded it. */
+export function shopperHeaders(headers: Headers): Record<string, string> {
+  const value = headers.get(SHOPPER_ATTESTATION_HEADER)
+  return value === null ? {} : { [SHOPPER_ATTESTATION_HEADER]: value }
+}
 
 /**
  * The order its expired key opens beside the order's email; `'not-found'` when the email does not open it (the API's
@@ -160,11 +167,12 @@ export async function openExpiredOrder(
   orderNumber: string,
   key: string,
   email: string,
+  forwarded: Record<string, string> = {},
 ): Promise<ShopperOrder | 'not-found' | 'limited'> {
   const url = `${API_URL}/api/orders/${encodeURIComponent(orderNumber)}`
   const res = await fetch(url, {
     cache: 'no-store',
-    headers: { [ORDER_KEY_HEADER]: key, [ORDER_EMAIL_HEADER]: email },
+    headers: { ...forwarded, [ORDER_KEY_HEADER]: key, [ORDER_EMAIL_HEADER]: email },
   })
   if (res.status === 404) return 'not-found'
   if (res.status === 429) return 'limited'
@@ -185,13 +193,15 @@ const CSRF_HEADER = 'x-csrf-token'
 export async function requestOrderLink(
   orderNumber: string,
   email: string,
+  forwarded: Record<string, string> = {},
 ): Promise<'sent' | 'limited'> {
-  const issued = await fetch(`${API_URL}/api/csrf`, { cache: 'no-store' })
+  const issued = await fetch(`${API_URL}/api/csrf`, { cache: 'no-store', headers: forwarded })
   if (!issued.ok) throw new Error(`[api] GET /api/csrf answered ${issued.status}`)
   const { token } = ((await issued.json()) as { data: { token: string } }).data
   const res = await fetch(`${API_URL}/api/orders/link`, {
     method: 'POST',
     headers: {
+      ...forwarded,
       'content-type': 'application/json',
       accept: 'application/json',
       cookie: `${CSRF_COOKIE}=${token}`,
@@ -297,10 +307,14 @@ export async function fetchSearch(
 }
 
 /** An alert link's token posted to the API from this server; null when the API refuses the link (404, or 400). */
-async function postAlertToken<T>(path: string, token: string): Promise<T | null> {
+async function postAlertToken<T>(
+  path: string,
+  token: string,
+  forwarded: Record<string, string>,
+): Promise<T | null> {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: { ...forwarded, 'content-type': 'application/json', accept: 'application/json' },
     body: JSON.stringify({ token }),
     cache: 'no-store',
   })
@@ -315,13 +329,23 @@ export interface AlertConfirmation {
 }
 
 /** Confirms the alert a confirmation email's link names; null when the link is not valid; rejects when the API fails. */
-export function confirmAlert(token: string): Promise<AlertConfirmation | null> {
-  return postAlertToken<AlertConfirmation>('/api/alerts/confirm', token)
+export function confirmAlert(
+  token: string,
+  forwarded: Record<string, string> = {},
+): Promise<AlertConfirmation | null> {
+  return postAlertToken<AlertConfirmation>('/api/alerts/confirm', token, forwarded)
 }
 
 /** Stops the alert an email's unsubscribe link names; false when the link is not valid; rejects when the API fails. */
-export async function unsubscribeAlert(token: string): Promise<boolean> {
+export async function unsubscribeAlert(
+  token: string,
+  forwarded: Record<string, string> = {},
+): Promise<boolean> {
   return (
-    (await postAlertToken<{ status: 'unsubscribed' }>('/api/alerts/unsubscribe', token)) !== null
+    (await postAlertToken<{ status: 'unsubscribed' }>(
+      '/api/alerts/unsubscribe',
+      token,
+      forwarded,
+    )) !== null
   )
 }

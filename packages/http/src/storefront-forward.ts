@@ -1,5 +1,6 @@
 import httpProxy from '@fastify/http-proxy'
 import type { HTTPMethods } from 'fastify'
+import { SHOPPER_ATTESTATION_HEADER } from '@nymbalhq/types'
 import type { FastifyHttpAdapter } from './fastify-adapter.js'
 
 export interface StorefrontForwardOptions {
@@ -23,7 +24,8 @@ const FORWARDED_METHODS: HTTPMethods[] = ['DELETE', 'GET', 'HEAD', 'PATCH', 'POS
 
 /**
  * Forwards every request the API does not route to the storefront on its internal port, body and headers unchanged
- * both ways. A path under /api/ keeps the API's not-found answer and never reaches the storefront. Call before
+ * both ways but for the forwarding headers and `x-nymbal-shopper`, the shopper's address attested by this API. A path
+ * under /api/ keeps the API's not-found answer and never reaches the storefront. Call before
  * `adapter.start`.
  */
 export function forwardToStorefront(
@@ -79,6 +81,8 @@ export function forwardToStorefront(
             'x-forwarded-host': origin.host,
             'x-forwarded-proto': proto,
             'x-forwarded-for': [prior, peer].flat().filter(Boolean).join(', '),
+            // Replaces whatever the client sent: only this API's own attestation of the address it resolved.
+            [SHOPPER_ATTESTATION_HEADER]: adapter.attestShopper(req.ip),
           }
         },
         // A forward is never retried: a page POST may not be idempotent, and a 503 is the storefront's answer.

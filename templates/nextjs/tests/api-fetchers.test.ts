@@ -492,3 +492,127 @@ describe('AC-6: the Next order page’s server fetchers', () => {
     )
   })
 })
+
+// AC-10: the API attests a no-JS shopper's address to this server on the page request (`x-nymbal-shopper`). The
+// server's own calls for that shopper echo it, so the API counts them against the shopper and not against this server.
+const SHOPPER_HEADER = 'x-nymbal-shopper'
+
+/** Header values as the API mints them, and any other visible ASCII a client could send. */
+const aShopperValue = fc.oneof(
+  fc
+    .tuple(fc.oneof(fc.ipV4(), fc.ipV6()), fc.integer({ min: 0, max: 4_102_444_800_000 }))
+    .chain(([ip, at]) =>
+      fc.stringMatching(/^[A-Za-z0-9_-]{43}$/).map((mac) => `${ip}~${at}~${mac}`),
+    ),
+  fc.stringMatching(/^[!-~]{1,120}$/),
+)
+/** Other request headers a page request carries. */
+const otherHeaders = fc.dictionary(
+  fc.constantFrom(
+    'accept',
+    'cookie',
+    'user-agent',
+    'x-forwarded-for',
+    'x-nymbal-order-key',
+    'referer',
+  ),
+  fc.stringMatching(/^[!-~]{1,40}$/),
+)
+
+type ShopperFetcher = 'openExpiredOrder' | 'requestOrderLink' | 'confirmAlert' | 'unsubscribeAlert'
+
+/** One call of the fetcher with `forwarded` (or no argument), answered as a success; the requests it made. */
+async function callShopperFetcher(
+  api: Api,
+  name: ShopperFetcher,
+  forwarded: Record<string, string> | undefined,
+  token: string,
+) {
+  const sent = recordRequests((call) => {
+    const path = new URL(call.url).pathname
+    if (path === '/api/csrf') {
+      return new Response(JSON.stringify({ data: { token } }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': `nymbal.csrf=${token}; Path=/`,
+        },
+      })
+    }
+    if (path === '/api/orders/link') return json({ sent: 'if-matched' }, 202)
+    if (path.startsWith('/api/orders/')) {
+      return json({ orderNumber: 'N-1', totalMinor: 1, currency: 'GBP', lineItems: [] })
+    }
+    if (path === '/api/alerts/confirm') {
+      return json({ kind: 'back-in-stock', product: { name: 'P', slug: 'p' } })
+    }
+    if (path === '/api/alerts/unsubscribe') return json({ status: 'unsubscribed' })
+    throw new Error(`unexpected fetch ${call.method} ${call.url}`)
+  })
+  const args = forwarded === undefined ? [] : [forwarded]
+  const run = () => {
+    switch (name) {
+      case 'openExpiredOrder':
+        return api.openExpiredOrder('N-1', 'k'.repeat(43), 'shopper@shop.example', ...args)
+      case 'requestOrderLink':
+        return api.requestOrderLink('N-1', 'shopper@shop.example', ...args)
+      case 'confirmAlert':
+        return api.confirmAlert(token, ...args)
+      case 'unsubscribeAlert':
+        return api.unsubscribeAlert(token, ...args)
+    }
+  }
+  return { sent, outcome: await settle(run()) }
+}
+
+describe('AC-10: the Next server fetchers echo the shopper attestation', () => {
+  it('AC-10: over generated headers, shopperHeaders returns { x-nymbal-shopper: v } exactly when the inbound headers carry v, and {} otherwise', async () => {
+    const api = await load()
+    fc.assert(
+      fc.property(otherHeaders, fc.option(aShopperValue, { nil: undefined }), (others, value) => {
+        const inbound = new Headers(others)
+        if (value !== undefined) inbound.set(SHOPPER_HEADER, value)
+
+        expect(api.shopperHeaders(inbound)).toEqual(
+          value === undefined ? {} : { [SHOPPER_HEADER]: value },
+        )
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('AC-10: openExpiredOrder, requestOrderLink, confirmAlert and unsubscribeAlert send x-nymbal-shopper: v on every API request when given it, and no such header when not; the link request keeps its CSRF cookie and header', async () => {
+    const api = await load()
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom<ShopperFetcher>(
+          'openExpiredOrder',
+          'requestOrderLink',
+          'confirmAlert',
+          'unsubscribeAlert',
+        ),
+        fc.option(aShopperValue, { nil: undefined }),
+        fc.boolean(),
+        fc.stringMatching(/^[0-9a-f]{64}$/),
+        async (name, value, passEmpty, token) => {
+          const forwarded: Record<string, string> | undefined =
+            value !== undefined ? { [SHOPPER_HEADER]: value } : passEmpty ? {} : undefined
+          const { sent, outcome } = await callShopperFetcher(api, name, forwarded, token)
+          const link = sent.find((c) => new URL(c.url).pathname === '/api/orders/link')
+
+          expect(outcome.ok, String(outcome.ok ? '' : outcome.error)).toBe(true)
+          expect(sent.length).toBe(name === 'requestOrderLink' ? 2 : 1)
+          expect(sent.map((c) => c.headers.get(SHOPPER_HEADER))).toEqual(
+            sent.map(() => value ?? null),
+          )
+          expect(
+            link === undefined
+              ? null
+              : [link.headers.get('x-csrf-token'), link.headers.get('cookie')],
+          ).toEqual(name === 'requestOrderLink' ? [token, `nymbal.csrf=${token}`] : null)
+        },
+      ),
+      { numRuns: 120 },
+    )
+  })
+})
