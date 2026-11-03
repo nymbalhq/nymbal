@@ -22,7 +22,7 @@ import { isNotConfigured } from './adapters/not-configured.js'
 import { createLogger } from './logger.js'
 import { loadBootSettings } from './settings/load.js'
 import { addSecret, scrubbingLogger } from './settings/secret-set.js'
-import { JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
+import { isLoopbackHost, JWT_SECRET_ENV, resolveAuthSecret } from './auth-secret.js'
 import { buildServices, type ServiceRegistry } from './services/index.js'
 import { createEventPublisher, type EventPublisher } from './events/publisher.js'
 import { createRelay, deliveringBus, type CreateRelayOptions, type Relay } from './events/relay.js'
@@ -371,6 +371,13 @@ export async function createApp(
       publisher,
       relay,
       async attachHttp(adapter, options = {}) {
+        // Anyone can sign a token with the published default secret, so it is served on loopback only.
+        if (jwt.source === 'default' && !isLoopbackHost(config.http.host)) {
+          throw new ConfigError(
+            `security.auth.jwtSecret is the schema default and ${JWT_SECRET_ENV} is not set, so the API may listen on loopback only, not on ${config.http.host}; set ${JWT_SECRET_ENV} to a secret of your own (\`openssl rand -base64 32\`).`,
+            { code: 'config.default_jwt_secret_exposed', context: { host: config.http.host } },
+          )
+        }
         await adapters.security.applyMiddleware(adapter, config.security)
         const { registerAllRoutes } = await import('./routes/register.js')
         const table = new RouteTable()

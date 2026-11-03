@@ -13,6 +13,9 @@ import { expiredCartCookie } from './cart.js'
 /** Runs once a login or register has succeeded; the cookies it answers join the response. */
 export type AfterSignIn = (ctx: RequestContext, customerId: string) => Promise<ResponseCookie[]>
 
+/** Whether a cookie minted now carries `Secure`: `secureCookies(config, process.env)`, read when the cookie is set. */
+export type SecureCookies = () => boolean
+
 interface RegisterBody {
   email?: string
   password?: string
@@ -30,7 +33,7 @@ interface RefreshBody {
 
 const REFRESH_COOKIE = 'nymbal.refresh'
 
-function refreshCookies(token: string, maxAgeSeconds: number): ResponseCookie[] {
+function refreshCookies(token: string, maxAgeSeconds: number, secure: boolean): ResponseCookie[] {
   return [
     {
       name: REFRESH_COOKIE,
@@ -38,18 +41,18 @@ function refreshCookies(token: string, maxAgeSeconds: number): ResponseCookie[] 
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       maxAge: maxAgeSeconds,
     },
   ]
 }
 
 /** Logout ends the browser's visitor and cart too, so the next person on a shared device starts with neither. */
-function expiredCookies(): ResponseCookie[] {
+function expiredCookies(secure: boolean): ResponseCookie[] {
   return [
-    { name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true },
-    expiredVisitorCookie(),
-    expiredCartCookie(),
+    { name: REFRESH_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true, secure },
+    expiredVisitorCookie(secure),
+    expiredCartCookie(secure),
   ]
 }
 
@@ -79,6 +82,7 @@ export function registerAuthRoutes(
   auth: AuthService,
   refreshTtl: string,
   afterSignIn: readonly AfterSignIn[] = [],
+  secure: SecureCookies = () => false,
 ): void {
   const refreshMaxAge = Math.floor(parseDurationToMs(refreshTtl) / 1000)
   adapter.registerRoute('POST', '/api/auth/register', async (ctx) => {
@@ -105,12 +109,12 @@ export function registerAuthRoutes(
         201,
       )
       envelope.cookies = [
-        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge),
+        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge, secure()),
         ...(await runAfterSignIn(afterSignIn, ctx, result.customer.id)),
       ]
       return envelope as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -127,12 +131,12 @@ export function registerAuthRoutes(
         expiresIn: result.tokens.expiresIn,
       })
       envelope.cookies = [
-        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge),
+        ...refreshCookies(result.tokens.refreshToken, refreshMaxAge, secure()),
         ...(await runAfterSignIn(afterSignIn, ctx, result.customer.id)),
       ]
       return envelope as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -143,10 +147,10 @@ export function registerAuthRoutes(
       if (!refreshToken) throw new AuthError('token_invalid', 'refresh token missing')
       const tokens = await auth.refresh(refreshToken)
       const envelope = ok({ accessToken: tokens.accessToken, expiresIn: tokens.expiresIn })
-      envelope.cookies = refreshCookies(tokens.refreshToken, refreshMaxAge)
+      envelope.cookies = refreshCookies(tokens.refreshToken, refreshMaxAge, secure())
       return envelope as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -156,10 +160,10 @@ export function registerAuthRoutes(
         (ctx.body as RefreshBody | undefined)?.refreshToken ?? ctx.cookies[REFRESH_COOKIE]
       if (refreshToken) await auth.logout(refreshToken)
       const envelope = ok({ ok: true })
-      envelope.cookies = expiredCookies()
+      envelope.cookies = expiredCookies(secure())
       return envelope as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

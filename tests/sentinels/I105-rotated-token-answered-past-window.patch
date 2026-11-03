@@ -1,0 +1,20 @@
+# id: I105
+# kind: injected
+# defect: a rotated refresh token presented after the reuse window is rotated again instead of refused, so a stolen token stays good and no session is revoked
+# where: packages/platform/src/services/auth-service.ts:236
+# killed-by: packages/platform/src/services/refresh-reuse.test.ts AC-15 (the window does not slide: R0 replayed at t0+40 s is refused and every session of the customer is refused; also the chain property)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/services/refresh-reuse.test.ts
+diff --git a/packages/platform/src/services/auth-service.ts b/packages/platform/src/services/auth-service.ts
+--- a/packages/platform/src/services/auth-service.ts
++++ b/packages/platform/src/services/auth-service.ts
+@@ -233,10 +233,6 @@
+           throw new AuthError('token_invalid', 'refresh token revoked')
+         }
+         // Rotated: two tabs presenting one cookie together get a pair each; later, it is a stolen token replayed.
+-        if (Date.now() - Date.parse(record.revokedAt) > REFRESH_REUSE_WINDOW_MS) {
+-          await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
+-          throw new AuthError('token_invalid', 'refresh token reused; sessions revoked')
+-        }
+       }
+       if (record.tokenHash !== hashRefresh(refreshToken)) {
+         // A mismatch means replay with an older token — revoke chain.

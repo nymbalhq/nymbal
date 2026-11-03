@@ -38,11 +38,11 @@ function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
 }
 
 export function registerCapabilitiesRoute(adapter: HttpAdapter, adapters: ReportedAdapters): void {
-  adapter.registerRoute('GET', '/api/capabilities', async () => {
+  adapter.registerRoute('GET', '/api/capabilities', async (ctx) => {
     try {
       return ok(storeCapabilities(adapters))
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

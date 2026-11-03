@@ -137,7 +137,7 @@ export function registerAdminOrdersRoutes(
         const page = orders.slice(offset, offset + limit)
         return ok(await store.read((tx) => withPayments(tx, page)))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -152,7 +152,13 @@ export function registerAdminOrdersRoutes(
         if (!orderNumber) return fail('admin.invalid', 'orderNumber required', 400)
         const at = atOf(ctx)
         if (at !== undefined) {
-          return answerAsOf(history, at, () => historySubject(orderNumber), notFound(orderNumber))
+          return answerAsOf(
+            history,
+            at,
+            () => historySubject(orderNumber),
+            notFound(orderNumber),
+            ctx.logger,
+          )
         }
         const detail = await store.read(async (tx) => {
           const found = await repos.order.findByOrderNumber(tx, orderNumber)
@@ -163,7 +169,7 @@ export function registerAdminOrdersRoutes(
         if (!detail) return fail('orders.not_found', `Order not found: ${orderNumber}`, 404)
         return ok(detail)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -187,7 +193,7 @@ export function registerAdminOrdersRoutes(
         const fresh = await order.updateStatus(id, 'confirmed', `admin:${ctx.auth!.userId}`)
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -203,7 +209,7 @@ export function registerAdminOrdersRoutes(
         const fresh = await order.updateStatus(id, 'processing', `admin:${ctx.auth!.userId}`)
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -222,7 +228,7 @@ export function registerAdminOrdersRoutes(
         const fresh = await checkout.cancel(id, reason, `admin:${ctx.auth!.userId}`)
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -239,7 +245,7 @@ export function registerAdminOrdersRoutes(
         const fresh = await checkout.markPaid(id, `admin:${ctx.auth!.userId}`, body?.note)
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -255,7 +261,7 @@ export function registerAdminOrdersRoutes(
         const fresh = await order.markDelivered(id, `admin:${ctx.auth!.userId}`)
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -280,7 +286,7 @@ export function registerAdminOrdersRoutes(
         )
         return ok(await adminOrder(fresh))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -307,7 +313,7 @@ export function registerAdminOrdersRoutes(
         })
         return ok(result)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -338,7 +344,7 @@ export function registerAdminOrdersRoutes(
         if (!history) return fail('orders.not_found', `Order not found: ${id}`, 404)
         return ok(history)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -356,7 +362,7 @@ export function registerAdminOrdersRoutes(
         const notes = parseNotes(found.notes, found.createdAt)
         return ok(notes)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -389,7 +395,7 @@ export function registerAdminOrdersRoutes(
         if (!noted) return fail('orders.not_found', `Order not found: ${id}`, 404)
         return ok({ note: newNote })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -406,7 +412,7 @@ export function registerAdminOrdersRoutes(
         const queued = await order.resendConfirmation(id)
         return ok({ orderId: queued.id, orderNumber: queued.orderNumber, email: queued.email })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

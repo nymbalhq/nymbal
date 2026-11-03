@@ -52,14 +52,14 @@ export interface SecurityGuard {
 /** Counts failures only, keyed by IP and by account, so an office behind one NAT is not blocked by its own logins. */
 const LOGIN_PATH = '/api/auth/login'
 
-function csrfCookie(token: string): ResponseCookie {
+function csrfCookie(token: string, secure: boolean): ResponseCookie {
   return {
     name: CSRF_COOKIE,
     value: token,
     path: '/',
     httpOnly: false,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure,
   }
 }
 
@@ -74,7 +74,11 @@ function isLogin(ctx: RequestContext): boolean {
   return ctx.method === 'POST' && ctx.path === LOGIN_PATH
 }
 
-export function createSecurityGuard(security: NymbalConfig['security']): SecurityGuard {
+/** `secureCookies` is whether the CSRF cookie carries `Secure` (`secureCookies(config, env)` in `@nymbalhq/config`). */
+export function createSecurityGuard(
+  security: NymbalConfig['security'],
+  secureCookies = false,
+): SecurityGuard {
   const rateLimiter = new RateLimiter({ ...BUILT_IN_RATE_LIMITS, ...security.rateLimit })
   const baseHeaders = buildSecurityHeaders(security)
 
@@ -125,7 +129,7 @@ export function createSecurityGuard(security: NymbalConfig['security']): Securit
       const existing = ctx.cookies[CSRF_COOKIE]
       if (existing) return { status: 200, body: { data: { token: existing } } }
       const token = newToken()
-      return { status: 200, body: { data: { token } }, cookies: [csrfCookie(token)] }
+      return { status: 200, body: { data: { token } }, cookies: [csrfCookie(token, secureCookies)] }
     },
 
     reset() {

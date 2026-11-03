@@ -13,7 +13,7 @@ import {
   viewerKey,
 } from '../read-models/recently-viewed.js'
 import type { RecentlyViewedService } from '../services/recently-viewed-service.js'
-import type { AfterSignIn } from './auth.js'
+import type { AfterSignIn, SecureCookies } from './auth.js'
 import { refuseLapsedBearer } from './auth-middleware.js'
 import { ok, renderError } from './envelope.js'
 
@@ -23,20 +23,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const BOT = /bot|crawl|spider|slurp/i
 const NOT_STORED = { 'Cache-Control': 'private, no-store' }
 
-function visitorCookie(id: string): ResponseCookie {
+function visitorCookie(id: string, secure: boolean): ResponseCookie {
   return {
     name: VISITOR_COOKIE,
     value: id,
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure,
     maxAge: RECENT_VIEWS_WINDOW_DAYS * 86_400,
   }
 }
 
-export function expiredVisitorCookie(): ResponseCookie {
-  return { name: VISITOR_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true }
+export function expiredVisitorCookie(secure = false): ResponseCookie {
+  return { name: VISITOR_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true, secure }
 }
 
 /** The request's visitor id, when its cookie holds one; anything but a UUID is no visitor. */
@@ -46,12 +46,15 @@ function visitorOf(ctx: RequestContext): string | undefined {
 }
 
 /** The sign-in hook that moves the visitor's views to the customer and ends the visitor. */
-export function foldViewsOnSignIn(recentlyViewed: RecentlyViewedService): AfterSignIn {
+export function foldViewsOnSignIn(
+  recentlyViewed: RecentlyViewedService,
+  secure: SecureCookies = () => false,
+): AfterSignIn {
   return async (ctx, customerId) => {
     const visitorId = visitorOf(ctx)
     if (visitorId === undefined) return []
     await recentlyViewed.fold(visitorId, customerId)
-    return [expiredVisitorCookie()]
+    return [expiredVisitorCookie(secure())]
   }
 }
 
@@ -62,6 +65,7 @@ export interface RegisterRecentlyViewedRoutesDeps {
   /** The config's `events.retentionDays`: the list reaches no further back than the log does. */
   retentionDays: number
   now?: () => Date
+  secureCookies?: SecureCookies
 }
 
 export function registerRecentlyViewedRoutes(
@@ -70,6 +74,7 @@ export function registerRecentlyViewedRoutes(
 ): void {
   const { recentlyViewed, documentStore, productRepo, retentionDays } = deps
   const now = deps.now ?? (() => new Date())
+  const secure = deps.secureCookies ?? (() => false)
 
   adapter.registerRoute('POST', '/api/recently-viewed', async (ctx) => {
     try {
@@ -85,9 +90,11 @@ export function registerRecentlyViewedRoutes(
       }
       const visitorId = visitorOf(ctx) ?? uuidv7()
       const recorded = await recentlyViewed.record({ kind: 'visitor', id: visitorId }, productId)
-      return recorded ? { status: 204, cookies: [visitorCookie(visitorId)] } : { status: 204 }
+      return recorded
+        ? { status: 204, cookies: [visitorCookie(visitorId, secure())] }
+        : { status: 204 }
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -109,7 +116,7 @@ export function registerRecentlyViewedRoutes(
       )
       return { ...ok({ items }), headers: NOT_STORED } as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

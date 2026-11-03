@@ -17,6 +17,7 @@ export {
 } from './known-infrastructure.js'
 export type { Slot } from '@nymbalhq/types'
 export { loadConfig, findConfigFile, type LoadedConfig } from './load.js'
+export { PUBLIC_URL_ENV, secureCookies } from './secure-cookies.js'
 export {
   DEFAULT_JWT_SECRET,
   nymbalConfigSchema,

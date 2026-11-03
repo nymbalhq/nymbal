@@ -1,4 +1,7 @@
 import type { DenormalisedProduct } from '@nymbalhq/sdk'
+import { descriptionText } from '@nymbalhq/web-components/ssr'
+
+export { descriptionText, serializeJsonLd } from '@nymbalhq/web-components/ssr'
 
 export interface BreadcrumbItem {
   name: string
@@ -38,16 +41,14 @@ export function productJsonLd(
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: product.name,
-    description: product.description,
+    description: descriptionText(product.description),
     url,
     sku: product.variants[0]?.sku ?? product.id,
     offers,
   }
 }
 
-export function breadcrumbJsonLd(
-  items: BreadcrumbItem[],
-): Record<string, unknown> {
+export function breadcrumbJsonLd(items: BreadcrumbItem[]): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
@@ -60,10 +61,7 @@ export function breadcrumbJsonLd(
   }
 }
 
-export function organizationJsonLd(
-  storeName: string,
-  url: string,
-): Record<string, unknown> {
+export function organizationJsonLd(storeName: string, url: string): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',

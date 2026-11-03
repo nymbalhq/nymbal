@@ -19,7 +19,7 @@ export function registerAlertRoutes(adapter: HttpAdapter, deps: RegisterAlertRou
       const answer = await alerts.subscribe({ ...body, origin: originOf(ctx.headers['origin']) })
       return ok(answer, undefined, 202)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -32,7 +32,7 @@ export function registerAlertRoutes(adapter: HttpAdapter, deps: RegisterAlertRou
       try {
         return ok(await alerts.confirm((ctx.body as { token: string }).token))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     },
     { csrf: false },
@@ -45,7 +45,7 @@ export function registerAlertRoutes(adapter: HttpAdapter, deps: RegisterAlertRou
       try {
         return ok(await alerts.unsubscribe((ctx.body as { token: string }).token))
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     },
     { csrf: false },

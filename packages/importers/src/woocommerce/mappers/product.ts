@@ -27,6 +27,12 @@ function wcStatusToNymbal(status: string): 'active' | 'draft' {
   return status === 'publish' ? 'active' : 'draft'
 }
 
+/** The slug the product is created with: the WooCommerce slug (or name) slugified, plus the run's suffix if any. */
+export function productSlug(wc: WcProduct, slugSuffix: string): string {
+  const base = slugify(wc.slug || wc.name)
+  return slugSuffix ? `${base}-${slugSuffix}` : base
+}
+
 export function mapProduct(
   wc: WcProduct,
   variations: WcVariation[],
@@ -34,10 +40,11 @@ export function mapProduct(
   mediaUrls: Array<{ url: string; altText: string }>,
   slugSuffix: string,
 ): ProductCreateInput {
-  const slug = slugSuffix ? `${slugify(wc.slug || wc.name)}-${slugSuffix}` : slugify(wc.slug || wc.name)
+  const slug = productSlug(wc, slugSuffix)
 
   const seoTitle = wc.yoast_head_json?.title ?? wc.name
-  const seoDescription = wc.yoast_head_json?.description ?? wc.short_description?.replace(/<[^>]+>/g, '') ?? ''
+  const seoDescription =
+    wc.yoast_head_json?.description ?? wc.short_description?.replace(/<[^>]+>/g, '') ?? ''
 
   const media = mediaUrls.map((m, i) => ({ url: m.url, altText: m.altText, position: i }))
 

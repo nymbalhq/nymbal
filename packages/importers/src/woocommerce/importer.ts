@@ -9,11 +9,11 @@ import { buildReport } from '../report.js'
 import { WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcProduct, WcVariation, WcCustomer, WcOrder, WcReview } from './client.js'
 import { mapCategory } from './mappers/category.js'
-import { mapProduct } from './mappers/product.js'
+import { mapProduct, productSlug } from './mappers/product.js'
 import { mapCustomer } from './mappers/customer.js'
 import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
-import { downloadProductImages } from './media.js'
+import { downloadProductImages, type ImagePolicy } from './media.js'
 import { runEnrichment } from './enrichment.js'
 import { categoryRefs, orderRefs, productRefs, reviewRefs } from './refs.js'
 import type { ReviewsAdapter } from '@nymbalhq/types'
@@ -25,6 +25,8 @@ export interface WooCommerceImporterDeps {
   adapters: { ai: AiAdapter | null; reviews: ReviewsAdapter }
   /** The store's media storage (`app.platform.media`): every product image is put here. */
   media: MediaStorage
+  /** Resolves an image host to its addresses for the image policy; the system resolver by default. */
+  lookup?: ImagePolicy['lookup']
   onProgress?: ProgressCallback
 }
 
@@ -60,6 +62,13 @@ export async function runWooCommerceImport(
   const emit = onProgress ?? (() => undefined)
 
   const client = new WooCommerceClient(opts.credentials)
+  // The store's own host is fetched whatever its address; a URL that does not parse fails at the connect check below.
+  const imagePolicy: ImagePolicy = {
+    ...(URL.canParse(opts.credentials.url) && {
+      allowHost: new URL(opts.credentials.url).hostname,
+    }),
+    ...(deps.lookup !== undefined && { lookup: deps.lookup }),
+  }
 
   // Load or create state
   let state: ImportState = opts.fresh
@@ -143,10 +152,16 @@ export async function runWooCommerceImport(
             .map((id) => state.wcToNymbalCategory[id])
             .filter((id): id is string => Boolean(id))
 
-          const mediaItems = await downloadProductImages(refs.imageSources, refs.rawSlug, media, (err) => {
-            state.errors.push({ phase: 'media', id: String(wc.id), error: String(err) })
-            emit({ kind: 'error', phase: 'media', id: String(wc.id), message: String(err) })
-          })
+          const mediaItems = await downloadProductImages(
+            refs.imageSources,
+            productSlug(wc, refs.slugSuffix),
+            media,
+            (err) => {
+              state.errors.push({ phase: 'media', id: String(wc.id), error: String(err) })
+              emit({ kind: 'error', phase: 'media', id: String(wc.id), message: String(err) })
+            },
+            imagePolicy,
+          )
 
           try {
             const snap = await services.product.create(

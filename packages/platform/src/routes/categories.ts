@@ -6,7 +6,7 @@ export function registerCategoryRoutes(
   documentStore: DocumentStoreAdapter,
   storeName: string,
 ): void {
-  adapter.registerRoute('GET', '/api/categories', async () => {
+  adapter.registerRoute('GET', '/api/categories', async (ctx) => {
     try {
       const all: Array<Category & { storeId: string; position: number }> = []
       let cursor: string | undefined
@@ -24,7 +24,7 @@ export function registerCategoryRoutes(
       } while (cursor !== undefined)
       return ok(all.sort((a, b) => (a.position ?? 0) - (b.position ?? 0)))
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

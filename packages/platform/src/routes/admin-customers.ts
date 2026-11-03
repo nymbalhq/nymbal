@@ -98,7 +98,7 @@ export function registerAdminCustomersRoutes(
         const page = customers.slice(offset, offset + limit)
         return ok({ customers: page })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -112,7 +112,8 @@ export function registerAdminCustomersRoutes(
         const id = ctx.params.id
         if (!id) return fail('admin.invalid', 'id required', 400)
         const at = atOf(ctx)
-        if (at !== undefined) return answerAsOf(history, at, () => historySubject(id), notFound(id))
+        if (at !== undefined)
+          return answerAsOf(history, at, () => historySubject(id), notFound(id), ctx.logger)
         const found = await store.read(async (tx) => {
           const raw = await repos.customer.findById(tx, id)
           return raw ? { raw, totals: await repos.order.totalsByCustomer(tx, id) } : null
@@ -121,7 +122,7 @@ export function registerAdminCustomersRoutes(
         const { passwordHash: _pw, ...customer } = found.raw
         return ok({ customer, stats: statsOf(found.totals) })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -148,7 +149,7 @@ export function registerAdminCustomersRoutes(
         const orders = await store.read((tx) => repos.order.listByCustomer(tx, id))
         return ok(orders)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -178,7 +179,7 @@ export function registerAdminCustomersRoutes(
         }
         return ok({ note: newNote })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

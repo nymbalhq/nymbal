@@ -1,4 +1,4 @@
-import type { RequestContext, ResponseEnvelope } from '@nymbalhq/types'
+import type { Logger, RequestContext, ResponseEnvelope } from '@nymbalhq/types'
 import { fail, ok, renderError, type Envelope } from '../routes/envelope.js'
 import type { HistoryReader, HistorySubject } from './read.js'
 
@@ -25,6 +25,7 @@ export async function answerAsOf(
   at: string,
   resolve: () => Promise<HistorySubject>,
   notFound: () => Answer,
+  logger: Logger,
 ): Promise<Answer> {
   try {
     const instant = new Date(at)
@@ -52,7 +53,7 @@ export async function answerAsOf(
         )
     }
   } catch (err) {
-    return renderError(err)
+    return renderError(err, logger)
   }
 }
 
@@ -79,6 +80,6 @@ export async function answerHistory(
     })
     return page === null ? notFound() : ok(page)
   } catch (err) {
-    return renderError(err)
+    return renderError(err, ctx.logger)
   }
 }

@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import {
   type DocumentStoreAdapter,
   type EventBusAdapter,
@@ -52,8 +52,10 @@ function sign(payload: TicketPayload, secret: string): string {
 function verify(token: string, secret: string): TicketPayload | null {
   const [body, sig] = token.split('.')
   if (!body || !sig) return null
-  const expected = createHmac('sha256', secret).update(body).digest('base64url')
-  if (expected !== sig) return null
+  const expected = Buffer.from(createHmac('sha256', secret).update(body).digest('base64url'))
+  const given = Buffer.from(sig)
+  // timingSafeEqual throws on unequal lengths; a length differs only for a forged ticket, so it may return early.
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
   try {
     return JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TicketPayload
   } catch {
@@ -91,7 +93,7 @@ export function registerEventsSseRoute(adapter: HttpAdapter, deps: RegisterEvent
         const token = sign(payload, ticketSecret)
         return ok({ ticket: token, expiresIn: TICKET_TTL_SECONDS })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

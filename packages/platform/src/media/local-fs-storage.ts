@@ -1,7 +1,7 @@
 import { constants } from 'node:fs'
 import { access, mkdir, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import type { HealthReport, MediaStorage } from '@nymbalhq/types'
+import { dirname, isAbsolute, resolve, sep } from 'node:path'
+import { ValidationError, type HealthReport, type MediaStorage } from '@nymbalhq/types'
 
 export interface LocalFsMediaStorageOptions {
   root: string
@@ -29,6 +29,19 @@ async function nearestExisting(root: string): Promise<string> {
   }
 }
 
+/** The file a key names under `root`, or a refusal when it would land anywhere else. */
+function destinationOf(root: string, key: string): string {
+  const base = resolve(root) + sep
+  const dest = resolve(base, key)
+  if (key.includes('\\') || key.includes('\0') || isAbsolute(key) || !dest.startsWith(base)) {
+    throw new ValidationError('the media key resolves outside the media root', {
+      code: 'media.key_outside_root',
+      context: { key },
+    })
+  }
+  return dest
+}
+
 export function createLocalFsMediaStorage(options: LocalFsMediaStorageOptions): MediaStorage {
   const { root } = options
   const urlPrefix = options.urlPrefix ?? '/imported-media'
@@ -36,9 +49,8 @@ export function createLocalFsMediaStorage(options: LocalFsMediaStorageOptions): 
   return {
     capabilities: () => LOCAL_FS_MEDIA_CAPABILITIES,
     async put(key, body, _contentType) {
-      const dest = join(root, key)
-      const dir = dest.substring(0, dest.lastIndexOf('/'))
-      await mkdir(dir, { recursive: true })
+      const dest = destinationOf(root, key)
+      await mkdir(dirname(dest), { recursive: true })
       await writeFile(dest, body)
       return { url: `${urlPrefix}/${key}` }
     },

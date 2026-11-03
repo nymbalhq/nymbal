@@ -44,6 +44,7 @@ export * from './recently-viewed-service.js'
 export * from './alert-service.js'
 export * from './review-service.js'
 export { newAlertToken } from './alert-token.js'
+export { sanitizeDescription } from './description.js'
 
 /** A `native` email adapter only logs; any other (`smtp`, a project's own) is taken to reach a mailbox. */
 export function emailDelivers(email: EmailAdapter): boolean {

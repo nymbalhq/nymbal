@@ -1,3 +1,4 @@
+import { isIPv4 } from 'node:net'
 import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
 import { ConfigError } from '@nymbalhq/types'
 
@@ -27,4 +28,18 @@ export function resolveAuthSecret(config: NymbalConfig, env: NodeJS.ProcessEnv):
   if (own !== DEFAULT_JWT_SECRET) return { secret: own, source: 'config' }
   if (fromEnv !== undefined) return { secret: fromEnv, source: 'env' }
   return { secret: DEFAULT_JWT_SECRET, source: 'default' }
+}
+
+/**
+ * Whether a listen host is reachable from this machine only: 127.0.0.0/8, ::1 or localhost. The wildcards `0.0.0.0`
+ * and `::` listen on every interface, so they are not. Any other spelling of a loopback address is treated as
+ * reachable, which refuses more, never less.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const h = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, '$1')
+  if (h === 'localhost' || h === '::1') return true
+  return isIPv4(h) && h.startsWith('127.')
 }

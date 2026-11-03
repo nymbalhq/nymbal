@@ -87,7 +87,8 @@ export {
   type CapabilitySlot,
   type SlotCapabilities,
 } from './app.js'
-export { resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { isLoopbackHost, resolveAuthSecret, type AuthSecret } from './auth-secret.js'
+export { secureCookies } from '@nymbalhq/config'
 export { registerAdminStaticRoute } from './routes/admin-static.js'
 export {
   startInventoryReservationSweeper,

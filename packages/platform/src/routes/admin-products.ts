@@ -77,7 +77,7 @@ export function registerAdminProductsRoutes(
         const page = products.slice(offset, offset + limit)
         return ok(page)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -91,7 +91,7 @@ export function registerAdminProductsRoutes(
         const snap = await product.create(ctx.body as Parameters<ProductService['create']>[0])
         return ok(snap, undefined, 201)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -106,12 +106,18 @@ export function registerAdminProductsRoutes(
         if (!idOrSlug) return fail('admin.invalid', 'id required', 400)
         const at = atOf(ctx)
         if (at !== undefined) {
-          return answerAsOf(history, at, () => historySubject(idOrSlug), notFound(idOrSlug))
+          return answerAsOf(
+            history,
+            at,
+            () => historySubject(idOrSlug),
+            notFound(idOrSlug),
+            ctx.logger,
+          )
         }
         const found = await findProduct(idOrSlug)
         return found === null ? notFound(idOrSlug)() : ok(found)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -138,7 +144,7 @@ export function registerAdminProductsRoutes(
         const snap = await product.update(id, ctx.body as Parameters<ProductService['update']>[1])
         return ok(snap)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -154,7 +160,7 @@ export function registerAdminProductsRoutes(
         await product.delete(id)
         return ok({ ok: true })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -170,7 +176,7 @@ export function registerAdminProductsRoutes(
         await product.publish(id)
         return ok({ ok: true })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -186,7 +192,7 @@ export function registerAdminProductsRoutes(
         await product.unpublish(id)
         return ok({ ok: true })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -202,7 +208,7 @@ export function registerAdminProductsRoutes(
         const snap = await product.update(id, { status: 'archived' })
         return ok(snap)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -245,7 +251,7 @@ export function registerAdminProductsRoutes(
         })
         return ok(snap, undefined, 201)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -295,7 +301,7 @@ export function registerAdminProductsRoutes(
         const suggestion = await deps.ai.complete(prompt, { maxTokens: 300 })
         return ok({ suggestion })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

@@ -1,4 +1,4 @@
-import type { NymbalConfig } from '@nymbalhq/config'
+import { secureCookies, type NymbalConfig } from '@nymbalhq/config'
 import {
   ConfigError,
   type DocumentStoreAdapter,
@@ -62,6 +62,7 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     cors: config.http.cors,
     security: config.security,
     trustProxy: resolveTrustProxy(config, process.env),
+    secureCookies: secureCookies(config, process.env),
   })
 
   const server: HttpServer = {

@@ -98,7 +98,7 @@ export function registerAdminSettingsRoutes(
   adapter.registerRoute(
     'GET',
     '/api/admin/settings',
-    requireRole('admin', async () => {
+    requireRole('admin', async (ctx) => {
       try {
         const rows = await listStoredSettings(store)
         return ok<SettingsListing>({
@@ -115,7 +115,7 @@ export function registerAdminSettingsRoutes(
           })),
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -177,7 +177,7 @@ export function registerAdminSettingsRoutes(
           restartRequired: true,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -208,7 +208,7 @@ export function registerAdminSettingsRoutes(
           restartRequired: true,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

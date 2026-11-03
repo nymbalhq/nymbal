@@ -43,7 +43,7 @@ export function registerCheckoutRoutes(adapter: HttpAdapter, checkout: CheckoutS
         ...(result.orderKey !== undefined && { orderKey: result.orderKey }),
       })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

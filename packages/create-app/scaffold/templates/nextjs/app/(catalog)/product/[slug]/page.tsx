@@ -4,7 +4,7 @@ import { preload } from 'react-dom'
 import { fetchCapabilities, fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
 import { acceptsReviews } from '@/lib/reviews'
-import { productJsonLd } from '@/lib/seo'
+import { descriptionText, productJsonLd, serializeJsonLd } from '@/lib/seo'
 import {
   Breadcrumb,
   ImageGallery,
@@ -38,7 +38,8 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 
   return {
     title: product.name,
-    description: product.shortDescription ?? product.description ?? `Buy ${product.name}.`,
+    description:
+      descriptionText(product.shortDescription || product.description) || `Buy ${product.name}.`,
   }
 }
 
@@ -93,6 +94,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   const jsonLd = productJsonLd(product, baseUrl)
+  const descriptionHtml = { __html: product.description || 'No additional details available.' }
 
   const mediaArray = Array.isArray(product.media) ? product.media : []
   const images =
@@ -116,7 +118,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
 
       <div className={`container ${styles.page}`}>
@@ -142,17 +144,17 @@ export default async function ProductPage({ params }: ProductPageProps) {
             />
 
             {product.description && (
-              <div className={styles.description}>
-                <p>{product.description}</p>
-              </div>
+              <div
+                className={styles.description}
+                data-testid="product-description"
+                dangerouslySetInnerHTML={descriptionHtml}
+              />
             )}
 
             <div className={styles.detailsSection}>
               <details className={styles.detailsItem}>
                 <summary className={styles.detailsSummary}>Details</summary>
-                <div className={styles.detailsContent}>
-                  {product.description ?? 'No additional details available.'}
-                </div>
+                <div className={styles.detailsContent} dangerouslySetInnerHTML={descriptionHtml} />
               </details>
               <details className={styles.detailsItem}>
                 <summary className={styles.detailsSummary}>Shipping & Returns</summary>

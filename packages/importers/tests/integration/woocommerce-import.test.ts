@@ -25,6 +25,7 @@ import type { AiAdapter, Logger } from '@nymbalhq/types'
 import type { ServiceRegistry, Repositories } from '@nymbalhq/platform'
 import { runWooCommerceImport } from '@nymbalhq/importers'
 import { wirePublisher } from '../../../platform/src/tests/publisher.js'
+import { offlineLookup } from './support/import-env.js'
 
 const MIGRATIONS_ROOT = new URL('../../../platform/migrations', import.meta.url).pathname
 const FIXTURE_DIR = new URL('./fixtures', import.meta.url).pathname
@@ -201,6 +202,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     // Every source record arrives: imported counts equal the WooCommerce fixtures served.
@@ -221,6 +223,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     expect(report.errors).toHaveLength(0)
@@ -243,6 +246,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     expect(report.errors).toHaveLength(0)
@@ -263,6 +267,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     const original = await env.commandStore.read((tx) =>
@@ -279,6 +284,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     const order = await env.commandStore.read((tx) =>
@@ -297,6 +303,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: env.adapters,
       media: localMedia(),
+      lookup: offlineLookup,
     })
     expect(r1.imported.products).toBe(2)
 
@@ -307,6 +314,7 @@ describe('WooCommerce importer integration', () => {
         repos: env.repos,
         adapters: env.adapters,
         media: localMedia(),
+        lookup: offlineLookup,
       },
     )
     expect(r2.imported.products).toBe(2)
@@ -332,6 +340,7 @@ describe('WooCommerce importer integration', () => {
       repos: env.repos,
       adapters: { ...env.adapters, ai: mockAi },
       media: localMedia(),
+      lookup: offlineLookup,
     })
 
     expect(report.imported.products).toBe(2)

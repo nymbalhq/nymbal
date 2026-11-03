@@ -43,6 +43,8 @@ export interface FastifyAdapterOptions {
   /** Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default. */
   trustProxy?: boolean | number
   cors?: CorsOptions
+  /** Whether the CSRF cookie carries `Secure`: `secureCookies(config, env)`. */
+  secureCookies?: boolean
 }
 
 /**
@@ -75,7 +77,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
-    this.#guard = createSecurityGuard(options.security)
+    this.#guard = createSecurityGuard(options.security, options.secureCookies)
     this.#app = Fastify({
       logger: false,
       trustProxy: trustedHops(options.trustProxy ?? false),

@@ -4,7 +4,7 @@ import {
   type DocumentStoreAdapter,
   type EventBusAdapter,
 } from '@nymbalhq/types'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { secureCookies, type NymbalConfig } from '@nymbalhq/config'
 import type { ServiceRegistry } from '../services/index.js'
 import type { AdapterRegistry } from '../adapters/registry.js'
 import type { Repositories } from '../repositories/index.js'
@@ -162,8 +162,12 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   // Auth middleware — decodes bearer if present.
   adapter.registerMiddleware(createAuthMiddleware(services.auth))
 
-  const afterSignIn = [foldViewsOnSignIn(services.recentlyViewed), mergeCartOnSignIn(services.cart)]
-  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn)
+  const secure = () => secureCookies(config, process.env)
+  const afterSignIn = [
+    foldViewsOnSignIn(services.recentlyViewed, secure),
+    mergeCartOnSignIn(services.cart, secure),
+  ]
+  registerAuthRoutes(adapter, services.auth, config.security.auth.refreshTtl, afterSignIn, secure)
   registerCapabilitiesRoute(adapter, adapters)
   registerCategoryRoutes(adapter, documentStore, config.store.name)
   registerProductRoutes(
@@ -180,12 +184,14 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     cart: services.cart,
     productRepo: repos.product,
     variantRepo: repos.variant,
+    secureCookies: secure,
   })
   registerRecentlyViewedRoutes(adapter, {
     recentlyViewed: services.recentlyViewed,
     documentStore,
     productRepo: repos.product,
     retentionDays: config.events.retentionDays,
+    secureCookies: secure,
   })
   registerCheckoutRoutes(adapter, services.checkout)
   registerAlertRoutes(adapter, { alerts: services.alert })

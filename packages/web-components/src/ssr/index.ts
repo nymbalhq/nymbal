@@ -6,6 +6,7 @@ import type { LitElement } from 'lit'
 import { ELEMENTS } from '../register-components.js'
 
 export { cardImageOf, cardProductOf, type CardProduct } from '../components/product-card.js'
+export { descriptionText, serializeJsonLd } from './seo.js'
 
 restoreCreateRenderRoot()
 

@@ -1,6 +1,6 @@
 import { type HttpAdapter, type ResponseCookie, type ResponseEnvelope } from '@nymbalhq/types'
 import { isSellable, type CartService } from '../services/cart-service.js'
-import type { AfterSignIn } from './auth.js'
+import type { AfterSignIn, SecureCookies } from './auth.js'
 import type { ProductRepository } from '../repositories/product.js'
 import type { VariantRepository } from '../repositories/variant.js'
 import { ok, fail, renderError } from './envelope.js'
@@ -16,7 +16,7 @@ interface UpdateBody {
   qty?: number
 }
 
-function cookie(token: string): ResponseCookie[] {
+function cookie(token: string, secure = false): ResponseCookie[] {
   return [
     {
       name: CART_COOKIE,
@@ -24,24 +24,27 @@ function cookie(token: string): ResponseCookie[] {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       maxAge: 60 * 60 * 24 * 30,
     },
   ]
 }
 
 /** Ends the browser's cart, as logout does and a sign-in does for a cart that is not the customer's to keep. */
-export function expiredCartCookie(): ResponseCookie {
-  return { name: CART_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true }
+export function expiredCartCookie(secure = false): ResponseCookie {
+  return { name: CART_COOKIE, value: '', path: '/', maxAge: 0, httpOnly: true, secure }
 }
 
 /** The sign-in hook that folds the browser's guest cart into the customer's and points the cookie at the result. */
-export function mergeCartOnSignIn(cart: CartService): AfterSignIn {
+export function mergeCartOnSignIn(
+  cart: CartService,
+  secure: SecureCookies = () => false,
+): AfterSignIn {
   return async (ctx, customerId) => {
     const guestToken = ctx.cookies[CART_COOKIE]
     const result = await cart.signIn(guestToken, customerId)
-    if (result !== null) return cookie(result.token)
-    return guestToken === undefined ? [] : [expiredCartCookie()]
+    if (result !== null) return cookie(result.token, secure())
+    return guestToken === undefined ? [] : [expiredCartCookie(secure())]
   }
 }
 
@@ -49,6 +52,7 @@ export interface RegisterCartRoutesDeps {
   cart: CartService
   productRepo: ProductRepository
   variantRepo: VariantRepository
+  secureCookies?: SecureCookies
 }
 
 export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoutesDeps): void {
@@ -61,10 +65,10 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       if (existing) return ok(existing) as ResponseEnvelope
       const fresh = await cart.getOrCreate()
       const env = ok(fresh)
-      env.cookies = cookie(fresh.token)
+      env.cookies = cookie(fresh.token, deps.secureCookies?.())
       return env as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -100,10 +104,10 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
         imageUrl: (product.media[0] as { url?: string } | undefined)?.url ?? '',
       })
       const env = ok(updated)
-      env.cookies = cookie(token)
+      env.cookies = cookie(token, deps.secureCookies?.())
       return env as ResponseEnvelope
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -117,7 +121,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const updated = await cart.updateItemQuantity(token, variantId, qty)
       return ok(updated)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -130,7 +134,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const updated = await cart.removeItem(token, variantId)
       return ok(updated)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -141,7 +145,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const cleared = await cart.clear(token)
       return ok(cleared)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

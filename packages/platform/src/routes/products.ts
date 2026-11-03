@@ -146,7 +146,7 @@ export function registerProductRoutes(
           : []
       return ok({ items, nextCursor: searchResult.nextCursor, total: searchResult.total, facets })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -189,7 +189,7 @@ export function registerProductRoutes(
       const categoryFacet = buildCategoryFacet(allResult.items as Array<Record<string, unknown>>)
       return ok({ items: result.items, nextCursor: result.nextCursor, facets: [categoryFacet] })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -201,7 +201,7 @@ export function registerProductRoutes(
       if (!doc) throw new NotFoundError('product', slug)
       return ok(doc)
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 
@@ -225,7 +225,7 @@ export function registerProductRoutes(
         nextCursor: result.nextCursor,
       })
     } catch (err) {
-      return renderError(err)
+      return renderError(err, ctx.logger)
     }
   })
 }

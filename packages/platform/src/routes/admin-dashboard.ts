@@ -29,7 +29,7 @@ export function registerAdminDashboardRoute(
   adapter.registerRoute(
     'GET',
     '/api/admin/dashboard',
-    requireRole('admin', async () => {
+    requireRole('admin', async (ctx) => {
       try {
         const startOfToday = new Date(new Date().setHours(0, 0, 0, 0))
 
@@ -88,7 +88,7 @@ export function registerAdminDashboardRoute(
           lowStock,
         })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )

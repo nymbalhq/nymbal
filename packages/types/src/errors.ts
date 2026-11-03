@@ -34,8 +34,11 @@ export class ConfigError extends NymbalError {
 }
 
 export class ValidationError extends NymbalError {
-  constructor(message: string, options: { cause?: unknown; context?: ErrorContext } = {}) {
-    super('validation.failed', message, options)
+  constructor(
+    message: string,
+    options: { cause?: unknown; context?: ErrorContext; code?: string } = {},
+  ) {
+    super(options.code ?? 'validation.failed', message, options)
   }
 }
 

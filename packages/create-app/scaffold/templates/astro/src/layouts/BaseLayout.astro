@@ -4,6 +4,7 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import SkipNav from '../components/SkipNav.astro'
 import { FOOTER, HEADER, headerSlots } from '../lib/chrome'
 import { fetchCapabilities, fetchCart, type CartProjection } from '../lib/api'
+import { serializeJsonLd } from '../lib/seo'
 
 interface Props {
   title: string
@@ -43,7 +44,7 @@ const canonicalUrl = Astro.props.canonical ?? Astro.url.href
 
     <!-- JSON-LD structured data -->
     {jsonLd && (
-      <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+      <script type="application/ld+json" set:html={serializeJsonLd(jsonLd)} />
     )}
   </head>
   <body>

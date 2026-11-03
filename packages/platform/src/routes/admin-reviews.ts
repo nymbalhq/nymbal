@@ -19,12 +19,12 @@ export function registerAdminReviewsRoutes(
   adapter.registerRoute(
     'GET',
     '/api/admin/reviews',
-    requireRole('admin', async () => {
+    requireRole('admin', async (ctx) => {
       try {
         const pending = await reviewRepo.store.read((tx) => reviewRepo.listByStatus(tx, 'pending'))
         return ok(pending)
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
@@ -54,7 +54,7 @@ export function registerAdminReviewsRoutes(
         })
         return ok({ ok: true })
       } catch (err) {
-        return renderError(err)
+        return renderError(err, ctx.logger)
       }
     }),
   )
