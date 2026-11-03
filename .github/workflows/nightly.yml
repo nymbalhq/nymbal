@@ -80,6 +80,18 @@ jobs:
           name: build-output
       - name: Stryker over every mutate target, ignoring the incremental file
         run: pnpm mutation --force
+      # The push mutation job (ci.yml) restores the newest report under its key prefix and mutates only what changed
+      # since the commit stamped beside it. A cold whole-set run there outlasts its timeout, so this full measurement
+      # seeds that chain; both steps sit before the ratchet check, so a ratchet failure still seeds it.
+      - name: Stamp the incremental report
+        run: git rev-parse HEAD > reports/mutation/stryker-incremental.commit
+      - name: Seed the push mutation job's cache
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            reports/mutation/stryker-incremental.json
+            reports/mutation/stryker-incremental.commit
+          key: stryker-incremental-v3-nightly-${{ github.sha }}
       - name: No file below its unit ratchet entry
         run: pnpm --silent mutation:ratchet check --report reports/mutation/mutation.json
       - name: Upload the Stryker report

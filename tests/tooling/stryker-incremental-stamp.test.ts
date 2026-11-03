@@ -1,4 +1,4 @@
-// Reads: .github/workflows/ci.yml, scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
+// Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, stryker.config.mjs, scripts/gate.ts, scripts/sentinels.ts, scripts/stack.ts, scripts/test-census.ts
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -123,12 +123,20 @@ describe('the stryker step after a red run left the cached report behind its bas
 
 type Step = { name?: string; run?: string; uses?: string; if?: string; with?: Record<string, string> }
 
-function mutationSteps(): Step[] {
-  const wf = parseYaml(readFileSync(join(REPO, '.github/workflows/ci.yml'), 'utf8')) as {
+function jobSteps(workflow: string, job: string): Step[] {
+  const wf = parseYaml(readFileSync(join(REPO, '.github/workflows', workflow), 'utf8')) as {
     jobs?: Record<string, { steps?: Step[] }>
   }
-  return wf.jobs?.mutation?.steps ?? []
+  return wf.jobs?.[job]?.steps ?? []
 }
+
+const mutationSteps = (): Step[] => jobSteps('ci.yml', 'mutation')
+
+const cachePaths = (s: Step | undefined): string[] =>
+  (s?.with?.path ?? '')
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean)
 
 const writesStamp = (s: Step): boolean => (s.run ?? '').includes(STAMP)
 
@@ -162,6 +170,58 @@ describe("the mutation job's cache", () => {
     write(repo.root, B, 'export const b = 2\n')
     commit(repo.root, 'next push')
     const next = await gateCli(repo, args(head))
+    expect(mutateArgs(repo), next.output).toEqual([[B]])
+  })
+})
+
+describe("the nightly full run seeds the push mutation job's cache", () => {
+  const nightly = (): Step[] => jobSteps('nightly.yml', 'mutation-full')
+  const fullRun = (all: Step[]): number => all.findIndex((s) => /\bmutation --force\b/.test(s.run ?? ''))
+  const seed = (all: Step[]): number => all.findIndex((s) => /^actions\/cache\/save@/.test(s.uses ?? ''))
+
+  // Stryker writes the incremental file whenever `incremental` is on, `--force` included; `--force` only skips reading it.
+  it("the file the push job restores is the incremental file Stryker's config writes", () => {
+    const config = readFileSync(join(REPO, 'stryker.config.mjs'), 'utf8')
+    expect(config).toMatch(/\bincremental: true\b/)
+    const file = /\bincrementalFile: '([^']+)'/.exec(config)?.[1]
+    expect(file).toBe(INCREMENTAL)
+    expect(cachePaths(mutationSteps().find((s) => /^actions\/cache@/.test(s.uses ?? '')))).toContain(file)
+  })
+
+  it("saves the report and its stamp under a key of its own that the push job's restore prefix matches, after the full run and whatever the ratchet check says", () => {
+    const all = nightly()
+    const run = fullRun(all)
+    const save = seed(all)
+    const ratchet = all.findIndex((s) => /\bmutation:ratchet check\b/.test(s.run ?? ''))
+    expect(run).toBeGreaterThanOrEqual(0)
+    expect(save).toBeGreaterThan(run)
+    expect(save < ratchet || /\balways\(\)/.test(all[save]?.if ?? '')).toBe(true)
+    expect(cachePaths(all[save]).sort()).toEqual([INCREMENTAL, STAMP].sort())
+
+    const restore = mutationSteps().find((s) => /^actions\/cache@/.test(s.uses ?? ''))
+    expect(cachePaths(restore).sort()).toEqual(cachePaths(all[save]).sort())
+    const key = all[save]?.with?.key ?? ''
+    const prefix = restore?.with?.['restore-keys'] ?? ''
+    expect(prefix).not.toBe('')
+    expect(key.startsWith(prefix)).toBe(true)
+    // A push that passed at the same sha saves under its own exact key; a shared key would drop the full measurement.
+    expect(key).not.toBe(restore?.with?.key)
+  })
+
+  it('stamps HEAD after the full run and before the save, so the next push diffs from the night\'s commit', async () => {
+    const all = nightly()
+    const stamp = all.findIndex(writesStamp)
+    expect(stamp).toBeGreaterThan(fullRun(all))
+    expect(stamp).toBeLessThan(seed(all))
+    const { repo, measuredAt } = stampedRepo()
+    write(repo.root, A, 'export const a = 2\n')
+    const night = commit(repo.root, 'nightly head')
+    execFileSync('bash', ['-ec', all[stamp]?.run ?? ''], { cwd: repo.root, stdio: 'pipe' })
+    expect(readFileSync(join(repo.root, STAMP), 'utf8').trim()).toBe(night)
+    expect(night).not.toBe(measuredAt)
+    write(repo.root, B, 'export const b = 2\n')
+    const push = commit(repo.root, 'next push')
+    const next = await gateCli(repo, args(push))
     expect(mutateArgs(repo), next.output).toEqual([[B]])
   })
 })

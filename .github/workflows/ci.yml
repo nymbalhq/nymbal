@@ -277,7 +277,10 @@ jobs:
           path: |
             reports/mutation/stryker-incremental.json
             reports/mutation/stryker-incremental.commit
-          # Bumping the prefix starts a fresh chain from a full measurement, dropping statuses carried forward. A
+          # The nightly's full run (nightly.yml, mutation-full) saves its report and stamp under
+          # stryker-incremental-v3-nightly-<sha>, which the restore prefix matches, seeding the chain; a key of its own
+          # keeps a passing push at the same sha from taking the save. Bumping the prefix drops the statuses carried forward and restores nothing until the next nightly;
+          # a push that mutates the whole set cold before then can outlast the timeout. A
           # ratchet change keeps the chain: the gate measures the files whose entry moved afresh, dropping their
           # cached statuses, and the nightly full run stays the ground truth for the rest.
           key: stryker-incremental-v3-${{ github.sha }}
