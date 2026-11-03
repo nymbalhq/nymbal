@@ -28,7 +28,8 @@ import { formatPrice } from '../support/variants'
 // `/order/<n>`, for an order placed through the checkout with JS on in the same context and read JS off from its
 // storage state, shows `nymbal-order-summary`'s lines, subtotal, discount (when non-zero), shipping, tax and total
 // equal to `GET /api/orders/:n`, which sum per the invariant. With JavaScript on the same pages reuse the markup
-// (per-part counts equal, no template left, no console error); the header's search suggestion opens the product and
+// (per-part counts equal, no template left, no console error; a guest's review form, which follows the session, is
+// left out of the counts); the header's search suggestion opens the product and
 // its mini-cart opens the drawer; the footer's `link` part is painted with a `--nymbal-color-*` token, the colour the
 // template's own tokens file gives it.
 
@@ -184,10 +185,16 @@ test.describe('AC-4: the chrome is elements (production build)', () => {
     }
 
     await blockExternalRequests(page)
-    await expectMarkupReused(page, browser, testInfo, `/product/${PRODUCT}`, [
-      'nymbal-review-list',
-      'nymbal-review-form',
-    ])
+    // A guest's review form becomes a sign-in link once it upgrades and the session is known, so its part counts are
+    // left out of the reuse comparison; it must still be server-rendered and upgrade, and every other element is compared.
+    await expectMarkupReused(
+      page,
+      browser,
+      testInfo,
+      `/product/${PRODUCT}`,
+      ['nymbal-review-list', 'nymbal-review-form'],
+      ['nymbal-review-form'],
+    )
   })
 
   test('AC-4: theming.chrome-is-elements: an order placed through the checkout with JS on, read with JS off from its storage state: nymbal-order-summary’s lines, subtotal, discount when non-zero, shipping, tax and total are GET /api/orders/:n’s and sum per the invariant; with JS on the markup is reused', async ({

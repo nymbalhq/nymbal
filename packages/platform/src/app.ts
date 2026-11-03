@@ -304,6 +304,7 @@ export async function createApp(
       payments: adapters.payments,
       searchAdapter: adapters.search,
       email: adapters.email,
+      reviews: adapters.reviews,
       jwtSecret: jwt.secret,
     })
 

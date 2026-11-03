@@ -27,7 +27,7 @@ export { runEventBusContract, type EventBusContractOptions } from './event-bus.j
 export { runMediaStorageContract, type MediaStorageContractOptions } from './media-storage.js'
 export { runPaymentsContract, type PaymentsContractOptions } from './payments.js'
 export { runEmailContract } from './email.js'
-export { runReviewsContract } from './reviews.js'
+export { runReviewsContract, type ReviewsContractOptions } from './reviews.js'
 export { runSearchContract, type SearchContractOptions } from './search.js'
 export {
   matchesQuery,

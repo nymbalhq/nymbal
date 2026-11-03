@@ -506,6 +506,14 @@ function formStates(base: Partial<State> = {}): State[] {
 
 const signedIn = { stores: { auth: { customer: CUSTOMER, isAuthenticated: true } } }
 
+/** Lets a signed-out element's profile load settle and its next render land. */
+async function settleProfile(el: HTMLElement): Promise<void> {
+  for (let turn = 0; turn < 5; turn += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await settled(el)
+  }
+}
+
 // ─── The checkout's steps, walked as a shopper walks them ───────────────────
 
 /** Lit renders in microtasks, the address forms inside the checkout too; no animation frame passes here. */
@@ -972,7 +980,12 @@ const FIXED: Record<Tag, State[]> = {
       },
     }),
   ],
-  'nymbal-review-form': formStates({ attrs: { 'product-id': 'p1' } }),
+  // Signed in: the form, submitted held, refused and accepted. Signed out once the profile load settles: the sign-in
+  // link alone.
+  'nymbal-review-form': [
+    ...formStates({ ...signedIn, attrs: { 'product-id': 'p1' } }),
+    state({ attrs: { 'product-id': 'p1' }, walk: settleProfile }),
+  ],
   // Out of stock (the back-in-stock form), submitted held, refused and accepted; in stock (the price-drop form); and
   // following the store.
   'nymbal-notify-me': [
@@ -1309,8 +1322,14 @@ const ARBITRARY: Record<Tag, fc.Arbitrary<State>> = {
     )
     .map((reviews) => state({ attrs: { reviews: JSON.stringify(reviews) } })),
   'nymbal-review-form': fc
-    .option(fc.constantFrom(...PHASES))
-    .map((phase) => state({ attrs: { 'product-id': 'p1' }, phase })),
+    .record({ phase: fc.option(fc.constantFrom(...PHASES)), signed: fc.boolean() })
+    .map(({ phase, signed }) =>
+      state({
+        ...(signed ? signedIn : { walk: settleProfile }),
+        attrs: { 'product-id': 'p1' },
+        phase,
+      }),
+    ),
   'nymbal-notify-me': fc
     .record({
       stock: fc.integer({ min: -2, max: 6 }),

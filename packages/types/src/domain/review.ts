@@ -14,6 +14,22 @@ export interface Review {
   moderatedBy: string | null
 }
 
+/** A review as the public list publishes it: no customer or order id, only whether a purchase verified it. */
+export interface PublicReview {
+  id: string
+  productId: string
+  rating: number
+  title: string
+  body: string
+  verified: boolean
+  submittedAt: string
+}
+
+export interface PublicReviewsResult {
+  items: PublicReview[]
+  nextCursor: string | null
+}
+
 export interface AggregateRating {
   productId: string
   average: number

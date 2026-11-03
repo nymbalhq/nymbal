@@ -5,6 +5,7 @@ import NymbalElement from '@nymbalhq/web-components/astro'
 import { cardProductOf } from '@nymbalhq/web-components/ssr'
 import { loadProduct, fetchReviews, fetchProducts, fetchCapabilities } from '../../lib/api'
 import { productJsonLd, breadcrumbJsonLd } from '../../lib/seo'
+import { acceptsReviews } from '../../lib/reviews'
 
 const { slug } = Astro.params
 
@@ -117,7 +118,9 @@ const hasVariantChoice = (product.variants?.length ?? 0) > 1
     <section class="pdp-reviews">
       <h2 class="pdp-reviews-title">Customer Reviews</h2>
       <NymbalElement tag="nymbal-review-list" attributes={{ reviews: JSON.stringify(reviews) }} />
-      <NymbalElement tag="nymbal-review-form" attributes={{ class: 'pdp-review-form', 'product-id': product.id }} />
+      {acceptsReviews(capabilities) && (
+        <NymbalElement tag="nymbal-review-form" attributes={{ class: 'pdp-review-form', 'product-id': product.id }} />
+      )}
     </section>
 
     {relatedProducts.length > 0 && (

@@ -4,6 +4,7 @@ import {
   type EmailAdapter,
   type HttpAdapter,
   type PaymentsAdapter,
+  type ReviewsAdapter,
   type SearchAdapter,
   type StoreCapabilities,
 } from '@nymbalhq/types'
@@ -14,11 +15,14 @@ import { ok, renderError } from './envelope.js'
  * What a storefront needs to decide what to render, from the adapters' own answers. It is public, so it carries no
  * provider name and nothing from an adapter's config but the payments client half, whose options are public values.
  */
-function storeCapabilities(adapters: {
+interface ReportedAdapters {
   payments: PaymentsAdapter
   search: SearchAdapter
   email: EmailAdapter
-}): StoreCapabilities {
+  reviews?: ReviewsAdapter | undefined
+}
+
+function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
   const client = adapters.payments.client?.() ?? null
   return {
     payments: {
@@ -29,13 +33,11 @@ function storeCapabilities(adapters: {
     // The document store runs the listing's sort, so these are the catalogue's keys, not the search adapter's.
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
     email: { delivers: emailDelivers(adapters.email) },
+    reviews: { capabilities: [...(adapters.reviews?.capabilities() ?? [])] },
   }
 }
 
-export function registerCapabilitiesRoute(
-  adapter: HttpAdapter,
-  adapters: { payments: PaymentsAdapter; search: SearchAdapter; email: EmailAdapter },
-): void {
+export function registerCapabilitiesRoute(adapter: HttpAdapter, adapters: ReportedAdapters): void {
   adapter.registerRoute('GET', '/api/capabilities', async () => {
     try {
       return ok(storeCapabilities(adapters))

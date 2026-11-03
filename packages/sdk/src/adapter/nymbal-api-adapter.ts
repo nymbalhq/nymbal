@@ -6,7 +6,7 @@ import {
   type Customer,
   type CustomerAddress,
   type Order,
-  type ReviewsResult,
+  type PublicReviewsResult,
   type ReviewResult,
   type ShopperOrder,
   type StoreCapabilities,
@@ -183,7 +183,7 @@ export function createNymbalApiAdapter(fetchClient: FetchClient): CommerceAdapte
         if (params?.limit !== undefined) search.set('limit', String(params.limit))
         if (params?.cursor !== undefined) search.set('cursor', params.cursor)
         const qs = search.toString()
-        return fetchClient.request<ReviewsResult>(
+        return fetchClient.request<PublicReviewsResult>(
           'GET',
           `/api/products/${encodeURIComponent(productId)}/reviews${qs ? `?${qs}` : ''}`,
         )

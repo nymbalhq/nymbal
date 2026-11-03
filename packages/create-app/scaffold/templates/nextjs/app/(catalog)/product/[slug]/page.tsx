@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { preload } from 'react-dom'
 import { fetchCapabilities, fetchProduct, fetchProducts, fetchReviews } from '@/lib/api'
 import { cardProductOf, renderNymbal } from '@/lib/render'
+import { acceptsReviews } from '@/lib/reviews'
 import { productJsonLd } from '@/lib/seo'
 import {
   Breadcrumb,
@@ -172,11 +173,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
               renderNymbal('nymbal-review-list', { reviews: JSON.stringify(reviews) }).__html
             }
           />
-          <ReviewForm
-            className={styles.reviewForm}
-            productId={product.id}
-            serverHtml={renderNymbal('nymbal-review-form', { 'product-id': product.id }).__html}
-          />
+          {acceptsReviews(capabilities) && (
+            <ReviewForm
+              className={styles.reviewForm}
+              productId={product.id}
+              serverHtml={renderNymbal('nymbal-review-form', { 'product-id': product.id }).__html}
+            />
+          )}
         </section>
 
         {related.length > 0 && (

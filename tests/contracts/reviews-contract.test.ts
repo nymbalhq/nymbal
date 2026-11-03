@@ -87,6 +87,7 @@ describe('native reviews moderation (SQLite)', () => {
       productId,
       customerId: null,
       orderId: null,
+      author: null,
       rating: 5,
       title: 'Excellent',
       body: 'Loved it.',

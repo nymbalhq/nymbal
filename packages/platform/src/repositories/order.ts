@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, notInArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
 import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -97,6 +97,16 @@ export interface OrderRepository extends StoreRepository {
   /** The newest order the cart became: neither pending nor cancelled. */
   findLastConvertedByCartToken(tx: ReadTx, cartToken: string): Promise<Order | null>
   listByCustomer(tx: ReadTx, customerId: string, limit?: number): Promise<Order[]>
+  /**
+   * The customer's newest order (by `createdAt`, then id) in one of `statuses` whose line items hold the product, or
+   * null: their orders are read newest first a page at a time until one does.
+   */
+  newestHolding(
+    tx: ReadTx,
+    customerId: string,
+    productId: string,
+    statuses: readonly OrderStatus[],
+  ): Promise<Order | null>
   /** Totals over every order the customer has, however many. */
   totalsByCustomer(tx: ReadTx, customerId: string): Promise<CustomerOrderTotals>
   list(
@@ -120,6 +130,57 @@ export interface OrderRepository extends StoreRepository {
   recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
   setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
   setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
+}
+
+const HOLDING_PAGE = 50
+
+/** One page of the customer's orders in `statuses`, newest first (ties by id descending), after `after`. */
+async function customerOrdersPage(
+  tx: ReadTx,
+  customerId: string,
+  statuses: readonly OrderStatus[],
+  after: { createdAt: string; id: string } | undefined,
+): Promise<Order[]> {
+  if (tx.kind === 'sqlite') {
+    const t = sqliteSchema.orders
+    const key =
+      after === undefined
+        ? undefined
+        : { at: new Date(after.createdAt).toISOString(), id: after.id }
+    const rows = sqliteDb(tx)
+      .select()
+      .from(t)
+      .where(
+        and(
+          eq(t.customerId, customerId),
+          inArray(t.status, [...statuses]),
+          key === undefined
+            ? undefined
+            : or(lt(t.createdAt, key.at), and(eq(t.createdAt, key.at), lt(t.id, key.id))),
+        ),
+      )
+      .orderBy(desc(t.createdAt), desc(t.id))
+      .limit(HOLDING_PAGE)
+      .all()
+    return rows.map((r) => rowToOrder('sqlite', r as Record<string, unknown>))
+  }
+  const t = postgresSchema.orders
+  const key = after === undefined ? undefined : { at: new Date(after.createdAt), id: after.id }
+  const rows = await postgresDb(tx)
+    .select()
+    .from(t)
+    .where(
+      and(
+        eq(t.customerId, customerId),
+        inArray(t.status, [...statuses]),
+        key === undefined
+          ? undefined
+          : or(lt(t.createdAt, key.at), and(eq(t.createdAt, key.at), lt(t.id, key.id))),
+      ),
+    )
+    .orderBy(desc(t.createdAt), desc(t.id))
+    .limit(HOLDING_PAGE)
+  return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
 }
 
 export function createOrderRepository(store: CommandStore): OrderRepository {
@@ -244,6 +305,18 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .orderBy(desc(postgresSchema.orders.createdAt))
         .limit(limit)
       return rows.map((r) => rowToOrder('postgres', r as Record<string, unknown>))
+    },
+    async newestHolding(tx, customerId, productId, statuses) {
+      if (statuses.length === 0) return null
+      let after: { createdAt: string; id: string } | undefined
+      for (;;) {
+        const page = await customerOrdersPage(tx, customerId, statuses, after)
+        const holding = page.find((o) => o.lineItems.some((line) => line.productId === productId))
+        if (holding !== undefined) return holding
+        const last = page[page.length - 1]
+        if (page.length < HOLDING_PAGE || last === undefined) return null
+        after = { createdAt: last.createdAt, id: last.id }
+      }
     },
     async totalsByCustomer(tx, customerId) {
       const o = tx.kind === 'sqlite' ? sqliteSchema.orders : postgresSchema.orders

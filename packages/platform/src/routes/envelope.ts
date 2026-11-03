@@ -5,6 +5,7 @@ import {
   NotFoundError,
   NymbalError,
   OrderConflictError,
+  ReviewRefusedError,
   StatusTransitionError,
   ValidationError,
   type ResponseEnvelope,
@@ -69,6 +70,10 @@ function errorEnvelope(err: unknown): ResponseEnvelope<Envelope<never>> {
   // A transition the table forbids, or money that does not allow the command: the caller's to fix, never a fault.
   if (err instanceof StatusTransitionError || err instanceof OrderConflictError) {
     return fail(err.code, err.message, 409, err.context)
+  }
+  // A store may refuse a review; `not_a_buyer` is a permission, the rest conflict with what the store holds or takes.
+  if (err instanceof ReviewRefusedError) {
+    return fail(err.code, err.message, err.refusal === 'not_a_buyer' ? 403 : 409, err.context)
   }
   if (err instanceof CheckoutError) {
     return fail(err.code, err.message, CHECKOUT_STATUS[err.code] ?? 500, err.context)

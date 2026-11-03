@@ -28,6 +28,8 @@ export const EXEMPT_TABLES: Readonly<Record<string, string>> = {
     'written inside a delivery by the email feedback and alert handlers, not by a command',
   order_refunds:
     'read from its own table, no read model; a refund that moves money changes the order and publishes its events',
+  reviews:
+    "the native reviews adapter's own store, read from its table, no read model; a submission publishes its event after the adapter's write",
 }
 
 /** Kernel event types a transaction may insert with no domain change, each because the event is all there is to write. */
@@ -39,6 +41,8 @@ export const NOTIFICATION_ONLY: Readonly<Record<string, string>> = {
     'asks the email handler to send the confirmation again; nothing about the order changes',
   'payment.failed.v1':
     "a payment provider's report, recorded as it arrives; its handler changes the order in its own delivery",
+  'review.submitted.v1':
+    'a review the reviews adapter stored in its own write, outside any kernel transaction, recorded as its event alone',
 }
 
 const KERNEL_TYPES: ReadonlySet<string> = new Set(STANDARD_EVENT_TYPES)

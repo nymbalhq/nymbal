@@ -6,6 +6,9 @@ import {
   type QueryParams,
   type Facet,
   type HttpAdapter,
+  type PublicReview,
+  type PublicReviewsResult,
+  type Review,
   type ReviewsAdapter,
   type SearchAdapter,
 } from '@nymbalhq/types'
@@ -18,6 +21,19 @@ const ORDER_BY: Record<ProductSortKey, NonNullable<QueryParams['orderBy']>> = {
   'price-desc': { field: 'priceRange.minMinor', direction: 'desc', nulls: 'last' },
   'name-asc': { field: 'name', direction: 'asc' },
   'name-desc': { field: 'name', direction: 'desc' },
+}
+
+/** A review as the public list shows it: whether a purchase verified it, never who wrote it or which order. */
+function publicReview(review: Review): PublicReview {
+  return {
+    id: review.id,
+    productId: review.productId,
+    rating: review.rating,
+    title: review.title,
+    body: review.body,
+    verified: review.orderId !== null,
+    submittedAt: review.submittedAt,
+  }
 }
 
 function buildCategoryFacet(products: Array<Record<string, unknown>>): Facet {
@@ -193,7 +209,7 @@ export function registerProductRoutes(
     try {
       const id = ctx.params.id
       if (!id) return fail('products.id_required', 'id param required', 400)
-      if (!reviewsAdapter) return ok({ items: [], nextCursor: null })
+      if (!reviewsAdapter) return ok<PublicReviewsResult>({ items: [], nextCursor: null })
       const rawLimit = ctx.query.limit
       const limit = rawLimit
         ? Math.min(100, Math.max(1, Number(Array.isArray(rawLimit) ? rawLimit[0] : rawLimit) || 20))
@@ -204,7 +220,10 @@ export function registerProductRoutes(
         limit,
         ...(cursor && { cursor }),
       })
-      return ok(result)
+      return ok<PublicReviewsResult>({
+        items: result.items.map(publicReview),
+        nextCursor: result.nextCursor,
+      })
     } catch (err) {
       return renderError(err)
     }

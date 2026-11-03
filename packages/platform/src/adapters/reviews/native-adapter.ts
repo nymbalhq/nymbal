@@ -1,6 +1,7 @@
 import { v7 as uuidv7 } from 'uuid'
 import {
   EVT_ORDER_DELIVERED,
+  ReviewRefusedError,
   ValidationError,
   type AggregateRating,
   type Logger,
@@ -75,11 +76,22 @@ export function createNativeReviewsAdapter(deps: {
     async submitReview(submission: ReviewSubmission): Promise<ReviewResult> {
       const id = uuidv7()
       const now = new Date()
+      const { customerId } = submission
       const review = await repos.review.store.transaction(async (tx) => {
+        // One review per customer and product. A review with no customer (an import) is exempt.
+        if (customerId !== null) {
+          await repos.review.lockPair(tx, submission.productId, customerId)
+          const existing = await repos.review.findByProductAndCustomer(
+            tx,
+            submission.productId,
+            customerId,
+          )
+          if (existing !== null) throw new ReviewRefusedError('already_reviewed')
+        }
         await repos.review.insert(tx, {
           id,
           productId: submission.productId,
-          customerId: submission.customerId,
+          customerId,
           orderId: submission.orderId,
           rating: submission.rating,
           title: submission.title,

@@ -29,6 +29,8 @@ interface Visit {
   line: boolean
   /** The element this page exists to render: the server must have rendered it, so the comparison is not vacuous. */
   element: string
+  /** Elements whose upgraded render follows the session: still server-rendered and upgraded, counts not compared. */
+  followsAuth?: string[]
 }
 
 const VISITS: Visit[] = [
@@ -41,6 +43,8 @@ const VISITS: Visit[] = [
     path: (slug) => `/product/${slug}`,
     line: false,
     element: 'nymbal-variant-selector',
+    // A guest's review form becomes a sign-in link once the session is known.
+    followsAuth: ['nymbal-review-form'],
   },
   { name: 'login', path: () => '/account/login', line: false, element: 'nymbal-login-form' },
   {
@@ -101,14 +105,23 @@ test.describe('AC-5: hydration reuses the server markup', () => {
       if (visit.line) await addOneLine(page.context())
       const path = visit.path(slug)
 
-      const off = await withScriptOff(page, path, browser, testInfo)
+      const served = await withScriptOff(page, path, browser, testInfo)
+      const all = Object.keys(served)
+      expect(all.map(tagOf), `${visit.element} rendered by the server`).toContain(visit.element)
+      const followsAuth = visit.followsAuth ?? []
+      expect(
+        followsAuth.filter((tag) => !all.map(tagOf).includes(tag)),
+        'elements that follow the session, rendered by the server',
+      ).toEqual([])
+      const off = Object.fromEntries(
+        Object.entries(served).filter(([key]) => !followsAuth.includes(tagOf(key))),
+      )
       const keys = Object.keys(off)
-      expect(keys.map(tagOf), `${visit.element} rendered by the server`).toContain(visit.element)
       expect(Math.min(...Object.values(off).map((c) => Object.keys(c).length))).toBeGreaterThan(0)
 
       const errors = watchErrors(page)
       await page.goto(path, { waitUntil: 'load' })
-      await upgraded(page, tagsOf(keys))
+      await upgraded(page, tagsOf(all))
       await expect.poll(() => sameHosts(page, keys), { timeout: 10_000 }).toEqual(off)
       expect(await templatesLeft(page)).toBe(0)
       expect(errors).toEqual([])

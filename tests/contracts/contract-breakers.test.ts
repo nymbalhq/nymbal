@@ -23,6 +23,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 // The shipping tracking suite runs the same way on the kernel's test shipping provider: one twin mints a delivery id
 // per call, one hands on a numberless copy beside each tracking event, one leaves its tracking type out of
 // producesEvents; each fails only the case named for its defect, and the provider itself passes every case.
+// The reviews suite's submit case runs the same way: an adapter without submit that stores a review anyway, beside the
+// one that refuses it (seeded through `seed`), and a submit adapter that drops the customer and order beside the
+// control; each fails only the submit case.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '..', '..')
@@ -43,6 +46,7 @@ const FEEDBACK_REPLAY = /\breplay:/
 const FEEDBACK_SHAPE = /\bshape:/
 const TRACKING_REPLAY = /\breplay:/
 const TRACKING_SHAPE = /\bshape:/
+const REVIEW_SUBMIT = /\bsubmit:/
 
 interface Outcome {
   passed: string[]
@@ -155,6 +159,28 @@ describe('the published suites fail an adapter with the defect they exist for', 
 
   it('AC-5: an unreachable dependency that never answers fails the downtime cases within their bound and nothing else', () => {
     const run = compare('media-down-hangs', 'media-down-control', DOWNTIME)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+})
+
+describe('the published reviews suite certifies a provider without on-site reviews', () => {
+  // Kills: a suite that only reads what submitReview stored, so a no-submit adapter cannot be certified, or one that
+  // never asks a no-submit adapter to refuse, so one that silently stores passes.
+  it('AC-12: an adapter whose capabilities lack submit yet stores a submitted review fails the submit case and nothing else; the same adapter refusing with ReviewRefusedError reviews.submit_unsupported, seeded through seed, passes every case', () => {
+    const run = compare('reviews-no-submit-stores', 'reviews-read-only', REVIEW_SUBMIT)
+
+    expect(run.failed.length, run.why).toBeGreaterThan(0)
+    expect(run.offTopic, run.why).toEqual([])
+    expect(run.controlFailed, run.why).toEqual([])
+    expect(run.controlPassed).toBe(run.badTotal)
+  })
+
+  it('AC-12: a submit adapter that files the review without the submission’s customerId and orderId fails the submit case and nothing else; the same adapter keeping them passes every case', () => {
+    const run = compare('reviews-drops-identity', 'reviews-control', REVIEW_SUBMIT)
 
     expect(run.failed.length, run.why).toBeGreaterThan(0)
     expect(run.offTopic, run.why).toEqual([])

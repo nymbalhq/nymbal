@@ -1,21 +1,45 @@
 import { randomUUID } from 'node:crypto'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { Review, ReviewsAdapter, ReviewsResult } from '@nymbalhq/types'
-import { CASE_MS, healthAndDowntime, type Build, type ContractOptions } from './common.js'
+import type { Review, ReviewsAdapter, ReviewsResult, ReviewSubmission } from '@nymbalhq/types'
+import { CASE_MS, healthAndDowntime, settle, type Build, type ContractOptions } from './common.js'
 
-// Every case seeds under a product of its own, and reads what it seeded with the moderation status the adapter
-// reported on submitReview: one that files reviews for moderation reads them as pending, one that auto-approves as
-// approved.
+// Every case seeds under a product of its own, and reads what it seeded with the moderation status the seed came back
+// with: one that files reviews for moderation reads them as pending, one that auto-approves as approved. An adapter
+// with `submit` among its capabilities is seeded through submitReview unless the caller gives `seed`; one without it
+// (a provider that collects reviews by invitation or on its own site) takes no review from the kernel, refuses
+// submitReview, and is seeded through `seed`.
 
-async function seed(adapter: ReviewsAdapter, count: number): Promise<Review[]> {
+export interface ReviewsContractOptions extends ContractOptions<ReviewsAdapter> {
+  /**
+   * Puts `count` reviews of `productId` in the adapter's store, by whatever way reviews reach it, and returns them.
+   * Required when `submit` is not among the adapter's capabilities.
+   */
+  seed?: (adapter: ReviewsAdapter, productId: string, count: number) => Promise<Review[]>
+}
+
+const takesSubmissions = (adapter: ReviewsAdapter): boolean =>
+  adapter.capabilities().includes('submit')
+
+async function seedWith(
+  adapter: ReviewsAdapter,
+  count: number,
+  options: ReviewsContractOptions,
+): Promise<Review[]> {
   const productId = `contract-reviews-${randomUUID()}`
+  if (options.seed !== undefined) return options.seed(adapter, productId, count)
+  if (!takesSubmissions(adapter)) {
+    throw new Error(
+      'runReviewsContract: an adapter without the submit capability needs the seed option to put reviews in its store',
+    )
+  }
   const seeded: Review[] = []
   for (let i = 0; i < count; i++) {
     const { review } = await adapter.submitReview({
       productId,
       customerId: null,
       orderId: null,
+      author: null,
       rating: (i % 5) + 1,
       title: `review ${i}`,
       body: `body ${i}`,
@@ -46,34 +70,82 @@ async function walk(
   return pages
 }
 
+const arbSubmission: fc.Arbitrary<ReviewSubmission> = fc.record({
+  productId: fc.uuid().map((id) => `contract-reviews-${id}`),
+  customerId: fc.option(
+    fc.uuid().map((id) => `contract-customer-${id}`),
+    { nil: null },
+  ),
+  orderId: fc.option(
+    fc.uuid().map((id) => `contract-order-${id}`),
+    { nil: null },
+  ),
+  author: fc.option(
+    fc.record({
+      name: fc.stringMatching(/^[A-Z][a-z]{1,10} [A-Z][a-z]{1,12}$/),
+      email: fc.stringMatching(/^[a-z]{3,10}@contract\.test$/),
+    }),
+    { nil: null },
+  ),
+  rating: fc.integer({ min: 1, max: 5 }),
+  title: fc.stringMatching(/^[A-Z][a-z]{2,10}( [a-z]{2,8}){0,3}$/),
+  body: fc.stringMatching(/^[A-Z][a-z]{2,10}( [a-z]{2,8}){0,8}\.$/),
+})
+
 export function runReviewsContract(
   name: string,
   build: Build<ReviewsAdapter>,
-  options: ContractOptions<ReviewsAdapter> = {},
+  options: ReviewsContractOptions = {},
 ): void {
+  const seed = (adapter: ReviewsAdapter, count: number) => seedWith(adapter, count, options)
+
   describe(`ReviewsAdapter contract: ${name}`, () => {
+    // Kills: an adapter that files a review as someone else's or drops the purchase it was verified by (the kernel
+    // resolves both; the adapter only stores or forwards them), and one that reports no submit capability yet takes
+    // the review anyway, where a store's form would be hidden for nothing.
     it(
-      'submitReview returns the created review',
+      'submit: with submit among its capabilities, submitReview returns the review carrying the submission’s productId, customerId, orderId, rating, title and body; without it, submitReview rejects with ReviewRefusedError reviews.submit_unsupported',
       async () => {
         const adapter = await build()
-        const productId = `contract-reviews-${randomUUID()}`
-        const { review } = await adapter.submitReview({
-          productId,
-          customerId: null,
-          orderId: null,
-          rating: 5,
-          title: 'Great!',
-          body: 'Really liked it.',
-        })
-        expect(review.productId).toBe(productId)
-        expect(review.rating).toBe(5)
-        expect(review.id).toBeTruthy()
+        const takes = takesSubmissions(adapter)
+        await fc.assert(
+          fc.asyncProperty(arbSubmission, async (submission) => {
+            const answer = await settle(() => adapter.submitReview(submission))
+            if (takes) {
+              expect(answer.state, JSON.stringify(answer)).toBe('resolved')
+              const { review } = (answer as { value: { review: Review } }).value
+              expect([
+                review.productId,
+                review.customerId,
+                review.orderId,
+                review.rating,
+                review.title,
+                review.body,
+              ]).toEqual([
+                submission.productId,
+                submission.customerId,
+                submission.orderId,
+                submission.rating,
+                submission.title,
+                submission.body,
+              ])
+            } else {
+              expect(answer.state, 'submitReview of an adapter without submit').toBe('rejected')
+              const error = (answer as { error: { name?: unknown; code?: unknown } }).error
+              expect({ name: error?.name, code: error?.code }).toEqual({
+                name: 'ReviewRefusedError',
+                code: 'reviews.submit_unsupported',
+              })
+            }
+          }),
+          { numRuns: 10 },
+        )
       },
       CASE_MS,
     )
 
     it(
-      'getProductReviews returns the submitted review, read under the status submitReview reported',
+      'getProductReviews returns the seeded review, read under the status it was seeded with',
       async () => {
         const adapter = await build()
         const [review] = await seed(adapter, 1)

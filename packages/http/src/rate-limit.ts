@@ -32,6 +32,8 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/recently-viewed': { requests: 600, window: '1m', action: 'block' },
   // Each accepted subscribe mails a confirmation: the bound on how much mail one IP can make the store send.
   '/api/alerts/subscribe': { requests: 10, window: '1h', action: 'block' },
+  // Each accepted review waits in the moderation queue: the bound on how much one IP can put there.
+  '/api/reviews': { requests: 10, window: '1h', action: 'block' },
   // Each match mails the order's link. Before the order-read rule, which a request carrying the email would also match.
   '/api/orders/link': { requests: 5, window: '1h', action: 'block' },
   // The email is the second factor of an expired order key: bounded so it cannot be guessed. The key-only poll of a

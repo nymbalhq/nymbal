@@ -112,10 +112,19 @@ export interface ReviewsResult {
   nextCursor: string | null
 }
 
+/** What a reviews adapter can do; `capabilities()` of a reviews adapter answers a subset. */
+export type ReviewsCapability = 'submit' | 'moderate' | 'aggregate' | 'invite' | 'widget'
+
+/**
+ * The kernel resolves `customerId`, `author` and `orderId` (the reviewer's paid order holding the product) before the
+ * adapter sees a submission; an adapter never looks up customers or orders. An adapter without `submit` refuses it
+ * with `ReviewRefusedError('submit_unsupported')`.
+ */
 export interface ReviewSubmission {
   productId: string
   customerId: string | null
   orderId: string | null
+  author: { name: string; email: string } | null
   rating: number
   title: string
   body: string

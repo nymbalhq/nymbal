@@ -79,7 +79,8 @@ export type {
   StoreCapabilities,
   PaymentClient,
   ProductSortKey,
-  ReviewsResult as ReviewsListResult,
+  PublicReview,
+  PublicReviewsResult as ReviewsListResult,
   ReviewResult as ReviewSubmitResult,
   AlertKind,
 } from '@nymbalhq/types'

@@ -44,6 +44,7 @@
     "packages/platform/src/services/product-service.ts": 53.68,
     "packages/platform/src/services/recently-viewed-service.ts": 0,
     "packages/platform/src/services/refund-service.ts": 82.44,
+    "packages/platform/src/services/review-service.ts": 0,
     "packages/platform/src/services/search-service.ts": 100
   }
 }

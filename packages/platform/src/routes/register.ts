@@ -40,6 +40,7 @@ import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
 import { registerAlertRoutes } from './alerts.js'
+import { registerReviewRoutes } from './reviews.js'
 
 export interface RegisterAllRoutesDeps {
   config: NymbalConfig
@@ -188,6 +189,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   })
   registerCheckoutRoutes(adapter, services.checkout)
   registerAlertRoutes(adapter, { alerts: services.alert })
+  registerReviewRoutes(adapter, { reviews: services.review })
   registerOrderRoutes(adapter, services.order, documentStore)
   registerCustomerRoutes(adapter, services.customer)
   registerAdminRoutes(adapter, {

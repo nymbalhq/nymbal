@@ -149,6 +149,29 @@ export class CartLimitError extends NymbalError {
   }
 }
 
+/** Why a review was not taken. `not_a_buyer` is reserved: any signed-in customer may review. */
+export type ReviewRefusal = 'submit_unsupported' | 'already_reviewed' | 'not_a_buyer' | 'rejected'
+
+const REVIEW_REFUSAL_MESSAGES: Record<ReviewRefusal, string> = {
+  submit_unsupported: 'This store does not take reviews on its site.',
+  already_reviewed: 'You have already reviewed this product.',
+  not_a_buyer: 'Only a customer who bought this product can review it.',
+  rejected: 'The review was not accepted.',
+}
+
+export class ReviewRefusedError extends NymbalError {
+  readonly refusal: ReviewRefusal
+
+  constructor(
+    refusal: ReviewRefusal,
+    message: string = REVIEW_REFUSAL_MESSAGES[refusal],
+    options: { cause?: unknown; context?: ErrorContext } = {},
+  ) {
+    super(`reviews.${refusal}`, message, options)
+    this.refusal = refusal
+  }
+}
+
 export class StatusTransitionError extends NymbalError {
   constructor(
     entity: string,

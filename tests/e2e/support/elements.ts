@@ -157,7 +157,9 @@ export async function hostsWithScriptOff(
 /**
  * AC-5's reuse on `path` with JavaScript on: every element the JS-off page rendered keeps its per-part counts once
  * upgraded, no `template[shadowrootmode]` is left and the console logs no error. `elements` are the tags the page must
- * have rendered on the server, so the comparison is never vacuous.
+ * have rendered on the server, so the comparison is never vacuous. `followsAuth` are tags whose upgraded render follows
+ * the shopper's session (a guest's review form becomes a sign-in link): they must still be server-rendered and upgrade,
+ * but their part counts are left out of the comparison.
  */
 export async function expectMarkupReused(
   page: Page,
@@ -165,17 +167,22 @@ export async function expectMarkupReused(
   testInfo: TestInfo,
   path: string,
   elements: string[],
+  followsAuth: string[] = [],
 ): Promise<void> {
-  const off = await hostsWithScriptOff(browser, testInfo, page.context(), path)
-  const keys = Object.keys(off)
+  const served = await hostsWithScriptOff(browser, testInfo, page.context(), path)
+  const all = Object.keys(served)
   expect(
-    elements.filter((tag) => !keys.map(tagOf).includes(tag)),
+    elements.filter((tag) => !all.map(tagOf).includes(tag)),
     `elements the server rendered on ${path}`,
   ).toEqual([])
+  const off = Object.fromEntries(
+    Object.entries(served).filter(([key]) => !followsAuth.includes(tagOf(key))),
+  )
+  const keys = Object.keys(off)
 
   const errors = watchErrors(page)
   await page.goto(path, { waitUntil: 'load' })
-  await upgraded(page, [...new Set(keys.map(tagOf))])
+  await upgraded(page, [...new Set(all.map(tagOf))])
   await expect
     .poll(
       async () => {

@@ -183,6 +183,23 @@ export const routeSchemas: Record<string, RouteSchema> = {
     query: z.object({ limit: queryValue, cursor: queryValue }),
   },
 
+  // Reviews
+  'POST /api/reviews': {
+    name: 'reviews.submit',
+    command: 'review.submit',
+    description:
+      'Review a product as the signed-in customer: a rating of 1 to 5, a title and a body. The review waits for moderation, and is marked verified when the customer bought the product.',
+    // Strict: the reviewer, the order and whether it is verified come from the session, never the body.
+    body: z
+      .object({
+        productId: id,
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(120).default(''),
+        body: z.string().trim().min(1).max(2000),
+      })
+      .strict(),
+  },
+
   // Back-in-stock and price-drop alerts
   'POST /api/alerts/subscribe': {
     name: 'alerts.subscribe',

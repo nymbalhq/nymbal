@@ -256,6 +256,15 @@ export interface AlertConfirmationSentV1Payload {
   requestEventId: string
 }
 
+export interface ReviewSubmittedV1Payload {
+  reviewId: string
+  productId: string
+  customerId: string
+  /** The reviewer's paid order holding the product, which makes the review verified; null when there is none. */
+  orderId: string | null
+  rating: number
+}
+
 export interface AdapterErrorV1Payload {
   adapterType: string
   adapterName: string

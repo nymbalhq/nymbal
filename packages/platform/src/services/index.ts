@@ -1,4 +1,10 @@
-import type { EmailAdapter, Logger, PaymentsAdapter, SearchAdapter } from '@nymbalhq/types'
+import type {
+  EmailAdapter,
+  Logger,
+  PaymentsAdapter,
+  ReviewsAdapter,
+  SearchAdapter,
+} from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { CommandStore } from '../db/command-store.js'
 import type { Repositories } from '../repositories/index.js'
@@ -22,6 +28,7 @@ import {
   type RecentlyViewedService,
 } from './recently-viewed-service.js'
 import { createAlertService, type AlertService } from './alert-service.js'
+import { createReviewService, type ReviewService } from './review-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -35,6 +42,7 @@ export * from './search-service.js'
 export * from './refund-service.js'
 export * from './recently-viewed-service.js'
 export * from './alert-service.js'
+export * from './review-service.js'
 export { newAlertToken } from './alert-token.js'
 
 /** A `native` email adapter only logs; any other (`smtp`, a project's own) is taken to reach a mailbox. */
@@ -55,6 +63,7 @@ export interface ServiceRegistry {
   search: SearchService
   recentlyViewed: RecentlyViewedService
   alert: AlertService
+  review: ReviewService
 }
 
 export interface BuildServicesDeps {
@@ -66,13 +75,24 @@ export interface BuildServicesDeps {
   payments: PaymentsAdapter
   searchAdapter: SearchAdapter
   email: EmailAdapter
+  reviews: ReviewsAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
-  const { config, store, repos, publisher, logger, payments, searchAdapter, email, jwtSecret } =
-    deps
+  const {
+    config,
+    store,
+    repos,
+    publisher,
+    logger,
+    payments,
+    searchAdapter,
+    email,
+    reviews,
+    jwtSecret,
+  } = deps
   const inventory = createInventoryService({
     store,
     repos,
@@ -161,6 +181,13 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       publisher,
       allowedOrigins: config.http.cors.allowedOrigins,
       delivers: () => emailDelivers(email),
+    }),
+    review: createReviewService({
+      store,
+      repos,
+      publisher,
+      reviews,
+      logger: logger.child({ service: 'review' }),
     }),
   }
 }

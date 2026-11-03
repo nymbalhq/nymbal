@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
+import { and, desc, eq, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -48,6 +48,13 @@ export interface ReviewKey {
 
 export interface ReviewRepository extends StoreRepository {
   findById(tx: ReadTx, id: string): Promise<Review | null>
+  /** The customer's review of the product, whatever its moderation status. */
+  findByProductAndCustomer(tx: ReadTx, productId: string, customerId: string): Promise<Review | null>
+  /**
+   * Holds the (product, customer) pair until the transaction ends, so a find then insert for it runs one at a time:
+   * a Postgres advisory lock; on SQLite the open `BEGIN IMMEDIATE` transaction already holds every write.
+   */
+  lockPair(tx: Tx, productId: string, customerId: string): Promise<void>
   /** Newest first, ties by id descending; `after` is the last review of the previous page. */
   listByProduct(
     tx: ReadTx,
@@ -92,6 +99,31 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
         .from(postgresSchema.reviews)
         .where(eq(postgresSchema.reviews.id, id))
       return row ? rowToReview(row as Record<string, unknown>) : null
+    },
+    async findByProductAndCustomer(tx, productId, customerId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        const row = sqliteDb(tx)
+          .select()
+          .from(t)
+          .where(and(eq(t.productId, productId), eq(t.customerId, customerId)))
+          .limit(1)
+          .get()
+        return row ? rowToReview(row as Record<string, unknown>) : null
+      }
+      const t = postgresSchema.reviews
+      const [row] = await postgresDb(tx)
+        .select()
+        .from(t)
+        .where(and(eq(t.productId, productId), eq(t.customerId, customerId)))
+        .limit(1)
+      return row ? rowToReview(row as Record<string, unknown>) : null
+    },
+    async lockPair(tx, productId, customerId) {
+      if (tx.kind === 'sqlite') return
+      await postgresDb(tx).execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${productId}::text || ':' || ${customerId}::text))`,
+      )
     },
     async listByProduct(tx, productId, status, limit = 50, after) {
       if (tx.kind === 'sqlite') {
