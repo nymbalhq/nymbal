@@ -126,6 +126,8 @@ function kept(project: Named, index: number, all: Named[]): boolean {
 
 export default defineConfig({
   test: {
+    // Every run is one-off; watching many worktrees fills the disk. `pnpm test:watch` asks for it explicitly.
+    watch: false,
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
     // Node 25+ defines a global `localStorage` that is undefined without --localstorage-file, and it shadows the one
     // jsdom and happy-dom install; without Node's, the test environment's is the only one.

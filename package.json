@@ -13,7 +13,7 @@
     "build": "pnpm -r --filter './packages/**' build",
     "build:templates": "pnpm -r --filter './templates/**' build",
     "test": "vitest run --project '!integration-*' --exclude 'packages/proof-kit/tests/services/**'",
-    "test:watch": "vitest",
+    "test:watch": "vitest --watch",
     "typecheck": "tsc -b && pnpm --filter @nymbalhq/template-nextjs typecheck && pnpm --filter @nymbalhq/template-astro typecheck",
     "typecheck:astro": "pnpm --filter @nymbalhq/template-astro typecheck",
     "lint": "eslint .",
