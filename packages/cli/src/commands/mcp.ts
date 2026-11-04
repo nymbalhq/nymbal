@@ -5,7 +5,12 @@ import {
   StreamableHTTPClientTransport,
   UnauthorizedError,
 } from '@modelcontextprotocol/client'
-import { Server, type CallToolResult, type Tool } from '@modelcontextprotocol/server'
+import {
+  CLIENT_INFO_META_KEY,
+  Server,
+  type CallToolResult,
+  type Tool,
+} from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { CSRF_COOKIE, CSRF_HEADER, MCP_PATH } from '@nymbalhq/http'
 import { loadProject } from '../utils/project.js'
@@ -152,6 +157,17 @@ async function listAll(client: Client): Promise<Tool[]> {
   return tools
 }
 
+/**
+ * The MCP host's own name and version, sent on each call so the store records the agent that called (on a proposal,
+ * a cart, an order) rather than this bridge.
+ */
+function hostMeta(envelope: object | undefined, server: Server): { _meta?: Record<string, unknown> } {
+  const info =
+    (envelope as Record<string, unknown> | undefined)?.[CLIENT_INFO_META_KEY] ??
+    server.getClientVersion()
+  return info === undefined ? {} : { _meta: { [CLIENT_INFO_META_KEY]: info } }
+}
+
 /** stdio in front of the store's `POST /api/mcp`: every listing and call is the store's own answer. */
 function bridge(upstream: Client): void {
   serveStdio(() => {
@@ -160,10 +176,11 @@ function bridge(upstream: Client): void {
       { capabilities: { tools: {} } },
     )
     server.setRequestHandler('tools/list', async () => ({ tools: await listAll(upstream) }))
-    server.setRequestHandler('tools/call', async (request) => {
+    server.setRequestHandler('tools/call', async (request, ctx) => {
       const result = (await upstream.callTool({
         name: request.params.name,
         arguments: request.params.arguments ?? {},
+        ...hostMeta(ctx.mcpReq.envelope, server),
       })) as CallToolResult
       return server.projectCallToolResult(result, undefined)
     })

@@ -735,3 +735,18 @@ jobs:
         run: |
           scripts/scaffold-image.sh "$TEMPLATE" | tee scaffold-image.log
           grep '^scaffold-image: ' scaffold-image.log | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  # The docs site builds from apps/docs/src/content/docs alone, so a dependency bump that breaks it shows here.
+  docs:
+    name: Build the docs site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:build

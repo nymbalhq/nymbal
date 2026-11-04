@@ -33,6 +33,8 @@ export type Runner = (
 
 /** The port `renderConfig` gives the API, which serves the admin at /admin/. */
 const API_PORT = 3001
+/** The last line create-nymbal-app prints: where a new store's developer reports a problem. */
+const HELP_LINE = 'Problems or questions: https://github.com/nymbalhq/nymbal/issues'
 
 /** Each template's dev server origin, the storefront URL a new store starts with. */
 const STOREFRONT_ORIGIN: Record<Answers['template'], string> = {
@@ -293,7 +295,7 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
     } else {
       process.stdout.write(`Next: cd ${answers.directory} && ${installCmd(pm)[0]} install\n`)
     }
-    process.stdout.write(`${adminSignIn(admin).join('\n')}\n`)
+    process.stdout.write(`${[...adminSignIn(admin), '', HELP_LINE].join('\n')}\n`)
     return
   }
 
@@ -401,9 +403,15 @@ export async function main(argv: string[] = process.argv, deps: MainDeps = {}): 
   nextSteps.push(`  ${pc.cyan(cmd)}`)
 
   outro(
-    [pc.green(`✓ Created ${answers.directory}`), '', ...nextSteps, '', ...adminSignIn(admin)].join(
-      '\n',
-    ),
+    [
+      pc.green(`✓ Created ${answers.directory}`),
+      '',
+      ...nextSteps,
+      '',
+      ...adminSignIn(admin),
+      '',
+      HELP_LINE,
+    ].join('\n'),
   )
 }
 

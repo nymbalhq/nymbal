@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/nymbalhq/nymbal/security/advisories/new
+    about: Please report security issues privately, not as an issue.
+  - name: Documentation
+    url: https://github.com/nymbalhq/nymbal/tree/main/apps/docs/src/content/docs
+    about: The guides, the quickstart and the CLI reference.

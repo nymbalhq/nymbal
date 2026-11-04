@@ -1,10 +1,18 @@
-// Reads: packages/adapters/**, registry/README.md, README.md, package.json, packages/cli/src/index.ts
+// Reads: packages/adapters/**, registry/README.md, README.md, package.json
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FIRST_PARTY_ADAPTERS, ROOT } from './adapter-table'
+import {
+  cliTree,
+  codeOf,
+  isPattern,
+  linkTargets as allLinkTargets,
+  nymbalInvocations,
+  nymbalProblem,
+  packageManagerProblem,
+} from './doc-commands'
 import { privateWords } from './private-words'
-import { workspaceMembers } from './workspace-manifests'
 
 // AC-6: the contributor's guide (packages/adapters/README.md) and the new-adapter skill beside it name only what
 // exists: every repository path, every `pnpm` command (a root script, a pnpm command or a bin) and every `nymbal`
@@ -37,26 +45,13 @@ function frontmatter(text: string): Record<string, string> {
   return out
 }
 
-/** The code a markdown text holds: each inline code span and each line of each fenced block. */
-function codeOf(text: string): string[] {
-  const fenced = [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)].flatMap((m) =>
-    m[1]!.split('\n'),
-  )
-  const prose = text.replace(/^```[^\n]*\n[\s\S]*?^```/gm, '')
-  const spans = [...prose.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!)
-  return [...fenced, ...spans].map((l) => l.trim()).filter(Boolean)
-}
-
 /** Markdown link targets, without an anchor; web and mail links aside. */
 const linkTargets = (text: string): string[] =>
-  [...text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)]
-    .map((m) => m[1]!.replace(/#.*$/, ''))
+  allLinkTargets(text)
+    .map((t) => t.replace(/#.*$/, ''))
     .filter((t) => t !== '' && !/^[a-z]+:/i.test(t))
 
 const TOP_LEVEL = new Set(readdirSync(ROOT))
-
-/** A placeholder, glob or shell variable stands for a path that need not exist. */
-const isPattern = (token: string): boolean => /[<>*{}$…]|\.\.\./.test(token)
 
 /** The repository paths a code line names: tokens under a top-level entry of the repository, or a package's src/. */
 function pathsIn(line: string): string[] {
@@ -79,74 +74,12 @@ function exists(path: string, doc: string): boolean {
 
 const rootManifest = JSON.parse(read('package.json')) as { scripts?: Record<string, string> }
 const ROOT_SCRIPTS = new Set(Object.keys(rootManifest.scripts ?? {}))
-const ROOT_BINS = new Set(
-  existsSync(join(ROOT, 'node_modules', '.bin'))
-    ? readdirSync(join(ROOT, 'node_modules', '.bin'))
-    : [],
-)
-const PNPM_COMMANDS = new Set([
-  'install',
-  'i',
-  'add',
-  'remove',
-  'update',
-  'exec',
-  'dlx',
-  'run',
-  'test',
-  'list',
-  'why',
-  'publish',
-  'pack',
-])
 
-/** The CLI's command table: the keys of `subCommands` in packages/cli/src/index.ts. */
-function cliCommands(): Set<string> {
-  const source = read('packages/cli/src/index.ts')
-  const table = /subCommands:\s*\{([\s\S]*?)\n\s*\}/.exec(source)?.[1] ?? ''
-  return new Set([...table.matchAll(/^\s*(?:'([^']+)'|([\w-]+))\s*:/gm)].map((m) => m[1] ?? m[2]!))
-}
-
-/** What is wrong with a `pnpm …` or `nymbal …` command line, if anything. */
-function commandProblem(line: string, cli: ReadonlySet<string>): string | undefined {
-  const tokens = line.replace(/^\$\s+/, '').split(/\s+/)
-  const [tool, ...rest] = tokens
-  if (tool !== 'pnpm' && tool !== 'nymbal') return undefined
-  let filter: string | undefined
-  const args: string[] = []
-  for (let i = 0; i < rest.length; i++) {
-    const t = rest[i]!
-    if (t === '--filter' || t === '-F' || t === '-C' || t === '--dir') filter = rest[++i]
-    else if (t.startsWith('--filter=')) filter = t.slice('--filter='.length)
-    else if (args.length === 0 && t.startsWith('-')) continue
-    else args.push(t)
-  }
-  const [command, next] = args
-  if (command === undefined || isPattern(command)) return undefined
-  if (tool === 'nymbal') return cli.has(command) ? undefined : `nymbal has no command ${command}`
-  const filtered =
-    filter === undefined || isPattern(filter)
-      ? undefined
-      : workspaceMembers(ROOT).find(
-          (m) => m.manifest.name === filter || m.dir === filter.replace(/^\.\//, ''),
-        )
-  if (filter !== undefined && !isPattern(filter) && filtered === undefined)
-    return `no workspace package ${filter}`
-  const scripts = new Set(
-    Object.keys((filtered?.manifest.scripts as Record<string, string> | undefined) ?? {}),
-  )
-  const isScript = (s: string): boolean => (filtered === undefined ? ROOT_SCRIPTS : scripts).has(s)
-  if (command === 'run') {
-    return next === undefined || isPattern(next) || isScript(next) ? undefined : `no script ${next}`
-  }
-  if (command === 'exec') {
-    return next === undefined || isPattern(next) || ROOT_BINS.has(next)
-      ? undefined
-      : `no bin ${next}`
-  }
-  return isScript(command) || PNPM_COMMANDS.has(command) || ROOT_BINS.has(command)
-    ? undefined
-    : `pnpm has no script, command or bin ${command}`
+/** What is wrong with a `pnpm …` (a root script, a pnpm command or a bin) or `nymbal …` command line, if anything. */
+async function commandProblem(line: string): Promise<string | undefined> {
+  const cli = await cliTree()
+  const nymbal = nymbalInvocations(line).map((args) => nymbalProblem(args, cli))
+  return nymbal.find((p) => p !== undefined) ?? packageManagerProblem(line, ROOT_SCRIPTS)
 }
 
 describe('AC-6: the guide and the skill name only what exists', () => {
@@ -173,17 +106,17 @@ describe('AC-6: the guide and the skill name only what exists', () => {
     )
   })
 
-  it('AC-6: every pnpm and nymbal command the guide and the skill give is a root script, a pnpm command, a bin or a CLI command', () => {
-    const cli = cliCommands()
+  it('AC-6: every pnpm and nymbal command the guide and the skill give is a root script, a pnpm command, a bin or a CLI command', async () => {
     const commands = DOCS.flatMap((doc) =>
       codeOf(read(doc))
         .filter((l) => /^(\$\s+)?(pnpm|nymbal)\s/.test(l))
         .map((line) => ({ doc, line })),
     )
-    const problems = commands.flatMap(({ doc, line }) => {
-      const problem = commandProblem(line, cli)
-      return problem === undefined ? [] : [`${doc}: ${line}: ${problem}`]
-    })
+    const problems: string[] = []
+    for (const { doc, line } of commands) {
+      const problem = await commandProblem(line)
+      if (problem !== undefined) problems.push(`${doc}: ${line}: ${problem}`)
+    }
 
     expect(
       commands

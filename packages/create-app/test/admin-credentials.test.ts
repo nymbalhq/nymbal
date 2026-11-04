@@ -313,3 +313,22 @@ describe('AC-11: no two scaffolds share an admin email', () => {
     }, 60_000)
   }
 })
+
+const HELP_LINE = 'Problems or questions: https://github.com/nymbalhq/nymbal/issues'
+
+describe('AC-12: the closing message ends with where to report a problem', () => {
+  it('AC-12: --yes with the install, --yes --no-install and the interactive run each end with the issues URL, after the admin sign-in', async () => {
+    const runs = [
+      await scaffoldOnce(['shop', '--yes']),
+      await scaffoldOnce(['shop', '--yes', '--no-install']),
+      await scaffoldOnce([]),
+    ]
+    const lastLines = runs.map((r) => r.output.trimEnd().split('\n').at(-1))
+    const afterSignIn = runs.map(
+      (r) => r.output.lastIndexOf(HELP_LINE) > r.output.lastIndexOf('http://localhost:3001/admin/'),
+    )
+
+    expect(lastLines).toEqual([HELP_LINE, HELP_LINE, HELP_LINE])
+    expect(afterSignIn).toEqual([true, true, true])
+  }, 60_000)
+})

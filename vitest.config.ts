@@ -54,6 +54,20 @@ const scaffoldImage = process.env['NYMBAL_IMAGE']
     ]
   : []
 
+// The quickstart page's store in its container: the project exists only when `scripts/quickstart.sh <astro|nextjs>`
+// has started it (NYMBAL_CONTAINER and the rest; the file throws at collection without them).
+const quickstart = process.env['NYMBAL_CONTAINER']
+  ? [
+      {
+        test: {
+          name: 'quickstart',
+          environment: 'node' as const,
+          include: ['tests/quickstart/**/*.test.ts'],
+        },
+      },
+    ]
+  : []
+
 // Quarantined: each went red then green with no code change in a gate or CI. It runs in the `nightly` project
 // (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until it is fixed, and its home project leaves it out: through
 // that project's own `exclude` when it has one (cli), else behind `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the
@@ -352,6 +366,7 @@ export default defineConfig({
       },
       ...scaffoldClean,
       ...scaffoldImage,
+      ...quickstart,
       ...nightly,
       {
         test: {

@@ -23,12 +23,12 @@ PATH="$(dirname "$(cd "$root" && node -p process.execPath)"):$PATH"
 export PATH
 work="$(mktemp -d)"
 parent="$(mktemp -d)"
-registry_container=""
 store_container=""
 image=""
 database=""
 stripe_pid=""
-restore=0
+# shellcheck source=local-registry.sh
+. "$root/scripts/local-registry.sh"
 
 if [ -z "${NYMBAL_TEST_POSTGRES_URL:-}" ] || [ -z "${NYMBAL_TEST_REDIS_URL:-}" ]; then
   eval "$(cd "$root" && pnpm --silent stack env)"
@@ -37,7 +37,7 @@ postgres_url="${NYMBAL_TEST_POSTGRES_URL:-postgres://postgres:nymbal@localhost:$
 redis_url="${NYMBAL_TEST_REDIS_URL:-redis://localhost:${NYMBAL_REDIS_PORT:-63799}}"
 
 now_ms() { node -p 'Date.now()'; }
-free_port() { node -e 'const s=require("net").createServer().listen(0,()=>{console.log(s.address().port);s.close()})'; }
+free_port() { registry_free_port; }
 seconds_since() { node -p "((Date.now() - $1) / 1000).toFixed(1)"; }
 # The same server, as a container reaches the host.
 from_container() { printf '%s' "$1" | sed -E 's#@(localhost|127\.0\.0\.1):#@host.docker.internal:#; s#//(localhost|127\.0\.0\.1):#//host.docker.internal:#'; }
@@ -59,76 +59,16 @@ cleanup() {
   [ -n "$stripe_pid" ] && kill "$stripe_pid" >/dev/null 2>&1 && wait "$stripe_pid" 2>/dev/null
   [ -n "$image" ] && docker image rm -f "$image" >/dev/null 2>&1
   [ -n "$database" ] && psql_run "DROP DATABASE IF EXISTS \"$database\" WITH (FORCE)" >/dev/null 2>&1
-  [ -n "$registry_container" ] && docker rm -f "$registry_container" >/dev/null 2>&1
-  if [ "$restore" -eq 1 ]; then tar -xf "$work/backup.tar" -C "$root"; fi
+  registry_cleanup
   rm -rf "$work" "$parent"
   exit "$status"
 }
 trap cleanup EXIT
 
-# ─── a registry ──────────────────────────────────────────────────────────────────────────────────────────────────
-port="$(free_port)"
-cat > "$work/verdaccio.yaml" <<'YAML'
-storage: /verdaccio/storage/data
-max_body_size: 200mb
-uplinks:
-  npmjs:
-    url: https://registry.npmjs.org/
-packages:
-  '@nymbalhq/*':
-    access: $all
-    publish: $all
-  'nymbal':
-    access: $all
-    publish: $all
-  'create-nymbal-app':
-    access: $all
-    publish: $all
-  '**':
-    access: $all
-    proxy: npmjs
-log: { type: stdout, format: pretty, level: warn }
-YAML
-registry_container="$(docker run -d --rm -p "127.0.0.1:$port:4873" \
-  -v "$work/verdaccio.yaml:/verdaccio/conf/config.yaml:ro" verdaccio/verdaccio:6)"
-registry="http://localhost:$port"
-for _ in $(seq 1 60); do curl -fs "$registry/-/ping" >/dev/null 2>&1 && break; sleep 1; done
-curl -fs "$registry/-/ping" >/dev/null || { echo "scaffold-image: registry did not start" >&2; exit 1; }
-
-cat > "$work/npmrc" <<EOF
-registry=$registry/
-//localhost:$port/:_authToken=scaffold-image
-EOF
-export npm_config_userconfig="$work/npmrc" NPM_CONFIG_USERCONFIG="$work/npmrc"
-export npm_config_registry="$registry/"
-export npm_config_cache="$work/npm-cache"
-
-# ─── publish every public package at one snapshot version ───────────────────────────────────────────────────────
-(cd "$root" && node scripts/workspace-packages.ts --manifests) > "$work/manifests"
-tar -cf "$work/backup.tar" -C "$root" $(cat "$work/manifests") packages/create-app/scaffold pnpm-lock.yaml
-restore=1
-
-snapshot="$(cd "$root" && MANIFESTS="$work/manifests" node -e '
-const { readFileSync, writeFileSync } = require("node:fs")
-const paths = readFileSync(process.env.MANIFESTS, "utf8").split("\n").filter(Boolean)
-const manifests = paths.map((path) => ({ path, pkg: JSON.parse(readFileSync(path, "utf8")) }))
-const stack = manifests.find((m) => m.pkg.name === "@nymbalhq/stack").pkg
-const version = `${stack.version}-image.${Math.floor(Date.now() / 1000)}`
-for (const { path, pkg } of manifests) {
-  if (pkg.private) continue
-  pkg.version = version
-  if (pkg.name === "@nymbalhq/stack") {
-    for (const name of Object.keys(pkg.dependencies)) pkg.dependencies[name] = version
-  }
-  if (pkg.peerDependencies?.["@nymbalhq/types"]) pkg.peerDependencies["@nymbalhq/types"] = `^${version}`
-  writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n")
-}
-console.log(version)
-')"
+# ─── a registry, and every public package published to it at one snapshot version ──────────────────────────────
+registry_start scaffold-image
+registry_publish image
 echo "scaffold-image: snapshot $snapshot on $registry"
-
-(cd "$root" && pnpm build >/dev/null && pnpm --filter @nymbalhq/admin build >/dev/null && pnpm -r publish --no-git-checks --access public --tag latest --registry "$registry/" >"$work/publish.log" 2>&1) \
-  || { tail -30 "$work/publish.log" >&2; echo "scaffold-image: publish failed" >&2; exit 1; }
 
 # ─── create, on Postgres, Redis and stripe ──────────────────────────────────────────────────────────────────────
 (cd "$parent" && npx --yes create-nymbal-app shop --template "$template" --yes)

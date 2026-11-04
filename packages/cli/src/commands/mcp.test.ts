@@ -173,6 +173,30 @@ describe('AC-10: nymbal mcp, the stdio bridge', () => {
     expect((result.structuredContent as { id?: string } | undefined)?.id).toBe(served.data?.id)
   }, 60_000)
 
+  it("AC-10: a call through the bridge is recorded as the MCP host's agent, by its name and version, not the bridge's", async () => {
+    const slug = `bridge-agent-${randomUUID()}`
+    await overBridge(bridgeEnv(signedIn()), (client) =>
+      client.callTool({
+        name: 'admin_products_create',
+        arguments: {
+          slug,
+          name: 'Attributed Widget',
+          variants: [{ sku: slug, name: 'Default', priceMinor: 900, stock: 1, options: [] }],
+        },
+      }),
+    )
+    const res = await fetch(`${dev.base}/api/admin/proposals?status=all&limit=200`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    const page = (await res.json()) as {
+      data?: { items: Array<{ args: { slug?: string }; proposer: { agent: unknown } }> }
+    }
+    const recorded = (page.data?.items ?? []).filter((p) => p.args.slug === slug)
+
+    expect(res.status).toBe(200)
+    expect(recorded.map((p) => p.proposer.agent)).toEqual([AGENT])
+  }, 60_000)
+
   it('AC-10: every line the bridge writes to stdout, at debug log level, through sign-in, initialize and tools/list, is a JSON-RPC 2.0 message', async () => {
     const child = spawn(process.execPath, [CLI_BIN, 'mcp'], {
       cwd: dir,
