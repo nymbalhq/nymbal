@@ -226,7 +226,11 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
       const jti = payload.jti
       const customerId = payload.sub
       const record = await store.read((tx) => repos.refreshToken.findById(tx, jti))
-      if (!record) throw new AuthError('token_invalid', 'refresh token unknown')
+      if (!record) {
+        // Every token is inserted before it is returned, so a signed one with no row was rotated and purged: a replay.
+        await store.transaction((tx) => repos.refreshToken.revokeAllForCustomer(tx, customerId))
+        throw new AuthError('token_invalid', 'refresh token unknown; sessions revoked')
+      }
       if (record.revokedAt) {
         // Revoked by logout or by a sign-out of every session: refused, and nothing more.
         if (record.replacedByJti === null) {

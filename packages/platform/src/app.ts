@@ -33,6 +33,7 @@ import {
   startInventoryReservationSweeper,
   startCartAbandonmentSweeper,
   startEventRetentionSweeper,
+  startRefreshTokenSweeper,
   type EventArchiveWriter,
   type SweeperHandle,
 } from './sweepers/index.js'
@@ -85,6 +86,8 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   adapters?: InjectedAdapters
   /** How the event relay retries a failed delivery (`createRelay`). */
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
+  /** How often expired and used refresh tokens are deleted; tests shorten it. */
+  refreshTokenSweep?: { intervalMs?: number }
 }
 
 /**
@@ -366,6 +369,14 @@ export async function createApp(
         logger,
         retentionDays: config.events.retentionDays,
         ...(archive !== undefined && { archive }),
+      }),
+      startRefreshTokenSweeper({
+        store: platform.commandStore,
+        refreshTokens: repos.refreshToken,
+        logger,
+        ...(options.refreshTokenSweep?.intervalMs !== undefined && {
+          intervalMs: options.refreshTokenSweep.intervalMs,
+        }),
       }),
     ]
 

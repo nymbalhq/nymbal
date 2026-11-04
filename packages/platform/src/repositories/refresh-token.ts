@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, lt } from 'drizzle-orm'
 import {
   postgresDb,
   sqliteDb,
@@ -53,6 +53,11 @@ export interface RefreshTokenRepository extends StoreRepository {
   /** Revokes every row of the customer not revoked already, leaving earlier `revokedAt` instants as they were. */
   revokeAllForCustomer(tx: Tx, customerId: string): Promise<void>
   purgeExpired(tx: Tx, now: Date): Promise<number>
+  /**
+   * Deletes rotated rows (a successor is recorded) revoked before `revokedBefore`. Rows revoked with no successor
+   * (logout, sign-out of every session) stay until they expire, so presenting one stays a plain refusal.
+   */
+  purgeRotated(tx: Tx, revokedBefore: Date): Promise<number>
   deleteByCustomer(tx: Tx, customerId: string): Promise<void>
 }
 
@@ -198,6 +203,21 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
       const result = await postgresDb(tx)
         .delete(postgresSchema.refreshTokens)
         .where(lt(postgresSchema.refreshTokens.expiresAt, now))
+      return result.rowCount ?? 0
+    },
+    async purgeRotated(tx, revokedBefore) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.refreshTokens
+        const result = sqliteDb(tx)
+          .delete(t)
+          .where(and(isNotNull(t.replacedByJti), lt(t.revokedAt, revokedBefore.toISOString())))
+          .run()
+        return result.changes
+      }
+      const t = postgresSchema.refreshTokens
+      const result = await postgresDb(tx)
+        .delete(t)
+        .where(and(isNotNull(t.replacedByJti), lt(t.revokedAt, revokedBefore)))
       return result.rowCount ?? 0
     },
     async deleteByCustomer(tx, customerId) {

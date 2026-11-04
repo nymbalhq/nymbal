@@ -12,3 +12,7 @@ export {
   type EventArchiveWriter,
   type EventRetentionSweeperDeps,
 } from './event-retention-sweeper.js'
+export {
+  startRefreshTokenSweeper,
+  type RefreshTokenSweeperDeps,
+} from './refresh-token-sweeper.js'
