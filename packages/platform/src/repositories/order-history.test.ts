@@ -40,6 +40,28 @@ const append = (env: Env, e: OrderHistoryInsert) =>
 const listOf = (env: Env, orderId: string) =>
   env.store.read((tx) => env.repo.listByOrder(tx, orderId))
 
+describe('OrderHistoryRepository: read back', () => {
+  // Defect: a status change written without a note stores a placeholder (or "undefined") in its place, so the admin
+  // timeline shows a note nobody wrote.
+  it('entries read back as written, oldest first, and one written with no note reads back an empty note', async () => {
+    const env = await setup()
+    const orderId = uuidv7()
+    const base = Date.UTC(2026, 9, 1, 10, 0, 0)
+    const written = [
+      { ...entry(orderId, new Date(base + 1000)), note: 'Packed by Sam' },
+      entry(orderId, new Date(base)),
+    ]
+    for (const e of written) await append(env, e)
+
+    const read = await listOf(env, orderId)
+    const expected = [...written]
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      .map((e) => ({ ...e, note: e.note ?? '', timestamp: e.timestamp.toISOString() }))
+    expect(read).toEqual(expected)
+    await env.store.close()
+  })
+})
+
 describe('OrderHistoryRepository: removal and entries since a time', () => {
   // Defect: the delete loses its order condition (one imported order's rollback takes every order's history with
   // it) or deletes nothing (the removed order leaves history behind).

@@ -198,6 +198,19 @@ describe('OrderRefundRepository', () => {
     await env.store.close()
   })
 
+  // Defect: the empty-page guard is dropped, so an admin orders page with no orders still queries refunds. A handle
+  // whose read has settled refuses any query, so only a call that queries nothing answers on it.
+  it('listByOrders of no orders answers an empty map without querying', async () => {
+    const env = await setup()
+    const orderId = await order(env)
+    await insert(env, row(orderId))
+    const settled = await env.store.read(async (tx) => tx)
+
+    await expect(env.repo.listByOrders(settled, [orderId])).rejects.toThrow(/after its read/)
+    await expect(env.repo.listByOrders(settled, [])).resolves.toEqual(new Map())
+    await env.store.close()
+  })
+
   // Defect: the delete loses its order condition (rolling one imported order back takes every order's refunds with
   // it) or deletes nothing (the removed order leaves refunds behind).
   it('deleteByOrder removes the refunds of that order and leaves those of every other order as they were', async () => {

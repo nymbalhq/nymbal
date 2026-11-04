@@ -266,7 +266,8 @@ describe('AC-7: the Next fetchers’ failure modes and cache options', () => {
     calls.length = 0
     await overridden.generateMetadata({ params })
     expect(productCalls().map((c) => c.init?.next?.revalidate)).toEqual([2])
-  })
+    // Two cold imports of the PDP's module graph: up to 1.5 s alone; a loaded gate has pushed it past the 5 s default.
+  }, 30_000)
 
   it('AC-7 (d): over generated NYMBAL_CATALOG_REVALIDATE_S values, every catalog fetcher’s next.revalidate is that number, and the shopper fetchers still pass cache: no-store', async () => {
     await fc.assert(
