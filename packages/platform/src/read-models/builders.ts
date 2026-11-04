@@ -198,8 +198,22 @@ export function productWrites(doc: DenormalisedProduct): DocumentWrite[] {
 }
 
 /** Newest first within a customer: a descending timestamp prefix, then the order number. */
-function customerSortKey(o: Order): string {
+function customerSortKey(o: Pick<Order, 'createdAt' | 'orderNumber'>): string {
   return `order:${String(Number.MAX_SAFE_INTEGER - new Date(String(o.createdAt)).getTime()).padStart(16, '0')}:${o.orderNumber}`
+}
+
+/** The keys `orderWrites` puts an order's documents under. */
+export function orderDocumentKeys(
+  o: Pick<Order, 'createdAt' | 'orderNumber' | 'customerId'>,
+): Array<{ collection: string; key: string }> {
+  const keys = [{ collection: ORDERS, key: o.orderNumber }]
+  if (o.customerId) {
+    keys.push({
+      collection: ORDERS_BY_CUSTOMER,
+      key: `customer:${o.customerId}#${customerSortKey(o)}`,
+    })
+  }
+  return keys
 }
 
 export function buildOrderDoc(order: Order, history: OrderHistoryEntry[]): OrderDoc {

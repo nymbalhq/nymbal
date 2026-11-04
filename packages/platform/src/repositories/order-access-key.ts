@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray } from 'drizzle-orm'
 import {
   postgresDb,
   sqliteDb,
@@ -32,6 +32,9 @@ export interface OrderAccessKeyRepository extends StoreRepository {
   opens(tx: ReadTx, orderId: string, keyHash: string, now: Date): Promise<OrderKeyState>
   /** Deletes the order's oldest keys of `purpose`, by `(created_at, id)`, until at most `keep` remain. */
   keepNewest(tx: Tx, orderId: string, purpose: OrderAccessKeyPurpose, keep: number): Promise<void>
+  deleteByOrder(tx: Tx, orderId: string): Promise<void>
+  /** The order of each key minted at or after `since`, once per key. */
+  orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 export function createOrderAccessKeyRepository(store: CommandStore): OrderAccessKeyRepository {
@@ -113,6 +116,32 @@ export function createOrderAccessKeyRepository(store: CommandStore): OrderAccess
       const t = postgresSchema.orderAccessKeys
       await postgresDb(tx).delete(t).where(inArray(t.id, stale))
       // Stryker restore all
+    },
+    async deleteByOrder(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderAccessKeys
+        sqliteDb(tx).delete(t).where(eq(t.orderId, orderId)).run()
+        return
+      }
+      const t = postgresSchema.orderAccessKeys
+      await postgresDb(tx).delete(t).where(eq(t.orderId, orderId))
+    },
+    async orderIdsSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderAccessKeys
+        return sqliteDb(tx)
+          .select({ orderId: t.orderId })
+          .from(t)
+          .where(gte(t.createdAt, since.toISOString()))
+          .all()
+          .map((r) => r.orderId)
+      }
+      const t = postgresSchema.orderAccessKeys
+      const rows = await postgresDb(tx)
+        .select({ orderId: t.orderId })
+        .from(t)
+        .where(gte(t.createdAt, since))
+      return rows.map((r) => r.orderId)
     },
   }
 }

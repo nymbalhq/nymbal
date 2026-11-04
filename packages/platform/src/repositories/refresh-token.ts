@@ -53,6 +53,7 @@ export interface RefreshTokenRepository extends StoreRepository {
   /** Revokes every row of the customer not revoked already, leaving earlier `revokedAt` instants as they were. */
   revokeAllForCustomer(tx: Tx, customerId: string): Promise<void>
   purgeExpired(tx: Tx, now: Date): Promise<number>
+  deleteByCustomer(tx: Tx, customerId: string): Promise<void>
 }
 
 export function createRefreshTokenRepository(store: CommandStore): RefreshTokenRepository {
@@ -198,6 +199,15 @@ export function createRefreshTokenRepository(store: CommandStore): RefreshTokenR
         .delete(postgresSchema.refreshTokens)
         .where(lt(postgresSchema.refreshTokens.expiresAt, now))
       return result.rowCount ?? 0
+    },
+    async deleteByCustomer(tx, customerId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.refreshTokens
+        sqliteDb(tx).delete(t).where(eq(t.customerId, customerId)).run()
+        return
+      }
+      const t = postgresSchema.refreshTokens
+      await postgresDb(tx).delete(t).where(eq(t.customerId, customerId))
     },
   }
 }

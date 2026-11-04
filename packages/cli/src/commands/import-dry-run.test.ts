@@ -30,6 +30,7 @@ const PLAN_JSON = 'nymbal-import-plan.json'
 const PLAN_MD = 'nymbal-import-plan.md'
 const IMPORT_LEFTOVERS = [
   '.nymbal-migration.json',
+  '.nymbal-migration.journal',
   'nymbal-migration-report.md',
   join('public', 'imported-media'),
 ]

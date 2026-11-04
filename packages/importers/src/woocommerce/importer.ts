@@ -3,8 +3,13 @@ import type {
   ServiceRegistry,
   Repositories,
 } from '@nymbalhq/platform'
-import type { WooCommerceImportOptions, ImportState, ProgressCallback } from '../types.js'
-import { loadState, freshState, saveState } from '../state.js'
+import type {
+  WooCommerceImportOptions,
+  ImportEntity,
+  ImportState,
+  ProgressCallback,
+} from '../types.js'
+import { appendJournal, compactState, freshState, loadState, saveState } from '../state.js'
 import { buildReport } from '../report.js'
 import { WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcProduct, WcVariation, WcCustomer, WcOrder, WcReview } from './client.js'
@@ -70,12 +75,19 @@ export async function runWooCommerceImport(
     ...(deps.lookup !== undefined && { lookup: deps.lookup }),
   }
 
-  // Load or create state
-  let state: ImportState = opts.fresh
-    ? freshState()
-    : ((await loadState(opts.statePath)) ?? freshState())
+  // A state that cannot be read throws here: starting again would forget what earlier runs created. `--fresh` starts
+  // the progress again but keeps the records earlier runs created, so a rollback still removes them.
+  const saved = await loadState(opts.statePath)
+  const state: ImportState =
+    saved === null
+      ? freshState()
+      : opts.fresh
+        ? { ...freshState(), importedIds: saved.importedIds, rollbackSince: saved.rollbackSince }
+        : saved
 
   const checkpoint = async () => saveState(opts.statePath, state)
+  const journal = (entity: ImportEntity, id: string, wcId: number) =>
+    appendJournal(opts.statePath, { entity, id, wcId })
 
   // ── 1. Connect ──────────────────────────────────────────────────────────────
   emit({ kind: 'phase', phase: 'connect' })
@@ -85,6 +97,9 @@ export async function runWooCommerceImport(
     if (err instanceof WooCommerceApiError) throw err
     throw new Error(`Cannot connect to ${opts.credentials.url}: ${String(err)}`)
   }
+
+  // On disk before the first create, so a run stopped at any point can be rolled back from the files alone.
+  await compactState(opts.statePath, state)
 
   // ── 2. Categories ────────────────────────────────────────────────────────────
   if (opts.entities.includes('categories') && state.phase !== 'done') {
@@ -107,6 +122,7 @@ export async function runWooCommerceImport(
           state.wcToNymbalCategory[wc.id] = category.id
           state.importedIds.categories.push(category.id)
           state.eventsEmitted++
+          await journal('categories', category.id, wc.id)
         } catch (err) {
           state.errors.push({ phase: 'categories', id: String(wc.id), error: String(err) })
         }
@@ -136,8 +152,9 @@ export async function runWooCommerceImport(
       await pMap(
         page.items,
         async (wc) => {
-          if (state.wcToNymbalProduct[wc.id]) return
+          // Before the skip, so a product created before a stop still claims its slug on resume.
           const refs = productRefs(wc, seenSlugs)
+          if (state.wcToNymbalProduct[wc.id]) return
 
           let variations: WcVariation[] = []
           if (refs.isVariable && refs.variationCount > 0) {
@@ -170,6 +187,7 @@ export async function runWooCommerceImport(
             state.wcToNymbalProduct[wc.id] = snap.id
             state.importedIds.products.push(snap.id)
             state.eventsEmitted++
+            await journal('products', snap.id, wc.id)
           } catch (err) {
             state.errors.push({ phase: 'products', id: String(wc.id), error: String(err) })
           }
@@ -203,8 +221,13 @@ export async function runWooCommerceImport(
           try {
             const customer = await services.auth.importCustomer(mapCustomer(wc, opts.gdpr))
             state.wcToNymbalCustomer[wc.id] = customer.id
+            // A customer whose email the store already had is returned as it was: its orders attach to it, but it is
+            // the store's, so a rollback leaves it.
+            const woo = customer.metadata['woocommerce'] as { customerId?: unknown } | undefined
+            if (woo?.customerId !== wc.id) return
             state.importedIds.customers.push(customer.id)
             state.eventsEmitted++
+            await journal('customers', customer.id, wc.id)
           } catch (err) {
             state.errors.push({ phase: 'customers', id: String(wc.id), error: String(err) })
           }
@@ -234,7 +257,7 @@ export async function runWooCommerceImport(
       await pMap(
         page.items,
         async (wc) => {
-          if (state.wcToNymbalProduct[wc.id]) return
+          if (state.wcToNymbalOrder[wc.id]) return
           const { customerWcId, lineProductWcIds } = orderRefs(wc)
           const nymbalCustomerId = customerWcId
             ? (state.wcToNymbalCustomer[customerWcId] ?? null)
@@ -248,8 +271,10 @@ export async function runWooCommerceImport(
             const order = await services.order.importOrder(
               mapOrder(wc, nymbalCustomerId, productIdMap, opts.currency),
             )
+            state.wcToNymbalOrder[wc.id] = order.id
             state.importedIds.orders.push(order.id)
             state.eventsEmitted++
+            await journal('orders', order.id, wc.id)
           } catch (err) {
             state.errors.push({ phase: 'orders', id: String(wc.id), error: String(err) })
           }
@@ -277,14 +302,17 @@ export async function runWooCommerceImport(
       total = page.total
 
       for (const wc of page.items) {
+        if (state.wcToNymbalReview[wc.id]) continue
         const nymbalProductId = state.wcToNymbalProduct[reviewRefs(wc).productWcId]
         if (!nymbalProductId) continue
         try {
           const result = await adapters.reviews.submitReview(
             mapReview(wc, nymbalProductId, null),
           )
+          state.wcToNymbalReview[wc.id] = result.review.id
           state.importedIds.reviews.push(result.review.id)
           state.eventsEmitted++
+          await journal('reviews', result.review.id, wc.id)
         } catch (err) {
           state.errors.push({ phase: 'reviews', id: String(wc.id), error: String(err) })
         }

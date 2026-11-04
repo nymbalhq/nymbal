@@ -18,7 +18,25 @@ export type {
   ExistingStoreLookup,
   PlanCollision,
   ImportPlan,
+  RollbackPlan,
+  RollbackReport,
 } from './types.js'
 export { buildReport, formatReport, writeReport } from './report.js'
 export { formatPlan, writePlan } from './plan-report.js'
-export { loadState, freshState, saveState, deleteState } from './state.js'
+export {
+  appendJournal,
+  deleteState,
+  freshState,
+  ImportStateError,
+  journalPathFor,
+  loadState,
+  saveState,
+  type JournalEntry,
+} from './state.js'
+export {
+  rollbackImport,
+  RollbackRefusedError,
+  type RollbackDeps,
+  type RollbackOptions,
+  type RollbackRefusal,
+} from './rollback.js'

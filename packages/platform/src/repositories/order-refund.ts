@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray } from 'drizzle-orm'
 import type { OrderRefund, OrderRefundStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -54,6 +54,9 @@ export interface OrderRefundRepository extends StoreRepository {
   listByOrder(tx: ReadTx, orderId: string): Promise<OrderRefund[]>
   /** The refunds of each order, oldest first; an order without refunds is absent. */
   listByOrders(tx: ReadTx, orderIds: string[]): Promise<Map<string, OrderRefund[]>>
+  deleteByOrder(tx: Tx, orderId: string): Promise<void>
+  /** The order of each refund made at or after `since`, once per refund. */
+  orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 export function createOrderRefundRepository(store: CommandStore): OrderRefundRepository {
@@ -135,6 +138,32 @@ export function createOrderRefundRepository(store: CommandStore): OrderRefundRep
         byOrder.set(refund.orderId, refunds)
       }
       return byOrder
+    },
+    async deleteByOrder(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderRefunds
+        sqliteDb(tx).delete(t).where(eq(t.orderId, orderId)).run()
+        return
+      }
+      const t = postgresSchema.orderRefunds
+      await postgresDb(tx).delete(t).where(eq(t.orderId, orderId))
+    },
+    async orderIdsSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderRefunds
+        return sqliteDb(tx)
+          .select({ orderId: t.orderId })
+          .from(t)
+          .where(gte(t.createdAt, since.toISOString()))
+          .all()
+          .map((r) => r.orderId)
+      }
+      const t = postgresSchema.orderRefunds
+      const rows = await postgresDb(tx)
+        .select({ orderId: t.orderId })
+        .from(t)
+        .where(gte(t.createdAt, since))
+      return rows.map((r) => r.orderId)
     },
   }
 }

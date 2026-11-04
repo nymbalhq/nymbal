@@ -26,6 +26,8 @@ export const EVT_ORDER_REFUNDED = 'order.refunded.v1'
 export const EVT_ORDER_PARTIALLY_REFUNDED = 'order.partially_refunded.v1'
 export const EVT_ORDER_STATUS_CHANGED = 'order.status_changed.v1'
 export const EVT_ORDER_CONFIRMATION_RESEND_REQUESTED = 'order.confirmation_resend_requested.v1'
+/** An imported order taken back out of the store, with every row it owned. */
+export const EVT_ORDER_DELETED = 'order.deleted.v1'
 
 // Inventory
 export const EVT_INVENTORY_CHANGED = 'inventory.changed.v1'
@@ -98,6 +100,7 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ORDER_PARTIALLY_REFUNDED,
   EVT_ORDER_STATUS_CHANGED,
   EVT_ORDER_CONFIRMATION_RESEND_REQUESTED,
+  EVT_ORDER_DELETED,
   EVT_INVENTORY_CHANGED,
   EVT_INVENTORY_RESERVED,
   EVT_INVENTORY_RELEASED,

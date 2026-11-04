@@ -2,14 +2,19 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ImportReport, ImportState } from './types.js'
 
+/**
+ * Counts the source records brought over since the last `--fresh`: a customer linked to one the store already had is
+ * imported, though the rollback set holds only the records the import created.
+ */
 export function buildReport(state: ImportState, startMs: number): ImportReport {
+  const count = (map: Record<string, string>) => Object.keys(map).length
   return {
     imported: {
-      categories: state.importedIds.categories.length,
-      products: state.importedIds.products.length,
-      customers: state.importedIds.customers.length,
-      orders: state.importedIds.orders.length,
-      reviews: state.importedIds.reviews.length,
+      categories: count(state.wcToNymbalCategory),
+      products: count(state.wcToNymbalProduct),
+      customers: count(state.wcToNymbalCustomer),
+      orders: count(state.wcToNymbalOrder),
+      reviews: count(state.wcToNymbalReview),
     },
     enriched: { enriched: 0, skipped: 0, failed: 0 },
     errors: state.errors,

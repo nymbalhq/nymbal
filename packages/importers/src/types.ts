@@ -25,8 +25,11 @@ export interface ImportCursor {
 export interface ImportState {
   source: 'woocommerce'
   startedAt: string
+  /** When the earliest run whose records the state holds began: the store's own activity is counted from here. */
+  rollbackSince: string
   phase: ImportEntity | 'connect' | 'enrich' | 'done'
   cursors: Partial<Record<ImportEntity, ImportCursor>>
+  /** The records the import created (not those it only linked): what a rollback removes. */
   importedIds: {
     categories: string[]
     products: string[]
@@ -37,6 +40,8 @@ export interface ImportState {
   wcToNymbalCustomer: Record<string, string>
   wcToNymbalProduct: Record<string, string>
   wcToNymbalCategory: Record<string, string>
+  wcToNymbalOrder: Record<string, string>
+  wcToNymbalReview: Record<string, string>
   errors: Array<{ phase: string; id?: string; error: string }>
   eventsEmitted: number
 }
@@ -46,6 +51,22 @@ export interface ImportReport {
   enriched: { enriched: number; skipped: number; failed: number }
   errors: ImportState['errors']
   eventsEmitted: number
+  durationMs: number
+}
+
+/** What a rollback will remove, and what it keeps. */
+export interface RollbackPlan {
+  remove: Record<ImportEntity, number>
+  /** Image URLs the products to remove hold; their objects stay in media storage. */
+  mediaUrls: number
+  /** Customers that were in the store before the import, which it linked its orders to. */
+  linkedCustomersKept: number
+}
+
+export interface RollbackReport extends RollbackPlan {
+  removed: Record<ImportEntity, number>
+  /** Records already gone when the rollback reached them. */
+  absent: Record<ImportEntity, number>
   durationMs: number
 }
 

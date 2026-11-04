@@ -29,6 +29,10 @@ import {
 } from './recently-viewed-service.js'
 import { createAlertService, type AlertService } from './alert-service.js'
 import { createReviewService, type ReviewService } from './review-service.js'
+import {
+  createImportRemovalService,
+  type ImportRemovalService,
+} from './import-removal-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -43,6 +47,7 @@ export * from './refund-service.js'
 export * from './recently-viewed-service.js'
 export * from './alert-service.js'
 export * from './review-service.js'
+export * from './import-removal-service.js'
 export { newAlertToken } from './alert-token.js'
 export { sanitizeDescription } from './description.js'
 
@@ -65,6 +70,7 @@ export interface ServiceRegistry {
   recentlyViewed: RecentlyViewedService
   alert: AlertService
   review: ReviewService
+  importRemoval: ImportRemovalService
 }
 
 export interface BuildServicesDeps {
@@ -189,6 +195,12 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       publisher,
       reviews,
       logger: logger.child({ service: 'review' }),
+    }),
+    importRemoval: createImportRemovalService({
+      store,
+      repos,
+      publisher,
+      logger: logger.child({ service: 'import-removal' }),
     }),
   }
 }

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, gte } from 'drizzle-orm'
 import type { OrderHistoryEntry, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -37,6 +37,9 @@ function rowToEntry(row: Record<string, unknown>): OrderHistoryEntry {
 export interface OrderHistoryRepository extends StoreRepository {
   append(tx: Tx, entry: OrderHistoryInsert): Promise<void>
   listByOrder(tx: ReadTx, orderId: string): Promise<OrderHistoryEntry[]>
+  deleteByOrder(tx: Tx, orderId: string): Promise<void>
+  /** The order of each entry written at or after `since`, once per entry. */
+  orderIdsSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 export function createOrderHistoryRepository(store: CommandStore): OrderHistoryRepository {
@@ -78,6 +81,32 @@ export function createOrderHistoryRepository(store: CommandStore): OrderHistoryR
         .where(eq(postgresSchema.orderHistory.orderId, orderId))
         .orderBy(asc(postgresSchema.orderHistory.timestamp), asc(postgresSchema.orderHistory.id))
       return rows.map((r) => rowToEntry(r as Record<string, unknown>))
+    },
+    async deleteByOrder(tx, orderId) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderHistory
+        sqliteDb(tx).delete(t).where(eq(t.orderId, orderId)).run()
+        return
+      }
+      const t = postgresSchema.orderHistory
+      await postgresDb(tx).delete(t).where(eq(t.orderId, orderId))
+    },
+    async orderIdsSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orderHistory
+        return sqliteDb(tx)
+          .select({ orderId: t.orderId })
+          .from(t)
+          .where(gte(t.timestamp, since.toISOString()))
+          .all()
+          .map((r) => r.orderId)
+      }
+      const t = postgresSchema.orderHistory
+      const rows = await postgresDb(tx)
+        .select({ orderId: t.orderId })
+        .from(t)
+        .where(gte(t.timestamp, since))
+      return rows.map((r) => r.orderId)
     },
   }
 }

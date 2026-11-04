@@ -3,10 +3,18 @@ import { intro, outro, text, select, spinner, isCancel, cancel } from '@clack/pr
 import p from 'picocolors'
 import { loadProject } from '../utils/project.js'
 import { createApp, newCorrelationId, runAsActor, runWithCorrelation } from '@nymbalhq/platform'
-import { runWooCommerceImport, writeReport, type ImportEntity, type ProgressEvent } from '@nymbalhq/importers'
+import {
+  ImportStateError,
+  loadState,
+  runWooCommerceImport,
+  writeReport,
+  type ImportEntity,
+  type ProgressEvent,
+} from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
 import { runImportPlan } from './import-plan.js'
+import { runImportRollback } from './import-rollback.js'
 
 const IMPORT_ENTITIES = ['categories', 'products', 'customers', 'orders', 'reviews'] as const satisfies readonly ImportEntity[]
 
@@ -73,12 +81,42 @@ export const importCommand = defineCommand({
         'Read the source and write nymbal-import-plan.json and .md (counts, collisions, unmapped fields, estimate); import nothing',
       default: false,
     },
+    rollback: {
+      type: 'boolean',
+      description:
+        'Remove every record the imports in this project created, from .nymbal-migration.json; needs no source or credentials',
+      default: false,
+    },
+    yes: {
+      type: 'boolean',
+      description: 'With --rollback: remove without asking',
+      default: false,
+    },
   },
-  async run({ args }) {
+  async run({ args, rawArgs }) {
+    if (args.rollback) {
+      const since = rawArgs.some((a) => a === '--since' || a.startsWith('--since='))
+      const conflicts = [
+        ...(args['dry-run'] ? ['--dry-run'] : []),
+        ...(since ? ['--since'] : []),
+        ...(args.fresh ? ['--fresh'] : []),
+      ]
+      if (conflicts.length > 0) {
+        console.error(`--rollback cannot be combined with ${conflicts.join(', ')}`)
+        process.exit(1)
+      }
+    }
+
     const { config } = await loadProject()
     const projectRoot = process.cwd()
     const statePath = join(projectRoot, '.nymbal-migration.json')
     const isTTY = process.stdin.isTTY ?? false
+
+    if (args.rollback) {
+      intro(p.bold('Nymbal Import rollback'))
+      await runImportRollback({ config, statePath, yes: args.yes, isTTY, onProgress: printProgress })
+      return
+    }
 
     intro(p.bold('Nymbal Import'))
 
@@ -156,6 +194,15 @@ export const importCommand = defineCommand({
         onProgress: printProgress,
       })
       return
+    }
+
+    // A state file that cannot be read holds what earlier runs created: stop before the store is opened.
+    try {
+      await loadState(statePath)
+    } catch (err) {
+      if (!(err instanceof ImportStateError)) throw err
+      console.error(err.message)
+      process.exit(1)
     }
 
     // ── Bootstrap app ─────────────────────────────────────────────────────────

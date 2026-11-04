@@ -1,5 +1,6 @@
 import {
   EVT_ORDER_CANCELLED,
+  EVT_ORDER_DELETED,
   EVT_ORDER_DELIVERED,
   EVT_ORDER_PAID,
   EVT_ORDER_PARTIALLY_REFUNDED,
@@ -14,11 +15,12 @@ import {
   type EventBusAdapter,
   type EventHandler,
   type Logger,
+  type OrderDeletedV1Payload,
   type OrderPlacedV1Payload,
 } from '@nymbalhq/types'
 import type { OrderRepository } from '../../repositories/order.js'
 import type { OrderHistoryRepository } from '../../repositories/order-history.js'
-import { orderWrites } from '../../read-models/builders.js'
+import { orderDocumentKeys, orderWrites } from '../../read-models/builders.js'
 import { settle } from '../../read-models/settle.js'
 import { loadOrderDoc } from '../../read-models/sources.js'
 import { subscribeDerived, type DerivedHandler } from '../derived.js'
@@ -49,6 +51,16 @@ export function orderProjection(deps: OrderProjectionDeps): DerivedHandler[] {
 
   const onPlaced: EventHandler<OrderPlacedV1Payload> = (event) => reproject(event.payload.order.id)
 
+  // A reprojection of a missing order writes nothing, so a removed order's documents are deleted by their keys.
+  const onDeleted: EventHandler<OrderDeletedV1Payload> = async (event) => {
+    const { orderId } = event.payload
+    await settle(documentStore, `order ${orderId}`, async () => ({
+      puts: [],
+      deletes: async () => orderDocumentKeys(event.payload),
+    }))
+    logger.debug({ orderId }, 'order documents removed')
+  }
+
   const onStatusChange: EventHandler<{ orderId: string }> = (event) =>
     reproject(event.payload.orderId)
 
@@ -57,6 +69,11 @@ export function orderProjection(deps: OrderProjectionDeps): DerivedHandler[] {
       name: 'order-projection-placed',
       types: [EVT_ORDER_PLACED],
       handle: onPlaced as EventHandler,
+    },
+    {
+      name: 'order-projection-deleted',
+      types: [EVT_ORDER_DELETED],
+      handle: onDeleted as EventHandler,
     },
     {
       name: 'order-projection-status',

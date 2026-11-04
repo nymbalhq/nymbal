@@ -116,6 +116,13 @@ export interface OrderStatusChangedV1Payload {
 export interface OrderConfirmationResendRequestedV1Payload {
   orderId: string
 }
+/** An imported order taken back out. It carries what the order's documents are keyed by, as its row is gone. */
+export interface OrderDeletedV1Payload {
+  orderId: string
+  orderNumber: string
+  customerId: string | null
+  createdAt: string
+}
 
 export interface InventoryChangedV1Payload {
   variantId: string

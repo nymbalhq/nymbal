@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, notInArray, or, sql } from 'drizzle-orm'
 import type { Address, CaptureMethod, Order, OrderLineItem, OrderStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -130,6 +130,10 @@ export interface OrderRepository extends StoreRepository {
   recordCapture(tx: Tx, id: string, capture: OrderCapture): Promise<void>
   setRefunded(tx: Tx, id: string, refundedMinor: number, updatedAt: Date): Promise<void>
   setNotes(tx: Tx, id: string, notes: string, updatedAt: Date): Promise<void>
+  /** Deletes the order's row alone: the rows that reference it go first. */
+  delete(tx: Tx, id: string): Promise<void>
+  /** Ids of the orders created at or after `since`. */
+  idsCreatedSince(tx: ReadTx, since: Date): Promise<string[]>
 }
 
 const HOLDING_PAGE = 50
@@ -538,6 +542,27 @@ export function createOrderRepository(store: CommandStore): OrderRepository {
         .update(postgresSchema.orders)
         .set({ notes, updatedAt })
         .where(eq(postgresSchema.orders.id, id))
+    },
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.orders).where(eq(sqliteSchema.orders.id, id)).run()
+        return
+      }
+      await postgresDb(tx).delete(postgresSchema.orders).where(eq(postgresSchema.orders.id, id))
+    },
+    async idsCreatedSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.orders
+        return sqliteDb(tx)
+          .select({ id: t.id })
+          .from(t)
+          .where(gte(t.createdAt, since.toISOString()))
+          .all()
+          .map((r) => r.id)
+      }
+      const t = postgresSchema.orders
+      const rows = await postgresDb(tx).select({ id: t.id }).from(t).where(gte(t.createdAt, since))
+      return rows.map((r) => r.id)
     },
   }
 }

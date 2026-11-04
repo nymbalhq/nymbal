@@ -1,4 +1,4 @@
-import { and, desc, eq, lt, or, sql, type SQL } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { Review, ReviewModerationStatus } from '@nymbalhq/types'
 import {
   postgresDb,
@@ -65,6 +65,9 @@ export interface ReviewRepository extends StoreRepository {
   ): Promise<Review[]>
   listByStatus(tx: ReadTx, status: ReviewModerationStatus, limit?: number): Promise<Review[]>
   insert(tx: Tx, r: ReviewInsert): Promise<void>
+  delete(tx: Tx, id: string): Promise<void>
+  /** Ids of the reviews submitted at or after `since`. */
+  idsSubmittedSince(tx: ReadTx, since: Date): Promise<string[]>
   setModerationStatus(
     tx: Tx,
     id: string,
@@ -208,6 +211,27 @@ export function createReviewRepository(store: CommandStore): ReviewRepository {
           moderatedAt: null,
           moderatedBy: null,
         })
+    },
+    async delete(tx, id) {
+      if (tx.kind === 'sqlite') {
+        sqliteDb(tx).delete(sqliteSchema.reviews).where(eq(sqliteSchema.reviews.id, id)).run()
+        return
+      }
+      await postgresDb(tx).delete(postgresSchema.reviews).where(eq(postgresSchema.reviews.id, id))
+    },
+    async idsSubmittedSince(tx, since) {
+      if (tx.kind === 'sqlite') {
+        const t = sqliteSchema.reviews
+        return sqliteDb(tx)
+          .select({ id: t.id })
+          .from(t)
+          .where(gte(t.submittedAt, since.toISOString()))
+          .all()
+          .map((r) => r.id)
+      }
+      const t = postgresSchema.reviews
+      const rows = await postgresDb(tx).select({ id: t.id }).from(t).where(gte(t.submittedAt, since))
+      return rows.map((r) => r.id)
     },
     async setModerationStatus(tx, id, status, moderatedBy, moderatedAt) {
       if (tx.kind === 'sqlite') {
