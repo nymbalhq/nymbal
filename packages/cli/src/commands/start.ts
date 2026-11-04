@@ -367,7 +367,11 @@ export const startCommand = defineCommand({
       throw new Error('nymbal start needs the fastify http adapter')
     }
     const internalPort = await loopbackPort()
-    const forward = forwardToStorefront(http.adapter, { port: internalPort, publicUrl })
+    const forward = forwardToStorefront(http.adapter, {
+      port: internalPort,
+      publicUrl,
+      headers: config.security.headers,
+    })
 
     const storefront = spawn(process.execPath, launch(internalPort), {
       cwd: projectRoot,

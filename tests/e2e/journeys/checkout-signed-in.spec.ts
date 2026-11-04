@@ -10,14 +10,14 @@ import {
 } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
-import { lapseStoredToken } from '../support/lapsed-token'
+import { lapseNextBearer } from '../support/lapsed-token'
 import { signIn } from '../support/sign-in'
 
 // AC-9 on both templates (the astro and nextjs projects run this file): a signed-in shopper reaches Place Order with an
-// access token the API no longer accepts, kept in localStorage as a lapsed one is across page loads. With the session's
-// refresh cookie still there, the order is theirs: listed in their account, its page opened with no key. With the
-// refresh cookie gone too, the session has ended: the page asks them to sign in again, places no order (a guest order
-// would be missing from their account), and keeps the cart.
+// access token the API no longer accepts: the Place Order request goes with the page's token lapsed, and the API answers
+// it 401 itself. With the session's refresh cookie still there, the order is theirs: listed in their account, its page
+// opened with no key. With the refresh cookie gone too, the session has ended: the page asks them to sign in again,
+// places no order (a guest order would be missing from their account), and keeps the cart.
 
 const PASSWORD = 'TestPassword123!'
 const REFRESH_COOKIE = 'nymbal.refresh'
@@ -82,13 +82,14 @@ test.describe('A signed-in shopper whose access token lapsed at the payment step
     const refresh = (await page.context().cookies(API_URL)).find((c) => c.name === REFRESH_COOKIE)
     expect(refresh?.value.length ?? 0, 'the sign-in left a refresh cookie').toBeGreaterThan(0)
 
-    await lapseStoredToken(page)
+    const lapse = await lapseNextBearer(page, 'POST', '/api/checkout')
     await page.getByTestId('place-order').click()
     // A signed-in checkout lands on the account's order page, `/account/orders/<n>` (account-signed-in.spec.ts).
     const accountOrder = /^\/account\/orders\/([^/]+)\/?$/
     await page.waitForURL((url) => accountOrder.test(url.pathname), { timeout: 20_000 })
     const orderNumber = decodeURIComponent(accountOrder.exec(new URL(page.url()).pathname)![1]!)
 
+    expect(lapse.status(), 'the API’s answer to the lapsed token').toBe(401)
     expect(await accountOrders(request, email), 'the account’s orders').toEqual([orderNumber])
     expect(new URL(page.url()).searchParams.get('key'), 'the order page’s key').toBeNull()
     await expect(page.getByTestId('order-detail')).toContainText(orderNumber, {
@@ -108,7 +109,7 @@ test.describe('A signed-in shopper whose access token lapsed at the payment step
     const checkouts = countCheckouts(page)
 
     await page.context().clearCookies({ name: REFRESH_COOKIE })
-    await lapseStoredToken(page)
+    const lapse = await lapseNextBearer(page, 'POST', '/api/checkout')
     const placeOrder = page.getByTestId('place-order')
     await placeOrder.click()
 
@@ -121,6 +122,7 @@ test.describe('A signed-in shopper whose access token lapsed at the payment step
     await placeOrder.click({ force: true })
     await page.waitForLoadState('networkidle')
     expect(checkouts(), 'POST /api/checkout requests').toBe(1)
+    expect(lapse.status(), 'the API’s answer to the lapsed token').toBe(401)
     expect(new URL(page.url()).pathname.replace(/\/$/, '')).toBe('/checkout')
     expect(await ordersFor(request, token, email), 'orders for the shopper’s email').toEqual([])
     const cart = await page.request.get(`${API_URL}/api/cart`)

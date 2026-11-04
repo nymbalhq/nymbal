@@ -1,5 +1,6 @@
 import httpProxy from '@fastify/http-proxy'
 import type { HTTPMethods } from 'fastify'
+import { securitySchema, type NymbalConfig } from '@nymbalhq/config'
 import { SHOPPER_ATTESTATION_HEADER } from '@nymbalhq/types'
 import type { FastifyHttpAdapter } from './fastify-adapter.js'
 
@@ -8,6 +9,8 @@ export interface StorefrontForwardOptions {
   port: number
   /** The store's public origin: the storefront sees its host and scheme, whatever the client sent. */
   publicUrl: string
+  /** The security headers a page answer gets where the storefront set none; absent, the config's defaults. */
+  headers?: Pick<NymbalConfig['security']['headers'], 'hsts' | 'referrerPolicy' | 'xFrameOptions'>
 }
 
 export interface StorefrontForward {
@@ -17,6 +20,31 @@ export interface StorefrontForward {
   refuse(): void
   /** Resolves true once no forward is in flight, false when `timeoutMs` passes first. */
   drained(timeoutMs: number): Promise<boolean>
+}
+
+/**
+ * The page security headers, each sent only where the storefront's answer has none of its own. The policy is a floor
+ * a storefront's own replaces: it does not know the API origin or the payment scripts a page loads.
+ */
+function pageHeaders(
+  origin: URL,
+  {
+    hsts,
+    referrerPolicy,
+    xFrameOptions,
+  }: NonNullable<StorefrontForwardOptions['headers']> = securitySchema.parse({
+    adapter: 'middleware',
+  }).headers,
+): Record<string, string> {
+  return {
+    ...(hsts && origin.protocol === 'https:' && {
+      'strict-transport-security': 'max-age=31536000; includeSubDomains',
+    }),
+    'content-security-policy': "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': xFrameOptions === 'deny' ? 'DENY' : 'SAMEORIGIN',
+    'referrer-policy': referrerPolicy,
+  }
 }
 
 /** OPTIONS stays the API's: CORS answers a preflight on any path. */
@@ -34,6 +62,7 @@ export function forwardToStorefront(
 ): StorefrontForward {
   const origin = new URL(options.publicUrl)
   const proto = origin.protocol.slice(0, -1)
+  const filled = pageHeaders(origin, options.headers)
   let inFlight = 0
   let refusing = false
   const waiters = new Set<() => void>()
@@ -85,6 +114,7 @@ export function forwardToStorefront(
             [SHOPPER_ATTESTATION_HEADER]: adapter.attestShopper(req.ip),
           }
         },
+        rewriteHeaders: (headers) => ({ ...filled, ...headers }),
         // A forward is never retried: a page POST may not be idempotent, and a 503 is the storefront's answer.
         retryDelay: () => null,
         onError: (reply) => {

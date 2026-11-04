@@ -3,14 +3,14 @@ import type { APIRequestContext, Page } from '@playwright/test'
 import { adminToken, keyedOrderPath, ownProduct, shopperWithOrder } from '../support/checkout'
 import { API_URL, csrf } from '../support/csrf'
 import { expect, test } from '../support/fixtures'
-import { lapseStoredToken } from '../support/lapsed-token'
+import { lapseNextBearer } from '../support/lapsed-token'
 import { signIn } from '../support/sign-in'
 
 // A signed-in shopper who opens `/order/<n>` of their own order without a working key lands on it in their account,
 // on both templates (the astro and nextjs projects run this file). The order page's server cannot see the session (it
-// lives in the browser's storage), so the page restores it, then reads the order as its owner; only that read
-// answering sends the browser on, so an order of anyone else's stays the not-found state and the page says nothing
-// about whether it exists.
+// lives in the page's memory and the API's refresh cookie), so the page restores it, then reads the order as its owner;
+// only that read answering sends the browser on, so an order of anyone else's stays the not-found state and the page
+// says nothing about whether it exists.
 
 const PASSWORD = 'TestPassword123!'
 const REFRESH_COOKIE = 'nymbal.refresh'
@@ -114,7 +114,7 @@ test.describe('A signed-in shopper at /order/<n>', () => {
 
   // Kills: the owner's read sent with the lapsed bearer before the session is restored: the route reads it as a guest's
   // and answers 404, and the SDK never refreshes.
-  test('AC-8: the same shopper with their stored access token lapsed and the refresh cookie still valid, opening /order/<n>, lands on /account/orders/<n> showing n', async ({
+  test('AC-8: the same shopper whose access token has lapsed, with the refresh cookie still valid, opening /order/<n>, lands on /account/orders/<n> showing n', async ({
     page,
     request,
   }) => {
@@ -122,13 +122,16 @@ test.describe('A signed-in shopper at /order/<n>', () => {
     const { orderNumber } = await signedInOwner(page, request)
     const refresh = (await page.context().cookies(API_URL)).find((c) => c.name === REFRESH_COOKIE)
     expect(refresh?.value.length ?? 0, 'the sign-in left a refresh cookie').toBeGreaterThan(0)
-    await lapseStoredToken(page)
+    // The account page restores its own session after it loads; its profile read must not be the one lapsed.
+    await page.waitForLoadState('networkidle')
+    const lapse = await lapseNextBearer(page, 'GET', '/api/customers/me')
 
     await page.goto(bareOrderPath(orderNumber))
     await page.waitForURL((url) => url.pathname === accountOrderPath(orderNumber), {
       timeout: 15_000,
     })
     await expect(page.getByTestId('order-detail')).toContainText(orderNumber, { timeout: 15_000 })
+    expect(lapse.status(), 'the API’s answer to the lapsed token').toBe(401)
   })
 
   // Kills: a check that sends every signed-in visit to the account's order page without the owner's read answering, so

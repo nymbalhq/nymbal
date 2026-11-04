@@ -78,9 +78,9 @@ const SOURCES = {
 /**
  * `wc -l` at the base (d9b47e7), measured before the move; Next's raised once its own code grew: order links without
  * JavaScript, category listings and header links, the review form's capability check, the product rating's
- * pass-through and the description sanitising, the shopper attestation's pass-through.
+ * pass-through and the description sanitising, the shopper attestation's pass-through, the page policy.
  */
-const BASE_LINES = { astro: 4395, nextjs: 3940 } as const
+const BASE_LINES = { astro: 4395, nextjs: 3961 } as const
 
 /** Every file git tracks or would add under `dir`, relative to the repo root. */
 function filesUnder(dir: string): string[] {

@@ -39,6 +39,10 @@
       "types": "./dist/hydrate-support.d.ts",
       "import": "./dist/hydrate-support.js"
     },
+    "./payment-sources": {
+      "types": "./dist/payment-sources.d.ts",
+      "import": "./dist/payment-sources.js"
+    },
     "./ssr": {
       "types": "./dist/ssr/index.d.ts",
       "import": "./dist/ssr/index.js"

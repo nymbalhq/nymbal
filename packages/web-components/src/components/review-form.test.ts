@@ -75,7 +75,7 @@ const text = fc.stringMatching(/^[A-Z][a-z]{2,12}( [a-z]{2,8}){0,3}$/)
 
 interface AuthStore {
   setState(partial: Record<string, unknown>): void
-  loadProfile: () => Promise<void>
+  restore: () => Promise<void>
 }
 
 const authOf = (client: Record<string, unknown>): AuthStore => client['auth'] as AuthStore
@@ -177,8 +177,8 @@ describe('AC-5: the review form submits once per click', () => {
   })
 })
 
-// AC-11: the form follows the auth store. While the shopper is not known to be signed out (a profile load in flight)
-// it is the form, as the server rendered it; once the profile load settles signed out it is only a sign-in link back
+// AC-11: the form follows the auth store. While the shopper is not known to be signed out (a session restore in flight)
+// it is the form, as the server rendered it; once the restore settles signed out it is only a sign-in link back
 // to this page; signed in it is the form. A refusal shows the store's own words when they are about the review or the
 // session, and an ended session turns the form into the sign-in link; anything else shows the generic text.
 
@@ -187,7 +187,7 @@ const GENERIC = 'Something went wrong. Please try again.'
 
 type Auth = 'loading' | 'signed-out' | 'signed-in'
 
-/** A client whose profile load is held (`loading`), settles signed out, or finds the customer signed in already. */
+/** A client whose session restore is held (`loading`), settles signed out, or finds the customer signed in already. */
 function clientIn(auth: Auth): { client: Record<string, unknown>; release: () => void; loads: () => number } {
   const client = setupMockClient() as unknown as Record<string, unknown>
   const store = authOf(client)
@@ -195,7 +195,7 @@ function clientIn(auth: Auth): { client: Record<string, unknown>; release: () =>
   let loads = 0
   if (auth === 'signed-in') signIn(client)
   if (auth === 'loading') store.setState({ loading: true })
-  store.loadProfile = async () => {
+  store.restore = async () => {
     loads += 1
     if (auth === 'loading') await held.promise
     store.setState({ loading: false })
@@ -249,7 +249,7 @@ async function refusedWith(error: Error): Promise<HTMLElement> {
 
 describe('AC-11: the review form follows the shopper’s session', () => {
   // Kills: no prompt (a guest gets a form whose every submit fails 401), or a prompt shown while auth is unknown.
-  it('AC-11: the parts it renders follow auth: a profile load in flight renders the five form parts, the load settling signed out leaves only sign-in, a signed-in shopper gets the five form parts', async () => {
+  it('AC-11: the parts it renders follow auth: a session restore in flight renders the five form parts, the restore settling signed out leaves only sign-in, a signed-in shopper gets the five form parts', async () => {
     const shown: Record<Auth, string[]> = { loading: [], 'signed-out': [], 'signed-in': [] }
     for (const auth of ['loading', 'signed-out', 'signed-in'] as const) {
       document.body.innerHTML = ''
@@ -264,7 +264,7 @@ describe('AC-11: the review form follows the shopper’s session', () => {
     })
   })
 
-  it('AC-11: a load held while the element renders shows the form; once it settles signed out the form is gone and the sign-in link shows, and the profile was loaded once', async () => {
+  it('AC-11: a restore held while the element renders shows the form; once it settles signed out the form is gone and the sign-in link shows, and the session was restored once', async () => {
     const { release, loads } = clientIn('loading')
     const el = await mounted()
     const before = renderedParts(el)

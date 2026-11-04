@@ -33,7 +33,7 @@ export interface ScriptReference {
 }
 
 /** The reference files (from the repository root) that hold a page to its bytes at a commit. */
-export const SCRIPT_REFERENCES = ['tests/perf/fixtures/astro-home-cfc530f.json']
+export const SCRIPT_REFERENCES = ['tests/perf/fixtures/astro-home-64db4b0.json']
 
 /** The failure a page above its reference has. */
 export const referenceFailure = (commit: string): string => `scriptBytes (reference ${commit})`

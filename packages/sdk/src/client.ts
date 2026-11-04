@@ -1,6 +1,7 @@
 import type { CommerceAdapter } from './adapter/commerce-adapter.js'
 import { FetchClient } from './adapter/fetch-client.js'
 import { createNymbalApiAdapter } from './adapter/nymbal-api-adapter.js'
+import { adoptLegacyToken, hasSessionHint, renewSession } from './auth/session.js'
 import { createTokenManager, type TokenManager } from './auth/token-manager.js'
 import type { CartStore } from './store/cart-store.js'
 import type { ProductStore } from './store/product-store.js'
@@ -90,6 +91,8 @@ export interface NamespaceContext {
   adapter: CommerceAdapter
   tokenManager: TokenManager
   client: NymbalClient
+  /** The client's one session refresh, holding its other requests until it settles; it never throws. */
+  restoreSession: () => Promise<void>
 }
 
 type NamespaceFactory<K extends StoreNamespace> = (context: NamespaceContext) => NymbalClient[K]
@@ -134,6 +137,21 @@ function isStore(value: unknown): value is ObservedStore {
   )
 }
 
+// On a symbol, as STORE_BUILT: the session's refresh is the client's, so a page starts it without the auth store.
+const RESUME_SESSION = Symbol.for('nymbal.client.resumeSession')
+
+type ResumeSessionHook = () => Promise<void>
+
+/**
+ * `auth.restore()`'s refresh without the auth store, for a page that reads no profile: with the session hint and no
+ * token held, the one refresh from the refresh cookie, which every other request the client sends meanwhile waits for.
+ * A guest's sends nothing. An `auth.restore()` called while it is in flight shares it. Never throws.
+ */
+export function resumeSession(client: NymbalClient): Promise<void> {
+  const hook = (client as unknown as Record<symbol, ResumeSessionHook | undefined>)[RESUME_SESSION]
+  return typeof hook === 'function' ? hook() : Promise.resolve()
+}
+
 /**
  * Calls `listener` with each store namespace the client has built, and with each it builds later; returns the
  * unsubscribe. A client not made by `createNymbalClient` has its stores already: each is reported once, now.
@@ -148,30 +166,24 @@ export function onStoreBuilt(client: NymbalClient, listener: StoreListener): () 
 }
 
 export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
+  if (options.tokenStorage !== 'localStorage') adoptLegacyToken()
   const tokenManager = createTokenManager({
     ...(options.tokenStorage !== undefined && { storage: options.tokenStorage }),
   })
 
   let adapter: CommerceAdapter
+  let fetchClient: FetchClient | undefined
+  const renew = () => renewSession(adapter, tokenManager)
 
   if (options.adapter) {
     adapter = options.adapter
   } else {
-    const fetchClient = new FetchClient({
+    fetchClient = new FetchClient({
       baseUrl: options.baseUrl,
       ...(options.credentials !== undefined && { credentials: options.credentials }),
       getAccessToken: () => tokenManager.getAccessToken(),
       ...(options.getCartToken !== undefined && { getCartToken: options.getCartToken }),
-      onUnauthorized: async () => {
-        try {
-          const result = await adapter.customers.refresh()
-          tokenManager.setTokens(result.accessToken, result.expiresIn)
-        } catch (err) {
-          // Token refresh failure is expected when the user session has expired.
-          console.warn('[NymbalClient] token refresh on unauthorized failed', err)
-          tokenManager.clear()
-        }
-      },
+      onUnauthorized: renew,
     })
     adapter = createNymbalApiAdapter(fetchClient)
   }
@@ -227,7 +239,7 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
     },
   }
 
-  tokenManager.scheduleRefresh(() => adapter.customers.refresh())
+  tokenManager.scheduleRefresh(() => fetchClient?.refreshSession() ?? renew())
 
   const built: { [K in StoreNamespace]?: ClientStore } = {}
   const listeners = new Set<StoreListener>()
@@ -246,12 +258,18 @@ export function createNymbalClient(options: NymbalClientOptions): NymbalClient {
       listeners.delete(listener)
     }
   }
-  const client = Object.defineProperty(
+  const resume: ResumeSessionHook = () =>
+    tokenManager.getAccessToken() || !hasSessionHint() ? Promise.resolve() : context.restoreSession()
+  const client = Object.defineProperties(
     { capabilities, recentlyViewed, customer, orders, adapter, destroy },
-    STORE_BUILT,
-    { value: storeBuilt },
+    { [STORE_BUILT]: { value: storeBuilt }, [RESUME_SESSION]: { value: resume } },
   ) as NymbalClient
-  const context: NamespaceContext = { adapter, tokenManager, client }
+  const context: NamespaceContext = {
+    adapter,
+    tokenManager,
+    client,
+    restoreSession: () => fetchClient?.restoreSession() ?? renew(),
+  }
 
   function build(name: StoreNamespace): ClientStore {
     // Building one now would leave a live store on a client whose destroy() has run.

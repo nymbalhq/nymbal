@@ -11,8 +11,8 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  // A stored token is only known to be valid once its profile has loaded; redirecting before that would sign a
-  // reloading shopper out.
+  // The shopper is only known to be signed out once the page load's session restore has settled; redirecting before
+  // that would sign a reloading shopper out.
   const [restored, setRestored] = useState(false)
 
   const isPublicAuthPath = PUBLIC_AUTH_PATHS.includes(pathname)

@@ -96,7 +96,7 @@ export class NymbalReviewForm extends NymbalFormElement {
 
   declare productId: string | undefined
 
-  /** The profile load this element asked for: the shopper is known to be signed out only once it has settled. */
+  /** The session restore this element asked for: the shopper is known to be signed out only once it has settled. */
   private profile: 'unasked' | 'loading' | 'loaded' = 'unasked'
   /** The store refused a submission for want of a session. */
   private sessionEnded = false
@@ -108,7 +108,7 @@ export class NymbalReviewForm extends NymbalFormElement {
   protected override clientConnected(): void {
     if (this.profile !== 'unasked' || this.client.auth.getState().isAuthenticated) return
     this.profile = 'loading'
-    void this.client.auth.loadProfile().then(() => {
+    void this.client.auth.restore().then(() => {
       this.profile = 'loaded'
       this.requestUpdate()
     })

@@ -161,7 +161,7 @@ submitOnce(linkForm, async () => {
  * nothing about whether it exists. Replacing the entry keeps Back from returning here.
  */
 async function sendOwnerToAccount(orderNumber: string): Promise<void> {
-  await client.auth.loadProfile()
+  await client.auth.restore()
   if (!client.auth.getState().isAuthenticated) return
   try {
     await client.customer.orders.get(orderNumber)

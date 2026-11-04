@@ -1,8 +1,0 @@
-{
-  "commit": "cfc530f",
-  "template": "astro",
-  "page": "home",
-  "url": "/",
-  "scriptBytes": 27586,
-  "method": "Measured on 2026-11-04 by pnpm perf:budgets --bytes --template astro: the Astro template built for production (astro build) and served by astro preview against a seeded API; each script request Lighthouse's mobile load of / makes is fetched again, and scriptBytes is the sum of gzip(body) at zlib's default level. astro preview does not compress, so the wire size is the raw size. 3 B over 13a4e78 (27,583 B), with no script changed: built in one checkout with one API URL, 13a4e78 and cfc530f ship byte-identical scripts, and 13a6b2d measures 27,586 B in that checkout too. The build inlines the API URL, whose port follows the checkout's stack slot, into the client chunk, and that chunk's hash into every page script that imports it; gzip sizes those bytes differently per port, so 27,583 B was measured from another slot."
-}
