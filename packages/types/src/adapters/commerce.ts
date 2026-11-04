@@ -9,6 +9,7 @@ import type {
 } from '../domain/payment.js'
 import type { CustomerProfile } from '../domain/customer.js'
 import type { Review, ReviewModerationStatus, AggregateRating } from '../domain/review.js'
+import type { JsonSchemaObject } from './http.js'
 
 /** A webhook request's headers, names lower-cased. */
 export type WebhookHeaders = Record<string, string | string[] | undefined>
@@ -272,30 +273,59 @@ export interface TaxAdapter extends CommerceAdapter {
 
 // --- AI --------------------------------------------------------------------
 
-/** One turn of a conversation. The first turn is the user's. */
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
+/** A tool the model may call. Its name matches `^[A-Za-z0-9_-]{1,64}$` and is unique among the tools of one request. */
+export interface ChatTool {
+  name: string
+  description: string
+  inputSchema: JsonSchemaObject
 }
+
+/** A call the model asked for, its arguments a JSON object. */
+export interface ChatToolCall {
+  id: string
+  name: string
+  args: Record<string, unknown>
+}
+
+/**
+ * One turn of a conversation. The first turn is the user's. An assistant turn's `content` may be empty only when it
+ * has calls; each call is answered by one `tool` turn before the next user or assistant turn.
+ */
+export type ChatMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: readonly ChatToolCall[] }
+  | { role: 'tool'; toolCallId: string; content: string; isError?: boolean }
 
 export interface ChatOptions {
   /** Instructions for the whole conversation, sent in the provider's own system field. */
   system?: string
   /** The most tokens the answer may take; 1024 when omitted. */
   maxTokens?: number
+  tools?: readonly ChatTool[]
+  /** Aborting it closes the request and rejects `adapter.cancelled`. */
+  signal?: AbortSignal
 }
 
-/** Why the answer ended: complete, cut at `maxTokens`, or anything else the provider reported. */
-export type ChatStopReason = 'end' | 'max_tokens' | 'other'
+/** Why the answer ended: complete, cut at `maxTokens`, waiting on its tool calls, or anything else reported. */
+export type ChatStopReason = 'end' | 'max_tokens' | 'tool_use' | 'other'
 
 export interface ChatResult {
+  /** '' when the answer is calls only. */
   text: string
   stopReason: ChatStopReason
   /** 0 where the provider reports none. */
   usage: { inputTokens: number; outputTokens: number }
   /** The model as the provider reports it. */
   model: string
+  /** The calls the model asked for, in its order; [] when none. */
+  toolCalls: ChatToolCall[]
 }
+
+/** What `chatStream` yields: text as it arrives, each call once its arguments are complete, and one `done` last. */
+export type ChatStreamEvent =
+  | { type: 'text'; delta: string }
+  | { type: 'tool_call'; call: ChatToolCall }
+  | { type: 'done'; result: ChatResult }
 
 export interface AiAdapter extends CommerceAdapter {
   readonly kind: 'ai'
@@ -307,6 +337,12 @@ export interface AiAdapter extends CommerceAdapter {
    * context is `{ provider, status? }` and which never carries the key.
    */
   chat(messages: readonly ChatMessage[], opts?: ChatOptions): Promise<ChatResult>
+  /**
+   * `chat` as it is generated: the text deltas concatenate to the `done` result's text and the `tool_call` events are
+   * its calls in order. A stream broken after it started rejects `adapter.unavailable`; the whole stream is bounded as
+   * one `chat`.
+   */
+  chatStream?(messages: readonly ChatMessage[], opts?: ChatOptions): AsyncIterable<ChatStreamEvent>
 }
 
 /** The adapter interface each commerce slot takes: what a project injects for a slot whose provider is `custom`. */

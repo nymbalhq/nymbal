@@ -18,6 +18,7 @@ export { BOUND_MS, type Build, type ContractOptions } from './common.js'
 export { CONTRACT_KINDS } from './kinds.js'
 export {
   runAiContract,
+  type AiCapability,
   type AiContractOptions,
   type AiFailingBuild,
   type AiFailureMode,

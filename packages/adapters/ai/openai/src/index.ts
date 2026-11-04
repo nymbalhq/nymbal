@@ -24,8 +24,9 @@ export const settings: AdapterSetting[] = [
 ]
 
 /**
- * The kernel's entry: `ai: { provider: 'openai', config: { model, apiKey?, baseUrl?, timeoutMs? } }`, the key falling
- * back to OPENAI_API_KEY. A `baseUrl` reaches any OpenAI-compatible server (a gateway, Ollama, vLLM).
+ * The kernel's entry: `ai: { provider: 'openai', config: { model, apiKey?, baseUrl?, tokenField?, timeoutMs? } }`, the
+ * key falling back to OPENAI_API_KEY. A `baseUrl` reaches any OpenAI-compatible server (a gateway, Ollama, vLLM);
+ * `tokenField` names the length field for one that takes the other.
  */
 export function createAdapter(ctx: AdapterContext): AiAdapter {
   if (ctx.slot !== 'ai') {
@@ -43,11 +44,23 @@ export function createAdapter(ctx: AdapterContext): AiAdapter {
       { context: { slot: ctx.slot } },
     )
   }
+  const tokenField = ctx.config['tokenField']
+  if (
+    tokenField !== undefined &&
+    tokenField !== 'max_tokens' &&
+    tokenField !== 'max_completion_tokens'
+  ) {
+    throw new ConfigError(
+      "commerce.ai.config.tokenField is neither 'max_tokens' nor 'max_completion_tokens'",
+      { context: { slot: ctx.slot } },
+    )
+  }
   return createOpenAiAdapter({
     apiKey:
       typeof apiKey === 'string' && apiKey !== '' ? apiKey : (ctx.env['OPENAI_API_KEY'] ?? ''),
     model,
     ...(typeof baseUrl === 'string' && baseUrl !== '' && { baseUrl }),
+    ...(tokenField !== undefined && { tokenField }),
     timeoutMs: timeoutOf(ctx.config['timeoutMs']),
     logger: ctx.logger,
   })
