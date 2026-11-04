@@ -26,6 +26,23 @@ export function buildReport(state: ImportState, startMs: number): ImportReport {
   }
 }
 
+/** One heading per phase, in the order each first appears, with its count, then a line per item in its order. */
+function byPhase(items: Array<{ phase: string; id?: string; message: string }>): string[] {
+  const groups = new Map<string, typeof items>()
+  for (const item of items) {
+    const group = groups.get(item.phase)
+    if (group === undefined) groups.set(item.phase, [item])
+    else group.push(item)
+  }
+  const lines: string[] = []
+  for (const [phase, group] of groups) {
+    lines.push(`### ${phase.charAt(0).toUpperCase()}${phase.slice(1)} (${group.length})`, '')
+    for (const item of group) lines.push(`- ${item.id ? `**${item.id}**: ` : ''}${item.message}`)
+    lines.push('')
+  }
+  return lines
+}
+
 export function formatReport(report: ImportReport, storeName: string): string {
   const mins = Math.round(report.durationMs / 60000)
   const secs = Math.round((report.durationMs % 60000) / 1000)
@@ -73,18 +90,12 @@ export function formatReport(report: ImportReport, storeName: string): string {
 
   if (report.errors.length > 0) {
     lines.push('## Errors Requiring Review', '')
-    for (const e of report.errors) {
-      lines.push(`- **${e.phase}**${e.id ? ` (${e.id})` : ''}: ${e.error}`)
-    }
-    lines.push('')
+    lines.push(...byPhase(report.errors.map((e) => ({ ...e, message: e.error }))))
   }
 
   if (report.warnings.length > 0) {
     lines.push('## Review before launch', '')
-    for (const w of report.warnings) {
-      lines.push(`- **${w.phase}**${w.id ? ` (${w.id})` : ''}: ${w.message}`)
-    }
-    lines.push('')
+    lines.push(...byPhase(report.warnings))
   }
 
   lines.push(

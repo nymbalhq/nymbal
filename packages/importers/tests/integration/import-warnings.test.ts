@@ -104,13 +104,13 @@ async function oneShot(): Promise<ImportReport> {
   }
 }
 
-/** The lines under "## Review before launch", up to the next heading. */
+/** The item lines under "## Review before launch", up to the next heading of its level. */
 function reviewLines(markdown: string): string[] {
   const lines = markdown.split('\n')
   const start = lines.indexOf('## Review before launch')
   if (start < 0) return []
   const end = lines.findIndex((l, i) => i > start && l.startsWith('## '))
-  return lines.slice(start + 1, end < 0 ? lines.length : end).filter((l) => l.trim() !== '')
+  return lines.slice(start + 1, end < 0 ? lines.length : end).filter((l) => l.startsWith('- '))
 }
 
 describe('warnings in the report, the state file and the migration report', () => {

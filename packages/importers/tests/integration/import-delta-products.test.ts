@@ -373,7 +373,7 @@ describe('AC-8: images in a delta', () => {
     }
   }, 120_000)
 
-  it('AC-8: a product whose new image fails to download keeps its stored media, and the delta reports one products error naming it', async () => {
+  it('AC-8: a product whose new image fails to download keeps its stored media, and the delta reports one products error naming it, the image and why', async () => {
     const env = await openStoreApp()
     try {
       const a = imageSource()
@@ -392,6 +392,7 @@ describe('AC-8: images in a delta', () => {
 
       const added = report!.errors.slice(imported.errors.length)
       expect(added.map((e) => [e.phase, e.id])).toEqual([['products', '2']])
+      expect(added[0]!.error).toContain(`${images[1]!.src} (HTTP 404)`)
       expect((await productOf(env, 2)).media).toEqual(before.media)
     } finally {
       await env.close()

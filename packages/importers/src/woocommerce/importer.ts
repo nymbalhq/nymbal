@@ -193,8 +193,20 @@ export async function runWooCommerceImport(
     if (!state.finished.includes(entity)) state.finished.push(entity)
     await checkpoint()
   }
-  const journal = (entity: ImportEntity, id: string, wcId: number, warnings?: string[]) =>
-    appendJournal(opts.statePath, { entity, id, wcId, ...(warnings && { warnings }) })
+  const journal = (
+    entity: ImportEntity,
+    id: string,
+    wcId: number,
+    warnings?: string[],
+    mediaWarnings?: string[],
+  ) =>
+    appendJournal(opts.statePath, {
+      entity,
+      id,
+      wcId,
+      ...(warnings && { warnings }),
+      ...(mediaWarnings && { mediaWarnings }),
+    })
   const warn = warningAdder(state)
   const slugTaken = async (slug: string): Promise<boolean> => {
     try {
@@ -368,28 +380,35 @@ export async function runWooCommerceImport(
               ? String(wc.id)
               : refs.slugSuffix
 
-          const mediaItems = await downloadProductImages(
+          const images = await downloadProductImages(
             refs.imageSources,
             productSlug(wc, slugSuffix),
             media,
-            (err) => {
-              state.errors.push({ phase: 'media', id: String(wc.id), error: String(err) })
-              emit({ kind: 'error', phase: 'media', id: String(wc.id), message: String(err) })
-            },
             imagePolicy,
           )
+          // The store's own media storage refusing a put is an error; a source that did not serve is the merchant's
+          // to review, once the product exists.
+          for (const failure of images.failed.filter((f) => f.byStorage)) {
+            const error = `Image ${failure.src} could not be stored: ${failure.reason}`
+            state.errors.push({ phase: 'media', id: String(wc.id), error })
+            emit({ kind: 'error', phase: 'media', id: String(wc.id), message: error })
+          }
 
           try {
             const snap = await services.product.create(
-              mapProduct(wc, variations, categoryIds, mediaItems, slugSuffix, store),
+              mapProduct(wc, variations, categoryIds, images.stored, slugSuffix, store),
             )
             const warnings = productWarnings(wc, variations, store)
+            const mediaWarnings = images.failed
+              .filter((f) => !f.byStorage)
+              .map((f) => `Image ${f.src} was not imported (${f.reason}); the product was imported without it`)
             state.wcToNymbalProduct[wc.id] = snap.id
             state.importedIds.products.push(snap.id)
             state.delta?.created.products.push(snap.id)
             for (const message of warnings) warn({ phase: 'products', id: String(wc.id), message })
+            for (const message of mediaWarnings) warn({ phase: 'media', id: String(wc.id), message })
             state.eventsEmitted++
-            await journal('products', snap.id, wc.id, warnings)
+            await journal('products', snap.id, wc.id, warnings, mediaWarnings)
           } catch (err) {
             state.errors.push({ phase: 'products', id: String(wc.id), error: String(err) })
           }

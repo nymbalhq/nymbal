@@ -188,21 +188,12 @@ export async function applyProductChanges(
   let media: Array<{ url: string; altText: string }> | null = null
   let mediaError: string | null = null
   if (!sameImages(stored.media, images)) {
-    const failures: string[] = []
-    const downloaded = await downloadProductImages(
-      images,
-      stored.slug,
-      deps.media,
-      (err) => failures.push(String(err)),
-      deps.imagePolicy,
-    )
-    if (downloaded.length === images.length) {
-      media = downloaded
+    const downloaded = await downloadProductImages(images, stored.slug, deps.media, deps.imagePolicy)
+    if (downloaded.failed.length === 0) {
+      media = downloaded.stored
     } else {
-      mediaError = [
-        `${images.length - downloaded.length} of ${images.length} images could not be stored; the product keeps the images it had`,
-        ...failures,
-      ].join(': ')
+      const each = downloaded.failed.map((f) => `${f.src} (${f.reason})`).join('; ')
+      mediaError = `${downloaded.failed.length} of ${images.length} images could not be stored, so the product keeps the images it had: ${each}`
     }
   }
 

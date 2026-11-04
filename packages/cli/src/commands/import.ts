@@ -300,7 +300,9 @@ export const importCommand = defineCommand({
                 `  Changed orders not updated: ${report.changedNotUpdated.orders}`,
               ]
             : []),
-          ...(aiEnabled ? [`  AI enriched: ${report.enriched.enriched} products`] : []),
+          aiEnabled && app.adapters.ai !== null
+            ? `  AI enriched: ${report.enriched.enriched} products`
+            : `  AI enrichment: off (${aiEnabled ? 'the ai provider is none' : '--no-ai'})`,
           ...(report.errors.length > 0 || report.warnings.length > 0
             ? [p.yellow(`  ⚠ ${report.errors.length} errors, ${report.warnings.length} to review before launch — see report`)]
             : []),

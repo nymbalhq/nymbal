@@ -2,7 +2,12 @@ import { isIP } from 'node:net'
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MediaStorage } from '@nymbalhq/types'
-import { downloadImage, isPublicAddress } from '../../src/woocommerce/media.js'
+import {
+  downloadImage,
+  isPublicAddress,
+  type DownloadedMedia,
+  type ImageNotStored,
+} from '../../src/woocommerce/media.js'
 
 // What the importer may fetch for a product image: http(s) only, from a host whose every resolved address is public,
 // unless the host is the WooCommerce store's own (`allowHost`); a redirect is followed only to a URL that passes the
@@ -86,7 +91,16 @@ function recordingStorage() {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
+
+/** The URL a stored image was given, or undefined when it was not stored. */
+const urlOf = (result: DownloadedMedia | ImageNotStored): string | undefined =>
+  'url' in result ? result.url : undefined
+
+/** Why an image was not stored, or 'stored'. */
+const reasonOf = (result: DownloadedMedia | ImageNotStored): string =>
+  'reason' in result ? result.reason : 'stored'
 
 // ---- addresses ----------------------------------------------------------------------------------------------------
 
@@ -183,7 +197,9 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
       results.push(await downloadImage(src, 'alt', storage, 'products/tee', { lookup }))
     }
 
-    expect(results).toEqual(sources.map(() => null))
+    expect(results.map(reasonOf)).toEqual(
+      sources.map(() => 'refused: only http and https images are fetched'),
+    )
     expect(requested).toEqual([])
     expect(puts).toEqual([])
   })
@@ -200,7 +216,9 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
           lookup,
         })
 
-        expect(result, blocked).toBeNull()
+        expect(reasonOf(result), blocked).toBe(
+          `refused: ${host} resolves to ${blocked}, which is not a public address`,
+        )
         expect(requested, blocked).toEqual([])
       }),
       { numRuns: 150 },
@@ -223,7 +241,12 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
       results.push(await downloadImage(src, '', storage, 'products/tee', { lookup: lookupOf({}) }))
     }
 
-    expect(results).toEqual(sources.map(() => null))
+    expect(results.map(reasonOf)).toEqual(
+      sources.map(
+        (src) =>
+          `refused: ${new URL(src).hostname.replace(/^\[|\]$/g, '')} is not a public address`,
+      ),
+    )
     expect(requested).toEqual([])
     expect(puts).toEqual([])
   })
@@ -249,9 +272,11 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
     const keptLiteral = await downloadImage(literal, 'cap', storage, 'products/cap', literalPolicy)
 
     expect(requested.includes(metadata)).toBe(false)
-    expect(refused).toBeNull()
+    expect(reasonOf(refused)).toBe(
+      `refused after a redirect to ${metadata}: 169.254.169.254 is not a public address`,
+    )
     expect(requested.includes(normal(literal))).toBe(true)
-    expect(puts.map((p) => `/imported-media/${p.key}`)).toEqual([kept?.url, keptLiteral?.url])
+    expect(puts.map((p) => `/imported-media/${p.key}`)).toEqual([urlOf(kept), urlOf(keptLiteral)])
   })
 
   it('AC-14: a redirect is followed only to a URL passing the same check, at most three hops', async () => {
@@ -311,11 +336,13 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
       },
     )
 
-    expect(threeHops?.url).toBe(`/imported-media/${puts[0]?.key}`)
+    expect(urlOf(threeHops)).toBe(`/imported-media/${puts[0]?.key}`)
     expect(requested).toEqual([hop(0), hop(1), hop(2), hop(3)])
-    expect(fourHops).toBeNull()
+    expect(reasonOf(fourHops)).toBe('more than 3 redirects')
     expect(second.requested.includes('https://cdn0.shop.test/four.jpg')).toBe(false)
-    expect(toInternal).toBeNull()
+    expect(reasonOf(toInternal)).toBe(
+      `refused after a redirect to ${internal}: internal.shop.test resolves to 10.1.2.3, which is not a public address`,
+    )
     expect(third.requested.includes(internal)).toBe(false)
     expect(puts.length).toBe(putsAfterThree)
   })
@@ -341,10 +368,98 @@ describe('AC-14: downloadImage requests only what the policy allows', () => {
       const result = await downloadImage(`https://cdn.shop.test/${i}`, '', storage, 'products/t', {
         lookup,
       })
-      outcomes.push({ stored: result !== null && puts.length === before + 1 })
+      outcomes.push({ stored: 'url' in result && puts.length === before + 1 })
     }
 
     expect(outcomes).toEqual(cases.map((c) => ({ stored: c.stored })))
     expect(puts.map((p) => p.contentType)).toEqual(['image/png', 'image/webp'])
+  })
+})
+
+describe('AC-1: an image that is not stored says why', () => {
+  const lookup = lookupOf({ 'cdn.shop.test': [PUBLIC] })
+
+  it('AC-1: property: an answer with any status from 400 to 599 is not stored, and its reason is that status', async () => {
+    const { storage, puts } = recordingStorage()
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 400, max: 599 }), async (status) => {
+        web({
+          'https://cdn.shop.test/a.jpg': {
+            status,
+            headers: { 'content-type': 'image/jpeg' },
+            body: JPEG,
+          },
+        })
+        const result = await downloadImage(
+          'https://cdn.shop.test/a.jpg',
+          '',
+          storage,
+          'products/t',
+          { lookup },
+        )
+        expect(reasonOf(result)).toBe(`HTTP ${status}`)
+      }),
+      { numRuns: 60 },
+    )
+    expect(puts).toEqual([])
+  })
+
+  it('AC-1: a source that does not answer is given up at 15 s, not before, and its reason says so', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.stubGlobal('fetch', (_input: unknown, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+      })
+    })
+    const { storage, puts } = recordingStorage()
+    let settled: DownloadedMedia | ImageNotStored | undefined
+    void downloadImage('https://cdn.shop.test/slow.jpg', '', storage, 'products/t', {
+      lookup,
+    }).then((r) => (settled = r))
+
+    await vi.advanceTimersByTimeAsync(14_999)
+    const before = settled
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(before).toBeUndefined()
+    expect(reasonOf(settled!)).toBe('no answer within 15 s')
+    expect(puts).toEqual([])
+  })
+
+  it('AC-1: a refused connection, an unknown host, an unsupported type and a missing type each name what went wrong', async () => {
+    const refusedConnection = 'https://cdn.shop.test/down.jpg'
+    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+      const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (href === refusedConnection) {
+        throw new TypeError('fetch failed', {
+          cause: Object.assign(new Error(`connect ECONNREFUSED ${PUBLIC}:443`), {
+            code: 'ECONNREFUSED',
+          }),
+        })
+      }
+      const type = href.endsWith('.html') ? 'text/html; charset=utf-8' : undefined
+      return new Response(JPEG, {
+        status: 200,
+        headers: type === undefined ? {} : { 'content-type': type },
+      })
+    })
+    const { storage, puts } = recordingStorage()
+    const reasons: string[] = []
+    for (const src of [
+      refusedConnection,
+      'https://nowhere.shop.test/a.jpg',
+      'https://cdn.shop.test/page.html',
+      'https://cdn.shop.test/untyped.jpg',
+    ]) {
+      reasons.push(reasonOf(await downloadImage(src, '', storage, 'products/t', { lookup })))
+    }
+
+    expect(reasons).toEqual([
+      'could not be fetched (ECONNREFUSED)',
+      'could not be fetched (ENOTFOUND)',
+      'unsupported type text/html (JPEG, PNG, WebP and GIF are imported)',
+      'served with no content type',
+    ])
+    expect(puts).toEqual([])
   })
 })

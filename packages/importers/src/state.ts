@@ -56,6 +56,8 @@ export interface JournalEntry {
   wcId: number
   /** Warning messages about the record, each reported under its entity and WooCommerce id. */
   warnings?: string[]
+  /** Messages about the record's images that were not imported, each reported under `media` and its WooCommerce id. */
+  mediaWarnings?: string[]
 }
 
 /** A record a rollback removed. */
@@ -135,10 +137,15 @@ function journalLine(line: string): JournalEntry | JournalRemoval | null {
   if (!ENTITIES.includes(v['entity'] as ImportEntity)) return null
   if (v['op'] === 'removed') return v as unknown as JournalRemoval
   if (typeof v['wcId'] !== 'number') return null
-  const warnings = Array.isArray(v['warnings'])
-    ? v['warnings'].filter((w): w is string => typeof w === 'string')
-    : []
-  return { entity: v['entity'] as ImportEntity, id: v['id'], wcId: v['wcId'], warnings }
+  const strings = (field: unknown) =>
+    Array.isArray(field) ? field.filter((w): w is string => typeof w === 'string') : []
+  return {
+    entity: v['entity'] as ImportEntity,
+    id: v['id'],
+    wcId: v['wcId'],
+    warnings: strings(v['warnings']),
+    mediaWarnings: strings(v['mediaWarnings']),
+  }
 }
 
 /**
@@ -179,6 +186,9 @@ function foldJournal(state: ImportState, journal: string): void {
       state[MAP_OF[entry.entity]][entry.wcId] = entry.id
       for (const message of entry.warnings ?? []) {
         warn({ phase: entry.entity, id: String(entry.wcId), message })
+      }
+      for (const message of entry.mediaWarnings ?? []) {
+        warn({ phase: 'media', id: String(entry.wcId), message })
       }
     }
   }
@@ -236,6 +246,9 @@ export async function saveState(statePath: string, state: ImportState): Promise<
 export async function appendJournal(statePath: string, entry: JournalEntry): Promise<void> {
   const line: JournalEntry = { entity: entry.entity, id: entry.id, wcId: entry.wcId }
   if (entry.warnings !== undefined && entry.warnings.length > 0) line.warnings = entry.warnings
+  if (entry.mediaWarnings !== undefined && entry.mediaWarnings.length > 0) {
+    line.mediaWarnings = entry.mediaWarnings
+  }
   await appendFile(journalPathFor(statePath), `${JSON.stringify(line)}\n`, 'utf-8')
 }
 

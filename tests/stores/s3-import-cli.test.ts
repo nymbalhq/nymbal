@@ -23,7 +23,9 @@ const exec = promisify(execFile)
 const REPO = fileURLToPath(new URL('../../', import.meta.url))
 const CLI = join(REPO, 'packages/cli/bin/nymbal.mjs')
 const MIGRATIONS = join(REPO, 'packages/platform/migrations')
-const READY_WITHIN_MS = 30_000
+// Each step (migrate, import, the API's boot) takes about 2 s, and the whole file 6-7 s with six copies running at a
+// load average of 210-260 on 12 cores: the bound is for a slower machine to wait, not to fail.
+const STEP_WITHIN_MS = 90_000
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString('hex')
 
@@ -99,7 +101,7 @@ async function nymbal(dir: string, env: NodeJS.ProcessEnv, args: string[]) {
     const { stdout, stderr } = await exec(process.execPath, [CLI, ...args], {
       cwd: dir,
       env,
-      timeout: 90_000,
+      timeout: STEP_WITHIN_MS,
       maxBuffer: 16 * 1024 * 1024,
     })
     return { code: 0, output: stdout + stderr }
@@ -140,15 +142,18 @@ async function startApi(dir: string, env: NodeJS.ProcessEnv): Promise<string> {
   child.stdout?.on('data', (b: Buffer) => (out += b.toString()))
   child.stderr?.on('data', (b: Buffer) => (out += b.toString()))
   const base = `http://127.0.0.1:${port}`
-  const deadline = Date.now() + READY_WITHIN_MS
+  const started = Date.now()
+  const deadline = started + STEP_WITHIN_MS
   while (Date.now() < deadline && child.exitCode === null) {
-    const up = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) })
+    const up = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
       .then((r) => r.ok)
       .catch(() => false)
     if (up) return base
     await new Promise((r) => setTimeout(r, 200))
   }
-  throw new Error(`nymbal dev --api-only did not answer on :${port}. Output:\n${out.slice(-3000)}`)
+  throw new Error(
+    `nymbal dev --api-only did not answer on :${port} within ${Date.now() - started} ms (exit ${child.exitCode}). Output:\n${out.slice(-3000)}`,
+  )
 }
 
 interface ListedProduct {
@@ -195,13 +200,10 @@ function otherLoopback(endpoint: string): string {
   return u.origin
 }
 
-// Quarantined to the nightly project (vitest.config.ts): the built CLI against MinIO times out under a parallel
-// gate:full, red then green with no code change. Gated here, not by a project exclude: one on integration-stores
-// would replace the sentinels control run's --exclude list.
-describe.runIf(process.env['NYMBAL_NIGHTLY'])(
-  "AC-5: nymbal import into a store with media 's3' serves every image from the bucket",
-  () => {
-    it('AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served', async () => {
+describe("AC-5: nymbal import into a store with media 's3' serves every image from the bucket", () => {
+  it(
+    'AC-5: with the bucket, endpoint, public URL and credentials from the environment only, the import exits 0 and GET /api/products lists every image under the bucket URL, each serving exactly the bytes and content type its source served',
+    async () => {
       const dir = project({
         commandStore: 'sqlite',
         documentStore: { provider: 'in-memory' },
@@ -237,9 +239,13 @@ describe.runIf(process.env['NYMBAL_NIGHTLY'])(
         }
       }
       expect((await bucket.keys()).length).toBe(woo.images.size)
-    }, 180_000)
+    },
+    4 * STEP_WITHIN_MS,
+  )
 
-    it('AC-5: the same import with the default local-fs keeps /imported-media/... URLs, each a file under public/imported-media holding its source image’s bytes', async () => {
+  it(
+    'AC-5: the same import with the default local-fs keeps /imported-media/... URLs, each a file under public/imported-media holding its source image’s bytes',
+    async () => {
       const dir = project({
         commandStore: 'sqlite',
         documentStore: { provider: 'in-memory' },
@@ -262,6 +268,7 @@ describe.runIf(process.env['NYMBAL_NIGHTLY'])(
           expect(hex(file), url).toBe(hex(product.images[i]!.bytes))
         }
       }
-    }, 180_000)
-  },
-)
+    },
+    4 * STEP_WITHIN_MS,
+  )
+})

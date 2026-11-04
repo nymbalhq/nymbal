@@ -77,8 +77,6 @@ const quickstart = process.env['NYMBAL_CONTAINER']
 const NIGHTLY = [
   // CLI spawns time out under load.
   'packages/cli/src/commands/add.test.ts',
-  // The built CLI against MinIO times out under a parallel gate:full.
-  'tests/stores/s3-import-cli.test.ts',
 ]
 const nightly = process.env['NYMBAL_NIGHTLY']
   ? [
