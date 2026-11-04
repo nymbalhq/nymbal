@@ -14,7 +14,7 @@ import {
   type NymbalApp,
 } from '@nymbalhq/platform'
 import { runWooCommerceImport, type ImportEntity } from '@nymbalhq/importers'
-import type { MediaStorage } from '@nymbalhq/types'
+import type { EmailAdapter, MediaStorage } from '@nymbalhq/types'
 import { WC_URL } from './import-env.js'
 import { wooStoreFetch, type WooStore } from './woo-store.js'
 import {
@@ -55,7 +55,12 @@ export interface StoreApp {
   close(): Promise<void>
 }
 
-export async function openStoreApp(): Promise<StoreApp> {
+export interface StoreAppOptions {
+  /** The store's email adapter, as the `custom` email provider (a recording one, say); the console one otherwise. */
+  email?: EmailAdapter
+}
+
+export async function openStoreApp(opts: StoreAppOptions = {}): Promise<StoreApp> {
   const dir = mkdtempSync(join(tmpdir(), 'nymbal-rollback-'))
   const dbPath = join(dir, 'store.db')
   const config = nymbalConfigSchema.parse({
@@ -69,7 +74,10 @@ export async function openStoreApp(): Promise<StoreApp> {
     security: { adapter: 'middleware', botProtection: { mode: 'off' } },
     commerce: {
       payments: { provider: 'native' },
-      email: { provider: 'native', config: { transport: 'console' } },
+      email:
+        opts.email === undefined
+          ? { provider: 'native', config: { transport: 'console' } }
+          : { provider: 'custom' },
       reviews: { provider: 'native' },
       search: { provider: 'native' },
       analytics: { provider: 'native' },
@@ -94,6 +102,7 @@ export async function openStoreApp(): Promise<StoreApp> {
     logger,
     mediaRoot: join(dir, 'media'),
     relay: { retryDelayMs: 0 },
+    ...(opts.email !== undefined && { adapters: { email: opts.email } }),
   })
 
   const rows = <T>(sql: string, ...params: unknown[]): T[] => readRows<T>(dbPath, sql, ...params)

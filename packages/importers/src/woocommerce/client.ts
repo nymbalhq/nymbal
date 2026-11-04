@@ -103,16 +103,24 @@ export interface WcOrder {
     quantity: number
     price: number
     subtotal: string
+    subtotal_tax?: string
     total: string
+    total_tax?: string
     sku: string
   }>
-  shipping_lines: Array<{ method_title: string; total: string }>
+  shipping_lines: Array<{ method_title: string; total: string; total_tax?: string }>
+  fee_lines?: Array<{ id: number; name: string; total: string; total_tax: string }>
   tax_lines: Array<{ label: string; tax_total: string }>
+  /** Each refund's `total` is negative: `"-9.00"`. */
+  refunds?: Array<{ id: number; reason?: string; total: string }>
   discount_total: string
   shipping_total: string
   total_tax: string
   total: string
   customer_note: string
+  /** Typed so that nothing maps them: they are personal. */
+  customer_ip_address?: string
+  customer_user_agent?: string
   meta_data: Array<{ key: string; value: unknown }>
   payment_method: string
 }
@@ -132,6 +140,9 @@ export interface WooCommerceClientOptions {
   /** The clock each request is timed on (`requestStats`). */
   now?: () => number
 }
+
+/** Records per page of every list the import reads. */
+export const PAGE_SIZE = 100
 
 export class WooCommerceClient {
   private readonly base: string
@@ -188,7 +199,7 @@ export class WooCommerceClient {
     while (true) {
       const url = this.buildUrl(resource, {
         ...params,
-        per_page: '100',
+        per_page: String(PAGE_SIZE),
         page: String(page),
         orderby: 'id',
         order: 'asc',

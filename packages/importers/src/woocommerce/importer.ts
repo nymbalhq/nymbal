@@ -1,4 +1,4 @@
-import type { AiAdapter, MediaStorage } from '@nymbalhq/types'
+import type { AiAdapter, MediaStorage, Order, ProductSnapshot } from '@nymbalhq/types'
 import type {
   ServiceRegistry,
   Repositories,
@@ -9,9 +9,16 @@ import type {
   ImportState,
   ProgressCallback,
 } from '../types.js'
-import { appendJournal, compactState, freshState, loadState, saveState } from '../state.js'
+import {
+  appendJournal,
+  compactState,
+  ENTITIES,
+  freshState,
+  loadState,
+  saveState,
+} from '../state.js'
 import { buildReport } from '../report.js'
-import { WooCommerceClient, WooCommerceApiError } from './client.js'
+import { PAGE_SIZE, WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcProduct, WcVariation, WcCustomer, WcOrder, WcReview } from './client.js'
 import { mapCategory } from './mappers/category.js'
 import { mapProduct, productSlug } from './mappers/product.js'
@@ -57,6 +64,38 @@ async function pMap<T, U>(
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker))
   return results
+}
+
+/**
+ * One entity's progress: every source record this run passes counts, whatever became of it, from the records the pages
+ * before the cursor held. A source that lost records since an earlier run can hold fewer than that, so `done` never
+ * shows past the total.
+ */
+function progressOf(entity: ImportEntity, startPage: number, emit: ProgressCallback) {
+  let passed = PAGE_SIZE * (startPage - 1)
+  let total = 0
+  return {
+    page(pageTotal: number) {
+      total = pageTotal
+    },
+    pass(records: number) {
+      passed += records
+      emit({ kind: 'progress', entity, done: Math.min(passed, total), total })
+    },
+  }
+}
+
+/** Nymbal variant ids by the WooCommerce variation (or simple product) id each was made from. */
+function variantIdsOf(product: ProductSnapshot): Record<number, string> {
+  const woo = product.metadata['woocommerce'] as
+    | { variants?: Record<string, { id?: unknown }> }
+    | undefined
+  const out: Record<number, string> = {}
+  for (const variant of product.variants) {
+    const wcId = woo?.variants?.[variant.sku]?.id
+    if (typeof wcId === 'number') out[wcId] = variant.id
+  }
+  return out
 }
 
 export async function runWooCommerceImport(
@@ -115,9 +154,12 @@ export async function runWooCommerceImport(
     state.cursors = {}
     state.finished = []
   }
-  // A run on a finished pass with no `since` reads nothing, and records no pass.
-  const inPass = state.phase !== 'done'
   const since = state.delta?.since
+
+  const runs = (entity: ImportEntity) =>
+    opts.entities.includes(entity) && !state.finished.includes(entity)
+  // A run that walks no entity, a finished pass's selected ones all finished, reads nothing and records no pass.
+  const inPass = state.phase !== 'done' || opts.entities.some(runs)
 
   const checkpoint = async () => saveState(opts.statePath, state)
   // Saved at once: a run stopped in the next entity still holds this one as covered by the pass.
@@ -150,23 +192,25 @@ export async function runWooCommerceImport(
   await compactState(opts.statePath, state)
 
   // ── 2. Categories ────────────────────────────────────────────────────────────
-  if (opts.entities.includes('categories') && state.phase !== 'done') {
+  if (runs('categories')) {
     emit({ kind: 'phase', phase: 'categories' })
     state.phase = 'categories'
 
     const startPage = state.cursors['categories']?.page ?? 1
-    let done = state.importedIds.categories.length
-    let total = 0
+    const progress = progressOf('categories', startPage, emit)
 
     for await (const page of client.paginate<WcCategory>(
       '/products/categories',
       deltaParams('categories', since),
       startPage,
     )) {
-      total = page.total
+      progress.page(page.total)
 
       for (const wc of page.items) {
-        if (state.wcToNymbalCategory[wc.id]) continue
+        if (state.wcToNymbalCategory[wc.id]) {
+          progress.pass(1)
+          continue
+        }
         const { parentWcId } = categoryRefs(wc)
         const nymbalParentId = parentWcId ? state.wcToNymbalCategory[parentWcId] : undefined
         try {
@@ -178,24 +222,22 @@ export async function runWooCommerceImport(
         } catch (err) {
           state.errors.push({ phase: 'categories', id: String(wc.id), error: String(err) })
         }
-        done++
-        emit({ kind: 'progress', entity: 'categories', done, total })
+        progress.pass(1)
       }
 
-      state.cursors['categories'] = { page: state.cursors['categories']?.page ?? 1 }
+      state.cursors['categories'] = { page: (state.cursors['categories']?.page ?? 1) + 1 }
       await checkpoint()
     }
     await finish('categories')
   }
 
   // ── 3. Products ──────────────────────────────────────────────────────────────
-  if (opts.entities.includes('products') && state.phase !== 'done') {
+  if (runs('products')) {
     emit({ kind: 'phase', phase: 'products' })
     state.phase = 'products'
 
     const startPage = state.cursors['products']?.page ?? 1
-    let done = state.importedIds.products.length
-    let total = 0
+    const progress = progressOf('products', startPage, emit)
 
     const seenSlugs = new Set<string>()
 
@@ -204,7 +246,7 @@ export async function runWooCommerceImport(
       deltaParams('products', since),
       startPage,
     )) {
-      total = page.total
+      progress.page(page.total)
 
       await pMap(
         page.items,
@@ -299,8 +341,7 @@ export async function runWooCommerceImport(
         opts.concurrency,
       )
 
-      done += page.items.length
-      emit({ kind: 'progress', entity: 'products', done, total })
+      progress.pass(page.items.length)
       state.cursors['products'] = { page: (state.cursors['products']?.page ?? 1) + 1 }
       await checkpoint()
     }
@@ -308,20 +349,19 @@ export async function runWooCommerceImport(
   }
 
   // ── 4. Customers ─────────────────────────────────────────────────────────────
-  if (opts.entities.includes('customers') && state.phase !== 'done') {
+  if (runs('customers')) {
     emit({ kind: 'phase', phase: 'customers' })
     state.phase = 'customers'
 
     const startPage = state.cursors['customers']?.page ?? 1
-    let done = state.importedIds.customers.length
-    let total = 0
+    const progress = progressOf('customers', startPage, emit)
 
     for await (const page of client.paginate<WcCustomer>(
       '/customers',
       deltaParams('customers', since),
       startPage,
     )) {
-      total = page.total
+      progress.page(page.total)
 
       await pMap(
         page.items,
@@ -344,8 +384,7 @@ export async function runWooCommerceImport(
         opts.concurrency,
       )
 
-      done += page.items.length
-      emit({ kind: 'progress', entity: 'customers', done, total })
+      progress.pass(page.items.length)
       state.cursors['customers'] = { page: (state.cursors['customers']?.page ?? 1) + 1 }
       await checkpoint()
     }
@@ -353,20 +392,50 @@ export async function runWooCommerceImport(
   }
 
   // ── 5. Orders ────────────────────────────────────────────────────────────────
-  if (opts.entities.includes('orders') && state.phase !== 'done') {
+  if (runs('orders')) {
     emit({ kind: 'phase', phase: 'orders' })
     state.phase = 'orders'
 
     const startPage = state.cursors['orders']?.page ?? 1
-    let done = state.importedIds.orders.length
-    let total = 0
+    const progress = progressOf('orders', startPage, emit)
+
+    const variantCache = new Map<string, Promise<Record<number, string>>>()
+    const lineVariants = (productId: string) => {
+      let ids = variantCache.get(productId)
+      if (ids === undefined) {
+        // A product deleted in the store since it was imported has no variants to point at; its lines read 'unknown'.
+        ids = services.product.getById(productId).then(variantIdsOf, (err: unknown) => {
+          if ((err as { code?: unknown }).code === 'not_found') return {}
+          throw err
+        })
+        variantCache.set(productId, ids)
+      }
+      return ids
+    }
+
+    /**
+     * The id of the store's order with this number when it was written from this source order, by a run stopped before
+     * its journal line; otherwise the create's own error, or the clash with another order.
+     */
+    const takeBack = async (orderNumber: string, wcId: number, err: unknown): Promise<string> => {
+      let held: Order
+      try {
+        held = await services.order.getByOrderNumber(orderNumber)
+      } catch (lookup) {
+        if ((lookup as { code?: unknown }).code === 'not_found') throw err
+        throw lookup
+      }
+      const woo = held.metadata['woocommerce'] as { orderId?: unknown } | undefined
+      if (woo?.orderId === wcId) return held.id
+      throw new Error(`${orderNumber} is already in the store as another order`)
+    }
 
     for await (const page of client.paginate<WcOrder>(
       '/orders',
       deltaParams('orders', since),
       startPage,
     )) {
-      total = page.total
+      progress.page(page.total)
 
       await pMap(
         page.items,
@@ -386,13 +455,25 @@ export async function runWooCommerceImport(
             if (nid) productIdMap[productWcId] = nid
           }
           try {
-            const order = await services.order.importOrder(
-              mapOrder(wc, nymbalCustomerId, productIdMap, opts.currency),
-            )
-            state.wcToNymbalOrder[wc.id] = order.id
-            state.importedIds.orders.push(order.id)
-            state.eventsEmitted++
-            await journal('orders', order.id, wc.id)
+            const variantIds: Record<number, string> = {}
+            for (const nid of new Set(Object.values(productIdMap))) {
+              Object.assign(variantIds, await lineVariants(nid))
+            }
+            const input = mapOrder(wc, nymbalCustomerId, productIdMap, opts.currency, {
+              gdpr: opts.gdpr,
+              variantIds,
+            })
+            let id: string
+            try {
+              id = (await services.order.importOrder(input)).id
+              state.importedIds.orders.push(id)
+              state.eventsEmitted++
+            } catch (err) {
+              id = await takeBack(input.orderNumber, wc.id, err)
+              if (!state.importedIds.orders.includes(id)) state.importedIds.orders.push(id)
+            }
+            state.wcToNymbalOrder[wc.id] = id
+            await journal('orders', id, wc.id)
           } catch (err) {
             state.errors.push({ phase: 'orders', id: String(wc.id), error: String(err) })
           }
@@ -400,8 +481,7 @@ export async function runWooCommerceImport(
         opts.concurrency,
       )
 
-      done += page.items.length
-      emit({ kind: 'progress', entity: 'orders', done, total })
+      progress.pass(page.items.length)
       state.cursors['orders'] = { page: (state.cursors['orders']?.page ?? 1) + 1 }
       await checkpoint()
     }
@@ -409,25 +489,26 @@ export async function runWooCommerceImport(
   }
 
   // ── 6. Reviews ───────────────────────────────────────────────────────────────
-  if (opts.entities.includes('reviews') && state.phase !== 'done') {
+  if (runs('reviews')) {
     emit({ kind: 'phase', phase: 'reviews' })
     state.phase = 'reviews'
 
     const startPage = state.cursors['reviews']?.page ?? 1
-    let done = state.importedIds.reviews.length
-    let total = 0
+    const progress = progressOf('reviews', startPage, emit)
 
     for await (const page of client.paginate<WcReview>(
       '/products/reviews',
       deltaParams('reviews', since),
       startPage,
     )) {
-      total = page.total
+      progress.page(page.total)
 
       for (const wc of page.items) {
-        if (state.wcToNymbalReview[wc.id]) continue
         const nymbalProductId = state.wcToNymbalProduct[reviewRefs(wc).productWcId]
-        if (!nymbalProductId) continue
+        if (state.wcToNymbalReview[wc.id] || !nymbalProductId) {
+          progress.pass(1)
+          continue
+        }
         try {
           const result = await adapters.reviews.submitReview(
             mapReview(wc, nymbalProductId, null),
@@ -439,8 +520,7 @@ export async function runWooCommerceImport(
         } catch (err) {
           state.errors.push({ phase: 'reviews', id: String(wc.id), error: String(err) })
         }
-        done++
-        emit({ kind: 'progress', entity: 'reviews', done, total })
+        progress.pass(1)
       }
 
       state.cursors['reviews'] = { page: (state.cursors['reviews']?.page ?? 1) + 1 }
@@ -467,14 +547,19 @@ export async function runWooCommerceImport(
   }
 
   const delta = state.delta
+  const covered = [...state.finished]
   if (inPass) {
     state.runs.push({
       startedAt: delta?.startedAt ?? state.startedAt,
       finishedAt: new Date().toISOString(),
       ...(delta !== undefined && { since: delta.since }),
-      entities: [...state.finished],
+      entities: covered,
     })
     delete state.delta
+  }
+  // A delta's pass covers only what it walked; every entity an earlier pass finished stays finished for a plain run.
+  if (delta !== undefined) {
+    state.finished = ENTITIES.filter((e) => state.runs.some((r) => r.entities.includes(e)))
   }
   state.phase = 'done'
   await checkpoint()
@@ -484,7 +569,7 @@ export async function runWooCommerceImport(
   if (delta !== undefined) {
     report.updated = { ...delta.updated }
     report.changedNotUpdated = { ...delta.changedNotUpdated }
-    report.since = Object.fromEntries(state.finished.map((e) => [e, delta.since[e] ?? null]))
+    report.since = Object.fromEntries(covered.map((e) => [e, delta.since[e] ?? null]))
   }
   return report
 }

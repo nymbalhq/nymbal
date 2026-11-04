@@ -94,21 +94,28 @@ function parseState(path: string, raw: string): ImportState {
       throw new ImportStateError(path, `${map} is not a map`)
     }
   }
+  const finished = parsed['finished']
+  if (
+    finished !== undefined &&
+    !(Array.isArray(finished) && finished.every((e) => ENTITIES.includes(e as ImportEntity)))
+  ) {
+    throw new ImportStateError(path, 'finished is not a list of entities')
+  }
   const state = parsed as unknown as ImportState
   // A state saved before the order and review maps and the rollback start existed.
   state.wcToNymbalOrder ??= {}
   state.wcToNymbalReview ??= {}
   state.rollbackSince ??= state.startedAt
   state.warnings ??= []
+  const done = state.phase === 'done'
   // A state saved before passes were recorded: a finished one stands for one pass, from its start, over the entities
   // it holds records of (orders by their ids: a state older than the order map has an empty one).
   if (state.runs === undefined) {
     const entities = ENTITIES.filter((e) => state.importedIds[e].length > 0)
-    const done = state.phase === 'done'
     state.runs = done ? [{ startedAt: state.startedAt, finishedAt: state.startedAt, entities }] : []
-    state.finished ??= done ? entities : []
   }
-  state.finished ??= []
+  // Before `finished`, a done state had walked each entity its run was asked for, and only those have a cursor.
+  state.finished ??= done ? ENTITIES.filter((e) => state.cursors[e] !== undefined) : []
   return state
 }
 

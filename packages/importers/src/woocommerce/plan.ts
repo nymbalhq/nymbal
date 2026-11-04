@@ -348,6 +348,7 @@ export async function planWooCommerceImport(
         customerWcId ? (customerIds.get(customerWcId) ?? null) : null,
         lineProducts,
         opts.currency,
+        { gdpr: opts.gdpr },
       )
       if (await taken('order-number', input.orderNumber, input.orderNumber, sourceId)) {
         counts.orders.refused++

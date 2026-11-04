@@ -64,6 +64,21 @@ describe('AuthService', () => {
     await commandStore.close()
   })
 
+  it("customer.created carries origin 'import' for an imported customer and no origin for a registered one", async () => {
+    const { auth, eventBus, commandStore } = await setup()
+    const events: Array<{ email: string; origin?: string }> = []
+    await eventBus.subscribe(EVT_CUSTOMER_CREATED, (e) => {
+      events.push(e.payload as { email: string; origin?: string })
+    })
+    await auth.register({ email: 'shopper@example.com', password: 'password123' })
+    await auth.importCustomer({ email: 'migrated@example.com' })
+    expect(events.map((p) => [p.email, p.origin])).toEqual([
+      ['shopper@example.com', undefined],
+      ['migrated@example.com', 'import'],
+    ])
+    await commandStore.close()
+  })
+
   it('register stores optional phone when provided', async () => {
     const { auth, commandStore } = await setup()
     const { customer } = await auth.register({

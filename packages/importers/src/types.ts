@@ -51,6 +51,11 @@ export interface ImportState {
   /** When the earliest run whose records the state holds began: the store's own activity is counted from here. */
   rollbackSince: string
   phase: ImportEntity | 'connect' | 'enrich' | 'done'
+  /**
+   * The entities whose loop ran to its end: a later run imports only the selected entities not in it. A delta pass
+   * starts it empty and holds there what it has covered.
+   */
+  finished: ImportEntity[]
   cursors: Partial<Record<ImportEntity, ImportCursor>>
   /** The records the import created (not those it only linked): what a rollback removes. */
   importedIds: {
@@ -70,8 +75,6 @@ export interface ImportState {
   eventsEmitted: number
   /** The finished passes, oldest first. */
   runs: FinishedPass[]
-  /** The entities whose loops have reached their end in the current pass. */
-  finished: ImportEntity[]
   /** Set while a delta pass is under way; a run without `since` resumes it. */
   delta?: {
     since: SinceByEntity

@@ -321,6 +321,7 @@ export function createAuthService(deps: CreateAuthServiceDeps): AuthService {
           customerId: id,
           email,
           customer: toCustomerSnapshot(inserted),
+          origin: 'import',
         })
         logger.info({ customerId: id }, 'customer imported')
         return inserted

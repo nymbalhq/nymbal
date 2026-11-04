@@ -290,4 +290,50 @@ describe('AC-4: what each pass covers and so what --since last sends', () => {
       await env.close()
     }
   }, 120_000)
+
+  it('AC-4: a finished products import and then a plain run of orders records a pass covering orders, so --since last gives orders that pass’s start', async () => {
+    const env = await openStoreApp()
+    try {
+      const a = withReviews()
+      await runOver(env, { store: a, entities: ['products'] })
+      const before = (await stateOf(env)).runs ?? []
+      const secondRunStart = toSecond(new Date().toISOString())
+
+      await runOver(env, { store: a, entities: ['orders'] })
+
+      const state = await stateOf(env)
+      const runs = state.runs ?? []
+      const since = resolveSince('last', state)
+      expect(runs.slice(0, before.length)).toEqual(before)
+      expect(runs.slice(before.length).map((r) => r.entities?.includes('orders'))).toEqual([true])
+      expect(since.orders).toBe(toSecond(runs.at(-1)!.startedAt))
+      // Never later than when the orders run began: a later `since` would miss what changed during it.
+      expect(Date.parse(since.orders!)).toBeLessThanOrEqual(Date.parse(secondRunStart))
+    } finally {
+      await env.close()
+    }
+  }, 120_000)
+
+  it('AC-4: after a default import and a products-only delta, a plain run of the default entities reads no list and records no pass', async () => {
+    const env = await openStoreApp()
+    try {
+      const a = withReviews()
+      await runOver(env, { store: a, entities: DEFAULT_ENTITIES })
+      await nextSecond((await stateOf(env)).startedAt)
+      await runOver(env, {
+        store: changed(a),
+        entities: ['products'],
+        since: resolveSince('last', await stateOf(env)),
+      })
+      const before = (await stateOf(env)).runs ?? []
+
+      const { requests } = await runOver(env, { store: changed(a), entities: DEFAULT_ENTITIES })
+
+      const lists = ['/products', '/orders', '/customers', '/products/categories']
+      expect(requests.map(resourceOf).filter((r) => r !== null && lists.includes(r))).toEqual([])
+      expect((await stateOf(env)).runs ?? []).toEqual(before)
+    } finally {
+      await env.close()
+    }
+  }, 120_000)
 })

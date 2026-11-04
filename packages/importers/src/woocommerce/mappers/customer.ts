@@ -23,13 +23,18 @@ function mapAddress(a: WcAddress): CustomerAddress {
   return addr
 }
 
+/** The address a WooCommerce customer is imported under `--gdpr`, and the email their orders carry. */
+export function anonymisedCustomerEmail(wcCustomerId: number): string {
+  const hash = createHash('sha256').update(String(wcCustomerId)).digest('hex').slice(0, 12)
+  return `customer-${hash}@imported.nymbal.local`
+}
+
 export function mapCustomer(wc: WcCustomer, gdpr: boolean): ImportCustomerInput {
   const wcMeta: Record<string, unknown> = { customerId: wc.id, syncedAt: new Date().toISOString() }
 
   if (gdpr) {
-    const hash = createHash('sha256').update(String(wc.id)).digest('hex').slice(0, 12)
     return {
-      email: `customer-${hash}@imported.nymbal.local`,
+      email: anonymisedCustomerEmail(wc.id),
       metadata: { woocommerce: wcMeta },
     }
   }

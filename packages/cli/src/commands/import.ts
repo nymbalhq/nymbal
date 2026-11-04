@@ -28,7 +28,7 @@ function printProgress(event: ProgressEvent): void {
   } else if (event.kind === 'progress') {
     const pct = Math.round((event.done / event.total) * 100)
     process.stdout.write(`\r  ${event.entity}: ${event.done}/${event.total} (${pct}%)  `)
-    if (event.done === event.total) process.stdout.write('\n')
+    if (event.done >= event.total) process.stdout.write('\n')
   } else if (event.kind === 'error') {
     console.log(p.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`))
   }

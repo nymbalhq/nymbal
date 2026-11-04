@@ -48,15 +48,14 @@ export function mapProduct(
 
   const media = mediaUrls.map((m, i) => ({ url: m.url, altText: m.altText, position: i }))
 
-  const metadata: Record<string, unknown> = {
-    woocommerce: {
-      id: wc.id,
-      sku: wc.sku,
-      syncedAt: new Date().toISOString(),
-      virtual: wc.virtual,
-      downloadable: wc.downloadable,
-    },
+  const woocommerce: Record<string, unknown> = {
+    id: wc.id,
+    sku: wc.sku,
+    syncedAt: new Date().toISOString(),
+    virtual: wc.virtual,
+    downloadable: wc.downloadable,
   }
+  const metadata: Record<string, unknown> = { woocommerce }
 
   if (wc.type === 'variable' && variations.length > 0) {
     const mappedVariants = variations.map((v) => {
@@ -74,6 +73,10 @@ export function mapProduct(
         status: (v.status === 'publish' ? 'active' : 'inactive') as 'active' | 'inactive',
       }
     })
+    // Which WooCommerce variation each variant was made from, by SKU: an order line names the variation it bought.
+    woocommerce['variants'] = Object.fromEntries(
+      mappedVariants.map((variant, i) => [variant.sku, { id: variations[i]!.id }]),
+    )
     return {
       slug,
       name: wc.name,
@@ -90,6 +93,8 @@ export function mapProduct(
     }
   }
 
+  const sku = wc.sku || slug
+  woocommerce['variants'] = { [sku]: { id: wc.id } }
   return {
     slug,
     name: wc.name,
@@ -104,7 +109,7 @@ export function mapProduct(
     categoryIds,
     variants: [
       {
-        sku: wc.sku || slug,
+        sku,
         name: wc.name,
         priceMinor: parsePriceMinor(wc.regular_price),
         compareAtPriceMinor: wc.sale_price ? parsePriceMinor(wc.regular_price) : null,

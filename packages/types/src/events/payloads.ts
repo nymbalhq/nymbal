@@ -168,6 +168,8 @@ export interface CustomerCreatedV1Payload {
   customerId: string
   email: string
   customer?: CustomerSnapshot
+  /** `'import'` for a customer an import brought over, who is not welcomed; absent for one who registered. */
+  origin?: 'import'
 }
 export interface CustomerUpdatedV1Payload {
   customerId: string

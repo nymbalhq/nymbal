@@ -3,12 +3,21 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import fc from 'fast-check'
 import { WC_URL } from './import-env.js'
+import {
+  moneyDraft,
+  orderMoney,
+  type LineRef,
+  type MoneyDraft,
+  type TestCurrency,
+} from './wc-orders.js'
 
 // A WooCommerce store as data, served by a fetch mock that paginates as WooCommerce does (`per_page`, `page`, ordered
 // by id, `X-WP-Total` and `X-WP-TotalPages`), records every request, and answers the coupon, tax and shipping-zone
 // endpoints only when the store says how. `arbStore` draws stores the import and the plan can both run on: names in
 // `[a-z0-9 ]+`, order money that never refunds more than it took, product and order ids in disjoint ranges, and slugs
-// and SKUs drawn from small pools so that clashes happen.
+// and SKUs drawn from small pools so that clashes happen. Options add personal values that are unique tokens
+// (`personalTokens`), orders whose money adds up in one currency (wc-orders.ts), and order ids that meet product and
+// customer ids.
 
 export type Rec = Record<string, unknown>
 
@@ -260,6 +269,12 @@ const orderDraft = fc.record({
   shipCents: fc.integer({ min: 0, max: 2_000 }),
   discountCents: fc.integer({ min: 0, max: 5_000 }),
   note: fc.constantFrom('', 'leave at the door'),
+  /** Where the order is billed and shipped to, under `pii`: shipping's country is empty now and then. */
+  billTo: fc.constantFrom(['GB', 'yorkshire'], ['US', 'CA'], ['DE', 'BE']),
+  shipTo: fc.constantFrom(['', ''], ['FR', 'IDF'], ['GB', 'kent']),
+  money: moneyDraft,
+  /** Which variation of a variable line product was bought, under `currency`. */
+  variationPick: fc.nat(),
 })
 
 const reviewDraft = fc.record({
@@ -274,6 +289,24 @@ export interface StoreSizes {
   customers?: number
   orders?: number
   reviews?: number
+  /**
+   * Every personal value of customers, orders and reviews is a token no other string holds (`personalTokens`): names,
+   * emails, phones, companies, street lines, city, postcode, customer note, IP address, user agent and order and line
+   * `meta_data` values. Region and country stay plain.
+   */
+  pii?: boolean
+  /** Orders whose money adds up in this currency, with variation lines, line and shipping tax, fees and refunds. */
+  currency?: TestCurrency
+  /** Order ids start at 1, as product and customer ids do, so the ranges meet. */
+  idsMeet?: boolean
+}
+
+/** Each token a `pii` store holds: `ZqPii<salt>N<n>X`, so that no token is a prefix of another. */
+const TOKEN = /ZqPii[a-z]{4}N\d+X/g
+
+/** Every personal value token in `store`, once each. */
+export function personalTokens(store: WooStore): string[] {
+  return [...new Set(JSON.stringify(store).match(TOKEN) ?? [])]
 }
 
 /** Product ids start at 1, orders at ORDER_ID_BASE, variations at VARIATION_ID_BASE: the ranges never meet. */
@@ -289,18 +322,67 @@ export function arbStore(sizes: StoreSizes): fc.Arbitrary<WooStore> {
         customers: fc.array(customerDraft, { maxLength: sizes.customers ?? 10 }),
         orders: fc.array(orderDraft, { maxLength: sizes.orders ?? 10 }),
         reviews: fc.array(reviewDraft, { maxLength: sizes.reviews ?? 8 }),
+        salt: fc.string({
+          unit: fc.constantFrom(...'abcdefghijklmnopqrstuvwxyz'.split('')),
+          minLength: 4,
+          maxLength: 4,
+        }),
       })
-      .map(buildStore),
+      .map((d) => buildStore(d, sizes)),
   )
 }
 
-function buildStore(d: {
-  categories: Array<typeof categoryDraft extends fc.Arbitrary<infer T> ? T : never>
-  products: Array<typeof productDraft extends fc.Arbitrary<infer T> ? T : never>
-  customers: Array<typeof customerDraft extends fc.Arbitrary<infer T> ? T : never>
-  orders: Array<typeof orderDraft extends fc.Arbitrary<infer T> ? T : never>
-  reviews: Array<typeof reviewDraft extends fc.Arbitrary<infer T> ? T : never>
-}): WooStore {
+/** `s` with every slug, SKU, email and order number its own, so a whole import of it refuses nothing. */
+export function clashFree(s: WooStore): WooStore {
+  return {
+    ...s,
+    categories: s.categories.map((c) => ({ ...c, slug: `cat-${String(c['id'])}` })),
+    products: s.products.map((p) => ({
+      ...p,
+      slug: `p-${String(p['id'])}`,
+      sku: `SKU-${String(p['id'])}`,
+    })),
+    variations: Object.fromEntries(
+      Object.entries(s.variations).map(([id, vs]) => [
+        id,
+        vs.map((v) => ({ ...v, sku: `V-${String(v['id'])}` })),
+      ]),
+    ),
+    customers: s.customers.map((c) => {
+      const email = `c${String(c['id'])}@example.com`
+      return { ...c, email, billing: { ...(c['billing'] as Rec), email } }
+    }),
+    orders: s.orders.map((o) => ({ ...o, number: String(o['id']) })),
+  }
+}
+
+function buildStore(
+  d: {
+    categories: Array<typeof categoryDraft extends fc.Arbitrary<infer T> ? T : never>
+    products: Array<typeof productDraft extends fc.Arbitrary<infer T> ? T : never>
+    customers: Array<typeof customerDraft extends fc.Arbitrary<infer T> ? T : never>
+    orders: Array<typeof orderDraft extends fc.Arbitrary<infer T> ? T : never>
+    reviews: Array<typeof reviewDraft extends fc.Arbitrary<infer T> ? T : never>
+    salt: string
+  },
+  opts: StoreSizes,
+): WooStore {
+  let tokens = 0
+  const token = () => `ZqPii${d.salt}N${++tokens}X`
+  /** An address of tokens, but for its region and country. */
+  const personal = (country: string, region: string, email?: string): Rec => ({
+    first_name: token(),
+    last_name: token(),
+    company: token(),
+    address_1: token(),
+    address_2: token(),
+    city: token(),
+    state: region,
+    postcode: token(),
+    country,
+    phone: token(),
+    ...(email !== undefined && { email }),
+  })
   const categories: Rec[] = d.categories.map((c, i) => {
     const id = i + 1
     return {
@@ -376,6 +458,22 @@ function buildStore(d: {
 
   const customers: Rec[] = d.customers.map((c, i) => {
     const id = i + 1
+    if (opts.pii) {
+      const email = `${token()}@example.com`
+      return {
+        id,
+        email,
+        first_name: token(),
+        last_name: token(),
+        username: `user${id}`,
+        billing: c.hasAddress
+          ? personal('GB', 'yorkshire', email)
+          : { ...personal('GB', 'yorkshire', email), address_1: '' },
+        shipping: personal('GB', 'yorkshire'),
+        meta_data: [{ id: 1, key: 'birthday', value: token() }],
+        date_created: '2024-01-15T10:00:00',
+      }
+    }
     const email = c.email ?? `c${id}@example.com`
     return {
       id,
@@ -397,15 +495,58 @@ function buildStore(d: {
       ? 77_777
       : (products[pick % products.length]!['id'] as number)
 
+  /** A line of the product at `pick`, of one of its variations when it is variable. */
+  const lineRef = (pick: number | null, variationPick: number): LineRef => {
+    const productId = productIdAt(pick)
+    const vars = variations[productId] ?? []
+    const v = vars.length > 0 ? vars[variationPick % vars.length]! : undefined
+    const product = products.find((p) => p['id'] === productId)
+    return {
+      productId,
+      variationId: v === undefined ? 0 : (v['id'] as number),
+      sku: String(v?.['sku'] ?? product?.['sku'] ?? ''),
+    }
+  }
+
   const orders: Rec[] = d.orders.map((o, i) => {
-    const id = ORDER_ID_BASE + i
+    const id = opts.idsMeet ? i + 1 : ORDER_ID_BASE + i
     const customer =
       o.customerPick === null
         ? 0
         : customers.length === 0
           ? 888
           : (customers[o.customerPick % customers.length]!['id'] as number)
-    return {
+    const addsUp = (draft: MoneyDraft, currency: TestCurrency) =>
+      orderMoney(
+        draft,
+        currency,
+        draft.lines.map((_, n) => lineRef(o.lines[n]?.productPick ?? null, o.variationPick + n)),
+      )
+    const fidelity =
+      opts.currency === undefined
+        ? {}
+        : { currency: opts.currency, ...addsUp(o.money, opts.currency) }
+    const personalFields = opts.pii
+      ? {
+          billing: personal(o.billTo[0], o.billTo[1], `${token()}@example.com`),
+          shipping: personal(o.shipTo[0], o.shipTo[1]),
+          customer_note: token(),
+          customer_ip_address: token(),
+          customer_user_agent: token(),
+          meta_data: [{ id: 1, key: 'gift_message', value: token() }],
+        }
+      : {}
+    const withLineMeta = (order: Rec): Rec =>
+      opts.pii
+        ? {
+            ...order,
+            line_items: (order['line_items'] as Rec[]).map((l) => ({
+              ...l,
+              meta_data: [{ id: 1, key: 'Engraving', value: token() }],
+            })),
+          }
+        : order
+    return withLineMeta({
       id,
       number: o.number ?? String(id),
       status: o.status,
@@ -435,14 +576,16 @@ function buildStore(d: {
       customer_note: o.note,
       meta_data: [],
       payment_method: 'stripe',
-    }
+      ...fidelity,
+      ...personalFields,
+    })
   })
 
   const reviews: Rec[] = d.reviews.map((r, i) => ({
     id: i + 1,
     product_id: productIdAt(r.productPick),
-    reviewer: `reviewer${i + 1}`,
-    reviewer_email: `r${i + 1}@example.com`,
+    reviewer: opts.pii ? token() : `reviewer${i + 1}`,
+    reviewer_email: opts.pii ? `${token()}@example.com` : `r${i + 1}@example.com`,
     review: r.text,
     rating: r.rating,
     verified: false,

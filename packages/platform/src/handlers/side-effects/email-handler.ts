@@ -125,6 +125,8 @@ export async function registerEmailHandler(deps: RegisterEmailHandlerDeps): Prom
   }
 
   const onCustomerCreated: EventHandler<CustomerCreatedV1Payload> = async (event) => {
+    // An imported customer was already a customer of the store; the welcome is for one who registered.
+    if (event.payload.origin === 'import') return
     await email.sendTransactional({
       template: 'welcome',
       to: event.payload.email,
