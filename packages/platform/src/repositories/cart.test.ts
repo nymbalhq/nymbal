@@ -44,6 +44,8 @@ function cartAt(
     items,
     subtotalMinor: items.reduce((s, i) => s + i.priceMinor * i.qty, 0),
     currency: 'GBP',
+    // Both kinds of source, so every read-back equality holds the column's mapping in and out.
+    source: sequence % 2 === 0 ? 'storefront' : 'agent:repository-test',
     createdAt: iso((fields.updated ?? -10) - 5),
     updatedAt: iso(fields.updated ?? -10),
     expiresAt: iso(fields.expires ?? 60),

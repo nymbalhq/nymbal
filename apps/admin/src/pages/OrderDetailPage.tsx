@@ -42,7 +42,14 @@ import { formatMoney } from '@/lib/money'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { CaptureMethod, Order, OrderPayment, OrderRefund, OrderStatus } from '@nymbalhq/types'
+import type {
+  CaptureMethod,
+  Order,
+  OrderPayment,
+  OrderRefund,
+  OrderSource,
+  OrderStatus,
+} from '@nymbalhq/types'
 
 /** No confirmation is due before payment, and a cancelled order was never paid: the server refuses both. */
 const NO_CONFIRMATION_DUE: readonly OrderStatus[] = ['pending', 'cancelled']
@@ -65,6 +72,13 @@ const CAPTURE_METHOD_LABELS: Record<CaptureMethod, string> = {
   provider: 'Payment provider',
   manual: 'Recorded manually',
   import: 'Imported',
+}
+
+/** Who brought the order, as the operator reads it. */
+function sourceLabel(source: OrderSource): string {
+  if (source === 'storefront') return 'Storefront'
+  if (source === 'import') return 'Imported'
+  return `Agent · ${source.slice('agent:'.length)}`
 }
 
 const REFUND_STATUS_LABELS: Record<OrderRefund['status'], string> = {
@@ -115,6 +129,16 @@ function PaymentPanel({ order }: { order: Order & { payment: OrderPayment } }) {
             <dd className="text-zinc-700">{CAPTURE_METHOD_LABELS[order.captureMethod]}</dd>
           </div>
         )}
+        <div className="flex justify-between gap-3">
+          <dt className="text-zinc-500">Source</dt>
+          <dd
+            className="truncate text-zinc-700"
+            data-testid={tid('order', 'source')}
+            data-source={order.source}
+          >
+            {sourceLabel(order.source)}
+          </dd>
+        </div>
         {order.paymentIntentId && (
           <div className="flex justify-between">
             <dt className="text-zinc-500">Intent ID</dt>

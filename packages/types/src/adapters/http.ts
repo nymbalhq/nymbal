@@ -44,6 +44,8 @@ export interface RequestContext<TBody = unknown, TQuery = Record<string, string 
   correlationId: string
   logger: Logger
   ip: string
+  /** The agent a tool call is made for. Only the tool invoker sets it; no HTTP adapter does, so no header can claim it. */
+  agent?: { name: string }
 }
 
 export interface ResponseCookie {

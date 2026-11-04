@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ShoppingBag, DollarSign, Truck, AlertTriangle, TrendingUp } from 'lucide-react'
+import { ShoppingBag, DollarSign, Truck, AlertTriangle, TrendingUp, Bot } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -10,8 +10,8 @@ import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { formatRelative } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
-import type { Order } from '@nymbalhq/types'
-import type { InventoryRow } from '@/types'
+import type { AgentSurfaceCapabilities, Order } from '@nymbalhq/types'
+import type { AgentsDashboard, InventoryRow } from '@/types'
 
 /** Live only while the realtime stream is confirmed, as the top bar's badge. */
 function LiveIndicator() {
@@ -83,6 +83,120 @@ function StatCard({ icon, label, value, subtext, loading, color = 'blue' }: Stat
   )
 }
 
+/** What an agent can do through a surface, as the operator reads it. */
+function capabilityLabels({ search, lookup, checkout }: AgentSurfaceCapabilities): string[] {
+  return [
+    ...(search ? ['search'] : []),
+    ...(lookup ? ['lookup'] : []),
+    ...(checkout === 'none' ? [] : [`checkout ${checkout}`]),
+  ]
+}
+
+/** The agent orders of the last 30 days and the agent surfaces that are on; it reads, it changes nothing. */
+function AgentsCard({
+  agents,
+  loading,
+}: {
+  agents: AgentsDashboard | undefined
+  loading: boolean
+}) {
+  return (
+    <div
+      className="rounded-lg border border-zinc-200 bg-white p-5"
+      data-testid={tid('dashboard', 'agents')}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+          <Bot className="h-4.5 w-4.5" />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900">Agents</h2>
+          <p className="text-xs text-zinc-500">Orders shopping agents brought, last 30 days</p>
+        </div>
+      </div>
+      {loading || agents === undefined ? (
+        <Skeleton className="h-16 w-full" />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <p
+              className="text-2xl font-semibold font-mono text-zinc-900"
+              data-testid={tid('dashboard', 'agents', 'orders')}
+            >
+              {agents.orders.count}
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-500">Agent orders</p>
+            <p
+              className="mt-2 font-mono text-sm text-zinc-900"
+              data-testid={tid('dashboard', 'agents', 'revenue')}
+              data-minor={agents.orders.revenueMinor}
+            >
+              {formatMoney(agents.orders.revenueMinor, agents.currency)}
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-500">Revenue</p>
+          </div>
+          <div className="min-w-0">
+            <h3 className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+              By agent
+            </h3>
+            {agents.bySource.length === 0 ? (
+              <p className="text-xs text-zinc-500">No agent orders yet</p>
+            ) : (
+              <ul className="space-y-1 text-xs">
+                {agents.bySource.map((row) => (
+                  <li
+                    key={row.source}
+                    className="flex justify-between gap-2"
+                    data-testid={tid('dashboard', 'agents', 'source')}
+                    data-source={row.source}
+                    data-count={row.count}
+                    data-minor={row.revenueMinor}
+                  >
+                    <span className="truncate text-zinc-700">
+                      {row.source.slice('agent:'.length)}
+                    </span>
+                    <span className="shrink-0 font-mono text-zinc-500">
+                      {row.count} · {formatMoney(row.revenueMinor, agents.currency)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h3 className="mb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+              Surfaces
+            </h3>
+            <ul className="space-y-1 text-xs text-zinc-700">
+              {agents.surfaces.map((surface) => (
+                <li
+                  key={surface.name}
+                  data-testid={tid('dashboard', 'agents', 'surface', surface.name)}
+                >
+                  <span className="font-medium uppercase">{surface.name}</span>:{' '}
+                  {capabilityLabels(surface.capabilities).join(', ')}
+                </li>
+              ))}
+              <li>
+                <span className="font-medium uppercase">MCP</span>:{' '}
+                {agents.mcp.enabled ? `on, ${agents.mcp.writes}` : 'off'}
+              </li>
+            </ul>
+            {agents.profilePath !== null && (
+              <a
+                href={agents.profilePath}
+                className="mt-2 inline-block text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                Agent profile →
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function DashboardPage() {
   const { data: me } = useMe()
   const { data, isLoading } = useDashboard()
@@ -126,6 +240,8 @@ export function DashboardPage() {
           color="violet"
         />
       </div>
+
+      <AgentsCard agents={data?.agents} loading={isLoading} />
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">

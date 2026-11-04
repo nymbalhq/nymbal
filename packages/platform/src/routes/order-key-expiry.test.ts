@@ -108,6 +108,7 @@ function orderOf(
     capturedAt: paid ? CREATED : null,
     refundedMinor: 0,
     captureMethod: paid ? 'provider' : null,
+    source: 'storefront',
     createdAt: CREATED,
     updatedAt: CREATED,
   }

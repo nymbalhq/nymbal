@@ -13,6 +13,7 @@ import {
   assertOrderTransition,
   type Address,
   type CaptureMethod,
+  type CartSource,
   type Logger,
   type Order,
   type OrderLineItem,
@@ -42,9 +43,12 @@ export interface OrderCreateDraftInput {
   metadata?: Record<string, unknown>
   paymentIntentId?: string | null
   cartToken?: string | null
+  /** The source of the cart the order is placed from; `storefront` when not given. */
+  source?: CartSource
 }
 
-export interface OrderImportInput extends OrderCreateDraftInput {
+/** An imported order's source is always `import`. */
+export interface OrderImportInput extends Omit<OrderCreateDraftInput, 'source'> {
   orderNumber: string
   status: OrderStatus
   createdAt: Date
@@ -163,6 +167,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
           metadata: input.metadata ?? {},
           paymentIntentId: input.paymentIntentId ?? null,
           cartToken: input.cartToken ?? null,
+          ...(input.source !== undefined && { source: input.source }),
           createdAt: now,
           updatedAt: now,
         })
@@ -348,6 +353,7 @@ export function createOrderService(deps: CreateOrderServiceDeps): OrderService {
               refundedMinor,
             },
           }),
+          source: 'import',
           createdAt: input.createdAt,
           updatedAt: input.createdAt,
         })

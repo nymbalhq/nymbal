@@ -62,6 +62,7 @@ export function createOrder(overrides?: Partial<Order>): Order {
     capturedAt: null,
     refundedMinor: 0,
     captureMethod: null,
+    source: 'storefront',
     createdAt: isoDate(),
     updatedAt: isoDate(),
     ...overrides,

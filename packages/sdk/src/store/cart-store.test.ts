@@ -10,6 +10,7 @@ function makeCart(overrides?: Partial<Cart>): Cart {
     items: [],
     subtotalMinor: 0,
     currency: 'GBP',
+    source: 'storefront',
     expiresAt: '',
     createdAt: '',
     updatedAt: '',

@@ -149,6 +149,12 @@ export const refreshTokens = pgTable(
 
 // --- Orders ----------------------------------------------------------------
 
+/**
+ * Text compared byte by byte under any database locale, so the dashboard's `'agent:' <= source < 'agent;'` range holds
+ * every `agent:` value and nothing else (ICU collations put `;` before `:`).
+ */
+const byteOrderedText = customType<{ data: string }>({ dataType: () => 'text COLLATE "C"' })
+
 export const orders = pgTable(
   'orders',
   {
@@ -190,6 +196,8 @@ export const orders = pgTable(
     /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
     refundedMinor: integer('refunded_minor').notNull().default(0),
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
+    /** `storefront`, `import` or `agent:<name>`: who brought the order. */
+    source: byteOrderedText('source').notNull().default('storefront'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
@@ -199,6 +207,8 @@ export const orders = pgTable(
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
     paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // The dashboard's agent orders: a range on source, then the window on created_at.
+    sourceCreatedIdx: index('orders_source_created_idx').on(t.source, t.createdAt),
     // One pending order per cart, whatever the checkout's lock does.
     pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
       .on(t.cartToken)
@@ -342,6 +352,8 @@ export const carts = pgTable(
     items: jsonb('items').notNull().default([]),
     lineCount: integer('line_count').notNull().default(0),
     subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    /** `storefront` or `agent:<name>`: who opened the cart. */
+    source: text('source').notNull().default('storefront'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),

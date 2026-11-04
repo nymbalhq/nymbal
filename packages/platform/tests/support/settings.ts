@@ -1,9 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer as createHttpListener, type IncomingMessage, type Server } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import bcrypt from 'bcryptjs'
 import fc from 'fast-check'
@@ -173,24 +170,6 @@ export function anthropicBlock(stub: Stub, extra: Record<string, unknown> = {}) 
 }
 
 // ─── Stores ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** A copy of the migrations folder for `dialect` holding only 0000-0007: a store from before the settings table. */
-export function migrationsBefore0008(dialect: Dialect): { root: string; drop(): void } {
-  const root = mkdtempSync(join(tmpdir(), 'settings-migrations-'))
-  const from = join(MIGRATIONS_ROOT, dialect)
-  const to = join(root, dialect)
-  mkdirSync(join(to, 'meta'), { recursive: true })
-  const journal = JSON.parse(readFileSync(join(from, 'meta', '_journal.json'), 'utf8')) as {
-    entries: Array<{ idx: number; tag: string }>
-  }
-  journal.entries = journal.entries.filter((entry) => entry.idx <= 7)
-  if (journal.entries.length !== 8) throw new Error(`expected migrations 0000-0007 in ${from}`)
-  for (const entry of journal.entries) {
-    cpSync(join(from, `${entry.tag}.sql`), join(to, `${entry.tag}.sql`))
-  }
-  writeFileSync(join(to, 'meta', '_journal.json'), JSON.stringify(journal))
-  return { root, drop: () => rmSync(root, { recursive: true, force: true }) }
-}
 
 const storage = (dialect: Dialect, target: string) =>
   dialect === 'sqlite' ? { sqlitePath: target } : { postgresUrl: target }

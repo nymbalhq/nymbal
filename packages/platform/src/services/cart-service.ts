@@ -10,6 +10,7 @@ import {
   ValidationError,
   type Cart,
   type CartItem,
+  type CartSource,
   type Logger,
   type Product,
   type Variant,
@@ -24,7 +25,8 @@ import type { EventPublisher } from '../events/publisher.js'
 const TTL_SECONDS_DEFAULT = 60 * 60 * 24 * 30
 
 export interface CartService {
-  getOrCreate(token?: string, customerId?: string | null): Promise<Cart>
+  /** The live cart on `token`, or a new one opened with `source`; an existing cart keeps its own source. */
+  getOrCreate(token?: string, customerId?: string | null, source?: CartSource): Promise<Cart>
   get(token: string): Promise<Cart | null>
   addItem(token: string, item: Omit<CartItem, 'qty'> & { qty?: number }): Promise<Cart>
   updateItemQuantity(token: string, variantId: string, qty: number): Promise<Cart>
@@ -161,7 +163,9 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
 
   /**
    * Folds `guest` into `customer`, both locked, and removes the one folded. A guest cart with a checkout in progress
-   * is the one kept instead, so the pending order, keyed by its token, keeps its cart.
+   * is the one kept instead, so the pending order, keyed by its token, keeps its cart. The merged cart takes the guest
+   * cart's source when it had lines, since those are what the browser was checking out (an agent's handed-off cart is
+   * a guest cart); an empty guest cart brings nothing, so the kept cart's source stays.
    */
   async function fold(
     tx: Tx,
@@ -173,7 +177,8 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
     const guestPending = (await pendingOrders.findPendingByCartToken(tx, guest.token)) !== null
     const [kept, folded] = guestPending ? [guest, customer] : [customer, guest]
     const items = combine(kept.items, folded.items, await sellableOf(tx, kept.items, folded.items))
-    const merged = { ...written(kept, items, at), customerId }
+    const source = guest.items.length > 0 ? guest.source : kept.source
+    const merged = { ...written(kept, items, at), customerId, source }
     await carts.remove(tx, folded.token)
     await carts.put(tx, merged)
     await emitUpdated(merged)
@@ -206,7 +211,7 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
   }
 
   return {
-    async getOrCreate(token, customerId = null) {
+    async getOrCreate(token, customerId = null, source = 'storefront') {
       return store.transaction(async (tx) => {
         const at = now()
         const { cart, created } = await carts.create(tx, {
@@ -215,6 +220,7 @@ export function createCartService(deps: CreateCartServiceDeps): CartService {
           items: [],
           subtotalMinor: 0,
           currency,
+          source,
           expiresAt: new Date(at.getTime() + ttlMs).toISOString(),
           createdAt: at.toISOString(),
           updatedAt: at.toISOString(),

@@ -188,6 +188,8 @@ export const orders = sqliteTable(
     /** Σ of the succeeded `order_refunds`, written in the transaction that settles each. */
     refundedMinor: integer('refunded_minor').notNull().default(0),
     captureMethod: text('capture_method', { enum: ['provider', 'manual', 'import'] }),
+    /** `storefront`, `import` or `agent:<name>`: who brought the order. */
+    source: text('source').notNull().default('storefront'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -197,6 +199,8 @@ export const orders = sqliteTable(
     customerIdx: index('orders_customer_idx').on(t.customerId),
     statusIdx: index('orders_status_idx').on(t.status),
     paymentIntentIdx: index('orders_payment_intent_idx').on(t.paymentIntentId),
+    // The dashboard's agent orders: a range on source, then the window on created_at.
+    sourceCreatedIdx: index('orders_source_created_idx').on(t.source, t.createdAt),
     // One pending order per cart, whatever the checkout's lock does.
     pendingCartUnique: uniqueIndex('orders_pending_cart_unique')
       .on(t.cartToken)
@@ -340,6 +344,8 @@ export const carts = sqliteTable(
     items: text('items').notNull().default('[]'),
     lineCount: integer('line_count').notNull().default(0),
     subtotalMinor: integer('subtotal_minor').notNull().default(0),
+    /** `storefront` or `agent:<name>`: who opened the cart. */
+    source: text('source').notNull().default('storefront'),
     expiresAt: text('expires_at').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),

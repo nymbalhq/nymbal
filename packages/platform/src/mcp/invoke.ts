@@ -219,6 +219,7 @@ export function createInvoker(deps: InvokerDeps): Invoker {
       correlationId: correlation,
       logger: logger.child({ requestId, correlationId: correlation, tool: tool.name }),
       ip: caller.ip ?? '127.0.0.1',
+      agent: { name: caller.agent.name },
     }
     return ctx
   }

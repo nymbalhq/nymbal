@@ -1,4 +1,11 @@
-import { type HttpAdapter, type ResponseCookie, type ResponseEnvelope } from '@nymbalhq/types'
+import {
+  agentSource,
+  type CartSource,
+  type HttpAdapter,
+  type RequestContext,
+  type ResponseCookie,
+  type ResponseEnvelope,
+} from '@nymbalhq/types'
 import { isSellable, type CartService } from '../services/cart-service.js'
 import type { AfterSignIn, SecureCookies } from './auth.js'
 import type { ProductRepository } from '../repositories/product.js'
@@ -55,6 +62,11 @@ export interface RegisterCartRoutesDeps {
   secureCookies?: SecureCookies
 }
 
+/** Who a cart this request opens is for: only the tool invoker sets `ctx.agent`, so no header makes it an agent's. */
+function sourceOf(ctx: RequestContext): CartSource {
+  return ctx.agent === undefined ? 'storefront' : agentSource(ctx.agent.name)
+}
+
 export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoutesDeps): void {
   const { cart, productRepo, variantRepo } = deps
 
@@ -63,7 +75,7 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
       const token = ctx.cookies[CART_COOKIE]
       const existing = token ? await cart.get(token) : null
       if (existing) return ok(existing) as ResponseEnvelope
-      const fresh = await cart.getOrCreate()
+      const fresh = await cart.getOrCreate(undefined, null, sourceOf(ctx))
       const env = ok(fresh)
       env.cookies = cookie(fresh.token, deps.secureCookies?.())
       return env as ResponseEnvelope
@@ -92,7 +104,8 @@ export function registerCartRoutes(adapter: HttpAdapter, deps: RegisterCartRoute
           available: variant.stock,
         })
       }
-      const token = ctx.cookies[CART_COOKIE] ?? (await cart.getOrCreate()).token
+      const token =
+        ctx.cookies[CART_COOKIE] ?? (await cart.getOrCreate(undefined, null, sourceOf(ctx))).token
       const updated = await cart.addItem(token, {
         variantId: variant.id,
         productId: product.id,

@@ -81,6 +81,7 @@ export { policyOf, type Executed, type Policy, type Proposal } from './mcp/propo
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
+export { agentReadiness } from './agents/readiness.js'
 export {
   createApp,
   type NymbalApp,

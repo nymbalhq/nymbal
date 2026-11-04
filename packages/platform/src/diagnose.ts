@@ -40,6 +40,7 @@ import {
 import { migrationState } from './db/migrate.js'
 import { createLogger } from './logger.js'
 import { buildDocumentStore, buildEventBus, buildMedia, redisUrlOf } from './platform.js'
+import { agentReadiness } from './agents/readiness.js'
 import { createEventLogRepository } from './repositories/event-log.js'
 import { buildRepositories, type SettingRow } from './repositories/index.js'
 import { listStoredSettings, settingValues } from './settings/load.js'
@@ -459,6 +460,7 @@ export async function diagnose(
     ...slots,
     ...primitives,
     eventsCheck,
+    agentReadiness(config, env),
   ].map((check) => ({
     ...check,
     detail: scrub(secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail)),

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   CART_LINE_MAX_QTY,
   type AgentSurfaceAdapter,
+  type AgentSurfaceCapabilities,
   type AgentSurfaceUrls,
   type Caller,
   type Cart,
@@ -28,6 +29,13 @@ import {
   ucpProfile,
   type UcpCapability,
 } from './profile.js'
+
+/** What an agent can do through the UCP surface; the admin dashboard names the same. */
+export const UCP_CAPABILITIES: Readonly<AgentSurfaceCapabilities> = Object.freeze({
+  search: true,
+  lookup: true,
+  checkout: 'handoff',
+})
 
 export interface UcpSurfaceDeps {
   /** The app's route tools, which every UCP call runs through. */
@@ -405,7 +413,7 @@ export function createUcpSurface(deps: UcpSurfaceDeps): AgentSurfaceAdapter {
 
   return {
     name: 'ucp',
-    capabilities: { search: true, lookup: true, checkout: 'handoff' },
+    capabilities: { ...UCP_CAPABILITIES },
     wellKnown: { path: UCP_PROFILE_PATH, document: ucpProfile },
     endpoint: { path: UCP_ENDPOINT_PATH, tools },
   }

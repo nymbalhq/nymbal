@@ -69,6 +69,7 @@ function makeCart(overrides?: Partial<Cart>): Cart {
     items: [],
     subtotalMinor: 0,
     currency: 'GBP',
+    source: 'storefront',
     expiresAt: new Date(Date.now() + 86400000).toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

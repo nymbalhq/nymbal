@@ -59,6 +59,14 @@ export interface OrderLineItem {
   imageUrl: string
 }
 
+/** Where an order came from: the storefront, an import, or the shopping agent that opened its cart. */
+export type OrderSource = 'storefront' | 'import' | `agent:${string}`
+
+/** The source a cart or order opened by the named agent carries. */
+export function agentSource(name: string): `agent:${string}` {
+  return `agent:${name}`
+}
+
 export interface Order {
   id: string
   orderNumber: string
@@ -84,6 +92,7 @@ export interface Order {
   /** Σ of the order's succeeded refunds (or, for an import or a pre-refund-table order, what was refunded then). */
   refundedMinor: number
   captureMethod: CaptureMethod | null
+  source: OrderSource
   createdAt: string
   updatedAt: string
 }

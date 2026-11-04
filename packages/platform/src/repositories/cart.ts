@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, isNull, lt, lte, sql } from 'drizzle-orm'
-import type { Cart, CartItem } from '@nymbalhq/types'
+import type { Cart, CartItem, CartSource } from '@nymbalhq/types'
 import {
   postgresDb,
   sqliteDb,
@@ -61,6 +61,7 @@ function rowToCart(store: 'sqlite' | 'postgres', row: Record<string, unknown>): 
     items: parseJson<CartItem[]>(store, row.items, []),
     subtotalMinor: Number(row.subtotalMinor),
     currency: String(row.currency),
+    source: String(row.source) as CartSource,
     expiresAt: fromTimestamp(row.expiresAt),
     createdAt: fromTimestamp(row.createdAt),
     updatedAt: fromTimestamp(row.updatedAt),
@@ -75,6 +76,7 @@ function sqliteValues(cart: Cart) {
     items: JSON.stringify(cart.items),
     lineCount: cart.items.length,
     subtotalMinor: cart.subtotalMinor,
+    source: cart.source,
     expiresAt: cart.expiresAt,
     createdAt: cart.createdAt,
     updatedAt: cart.updatedAt,
@@ -90,6 +92,7 @@ function postgresValues(cart: Cart) {
     items: cart.items,
     lineCount: cart.items.length,
     subtotalMinor: cart.subtotalMinor,
+    source: cart.source,
     expiresAt: new Date(cart.expiresAt),
     createdAt: new Date(cart.createdAt),
     updatedAt: new Date(cart.updatedAt),
@@ -104,6 +107,7 @@ const fromExcluded = {
   items: sql`excluded.items`,
   lineCount: sql`excluded.line_count`,
   subtotalMinor: sql`excluded.subtotal_minor`,
+  source: sql`excluded.source`,
   expiresAt: sql`excluded.expires_at`,
   createdAt: sql`excluded.created_at`,
   updatedAt: sql`excluded.updated_at`,

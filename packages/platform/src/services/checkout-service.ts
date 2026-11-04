@@ -732,6 +732,7 @@ export function createCheckoutService(
         ...(correlationId !== undefined && { correlationId }),
       } satisfies DraftMetadata,
       cartToken: cartDoc.token,
+      source: cartDoc.source,
     })
     return { kind: 'placed', order, orderKey: await mintKey(tx, order) }
   }
