@@ -548,6 +548,45 @@ export const orderShipments = sqliteTable(
   }),
 )
 
+// --- Proposals: agent writes a person or a policy decides ------------------
+
+export const proposals = sqliteTable(
+  'proposals',
+  {
+    id: text('id').primaryKey(),
+    tool: text('tool').notNull(),
+    command: text('command').notNull(),
+    args: text('args').notNull(),
+    handles: text('handles'),
+    idempotencyKey: text('idempotency_key'),
+    proposerId: text('proposer_id'),
+    agentName: text('agent_name').notNull(),
+    agentVersion: text('agent_version'),
+    correlationId: text('correlation_id').notNull(),
+    status: text('status').notNull(),
+    decidedByKind: text('decided_by_kind'),
+    decidedBy: text('decided_by'),
+    decidedAt: text('decided_at'),
+    reason: text('reason'),
+    outcomeStatus: integer('outcome_status'),
+    outcomeCode: text('outcome_code'),
+    outcomeMessage: text('outcome_message'),
+    createdAt: text('created_at').notNull(),
+    settledAt: text('settled_at'),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('proposals_key_unique')
+      .on(t.proposerId, t.tool, t.idempotencyKey)
+      .where(sql`${t.proposerId} IS NOT NULL AND ${t.idempotencyKey} IS NOT NULL`),
+    createdIdx: index('proposals_created_idx').on(t.createdAt, t.id),
+    statusIdx: index('proposals_status_idx').on(t.status, t.createdAt, t.id),
+    statusCheck: check(
+      'proposals_status',
+      sql`${t.status} IN ('pending', 'approved', 'rejected', 'applied', 'failed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -570,4 +609,5 @@ export const schema = {
   alertSubscriptions,
   emailSuppressions,
   orderShipments,
+  proposals,
 }

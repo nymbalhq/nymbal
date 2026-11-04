@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Download, History, Loader2 } from 'lucide-react'
 import type { AuditEntry } from '@nymbalhq/types'
 import {
@@ -65,7 +66,12 @@ const EMPTY = {
 }
 
 export function ActivityPage() {
-  const [form, setForm] = useState(EMPTY)
+  // An inbox proposal links here by its correlation id.
+  const [params] = useSearchParams()
+  const [form, setForm] = useState(() => ({
+    ...EMPTY,
+    correlation: params.get('correlation') ?? '',
+  }))
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const filters = filtersOf(form)

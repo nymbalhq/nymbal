@@ -359,6 +359,8 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'PUT /api/admin/settings/:slot/:path': {
     name: 'admin.settings.put',
     command: 'settings.put',
+    // A proposal keeps its arguments in plain text, and this value may be a secret.
+    tool: false,
     description:
       'Save a value for a field the config and environment leave unset; it applies at the next start.',
     params: settingParams,
@@ -678,6 +680,36 @@ export const routeSchemas: Record<string, RouteSchema> = {
     tool: false,
     description: 'Export audit entries oldest first as NDJSON.',
     query: z.object({ since: queryValue, until: queryValue, correlation: queryValue }),
+  },
+
+  // Admin: proposals (agent writes a person decides). Agents read them; only a person approves or rejects.
+  'GET /api/admin/proposals': {
+    name: 'admin.proposals.list',
+    description:
+      'List agent proposals newest first, a page at a time: status pending, decided or all, and how many are pending.',
+    query: z.object({ status: queryValue, cursor: queryValue, limit: queryValue }),
+  },
+  'GET /api/admin/proposals/:id': {
+    name: 'admin.proposals.get',
+    description: 'Get one agent proposal: what it asks, who asked, and how it was decided and ran.',
+    params: idParams,
+  },
+  'POST /api/admin/proposals/:id/approve': {
+    name: 'admin.proposals.approve',
+    command: 'proposal.approve',
+    // Not money: the proposal's own command (a refund among them) must run outside this route's keyed transaction.
+    provider: true,
+    tool: false,
+    description: 'Approve a pending proposal and run its command as the approving admin.',
+    params: idParams,
+  },
+  'POST /api/admin/proposals/:id/reject': {
+    name: 'admin.proposals.reject',
+    command: 'proposal.reject',
+    tool: false,
+    description: 'Reject a pending proposal, with an optional reason.',
+    params: idParams,
+    body: z.object({ reason: z.string().max(500).optional() }),
   },
 
   // Webhooks

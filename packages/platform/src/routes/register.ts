@@ -38,6 +38,7 @@ import { validatedAdapter } from './validated-adapter.js'
 import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
+import { registerAdminProposalRoutes } from './admin-proposals.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
 import { registerAlertRoutes } from './alerts.js'
 import { registerReviewRoutes } from './reviews.js'
@@ -208,6 +209,7 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
     settingsSlots: deps.settingsSlots,
   })
   registerAdminActivityRoutes(adapter, { auditEntries: repos.auditEntry })
+  registerAdminProposalRoutes(adapter, { proposals: services.proposals })
   registerEventsSseRoute(adapter, {
     eventBus,
     documentStore,

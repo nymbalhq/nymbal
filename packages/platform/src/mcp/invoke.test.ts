@@ -13,11 +13,11 @@ import {
   cartHandleOf,
   committedAudit,
   committedCount,
+  committedRows,
   committedStock,
   contentOf,
   customerAccount,
   productBody,
-  recordingSink,
   resultText,
   toolSurface,
   type Account,
@@ -26,7 +26,8 @@ import {
 
 // AC-3 to AC-8: a tool call is the route's own request, run in process through the handler the HTTP adapter runs.
 // Two stores, each a SQLite kernel served over HTTP so a tool's answer can be held against the route's: one on the
-// default writes (proposal), one with `agents.mcp.writes: 'apply'`. Each carries a sink that keeps what it is given.
+// default writes (proposal), one with `agents.mcp.writes: 'apply'`. A proposal is a row of the store's `proposals`
+// table, read on a connection of its own.
 
 interface Store {
   served: ServedKernel
@@ -34,7 +35,6 @@ interface Store {
   baseUrl: string
   /** The SQLite file, read on connections of its own. */
   file: string
-  sink: ReturnType<typeof recordingSink>
   tools: ToolSurface
   admin: Account
   customer: Account
@@ -44,7 +44,6 @@ interface Store {
 }
 
 async function openStore(writes?: 'apply'): Promise<Store> {
-  const sink = recordingSink()
   const kernel = await createKernel({
     dialect: 'sqlite',
     ...(writes !== undefined && {
@@ -53,7 +52,6 @@ async function openStore(writes?: 'apply'): Promise<Store> {
         agents: { ...config.agents, mcp: { enabled: true, writes } },
       }),
     }),
-    appOptions: { proposalSink: sink.sink },
   })
   const served = await serveKernel(kernel)
   const seeded = await seedVariant(kernel, 1000)
@@ -74,7 +72,6 @@ async function openStore(writes?: 'apply'): Promise<Store> {
     kernel,
     baseUrl: served.baseUrl,
     file: kernel.target,
-    sink,
     tools: toolSurface(kernel.app),
     admin,
     customer,
@@ -106,6 +103,28 @@ function lines(result: ToolResult): Array<{ variantId: string; qty: number }> {
     qty: number
   }>
   return items.map(({ variantId, qty }) => ({ variantId, qty }))
+}
+
+interface StoredProposal {
+  id: string
+  tool: string
+  command: string
+  args: string
+  proposer_id: string | null
+  agent_name: string
+  agent_version: string | null
+  status: string
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** The `proposals` rows as committed, by id. */
+function storedProposals(file: string): Map<string, StoredProposal> {
+  const rows = committedRows<StoredProposal>(
+    file,
+    'SELECT id, tool, command, args, proposer_id, agent_name, agent_version, status FROM proposals',
+  )
+  return new Map(rows.map((row) => [row.id, row]))
 }
 
 function tableCounts(file: string): Record<string, number> {
@@ -240,41 +259,42 @@ describe('AC-4: the route gate refuses a call outside the caller', () => {
 })
 
 describe('AC-5: writes are proposals by default', () => {
-  it('AC-5: with writes unset, admin_products_create with a valid body answers proposed with the command and the parsed body, runs nothing, and the sink holds exactly that proposal and its caller', async () => {
+  it('AC-5: with writes unset, admin_products_create with a valid body answers proposed with the id of the one proposals row it writes, runs nothing, and the row holds the sent arguments, the command, the admin and the agent, pending', async () => {
     const store = proposal
     const body = productBody()
-    const parsed = routeSchemas['POST /api/admin/products']!.body!.parse(body) as Record<
-      string,
-      unknown
-    >
     const before = tableCounts(store.file)
-    const held = store.sink.proposals.length
+    const held = storedProposals(store.file)
 
     const result = await store.tools.call('admin_products_create', body, store.admin.caller)
     const answer = contentOf(result).structured
-    const received = store.sink.proposals.slice(held)
+    const added = [...storedProposals(store.file).values()].filter((row) => !held.has(row.id))
 
     expect(result.isError ?? false).toBe(false)
+    expect(added).toHaveLength(1)
     expect(answer).toMatchObject({
       status: 'proposed',
-      id: `proposal-${held + 1}`,
+      id: added[0]!.id,
       tool: 'admin_products_create',
       command: 'product.create',
     })
-    expect(answer['input']).toEqual(parsed)
+    expect(answer['id']).toMatch(UUID)
     expect(tableCounts(store.file)).toEqual(before)
     expect(committedCount(store.file, 'products', 'slug = ?', [body.slug])).toBe(0)
-    expect(received).toHaveLength(1)
-    expect(received[0]!.input).toEqual(parsed)
-    expect(received[0]!.command).toBe('product.create')
-    expect(received[0]!.tool).toBe('admin_products_create')
-    expect(received[0]!.caller.auth?.userId).toBe(store.admin.userId)
-    expect(received[0]!.caller.agent).toEqual(AGENT)
+    expect({ ...added[0]!, args: JSON.parse(added[0]!.args) as unknown }).toEqual({
+      id: answer['id'],
+      tool: 'admin_products_create',
+      command: 'product.create',
+      args: body,
+      proposer_id: store.admin.userId,
+      agent_name: AGENT.name,
+      agent_version: AGENT.version,
+      status: 'pending',
+    })
   })
 
-  it('AC-5: an invalid proposal answers validation.failed and an anonymous one auth.unauthorized, and neither reaches the sink', async () => {
+  it('AC-5: an invalid proposal answers validation.failed and an anonymous one auth.unauthorized, and neither writes a proposals row', async () => {
     const store = proposal
-    const held = store.sink.proposals.length
+    const held = storedProposals(store.file).size
     const { slug: _dropped, ...noSlug } = productBody()
 
     const invalid = await store.tools.call('admin_products_create', noSlug, store.admin.caller)
@@ -283,7 +303,7 @@ describe('AC-5: writes are proposals by default', () => {
     expect([invalid.isError, anonymous.isError]).toEqual([true, true])
     expect(contentOf(invalid).structured['code']).toBe('validation.failed')
     expect(contentOf(anonymous).structured['code']).toBe('auth.unauthorized')
-    expect(store.sink.proposals.length).toBe(held)
+    expect(storedProposals(store.file).size).toBe(held)
   })
 
   it('AC-5: property: under the default writes, any sequence of command tool calls by an admin leaves the product, order and audit tables as they were', async () => {
@@ -489,5 +509,29 @@ describe('AC-8: no result carries a secret or the bearer', () => {
     }
 
     expect(leaks).toEqual([])
+  })
+})
+
+describe('AC-13: a tool listed for nobody does not run', () => {
+  it('AC-13: orders_get, listed for nobody, answers isError tool.unknown in process for every caller, as a name no tool has does, and writes no audit entry', async () => {
+    const store = apply
+    const audit = committedCount(store.file, 'audit_entries')
+    const answers: Array<[unknown, unknown, unknown]> = []
+    for (const caller of [ANONYMOUS, store.customer.caller, store.admin.caller]) {
+      const unlisted = await store.tools.call('orders_get', { orderNumber: 'NYM-000001' }, caller)
+      const unknown = await store.tools.call(
+        'orders_nonexistent',
+        { orderNumber: 'NYM-000001' },
+        caller,
+      )
+      answers.push([
+        contentOf(unlisted).structured['code'],
+        contentOf(unknown).structured['code'],
+        unlisted.isError,
+      ])
+    }
+
+    expect(answers).toEqual(answers.map(() => ['tool.unknown', 'tool.unknown', true]))
+    expect(committedCount(store.file, 'audit_entries')).toBe(audit)
   })
 })

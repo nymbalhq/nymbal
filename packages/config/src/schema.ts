@@ -504,10 +504,11 @@ export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
 const CRAWL_OTHERS = ['allow', 'disallow'] as const
 
 /**
- * How agents reach the store. `mcp.writes: 'proposal'` hands a command tool's validated input to the proposal sink
- * and runs nothing; `'apply'` runs it as the route would. `ucp` is the Universal Commerce Protocol profile and its
- * MCP endpoint; `links` are the legal pages a UCP checkout names. `crawl` is what `robots.txt`, `llms.txt` and the
- * product feed serve.
+ * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
+ * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
+ * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
+ * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `crawl`
+ * is what `robots.txt`, `llms.txt` and the product feed serve.
  */
 export const agentsSchema = z
   .object({
@@ -525,6 +526,7 @@ export const agentsSchema = z
       })
       .strict()
       .prefault({}),
+    autoApprove: z.array(z.string().min(1)).default([]),
     ucp: z
       .object({
         enabled: z.boolean().default(true),

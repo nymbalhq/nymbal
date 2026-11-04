@@ -73,7 +73,9 @@ function bearerOf(ctx: RequestContext): string | undefined {
   return header.slice('bearer '.length).trim()
 }
 
-function agentOf(meta: Record<string, unknown> | undefined, server: Server): Caller['agent'] {
+/** The SDK lifts the client's `_meta` clientInfo into the request's envelope before a handler sees it. */
+function agentOf(envelope: object | undefined, server: Server): Caller['agent'] {
+  const meta = envelope as Record<string, unknown> | undefined
   const info = (meta?.[CLIENT_INFO_META_KEY] ?? server.getClientVersion()) as
     | { name?: unknown; version?: unknown }
     | undefined
@@ -90,8 +92,8 @@ function toolServer(surface: ToolSurface, state: RequestState, version: string):
     agent,
     ip: state.ip,
   })
-  server.setRequestHandler('tools/list', (request) => ({
-    tools: surface.list(caller(agentOf(request.params?._meta, server))).map((tool) => ({
+  server.setRequestHandler('tools/list', (_request, ctx) => ({
+    tools: surface.list(caller(agentOf(ctx.mcpReq.envelope, server))).map((tool) => ({
       name: tool.name,
       title: tool.title,
       description: tool.description,
@@ -100,8 +102,8 @@ function toolServer(surface: ToolSurface, state: RequestState, version: string):
       annotations: { readOnlyHint: tool.kind === 'read' },
     })),
   }))
-  server.setRequestHandler('tools/call', async (request) => {
-    const who = caller(agentOf(request.params._meta, server))
+  server.setRequestHandler('tools/call', async (request, ctx) => {
+    const who = caller(agentOf(ctx.mcpReq.envelope, server))
     const tool = surface.list(who).find((listed) => listed.name === request.params.name)
     const result =
       (tool && state.admit(tool)) ??

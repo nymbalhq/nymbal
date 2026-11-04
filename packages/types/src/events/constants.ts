@@ -74,6 +74,13 @@ export const EVT_ALERT_CONFIRMATION_SENT = 'alert.confirmation_sent.v1'
 /** A review the reviews adapter took for the store; the kernel resolved its reviewer and the order it is verified by. */
 export const EVT_REVIEW_SUBMITTED = 'review.submitted.v1'
 
+// Proposals: an agent's write a person or a policy decides
+export const EVT_PROPOSAL_CREATED = 'proposal.created.v1'
+export const EVT_PROPOSAL_APPROVED = 'proposal.approved.v1'
+export const EVT_PROPOSAL_REJECTED = 'proposal.rejected.v1'
+export const EVT_PROPOSAL_APPLIED = 'proposal.applied.v1'
+export const EVT_PROPOSAL_FAILED = 'proposal.failed.v1'
+
 // System
 export const EVT_ADAPTER_ERROR = 'adapter.error.v1'
 export const EVT_SETTINGS_CHANGED = 'settings.changed.v1'
@@ -127,6 +134,11 @@ export const STANDARD_EVENT_TYPES = [
   EVT_ALERT_SENT,
   EVT_ALERT_CONFIRMATION_SENT,
   EVT_REVIEW_SUBMITTED,
+  EVT_PROPOSAL_CREATED,
+  EVT_PROPOSAL_APPROVED,
+  EVT_PROPOSAL_REJECTED,
+  EVT_PROPOSAL_APPLIED,
+  EVT_PROPOSAL_FAILED,
   EVT_ADAPTER_ERROR,
   EVT_SETTINGS_CHANGED,
 ] as const

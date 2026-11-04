@@ -3,14 +3,13 @@ import bcrypt from 'bcryptjs'
 import Database from 'better-sqlite3'
 import type { Caller, ToolDefinition, ToolResult } from '@nymbalhq/types'
 import type { NymbalApp } from '../../src/app.js'
-import type { Proposal, ProposalSink } from '../../src/mcp/proposals.js'
 import type { Kernel } from './kernel.js'
 import { shopper } from './shopper.js'
 import { unaudited } from './write-audit.js'
 
 // The agent side of the tool registry: callers as the transports hand them to the invoker (a verified bearer, or none),
-// the accounts behind them, and a proposal sink that keeps what it was given. Nothing here knows how the registry, the
-// invoker or the transports are built.
+// the accounts behind them, and the committed rows a call leaves. Nothing here knows how the registry, the invoker or
+// the transports are built.
 
 export const AGENT = { name: 'acceptance-agent', version: '1.0.0' } as const
 
@@ -168,20 +167,6 @@ export function committedAudit(file: string, idempotencyKey?: string): AuditEntr
     subjectIds: (JSON.parse(r.subjects) as Array<{ id: string }>).map((s) => s.id),
     outcome: r.outcome,
   }))
-}
-
-/** A sink that keeps every proposal and answers ids `proposal-1`, `proposal-2`, … in order. */
-export function recordingSink(): { sink: ProposalSink; proposals: Proposal[] } {
-  const proposals: Proposal[] = []
-  return {
-    proposals,
-    sink: {
-      async propose(p: Proposal) {
-        proposals.push(p)
-        return { id: `proposal-${proposals.length}` }
-      },
-    },
-  }
 }
 
 /** A tool result's `structuredContent` as a record, and its one text block parsed. */

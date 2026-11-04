@@ -4,7 +4,8 @@ import { DEFAULT_AGENT_CRAWLERS } from './index.js'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
 // AC-12: the `agents` block. A store that never mentions agents serves MCP with writes held as proposals; `writes`
-// takes `proposal` or `apply` and nothing else.
+// takes `proposal` or `apply` and nothing else. AC-11: `autoApprove` lists the commands a policy approves at the call,
+// none by default.
 
 function baseConfig(): NymbalConfigInput {
   return {
@@ -86,6 +87,47 @@ describe('AC-12: agents.mcp in the config', () => {
   })
 })
 
+describe('AC-11: agents.autoApprove in the config', () => {
+  it('AC-11: a config with no agents block, or an agents block without autoApprove, parses to agents.autoApprove []', () => {
+    const bare = nymbalConfigSchema.parse(baseConfig())
+    const withMcp = nymbalConfigSchema.parse({
+      ...baseConfig(),
+      agents: { mcp: { writes: 'apply' } },
+    })
+
+    expect([bare.agents.autoApprove, withMcp.agents.autoApprove]).toEqual([[], []])
+  })
+
+  it('AC-11: property: any list of non-empty command names is kept as given, beside agents.mcp at its defaults', () => {
+    fc.assert(
+      fc.property(fc.array(fc.string({ minLength: 1 }), { maxLength: 6 }), (autoApprove) => {
+        const parsed = nymbalConfigSchema.parse({ ...baseConfig(), agents: { autoApprove } })
+
+        expect(parsed.agents.autoApprove).toEqual(autoApprove)
+        expect(parsed.agents.mcp).toEqual({ enabled: true, writes: 'proposal' })
+      }),
+    )
+  })
+
+  it('AC-11: property: an empty command name is refused at agents.autoApprove.<its index>', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1 }), { maxLength: 4 }),
+        fc.nat(),
+        (names, at) => {
+          const index = at % (names.length + 1)
+          const autoApprove = [...names.slice(0, index), '', ...names.slice(index)]
+          const result = nymbalConfigSchema.safeParse({ ...baseConfig(), agents: { autoApprove } })
+          const paths = result.success ? [] : result.error.issues.map((i) => i.path.join('.'))
+
+          expect(result.success).toBe(false)
+          expect(paths).toContain(`agents.autoApprove.${index}`)
+        },
+      ),
+    )
+  })
+})
+
 // AC-1: `agents.ucp` and `agents.crawl`, beside `agents.mcp`. A store that never mentions them serves the UCP surface
 // and every crawl file, allowing the named AI crawlers and everyone else.
 
@@ -127,6 +169,7 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
 
     expect(parsed.agents).toEqual({
       mcp: { enabled: true, writes: 'proposal' },
+      autoApprove: [],
       ucp: { enabled: true, links: [] },
       crawl: {
         robots: true,

@@ -148,6 +148,13 @@
       "when": 1793605266500,
       "tag": "0020_alert_confirmation_sent",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1793740928592,
+      "tag": "0021_proposals",
+      "breakpoints": true
     }
   ]
 }

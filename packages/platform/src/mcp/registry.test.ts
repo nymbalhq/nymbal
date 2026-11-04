@@ -20,7 +20,10 @@ import { RouteTable, recordingAdapter } from './route-table.js'
 // attachHttp fills the app's own (recordingAdapter around the adapter it is given); the adapter under it keeps each
 // composed handler as an HTTP server would run it, so a route's scope can be observed by calling it.
 
-/** Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history, the AI key. */
+/**
+ * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
+ * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal.
+ */
 const EXCLUDED = [
   'auth.register',
   'auth.login',
@@ -36,6 +39,9 @@ const EXCLUDED = [
   'recentlyViewed.record',
   'recentlyViewed.list',
   'admin.products.enhance',
+  'admin.proposals.approve',
+  'admin.proposals.reject',
+  'admin.settings.put',
 ].sort()
 
 /** The routes a cookie names the cart of; their tools take it as `cart`. */
@@ -200,7 +206,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-1: the entries marked tool: false are exactly the fourteen kept from agents, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject and settings put, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)
@@ -291,6 +297,31 @@ describe('AC-1: one tool per registry entry', () => {
         },
       ),
     )
+  })
+})
+
+describe('AC-13: proposals are read by agents and decided by people', () => {
+  it('AC-13: admin_proposals_list and admin_proposals_get are admin read tools of GET /api/admin/proposals and GET /api/admin/proposals/:id; no tool approves or rejects a proposal or puts a setting', () => {
+    const byName = new Map(tools.map((tool) => [tool.name, tool]))
+    const shape = (name: string) => {
+      const tool = byName.get(name)
+      return tool && { kind: tool.kind, scope: tool.scope, route: keyOf(tool) }
+    }
+
+    expect([shape('admin_proposals_list'), shape('admin_proposals_get')]).toEqual([
+      { kind: 'read', scope: 'admin', route: 'GET /api/admin/proposals' },
+      { kind: 'read', scope: 'admin', route: 'GET /api/admin/proposals/:id' },
+    ])
+    expect(
+      ['admin_proposals_approve', 'admin_proposals_reject', 'admin_settings_put'].filter((name) =>
+        byName.has(name),
+      ),
+    ).toEqual([])
+    expect(
+      tools.filter(
+        (tool) => tool.kind === 'command' && tool.route.path.startsWith('/api/admin/proposals'),
+      ),
+    ).toEqual([])
   })
 })
 

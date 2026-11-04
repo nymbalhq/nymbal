@@ -554,6 +554,45 @@ export const orderShipments = pgTable(
   }),
 )
 
+// --- Proposals: agent writes a person or a policy decides ------------------
+
+export const proposals = pgTable(
+  'proposals',
+  {
+    id: text('id').primaryKey(),
+    tool: text('tool').notNull(),
+    command: text('command').notNull(),
+    args: jsonb('args').notNull(),
+    handles: jsonb('handles'),
+    idempotencyKey: text('idempotency_key'),
+    proposerId: text('proposer_id'),
+    agentName: text('agent_name').notNull(),
+    agentVersion: text('agent_version'),
+    correlationId: text('correlation_id').notNull(),
+    status: text('status').notNull(),
+    decidedByKind: text('decided_by_kind'),
+    decidedBy: text('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    reason: text('reason'),
+    outcomeStatus: integer('outcome_status'),
+    outcomeCode: text('outcome_code'),
+    outcomeMessage: text('outcome_message'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+  },
+  (t) => ({
+    keyUnique: uniqueIndex('proposals_key_unique')
+      .on(t.proposerId, t.tool, t.idempotencyKey)
+      .where(sql`${t.proposerId} IS NOT NULL AND ${t.idempotencyKey} IS NOT NULL`),
+    createdIdx: index('proposals_created_idx').on(t.createdAt, t.id),
+    statusIdx: index('proposals_status_idx').on(t.status, t.createdAt, t.id),
+    statusCheck: check(
+      'proposals_status',
+      sql`${t.status} IN ('pending', 'approved', 'rejected', 'applied', 'failed')`,
+    ),
+  }),
+)
+
 export const schema = {
   categories,
   products,
@@ -576,4 +615,5 @@ export const schema = {
   alertSubscriptions,
   emailSuppressions,
   orderShipments,
+  proposals,
 }

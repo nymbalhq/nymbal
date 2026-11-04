@@ -30,9 +30,11 @@ import {
 import { createAlertService, type AlertService } from './alert-service.js'
 import { createReviewService, type ReviewService } from './review-service.js'
 import {
-  createImportRemovalService,
-  type ImportRemovalService,
-} from './import-removal-service.js'
+  createProposalService,
+  type ProposalService,
+  type ProposalServiceDeps,
+} from './proposal-service.js'
+import { createImportRemovalService, type ImportRemovalService } from './import-removal-service.js'
 
 export * from './product-service.js'
 export * from './category-service.js'
@@ -47,6 +49,7 @@ export * from './refund-service.js'
 export * from './recently-viewed-service.js'
 export * from './alert-service.js'
 export * from './review-service.js'
+export * from './proposal-service.js'
 export * from './import-removal-service.js'
 export { newAlertToken } from './alert-token.js'
 export { sanitizeDescription } from './description.js'
@@ -70,6 +73,7 @@ export interface ServiceRegistry {
   recentlyViewed: RecentlyViewedService
   alert: AlertService
   review: ReviewService
+  proposals: ProposalService
   importRemoval: ImportRemovalService
 }
 
@@ -85,6 +89,8 @@ export interface BuildServicesDeps {
   reviews: ReviewsAdapter
   /** The effective JWT secret (`resolveAuthSecret`), not the config's field. */
   jwtSecret: string
+  /** Runs a stored proposal through its route: the tool surface `attachHttp` builds. */
+  executeProposal: ProposalServiceDeps['execute']
 }
 
 export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
@@ -195,6 +201,12 @@ export function buildServices(deps: BuildServicesDeps): ServiceRegistry {
       publisher,
       reviews,
       logger: logger.child({ service: 'review' }),
+    }),
+    proposals: createProposalService({
+      store,
+      proposals: repos.proposal,
+      publisher,
+      execute: deps.executeProposal,
     }),
     importRemoval: createImportRemovalService({
       store,

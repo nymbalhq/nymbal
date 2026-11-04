@@ -4,6 +4,7 @@ import type { Order, OrderStatus } from '../domain/order.js'
 import type { Product, Variant } from '../domain/product.js'
 import type { StockAdjustmentReason } from '../domain/inventory.js'
 import type { AlertKind } from '../alerts.js'
+import type { ProposalDecider } from '../proposals.js'
 import type { SettingSourceName } from '../settings.js'
 
 export interface ProductSnapshot extends Product {
@@ -270,6 +271,27 @@ export interface ReviewSubmittedV1Payload {
   /** The reviewer's paid order holding the product, which makes the review verified; null when there is none. */
   orderId: string | null
   rating: number
+}
+
+// No proposal event carries the arguments or a handle: the log is kept, archived and streamed to every admin tab.
+export interface ProposalCreatedV1Payload {
+  proposalId: string
+  tool: string
+  command: string
+  proposerId: string | null
+  agentName: string
+}
+export interface ProposalApprovedV1Payload extends ProposalCreatedV1Payload {
+  decidedBy: ProposalDecider
+}
+export interface ProposalRejectedV1Payload extends ProposalApprovedV1Payload {
+  reason: string | null
+}
+export interface ProposalAppliedV1Payload extends ProposalCreatedV1Payload {
+  outcome: { status: number }
+}
+export interface ProposalFailedV1Payload extends ProposalCreatedV1Payload {
+  outcome: { status: number; code?: string; message?: string }
 }
 
 export interface AdapterErrorV1Payload {

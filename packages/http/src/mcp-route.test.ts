@@ -13,9 +13,9 @@ import {
   toolSurface,
 } from '../../platform/tests/support/mcp.js'
 
-// AC-9: `POST /api/mcp` over HTTP, mounted beside the routes `attachHttp` registers on a kernel built from source. Raw
-// requests where only the status matters (an `initialize`, which any MCP server answers); the SDK client where the
-// protocol does.
+// AC-9 and AC-13: `POST /api/mcp` over HTTP, mounted beside the routes `attachHttp` registers on a kernel built from
+// source. Raw requests where only the status matters (an `initialize`, which any MCP server answers); the SDK client
+// where the protocol does.
 
 const HOST = '127.0.0.1'
 const ALLOWED_ORIGIN = 'http://localhost:4321'
@@ -240,6 +240,29 @@ describe('AC-9: POST /api/mcp', () => {
     expect(results.slice(0, 5).map((r) => r.isError)).toEqual([false, false, false, false, false])
     expect([sixth.isError, sixth.code]).toEqual([true, 'rate.limited'])
     expect(typeof sixth.retryAfter === 'number' ? sixth.retryAfter : 0).toBeGreaterThan(0)
+  }, 30_000)
+
+  it('AC-13: tools/call of orders_get, listed for nobody, answers isError tool.unknown for an anonymous and an admin caller, as a name no tool has does', async () => {
+    const store = await served()
+    const admin = await adminAccount(store.kernel, store.base)
+    const args = { orderNumber: 'NYM-000001' }
+
+    const answers: Array<[unknown, unknown, unknown]> = []
+    for (const token of [undefined, admin.token]) {
+      const { client } = await connect(store, token)
+      const unlisted = await client.callTool({ name: 'orders_get', arguments: args })
+      const unknown = await client.callTool({ name: 'orders_nonexistent', arguments: args })
+      answers.push([
+        (unlisted.structuredContent as { code?: unknown } | undefined)?.code,
+        (unknown.structuredContent as { code?: unknown } | undefined)?.code,
+        unlisted.isError,
+      ])
+    }
+
+    expect(answers).toEqual([
+      ['tool.unknown', 'tool.unknown', true],
+      ['tool.unknown', 'tool.unknown', true],
+    ])
   }, 30_000)
 
   it('AC-9: with agents.mcp.enabled false, POST /api/mcp answers 404 while the store serves its routes', async () => {

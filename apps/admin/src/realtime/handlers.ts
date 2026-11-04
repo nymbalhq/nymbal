@@ -72,6 +72,7 @@ const LIVE_QUERY_PREFIXES: QueryKey[] = [
   ['orders', 'detail'],
   ['dashboard'],
   ['inventory', 'list'],
+  ['proposals'],
 ]
 
 /**
@@ -152,6 +153,24 @@ export function createEventHandlers(queryClient: QueryClient) {
           title: 'Payment Failed',
           message: `Payment failed for order ${orderId}: ${reason}`,
         })
+        break
+      }
+
+      case 'proposal.created.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
+        push({
+          type: 'info',
+          title: 'Inbox',
+          message: `Agent proposal: ${event.payload.command}`,
+        })
+        break
+      }
+
+      case 'proposal.approved.v1':
+      case 'proposal.rejected.v1':
+      case 'proposal.applied.v1':
+      case 'proposal.failed.v1': {
+        void queryClient.invalidateQueries({ queryKey: ['proposals'] })
         break
       }
 

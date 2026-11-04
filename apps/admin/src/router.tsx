@@ -13,6 +13,7 @@ import { CustomersListPage, customersListHandle } from '@/pages/CustomersListPag
 import { CustomerDetailPage, customerDetailHandle } from '@/pages/CustomerDetailPage'
 import { SettingsPage, settingsHandle } from '@/pages/SettingsPage'
 import { ActivityPage, activityHandle } from '@/pages/ActivityPage'
+import { InboxPage, inboxHandle } from '@/pages/InboxPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 
 let restoreAttempt: Promise<boolean> | null = null
@@ -105,6 +106,11 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           path: 'activity',
           element: <ActivityPage />,
           handle: activityHandle,
+        },
+        {
+          path: 'inbox',
+          element: <InboxPage />,
+          handle: inboxHandle,
         },
         {
           path: 'settings',

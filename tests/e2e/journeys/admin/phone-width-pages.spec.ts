@@ -4,10 +4,18 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD } from '../../support/admin'
 import { adminToken } from '../../support/checkout'
 import { API_URL } from '../../support/csrf'
 import { phoneWidths } from '../../support/phone-width'
+import { proposeProduct } from '../../support/proposals'
 
 // At a phone's width no admin page is wider than the viewport: the pages admin/phone-width.spec.ts does not measure,
-// each once it has rendered. Tagged @phone-width, so only the admin-mobile project runs it, at Pixel 7
+// each once it has rendered; the inbox with a pending proposal whose arguments hold one long value among them. Tagged @phone-width, so only the admin-mobile project runs it, at Pixel 7
 // (tests/e2e/playwright.config.ts).
+
+/** The right edge of an element against the viewport's width. */
+async function rightEdge(page: Page, testId: string): Promise<{ right: number; viewport: number }> {
+  const viewport = page.viewportSize()?.width ?? Number.POSITIVE_INFINITY
+  const box = await page.getByTestId(testId).boundingBox()
+  return { right: box === null ? Number.POSITIVE_INFINITY : box.x + box.width, viewport }
+}
 
 /** Holds the page the browser is on to the phone's width; soft, so one run measures every page. */
 async function expectPhoneWidth(page: Page, name: string): Promise<void> {
@@ -69,6 +77,39 @@ test.describe('Admin at a phone’s width @phone-width', () => {
       // Skeletons are placeholders of fixed size; the page is measured once its data has replaced them.
       await expect(main.locator('.animate-pulse')).toHaveCount(0, { timeout: 10_000 })
       await expectPhoneWidth(page, name)
+    }
+  })
+
+  test('AC-18: the inbox with a pending proposal whose arguments hold an unbroken 160-character value is no wider than the viewport, and its row and its Approve and Reject buttons end inside it', async ({
+    page,
+    request,
+  }) => {
+    const token = await adminToken(request)
+    const proposal = await proposeProduct(request, token, `long-argument-${'x'.repeat(146)}`)
+    const ids = [
+      `admin-inbox-row-${proposal.id}`,
+      `admin-inbox-approve-${proposal.id}`,
+      `admin-inbox-reject-${proposal.id}`,
+    ]
+
+    // Through the form, as above: signInAsAdmin waits for a sidebar link the phone's off-canvas sidebar hides.
+    await page.goto('login')
+    await page.getByTestId('admin-login-email').fill(ADMIN_EMAIL)
+    await page.getByTestId('admin-login-password').fill(ADMIN_PASSWORD)
+    await page.getByTestId('admin-login-submit').click()
+    await page.waitForURL((url) => !url.pathname.replace(/\/$/, '').endsWith('/login'), {
+      timeout: 15_000,
+    })
+    await page.goto('inbox')
+    await expect(page.getByTestId(ids[0]!)).toContainText(proposal.slug, { timeout: 15_000 })
+    await expect(page.locator('main .animate-pulse')).toHaveCount(0, { timeout: 10_000 })
+
+    await expectPhoneWidth(page, 'inbox')
+    for (const id of ids) {
+      const { right, viewport } = await rightEdge(page, id)
+      expect
+        .soft(right, `${id}: right edge ${right}, viewport ${viewport}`)
+        .toBeLessThanOrEqual(viewport + 1)
     }
   })
 })

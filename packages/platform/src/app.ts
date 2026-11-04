@@ -40,8 +40,8 @@ import { importAdapterModule, resolveChoice } from './adapters/resolve.js'
 import type { AgentSurfaces, HttpAdapter, ToolSurface } from '@nymbalhq/types'
 import { RouteTable, recordingAdapter } from './mcp/route-table.js'
 import { toolsOf } from './mcp/registry.js'
-import { createInvoker } from './mcp/invoke.js'
-import { returningSink, type ProposalSink } from './mcp/proposals.js'
+import { createInvoker, type Invoker } from './mcp/invoke.js'
+import { policyOf } from './mcp/proposals.js'
 import { createAgentSurfaces } from './agents/surfaces.js'
 
 export interface NymbalApp {
@@ -85,8 +85,6 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   adapters?: InjectedAdapters
   /** How the event relay retries a failed delivery (`createRelay`). */
   relay?: Pick<CreateRelayOptions, 'maxAttempts' | 'retryDelayMs' | 'intervalMs' | 'now'>
-  /** Where a command tool's call goes under `agents.mcp.writes: 'proposal'`; by default it is logged and kept nowhere. */
-  proposalSink?: ProposalSink
 }
 
 /**
@@ -217,6 +215,7 @@ export async function createApp(
   )
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
+  const policy = policyOf(config.agents)
   const jwt = resolveAuthSecret(config, process.env)
   addSecret(jwt.secret)
   const shadowed = process.env[JWT_SECRET_ENV]
@@ -298,6 +297,7 @@ export async function createApp(
         source: 'nymbal-app',
       },
     })
+    let mcp: Invoker | undefined
     const services = buildServices({
       config,
       store: platform.commandStore,
@@ -309,6 +309,11 @@ export async function createApp(
       email: adapters.email,
       reviews: adapters.reviews,
       jwtSecret: jwt.secret,
+      executeProposal: (row, auth) => {
+        if (mcp === undefined)
+          throw new Error('a proposal runs through the routes attachHttp registers')
+        return mcp.execute(row, auth)
+      },
     })
 
     await registerHandlers({
@@ -364,8 +369,6 @@ export async function createApp(
       }),
     ]
 
-    const proposalSink = options.proposalSink ?? returningSink(logger.child({ layer: 'mcp' }))
-    let mcp: ToolSurface | undefined
     let agents: AgentSurfaces | undefined
     const app: NymbalApp = {
       platform,
@@ -402,8 +405,8 @@ export async function createApp(
         mcp = createInvoker({
           table,
           tools: toolsOf(table),
-          writes: config.agents.mcp.writes,
-          sink: proposalSink,
+          proposals: services.proposals,
+          policy,
           logger,
         })
         agents = createAgentSurfaces({
