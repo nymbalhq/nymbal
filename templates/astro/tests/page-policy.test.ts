@@ -33,8 +33,8 @@ const apiUrls = fc.oneof(
 
 describe('AC-2: the Astro page policy', () => {
   // Kills: a production policy that lets the page be framed, loads plugins or scripts from anywhere, sends forms or
-  // a <base> elsewhere, connects to more than the API's origin, or carries a dev allowance.
-  it('AC-2: property: for any API URL the production policy forbids framing, plugins, foreign base and form targets, allows Stripe’s script and frames, connects to self, the API’s origin and Stripe only, and has no unsafe-eval, websocket or wildcard', () => {
+  // a <base> elsewhere, connects to more than the API's origin, refuses the API's images, or carries a dev allowance.
+  it('AC-2: property: for any API URL the production policy forbids framing, plugins, foreign base and form targets, allows Stripe’s script and frames, connects to self, the API’s origin and Stripe only, loads images from self, data, blob, https and the API’s origin only, and has no unsafe-eval, websocket or wildcard', () => {
     fc.assert(
       fc.property(apiUrls, (apiUrl) => {
         const policy = directives(pagePolicy({ apiUrl, dev: false }))
@@ -49,6 +49,15 @@ describe('AC-2: the Astro page policy', () => {
         expect(sorted(policy.get('connect-src') ?? []), apiUrl).toEqual(
           sorted(["'self'", STRIPE_API, ...(apiUrl === '' ? [] : [new URL(apiUrl).origin])]),
         )
+        expect(sorted(policy.get('img-src') ?? []), apiUrl).toEqual(
+          sorted([
+            "'self'",
+            'data:',
+            'blob:',
+            'https:',
+            ...(apiUrl === '' ? [] : [new URL(apiUrl).origin]),
+          ]),
+        )
         expect(
           sources.filter((s) => s === "'unsafe-eval'" || /^wss?:/i.test(s) || s.includes('*')),
           apiUrl,
@@ -58,13 +67,19 @@ describe('AC-2: the Astro page policy', () => {
     )
   })
 
-  // Kills: the API URL leaking into any directive but connect-src (a script source naming the API host).
-  it('AC-2: property: two API URLs give production policies that differ only in connect-src', () => {
+  // Kills: the API URL leaking into any directive but connect-src and img-src's API origin (a script source naming the
+  // API host).
+  it("AC-2: property: two API URLs give production policies that differ only in connect-src and img-src's API origin", () => {
     fc.assert(
       fc.property(apiUrls, apiUrls, (a, b) => {
         const without = (apiUrl: string) => {
           const policy = directives(pagePolicy({ apiUrl, dev: false }))
           policy.delete('connect-src')
+          const origin = apiUrl === '' ? '' : new URL(apiUrl).origin
+          policy.set(
+            'img-src',
+            (policy.get('img-src') ?? []).filter((s) => s !== origin),
+          )
           return policy
         }
 

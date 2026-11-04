@@ -7,6 +7,7 @@ import { deployCommand } from './commands/deploy.js'
 import { migrateCommand } from './commands/migrate.js'
 import { seedCommand } from './commands/seed.js'
 import { importCommand } from './commands/import.js'
+import { previewCommand } from './commands/preview.js'
 import { configValidateCommand } from './commands/config-validate.js'
 import { addCommand } from './commands/add.js'
 import { doctorCommand } from './commands/doctor.js'
@@ -46,6 +47,7 @@ export const main = defineCommand({
     migrate: migrateCommand,
     seed: seedCommand,
     import: importCommand,
+    preview: previewCommand,
     'config:validate': configValidateCommand,
     add: addCommand,
     doctor: doctorCommand,

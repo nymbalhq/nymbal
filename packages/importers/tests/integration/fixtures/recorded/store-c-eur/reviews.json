@@ -1,0 +1,197 @@
+[
+  {
+    "id": 50,
+    "date_created": "2026-11-04T18:29:36",
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "product_id": 13,
+    "product_name": "Oak Pan",
+    "product_permalink": "http://localhost:8888/product/oak-pan/",
+    "status": "approved",
+    "reviewer": "Anna Visser",
+    "reviewer_email": "anna.visser@example.com",
+    "review": "<p>Heats evenly and cleans up easily.</p>\n",
+    "rating": 5,
+    "verified": true,
+    "reviewer_avatar_urls": {
+      "24": "https://secure.gravatar.com/avatar/dc4cf2b9a528bfd43ff5f25424e5dc26577e4a2cdc6e0ce02080bc045ef785e2?s=24&d=mm&r=g",
+      "48": "https://secure.gravatar.com/avatar/dc4cf2b9a528bfd43ff5f25424e5dc26577e4a2cdc6e0ce02080bc045ef785e2?s=48&d=mm&r=g",
+      "96": "https://secure.gravatar.com/avatar/dc4cf2b9a528bfd43ff5f25424e5dc26577e4a2cdc6e0ce02080bc045ef785e2?s=96&d=mm&r=g"
+    },
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews/50",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/13"
+        }
+      ]
+    }
+  },
+  {
+    "id": 51,
+    "date_created": "2026-11-04T18:29:36",
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "product_id": 137,
+    "product_name": "Garden Gloves",
+    "product_permalink": "http://localhost:8888/product/garden-gloves/",
+    "status": "approved",
+    "reviewer": "Lotte Peeters",
+    "reviewer_email": "lotte.peeters@example.com",
+    "review": "<p>Good fit, a little stiff at first.</p>\n",
+    "rating": 4,
+    "verified": true,
+    "reviewer_avatar_urls": {
+      "24": "https://secure.gravatar.com/avatar/7f92ac4615224515419e959a0cf5b98d461ac8223862ffc386432aca09566796?s=24&d=mm&r=g",
+      "48": "https://secure.gravatar.com/avatar/7f92ac4615224515419e959a0cf5b98d461ac8223862ffc386432aca09566796?s=48&d=mm&r=g",
+      "96": "https://secure.gravatar.com/avatar/7f92ac4615224515419e959a0cf5b98d461ac8223862ffc386432aca09566796?s=96&d=mm&r=g"
+    },
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews/51",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137"
+        }
+      ]
+    }
+  },
+  {
+    "id": 52,
+    "date_created": "2026-11-04T18:29:36",
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "product_id": 141,
+    "product_name": "Fountain Pen",
+    "product_permalink": "http://localhost:8888/product/fountain-pen/",
+    "status": "approved",
+    "reviewer": "Lena Schmidt",
+    "reviewer_email": "lena.schmidt@example.com",
+    "review": "<p>Writes well but the ink runs out quickly.</p>\n",
+    "rating": 3,
+    "verified": true,
+    "reviewer_avatar_urls": {
+      "24": "https://secure.gravatar.com/avatar/d051fe1cd1640fd8f1b6cc0b9c327c3b8baa898bb393fdd702d0b5083214cae8?s=24&d=mm&r=g",
+      "48": "https://secure.gravatar.com/avatar/d051fe1cd1640fd8f1b6cc0b9c327c3b8baa898bb393fdd702d0b5083214cae8?s=48&d=mm&r=g",
+      "96": "https://secure.gravatar.com/avatar/d051fe1cd1640fd8f1b6cc0b9c327c3b8baa898bb393fdd702d0b5083214cae8?s=96&d=mm&r=g"
+    },
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews/52",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141"
+        }
+      ]
+    }
+  },
+  {
+    "id": 53,
+    "date_created": "2026-11-04T18:29:36",
+    "date_created_gmt": "2026-11-04T18:29:36",
+    "product_id": 24,
+    "product_name": "Slate Pen",
+    "product_permalink": "http://localhost:8888/product/slate-pen/",
+    "status": "approved",
+    "reviewer": "Noor Janssen",
+    "reviewer_email": "noor.janssen@example.com",
+    "review": "<p>Arrived beautifully wrapped.</p>\n",
+    "rating": 5,
+    "verified": true,
+    "reviewer_avatar_urls": {
+      "24": "https://secure.gravatar.com/avatar/ef2e97ecb259ebce0fcf06ea50b59339ae91cd7c20531ac200de32af401148e9?s=24&d=mm&r=g",
+      "48": "https://secure.gravatar.com/avatar/ef2e97ecb259ebce0fcf06ea50b59339ae91cd7c20531ac200de32af401148e9?s=48&d=mm&r=g",
+      "96": "https://secure.gravatar.com/avatar/ef2e97ecb259ebce0fcf06ea50b59339ae91cd7c20531ac200de32af401148e9?s=96&d=mm&r=g"
+    },
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews/53",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/24"
+        }
+      ]
+    }
+  },
+  {
+    "id": 54,
+    "date_created": "2026-11-04T18:29:37",
+    "date_created_gmt": "2026-11-04T18:29:37",
+    "product_id": 33,
+    "product_name": "Copper Pruner",
+    "product_permalink": "http://localhost:8888/product/copper-pruner/",
+    "status": "approved",
+    "reviewer": "Daan Bakker",
+    "reviewer_email": "daan.bakker@example.com",
+    "review": "<p>Smaller than I expected.</p>\n",
+    "rating": 2,
+    "verified": false,
+    "reviewer_avatar_urls": {
+      "24": "https://secure.gravatar.com/avatar/256928063104e336fe8c627da3396cd8553667cfed24cc991ce592aae5ec9e2a?s=24&d=mm&r=g",
+      "48": "https://secure.gravatar.com/avatar/256928063104e336fe8c627da3396cd8553667cfed24cc991ce592aae5ec9e2a?s=48&d=mm&r=g",
+      "96": "https://secure.gravatar.com/avatar/256928063104e336fe8c627da3396cd8553667cfed24cc991ce592aae5ec9e2a?s=96&d=mm&r=g"
+    },
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews/54",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/reviews"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/33"
+        }
+      ]
+    }
+  }
+]

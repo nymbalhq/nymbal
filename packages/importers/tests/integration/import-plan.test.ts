@@ -109,6 +109,10 @@ function sourceCount(store: WooStore, e: ImportEntity): number {
   return store[e].length
 }
 
+/** Each value once, in order: a product refused for its slug and a SKU is one refusal. */
+const sorted = (values: Array<string | undefined>): Array<string | undefined> =>
+  [...new Set(values)].sort()
+
 /** Small stores, and stores whose products cross the 100-per-page boundary. */
 const sizedStores = arbStore({
   products: fc.oneof(fc.integer({ min: 0, max: 12 }), fc.integer({ min: 101, max: 250 })),
@@ -129,22 +133,35 @@ describe('AC-1: the plan counts what the import imports', () => {
     }
   }, 60_000)
 
-  it("AC-1: for generated stores with clashing slugs and SKUs, every entity's planned import count is the import's at concurrency 1", async () => {
+  // Kills: the import creating products in the order their downloads finish, so of two clashing products the later
+  // keeps the slug or SKU the plan gave the earlier.
+  it("AC-1: for generated stores with clashing slugs and SKUs, at any concurrency, every entity's planned import count is the import's and the import refuses the very products the plan does", async () => {
     await fc.assert(
-      fc.asyncProperty(sizedStores, fc.boolean(), async (store, gdpr) => {
-        const opts = planOptions({ gdpr })
-        const plan = await planOf(store, opts)
-        const { report } = await importOf(store, opts)
+      fc.asyncProperty(
+        sizedStores,
+        fc.boolean(),
+        fc.integer({ min: 1, max: 8 }),
+        async (store, gdpr, concurrency) => {
+          const opts = planOptions({ gdpr, concurrency })
+          const plan = await planOf(store, opts)
+          const { report } = await importOf(store, opts)
 
-        expect(Object.fromEntries(ALL.map((e) => [e, plan.counts[e].import]))).toEqual(
-          report.imported,
-        )
-        for (const e of ALL) {
-          const c = plan.counts[e]
-          expect(c.import + c.refused + c.skipped, e).toBe(c.source)
-          expect(c.source, e).toBe(sourceCount(store, e))
-        }
-      }),
+          // The first record of a source clash keeps the value; every later one is refused.
+          const planRefused = plan.collisions
+            .filter((c) => c.with === 'source' && (c.kind === 'product-slug' || c.kind === 'sku'))
+            .flatMap((c) => c.sourceIds.slice(1))
+          const importRefused = report.errors.filter((e) => e.phase === 'products').map((e) => e.id)
+          expect(sorted(importRefused), `concurrency ${concurrency}`).toEqual(sorted(planRefused))
+          expect(Object.fromEntries(ALL.map((e) => [e, plan.counts[e].import]))).toEqual(
+            report.imported,
+          )
+          for (const e of ALL) {
+            const c = plan.counts[e]
+            expect(c.import + c.refused + c.skipped, e).toBe(c.source)
+            expect(c.source, e).toBe(sourceCount(store, e))
+          }
+        },
+      ),
       { numRuns: 15 },
     )
   }, 600_000)

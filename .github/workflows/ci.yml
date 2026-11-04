@@ -675,6 +675,24 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The preview case loads its storefront's images in Chromium. Cached as the E2E jobs cache it.
+      - name: Playwright version
+        id: playwright
+        run: |
+          version=$(grep -m1 -oE "^  '@playwright/test@[0-9]+\.[0-9]+\.[0-9]+'" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browsers
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install --with-deps chromium
+      - name: Install Playwright system libraries
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: pnpm --filter @nymbalhq/e2e exec playwright install-deps chromium
       # The script builds and publishes every public package at a snapshot version to a local Verdaccio (Docker),
       # scaffolds outside the checkout against it, and serves the store; nothing reaches npmjs and no token is used.
       - name: Scaffold, install and serve from a local registry

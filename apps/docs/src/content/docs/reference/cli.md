@@ -94,6 +94,26 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--yes` | boolean | With --rollback: remove without asking | `false` |
 | `--since` | string | Bring over what changed in WooCommerce since the last finished import (last), a date (2026-10-01, UTC) or a date-time with a zone |  |
 
+## `nymbal preview`
+
+Import a WooCommerce store into a throwaway store and serve it on your storefront, with a report and a redirect map; your own store is not touched
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--source` | string | Import source (woocommerce) |  |
+| `--url` | string | Store URL (e.g. https://mystore.com) |  |
+| `--key` | string | WooCommerce Consumer Key (or set WOOCOMMERCE_KEY) |  |
+| `--secret` | string | WooCommerce Consumer Secret (or set WOOCOMMERCE_SECRET) |  |
+| `--entities` | string | Comma-separated list: categories,products,customers,orders,reviews (default: categories,products,customers,orders) |  |
+| `--gdpr` | boolean | Anonymise customer PII (default: true) | `true` |
+| `--ai` | boolean | Enrich products with the project's ai provider (default: false) | `false` |
+| `--concurrency` | string | Parallel import workers (default: 4) |  |
+| `--untracked-stock` | string | Stock for products WooCommerce does not count, when in stock or on backorder (default: 1000) |  |
+| `--keep` | boolean | Keep the preview directory (its store, media and import state) when the preview stops | `false` |
+| `--api-only` | boolean | Serve only the API (no storefront) | `false` |
+| `--port` | string | Port for the preview's API (default: the config's http.port, or the next free one) |  |
+| `--storefront-port` | string | Port for the storefront (default: 4321 Astro / 3000 Next.js, or the next free one) |  |
+
 ## `nymbal config:validate`
 
 Validate nymbal.config.ts

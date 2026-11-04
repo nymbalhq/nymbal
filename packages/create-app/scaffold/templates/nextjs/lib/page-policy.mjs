@@ -12,7 +12,7 @@ export function pagePolicy({ apiUrl, dev }) {
     "default-src 'self'",
     `script-src 'self' 'unsafe-inline' ${PAY.script.join(' ')}${dev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https:",
+    `img-src 'self'${api} data: blob: https:`,
     "font-src 'self' data:",
     `connect-src 'self'${api} ${PAY.connect.join(' ')}`,
     `frame-src ${PAY.frame.join(' ')}`,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
@@ -13,6 +13,13 @@ import { fileURLToPath } from 'node:url'
 // that needs them says what they answer. Products and orders are listed as WooCommerce lists them under
 // `modified_after` (their `date_modified_gmt`, none read as long ago), reviews under `after` (`date_created_gmt`); a
 // test changes the source between runs through `source`.
+//
+// `recorded` serves one of the stores recorded under fixtures/recorded/ in place of the fixtures: every answer as
+// WooCommerce gave it (categories, every products page, variations by product id, the settings, system_status, and the
+// customers, orders, reviews, coupons, taxes and shipping zones the store recorded), paged by `page` and `per_page`
+// with WooCommerce's totals headers. Each image `src` (products' and variations') moves to the same path on this
+// server, which answers a 1x1 PNG a browser decodes; permalinks are kept as recorded. `failImages` answers 404 for
+// every image of the products it names.
 
 const FIXTURES = fileURLToPath(
   new URL('../../packages/importers/tests/integration/fixtures', import.meta.url),
@@ -48,7 +55,13 @@ export interface ServedRequest {
 /** A probe's answer: a list total in `X-WP-Total`, a JSON body as is, or a bare status. */
 export type ProbeAnswer = { total: number } | { body: unknown } | { status: number }
 
+export type RecordedStoreName = 'store-a-gbp' | 'store-b-jpy' | 'store-c-eur'
+
 export interface WooCommerceServerOptions {
+  /** Serves this recorded store instead of the fixtures; the fixture options below are then ignored. */
+  recorded?: RecordedStoreName
+  /** WooCommerce product ids whose images (the product's and its variations') answer 404. */
+  failImages?: number[]
   imagesPerProduct?: number
   /** Served after the fixture categories. */
   extraCategories?: Array<Record<string, unknown>>
@@ -97,9 +110,147 @@ function instant(value: unknown): number {
   return Date.parse(/(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`)
 }
 
+/** A 1x1 PNG. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+type Rec = Record<string, unknown>
+
+/** A recorded store's answers, read from its directory: the file a request was recorded in, or undefined. */
+function recordedAnswers(name: RecordedStoreName): {
+  products: Rec[]
+  answer: (file: string) => unknown
+} {
+  const dir = join(FIXTURES, 'recorded', name)
+  const answer = (file: string): unknown =>
+    existsSync(join(dir, file)) ? JSON.parse(readFileSync(join(dir, file), 'utf8')) : undefined
+  const pages = readdirSync(dir)
+    .map((file) => /^products\.page-(\d+)\.json$/.exec(file))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+  return { products: pages.flatMap((m) => answer(m[0]) as Rec[]), answer }
+}
+
+async function startRecordedServer(
+  name: RecordedStoreName,
+  failImages: readonly number[],
+): Promise<WooCommerceServer> {
+  const recording = recordedAnswers(name)
+  const requests: ServedRequest[] = []
+  const imagePaths = new Set<string>()
+  const failedPaths = new Set<string>()
+  let base = ''
+
+  const moved = (image: unknown, failed: boolean): unknown => {
+    if (typeof image !== 'object' || image === null) return image
+    const src = (image as Rec)['src']
+    if (typeof src !== 'string' || src === '') return image
+    const path = new URL(src).pathname
+    imagePaths.add(path)
+    if (failed) failedPaths.add(path)
+    return { ...(image as Rec), src: `${base}${path}` }
+  }
+
+  const server = createServer((req, res) => {
+    const u = new URL(req.url ?? '/', 'http://fixture.invalid')
+    requests.push({ method: req.method ?? 'GET', path: u.pathname })
+    const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+      res.writeHead(status, { 'content-type': 'application/json', ...headers })
+      res.end(JSON.stringify(body))
+    }
+    if (imagePaths.has(u.pathname)) {
+      if (failedPaths.has(u.pathname)) return send(404, { code: 'not_found' })
+      res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(PNG.length) })
+      res.end(PNG)
+      return
+    }
+    if (!u.pathname.startsWith('/wp-json/wc/v3/')) return send(404, { code: 'rest_no_route' })
+    if (!(req.headers.authorization ?? '').startsWith('Basic ')) {
+      return send(401, { code: 'woocommerce_rest_cannot_view' })
+    }
+    const path = u.pathname.slice('/wp-json/wc/v3'.length)
+    const page = Number(u.searchParams.get('page') ?? '1')
+    const perPage = Number(u.searchParams.get('per_page') ?? '100')
+    const list = (items: unknown[]) =>
+      send(200, items.slice((page - 1) * perPage, page * perPage), {
+        'x-wp-total': String(items.length),
+        'x-wp-totalpages': String(Math.max(1, Math.ceil(items.length / perPage))),
+      })
+    const recorded = (file: string, orElse: () => void) => {
+      const body = recording.answer(file)
+      if (body === undefined) return orElse()
+      return Array.isArray(body) ? list(body) : send(200, body)
+    }
+    const none = () => send(404, { code: 'rest_no_route' })
+    if (path === '/system_status') return recorded('system_status.json', none)
+    if (path === '/settings/general') return recorded('settings-general.json', none)
+    if (path === '/settings/products') return recorded('settings-products.json', none)
+    if (path === '/products/categories') return list(categories)
+    if (path === '/products') return list(products)
+    const variationsOf = /^\/products\/(\d+)\/variations$/.exec(path)
+    if (variationsOf) {
+      const items = variations.get(Number(variationsOf[1]))
+      return items === undefined
+        ? send(404, { code: 'woocommerce_rest_product_invalid_id' })
+        : list(items)
+    }
+    if (path === '/customers') return recorded('customers.json', () => list([]))
+    if (path === '/orders') return recorded('orders.json', () => list([]))
+    if (path === '/products/reviews') return recorded('reviews.json', () => list([]))
+    if (path === '/coupons') return recorded('coupons.json', none)
+    if (path === '/taxes') return recorded('taxes.json', none)
+    if (path === '/shipping/zones') return recorded('shipping-zones.json', none)
+    return none()
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+  const categories = recording.answer('categories.json') as Rec[]
+  const variations = new Map<number, Rec[]>()
+  const products: Rec[] = []
+  const served: ServedProduct[] = []
+  const images = new Map<string, ServedImage>()
+  for (const wc of recording.products) {
+    const id = wc['id'] as number
+    const failed = failImages.includes(id)
+    const own = ((wc['images'] as unknown[] | undefined) ?? []).map((i) => moved(i, failed))
+    products.push({ ...wc, images: own })
+    const recordedVariations = recording.answer(`products-${id}-variations.json`) as
+      | Rec[]
+      | undefined
+    if (recordedVariations !== undefined) {
+      variations.set(
+        id,
+        recordedVariations.map((v) => ({ ...v, image: moved(v['image'], failed) })),
+      )
+    }
+    const servedImages = (own as Rec[])
+      .filter((i) => typeof i['src'] === 'string' && i['src'] !== '')
+      .map((i) => ({ src: i['src'] as string, bytes: new Uint8Array(PNG), contentType: 'image/png' }))
+    for (const image of servedImages) images.set(image.src, image)
+    served.push({ id, slug: wc['slug'] as string, name: wc['name'] as string, images: servedImages })
+  }
+
+  return {
+    url: base,
+    products: served,
+    images,
+    requests,
+    source: { products, orders: (recording.answer('orders.json') as Rec[] | undefined) ?? [] },
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections()
+        server.close((err) => (err ? reject(err) : resolve()))
+      }),
+  }
+}
+
 export async function startWooCommerceServer(
   opts: WooCommerceServerOptions = {},
 ): Promise<WooCommerceServer> {
+  if (opts.recorded !== undefined) return startRecordedServer(opts.recorded, opts.failImages ?? [])
   const perProduct = opts.imagesPerProduct ?? 2
   const categories = [...fixture('categories'), ...(opts.extraCategories ?? [])]
   const variations = fixture('variations')

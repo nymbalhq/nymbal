@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,8 +11,12 @@ import type { buildImportEnv } from './import-env.js'
 // served them, and the test's own reading of what WooCommerce said: money parsed here, never by the mapper.
 
 export type Rec = Record<string, unknown>
-export type RecordedStoreName = 'store-a-gbp' | 'store-b-jpy'
-export const RECORDED_STORES: readonly RecordedStoreName[] = ['store-a-gbp', 'store-b-jpy']
+export type RecordedStoreName = 'store-a-gbp' | 'store-b-jpy' | 'store-c-eur'
+export const RECORDED_STORES: readonly RecordedStoreName[] = [
+  'store-a-gbp',
+  'store-b-jpy',
+  'store-c-eur',
+]
 
 const RECORDED = fileURLToPath(new URL('../fixtures/recorded', import.meta.url))
 const API = '/wp-json/wc/v3'
@@ -22,6 +26,7 @@ export interface RecordedStore {
   homeUrl: string
   currency: string
   settings: Record<string, string>
+  /** Every products page, in page order. */
   products: Rec[]
   /** Each variable product's variations as WooCommerce answered them, by product id. */
   variations: Record<number, Rec[]>
@@ -39,7 +44,11 @@ export function loadRecordedStore(name: RecordedStoreName): RecordedStore {
     settings: Record<string, string>
     record: { answers: Array<{ file: string; 'X-WP-Total': string | null }> }
   }
-  const products = answer('products.page-1.json') as Rec[]
+  const products = readdirSync(dir)
+    .map((file) => /^products\.page-(\d+)\.json$/.exec(file))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .flatMap((m) => answer(m[0]) as Rec[])
   const variations: Record<number, Rec[]> = {}
   for (const p of products) {
     const file = `products-${p['id'] as number}-variations.json`
@@ -121,8 +130,12 @@ export function recordedFetch(store: RecordedStore, opts: RecordedFetchOptions =
         ? json({ code: 'woocommerce_rest_product_invalid_id' }, 404)
         : list(items, page, 100)
     }
-    if (path === '/customers' || path === '/orders' || path === '/products/reviews')
-      return list([], page, 100)
+    // What the store recorded (store C), else an empty list as a store without any answers.
+    const recorded = (file: string) =>
+      list(existsSync(join(RECORDED, store.name, file)) ? (store.answer(file) as Rec[]) : [], page, 100)
+    if (path === '/customers') return recorded('customers.json')
+    if (path === '/orders') return recorded('orders.json')
+    if (path === '/products/reviews') return recorded('reviews.json')
     return json({ code: 'rest_no_route' }, 404)
   }
   return { fetch: fetchImpl as typeof fetch, requests }

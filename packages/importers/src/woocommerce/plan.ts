@@ -32,6 +32,8 @@ export interface WooCommercePlanDeps {
   onProgress?: ProgressCallback
   /** The clock requests are timed on; `performance.now` by default. */
   now?: () => number
+  /** Each source record as read, before the plan watches its fields; a variation comes with its product's id. */
+  onRecord?: (entity: PlanEntity, record: Record<string, unknown>, parentWcId?: number) => void
 }
 
 const ENTITIES: ImportEntity[] = ['categories', 'products', 'customers', 'orders', 'reviews']
@@ -244,6 +246,7 @@ export async function planWooCommerceImport(
     for await (const page of client.paginate<T>(LIST_PATH[entity])) {
       for (const item of page.items) {
         counts[entity].source++
+        deps.onRecord?.(entity, item as Rec)
         yield fields[entity].watch(item)
       }
       if (page.items.length === 0) continue
@@ -295,9 +298,10 @@ export async function planWooCommerceImport(
       let variations: WcVariation[] = []
       if (refs.isVariable && refs.variationCount > 0) {
         try {
-          variations = (await client.getProductVariations(wc.id)).map((v) =>
-            fields.variations.watch(v),
-          )
+          variations = (await client.getProductVariations(wc.id)).map((v) => {
+            deps.onRecord?.('variations', v as unknown as Rec, wc.id)
+            return fields.variations.watch(v)
+          })
         } catch {
           // the import refuses a variable product without its variations
           counts.products.refused++

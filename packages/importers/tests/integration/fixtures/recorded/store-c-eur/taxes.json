@@ -1,0 +1,95 @@
+[
+  {
+    "id": 1,
+    "country": "NL",
+    "state": "",
+    "postcode": "",
+    "city": "",
+    "rate": "21.0000",
+    "name": "BTW",
+    "priority": 1,
+    "compound": false,
+    "shipping": true,
+    "order": 0,
+    "class": "standard",
+    "postcodes": [],
+    "cities": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes/1",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes"
+        }
+      ]
+    }
+  },
+  {
+    "id": 2,
+    "country": "NL",
+    "state": "",
+    "postcode": "",
+    "city": "",
+    "rate": "9.0000",
+    "name": "BTW laag",
+    "priority": 1,
+    "compound": false,
+    "shipping": true,
+    "order": 0,
+    "class": "reduced-rate",
+    "postcodes": [],
+    "cities": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes/2",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes"
+        }
+      ]
+    }
+  },
+  {
+    "id": 3,
+    "country": "BE",
+    "state": "",
+    "postcode": "",
+    "city": "",
+    "rate": "21.0000",
+    "name": "TVA",
+    "priority": 1,
+    "compound": false,
+    "shipping": false,
+    "order": 0,
+    "class": "standard",
+    "postcodes": [],
+    "cities": [],
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes/3",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/taxes"
+        }
+      ]
+    }
+  }
+]

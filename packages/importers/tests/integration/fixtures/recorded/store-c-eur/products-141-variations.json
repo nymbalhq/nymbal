@@ -1,0 +1,158 @@
+[
+  {
+    "id": 142,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:35",
+    "date_modified_gmt": "2026-11-04T18:29:35",
+    "description": "",
+    "permalink": "http://localhost:8888/product/fountain-pen/?attribute_pa_colour=red",
+    "sku": "FOUNTAIN-RED",
+    "global_unique_id": "",
+    "price": "24.95",
+    "regular_price": "24.95",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 14,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.03",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Red"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Red",
+    "parent_id": 141,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141/variations/142",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141"
+        }
+      ]
+    }
+  },
+  {
+    "id": 143,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:34",
+    "date_created_gmt": "2026-11-04T18:29:34",
+    "date_modified": "2026-11-04T18:29:34",
+    "date_modified_gmt": "2026-11-04T18:29:34",
+    "description": "",
+    "permalink": "http://localhost:8888/product/fountain-pen/?attribute_pa_colour=blue",
+    "sku": "FOUNTAIN-BLUE",
+    "global_unique_id": "",
+    "price": "24.95",
+    "regular_price": "24.95",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 12,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.03",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Blue"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Blue",
+    "parent_id": 141,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141/variations/143",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/141"
+        }
+      ]
+    }
+  }
+]

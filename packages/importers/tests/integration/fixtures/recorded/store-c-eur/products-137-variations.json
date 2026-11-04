@@ -1,0 +1,263 @@
+[
+  {
+    "id": 138,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "description": "",
+    "permalink": "http://localhost:8888/product/garden-gloves/?attribute_pa_size=s",
+    "sku": "GLOVES-S",
+    "global_unique_id": "",
+    "price": "12.50",
+    "regular_price": "12.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 28,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.15",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T18:29:25",
+      "date_created_gmt": "2026-11-04T18:29:25",
+      "date_modified": "2026-11-04T18:29:25",
+      "date_modified_gmt": "2026-11-04T18:29:25",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "S"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "S",
+    "parent_id": 137,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations/138",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137"
+        }
+      ]
+    }
+  },
+  {
+    "id": 139,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "description": "",
+    "permalink": "http://localhost:8888/product/garden-gloves/?attribute_pa_size=m",
+    "sku": "GLOVES-M",
+    "global_unique_id": "",
+    "price": "12.50",
+    "regular_price": "12.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 28,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.15",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T18:29:25",
+      "date_created_gmt": "2026-11-04T18:29:25",
+      "date_modified": "2026-11-04T18:29:25",
+      "date_modified_gmt": "2026-11-04T18:29:25",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "M"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "M",
+    "parent_id": 137,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations/139",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137"
+        }
+      ]
+    }
+  },
+  {
+    "id": 140,
+    "type": "variation",
+    "date_created": "2026-11-04T18:29:33",
+    "date_created_gmt": "2026-11-04T18:29:33",
+    "date_modified": "2026-11-04T18:29:33",
+    "date_modified_gmt": "2026-11-04T18:29:33",
+    "description": "",
+    "permalink": "http://localhost:8888/product/garden-gloves/?attribute_pa_size=l",
+    "sku": "GLOVES-L",
+    "global_unique_id": "",
+    "price": "13.50",
+    "regular_price": "13.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 28,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.15",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T18:29:25",
+      "date_created_gmt": "2026-11-04T18:29:25",
+      "date_modified": "2026-11-04T18:29:25",
+      "date_modified_gmt": "2026-11-04T18:29:25",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "L"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "L",
+    "parent_id": 137,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations/140",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/137"
+        }
+      ]
+    }
+  }
+]

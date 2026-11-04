@@ -60,6 +60,8 @@ export interface WcProduct {
   weight: string
   dimensions: { length: string; width: string; height: string }
   yoast_head_json?: { title?: string; description?: string }
+  /** Where WooCommerce serves the product: `/product/<slug>/` under pretty permalinks, `?p=<id>` under plain ones. */
+  permalink?: string
 }
 
 export interface WcVariation {

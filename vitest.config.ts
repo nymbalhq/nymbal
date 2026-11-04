@@ -141,6 +141,9 @@ export default defineConfig({
     // Every run is one-off; watching many worktrees fills the disk. `pnpm test:watch` asks for it explicitly.
     watch: false,
     ...(sharedWorkers === undefined ? {} : { maxWorkers: Number(sharedWorkers) }),
+    // The scaffold's files one at a time (a root option, not a project one): the preview's file walks the project and
+    // runs its own store beside dev, while others rewrite the config (clean-machine) or add a product (mcp-agent).
+    ...(process.env['NYMBAL_SCAFFOLD_DIR'] ? { fileParallelism: false } : {}),
     // Node 25+ defines a global `localStorage` that is undefined without --localstorage-file, and it shadows the one
     // jsdom and happy-dom install; without Node's, the test environment's is the only one.
     poolOptions: { forks: { execArgv: ['--no-experimental-webstorage'] } },
@@ -341,6 +344,7 @@ export default defineConfig({
             'packages/importers/tests/client.test.ts',
             'packages/importers/tests/enrichment.test.ts',
             'packages/importers/tests/report.test.ts',
+            'packages/importers/tests/preview/**/*.test.ts',
           ],
         },
       },

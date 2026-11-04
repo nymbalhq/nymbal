@@ -75,7 +75,33 @@ async function pMap<T, U>(
   return results
 }
 
+/**
+ * Wraps a pMap callback so each call can wait, with `earlierDone`, until every call started before it has finished.
+ * Calls start in item order, so the waits run in that order whatever the concurrency.
+ */
+function sourceOrder<T>() {
+  let last: Promise<void> = Promise.resolve()
+  return <U>(fn: (item: T, earlierDone: () => Promise<void>) => Promise<U>) =>
+    async (item: T): Promise<U> => {
+      const previous = last
+      let release!: () => void
+      last = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      try {
+        return await fn(item, () => previous)
+      } finally {
+        void previous.then(release)
+      }
+    }
+}
+
 export const DEFAULT_UNTRACKED_STOCK = 1000
+
+/** Why a store in another currency than the WooCommerce store's is refused, before anything is written. */
+export function currencyRefusal(sourceCurrency: string, storeCurrency: string): string {
+  return `The WooCommerce store prices in ${sourceCurrency} and this store in ${storeCurrency}: nothing was imported. Import into a store whose currency is ${sourceCurrency}.`
+}
 
 /** WooCommerce's own defaults stand in for settings the import cannot read: kg, cm and a low-stock amount of 2. */
 export function storeContextFor(
@@ -231,9 +257,7 @@ export async function runWooCommerceImport(
   // upper-cased: the platform reads a currency case-insensitively.
   const settings = await client.getStoreSettings()
   if (settings !== null && settings.currency.toUpperCase() !== opts.currency.toUpperCase()) {
-    throw new Error(
-      `The WooCommerce store prices in ${settings.currency} and this store in ${opts.currency}: nothing was imported. Import into a store whose currency is ${settings.currency}.`,
-    )
+    throw new Error(currencyRefusal(settings.currency, opts.currency))
   }
   const store = storeContextFor(settings, opts.currency, untrackedStock)
   if (settings === null) {
@@ -303,9 +327,12 @@ export async function runWooCommerceImport(
     )) {
       progress.page(page.total)
 
+      // Images download in parallel, but products are created in source order, as the plan counts them: of two whose
+      // slugs clash, the first keeps it whichever finished downloading first.
+      const inSourceOrder = sourceOrder<WcProduct>()
       await pMap(
         page.items,
-        async (wc) => {
+        inSourceOrder(async (wc, earlierCreated) => {
           // Before the skip, so a product created before a stop still claims its slug on resume.
           const refs = productRefs(wc, seenSlugs)
           const imported = state.wcToNymbalProduct[wc.id]
@@ -394,6 +421,7 @@ export async function runWooCommerceImport(
             emit({ kind: 'error', phase: 'media', id: String(wc.id), message: error })
           }
 
+          await earlierCreated()
           try {
             const snap = await services.product.create(
               mapProduct(wc, variations, categoryIds, images.stored, slugSuffix, store),
@@ -412,7 +440,7 @@ export async function runWooCommerceImport(
           } catch (err) {
             state.errors.push({ phase: 'products', id: String(wc.id), error: String(err) })
           }
-        },
+        }),
         opts.concurrency,
       )
 

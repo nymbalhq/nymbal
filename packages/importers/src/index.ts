@@ -1,4 +1,9 @@
-export { runWooCommerceImport, type WooCommerceImporterDeps } from './woocommerce/importer.js'
+export {
+  currencyRefusal,
+  runWooCommerceImport,
+  type WooCommerceImporterDeps,
+} from './woocommerce/importer.js'
+export { WooCommerceApiError, WooCommerceClient } from './woocommerce/client.js'
 export {
   planWooCommerceImport,
   WRITE_MS,
@@ -48,3 +53,20 @@ export {
   type RollbackOptions,
   type RollbackRefusal,
 } from './rollback.js'
+export { diffProduct, type ServedProduct } from './preview/diff.js'
+export {
+  buildRedirects,
+  formatRedirectsCsv,
+  type RedirectInput,
+  type Redirects,
+} from './preview/redirects.js'
+export { formatPreviewReport, writePreview } from './preview/report.js'
+export {
+  DIFF_FIELDS,
+  type DiffField,
+  type PreviewCounts,
+  type PreviewReport,
+  type ProductDiff,
+  type RedirectRow,
+  type Unredirected,
+} from './preview/types.js'
