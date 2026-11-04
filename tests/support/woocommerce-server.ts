@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url'
 // them, each with bytes and a content type of its own, so a test can tell which source image a stored object came
 // from. Any request without Basic credentials is refused, as WooCommerce does. Every request is logged (method and
 // path). By default customers, orders and reviews are empty and coupons, taxes and shipping zones answer 404; a test
-// that needs them says what they answer.
+// that needs them says what they answer. Products and orders are listed as WooCommerce lists them under
+// `modified_after` (their `date_modified_gmt`, none read as long ago), reviews under `after` (`date_created_gmt`); a
+// test changes the source between runs through `source`.
 
 const FIXTURES = fileURLToPath(
   new URL('../../packages/importers/tests/integration/fixtures', import.meta.url),
@@ -68,6 +70,8 @@ export interface WooCommerceServer {
   images: Map<string, ServedImage>
   /** Every request the server answered, in order; a test may empty it (`requests.length = 0`). */
   requests: ServedRequest[]
+  /** The products (images rewritten) and orders as served: a test may replace or edit a record between runs. */
+  source: { products: Array<Record<string, unknown>>; orders: Array<Record<string, unknown>> }
   close(): Promise<void>
 }
 
@@ -87,6 +91,12 @@ function bytesFor(src: string, index: number): Uint8Array {
   return out
 }
 
+/** A WooCommerce date as an instant: a value with no zone is UTC, no value is long ago. */
+function instant(value: unknown): number {
+  if (typeof value !== 'string') return Date.parse('2024-01-01T00:00:00Z')
+  return Date.parse(/(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`)
+}
+
 export async function startWooCommerceServer(
   opts: WooCommerceServerOptions = {},
 ): Promise<WooCommerceServer> {
@@ -97,7 +107,8 @@ export async function startWooCommerceServer(
   const images = new Map<string, ServedImage>()
   const products: ServedProduct[] = []
   const requests: ServedRequest[] = []
-  let served: Array<Record<string, unknown>> = []
+  const served: Array<Record<string, unknown>> = []
+  const orders = [...(opts.orders ?? [])]
 
   const send = (res: ServerResponse, status: number, body: unknown, total?: number) => {
     res.writeHead(status, {
@@ -133,13 +144,19 @@ export async function startWooCommerceServer(
     const path = u.pathname.slice('/wp-json/wc/v3'.length)
     const page = Number(u.searchParams.get('page') ?? '1')
     const list = (items: unknown[]) => send(res, 200, page === 1 ? items : [], items.length)
+    const after = (param: string, field: string, items: Array<Record<string, unknown>>) => {
+      const since = u.searchParams.get(param)
+      return since === null ? items : items.filter((r) => instant(r[field]) > instant(since))
+    }
     if (path === '/system_status') return send(res, 200, {}, 1)
     if (path === '/products/categories') return list(categories)
-    if (path === '/products') return list(served)
+    if (path === '/products') return list(after('modified_after', 'date_modified_gmt', served))
     if (/^\/products\/\d+\/variations$/.test(path)) return list(variations)
     if (path === '/customers') return list(opts.customers ?? [])
-    if (path === '/orders') return list(opts.orders ?? [])
-    if (path === '/products/reviews') return list(opts.reviews ?? [])
+    if (path === '/orders') return list(after('modified_after', 'date_modified_gmt', orders))
+    if (path === '/products/reviews') {
+      return list(after('after', 'date_created_gmt', opts.reviews ?? []))
+    }
     if (path === '/coupons') return probe(res, opts.coupons)
     if (path === '/taxes') return probe(res, opts.taxes)
     if (path === '/shipping/zones') return probe(res, opts.shippingZones)
@@ -151,7 +168,7 @@ export async function startWooCommerceServer(
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 
   let n = 0
-  served = rawProducts.map((wc) => {
+  for (const wc of rawProducts) {
     const id = wc['id'] as number
     const own: ServedImage[] = []
     for (let i = 0; i < perProduct; i++) {
@@ -168,7 +185,7 @@ export async function startWooCommerceServer(
       name: wc['name'] as string,
       images: own,
     })
-    return {
+    served.push({
       ...wc,
       images: own.map((img, i) => ({
         id: id * 100 + i,
@@ -176,14 +193,15 @@ export async function startWooCommerceServer(
         name: `${id}-${i + 1}`,
         alt: `image ${i + 1} of ${id}`,
       })),
-    }
-  })
+    })
+  }
 
   return {
     url: base,
     products,
     images,
     requests,
+    source: { products: served, orders },
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections()

@@ -18,6 +18,9 @@ export function buildReport(state: ImportState, startMs: number): ImportReport {
     },
     enriched: { enriched: 0, skipped: 0, failed: 0 },
     errors: state.errors,
+    warnings: state.warnings,
+    updated: { products: state.delta?.updated.products ?? 0 },
+    changedNotUpdated: { orders: state.delta?.changedNotUpdated.orders ?? 0 },
     eventsEmitted: state.eventsEmitted,
     durationMs: Date.now() - startMs,
   }
@@ -54,6 +57,27 @@ export function formatReport(report: ImportReport, storeName: string): string {
     `- Duration: ${duration}`,
     '',
   ]
+
+  if (report.updated.products > 0 || report.changedNotUpdated.orders > 0) {
+    lines.push('## Changes since', '')
+    for (const [entity, since] of Object.entries(report.since ?? {})) {
+      const label = entity.charAt(0).toUpperCase() + entity.slice(1)
+      lines.push(`- ${label}: ${since === null ? 'everything (first pass)' : `since ${since}`}`)
+    }
+    lines.push(
+      `- Updated products: ${report.updated.products}`,
+      `- Changed orders not updated: ${report.changedNotUpdated.orders} (an imported order is never written again)`,
+      '',
+    )
+  }
+
+  if (report.warnings.length > 0) {
+    lines.push('## Review before launch', '')
+    for (const w of report.warnings) {
+      lines.push(`- **${w.phase}**${w.id ? ` (${w.id})` : ''}: ${w.message}`)
+    }
+    lines.push('')
+  }
 
   if (report.errors.length > 0) {
     lines.push('## Errors Requiring Review', '')

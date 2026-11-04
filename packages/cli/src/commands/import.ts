@@ -4,12 +4,16 @@ import p from 'picocolors'
 import { loadProject } from '../utils/project.js'
 import { createApp, newCorrelationId, runAsActor, runWithCorrelation } from '@nymbalhq/platform'
 import {
+  ImportSinceError,
   ImportStateError,
   loadState,
+  resolveSince,
   runWooCommerceImport,
   writeReport,
   type ImportEntity,
+  type ImportState,
   type ProgressEvent,
+  type SinceByEntity,
 } from '@nymbalhq/importers'
 import { join } from 'node:path'
 import { getCliVersion } from '../utils/version.js'
@@ -92,6 +96,11 @@ export const importCommand = defineCommand({
       description: 'With --rollback: remove without asking',
       default: false,
     },
+    since: {
+      type: 'string',
+      description:
+        'Bring over what changed in WooCommerce since the last finished import (last), a date (2026-10-01, UTC) or a date-time with a zone',
+    },
   },
   async run({ args, rawArgs }) {
     if (args.rollback) {
@@ -105,6 +114,10 @@ export const importCommand = defineCommand({
         console.error(`--rollback cannot be combined with ${conflicts.join(', ')}`)
         process.exit(1)
       }
+    }
+    if (args.since !== undefined && (args.fresh || args['dry-run'])) {
+      console.error(`--since cannot be combined with ${args.fresh ? '--fresh' : '--dry-run'}`)
+      process.exit(1)
     }
 
     const { config } = await loadProject()
@@ -197,12 +210,28 @@ export const importCommand = defineCommand({
     }
 
     // A state file that cannot be read holds what earlier runs created: stop before the store is opened.
+    let saved: ImportState | null = null
     try {
-      await loadState(statePath)
+      saved = await loadState(statePath)
     } catch (err) {
       if (!(err instanceof ImportStateError)) throw err
       console.error(err.message)
       process.exit(1)
+    }
+
+    let since: SinceByEntity | undefined
+    if (args.since !== undefined) {
+      if (saved !== null && saved.phase !== 'done') {
+        console.error('The last import has not finished: run nymbal import to finish it, then nymbal import --since.')
+        process.exit(1)
+      }
+      try {
+        since = resolveSince(args.since, saved)
+      } catch (err) {
+        if (!(err instanceof ImportSinceError)) throw err
+        console.error(err.message)
+        process.exit(1)
+      }
     }
 
     // ── Bootstrap app ─────────────────────────────────────────────────────────
@@ -226,6 +255,7 @@ export const importCommand = defineCommand({
             projectRoot,
             currency: config.store.currency,
             statePath,
+            ...(since !== undefined && { since }),
           },
           {
             services: app.services,
@@ -239,13 +269,29 @@ export const importCommand = defineCommand({
 
       const reportPath = await writeReport(report, projectRoot, config.store.name)
 
+      // After a delta, each total says how many of its records this run brought over.
+      const isDelta = report.since !== undefined
+      const total = (
+        entity: ImportEntity,
+        map: 'wcToNymbalProduct' | 'wcToNymbalCustomer' | 'wcToNymbalOrder' | 'wcToNymbalCategory',
+      ) => {
+        const n = report.imported[entity]
+        if (!isDelta) return String(n)
+        return `${n} (${n - Object.keys(saved?.[map] ?? {}).length} new)`
+      }
       outro(
         [
           p.green('✓ Import complete'),
-          `  Products:   ${report.imported.products}`,
-          `  Customers:  ${report.imported.customers}`,
-          `  Orders:     ${report.imported.orders}`,
-          `  Categories: ${report.imported.categories}`,
+          `  Products:   ${total('products', 'wcToNymbalProduct')}`,
+          `  Customers:  ${total('customers', 'wcToNymbalCustomer')}`,
+          `  Orders:     ${total('orders', 'wcToNymbalOrder')}`,
+          `  Categories: ${total('categories', 'wcToNymbalCategory')}`,
+          ...(isDelta
+            ? [
+                `  Updated products: ${report.updated.products}`,
+                `  Changed orders not updated: ${report.changedNotUpdated.orders}`,
+              ]
+            : []),
           ...(aiEnabled ? [`  AI enriched: ${report.enriched.enriched} products`] : []),
           ...(report.errors.length > 0 ? [p.yellow(`  ⚠ ${report.errors.length} errors — see report`)] : []),
           ``,

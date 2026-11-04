@@ -3,7 +3,7 @@ import { appendFile, open, readFile, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { ImportEntity, ImportState } from './types.js'
 
-const ENTITIES: readonly ImportEntity[] = [
+export const ENTITIES: readonly ImportEntity[] = [
   'categories',
   'products',
   'customers',
@@ -31,7 +31,10 @@ const EMPTY_STATE: Omit<ImportState, 'startedAt' | 'rollbackSince'> = {
   wcToNymbalOrder: {},
   wcToNymbalReview: {},
   errors: [],
+  warnings: [],
   eventsEmitted: 0,
+  runs: [],
+  finished: [],
 }
 
 /** A state file that is there but cannot be read as a state: the run stops rather than start again and forget it. */
@@ -96,6 +99,16 @@ function parseState(path: string, raw: string): ImportState {
   state.wcToNymbalOrder ??= {}
   state.wcToNymbalReview ??= {}
   state.rollbackSince ??= state.startedAt
+  state.warnings ??= []
+  // A state saved before passes were recorded: a finished one stands for one pass, from its start, over the entities
+  // it holds records of (orders by their ids: a state older than the order map has an empty one).
+  if (state.runs === undefined) {
+    const entities = ENTITIES.filter((e) => state.importedIds[e].length > 0)
+    const done = state.phase === 'done'
+    state.runs = done ? [{ startedAt: state.startedAt, finishedAt: state.startedAt, entities }] : []
+    state.finished ??= done ? entities : []
+  }
+  state.finished ??= []
   return state
 }
 

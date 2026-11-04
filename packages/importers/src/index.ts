@@ -13,6 +13,9 @@ export type {
   ProgressEvent,
   WooCommerceCredentials,
   ImportEntity,
+  ImportWarning,
+  FinishedPass,
+  SinceByEntity,
   PlanEntity,
   CollisionKind,
   ExistingStoreLookup,
@@ -22,6 +25,11 @@ export type {
   RollbackReport,
 } from './types.js'
 export { buildReport, formatReport, writeReport } from './report.js'
+export {
+  ImportSinceError,
+  resolveSince,
+  type ImportSinceReason,
+} from './woocommerce/delta.js'
 export { formatPlan, writePlan } from './plan-report.js'
 export {
   appendJournal,

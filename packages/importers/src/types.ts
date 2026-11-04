@@ -6,6 +6,27 @@ export interface WooCommerceCredentials {
 
 export type ImportEntity = 'categories' | 'products' | 'customers' | 'orders' | 'reviews'
 
+/** Each entity's `since` (`YYYY-MM-DDTHH:MM:SSZ`); `null` reads the entity whole, as a pass that never covered it must. */
+export type SinceByEntity = Partial<Record<ImportEntity, string | null>>
+
+/** Something a merchant should look at before launch that is not an error: the record was handled, partly. */
+export interface ImportWarning {
+  phase: string
+  id?: string
+  message: string
+}
+
+/** A pass that reached its end: every entity it covered was read from its first page to its last. */
+export interface FinishedPass {
+  /** When the pass began, not when its last resumed run began. */
+  startedAt: string
+  finishedAt: string
+  /** Present for a delta pass. */
+  since?: SinceByEntity
+  /** The entities whose loops reached their end within the pass. */
+  entities: ImportEntity[]
+}
+
 export interface WooCommerceImportOptions {
   credentials: WooCommerceCredentials
   entities: ImportEntity[]
@@ -16,6 +37,8 @@ export interface WooCommerceImportOptions {
   projectRoot: string
   currency: string
   statePath: string
+  /** Starts a delta pass on a state whose last pass finished; resolve `last` with `resolveSince`. */
+  since?: SinceByEntity
 }
 
 export interface ImportCursor {
@@ -43,13 +66,34 @@ export interface ImportState {
   wcToNymbalOrder: Record<string, string>
   wcToNymbalReview: Record<string, string>
   errors: Array<{ phase: string; id?: string; error: string }>
+  warnings: ImportWarning[]
   eventsEmitted: number
+  /** The finished passes, oldest first. */
+  runs: FinishedPass[]
+  /** The entities whose loops have reached their end in the current pass. */
+  finished: ImportEntity[]
+  /** Set while a delta pass is under way; a run without `since` resumes it. */
+  delta?: {
+    since: SinceByEntity
+    startedAt: string
+    updated: { products: number }
+    changedNotUpdated: { orders: number }
+    /** The products the pass created, kept across a stop: the ones `--ai` enriches when the pass ends. */
+    created: { products: string[] }
+  }
 }
 
 export interface ImportReport {
   imported: Record<ImportEntity, number>
   enriched: { enriched: number; skipped: number; failed: number }
   errors: ImportState['errors']
+  warnings: ImportWarning[]
+  /** Imported products a delta wrote WooCommerce's changes to. */
+  updated: { products: number }
+  /** Imported orders a delta listed as changed, which are never written again. */
+  changedNotUpdated: { orders: number }
+  /** Present when the run was part of a delta pass: each covered entity's `since`. */
+  since?: SinceByEntity
   eventsEmitted: number
   durationMs: number
 }
