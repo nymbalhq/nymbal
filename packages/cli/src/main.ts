@@ -15,6 +15,7 @@ import { eventsCommand } from './commands/events.js'
 import { auditCommand } from './commands/audit.js'
 import { replayCommand } from './commands/replay.js'
 import { mcpCommand } from './commands/mcp.js'
+import { evalCommand } from './commands/eval.js'
 import {
   securityApplyCommand,
   securityDriftCommand,
@@ -57,6 +58,7 @@ export const main = defineCommand({
     audit: auditCommand,
     replay: replayCommand,
     mcp: mcpCommand,
+    eval: evalCommand,
     test: testCommand,
     'test:e2e': testE2eCommand,
     'test:visual': testVisualCommand,

@@ -230,6 +230,23 @@ Serve the store's agent tools on stdio, for an MCP host to launch (`nymbal mcp t
 | `--token` | string | A bearer the store signed (NYMBAL_MCP_TOKEN); or set NYMBAL_MCP_EMAIL and NYMBAL_MCP_PASSWORD |  |
 | `--json` | boolean | With `tools`: the names as one JSON array |  |
 
+## `nymbal eval`
+
+Score a store feature against its golden questions
+
+Subcommands: `nymbal eval assistant`.
+
+## `nymbal eval assistant`
+
+Ask the store assistant the 20 golden questions with the project's AI provider, on a throwaway store
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--only` | string | Run only these question ids, comma-separated |  |
+| `--threshold` | string | How many must pass for exit 0 (default 17) |  |
+| `--json` | boolean | Print the report as JSON | `false` |
+| `--verbose` | boolean | Print each answer | `false` |
+
 ## `nymbal test`
 
 Run unit + integration tests (vitest)

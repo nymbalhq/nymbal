@@ -659,6 +659,37 @@ export const routeSchemas: Record<string, RouteSchema> = {
     query: z.object({ ticket: queryValue }),
   },
 
+  // Admin: the assistant, which spends the store's AI key, so no agent calls it
+  'POST /api/admin/assistant/turns': {
+    name: 'admin.assistant.turn',
+    tool: false,
+    command: null,
+    description:
+      'Start an assistant turn: keep the conversation for two minutes and issue the one-time ticket that streams its answer.',
+    body: z.object({
+      messages: z
+        .array(
+          z.object({
+            role: z.enum(['user', 'assistant']),
+            content: z.string().min(1).max(8_000),
+          }),
+        )
+        .min(1)
+        .max(40)
+        .refine((turns) => turns[0]?.role === 'user' && turns.at(-1)?.role === 'user', {
+          message: 'the first and the last turn are the user’s',
+        }),
+      page: z.string().max(200).optional(),
+    }),
+  },
+  'GET /api/admin/assistant/turns/:id/stream': {
+    name: 'admin.assistant.stream',
+    tool: false,
+    description: "Stream an assistant turn's answer, its tool steps and its proposals (SSE).",
+    params: idParams,
+    query: z.object({ ticket: queryValue }),
+  },
+
   // Admin: activity (the audit trail)
   'GET /api/admin/activity': {
     name: 'admin.activity.list',

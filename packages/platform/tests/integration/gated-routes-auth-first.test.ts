@@ -12,9 +12,13 @@ import { unaudited } from '../support/write-audit.js'
 // A gated route answers a caller who fails its gate from the gate alone: 401 with no bearer, 403 with the wrong role,
 // whatever the params, query, body and Idempotency-Key say, so nobody outside learns the shape of the input it
 // expects. Validation still runs behind the gate. Every `/api/admin/*` route in routeSchemas is behind
-// requireRole('admin') but the event stream (gated by its ticket); the requireAuth routes are listed by hand.
+// requireRole('admin') but the two streams an EventSource opens, the events and the assistant's (each gated by its
+// ticket, as an EventSource sends no bearer); the requireAuth routes are listed by hand.
 
-const STREAM_ROUTE = 'GET /api/admin/events'
+const STREAM_ROUTES = new Set([
+  'GET /api/admin/events',
+  'GET /api/admin/assistant/turns/:id/stream',
+])
 const REQUIRE_AUTH_ROUTES = [
   'GET /api/customers/me',
   'PATCH /api/customers/me',
@@ -25,7 +29,7 @@ const REQUIRE_AUTH_ROUTES = [
 ] as const
 
 const ADMIN_ROUTES = Object.keys(routeSchemas).filter(
-  (key) => key.split(' ')[1]!.startsWith('/api/admin/') && key !== STREAM_ROUTE,
+  (key) => key.split(' ')[1]!.startsWith('/api/admin/') && !STREAM_ROUTES.has(key),
 )
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 const MALFORMED_KEY = 'not a key!'

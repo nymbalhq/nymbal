@@ -22,7 +22,8 @@ import { RouteTable, recordingAdapter } from './route-table.js'
 
 /**
  * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
- * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal.
+ * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal; the
+ * assistant's turn and stream, which spend the AI key, so no agent calls the assistant.
  */
 const EXCLUDED = [
   'auth.register',
@@ -42,6 +43,8 @@ const EXCLUDED = [
   'admin.proposals.approve',
   'admin.proposals.reject',
   'admin.settings.put',
+  'admin.assistant.turn',
+  'admin.assistant.stream',
 ].sort()
 
 /** The routes a cookie names the cart of; their tools take it as `cart`. */
@@ -206,7 +209,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject and settings put, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and the assistant’s turn and stream, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)

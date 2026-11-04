@@ -60,6 +60,8 @@ export interface NymbalApp {
   attachHttp(adapter: HttpAdapter, options?: AttachHttpOptions): Promise<void>
   /** The API's routes as agent tools, run in process through the handlers `attachHttp` registered; set by it. */
   readonly mcp: ToolSurface | undefined
+  /** The routes as the admin's assistant runs them: as `mcp`, but only `agents.autoApprove` applies a write. */
+  readonly assistantTools: ToolSurface | undefined
   /** The agent surfaces (UCP) and crawl files, over `mcp`; set by `attachHttp` once `mcp` is. */
   readonly agents: AgentSurfaces | undefined
   /** Each slot's provider and its adapter's own `capabilities()`; an ai slot of `none` offers nothing. */
@@ -219,6 +221,11 @@ export async function createApp(
   const adapterLogger = logger.child({ layer: 'adapter' })
   checkInjectedAdapters(config, options.adapters)
   const policy = policyOf(config.agents)
+  // The admin's assistant is not an MCP client: `agents.mcp.writes: 'apply'` never applies what it asks for.
+  const assistantPolicy = policyOf({
+    ...config.agents,
+    mcp: { ...config.agents.mcp, writes: 'proposal' },
+  })
   const jwt = resolveAuthSecret(config, process.env)
   addSecret(jwt.secret)
   const shadowed = process.env[JWT_SECRET_ENV]
@@ -301,6 +308,7 @@ export async function createApp(
       },
     })
     let mcp: Invoker | undefined
+    let assistantTools: Invoker | undefined
     const services = buildServices({
       config,
       store: platform.commandStore,
@@ -412,12 +420,15 @@ export async function createApp(
           jwtSecret: jwt.secret,
           adminRoot:
             options.adminRoot !== undefined ? options.adminRoot : process.env['NYMBAL_ADMIN_DIST'],
+          assistantTools: () => assistantTools,
         })
-        mcp = createInvoker({
+        const tools = toolsOf(table)
+        mcp = createInvoker({ table, tools, proposals: services.proposals, policy, logger })
+        assistantTools = createInvoker({
           table,
-          tools: toolsOf(table),
+          tools,
           proposals: services.proposals,
-          policy,
+          policy: assistantPolicy,
           logger,
         })
         agents = createAgentSurfaces({
@@ -438,6 +449,9 @@ export async function createApp(
       },
       get mcp() {
         return mcp
+      },
+      get assistantTools() {
+        return assistantTools
       },
       get agents() {
         return agents

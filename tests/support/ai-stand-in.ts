@@ -34,9 +34,14 @@ import type { AddressInfo } from 'node:net'
 // arguments are not a JSON object. On a stream request only (any other request is answered as `model`): `stream-break` sends the
 // first two text deltas and destroys the connection; `stream-error` sends one text delta and then the provider's
 // mid-stream error (Anthropic's `event: error` overloaded, OpenAI's error chunk); `stream-stall` sends one text delta
-// and then nothing, holding the connection. Every mode but `model`, `stop:` and `bad-tool-args:` echoes the key it
-// received: in the error message (raw, base64 and base64url), in the body and in an `x-echo` header; the error
+// and then nothing, holding the connection. Every mode but `model`, `stop:`, `bad-tool-args:` and `script` echoes the
+// key it received: in the error message (raw, base64 and base64url), in the body and in an `x-echo` header; the error
 // messages of `status:` and `stream-error` echo the last user turn's text too.
+//
+// `script` answers what the stand-in's `script` returns for the request's conversation (`ScriptView`, the same on both
+// wires): its text and its calls (ids made here, unique per stand-in), streamed or not as the request asks, waiting
+// `delayMs` before each text delta of a stream (before the whole answer otherwise) and stopping once the client has
+// gone. A reply with `fail` answers that request as that mode instead (`status:500`, `hang`, ...).
 
 export type AiWire = 'anthropic' | 'openai'
 
@@ -52,6 +57,41 @@ export type AiStandInMode =
   | 'stream-break'
   | 'stream-error'
   | 'stream-stall'
+  | 'script'
+
+/** One turn of a conversation as a script reads it, whatever wire it came on. */
+export interface ScriptTurn {
+  role: 'user' | 'assistant' | 'tool' | string
+  content: string
+  /** An assistant turn's calls, with their arguments as objects. */
+  calls: AiStandInCall[]
+  /** A tool turn's call id. */
+  answers?: string
+  /** A tool turn sent as an error (Anthropic's `is_error`; OpenAI's wire has no such flag). */
+  isError?: boolean
+}
+
+/** A request's conversation as a script reads it. */
+export interface ScriptView {
+  /** The request's position among those the stand-in received, from 0. */
+  index: number
+  system: string
+  turns: ScriptTurn[]
+  /** The names of the tools offered, in order. */
+  tools: string[]
+  stream: boolean
+}
+
+export interface ScriptReply {
+  text?: string
+  toolCalls?: Array<{ name: string; args: Record<string, unknown> }>
+  /** Waits this long before each text delta of a stream, or before the whole answer of any other request. */
+  delayMs?: number
+  /** Answers this request as that mode instead. */
+  fail?: Exclude<AiStandInMode, 'model' | 'script'>
+}
+
+export type AiScript = (view: ScriptView) => ScriptReply | Promise<ScriptReply>
 
 export interface AiStandInRequest {
   method: string
@@ -93,6 +133,10 @@ export interface AiStandIn {
   /** `http://127.0.0.1:<port>`: Anthropic's baseUrl as it is; OpenAI's with the path prefix the test chooses. */
   url: string
   mode: AiStandInMode
+  /** What `script` mode answers. */
+  script: AiScript | undefined
+  /** What the script threw, per request it threw on (each such request was answered 500). */
+  scriptErrors: unknown[]
   requests: AiStandInRequest[]
   answers: AiStandInAnswer[]
   credentials(): Array<string | undefined>
@@ -230,6 +274,81 @@ function conversationOf(wire: AiWire, body: unknown): Conversation {
     model,
     stream,
     includeUsage: recOf(b['stream_options'])['include_usage'] === true,
+  }
+}
+
+function argsOf(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    try {
+      return recOf(JSON.parse(value))
+    } catch {
+      return {}
+    }
+  }
+  return recOf(value)
+}
+
+function anthropicScriptTurns(messages: Rec[]): ScriptTurn[] {
+  const turns: ScriptTurn[] = []
+  for (const m of messages) {
+    const role = String(m['role'])
+    const blocks = Array.isArray(m['content']) ? (m['content'] as unknown[]).map(recOf) : []
+    const results = blocks.filter((b) => b['type'] === 'tool_result')
+    for (const r of results) {
+      turns.push({
+        role: role === 'user' ? 'tool' : `${role}:tool_result`,
+        content: textOf(r['content']),
+        calls: [],
+        answers: String(r['tool_use_id'] ?? ''),
+        ...(r['is_error'] === true && { isError: true }),
+      })
+    }
+    const text = textOf(m['content'])
+    const calls = blocks
+      .filter((b) => b['type'] === 'tool_use')
+      .map((b) => ({
+        id: String(b['id'] ?? ''),
+        name: String(b['name'] ?? ''),
+        args: argsOf(b['input']),
+      }))
+    if (results.length === 0 || text !== '' || calls.length > 0)
+      turns.push({ role, content: text, calls })
+  }
+  return turns
+}
+
+function openaiScriptTurns(messages: Rec[]): ScriptTurn[] {
+  return messages
+    .filter((m) => m['role'] !== 'system')
+    .map((m) => {
+      const role = String(m['role'])
+      const calls = Array.isArray(m['tool_calls'])
+        ? (m['tool_calls'] as unknown[]).map(recOf).map((c) => ({
+            id: String(c['id'] ?? ''),
+            name: String(recOf(c['function'])['name'] ?? ''),
+            args: argsOf(recOf(c['function'])['arguments']),
+          }))
+        : []
+      return {
+        role,
+        content: textOf(m['content']),
+        calls,
+        ...(role === 'tool' && { answers: String(m['tool_call_id'] ?? '') }),
+      }
+    })
+}
+
+/** A recorded request's body as a script reads it (`index` is the caller's to set). */
+export function scriptViewOf(wire: AiWire, body: unknown, index = 0): ScriptView {
+  const b = recOf(body)
+  const messages = Array.isArray(b['messages']) ? (b['messages'] as unknown[]).map(recOf) : []
+  const c = conversationOf(wire, body)
+  return {
+    index,
+    system: c.system,
+    turns: wire === 'anthropic' ? anthropicScriptTurns(messages) : openaiScriptTurns(messages),
+    tools: c.tools,
+    stream: c.stream,
   }
 }
 
@@ -374,17 +493,22 @@ const sse = (res: ServerResponse, event: string | undefined, data: unknown): voi
 export async function startAiStandIn(
   wire: AiWire,
   mode: AiStandInMode = 'model',
+  script?: AiScript,
 ): Promise<AiStandIn> {
+  let scriptCalls = 0
   const standIn: AiStandIn = {
     wire,
     url: '',
     mode,
+    script,
+    scriptErrors: [],
     requests: [],
     answers: [],
     credentials: () => standIn.requests.map((r) => r.credential),
     reset: () => {
       standIn.requests.length = 0
       standIn.answers.length = 0
+      standIn.scriptErrors.length = 0
     },
     close: async () => undefined,
   }
@@ -416,9 +540,30 @@ export async function startAiStandIn(
         if (!res.writableFinished && !destroyedHere) record.closedEarly = true
       })
       const key = credential ?? ''
-      const now = standIn.mode
+      let now: AiStandInMode = standIn.mode
+      let scripted: ScriptReply | undefined
+      if (now === 'script') {
+        try {
+          if (standIn.script === undefined) throw new Error('script mode with no script')
+          scripted = await standIn.script(
+            scriptViewOf(wire, body, standIn.requests.indexOf(record)),
+          )
+        } catch (error) {
+          // A script that throws is the test's own fault: kept for the test to show, answered as a provider error.
+          standIn.scriptErrors.push(error)
+          scripted = { fail: 'status:500' }
+        }
+        if (scripted.fail !== undefined) {
+          now = scripted.fail
+          scripted = undefined
+        }
+      }
+      const delayMs = scripted?.delayMs ?? 0
       const echoes =
-        now !== 'model' && !now.startsWith('stop:') && !now.startsWith('bad-tool-args:')
+        now !== 'model' &&
+        now !== 'script' &&
+        !now.startsWith('stop:') &&
+        !now.startsWith('bad-tool-args:')
 
       const send = (status: number, payload: string, type = 'application/json') => {
         res.writeHead(status, { 'content-type': type, ...(echoes && { 'x-echo': key }) })
@@ -458,7 +603,22 @@ export async function startAiStandIn(
       const refusal = toolTurnRefusal(c.turns)
       if (refusal !== undefined) return refuse(400, refusal)
 
-      const answered = reply(wire, c)
+      const answered: Reply =
+        scripted === undefined
+          ? reply(wire, c)
+          : {
+              text: scripted.text ?? '',
+              calls: (scripted.toolCalls ?? []).map((call) => {
+                scriptCalls += 1
+                return {
+                  id: `${wire === 'anthropic' ? 'toolu' : 'call'}_script_${scriptCalls}`,
+                  name: call.name,
+                  args: call.args,
+                }
+              }),
+              truncated: false,
+              inputWords: reply(wire, c).inputWords,
+            }
       const noText = now === 'no-text'
       const bad = now.startsWith('bad-tool-args:')
         ? badArgs(now.slice('bad-tool-args:'.length))
@@ -504,7 +664,12 @@ export async function startAiStandIn(
       const argsText = (call: AiStandInCall) => bad?.text ?? JSON.stringify(call.args)
       const argsInput = (call: AiStandInCall) => (bad === undefined ? call.args : bad.input)
 
+      const gone = () => res.destroyed || record.closedEarly
+      const pause = () => new Promise((resolve) => setTimeout(resolve, delayMs))
+
       if (!c.stream) {
+        if (delayMs > 0) await pause()
+        if (gone()) return
         if (wire === 'anthropic') {
           return send(
             200,
@@ -610,6 +775,8 @@ export async function startAiStandIn(
         })
       }
       for (const delta of sent) {
+        if (delayMs > 0) await pause()
+        if (gone()) return
         answer.deltas.push(delta)
         if (wire === 'anthropic') {
           sse(res, 'content_block_delta', {

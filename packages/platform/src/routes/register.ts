@@ -1,6 +1,7 @@
 import {
   ConfigError,
   type HttpAdapter,
+  type ToolSurface,
   type DocumentStoreAdapter,
   type EventBusAdapter,
 } from '@nymbalhq/types'
@@ -39,6 +40,7 @@ import { gateOf, withGate } from './role-middleware.js'
 import { routeSchemas } from './schemas.js'
 import { registerAdminActivityRoutes } from './admin-activity.js'
 import { registerAdminProposalRoutes } from './admin-proposals.js'
+import { registerAdminAssistantRoutes } from './admin-assistant.js'
 import { foldViewsOnSignIn, registerRecentlyViewedRoutes } from './recently-viewed.js'
 import { registerAlertRoutes } from './alerts.js'
 import { registerReviewRoutes } from './reviews.js'
@@ -58,6 +60,8 @@ export interface RegisterAllRoutesDeps {
   jwtSecret: string
   /** The admin's dist directory, or null for a 404 that says how to build it; undefined serves no admin. */
   adminRoot?: string | null | undefined
+  /** The tools the admin's assistant runs, built over these routes once they are registered. */
+  assistantTools: () => ToolSurface | undefined
 }
 
 /** Every handler runs in its request's correlation scope, so each event a route's services publish carries its id. */
@@ -210,6 +214,14 @@ export function registerAllRoutes(deps: RegisterAllRoutesDeps): void {
   })
   registerAdminActivityRoutes(adapter, { auditEntries: repos.auditEntry })
   registerAdminProposalRoutes(adapter, { proposals: services.proposals })
+  registerAdminAssistantRoutes(adapter, {
+    config,
+    ai: adapters.ai,
+    tools: deps.assistantTools,
+    proposals: services.proposals,
+    documentStore,
+    jwtSecret: deps.jwtSecret,
+  })
   registerEventsSseRoute(adapter, {
     eventBus,
     documentStore,

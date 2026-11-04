@@ -78,6 +78,26 @@ export { toolsOf, jsonSchemaOf, toolName } from './mcp/registry.js'
 export { RouteTable, recordingAdapter } from './mcp/route-table.js'
 export { createInvoker, type Invoker, type InvokerDeps } from './mcp/invoke.js'
 export { policyOf, type Executed, type Policy, type Proposal } from './mcp/proposals.js'
+export {
+  ASSISTANT_AGENT,
+  runAssistantTurn,
+  streamOf,
+  type AssistantDeps,
+  type AssistantTurn,
+} from './assistant/loop.js'
+export {
+  GOLDEN_QUESTIONS,
+  goldenStore,
+  type GoldenFact,
+  type GoldenKind,
+  type GoldenQuestion,
+} from './assistant/golden.js'
+export {
+  runGolden,
+  type GoldenReport,
+  type GoldenResult,
+  type RunGoldenOptions,
+} from './assistant/eval.js'
 export { ucpProfile, UCP_VERSION } from './agents/profile.js'
 export { agentNameOf } from './agents/agent-name.js'
 export { createUcpSurface, type UcpSurfaceDeps } from './agents/ucp-surface.js'
