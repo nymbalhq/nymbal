@@ -1,0 +1,254 @@
+{
+  "store": "store-a-gbp",
+  "recordedAt": "2026-11-04",
+  "versions": {
+    "wordpress": "7.1.4",
+    "woocommerce": "11.2.1",
+    "php": "8.3.36",
+    "database": "12.3.3-MariaDB-ubu2404",
+    "wpEnv": "@wordpress/env 12.1.0"
+  },
+  "wpEnvConfig": {
+    "core": "https://wordpress.org/wordpress-7.1.4.zip",
+    "plugins": ["https://downloads.wordpress.org/plugin/woocommerce.11.2.1.zip"],
+    "port": 8888,
+    "testsEnvironment": false,
+    "config": {
+      "WP_DEBUG": false
+    }
+  },
+  "homeUrl": "http://localhost:8888",
+  "settings": {
+    "woocommerce_currency": "GBP",
+    "woocommerce_price_num_decimals": "2",
+    "woocommerce_weight_unit": "kg",
+    "woocommerce_dimension_unit": "cm",
+    "woocommerce_notify_low_stock_amount": "3",
+    "woocommerce_default_country": "GB",
+    "woocommerce_calc_taxes": "yes",
+    "woocommerce_manage_stock": "yes"
+  },
+  "build": {
+    "run": "On the host, in a directory holding wpEnvConfig as .wp-env.json: the 'host' commands. Then the 'cli' commands in order in one bash shell inside the cli container (npx @wordpress/env@12.1.0 run cli -- bash); later commands use the ids earlier ones print.",
+    "host": ["npx @wordpress/env@12.1.0 start"],
+    "cli": [
+      "set -euo pipefail",
+      "WP_APP_PASSWORD=$(wp user application-password create admin store-builder --porcelain)",
+      "api() { curl -sS --fail-with-body -u \"admin:$WP_APP_PASSWORD\" -H 'Host: localhost:8888' -H 'Content-Type: application/json' -X \"$1\" \"http://wordpress/wp-json/wc/v3$2\" ${3:+--data \"$3\"}; }",
+      "id() { php -r 'echo json_decode(stream_get_contents(STDIN))->id;'; }",
+      "wp option update woocommerce_currency GBP",
+      "wp option update woocommerce_price_num_decimals 2",
+      "wp option update woocommerce_weight_unit kg",
+      "wp option update woocommerce_dimension_unit cm",
+      "wp option update woocommerce_notify_low_stock_amount 3",
+      "wp option update woocommerce_default_country GB",
+      "wp option update woocommerce_calc_taxes yes",
+      "wp option update woocommerce_manage_stock yes",
+      "CAT_HOME=$(wp wc product_cat create --name=Homeware --slug=homeware --description='Things for the home' --user=admin --porcelain)",
+      "CAT_KITCHEN=$(wp wc product_cat create --name=Kitchen --slug=kitchen --parent=$CAT_HOME --user=admin --porcelain)",
+      "CAT_CLOTHING=$(wp wc product_cat create --name=Clothing --slug=clothing --user=admin --porcelain)",
+      "CAT_TSHIRTS=$(wp wc product_cat create --name=T-shirts --slug=t-shirts --parent=$CAT_CLOTHING --user=admin --porcelain)",
+      "CAT_ACCESSORIES=$(wp wc product_cat create --name=Accessories --slug=accessories --user=admin --porcelain)",
+      "TAG_ORGANIC=$(wp wc product_tag create --name=Organic --slug=organic --user=admin --porcelain)",
+      "TAG_GIFT=$(wp wc product_tag create --name=Gift --slug=gift --user=admin --porcelain)",
+      "TAG_BESTSELLER=$(wp wc product_tag create --name=Bestseller --slug=bestseller --user=admin --porcelain)",
+      "wp wc product_shipping_class create --name=Bulky --slug=bulky --user=admin --porcelain",
+      "wp wc product_shipping_class create --name=Letter --slug=letter --user=admin --porcelain",
+      "ATTR_COLOUR=$(wp wc product_attribute create --name=Colour --slug=colour --user=admin --porcelain)",
+      "ATTR_SIZE=$(wp wc product_attribute create --name=Size --slug=size --user=admin --porcelain)",
+      "for t in Red Blue Green Grey; do wp wc product_attribute_term create $ATTR_COLOUR --name=$t --user=admin --porcelain; done",
+      "for t in S M L; do wp wc product_attribute_term create $ATTR_SIZE --name=$t --user=admin --porcelain; done",
+      "php -r 'foreach ([\"red\"=>[200,40,40],\"blue\"=>[40,70,200],\"green\"=>[40,160,80],\"grey\"=>[128,128,128]] as $n=>$c) { $i=imagecreatetruecolor(64,64); imagefill($i,0,0,imagecolorallocate($i,$c[0],$c[1],$c[2])); imagepng($i,\"/tmp/swatch-$n.png\"); }'",
+      "IMG_RED=$(wp media import /tmp/swatch-red.png --title='Red swatch' --user=admin --porcelain)",
+      "IMG_BLUE=$(wp media import /tmp/swatch-blue.png --title='Blue swatch' --user=admin --porcelain)",
+      "IMG_GREEN=$(wp media import /tmp/swatch-green.png --title='Green swatch' --user=admin --porcelain)",
+      "IMG_GREY=$(wp media import /tmp/swatch-grey.png --title='Grey swatch' --user=admin --porcelain)",
+      "P_TOTE=$(api POST /products '{\"name\":\"Canvas Tote\",\"slug\":\"canvas-tote\",\"type\":\"simple\",\"sku\":\"TOTE-01\",\"description\":\"<p>A heavy canvas tote with a flat base.</p>\",\"short_description\":\"Heavy canvas tote.\",\"regular_price\":\"12.00\",\"manage_stock\":true,\"stock_quantity\":40,\"low_stock_amount\":5,\"weight\":\"0.35\",\"dimensions\":{\"length\":\"40\",\"width\":\"35\",\"height\":\"1\"},\"shipping_class\":\"letter\",\"categories\":[{\"id\":'$CAT_ACCESSORIES'}],\"tags\":[{\"id\":'$TAG_ORGANIC'}],\"images\":[{\"id\":'$IMG_GREY',\"alt\":\"Grey tote\"}],\"meta_data\":[{\"key\":\"care_instructions\",\"value\":\"Hand wash cold\"},{\"key\":\"_supplier_ref\",\"value\":\"SUP-0041\"}]}' | id)",
+      "wp post meta add $P_TOTE season spring",
+      "wp post meta add $P_TOTE season summer",
+      "P_NAPKINS=$(api POST /products '{\"name\":\"Linen Napkins (set of 4)\",\"slug\":\"linen-napkins\",\"type\":\"simple\",\"sku\":\"NAPKIN-04\",\"description\":\"<p>Stonewashed linen napkins.</p>\",\"regular_price\":\"20.00\",\"sale_price\":\"15.00\",\"manage_stock\":true,\"stock_quantity\":12,\"tax_class\":\"reduced-rate\",\"weight\":\"0.4\",\"dimensions\":{\"length\":\"45\",\"width\":\"45\",\"height\":\"\"},\"categories\":[{\"id\":'$CAT_KITCHEN'}],\"tags\":[{\"id\":'$TAG_GIFT'}]}' | id)",
+      "P_MUG=$(api POST /products '{\"name\":\"Enamel Mug\",\"slug\":\"enamel-mug\",\"type\":\"simple\",\"sku\":\"MUG-01\",\"description\":\"<p>A camp mug in blue enamel.</p>\",\"regular_price\":\"9.50\",\"sale_price\":\"7.60\",\"date_on_sale_from\":\"2026-11-01T00:00:00\",\"date_on_sale_to\":\"2026-12-31T23:59:59\",\"manage_stock\":true,\"stock_quantity\":30,\"weight\":\"0.3\",\"dimensions\":{\"length\":\"9\",\"width\":\"9\",\"height\":\"10\"},\"categories\":[{\"id\":'$CAT_KITCHEN'}],\"tags\":[{\"id\":'$TAG_BESTSELLER'}],\"images\":[{\"id\":'$IMG_BLUE'}]}' | id)",
+      "P_BLANKET=$(api POST /products '{\"name\":\"Wool Blanket\",\"slug\":\"wool-blanket\",\"type\":\"simple\",\"sku\":\"BLANKET-01\",\"description\":\"<p>A double-weave wool blanket.</p>\",\"regular_price\":\"85.00\",\"sale_price\":\"70.00\",\"date_on_sale_from\":\"2027-01-01T00:00:00\",\"date_on_sale_to\":\"2027-01-31T23:59:59\",\"manage_stock\":true,\"stock_quantity\":6,\"weight\":\"2.4\",\"dimensions\":{\"length\":\"200\",\"width\":\"150\",\"height\":\"2\"},\"shipping_class\":\"bulky\",\"categories\":[{\"id\":'$CAT_HOME'}]}' | id)",
+      "P_WRAP=$(api POST /products '{\"name\":\"Gift Wrap\",\"slug\":\"gift-wrap\",\"type\":\"simple\",\"sku\":\"WRAP-01\",\"regular_price\":\"2.50\",\"manage_stock\":false,\"stock_status\":\"instock\",\"tax_status\":\"none\",\"categories\":[{\"id\":'$CAT_ACCESSORIES'}],\"tags\":[{\"id\":'$TAG_GIFT'}]}' | id)",
+      "P_CANDLE=$(api POST /products '{\"name\":\"Beeswax Candle\",\"slug\":\"beeswax-candle\",\"type\":\"simple\",\"sku\":\"CANDLE-01\",\"regular_price\":\"14.00\",\"manage_stock\":false,\"stock_status\":\"onbackorder\",\"categories\":[{\"id\":'$CAT_HOME'}],\"tags\":[{\"id\":'$TAG_ORGANIC'},{\"id\":'$TAG_GIFT'}]}' | id)",
+      "P_VASE=$(api POST /products '{\"name\":\"Ceramic Vase\",\"slug\":\"ceramic-vase\",\"type\":\"simple\",\"sku\":\"VASE-01\",\"regular_price\":\"32.00\",\"manage_stock\":false,\"stock_status\":\"outofstock\",\"weight\":\"1.1\",\"dimensions\":{\"length\":\"15\",\"width\":\"15\",\"height\":\"30\"},\"shipping_class\":\"bulky\",\"categories\":[{\"id\":'$CAT_HOME'}]}' | id)",
+      "P_PAN=$(api POST /products '{\"name\":\"Cast Iron Pan\",\"slug\":\"cast-iron-pan\",\"type\":\"simple\",\"sku\":\"PAN-01\",\"regular_price\":\"45.00\",\"manage_stock\":true,\"stock_quantity\":-3,\"backorders\":\"notify\",\"weight\":\"3.2\",\"dimensions\":{\"length\":\"40\",\"width\":\"26\",\"height\":\"5\"},\"shipping_class\":\"bulky\",\"categories\":[{\"id\":'$CAT_KITCHEN'}]}' | id)",
+      "P_STICKER=$(api POST /products '{\"name\":\"Sticker Sheet\",\"slug\":\"sticker-sheet\",\"type\":\"simple\",\"sku\":\"STICKER-01\",\"regular_price\":\"0\",\"manage_stock\":true,\"stock_quantity\":500,\"weight\":\"0.01\",\"dimensions\":{\"length\":\"21\",\"width\":\"15\",\"height\":\"0.1\"},\"categories\":[{\"id\":'$CAT_ACCESSORIES'}],\"tags\":[{\"id\":'$TAG_GIFT'}]}' | id)",
+      "P_BUNDLE=$(api POST /products '{\"name\":\"Mystery Bundle\",\"slug\":\"mystery-bundle\",\"type\":\"simple\",\"sku\":\"BUNDLE-01\",\"manage_stock\":false,\"stock_status\":\"instock\",\"categories\":[{\"id\":'$CAT_ACCESSORIES'}]}' | id)",
+      "P_SET=$(api POST /products '{\"name\":\"Breakfast Set\",\"slug\":\"breakfast-set\",\"type\":\"grouped\",\"sku\":\"SET-01\",\"description\":\"<p>Napkins and a mug.</p>\",\"grouped_products\":['$P_NAPKINS','$P_MUG'],\"categories\":[{\"id\":'$CAT_KITCHEN'}]}' | id)",
+      "P_LAMP=$(api POST /products '{\"name\":\"Partner Lamp\",\"slug\":\"partner-lamp\",\"type\":\"external\",\"sku\":\"LAMP-EXT\",\"regular_price\":\"120.00\",\"external_url\":\"https://example.com/partner/lamp\",\"button_text\":\"Buy from our partner\",\"categories\":[{\"id\":'$CAT_HOME'}]}' | id)",
+      "P_TEA=$(api POST /products '{\"name\":\"Tea Sampler\",\"slug\":\"tea-sampler\",\"type\":\"simple\",\"sku\":\"TEA-01\",\"regular_price\":\"4.995\",\"manage_stock\":true,\"stock_quantity\":100,\"weight\":\"0.05\",\"categories\":[{\"id\":'$CAT_KITCHEN'}]}' | id)",
+      "P_PLANTER=$(api POST /products '{\"name\":\"Prototype Planter\",\"slug\":\"prototype-planter\",\"type\":\"simple\",\"status\":\"draft\",\"sku\":\"PLANTER-01\",\"regular_price\":\"18.00\",\"manage_stock\":true,\"stock_quantity\":0,\"categories\":[{\"id\":'$CAT_HOME'}]}' | id)",
+      "P_PATTERN=$(api POST /products '{\"name\":\"Knitting Pattern\",\"slug\":\"knitting-pattern\",\"type\":\"simple\",\"sku\":\"PATTERN-01\",\"virtual\":true,\"downloadable\":true,\"regular_price\":\"5.00\",\"manage_stock\":false,\"stock_status\":\"instock\",\"tax_class\":\"zero-rate\",\"categories\":[{\"id\":'$CAT_CLOTHING'}]}' | id)",
+      "P_HOOK=$(api POST /products '{\"name\":\"Wall Hook\",\"slug\":\"wall-hook\",\"type\":\"simple\",\"sku\":\"HOOK-01\",\"regular_price\":\"3.00\",\"manage_stock\":true,\"stock_quantity\":150,\"low_stock_amount\":10,\"weight\":\"0.02\",\"categories\":[{\"id\":'$CAT_HOME'}]}' | id)",
+      "P_TSHIRT=$(api POST /products '{\"name\":\"Organic T-shirt\",\"slug\":\"organic-t-shirt\",\"type\":\"variable\",\"sku\":\"TSHIRT\",\"description\":\"<p>A classic crew neck.</p>\",\"manage_stock\":false,\"weight\":\"0.2\",\"dimensions\":{\"length\":\"70\",\"width\":\"50\",\"height\":\"1\"},\"categories\":[{\"id\":'$CAT_TSHIRTS'}],\"tags\":[{\"id\":'$TAG_ORGANIC'},{\"id\":'$TAG_BESTSELLER'}],\"images\":[{\"id\":'$IMG_RED'},{\"id\":'$IMG_BLUE'}],\"attributes\":[{\"id\":'$ATTR_COLOUR',\"options\":[\"Red\",\"Blue\"],\"visible\":true,\"variation\":true},{\"id\":'$ATTR_SIZE',\"options\":[\"S\",\"M\"],\"visible\":true,\"variation\":true},{\"name\":\"Material\",\"options\":[\"Organic cotton\"],\"visible\":true,\"variation\":false},{\"name\":\"Fit\",\"options\":[\"Regular\"],\"visible\":false,\"variation\":false}],\"meta_data\":[{\"key\":\"fabric_origin\",\"value\":\"Portugal\"},{\"key\":\"_internal_cost\",\"value\":\"6.10\"}]}' | id)",
+      "api POST /products/$P_TSHIRT/variations '{\"sku\":\"TSHIRT-RED-S\",\"regular_price\":\"18.00\",\"manage_stock\":true,\"stock_quantity\":10,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Red\"},{\"id\":'$ATTR_SIZE',\"option\":\"S\"}]}' | id",
+      "api POST /products/$P_TSHIRT/variations '{\"sku\":\"TSHIRT-RED-M\",\"regular_price\":\"18.00\",\"sale_price\":\"14.40\",\"manage_stock\":true,\"stock_quantity\":0,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Red\"},{\"id\":'$ATTR_SIZE',\"option\":\"M\"}]}' | id",
+      "api POST /products/$P_TSHIRT/variations '{\"sku\":\"TSHIRT-BLUE-S\",\"regular_price\":\"18.00\",\"manage_stock\":false,\"stock_status\":\"instock\",\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Blue\"},{\"id\":'$ATTR_SIZE',\"option\":\"S\"}]}' | id",
+      "api POST /products/$P_TSHIRT/variations '{\"sku\":\"TSHIRT-BLUE-M\",\"regular_price\":\"19.00\",\"manage_stock\":true,\"stock_quantity\":7,\"low_stock_amount\":2,\"weight\":\"0.25\",\"dimensions\":{\"length\":\"72\",\"width\":\"52\",\"height\":\"\"},\"tax_class\":\"reduced-rate\",\"shipping_class\":\"letter\",\"image\":{\"id\":'$IMG_BLUE'},\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Blue\"},{\"id\":'$ATTR_SIZE',\"option\":\"M\"}]}' | id",
+      "P_SOCKS=$(api POST /products '{\"name\":\"Merino Socks\",\"slug\":\"merino-socks\",\"type\":\"variable\",\"sku\":\"SOCKS\",\"manage_stock\":true,\"stock_quantity\":25,\"low_stock_amount\":4,\"weight\":\"0.1\",\"dimensions\":{\"length\":\"25\",\"width\":\"10\",\"height\":\"2\"},\"categories\":[{\"id\":'$CAT_CLOTHING'}],\"images\":[{\"id\":'$IMG_GREEN'}],\"attributes\":[{\"id\":'$ATTR_COLOUR',\"options\":[\"Red\",\"Blue\",\"Green\",\"Grey\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "api POST /products/$P_SOCKS/variations '{\"sku\":\"SOCKS-RED\",\"regular_price\":\"8.00\",\"manage_stock\":false,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Red\"}]}' | id",
+      "api POST /products/$P_SOCKS/variations '{\"sku\":\"SOCKS-BLUE\",\"regular_price\":\"8.00\",\"sale_price\":\"6.00\",\"manage_stock\":false,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Blue\"}]}' | id",
+      "api POST /products/$P_SOCKS/variations '{\"sku\":\"SOCKS-GREEN\",\"status\":\"private\",\"regular_price\":\"8.00\",\"manage_stock\":false,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Green\"}]}' | id",
+      "api POST /products/$P_SOCKS/variations '{\"sku\":\"SOCKS-GREY\",\"regular_price\":\"9.00\",\"manage_stock\":true,\"stock_quantity\":4,\"attributes\":[{\"id\":'$ATTR_COLOUR',\"option\":\"Grey\"}]}' | id",
+      "P_JACKET=$(api POST /products '{\"name\":\"Rain Jacket\",\"slug\":\"rain-jacket\",\"type\":\"variable\",\"sku\":\"JACKET\",\"manage_stock\":false,\"weight\":\"0.6\",\"dimensions\":{\"length\":\"80\",\"width\":\"60\",\"height\":\"3\"},\"categories\":[{\"id\":'$CAT_CLOTHING'}],\"attributes\":[{\"id\":'$ATTR_SIZE',\"options\":[\"S\",\"M\",\"L\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "api POST /products/$P_JACKET/variations '{\"sku\":\"JACKET-S\",\"regular_price\":\"60.00\",\"manage_stock\":true,\"stock_quantity\":3,\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"S\"}]}' | id",
+      "api POST /products/$P_JACKET/variations '{\"sku\":\"JACKET-M\",\"manage_stock\":true,\"stock_quantity\":2,\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"M\"}]}' | id",
+      "api POST /products/$P_JACKET/variations '{\"sku\":\"JACKET-L\",\"regular_price\":\"62.00\",\"manage_stock\":true,\"stock_quantity\":-1,\"backorders\":\"notify\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"L\"}]}' | id",
+      "P_WREATH=$(api POST /products '{\"name\":\"Seasonal Wreath\",\"slug\":\"seasonal-wreath\",\"type\":\"variable\",\"sku\":\"WREATH\",\"manage_stock\":false,\"categories\":[{\"id\":'$CAT_HOME'}],\"attributes\":[{\"id\":'$ATTR_SIZE',\"options\":[\"S\",\"M\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "api POST /products/$P_WREATH/variations '{\"sku\":\"WREATH-S\",\"manage_stock\":false,\"stock_status\":\"instock\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"S\"}]}' | id",
+      "api POST /products/$P_WREATH/variations '{\"sku\":\"WREATH-M\",\"manage_stock\":false,\"stock_status\":\"instock\",\"attributes\":[{\"id\":'$ATTR_SIZE',\"option\":\"M\"}]}' | id"
+    ]
+  },
+  "record": {
+    "key": "WC_CREDS=$(npx @wordpress/env@12.1.0 run cli -- wp eval '$k=\"ck_\".wc_rand_hash(); $s=\"cs_\".wc_rand_hash(); global $wpdb; $wpdb->insert($wpdb->prefix.\"woocommerce_api_keys\", [\"user_id\"=>1,\"description\"=>\"recorder\",\"permissions\"=>\"read\",\"consumer_key\"=>wc_api_hash($k),\"consumer_secret\"=>$s,\"truncated_key\"=>substr($k,-7)]); echo \"$k:$s\";'); WC_KEY=${WC_CREDS%%:*}; WC_SECRET=${WC_CREDS#*:}",
+    "auth": "OAuth 1.0a one-legged with $WC_KEY:$WC_SECRET (a read-only WooCommerce REST key): HMAC-SHA256 over 'GET&' + rawurlencode(url without query) + '&' + the sorted, rawurlencoded query and oauth_* pairs joined by %26, signing key $WC_SECRET + '&', sent as query parameters. WooCommerce takes the key as HTTP Basic only over HTTPS, and wp-env serves http://localhost:8888",
+    "base": "http://localhost:8888/wp-json/wc/v3",
+    "answers": [
+      {
+        "file": "system_status.json",
+        "request": "GET /wp-json/wc/v3/system_status",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-general.json",
+        "request": "GET /wp-json/wc/v3/settings/general",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-products.json",
+        "request": "GET /wp-json/wc/v3/settings/products",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "categories.json",
+        "request": "GET /wp-json/wc/v3/products/categories?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "6",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products.page-1.json",
+        "request": "GET /wp-json/wc/v3/products?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "20",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-30-variations.json",
+        "request": "GET /wp-json/wc/v3/products/30/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "4",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-35-variations.json",
+        "request": "GET /wp-json/wc/v3/products/35/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "4",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-40-variations.json",
+        "request": "GET /wp-json/wc/v3/products/40/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "3",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-44-variations.json",
+        "request": "GET /wp-json/wc/v3/products/44/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "2",
+        "X-WP-TotalPages": "1"
+      }
+    ]
+  },
+  "covers": {
+    "managed stock, own low_stock_amount": ["TOTE-01", "HOOK-01"],
+    "managed stock, low_stock_amount null (store's 3 applies)": [
+      "NAPKIN-04",
+      "MUG-01",
+      "STICKER-01"
+    ],
+    "untracked instock / onbackorder / outofstock": ["WRAP-01", "CANDLE-01", "VASE-01"],
+    "negative stock with backorders": ["PAN-01 (-3)", "JACKET-L (-1)"],
+    "manage_stock 'parent' pool of 25, one private variation, one own pool of 4": [
+      "SOCKS-RED",
+      "SOCKS-BLUE",
+      "SOCKS-GREEN (private)",
+      "SOCKS-GREY (own)"
+    ],
+    "untracked variation under an untracked parent": ["TSHIRT-BLUE-S"],
+    "sale with no dates (on_sale true)": ["NAPKIN-04", "TSHIRT-RED-M", "SOCKS-BLUE"],
+    "dated sale active on the recording date": ["MUG-01 (2026-11-01 to 2026-12-31)"],
+    "future scheduled sale (price is regular, on_sale false)": [
+      "BLANKET-01 (2027-01-01 to 2027-01-31)"
+    ],
+    "price with more fraction digits than the currency": ["TEA-01 (4.995)"],
+    "free product, price \"0\"": ["STICKER-01"],
+    "simple product with no price": ["BUNDLE-01"],
+    "variation with no price beside priced ones": ["JACKET-M"],
+    "variable product with no priced variation": ["WREATH"],
+    "grouped (children NAPKIN-04, MUG-01; price is the cheapest child's, regular_price empty)": [
+      "SET-01"
+    ],
+    "external with a price": ["LAMP-EXT"],
+    "draft status": ["PLANTER-01"],
+    "virtual and downloadable": ["PATTERN-01"],
+    "tags": ["TOTE-01", "NAPKIN-04", "MUG-01", "WRAP-01", "CANDLE-01", "STICKER-01", "TSHIRT"],
+    "tax_class reduced-rate / zero-rate, tax_status none": [
+      "NAPKIN-04",
+      "TSHIRT-BLUE-M",
+      "PATTERN-01",
+      "WRAP-01"
+    ],
+    "shipping classes bulky / letter (product and variation)": [
+      "BLANKET-01",
+      "VASE-01",
+      "PAN-01",
+      "TOTE-01",
+      "TSHIRT-BLUE-M"
+    ],
+    "global attributes (variation) and local attributes (visible and hidden, not for variations)": [
+      "TSHIRT",
+      "SOCKS",
+      "JACKET",
+      "WREATH"
+    ],
+    "one empty dimension on a simple product": ["NAPKIN-04 (height empty)"],
+    "no weight or dimensions": ["WRAP-01", "CANDLE-01", "BUNDLE-01", "PATTERN-01"],
+    "public, private (_) and repeated meta_data keys": [
+      "TOTE-01 (care_instructions, _supplier_ref, season x2)",
+      "TSHIRT (fabric_origin, _internal_cost)"
+    ],
+    "images (generated 64x64 solid-colour PNGs, bytes not committed)": [
+      "TOTE-01",
+      "MUG-01",
+      "TSHIRT",
+      "TSHIRT-BLUE-M",
+      "SOCKS"
+    ],
+    "nested categories": [
+      "Homeware > Kitchen",
+      "Clothing > T-shirts",
+      "Accessories",
+      "Uncategorized (WooCommerce's default, empty)"
+    ]
+  },
+  "notes": [
+    "Every product, category, tag, attribute, image and setting is synthetic, created by the commands below on an empty WooCommerce. No WooCommerce sample data was imported.",
+    "Answers are WooCommerce's JSON bodies parsed and written back with 2-space indent; no value is changed. Requests are exactly the ones the importer sends (per_page=100, orderby=id, order=asc).",
+    "A variation's REST answer already resolves inheritance: an empty variation weight, dimension, tax_class or image shows the parent's value, so no recorded variation has an empty weight under a parent that has one.",
+    "A variation with manage_stock 'parent' reports the parent's stock_quantity.",
+    "Global attribute options come back sorted by name, not in the order they were created.",
+    "Fewer than 100 products per store, so each store has one products page.",
+    "home_url is wp-env's http://localhost:8888; the only email address is wp-env's admin default (wordpress@example.com, woocommerce_stock_email_recipient in settings-products). system_status.environment.store_id is a random id made at install."
+  ]
+}

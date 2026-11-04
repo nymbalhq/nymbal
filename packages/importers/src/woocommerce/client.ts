@@ -1,4 +1,5 @@
 import type { WooCommerceCredentials } from '../types.js'
+import type { DimensionUnit, WeightUnit } from './mappers/units.js'
 
 export class WooCommerceApiError extends Error {
   constructor(
@@ -25,11 +26,33 @@ export interface WcProduct {
   description: string
   short_description: string
   sku: string
+  /** The price charged now: the sale price while a sale is live, else the regular price. */
+  price: string
   regular_price: string
   sale_price: string
+  on_sale: boolean
+  date_on_sale_from: string | null
+  date_on_sale_to: string | null
+  manage_stock: boolean
+  stock_quantity: number | null
+  stock_status: string
+  backorders: string
+  low_stock_amount: number | null
+  tags: Array<{ id: number; name: string; slug: string }>
+  tax_status: string
+  tax_class: string
+  shipping_class: string
+  grouped_products: number[]
+  external_url: string
   categories: Array<{ id: number; name: string; slug: string }>
   images: Array<{ id: number; src: string; name: string; alt: string }>
-  attributes: Array<{ id: number; name: string; options: string[] }>
+  attributes: Array<{
+    id: number
+    name: string
+    options: string[]
+    visible: boolean
+    variation: boolean
+  }>
   variations: number[]
   meta_data: Array<{ key: string; value: unknown }>
   downloadable: boolean
@@ -42,14 +65,37 @@ export interface WcProduct {
 export interface WcVariation {
   id: number
   sku: string
+  price: string
   regular_price: string
   sale_price: string
+  on_sale: boolean
+  date_on_sale_from: string | null
+  date_on_sale_to: string | null
+  /** 'parent' when the variation sells from its parent's stock; it then reports the parent's quantity. */
+  manage_stock: boolean | 'parent'
   stock_quantity: number | null
+  stock_status: string
+  backorders: string
+  low_stock_amount: number | null
+  tax_status: string
+  tax_class: string
+  shipping_class: string
   status: string
   attributes: Array<{ id: number; name: string; option: string }>
   weight: string
   dimensions: { length: string; width: string; height: string }
 }
+
+/** The WooCommerce store's own settings the catalogue is read in. */
+export interface WcStoreSettings {
+  currency: string
+  weightUnit: WeightUnit
+  dimensionUnit: DimensionUnit
+  lowStockAmount: number
+}
+
+const WEIGHT_UNITS: readonly string[] = ['kg', 'g', 'lbs', 'oz'] satisfies WeightUnit[]
+const DIMENSION_UNITS: readonly string[] = ['m', 'cm', 'mm', 'in', 'yd'] satisfies DimensionUnit[]
 
 export interface WcCategory {
   id: number
@@ -215,6 +261,52 @@ export class WooCommerceClient {
       if (page >= totalPages) break
       page++
     }
+  }
+
+  /**
+   * The currency (`/settings/general`), units and low-stock amount (`/settings/products`); null when either answer is
+   * not a 2xx list of settings carrying them. A key without settings access gets a 401 or 403 here.
+   */
+  async getStoreSettings(): Promise<WcStoreSettings | null> {
+    const general = await this.getSettingsGroup('general')
+    if (general === null) return null
+    const products = await this.getSettingsGroup('products')
+    if (products === null) return null
+    const currency = general.get('woocommerce_currency')
+    const weightUnit = products.get('woocommerce_weight_unit')
+    const dimensionUnit = products.get('woocommerce_dimension_unit')
+    const lowStockAmount = Number(products.get('woocommerce_notify_low_stock_amount'))
+    if (
+      typeof currency !== 'string' ||
+      currency === '' ||
+      typeof weightUnit !== 'string' ||
+      !WEIGHT_UNITS.includes(weightUnit) ||
+      typeof dimensionUnit !== 'string' ||
+      !DIMENSION_UNITS.includes(dimensionUnit) ||
+      !Number.isInteger(lowStockAmount) ||
+      lowStockAmount < 0
+    ) {
+      return null
+    }
+    return {
+      currency,
+      weightUnit: weightUnit as WeightUnit,
+      dimensionUnit: dimensionUnit as DimensionUnit,
+      lowStockAmount,
+    }
+  }
+
+  /** A settings group as id → value; null when the answer is not a 2xx list. */
+  private async getSettingsGroup(group: string): Promise<Map<string, unknown> | null> {
+    const answer = await this.getList(`${this.base}/settings/${group}`)
+    if (answer === null) return null
+    const values = new Map<string, unknown>()
+    for (const item of answer.items) {
+      if (typeof item === 'object' && item !== null && 'id' in item && 'value' in item) {
+        values.set(String(item.id), item.value)
+      }
+    }
+    return values
   }
 
   async getProductVariations(productId: number): Promise<WcVariation[]> {

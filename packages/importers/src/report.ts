@@ -71,18 +71,18 @@ export function formatReport(report: ImportReport, storeName: string): string {
     )
   }
 
-  if (report.warnings.length > 0) {
-    lines.push('## Review before launch', '')
-    for (const w of report.warnings) {
-      lines.push(`- **${w.phase}**${w.id ? ` (${w.id})` : ''}: ${w.message}`)
-    }
-    lines.push('')
-  }
-
   if (report.errors.length > 0) {
     lines.push('## Errors Requiring Review', '')
     for (const e of report.errors) {
       lines.push(`- **${e.phase}**${e.id ? ` (${e.id})` : ''}: ${e.error}`)
+    }
+    lines.push('')
+  }
+
+  if (report.warnings.length > 0) {
+    lines.push('## Review before launch', '')
+    for (const w of report.warnings) {
+      lines.push(`- **${w.phase}**${w.id ? ` (${w.id})` : ''}: ${w.message}`)
     }
     lines.push('')
   }
@@ -92,7 +92,7 @@ export function formatReport(report: ImportReport, storeName: string): string {
     '',
     '1. Run `nymbal dev` to preview your imported store',
     '2. Run `nymbal test:visual --update-baselines` to capture visual baselines',
-    '3. Review any items listed under Errors above',
+    '3. Review any items listed under Errors and Review before launch above',
     ...(report.enriched.skipped > 0
       ? ['4. Products with sufficient content were skipped — review originals if needed']
       : []),

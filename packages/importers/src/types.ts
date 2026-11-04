@@ -37,6 +37,8 @@ export interface WooCommerceImportOptions {
   projectRoot: string
   currency: string
   statePath: string
+  /** The stock an item WooCommerce does not count imports with when it is in stock or on backorder; 1000 by default. */
+  untrackedStock?: number
   /** Starts a delta pass on a state whose last pass finished; resolve `last` with `resolveSince`. */
   since?: SinceByEntity
 }
@@ -71,6 +73,7 @@ export interface ImportState {
   wcToNymbalOrder: Record<string, string>
   wcToNymbalReview: Record<string, string>
   errors: Array<{ phase: string; id?: string; error: string }>
+  /** Each once, by phase, id and message. */
   warnings: ImportWarning[]
   eventsEmitted: number
   /** The finished passes, oldest first. */

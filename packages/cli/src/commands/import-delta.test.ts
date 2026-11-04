@@ -213,6 +213,8 @@ describe('AC-10: a delta through the CLI', () => {
     source.source.products[at] = {
       ...source.source.products[at],
       name: 'Classic White Tee, renamed',
+      // Not on sale: WooCommerce's active price is the regular price.
+      price: (newPriceMinor / 100).toFixed(2),
       regular_price: (newPriceMinor / 100).toFixed(2),
       date_modified_gmt: CHANGED_AT,
     }

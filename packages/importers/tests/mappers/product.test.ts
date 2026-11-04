@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mapProduct, isThinContent } from '../../src/woocommerce/mappers/product.js'
 import type { WcProduct, WcVariation } from '../../src/woocommerce/client.js'
+import { storeContext } from './support/wc.js'
 
 function makeProduct(overrides: Partial<WcProduct> = {}): WcProduct {
   return {
@@ -12,8 +13,23 @@ function makeProduct(overrides: Partial<WcProduct> = {}): WcProduct {
     description: 'A detailed product description with enough content for testing purposes here.',
     short_description: 'Short desc',
     sku: 'TEST-001',
+    price: '19.99',
     regular_price: '19.99',
     sale_price: '',
+    on_sale: false,
+    date_on_sale_from: null,
+    date_on_sale_to: null,
+    manage_stock: true,
+    stock_quantity: 10,
+    stock_status: 'instock',
+    backorders: 'no',
+    low_stock_amount: null,
+    tags: [],
+    tax_status: 'taxable',
+    tax_class: '',
+    shipping_class: '',
+    grouped_products: [],
+    external_url: '',
     categories: [],
     images: [],
     attributes: [],
@@ -29,7 +45,7 @@ function makeProduct(overrides: Partial<WcProduct> = {}): WcProduct {
 
 describe('mapProduct', () => {
   it('maps a simple product correctly', () => {
-    const result = mapProduct(makeProduct(), [], [], [], '')
+    const result = mapProduct(makeProduct(), [], [], [], '', storeContext())
     expect(result.slug).toBe('test-product')
     expect(result.name).toBe('Test Product')
     expect(result.type).toBe('simple')
@@ -41,12 +57,12 @@ describe('mapProduct', () => {
   })
 
   it('maps WC draft status to nymbal draft', () => {
-    const result = mapProduct(makeProduct({ status: 'draft' }), [], [], [], '')
+    const result = mapProduct(makeProduct({ status: 'draft' }), [], [], [], '', storeContext())
     expect(result.status).toBe('draft')
   })
 
   it('maps WC private status to nymbal draft', () => {
-    const result = mapProduct(makeProduct({ status: 'private' }), [], [], [], '')
+    const result = mapProduct(makeProduct({ status: 'private' }), [], [], [], '', storeContext())
     expect(result.status).toBe('draft')
   })
 
@@ -55,9 +71,20 @@ describe('mapProduct', () => {
       {
         id: 10,
         sku: 'P-S',
+        price: '29.99',
         regular_price: '29.99',
         sale_price: '',
+        on_sale: false,
+        date_on_sale_from: null,
+        date_on_sale_to: null,
+        manage_stock: true,
         stock_quantity: 5,
+        stock_status: 'instock',
+        backorders: 'no',
+        low_stock_amount: null,
+        tax_status: 'taxable',
+        tax_class: '',
+        shipping_class: '',
         status: 'publish',
         attributes: [{ id: 1, name: 'Size', option: 'S' }],
         weight: '0.3',
@@ -66,9 +93,20 @@ describe('mapProduct', () => {
       {
         id: 11,
         sku: 'P-M',
+        price: '29.99',
         regular_price: '29.99',
         sale_price: '',
+        on_sale: false,
+        date_on_sale_from: null,
+        date_on_sale_to: null,
+        manage_stock: true,
         stock_quantity: 8,
+        stock_status: 'instock',
+        backorders: 'no',
+        low_stock_amount: null,
+        tax_status: 'taxable',
+        tax_class: '',
+        shipping_class: '',
         status: 'publish',
         attributes: [{ id: 1, name: 'Size', option: 'M' }],
         weight: '0.3',
@@ -76,11 +114,19 @@ describe('mapProduct', () => {
       },
     ]
     const result = mapProduct(
-      makeProduct({ type: 'variable', variations: [10, 11] }),
+      makeProduct({
+        type: 'variable',
+        price: '29.99',
+        regular_price: '',
+        manage_stock: false,
+        stock_quantity: null,
+        variations: [10, 11],
+      }),
       variations,
       [],
       [],
       '',
+      storeContext(),
     )
     expect(result.type).toBe('variable')
     expect(result.variants).toHaveLength(2)
@@ -90,19 +136,19 @@ describe('mapProduct', () => {
   })
 
   it('appends suffix to slug when duplicate', () => {
-    const result = mapProduct(makeProduct(), [], [], [], '42')
+    const result = mapProduct(makeProduct(), [], [], [], '42', storeContext())
     expect(result.slug).toBe('test-product-42')
   })
 
   it('stores woocommerce metadata', () => {
-    const result = mapProduct(makeProduct({ id: 99, sku: 'X99' }), [], [], [], '')
+    const result = mapProduct(makeProduct({ id: 99, sku: 'X99' }), [], [], [], '', storeContext())
     const meta = result.metadata?.['woocommerce'] as Record<string, unknown>
     expect(meta['id']).toBe(99)
     expect(meta['sku']).toBe('X99')
   })
 
   it('flags virtual products in metadata', () => {
-    const result = mapProduct(makeProduct({ virtual: true }), [], [], [], '')
+    const result = mapProduct(makeProduct({ virtual: true }), [], [], [], '', storeContext())
     const meta = result.metadata?.['woocommerce'] as Record<string, unknown>
     expect(meta['virtual']).toBe(true)
   })
@@ -114,6 +160,7 @@ describe('mapProduct', () => {
       [],
       [],
       '',
+      storeContext(),
     )
     expect(result.seoTitle).toBe('Yoast Title')
     expect(result.seoDescription).toBe('Yoast Desc')
@@ -126,6 +173,7 @@ describe('mapProduct', () => {
       [],
       [],
       '',
+      storeContext(),
     )
     expect(result.description).toBe('Hello world')
   })
@@ -135,7 +183,7 @@ describe('mapProduct', () => {
       { url: '/imported-media/a.jpg', altText: 'Image A' },
       { url: '/imported-media/b.jpg', altText: 'Image B' },
     ]
-    const result = mapProduct(makeProduct(), [], [], media, '')
+    const result = mapProduct(makeProduct(), [], [], media, '', storeContext())
     expect(result.media).toHaveLength(2)
     expect(result.media![0]!.position).toBe(0)
     expect(result.media![1]!.position).toBe(1)

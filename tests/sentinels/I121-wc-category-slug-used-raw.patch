@@ -1,0 +1,18 @@
+# id: I121
+# kind: injected
+# defect: a category keeps its WooCommerce slug raw, so " Winter Hats " is stored with spaces and capitals and a re-import or a hand-made "winter-hats" splits one category into two
+# where: packages/importers/src/woocommerce/mappers/category.ts:9
+# killed-by: packages/importers/tests/mappers/category.test.ts (a WooCommerce slug in mixed case or with spaces is normalised, not copied)
+# suite: pnpm vitest run --project importers-unit packages/importers/tests/mappers/category.test.ts
+diff --git a/packages/importers/src/woocommerce/mappers/category.ts b/packages/importers/src/woocommerce/mappers/category.ts
+--- a/packages/importers/src/woocommerce/mappers/category.ts
++++ b/packages/importers/src/woocommerce/mappers/category.ts
+@@ -6,7 +6,7 @@
+   nymbalParentId: string | undefined,
+ ): CategoryCreateInput {
+   const result: CategoryCreateInput = {
+-    slug: slugify(wc.slug || wc.name),
++    slug: wc.slug || slugify(wc.name),
+     name: wc.name,
+     parentId: nymbalParentId ?? null,
+     position: 0,

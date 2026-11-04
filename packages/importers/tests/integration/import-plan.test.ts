@@ -293,15 +293,19 @@ describe('AC-3: unmapped fields are what the import never reads', () => {
     return store
   }
 
-  it('AC-3: for the fixture store, unmapped products include meta_data and attributes and not regular_price or slug', async () => {
+  it('AC-3: for the fixture store, unmapped products include backorders and not meta_data, attributes, regular_price or slug', async () => {
     const plan = await planOf(fixtureWithMeta(), planOptions())
     const fields = plan.unmapped.products.map((f) => f.field)
 
     expect(
-      ['meta_data', 'attributes', 'regular_price', 'slug'].map((f) => [f, fields.includes(f)]),
+      ['backorders', 'meta_data', 'attributes', 'regular_price', 'slug'].map((f) => [
+        f,
+        fields.includes(f),
+      ]),
     ).toEqual([
-      ['meta_data', true],
-      ['attributes', true],
+      ['backorders', true],
+      ['meta_data', false],
+      ['attributes', false],
       ['regular_price', false],
       ['slug', false],
     ])
@@ -338,8 +342,23 @@ function product(id: number, over: Rec): Rec {
     description: '',
     short_description: '',
     sku: `SKU-${id}`,
+    price: '10.00',
     regular_price: '10.00',
     sale_price: '',
+    on_sale: false,
+    date_on_sale_from: null,
+    date_on_sale_to: null,
+    manage_stock: false,
+    stock_quantity: null,
+    stock_status: 'instock',
+    backorders: 'no',
+    low_stock_amount: null,
+    tags: [],
+    tax_status: 'taxable',
+    tax_class: '',
+    shipping_class: '',
+    grouped_products: [],
+    external_url: '',
     categories: [],
     images: [],
     attributes: [],
@@ -357,9 +376,20 @@ function variation(id: number, sku: string): Rec {
   return {
     id,
     sku,
+    price: '12.00',
     regular_price: '12.00',
     sale_price: '',
+    on_sale: false,
+    date_on_sale_from: null,
+    date_on_sale_to: null,
+    manage_stock: true,
     stock_quantity: 3,
+    stock_status: 'instock',
+    backorders: 'no',
+    low_stock_amount: null,
+    tax_status: 'taxable',
+    tax_class: '',
+    shipping_class: '',
     status: 'publish',
     attributes: [{ id: 1, name: 'Size', option: `s${id}` }],
     weight: '',

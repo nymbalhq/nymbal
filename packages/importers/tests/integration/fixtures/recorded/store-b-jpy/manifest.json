@@ -1,0 +1,196 @@
+{
+  "store": "store-b-jpy",
+  "recordedAt": "2026-11-04",
+  "versions": {
+    "wordpress": "7.1.4",
+    "woocommerce": "11.2.1",
+    "php": "8.3.36",
+    "database": "12.3.3-MariaDB-ubu2404",
+    "wpEnv": "@wordpress/env 12.1.0"
+  },
+  "wpEnvConfig": {
+    "core": "https://wordpress.org/wordpress-7.1.4.zip",
+    "plugins": ["https://downloads.wordpress.org/plugin/woocommerce.11.2.1.zip"],
+    "port": 8888,
+    "testsEnvironment": false,
+    "config": {
+      "WP_DEBUG": false
+    }
+  },
+  "homeUrl": "http://localhost:8888",
+  "settings": {
+    "woocommerce_currency": "JPY",
+    "woocommerce_price_num_decimals": "0",
+    "woocommerce_weight_unit": "lbs",
+    "woocommerce_dimension_unit": "in",
+    "woocommerce_notify_low_stock_amount": "2",
+    "woocommerce_default_country": "JP",
+    "woocommerce_calc_taxes": "no",
+    "woocommerce_manage_stock": "yes"
+  },
+  "build": {
+    "run": "On the host, in a directory holding wpEnvConfig as .wp-env.json: the 'host' commands. Then the 'cli' commands in order in one bash shell inside the cli container (npx @wordpress/env@12.1.0 run cli -- bash); later commands use the ids earlier ones print.",
+    "host": ["npx @wordpress/env@12.1.0 start", "npx @wordpress/env@12.1.0 reset development"],
+    "cli": [
+      "set -euo pipefail",
+      "WP_APP_PASSWORD=$(wp user application-password create admin store-builder --porcelain)",
+      "api() { curl -sS --fail-with-body -u \"admin:$WP_APP_PASSWORD\" -H 'Host: localhost:8888' -H 'Content-Type: application/json' -X \"$1\" \"http://wordpress/wp-json/wc/v3$2\" ${3:+--data \"$3\"}; }",
+      "id() { php -r 'echo json_decode(stream_get_contents(STDIN))->id;'; }",
+      "wp option update woocommerce_currency JPY",
+      "wp option update woocommerce_price_num_decimals 0",
+      "wp option update woocommerce_weight_unit lbs",
+      "wp option update woocommerce_dimension_unit in",
+      "wp option update woocommerce_notify_low_stock_amount 2",
+      "wp option update woocommerce_default_country JP",
+      "wp option update woocommerce_calc_taxes no",
+      "wp option update woocommerce_manage_stock yes",
+      "CAT_FOOD=$(wp wc product_cat create --name=Food --slug=food --description='Pantry and tea' --user=admin --porcelain)",
+      "CAT_TEA=$(wp wc product_cat create --name=Tea --slug=tea --parent=$CAT_FOOD --user=admin --porcelain)",
+      "CAT_MATCHA=$(wp wc product_cat create --name=Matcha --slug=matcha --parent=$CAT_TEA --user=admin --porcelain)",
+      "CAT_TABLEWARE=$(wp wc product_cat create --name=Tableware --slug=tableware --user=admin --porcelain)",
+      "TAG_SEASONAL=$(wp wc product_tag create --name=Seasonal --slug=seasonal --user=admin --porcelain)",
+      "TAG_LIMITED=$(wp wc product_tag create --name=Limited --slug=limited --user=admin --porcelain)",
+      "wp wc product_shipping_class create --name=Fragile --slug=fragile --user=admin --porcelain",
+      "ATTR_GRADE=$(wp wc product_attribute create --name=Grade --slug=grade --user=admin --porcelain)",
+      "for t in Ceremonial Culinary; do wp wc product_attribute_term create $ATTR_GRADE --name=$t --user=admin --porcelain; done",
+      "P_MATCHA_TIN=$(api POST /products '{\"name\":\"Ceremonial Matcha Tin\",\"slug\":\"ceremonial-matcha-tin\",\"type\":\"simple\",\"sku\":\"MATCHA-C30\",\"description\":\"<p>Stone-ground matcha, 30 g.</p>\",\"regular_price\":\"1500\",\"manage_stock\":true,\"stock_quantity\":24,\"low_stock_amount\":3,\"weight\":\"0.25\",\"dimensions\":{\"length\":\"3\",\"width\":\"3\",\"height\":\"4\"},\"categories\":[{\"id\":'$CAT_MATCHA'}],\"tags\":[{\"id\":'$TAG_LIMITED'}],\"meta_data\":[{\"key\":\"origin\",\"value\":\"Uji\"},{\"key\":\"_wc_internal_note\",\"value\":\"reorder in spring\"}]}' | id)",
+      "P_HOJICHA=$(api POST /products '{\"name\":\"Hojicha Bag\",\"slug\":\"hojicha-bag\",\"type\":\"simple\",\"sku\":\"HOJI-100\",\"regular_price\":\"980\",\"sale_price\":\"780\",\"manage_stock\":true,\"stock_quantity\":60,\"weight\":\"0.22\",\"dimensions\":{\"length\":\"6\",\"width\":\"2\",\"height\":\"9\"},\"categories\":[{\"id\":'$CAT_TEA'}]}' | id)",
+      "P_SENCHA=$(api POST /products '{\"name\":\"Sencha Sampler\",\"slug\":\"sencha-sampler\",\"type\":\"simple\",\"sku\":\"SENCHA-S\",\"regular_price\":\"1200\",\"sale_price\":\"1000\",\"date_on_sale_from\":\"2026-11-01T00:00:00\",\"date_on_sale_to\":\"2026-11-30T23:59:59\",\"manage_stock\":true,\"stock_quantity\":15,\"categories\":[{\"id\":'$CAT_TEA'}],\"tags\":[{\"id\":'$TAG_SEASONAL'}]}' | id)",
+      "P_GYOKURO=$(api POST /products '{\"name\":\"Gyokuro\",\"slug\":\"gyokuro\",\"type\":\"simple\",\"sku\":\"GYOKURO-50\",\"regular_price\":\"3800\",\"sale_price\":\"3200\",\"date_on_sale_from\":\"2027-02-01T00:00:00\",\"date_on_sale_to\":\"2027-02-28T23:59:59\",\"manage_stock\":true,\"stock_quantity\":8,\"categories\":[{\"id\":'$CAT_TEA'}],\"tags\":[{\"id\":'$TAG_SEASONAL'},{\"id\":'$TAG_LIMITED'}]}' | id)",
+      "P_CHAWAN=$(api POST /products '{\"name\":\"Tea Bowl\",\"slug\":\"tea-bowl\",\"type\":\"simple\",\"sku\":\"CHAWAN-01\",\"regular_price\":\"4500\",\"manage_stock\":false,\"stock_status\":\"instock\",\"weight\":\"1.2\",\"dimensions\":{\"length\":\"4.7\",\"width\":\"4.7\",\"height\":\"3.1\"},\"shipping_class\":\"fragile\",\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_WHISK=$(api POST /products '{\"name\":\"Bamboo Whisk\",\"slug\":\"bamboo-whisk\",\"type\":\"simple\",\"sku\":\"CHASEN-01\",\"regular_price\":\"2200\",\"manage_stock\":true,\"stock_quantity\":-2,\"backorders\":\"yes\",\"weight\":\"0.1\",\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_SCOOP=$(api POST /products '{\"name\":\"Tea Scoop\",\"slug\":\"tea-scoop\",\"type\":\"simple\",\"sku\":\"CHASHAKU-01\",\"regular_price\":\"0\",\"manage_stock\":true,\"stock_quantity\":200,\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_GIFTBOX=$(api POST /products '{\"name\":\"Gift Box\",\"slug\":\"gift-box\",\"type\":\"grouped\",\"sku\":\"GIFT-01\",\"grouped_products\":['$P_MATCHA_TIN','$P_CHAWAN'],\"categories\":[{\"id\":'$CAT_TABLEWARE'}],\"tags\":[{\"id\":'$TAG_SEASONAL'}]}' | id)",
+      "P_KYUSU=$(api POST /products '{\"name\":\"Kyusu Teapot\",\"slug\":\"kyusu-teapot\",\"type\":\"external\",\"sku\":\"KYUSU-EXT\",\"regular_price\":\"6800\",\"sale_price\":\"6120\",\"external_url\":\"https://example.com/partner/kyusu\",\"button_text\":\"Buy from the maker\",\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_TOWEL=$(api POST /products '{\"name\":\"Tea Towel\",\"slug\":\"tea-towel\",\"type\":\"simple\",\"sku\":\"TOWEL-01\",\"manage_stock\":true,\"stock_quantity\":10,\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_COASTER=$(api POST /products '{\"name\":\"Ceramic Coaster\",\"slug\":\"ceramic-coaster\",\"type\":\"simple\",\"status\":\"pending\",\"sku\":\"COASTER-01\",\"regular_price\":\"600\",\"manage_stock\":true,\"stock_quantity\":5,\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_STAFFMUG=$(api POST /products '{\"name\":\"Staff Mug\",\"slug\":\"staff-mug\",\"type\":\"simple\",\"status\":\"private\",\"sku\":\"STAFFMUG-01\",\"regular_price\":\"1000\",\"manage_stock\":true,\"stock_quantity\":3,\"categories\":[{\"id\":'$CAT_TABLEWARE'}]}' | id)",
+      "P_MATCHA=$(api POST /products '{\"name\":\"Matcha\",\"slug\":\"matcha\",\"type\":\"variable\",\"sku\":\"MATCHA\",\"description\":\"<p>Matcha by grade and pack size.</p>\",\"manage_stock\":true,\"stock_quantity\":50,\"weight\":\"0.25\",\"dimensions\":{\"length\":\"3\",\"width\":\"3\",\"height\":\"4\"},\"tax_class\":\"reduced-rate\",\"categories\":[{\"id\":'$CAT_MATCHA'}],\"tags\":[{\"id\":'$TAG_LIMITED'}],\"attributes\":[{\"id\":'$ATTR_GRADE',\"options\":[\"Ceremonial\",\"Culinary\"],\"visible\":true,\"variation\":true},{\"name\":\"Pack\",\"options\":[\"30g\",\"100g\"],\"visible\":true,\"variation\":true}],\"meta_data\":[{\"key\":\"harvest\",\"value\":\"first flush\"}]}' | id)",
+      "api POST /products/$P_MATCHA/variations '{\"sku\":\"MATCHA-CER-30\",\"regular_price\":\"1800\",\"manage_stock\":false,\"attributes\":[{\"id\":'$ATTR_GRADE',\"option\":\"Ceremonial\"},{\"name\":\"Pack\",\"option\":\"30g\"}]}' | id",
+      "api POST /products/$P_MATCHA/variations '{\"sku\":\"MATCHA-CER-100\",\"regular_price\":\"5200\",\"sale_price\":\"4680\",\"manage_stock\":false,\"attributes\":[{\"id\":'$ATTR_GRADE',\"option\":\"Ceremonial\"},{\"name\":\"Pack\",\"option\":\"100g\"}]}' | id",
+      "api POST /products/$P_MATCHA/variations '{\"sku\":\"MATCHA-CUL-30\",\"regular_price\":\"900\",\"manage_stock\":false,\"weight\":\"0.3\",\"dimensions\":{\"length\":\"3\",\"width\":\"3\",\"height\":\"\"},\"tax_class\":\"zero-rate\",\"shipping_class\":\"fragile\",\"attributes\":[{\"id\":'$ATTR_GRADE',\"option\":\"Culinary\"},{\"name\":\"Pack\",\"option\":\"30g\"}]}' | id",
+      "api POST /products/$P_MATCHA/variations '{\"sku\":\"MATCHA-CUL-100\",\"regular_price\":\"2600\",\"manage_stock\":true,\"stock_quantity\":12,\"low_stock_amount\":5,\"attributes\":[{\"id\":'$ATTR_GRADE',\"option\":\"Culinary\"},{\"name\":\"Pack\",\"option\":\"100g\"}]}' | id",
+      "P_INCENSE=$(api POST /products '{\"name\":\"Incense Set\",\"slug\":\"incense-set\",\"type\":\"variable\",\"sku\":\"INCENSE\",\"manage_stock\":false,\"categories\":[{\"id\":'$CAT_TABLEWARE'}],\"attributes\":[{\"name\":\"Scent\",\"options\":[\"Sandalwood\",\"Cedar\"],\"visible\":true,\"variation\":true}]}' | id)",
+      "api POST /products/$P_INCENSE/variations '{\"sku\":\"INCENSE-SANDAL\",\"regular_price\":\"1100\",\"manage_stock\":false,\"stock_status\":\"onbackorder\",\"attributes\":[{\"name\":\"Scent\",\"option\":\"Sandalwood\"}]}' | id",
+      "api POST /products/$P_INCENSE/variations '{\"sku\":\"INCENSE-CEDAR\",\"regular_price\":\"1100\",\"manage_stock\":false,\"stock_status\":\"outofstock\",\"attributes\":[{\"name\":\"Scent\",\"option\":\"Cedar\"}]}' | id"
+    ]
+  },
+  "record": {
+    "key": "WC_CREDS=$(npx @wordpress/env@12.1.0 run cli -- wp eval '$k=\"ck_\".wc_rand_hash(); $s=\"cs_\".wc_rand_hash(); global $wpdb; $wpdb->insert($wpdb->prefix.\"woocommerce_api_keys\", [\"user_id\"=>1,\"description\"=>\"recorder\",\"permissions\"=>\"read\",\"consumer_key\"=>wc_api_hash($k),\"consumer_secret\"=>$s,\"truncated_key\"=>substr($k,-7)]); echo \"$k:$s\";'); WC_KEY=${WC_CREDS%%:*}; WC_SECRET=${WC_CREDS#*:}",
+    "auth": "OAuth 1.0a one-legged with $WC_KEY:$WC_SECRET (a read-only WooCommerce REST key): HMAC-SHA256 over 'GET&' + rawurlencode(url without query) + '&' + the sorted, rawurlencoded query and oauth_* pairs joined by %26, signing key $WC_SECRET + '&', sent as query parameters. WooCommerce takes the key as HTTP Basic only over HTTPS, and wp-env serves http://localhost:8888",
+    "base": "http://localhost:8888/wp-json/wc/v3",
+    "answers": [
+      {
+        "file": "system_status.json",
+        "request": "GET /wp-json/wc/v3/system_status",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-general.json",
+        "request": "GET /wp-json/wc/v3/settings/general",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "settings-products.json",
+        "request": "GET /wp-json/wc/v3/settings/products",
+        "status": 200,
+        "X-WP-Total": null,
+        "X-WP-TotalPages": null
+      },
+      {
+        "file": "categories.json",
+        "request": "GET /wp-json/wc/v3/products/categories?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "5",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products.page-1.json",
+        "request": "GET /wp-json/wc/v3/products?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "14",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-22-variations.json",
+        "request": "GET /wp-json/wc/v3/products/22/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "4",
+        "X-WP-TotalPages": "1"
+      },
+      {
+        "file": "products-27-variations.json",
+        "request": "GET /wp-json/wc/v3/products/27/variations?per_page=100&page=1&orderby=id&order=asc",
+        "status": 200,
+        "X-WP-Total": "2",
+        "X-WP-TotalPages": "1"
+      }
+    ]
+  },
+  "covers": {
+    "zero-decimal currency (JPY) prices": ["every product"],
+    "weights in lbs, dimensions in in, decimal inches": [
+      "MATCHA-C30",
+      "HOJI-100",
+      "CHAWAN-01 (4.7 x 4.7 x 3.1)"
+    ],
+    "managed stock, own low_stock_amount / null (store's 2 applies)": [
+      "MATCHA-C30",
+      "MATCHA-CUL-100",
+      "HOJI-100"
+    ],
+    "untracked instock / onbackorder / outofstock": [
+      "CHAWAN-01",
+      "INCENSE-SANDAL",
+      "INCENSE-CEDAR"
+    ],
+    "negative stock with backorders 'yes'": ["CHASEN-01 (-2)"],
+    "manage_stock 'parent' pool of 50 over three variations (does not split evenly), one own pool of 12": [
+      "MATCHA-CER-30",
+      "MATCHA-CER-100",
+      "MATCHA-CUL-30",
+      "MATCHA-CUL-100 (own)"
+    ],
+    "sale with no dates": ["HOJI-100", "MATCHA-CER-100"],
+    "dated sale active on the recording date": ["SENCHA-S (2026-11-01 to 2026-11-30)"],
+    "future scheduled sale": ["GYOKURO-50 (2027-02-01 to 2027-02-28)"],
+    "free product, price \"0\"": ["CHASHAKU-01"],
+    "tracked simple product with no price": ["TOWEL-01"],
+    "grouped (children MATCHA-C30, CHAWAN-01)": ["GIFT-01"],
+    "external on sale": ["KYUSU-EXT"],
+    "pending and private status": ["COASTER-01", "STAFFMUG-01"],
+    "tags": ["MATCHA-C30", "SENCHA-S", "GYOKURO-50", "GIFT-01", "MATCHA"],
+    "tax_class on a variable parent, inherited and overridden by variations": [
+      "MATCHA (reduced-rate)",
+      "MATCHA-CUL-30 (zero-rate)"
+    ],
+    "shipping class fragile (product and variation)": ["CHAWAN-01", "MATCHA-CUL-30"],
+    "global plus local attributes both used for variations; local-only variable product": [
+      "MATCHA (Grade, Pack)",
+      "INCENSE (Scent)"
+    ],
+    "public and private (_) meta_data": [
+      "MATCHA-C30 (origin, _wc_internal_note)",
+      "MATCHA (harvest)"
+    ],
+    "no images": ["every product"],
+    "three-level categories": [
+      "Food > Tea > Matcha",
+      "Tableware",
+      "Uncategorized (WooCommerce's default, empty)"
+    ]
+  },
+  "notes": [
+    "Every product, category, tag, attribute, image and setting is synthetic, created by the commands below on an empty WooCommerce. No WooCommerce sample data was imported.",
+    "Answers are WooCommerce's JSON bodies parsed and written back with 2-space indent; no value is changed. Requests are exactly the ones the importer sends (per_page=100, orderby=id, order=asc).",
+    "A variation's REST answer already resolves inheritance: an empty variation weight, dimension, tax_class or image shows the parent's value, so no recorded variation has an empty weight under a parent that has one.",
+    "A variation with manage_stock 'parent' reports the parent's stock_quantity.",
+    "Global attribute options come back sorted by name, not in the order they were created.",
+    "Fewer than 100 products per store, so each store has one products page.",
+    "home_url is wp-env's http://localhost:8888; the only email address is wp-env's admin default (wordpress@example.com, woocommerce_stock_email_recipient in settings-products). system_status.environment.store_id is a random id made at install."
+  ]
+}

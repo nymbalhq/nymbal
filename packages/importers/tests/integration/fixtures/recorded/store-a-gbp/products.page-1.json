@@ -1,0 +1,2162 @@
+[
+  {
+    "id": 14,
+    "name": "Canvas Tote",
+    "slug": "canvas-tote",
+    "permalink": "http://localhost:8888/product/canvas-tote/",
+    "date_created": "2026-11-04T14:48:23",
+    "date_created_gmt": "2026-11-04T14:48:23",
+    "date_modified": "2026-11-04T14:48:23",
+    "date_modified_gmt": "2026-11-04T14:48:23",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>A heavy canvas tote with a flat base.</p>\n",
+    "short_description": "<p>Heavy canvas tote.</p>\n",
+    "sku": "TOTE-01",
+    "price": "12.00",
+    "regular_price": "12.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 40,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 5,
+    "sold_individually": false,
+    "weight": "0.35",
+    "dimensions": {
+      "length": "40",
+      "width": "35",
+      "height": "1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "letter",
+    "shipping_class_id": 25,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 20,
+        "name": "Accessories",
+        "slug": "accessories"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 21,
+        "name": "Organic",
+        "slug": "organic"
+      }
+    ],
+    "images": [
+      {
+        "id": 13,
+        "date_created": "2026-11-04T14:48:23",
+        "date_created_gmt": "2026-11-04T14:48:23",
+        "date_modified": "2026-11-04T14:48:23",
+        "date_modified_gmt": "2026-11-04T14:48:23",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-grey.png",
+        "name": "Grey swatch",
+        "alt": "Grey tote",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-grey.png"
+      }
+    ],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>12.00</bdi></span>",
+    "related_ids": [22, 30, 23, 19, 18],
+    "meta_data": [
+      {
+        "id": 38,
+        "key": "care_instructions",
+        "value": "Hand wash cold"
+      },
+      {
+        "id": 39,
+        "key": "_supplier_ref",
+        "value": "SUP-0041"
+      },
+      {
+        "id": 40,
+        "key": "season",
+        "value": "spring"
+      },
+      {
+        "id": 41,
+        "key": "season",
+        "value": "summer"
+      }
+    ],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/14",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "name": "Linen Napkins (set of 4)",
+    "slug": "linen-napkins",
+    "permalink": "http://localhost:8888/product/linen-napkins/",
+    "date_created": "2026-11-04T14:48:31",
+    "date_created_gmt": "2026-11-04T14:48:31",
+    "date_modified": "2026-11-04T14:48:31",
+    "date_modified_gmt": "2026-11-04T14:48:31",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Stonewashed linen napkins.</p>\n",
+    "short_description": "",
+    "sku": "NAPKIN-04",
+    "price": "15.00",
+    "regular_price": "20.00",
+    "sale_price": "15.00",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "reduced-rate",
+    "manage_stock": true,
+    "stock_quantity": 12,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.4",
+    "dimensions": {
+      "length": "45",
+      "width": "45",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Kitchen",
+        "slug": "kitchen"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 22,
+        "name": "Gift",
+        "slug": "gift"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>20.00</bdi></span></del> <span class=\"screen-reader-text\">Original price was: &pound;20.00.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>15.00</bdi></span></ins><span class=\"screen-reader-text\">Current price is: &pound;15.00.</span>",
+    "related_ids": [16, 24, 19, 18, 21],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/15",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "name": "Enamel Mug",
+    "slug": "enamel-mug",
+    "permalink": "http://localhost:8888/product/enamel-mug/",
+    "date_created": "2026-11-04T14:48:32",
+    "date_created_gmt": "2026-11-04T14:48:32",
+    "date_modified": "2026-11-04T14:48:32",
+    "date_modified_gmt": "2026-11-04T14:48:32",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>A camp mug in blue enamel.</p>\n",
+    "short_description": "",
+    "sku": "MUG-01",
+    "price": "7.60",
+    "regular_price": "9.50",
+    "sale_price": "7.60",
+    "date_on_sale_from": "2026-11-01T00:00:00",
+    "date_on_sale_from_gmt": "2026-11-01T00:00:00",
+    "date_on_sale_to": "2026-12-31T23:59:59",
+    "date_on_sale_to_gmt": "2026-12-31T23:59:59",
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 30,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.3",
+    "dimensions": {
+      "length": "9",
+      "width": "9",
+      "height": "10"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Kitchen",
+        "slug": "kitchen"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 23,
+        "name": "Bestseller",
+        "slug": "bestseller"
+      }
+    ],
+    "images": [
+      {
+        "id": 11,
+        "date_created": "2026-11-04T14:48:15",
+        "date_created_gmt": "2026-11-04T14:48:15",
+        "date_modified": "2026-11-04T14:48:15",
+        "date_modified_gmt": "2026-11-04T14:48:15",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png",
+        "name": "Blue swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png"
+      }
+    ],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<del aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>9.50</bdi></span></del> <span class=\"screen-reader-text\">Original price was: &pound;9.50.</span><ins aria-hidden=\"true\"><span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>7.60</bdi></span></ins><span class=\"screen-reader-text\">Current price is: &pound;7.60.</span>",
+    "related_ids": [15, 21, 30, 26, 24],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/16",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "name": "Wool Blanket",
+    "slug": "wool-blanket",
+    "permalink": "http://localhost:8888/product/wool-blanket/",
+    "date_created": "2026-11-04T14:48:33",
+    "date_created_gmt": "2026-11-04T14:48:33",
+    "date_modified": "2026-11-04T14:48:33",
+    "date_modified_gmt": "2026-11-04T14:48:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>A double-weave wool blanket.</p>\n",
+    "short_description": "",
+    "sku": "BLANKET-01",
+    "price": "85.00",
+    "regular_price": "85.00",
+    "sale_price": "70.00",
+    "date_on_sale_from": "2027-01-01T00:00:00",
+    "date_on_sale_from_gmt": "2027-01-01T00:00:00",
+    "date_on_sale_to": "2027-01-31T23:59:59",
+    "date_on_sale_to_gmt": "2027-01-31T23:59:59",
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 6,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "2.4",
+    "dimensions": {
+      "length": "200",
+      "width": "150",
+      "height": "2"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "bulky",
+    "shipping_class_id": 24,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>85.00</bdi></span>",
+    "related_ids": [19, 44, 20, 25, 29],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/17",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "name": "Gift Wrap",
+    "slug": "gift-wrap",
+    "permalink": "http://localhost:8888/product/gift-wrap/",
+    "date_created": "2026-11-04T14:48:33",
+    "date_created_gmt": "2026-11-04T14:48:33",
+    "date_modified": "2026-11-04T14:48:33",
+    "date_modified_gmt": "2026-11-04T14:48:33",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "WRAP-01",
+    "price": "2.50",
+    "regular_price": "2.50",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "none",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": false,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 20,
+        "name": "Accessories",
+        "slug": "accessories"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 22,
+        "name": "Gift",
+        "slug": "gift"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>2.50</bdi></span>",
+    "related_ids": [22, 15, 14, 19, 23],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/18",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "name": "Beeswax Candle",
+    "slug": "beeswax-candle",
+    "permalink": "http://localhost:8888/product/beeswax-candle/",
+    "date_created": "2026-11-04T14:48:34",
+    "date_created_gmt": "2026-11-04T14:48:34",
+    "date_modified": "2026-11-04T14:48:34",
+    "date_modified_gmt": "2026-11-04T14:48:34",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "CANDLE-01",
+    "price": "14.00",
+    "regular_price": "14.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": true,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 22,
+        "name": "Gift",
+        "slug": "gift"
+      },
+      {
+        "id": 21,
+        "name": "Organic",
+        "slug": "organic"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>14.00</bdi></span>",
+    "related_ids": [44, 22, 30, 17, 18],
+    "meta_data": [],
+    "stock_status": "onbackorder",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/19",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "name": "Ceramic Vase",
+    "slug": "ceramic-vase",
+    "permalink": "http://localhost:8888/product/ceramic-vase/",
+    "date_created": "2026-11-04T14:48:34",
+    "date_created_gmt": "2026-11-04T14:48:34",
+    "date_modified": "2026-11-04T14:48:34",
+    "date_modified_gmt": "2026-11-04T14:48:34",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "VASE-01",
+    "price": "32.00",
+    "regular_price": "32.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "1.1",
+    "dimensions": {
+      "length": "15",
+      "width": "15",
+      "height": "30"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "bulky",
+    "shipping_class_id": 24,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>32.00</bdi></span>",
+    "related_ids": [29, 25, 17, 19, 44],
+    "meta_data": [],
+    "stock_status": "outofstock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/20",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "name": "Cast Iron Pan",
+    "slug": "cast-iron-pan",
+    "permalink": "http://localhost:8888/product/cast-iron-pan/",
+    "date_created": "2026-11-04T14:48:35",
+    "date_created_gmt": "2026-11-04T14:48:35",
+    "date_modified": "2026-11-04T14:48:35",
+    "date_modified_gmt": "2026-11-04T14:48:35",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "PAN-01",
+    "price": "45.00",
+    "regular_price": "45.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": -3,
+    "backorders": "notify",
+    "backorders_allowed": true,
+    "backordered": true,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "3.2",
+    "dimensions": {
+      "length": "40",
+      "width": "26",
+      "height": "5"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "bulky",
+    "shipping_class_id": 24,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Kitchen",
+        "slug": "kitchen"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>45.00</bdi></span>",
+    "related_ids": [24, 16, 15, 26],
+    "meta_data": [],
+    "stock_status": "onbackorder",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/21",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "name": "Sticker Sheet",
+    "slug": "sticker-sheet",
+    "permalink": "http://localhost:8888/product/sticker-sheet/",
+    "date_created": "2026-11-04T14:48:35",
+    "date_created_gmt": "2026-11-04T14:48:35",
+    "date_modified": "2026-11-04T14:48:35",
+    "date_modified_gmt": "2026-11-04T14:48:35",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "STICKER-01",
+    "price": "0",
+    "regular_price": "0",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 500,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.01",
+    "dimensions": {
+      "length": "21",
+      "width": "15",
+      "height": "0.1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 20,
+        "name": "Accessories",
+        "slug": "accessories"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 22,
+        "name": "Gift",
+        "slug": "gift"
+      }
+    ],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>0.00</bdi></span>",
+    "related_ids": [18, 14, 19, 23, 15],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/22",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "name": "Mystery Bundle",
+    "slug": "mystery-bundle",
+    "permalink": "http://localhost:8888/product/mystery-bundle/",
+    "date_created": "2026-11-04T14:48:36",
+    "date_created_gmt": "2026-11-04T14:48:36",
+    "date_modified": "2026-11-04T14:48:36",
+    "date_modified_gmt": "2026-11-04T14:48:36",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "BUNDLE-01",
+    "price": "",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 20,
+        "name": "Accessories",
+        "slug": "accessories"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "",
+    "related_ids": [22, 18, 14],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/23",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "name": "Breakfast Set",
+    "slug": "breakfast-set",
+    "permalink": "http://localhost:8888/product/breakfast-set/",
+    "date_created": "2026-11-04T14:48:36",
+    "date_created_gmt": "2026-11-04T14:48:36",
+    "date_modified": "2026-11-04T14:48:36",
+    "date_modified_gmt": "2026-11-04T14:48:36",
+    "type": "grouped",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>Napkins and a mug.</p>\n",
+    "short_description": "",
+    "sku": "SET-01",
+    "price": "7.60",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Kitchen",
+        "slug": "kitchen"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [15, 16],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>7.60</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>15.00</bdi></span><span class=\"screen-reader-text\">Price range: &pound;7.60 through &pound;15.00</span>",
+    "related_ids": [26, 16, 15, 21],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/24",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "name": "Partner Lamp",
+    "slug": "partner-lamp",
+    "permalink": "http://localhost:8888/product/partner-lamp/",
+    "date_created": "2026-11-04T14:48:37",
+    "date_created_gmt": "2026-11-04T14:48:37",
+    "date_modified": "2026-11-04T14:48:37",
+    "date_modified_gmt": "2026-11-04T14:48:37",
+    "type": "external",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "LAMP-EXT",
+    "price": "120.00",
+    "regular_price": "120.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "https://example.com/partner/lamp",
+    "button_text": "Buy from our partner",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>120.00</bdi></span>",
+    "related_ids": [29, 20, 17, 19, 44],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/25",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "name": "Tea Sampler",
+    "slug": "tea-sampler",
+    "permalink": "http://localhost:8888/product/tea-sampler/",
+    "date_created": "2026-11-04T14:48:37",
+    "date_created_gmt": "2026-11-04T14:48:37",
+    "date_modified": "2026-11-04T14:48:37",
+    "date_modified_gmt": "2026-11-04T14:48:37",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "TEA-01",
+    "price": "4.995",
+    "regular_price": "4.995",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 100,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.05",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 17,
+        "name": "Kitchen",
+        "slug": "kitchen"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>5.00</bdi></span>",
+    "related_ids": [15, 21, 24, 16],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/26",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "name": "Prototype Planter",
+    "slug": "prototype-planter",
+    "permalink": "http://localhost:8888/?post_type=product&p=27",
+    "date_created": "2026-11-04T14:48:38",
+    "date_created_gmt": "2026-11-04T14:48:38",
+    "date_modified": "2026-11-04T14:48:38",
+    "date_modified_gmt": "2026-11-04T14:48:38",
+    "type": "simple",
+    "status": "draft",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "PLANTER-01",
+    "price": "18.00",
+    "regular_price": "18.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 0,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>18.00</bdi></span>",
+    "related_ids": [29, 44, 20, 17, 19],
+    "meta_data": [],
+    "stock_status": "outofstock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 28,
+    "name": "Knitting Pattern",
+    "slug": "knitting-pattern",
+    "permalink": "http://localhost:8888/product/knitting-pattern/",
+    "date_created": "2026-11-04T14:48:38",
+    "date_created_gmt": "2026-11-04T14:48:38",
+    "date_modified": "2026-11-04T14:48:38",
+    "date_modified_gmt": "2026-11-04T14:48:38",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "PATTERN-01",
+    "price": "5.00",
+    "regular_price": "5.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": true,
+    "downloadable": true,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "zero-rate",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": false,
+    "shipping_taxable": false,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Clothing",
+        "slug": "clothing"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>5.00</bdi></span>",
+    "related_ids": [40, 35],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/28",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 29,
+    "name": "Wall Hook",
+    "slug": "wall-hook",
+    "permalink": "http://localhost:8888/product/wall-hook/",
+    "date_created": "2026-11-04T14:48:38",
+    "date_created_gmt": "2026-11-04T14:48:38",
+    "date_modified": "2026-11-04T14:48:38",
+    "date_modified_gmt": "2026-11-04T14:48:38",
+    "type": "simple",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "HOOK-01",
+    "price": "3.00",
+    "regular_price": "3.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 150,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 10,
+    "sold_individually": false,
+    "weight": "0.02",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [],
+    "default_attributes": [],
+    "variations": [],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>3.00</bdi></span>",
+    "related_ids": [44, 25, 17, 20, 19],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": false,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/29",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 30,
+    "name": "Organic T-shirt",
+    "slug": "organic-t-shirt",
+    "permalink": "http://localhost:8888/product/organic-t-shirt/",
+    "date_created": "2026-11-04T14:48:39",
+    "date_created_gmt": "2026-11-04T14:48:39",
+    "date_modified": "2026-11-04T14:48:40",
+    "date_modified_gmt": "2026-11-04T14:48:40",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "<p>A classic crew neck.</p>\n",
+    "short_description": "",
+    "sku": "TSHIRT",
+    "price": "14.40",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.2",
+    "dimensions": {
+      "length": "70",
+      "width": "50",
+      "height": "1"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 19,
+        "name": "T-shirts",
+        "slug": "t-shirts"
+      }
+    ],
+    "brands": [],
+    "tags": [
+      {
+        "id": 23,
+        "name": "Bestseller",
+        "slug": "bestseller"
+      },
+      {
+        "id": 21,
+        "name": "Organic",
+        "slug": "organic"
+      }
+    ],
+    "images": [
+      {
+        "id": 10,
+        "date_created": "2026-11-04T14:48:12",
+        "date_created_gmt": "2026-11-04T14:48:12",
+        "date_modified": "2026-11-04T14:48:12",
+        "date_modified_gmt": "2026-11-04T14:48:12",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png",
+        "name": "Red swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-red.png"
+      },
+      {
+        "id": 11,
+        "date_created": "2026-11-04T14:48:15",
+        "date_created_gmt": "2026-11-04T14:48:15",
+        "date_modified": "2026-11-04T14:48:15",
+        "date_modified_gmt": "2026-11-04T14:48:15",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png",
+        "name": "Blue swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-blue.png"
+      }
+    ],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Blue", "Red"]
+      },
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["M", "S"]
+      },
+      {
+        "id": 0,
+        "name": "Material",
+        "slug": "Material",
+        "position": 0,
+        "visible": true,
+        "variation": false,
+        "options": ["Organic cotton"]
+      },
+      {
+        "id": 0,
+        "name": "Fit",
+        "slug": "Fit",
+        "position": 0,
+        "visible": false,
+        "variation": false,
+        "options": ["Regular"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [31, 32, 33, 34],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>14.40</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>19.00</bdi></span><span class=\"screen-reader-text\">Price range: &pound;14.40 through &pound;19.00</span>",
+    "related_ids": [16, 19, 14],
+    "meta_data": [
+      {
+        "id": 370,
+        "key": "fabric_origin",
+        "value": "Portugal"
+      },
+      {
+        "id": 371,
+        "key": "_internal_cost",
+        "value": "6.10"
+      }
+    ],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/30",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 35,
+    "name": "Merino Socks",
+    "slug": "merino-socks",
+    "permalink": "http://localhost:8888/product/merino-socks/",
+    "date_created": "2026-11-04T14:48:40",
+    "date_created_gmt": "2026-11-04T14:48:40",
+    "date_modified": "2026-11-04T14:48:42",
+    "date_modified_gmt": "2026-11-04T14:48:42",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "SOCKS",
+    "price": "6.00",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 25,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": 4,
+    "sold_individually": false,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "2"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Clothing",
+        "slug": "clothing"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [
+      {
+        "id": 12,
+        "date_created": "2026-11-04T14:48:19",
+        "date_created_gmt": "2026-11-04T14:48:19",
+        "date_modified": "2026-11-04T14:48:19",
+        "date_modified_gmt": "2026-11-04T14:48:19",
+        "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+        "name": "Green swatch",
+        "alt": "",
+        "srcset": "",
+        "sizes": "(max-width: 64px) 100vw, 64px",
+        "thumbnail": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png"
+      }
+    ],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["Blue", "Green", "Grey", "Red"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [36, 37, 38, 39],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>6.00</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>9.00</bdi></span><span class=\"screen-reader-text\">Price range: &pound;6.00 through &pound;9.00</span>",
+    "related_ids": [40, 28],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 40,
+    "name": "Rain Jacket",
+    "slug": "rain-jacket",
+    "permalink": "http://localhost:8888/product/rain-jacket/",
+    "date_created": "2026-11-04T14:48:42",
+    "date_created_gmt": "2026-11-04T14:48:42",
+    "date_modified": "2026-11-04T14:48:43",
+    "date_modified_gmt": "2026-11-04T14:48:43",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "JACKET",
+    "price": "60.00",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": true,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "0.6",
+    "dimensions": {
+      "length": "80",
+      "width": "60",
+      "height": "3"
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 18,
+        "name": "Clothing",
+        "slug": "clothing"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["L", "M", "S"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [41, 42, 43],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "<span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>60.00</bdi></span> <span aria-hidden=\"true\">&ndash;</span> <span class=\"woocommerce-Price-amount amount\" aria-hidden=\"true\"><bdi><span class=\"woocommerce-Price-currencySymbol\" translate=\"no\" dir=\"auto\">&pound;</span>62.00</bdi></span><span class=\"screen-reader-text\">Price range: &pound;60.00 through &pound;62.00</span>",
+    "related_ids": [35, 28],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/40",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  },
+  {
+    "id": 44,
+    "name": "Seasonal Wreath",
+    "slug": "seasonal-wreath",
+    "permalink": "http://localhost:8888/product/seasonal-wreath/",
+    "date_created": "2026-11-04T14:48:43",
+    "date_created_gmt": "2026-11-04T14:48:43",
+    "date_modified": "2026-11-04T14:48:43",
+    "date_modified_gmt": "2026-11-04T14:48:43",
+    "type": "variable",
+    "status": "publish",
+    "featured": false,
+    "catalog_visibility": "visible",
+    "description": "",
+    "short_description": "",
+    "sku": "WREATH",
+    "price": "",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "purchasable": false,
+    "total_sales": 0,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "external_url": "",
+    "button_text": "",
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "sold_individually": false,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_required": true,
+    "shipping_taxable": true,
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "reviews_allowed": true,
+    "average_rating": "0.00",
+    "rating_count": 0,
+    "upsell_ids": [],
+    "cross_sell_ids": [],
+    "parent_id": 0,
+    "purchase_note": "",
+    "categories": [
+      {
+        "id": 16,
+        "name": "Homeware",
+        "slug": "homeware"
+      }
+    ],
+    "brands": [],
+    "tags": [],
+    "images": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["M", "S"]
+      }
+    ],
+    "default_attributes": [],
+    "variations": [45, 46],
+    "grouped_products": [],
+    "menu_order": 0,
+    "price_html": "",
+    "related_ids": [25, 29, 20, 17, 19],
+    "meta_data": [],
+    "stock_status": "instock",
+    "has_options": true,
+    "post_password": "",
+    "global_unique_id": "",
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products"
+        }
+      ]
+    }
+  }
+]

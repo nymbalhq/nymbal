@@ -23,6 +23,8 @@ export async function enrichProduct(
   existingDescription: string,
   aiAdapter: AiAdapter,
   productService: ProductService,
+  /** The product's metadata as it stands: the update replaces the column, so what the import kept is carried over. */
+  metadata: Record<string, unknown> = {},
 ): Promise<boolean> {
   const prompt = `Product name: ${productName}
 Existing description: ${existingDescription || '(none)'}
@@ -51,7 +53,12 @@ Generate copy for this product.`
     seoTitle: parsed['seoTitle'] ?? productName,
     seoDescription: parsed['seoDescription'] ?? '',
     metadata: {
-      woocommerce: { enriched: true, enrichedAt: new Date().toISOString() },
+      ...metadata,
+      woocommerce: {
+        ...(metadata['woocommerce'] as Record<string, unknown> | undefined),
+        enriched: true,
+        enrichedAt: new Date().toISOString(),
+      },
       original: { description: existingDescription },
     },
   })
@@ -75,7 +82,14 @@ export async function runEnrichment(
       if (!isThinContent(description)) {
         stats.skipped++
       } else {
-        const ok = await enrichProduct(id, snapshot.name, description, aiAdapter, productService)
+        const ok = await enrichProduct(
+          id,
+          snapshot.name,
+          description,
+          aiAdapter,
+          productService,
+          snapshot.metadata,
+        )
         if (ok) stats.enriched++
         else stats.failed++
       }

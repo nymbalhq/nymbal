@@ -1,0 +1,158 @@
+[
+  {
+    "id": 28,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:57",
+    "date_created_gmt": "2026-11-04T14:51:57",
+    "date_modified": "2026-11-04T14:51:57",
+    "date_modified_gmt": "2026-11-04T14:51:57",
+    "description": "",
+    "permalink": "http://localhost:8888/product/incense-set/?attribute_scent=Sandalwood",
+    "sku": "INCENSE-SANDAL",
+    "global_unique_id": "",
+    "price": "1100",
+    "regular_price": "1100",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "stock_status": "onbackorder",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": true,
+    "low_stock_amount": null,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 0,
+        "name": "Scent",
+        "slug": "scent",
+        "option": "Sandalwood"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Sandalwood",
+    "parent_id": 27,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27/variations/28",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27"
+        }
+      ]
+    }
+  },
+  {
+    "id": 29,
+    "type": "variation",
+    "date_created": "2026-11-04T14:51:58",
+    "date_created_gmt": "2026-11-04T14:51:58",
+    "date_modified": "2026-11-04T14:51:58",
+    "date_modified_gmt": "2026-11-04T14:51:58",
+    "description": "",
+    "permalink": "http://localhost:8888/product/incense-set/?attribute_scent=Cedar",
+    "sku": "INCENSE-CEDAR",
+    "global_unique_id": "",
+    "price": "1100",
+    "regular_price": "1100",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "stock_status": "outofstock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 0,
+        "name": "Scent",
+        "slug": "scent",
+        "option": "Cedar"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Cedar",
+    "parent_id": 27,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27/variations/29",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/27"
+        }
+      ]
+    }
+  }
+]

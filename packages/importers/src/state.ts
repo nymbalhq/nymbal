@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, open, readFile, rename, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import type { ImportEntity, ImportState } from './types.js'
+import type { ImportEntity, ImportState, ImportWarning } from './types.js'
 
 export const ENTITIES: readonly ImportEntity[] = [
   'categories',
@@ -49,11 +49,13 @@ export class ImportStateError extends Error {
   }
 }
 
-/** A record an import created, appended once its create resolves. */
+/** A record an import created, appended once its create resolves, with what its import could not carry over. */
 export interface JournalEntry {
   entity: ImportEntity
   id: string
   wcId: number
+  /** Warning messages about the record, each reported under its entity and WooCommerce id. */
+  warnings?: string[]
 }
 
 /** A record a rollback removed. */
@@ -94,6 +96,9 @@ function parseState(path: string, raw: string): ImportState {
       throw new ImportStateError(path, `${map} is not a map`)
     }
   }
+  if (parsed['warnings'] !== undefined && !Array.isArray(parsed['warnings'])) {
+    throw new ImportStateError(path, 'warnings is not a list')
+  }
   const finished = parsed['finished']
   if (
     finished !== undefined &&
@@ -102,7 +107,7 @@ function parseState(path: string, raw: string): ImportState {
     throw new ImportStateError(path, 'finished is not a list of entities')
   }
   const state = parsed as unknown as ImportState
-  // A state saved before the order and review maps and the rollback start existed.
+  // A state saved before the order and review maps, the rollback start and warnings existed.
   state.wcToNymbalOrder ??= {}
   state.wcToNymbalReview ??= {}
   state.rollbackSince ??= state.startedAt
@@ -129,19 +134,39 @@ function journalLine(line: string): JournalEntry | JournalRemoval | null {
   if (!isObject(v) || typeof v['id'] !== 'string') return null
   if (!ENTITIES.includes(v['entity'] as ImportEntity)) return null
   if (v['op'] === 'removed') return v as unknown as JournalRemoval
-  return typeof v['wcId'] === 'number' ? (v as unknown as JournalEntry) : null
+  if (typeof v['wcId'] !== 'number') return null
+  const warnings = Array.isArray(v['warnings'])
+    ? v['warnings'].filter((w): w is string => typeof w === 'string')
+    : []
+  return { entity: v['entity'] as ImportEntity, id: v['id'], wcId: v['wcId'], warnings }
 }
 
 /**
- * Applies the journal to the state: each creation adds its id and its WooCommerce mapping, each removal takes both out.
- * A line that does not parse is one a crash cut short, and is skipped. Applying the same journal twice gives the same
- * state.
+ * Adds a warning to the state unless one with the same phase, id and message is there: a resumed run meets again
+ * what an earlier run warned about.
+ */
+export function warningAdder(state: ImportState): (warning: ImportWarning) => void {
+  const key = (w: ImportWarning) => JSON.stringify([w.phase, w.id ?? null, w.message])
+  const held = new Set(state.warnings.map(key))
+  return (warning) => {
+    const k = key(warning)
+    if (held.has(k)) return
+    held.add(k)
+    state.warnings.push(warning)
+  }
+}
+
+/**
+ * Applies the journal to the state: each creation adds its id, its WooCommerce mapping and its warnings, each removal
+ * takes the id and the mapping out. A line that does not parse is one a crash cut short, and is skipped. Applying the
+ * same journal twice gives the same state.
  */
 function foldJournal(state: ImportState, journal: string): void {
   const held = Object.fromEntries(
     ENTITIES.map((e) => [e, new Set(state.importedIds[e])]),
   ) as Record<ImportEntity, Set<string>>
   const removed = new Set<string>()
+  const warn = warningAdder(state)
   for (const line of journal.split('\n')) {
     if (line.trim() === '') continue
     const entry = journalLine(line)
@@ -152,6 +177,9 @@ function foldJournal(state: ImportState, journal: string): void {
     } else {
       held[entry.entity].add(entry.id)
       state[MAP_OF[entry.entity]][entry.wcId] = entry.id
+      for (const message of entry.warnings ?? []) {
+        warn({ phase: entry.entity, id: String(entry.wcId), message })
+      }
     }
   }
   for (const e of ENTITIES) {
@@ -207,6 +235,7 @@ export async function saveState(statePath: string, state: ImportState): Promise<
 
 export async function appendJournal(statePath: string, entry: JournalEntry): Promise<void> {
   const line: JournalEntry = { entity: entry.entity, id: entry.id, wcId: entry.wcId }
+  if (entry.warnings !== undefined && entry.warnings.length > 0) line.warnings = entry.warnings
   await appendFile(journalPathFor(statePath), `${JSON.stringify(line)}\n`, 'utf-8')
 }
 

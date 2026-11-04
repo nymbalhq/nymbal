@@ -3,6 +3,13 @@
   "command": "pnpm mutation --force",
   "total": 55.7,
   "files": {
+    "packages/importers/src/woocommerce/mappers/category.ts": 89.47,
+    "packages/importers/src/woocommerce/mappers/customer.ts": 47.37,
+    "packages/importers/src/woocommerce/mappers/money.ts": 88.68,
+    "packages/importers/src/woocommerce/mappers/order.ts": 53.95,
+    "packages/importers/src/woocommerce/mappers/product.ts": 81.32,
+    "packages/importers/src/woocommerce/mappers/review.ts": 0,
+    "packages/importers/src/woocommerce/mappers/units.ts": 100,
     "packages/platform/src/events/publisher.ts": 0,
     "packages/platform/src/events/relay.ts": 0,
     "packages/platform/src/repositories/alert-subscription.ts": 0,

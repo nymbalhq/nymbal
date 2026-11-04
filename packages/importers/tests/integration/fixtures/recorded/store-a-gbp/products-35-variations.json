@@ -1,0 +1,350 @@
+[
+  {
+    "id": 36,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:41",
+    "date_created_gmt": "2026-11-04T14:48:41",
+    "date_modified": "2026-11-04T14:48:41",
+    "date_modified_gmt": "2026-11-04T14:48:41",
+    "description": "",
+    "permalink": "http://localhost:8888/product/merino-socks/?attribute_pa_colour=red",
+    "sku": "SOCKS-RED",
+    "global_unique_id": "",
+    "price": "8.00",
+    "regular_price": "8.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 25,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "2"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T14:48:19",
+      "date_created_gmt": "2026-11-04T14:48:19",
+      "date_modified": "2026-11-04T14:48:19",
+      "date_modified_gmt": "2026-11-04T14:48:19",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Red"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Red",
+    "parent_id": 35,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations/36",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35"
+        }
+      ]
+    }
+  },
+  {
+    "id": 37,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:41",
+    "date_created_gmt": "2026-11-04T14:48:41",
+    "date_modified": "2026-11-04T14:48:41",
+    "date_modified_gmt": "2026-11-04T14:48:41",
+    "description": "",
+    "permalink": "http://localhost:8888/product/merino-socks/?attribute_pa_colour=blue",
+    "sku": "SOCKS-BLUE",
+    "global_unique_id": "",
+    "price": "6.00",
+    "regular_price": "8.00",
+    "sale_price": "6.00",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": true,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 25,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "2"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T14:48:19",
+      "date_created_gmt": "2026-11-04T14:48:19",
+      "date_modified": "2026-11-04T14:48:19",
+      "date_modified_gmt": "2026-11-04T14:48:19",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Blue"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Blue",
+    "parent_id": 35,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations/37",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35"
+        }
+      ]
+    }
+  },
+  {
+    "id": 38,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:41",
+    "date_created_gmt": "2026-11-04T14:48:41",
+    "date_modified": "2026-11-04T14:48:41",
+    "date_modified_gmt": "2026-11-04T14:48:41",
+    "description": "",
+    "permalink": "http://localhost:8888/product/merino-socks/?attribute_pa_colour=green",
+    "sku": "SOCKS-GREEN",
+    "global_unique_id": "",
+    "price": "8.00",
+    "regular_price": "8.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "private",
+    "purchasable": false,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": "parent",
+    "stock_quantity": 25,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "2"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T14:48:19",
+      "date_created_gmt": "2026-11-04T14:48:19",
+      "date_modified": "2026-11-04T14:48:19",
+      "date_modified_gmt": "2026-11-04T14:48:19",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Green"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Green",
+    "parent_id": 35,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations/38",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35"
+        }
+      ]
+    }
+  },
+  {
+    "id": 39,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:42",
+    "date_created_gmt": "2026-11-04T14:48:42",
+    "date_modified": "2026-11-04T14:48:42",
+    "date_modified_gmt": "2026-11-04T14:48:42",
+    "description": "",
+    "permalink": "http://localhost:8888/product/merino-socks/?attribute_pa_colour=grey",
+    "sku": "SOCKS-GREY",
+    "global_unique_id": "",
+    "price": "9.00",
+    "regular_price": "9.00",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": true,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": true,
+    "stock_quantity": 4,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "0.1",
+    "dimensions": {
+      "length": "25",
+      "width": "10",
+      "height": "2"
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": {
+      "id": 12,
+      "date_created": "2026-11-04T14:48:19",
+      "date_created_gmt": "2026-11-04T14:48:19",
+      "date_modified": "2026-11-04T14:48:19",
+      "date_modified_gmt": "2026-11-04T14:48:19",
+      "src": "http://localhost:8888/wp-content/uploads/2026/11/swatch-green.png",
+      "name": "Green swatch",
+      "alt": ""
+    },
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Colour",
+        "slug": "pa_colour",
+        "option": "Grey"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "Grey",
+    "parent_id": 35,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations/39",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/35"
+        }
+      ]
+    }
+  }
+]

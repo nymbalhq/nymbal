@@ -79,6 +79,11 @@ export const importCommand = defineCommand({
       type: 'string',
       description: 'Parallel import workers (default: 4)',
     },
+    'untracked-stock': {
+      type: 'string',
+      description:
+        'Stock for products WooCommerce does not count, when in stock or on backorder (default: 1000)',
+    },
     'dry-run': {
       type: 'boolean',
       description:
@@ -255,6 +260,9 @@ export const importCommand = defineCommand({
             projectRoot,
             currency: config.store.currency,
             statePath,
+            ...(args['untracked-stock'] !== undefined && {
+              untrackedStock: Number(args['untracked-stock']),
+            }),
             ...(since !== undefined && { since }),
           },
           {
@@ -293,7 +301,9 @@ export const importCommand = defineCommand({
               ]
             : []),
           ...(aiEnabled ? [`  AI enriched: ${report.enriched.enriched} products`] : []),
-          ...(report.errors.length > 0 ? [p.yellow(`  ⚠ ${report.errors.length} errors — see report`)] : []),
+          ...(report.errors.length > 0 || report.warnings.length > 0
+            ? [p.yellow(`  ⚠ ${report.errors.length} errors, ${report.warnings.length} to review before launch — see report`)]
+            : []),
           ``,
           `  Report: ${reportPath}`,
           `  Next:   ${p.bold('nymbal dev')}`,

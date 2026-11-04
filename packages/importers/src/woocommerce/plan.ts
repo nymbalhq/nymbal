@@ -12,6 +12,7 @@ import { WooCommerceClient, WooCommerceApiError } from './client.js'
 import type { WcCategory, WcCustomer, WcOrder, WcProduct, WcReview, WcVariation } from './client.js'
 import { mapCategory } from './mappers/category.js'
 import { mapProduct } from './mappers/product.js'
+import { DEFAULT_UNTRACKED_STOCK, storeContextFor } from './importer.js'
 import { mapCustomer } from './mappers/customer.js'
 import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
@@ -259,6 +260,11 @@ export async function planWooCommerceImport(
     if (err instanceof WooCommerceApiError) throw err
     throw new Error(`Cannot connect to ${opts.credentials.url}: ${String(err)}`)
   }
+  const store = storeContextFor(
+    await client.getStoreSettings(),
+    opts.currency,
+    DEFAULT_UNTRACKED_STOCK,
+  )
 
   // WooCommerce id → the id the import would give the record; a placeholder, since nothing is written.
   const categoryIds = new Map<number, string>()
@@ -293,7 +299,9 @@ export async function planWooCommerceImport(
             fields.variations.watch(v),
           )
         } catch {
-          // the import proceeds with no variations
+          // the import refuses a variable product without its variations
+          counts.products.refused++
+          continue
         }
       }
       images += refs.imageSources.length
@@ -303,6 +311,7 @@ export async function planWooCommerceImport(
         refs.categoryWcIds.flatMap((id) => categoryIds.get(id) ?? []),
         refs.imageSources.map((img) => ({ url: img.src, altText: img.alt })),
         refs.slugSuffix,
+        store,
       )
       const skus = (input.variants ?? []).map((v) => v.sku)
       // Every clash is listed, though the import stops at the first.

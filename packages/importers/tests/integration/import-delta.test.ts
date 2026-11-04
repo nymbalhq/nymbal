@@ -214,6 +214,12 @@ const NEW_REVIEW = 30_000
 const cents = (price: unknown) => Math.round(parseFloat(String(price)) * 100)
 const plusOne = (price: unknown) => ((cents(price) + 100) / 100).toFixed(2)
 
+/** An item's prices one unit up: an item on sale keeps charging its sale price, any other its new regular price. */
+const repriced = (item: Rec): Rec => ({
+  regular_price: plusOne(item['regular_price']),
+  ...(item['on_sale'] !== true && { price: plusOne(item['regular_price']) }),
+})
+
 interface Changed {
   source: WooStore
   changed: number[]
@@ -237,7 +243,16 @@ function changedSource(
   const unchanged: number[] = []
   const products = a.products.map((p, i) => {
     const wcId = p['id'] as number
-    const plan: Plan = i === 0 ? { kind: 'unlisted' } : plans[i]!
+    const drawn: Plan = i === 0 ? { kind: 'unlisted' } : plans[i]!
+    // A variable product with no variations is not for sale and imports as a draft whatever its status, with no
+    // price of its own: a change to either is no change to the store.
+    const forSale = p['type'] !== 'variable' || (variations[wcId]?.length ?? 0) > 0
+    const changes =
+      drawn.kind === 'changed'
+        ? drawn.changes.filter((c) => forSale || (c !== 'status' && c !== 'price'))
+        : []
+    const plan: Plan =
+      drawn.kind === 'changed' && changes.length === 0 ? { kind: 'relisted' } : drawn
     if (plan.kind === 'unlisted') {
       unchanged.push(wcId)
       return p
@@ -248,7 +263,7 @@ function changedSource(
     }
     changed.push(wcId)
     const next: Rec = { ...p, date_modified_gmt: CHANGED_AT }
-    for (const change of plan.changes) {
+    for (const change of changes) {
       if (change === 'name') next['name'] = `${String(p['name'])} renamed`
       if (change === 'description') next['description'] = description(p['name'], 'revised')
       if (change === 'status') next['status'] = p['status'] === 'publish' ? 'draft' : 'publish'
@@ -258,9 +273,9 @@ function changedSource(
       if (change === 'price') {
         const own = variations[wcId]
         if (p['type'] === 'variable' && own !== undefined && own.length > 0) {
-          own[0] = { ...own[0]!, regular_price: plusOne(own[0]!['regular_price']) }
+          own[0] = { ...own[0]!, ...repriced(own[0]!) }
         } else {
-          next['regular_price'] = plusOne(p['regular_price'])
+          Object.assign(next, repriced(p))
         }
       }
     }
@@ -350,9 +365,10 @@ describe('AC-1: a delta asks each endpoint only for what it can filter', () => {
 
       const { requests } = await runOver(env, { store: b, since: sinceForAll(SINCE) })
 
+      // The connect check and the store settings are read before any list, and no delta filters them.
       const api = requests.filter((r) => {
         const resource = resourceOf(r)
-        return resource !== null && resource !== '/system_status'
+        return resource !== null && resource !== '/system_status' && !resource.startsWith('/settings/')
       })
       expect([...new Set(api.map(resourceOf))].sort()).toEqual(
         [

@@ -8,7 +8,7 @@ import type { MediaStorage, ProductSnapshot } from '@nymbalhq/types'
 import { ENTITIES } from '../state.js'
 import type { ImportEntity, ImportState, ImportWarning, SinceByEntity } from '../types.js'
 import type { WcProduct, WcVariation } from './client.js'
-import { mapProduct, productSlug } from './mappers/product.js'
+import { mapProduct, productSlug, type StoreContext } from './mappers/product.js'
 import { downloadProductImages, type ImagePolicy } from './media.js'
 import { imageSources } from './refs.js'
 
@@ -175,7 +175,7 @@ export async function applyProductChanges(
   variations: WcVariation[],
   categoryIds: string[],
   stored: ProductSnapshot,
-  deps: { product: ProductService; media: MediaStorage; imagePolicy: ImagePolicy },
+  deps: { product: ProductService; media: MediaStorage; imagePolicy: ImagePolicy; store: StoreContext },
 ): Promise<ProductChanges> {
   const id = String(wc.id)
   const warnings: ImportWarning[] = []
@@ -206,7 +206,7 @@ export async function applyProductChanges(
     }
   }
 
-  const mapped = mapProduct(source, variations, categoryIds, media ?? [], suffix ?? '')
+  const mapped = mapProduct(source, variations, categoryIds, media ?? [], suffix ?? '', deps.store)
 
   const storedBySku = new Map(stored.variants.map((v) => [v.sku, v]))
   const mappedSkus = new Set((mapped.variants ?? []).map((v) => v.sku))

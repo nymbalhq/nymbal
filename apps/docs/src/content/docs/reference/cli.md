@@ -88,6 +88,7 @@ Migrate content from WooCommerce (or other sources) into Nymbal
 | `--gdpr` | boolean | Anonymise customer PII (default: true) | `true` |
 | `--fresh` | boolean | Ignore previous progress and re-import | `false` |
 | `--concurrency` | string | Parallel import workers (default: 4) |  |
+| `--untracked-stock` | string | Stock for products WooCommerce does not count, when in stock or on backorder (default: 1000) |  |
 | `--dry-run` | boolean | Read the source and write nymbal-import-plan.json and .md (counts, collisions, unmapped fields, estimate); import nothing | `false` |
 | `--rollback` | boolean | Remove every record the imports in this project created, from .nymbal-migration.json; needs no source or credentials | `false` |
 | `--yes` | boolean | With --rollback: remove without asking | `false` |

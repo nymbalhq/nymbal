@@ -16,12 +16,21 @@ import {
   freshState,
   loadState,
   saveState,
+  warningAdder,
 } from '../state.js'
 import { buildReport } from '../report.js'
 import { PAGE_SIZE, WooCommerceClient, WooCommerceApiError } from './client.js'
-import type { WcCategory, WcProduct, WcVariation, WcCustomer, WcOrder, WcReview } from './client.js'
+import type {
+  WcCategory,
+  WcProduct,
+  WcVariation,
+  WcCustomer,
+  WcOrder,
+  WcReview,
+  WcStoreSettings,
+} from './client.js'
 import { mapCategory } from './mappers/category.js'
-import { mapProduct, productSlug } from './mappers/product.js'
+import { mapProduct, productSlug, productWarnings, type StoreContext } from './mappers/product.js'
 import { mapCustomer } from './mappers/customer.js'
 import { mapOrder } from './mappers/order.js'
 import { mapReview } from './mappers/review.js'
@@ -66,6 +75,19 @@ async function pMap<T, U>(
   return results
 }
 
+export const DEFAULT_UNTRACKED_STOCK = 1000
+
+/** WooCommerce's own defaults stand in for settings the import cannot read: kg, cm and a low-stock amount of 2. */
+export function storeContextFor(
+  settings: WcStoreSettings | null,
+  currency: string,
+  untrackedStock: number,
+): StoreContext {
+  return settings === null
+    ? { currency, weightUnit: 'kg', dimensionUnit: 'cm', lowStockAmount: 2, untrackedStock }
+    : { ...settings, untrackedStock }
+}
+
 /**
  * One entity's progress: every source record this run passes counts, whatever became of it, from the records the pages
  * before the cursor held. A source that lost records since an earlier run can hold fewer than that, so `done` never
@@ -102,6 +124,10 @@ export async function runWooCommerceImport(
   opts: WooCommerceImportOptions,
   deps: WooCommerceImporterDeps,
 ) {
+  const untrackedStock = opts.untrackedStock ?? DEFAULT_UNTRACKED_STOCK
+  if (!Number.isInteger(untrackedStock) || untrackedStock < 0) {
+    throw new Error(`untrackedStock must be a whole number of 0 or more, not ${untrackedStock}`)
+  }
   const startMs = Date.now()
   const { services, adapters, media, onProgress } = deps
   const emit = onProgress ?? (() => undefined)
@@ -167,8 +193,9 @@ export async function runWooCommerceImport(
     if (!state.finished.includes(entity)) state.finished.push(entity)
     await checkpoint()
   }
-  const journal = (entity: ImportEntity, id: string, wcId: number) =>
-    appendJournal(opts.statePath, { entity, id, wcId })
+  const journal = (entity: ImportEntity, id: string, wcId: number, warnings?: string[]) =>
+    appendJournal(opts.statePath, { entity, id, wcId, ...(warnings && { warnings }) })
+  const warn = warningAdder(state)
   const slugTaken = async (slug: string): Promise<boolean> => {
     try {
       await services.product.getBySlug(slug)
@@ -186,6 +213,22 @@ export async function runWooCommerceImport(
   } catch (err) {
     if (err instanceof WooCommerceApiError) throw err
     throw new Error(`Cannot connect to ${opts.credentials.url}: ${String(err)}`)
+  }
+
+  // Prices are copied as they are, so a store in another currency would import wrong money. Codes are compared
+  // upper-cased: the platform reads a currency case-insensitively.
+  const settings = await client.getStoreSettings()
+  if (settings !== null && settings.currency.toUpperCase() !== opts.currency.toUpperCase()) {
+    throw new Error(
+      `The WooCommerce store prices in ${settings.currency} and this store in ${opts.currency}: nothing was imported. Import into a store whose currency is ${settings.currency}.`,
+    )
+  }
+  const store = storeContextFor(settings, opts.currency, untrackedStock)
+  if (settings === null) {
+    warn({
+      phase: 'settings',
+      message: `WooCommerce's settings could not be read (a 401 or 403 means the key cannot read them): imported as ${store.currency}, weights in ${store.weightUnit}, sizes in ${store.dimensionUnit} and a low-stock amount of ${store.lowStockAmount}`,
+    })
   }
 
   // On disk before the first create, so a run stopped at any point can be rolled back from the files alone.
@@ -286,8 +329,9 @@ export async function runWooCommerceImport(
                 product: services.product,
                 media,
                 imagePolicy,
+                store,
               })
-              state.warnings.push(...changes.warnings)
+              for (const warning of changes.warnings) warn(warning)
               if (changes.mediaError !== null) {
                 state.errors.push({
                   phase: 'products',
@@ -302,6 +346,16 @@ export async function runWooCommerceImport(
             } catch (err) {
               state.errors.push({ phase: 'products', id: String(wc.id), error: String(err) })
             }
+            return
+          }
+
+          if (variationsError !== null) {
+            // Without its variations it would import as something WooCommerce never sold.
+            state.errors.push({
+              phase: 'products',
+              id: String(wc.id),
+              error: `variations could not be read, so the product was not created: ${String(variationsError)}`,
+            })
             return
           }
 
@@ -327,13 +381,15 @@ export async function runWooCommerceImport(
 
           try {
             const snap = await services.product.create(
-              mapProduct(wc, variations, categoryIds, mediaItems, slugSuffix),
+              mapProduct(wc, variations, categoryIds, mediaItems, slugSuffix, store),
             )
+            const warnings = productWarnings(wc, variations, store)
             state.wcToNymbalProduct[wc.id] = snap.id
             state.importedIds.products.push(snap.id)
             state.delta?.created.products.push(snap.id)
+            for (const message of warnings) warn({ phase: 'products', id: String(wc.id), message })
             state.eventsEmitted++
-            await journal('products', snap.id, wc.id)
+            await journal('products', snap.id, wc.id, warnings)
           } catch (err) {
             state.errors.push({ phase: 'products', id: String(wc.id), error: String(err) })
           }

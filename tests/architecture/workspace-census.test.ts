@@ -260,11 +260,11 @@ describe("AC-1: every member under packages/ is in each tool's view", () => {
             set.has(`${d}/dist/a.js`) !== platform(set)[1]),
       )
 
-    // The unit sandbox is an allowlist of the platform alone; the integration sandbox keeps every package's source.
+    // The unit sandbox is an allowlist of the platform and the importers with the types they read; the integration
+    // sandbox keeps every package's source.
+    const unitMembers = ['packages/platform', 'packages/importers', 'packages/types']
     expect(platform(unit)).toEqual([true, false])
-    expect(members.filter((d) => d !== 'packages/platform' && unit.has(`${d}/src/a.ts`))).toEqual(
-      [],
-    )
+    expect(members.filter((d) => !unitMembers.includes(d) && unit.has(`${d}/src/a.ts`))).toEqual([])
     expect(members.filter((d) => unit.has(`${d}/dist/a.js`))).toEqual([])
     expect(platform(integration)).toEqual([true, false])
     expect(unlike(integration)).toEqual([])

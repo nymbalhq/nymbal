@@ -342,6 +342,7 @@ export default defineConfig({
             'packages/importers/tests/mappers/**/*.test.ts',
             'packages/importers/tests/client.test.ts',
             'packages/importers/tests/enrichment.test.ts',
+            'packages/importers/tests/report.test.ts',
           ],
         },
       },

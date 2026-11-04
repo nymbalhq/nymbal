@@ -106,6 +106,35 @@ function byId(items: Rec[]): Rec[] {
 }
 
 /**
+ * A product or variation as WooCommerce answers it: a field the record leaves out takes the value WooCommerce gives it.
+ * `price` and `on_sale` are read-only there, computed from `regular_price` and `sale_price`; a stock quantity is
+ * reported only for an item whose stock is managed.
+ */
+function sellable(item: Rec, product: boolean): Rec {
+  const sale = typeof item['sale_price'] === 'string' ? item['sale_price'] : ''
+  const defaults: Rec = {
+    price: sale !== '' ? sale : (item['regular_price'] ?? ''),
+    on_sale: sale !== '',
+    date_on_sale_from: null,
+    date_on_sale_to: null,
+    manage_stock: typeof item['stock_quantity'] === 'number',
+    stock_quantity: null,
+    stock_status: 'instock',
+    backorders: 'no',
+    low_stock_amount: null,
+    tax_status: 'taxable',
+    tax_class: '',
+    shipping_class: '',
+    ...(product && { tags: [], grouped_products: [], external_url: '' }),
+  }
+  return { ...defaults, ...item }
+}
+
+/** WooCommerce's settings group answer: one `{ id, value }` per setting. */
+const settingsGroup = (values: Record<string, string>): Rec[] =>
+  Object.entries(values).map(([id, value]) => ({ id, value }))
+
+/**
  * fetch over `store` at WC_URL. Images under `/img/` answer a few JPEG bytes; any other host answers 404. `onRequest`
  * runs as each request arrives, before it is answered (a test's virtual clock advances there).
  */
@@ -143,10 +172,24 @@ export function wooStoreFetch(store: WooStore, opts: { onRequest?: () => void } 
         : json(answer.body, answer.status, answer.headers)
     if (path === '/system_status') return json({ environment: {} }, 200)
     if (path === '/products/categories') return list(store.categories)
-    if (path === '/products') return list(store.products)
+    // A store in the currency and units the import runs with, as a key that can read the settings sees it.
+    if (path === '/settings/general') return json(settingsGroup({ woocommerce_currency: 'GBP' }), 200)
+    if (path === '/settings/products') {
+      return json(
+        settingsGroup({
+          woocommerce_weight_unit: 'kg',
+          woocommerce_dimension_unit: 'cm',
+          woocommerce_notify_low_stock_amount: '2',
+        }),
+        200,
+      )
+    }
+    if (path === '/products') return list(store.products.map((p) => sellable(p, true)))
     if (path === '/products/reviews') return list(store.reviews)
     const variations = /^\/products\/(\d+)\/variations$/.exec(path)
-    if (variations) return list(store.variations[Number(variations[1])] ?? [])
+    if (variations) {
+      return list((store.variations[Number(variations[1])] ?? []).map((v) => sellable(v, false)))
+    }
     if (path === '/customers') return list(store.customers)
     if (path === '/orders') return list(store.orders)
     if (path === '/coupons') return probe(store.coupons)
@@ -412,9 +455,20 @@ function buildStore(
         vars.push({
           id: vid,
           sku,
+          price: money(v.priceCents),
           regular_price: money(v.priceCents),
           sale_price: '',
+          on_sale: false,
+          date_on_sale_from: null,
+          date_on_sale_to: null,
+          manage_stock: v.stock !== null,
           stock_quantity: v.stock,
+          stock_status: 'instock',
+          backorders: 'no',
+          low_stock_amount: null,
+          tax_status: 'taxable',
+          tax_class: '',
+          shipping_class: '',
           status: v.publish ? 'publish' : 'private',
           attributes: [{ id: 1, name: 'Size', option: v.option }],
           weight: '0.5',
@@ -432,8 +486,23 @@ function buildStore(
       description: `about ${p.name}`,
       short_description: '',
       sku: p.sku ?? `SKU-${id}`,
+      price: p.onSale ? money(Math.floor(p.priceCents / 2)) : money(p.priceCents),
       regular_price: money(p.priceCents),
       sale_price: p.onSale ? money(Math.floor(p.priceCents / 2)) : '',
+      on_sale: p.onSale,
+      date_on_sale_from: null,
+      date_on_sale_to: null,
+      manage_stock: false,
+      stock_quantity: null,
+      stock_status: 'instock',
+      backorders: 'no',
+      low_stock_amount: null,
+      tags: [],
+      tax_status: 'taxable',
+      tax_class: '',
+      shipping_class: '',
+      grouped_products: [],
+      external_url: '',
       categories: p.categoryPicks.map((pick) => {
         const cat = categories.length > 0 ? categories[pick % (categories.length + 1)] : undefined
         return cat

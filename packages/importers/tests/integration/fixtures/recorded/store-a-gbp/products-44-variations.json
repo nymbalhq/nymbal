@@ -1,0 +1,158 @@
+[
+  {
+    "id": 45,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:43",
+    "date_created_gmt": "2026-11-04T14:48:43",
+    "date_modified": "2026-11-04T14:48:43",
+    "date_modified_gmt": "2026-11-04T14:48:43",
+    "description": "",
+    "permalink": "http://localhost:8888/product/seasonal-wreath/?attribute_pa_size=s",
+    "sku": "WREATH-S",
+    "global_unique_id": "",
+    "price": "",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": false,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "S"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "S",
+    "parent_id": 44,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44/variations/45",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44"
+        }
+      ]
+    }
+  },
+  {
+    "id": 46,
+    "type": "variation",
+    "date_created": "2026-11-04T14:48:43",
+    "date_created_gmt": "2026-11-04T14:48:43",
+    "date_modified": "2026-11-04T14:48:43",
+    "date_modified_gmt": "2026-11-04T14:48:43",
+    "description": "",
+    "permalink": "http://localhost:8888/product/seasonal-wreath/?attribute_pa_size=m",
+    "sku": "WREATH-M",
+    "global_unique_id": "",
+    "price": "",
+    "regular_price": "",
+    "sale_price": "",
+    "date_on_sale_from": null,
+    "date_on_sale_from_gmt": null,
+    "date_on_sale_to": null,
+    "date_on_sale_to_gmt": null,
+    "on_sale": false,
+    "status": "publish",
+    "purchasable": false,
+    "virtual": false,
+    "downloadable": false,
+    "downloads": [],
+    "download_limit": -1,
+    "download_expiry": -1,
+    "tax_status": "taxable",
+    "tax_class": "",
+    "manage_stock": false,
+    "stock_quantity": null,
+    "stock_status": "instock",
+    "backorders": "no",
+    "backorders_allowed": false,
+    "backordered": false,
+    "low_stock_amount": null,
+    "weight": "",
+    "dimensions": {
+      "length": "",
+      "width": "",
+      "height": ""
+    },
+    "shipping_class": "",
+    "shipping_class_id": 0,
+    "image": null,
+    "gallery_image_ids": [],
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "slug": "pa_size",
+        "option": "M"
+      }
+    ],
+    "menu_order": 0,
+    "meta_data": [],
+    "name": "M",
+    "parent_id": 44,
+    "_links": {
+      "self": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44/variations/46",
+          "targetHints": {
+            "allow": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44/variations"
+        }
+      ],
+      "up": [
+        {
+          "href": "http://localhost:8888/wp-json/wc/v3/products/44"
+        }
+      ]
+    }
+  }
+]
