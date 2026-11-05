@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fc from 'fast-check'
 import { PLAN_LIMITS, type CfRule, type Plan } from './fake-cloudflare.js'
 
@@ -30,6 +31,8 @@ export type SpecSecurityConfig = {
   geo: { block: string[] }
   customRules: SpecCustomRule[]
   managedRulesets: ManagedRuleset[]
+  /** The header the edge sends the origin secret in; absent, `X-Nymbal-Origin`. */
+  originLock?: { header: string }
 }
 
 /** Interface: `SecurityPlan`. */
@@ -97,15 +100,45 @@ export const silentLogger: SilentLogger = {
   child: () => silentLogger,
 }
 
-/** For the `security` slot, `ctx.config` is the `security.cloudflare` block. */
-export function adapterContext(cloudflare: SpecCloudflareBlock) {
+/** For the `security` slot, `ctx.config` is the `security.cloudflare` block; `env` is the process environment. */
+export function adapterContext(cloudflare: SpecCloudflareBlock, env: NodeJS.ProcessEnv = {}) {
   return {
     slot: 'security' as const,
     config: cloudflare,
     logger: silentLogger,
-    env: {} as NodeJS.ProcessEnv,
+    env,
   }
 }
+
+/** The ref of the rule that sends the origin secret, and the phase it lives in. */
+export const ORIGIN_LOCK_REF = 'nymbal:origin-lock'
+export const TRANSFORM = 'http_request_late_transform' as const
+
+/** The origin-lock rule as the interface states it: `header` set to `value` on every request. */
+export function originLockRule(header: string, value: string): CfRule {
+  return {
+    ref: ORIGIN_LOCK_REF,
+    description: 'nymbal: origin lock',
+    expression: 'true',
+    action: 'rewrite',
+    action_parameters: { headers: { [header]: { operation: 'set', value } } },
+    enabled: true,
+  }
+}
+
+/** How a secret shows wherever the adapter returns a rule: the first 8 hex digits of its SHA-256. */
+export function maskOf(value: string): string {
+  return `[secret ${createHash('sha256').update(value).digest('hex').slice(0, 8)}]`
+}
+
+/** The characters an origin secret may hold. */
+export const SECRET_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=_.~-'
+
+/** Origin secrets: 32 to 256 characters of the allowed set, at least 8 distinct (no message holds one by chance). */
+export const originSecretArb = fc
+  .string({ unit: fc.constantFrom(...SECRET_ALPHABET), minLength: 32, maxLength: 256 })
+  .filter((s) => new Set(s).size >= 8)
 
 /** Every rule of a `desiredRules` result, phase by phase (a phase the result leaves out has none). */
 export function allRules(byPhase: Partial<Record<string, CfRule[]>>): CfRule[] {

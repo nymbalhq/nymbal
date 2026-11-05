@@ -181,7 +181,8 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
  * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
- * surfaces are) and `trust proxy` (the proxy list, and client-address header, the server reads client addresses through). A slot is named as its
+ * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through) and
+ * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it). A slot is named as its
  * folder is (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {
@@ -202,7 +203,7 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
     if (provider !== undefined && hasPackage(primitive, provider))
       names.push(`package ${slotFolder(primitive)}`)
   }
-  names.push('trust proxy')
+  names.push('trust proxy', 'origin lock')
   return names.sort()
 }
 

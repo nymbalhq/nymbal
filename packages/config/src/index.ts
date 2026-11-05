@@ -18,6 +18,7 @@ export {
 export type { Slot } from '@nymbalhq/types'
 export { loadConfig, findConfigFile, type LoadedConfig } from './load.js'
 export { PUBLIC_URL_ENV, secureCookies } from './secure-cookies.js'
+export { ORIGIN_SECRET_ENV, resolveOriginLock } from './origin-lock.js'
 export {
   CLIENT_IP_HEADER_ENV,
   TRUSTED_PROXIES_ENV,

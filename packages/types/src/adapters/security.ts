@@ -68,7 +68,23 @@ export interface ResolvedNetwork {
   clientIpHeader?: string
   clientIpHeaderSource?: NetworkSource
   clientIpRequiresLock: boolean
+  /** Present when `NYMBAL_ORIGIN_SECRET` is set: the header the CDN proves itself in, and the secrets it may send. */
+  originLock?: ResolvedOriginLock
 }
+
+/** The origin lock, resolved once at boot: every entry is accepted, so a secret can be rotated without downtime. */
+export interface ResolvedOriginLock {
+  header: string
+  secrets: readonly string[]
+}
+
+/**
+ * Whether the CDN sends the origin secret: `missing` when it has no enabled rule; `present` with the header the rule
+ * sets and `entry`, the 0-based index of the secret it sends, or null when it sends none of them.
+ */
+export type OriginLockRule =
+  | { state: 'missing' }
+  | { state: 'present'; header: string; entry: number | null }
 
 export interface SecurityAdapter extends AdapterBase {
   applyMiddleware(app: HttpAdapter, config: SecurityConfigLike): Promise<void>
@@ -77,6 +93,8 @@ export interface SecurityAdapter extends AdapterBase {
   inspect?(): Promise<SecurityState>
   /** The adapter's network settings, offered at boot; synchronous and without I/O. */
   network?(): SecurityNetwork
+  /** Whether the CDN in front sends one of the lock's secrets, read from the CDN itself. */
+  originLockRule?(lock: ResolvedOriginLock): Promise<OriginLockRule>
 }
 
 /** The response headers every security adapter sets in process, from the config's `headers` block. */

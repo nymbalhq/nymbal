@@ -3,6 +3,8 @@ import { isIP } from 'node:net'
 import { dirname, join } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
+import { trustedProxyProblem, type NymbalConfig } from '@nymbalhq/config'
+import { importAdapterModule } from '@nymbalhq/platform'
 import { loadProject } from '../utils/project.js'
 
 export type WebServer = 'nginx' | 'apache' | 'caddy'
@@ -16,6 +18,11 @@ export interface WebServerOptions {
   realIpFrom?: string[]
   /** The header the CDN names the client in; `X-Forwarded-For` when only `realIpFrom` is given. */
   realIpHeader?: string
+  /**
+   * The only addresses whose connections reach the API, judged on the connection's own address (never the one the CDN
+   * names); others get 403 from the web server. Absent, every connection does.
+   */
+  allowFrom?: string[]
 }
 
 export interface WebServerRecipe {
@@ -77,13 +84,24 @@ export function realIpFromProblem(entry: string): string | null {
   ) {
     return `${entry} is not an IP address or a CIDR such as 173.245.48.0/20`
   }
-  if (prefix !== undefined && Number(prefix) === 0) {
+  // At /96 or wider an IPv4-mapped range holds every IPv4 address, as the API's own proxy list reads it.
+  if ((prefix !== undefined && Number(prefix) === 0) || trustedProxyProblem(entry) === 'everyone') {
     return `${entry} trusts every address to name the client, so any client could choose its own; list the CDN's published ranges`
   }
   return null
 }
 
-function nginx(host: string, upstream: string, realIpFrom: string[], realIpHeader: string): string {
+const ADMISSION_COMMENT = `Only connections from these addresses reach the API, judged on the connection's own address.`
+
+interface Render {
+  host: string
+  upstream: string
+  realIpFrom: string[]
+  realIpHeader: string
+  allowFrom: string[]
+}
+
+function nginx({ host, upstream, realIpFrom, realIpHeader, allowFrom }: Render): string {
   const realIp =
     realIpFrom.length === 0
       ? []
@@ -96,6 +114,21 @@ function nginx(host: string, upstream: string, realIpFrom: string[], realIpHeade
             ? ['    real_ip_recursive on;']
             : []),
         ]
+  // $realip_remote_addr is the connection's address even after real_ip_header has replaced $remote_addr.
+  const admission =
+    allowFrom.length === 0
+      ? { map: [], check: [] }
+      : {
+          map: [
+            '',
+            `# ${ADMISSION_COMMENT}`,
+            'geo $realip_remote_addr $nymbal_admitted {',
+            '    default 0;',
+            ...allowFrom.map((range) => `    ${range} 1;`),
+            '}',
+          ],
+          check: ['', '    if ($nymbal_admitted = 0) {', '        return 403;', '    }'],
+        }
   return [
     `# nginx in front of the Nymbal API for ${host}, written by \`nymbal deploy nginx\`.`,
     "# The forwarded headers are overwritten with what nginx itself resolved, never appended to the client's.",
@@ -104,6 +137,7 @@ function nginx(host: string, upstream: string, realIpFrom: string[], realIpHeade
     `    server ${upstream};`,
     '    keepalive 16;',
     '}',
+    ...admission.map,
     '',
     'server {',
     '    listen 80;',
@@ -122,6 +156,7 @@ function nginx(host: string, upstream: string, realIpFrom: string[], realIpHeade
     '    ssl_protocols TLSv1.2 TLSv1.3;',
     '    ssl_session_cache shared:nymbal_tls:10m;',
     ...realIp,
+    ...admission.check,
     '',
     '    gzip on;',
     '    gzip_vary on;',
@@ -146,12 +181,7 @@ function nginx(host: string, upstream: string, realIpFrom: string[], realIpHeade
   ].join('\n')
 }
 
-function apache(
-  host: string,
-  upstream: string,
-  realIpFrom: string[],
-  realIpHeader: string,
-): string {
+function apache({ host, upstream, realIpFrom, realIpHeader, allowFrom }: Render): string {
   const realIp =
     realIpFrom.length === 0
       ? []
@@ -160,6 +190,21 @@ function apache(
           '    # The CDN in front names the client; only these addresses may.',
           `    RemoteIPHeader ${realIpHeader}`,
           `    RemoteIPTrustedProxy ${realIpFrom.join(' ')}`,
+        ]
+  // CONN_REMOTE_ADDR is the connection's address; mod_remoteip replaces only the client's (REMOTE_ADDR).
+  const admission =
+    allowFrom.length === 0
+      ? []
+      : [
+          '',
+          `    # ${ADMISSION_COMMENT}`,
+          '    <Location />',
+          '        <RequireAny>',
+          ...allowFrom.map(
+            (range) => `            Require expr "%{CONN_REMOTE_ADDR} -ipmatch '${range}'"`,
+          ),
+          '        </RequireAny>',
+          '    </Location>',
         ]
   return [
     `# Apache httpd in front of the Nymbal API for ${host}, written by \`nymbal deploy apache\`.`,
@@ -178,6 +223,7 @@ function apache(
     `    SSLCertificateKeyFile /etc/letsencrypt/live/${host}/privkey.pem`,
     '    SSLProtocol -all +TLSv1.2 +TLSv1.3',
     ...realIp,
+    ...admission,
     '',
     `    AddOutputFilterByType DEFLATE ${COMPRESSED.join(' ')}`,
     '',
@@ -197,7 +243,7 @@ function apache(
   ].join('\n')
 }
 
-function caddy(host: string, upstream: string, realIpFrom: string[], realIpHeader: string): string {
+function caddy({ host, upstream, realIpFrom, realIpHeader, allowFrom }: Render): string {
   const global =
     realIpFrom.length === 0
       ? []
@@ -213,12 +259,22 @@ function caddy(host: string, upstream: string, realIpFrom: string[], realIpHeade
           '}',
           '',
         ]
+  // remote_ip is the connection's address; client_ip is the one trusted_proxies resolves.
+  const admission =
+    allowFrom.length === 0
+      ? []
+      : [
+          `\t# ${ADMISSION_COMMENT}`,
+          `\t@outside not remote_ip ${allowFrom.join(' ')}`,
+          '\trespond @outside 403',
+        ]
   return [
     `# Caddy in front of the Nymbal API for ${host}, written by \`nymbal deploy caddy\`.`,
     '# Caddy gets and renews the certificate itself. The forwarded headers are overwritten with what Caddy resolved.',
     '',
     ...global,
     `${host} {`,
+    ...admission,
     '\tencode gzip {',
     '\t\tmatch {',
     ...COMPRESSED.map((type) => `\t\t\theader Content-Type ${type}*`),
@@ -270,14 +326,17 @@ function steps(server: WebServer, host: string, file: string): string[] {
  * A web server config for the store's own server: TLS for the public origin's host, port 80 redirected, the API at
  * `upstream` with X-Forwarded-For, X-Real-IP and X-Forwarded-Proto overwritten by what the server resolved, JSON and
  * text compressed, streams passed through as written, nothing cached. With `realIpFrom` the server takes the client
- * from `realIpHeader` when a listed CDN address sends it.
+ * from `realIpHeader` when a listed CDN address sends it; with `allowFrom` it answers 403 to any other connection.
  */
 export function webServerRecipe(server: WebServer, options: WebServerOptions): WebServerRecipe {
   const host = originHost(options.publicUrl)
   if (host === null)
     throw new Error(`${options.publicUrl} is not an http or https origin with no path`)
   const realIpFrom = options.realIpFrom ?? []
-  const refused = realIpFrom.map(realIpFromProblem).find((problem) => problem !== null)
+  const allowFrom = options.allowFrom ?? []
+  const refused = [...realIpFrom, ...allowFrom]
+    .map(realIpFromProblem)
+    .find((problem) => problem !== null)
   if (refused !== undefined) throw new Error(refused)
   const realIpHeader = options.realIpHeader ?? 'X-Forwarded-For'
   if (!TOKEN.test(realIpHeader)) throw new Error(`${realIpHeader} is not an HTTP header name`)
@@ -285,7 +344,7 @@ export function webServerRecipe(server: WebServer, options: WebServerOptions): W
   const file = FILES[server]
   return {
     file,
-    content: render(host, options.upstream, realIpFrom, realIpHeader),
+    content: render({ host, upstream: options.upstream, realIpFrom, realIpHeader, allowFrom }),
     steps: steps(server, host, file),
   }
 }
@@ -293,6 +352,31 @@ export function webServerRecipe(server: WebServer, options: WebServerOptions): W
 function fail(message: string): never {
   process.stderr.write(`${pc.red(message)}\n`)
   process.exit(1)
+}
+
+interface CloudflareRanges {
+  etag: string
+  fetchedAt: string
+  ipv4Cidrs: string[]
+  ipv6Cidrs: string[]
+}
+
+/** The published ranges the store's Cloudflare adapter ships, which its web server admits and believes. */
+async function cloudflareRanges(security: NymbalConfig['security']): Promise<CloudflareRanges> {
+  const mod = (await importAdapterModule(
+    'security',
+    {
+      provider: 'cloudflare',
+      ...(security.package !== undefined && { package: security.package }),
+    },
+    process.env,
+  )) as { CLOUDFLARE_IPS?: CloudflareRanges }
+  if (mod.CLOUDFLARE_IPS === undefined) {
+    fail(
+      "This version of the Cloudflare adapter ships no address ranges: update @nymbalhq/security-cloudflare, so the web server admits only Cloudflare's",
+    )
+  }
+  return mod.CLOUDFLARE_IPS
 }
 
 export function webServerCommand(server: WebServer) {
@@ -314,7 +398,8 @@ export function webServerCommand(server: WebServer) {
       },
     },
     async run({ args }) {
-      const { projectRoot } = await loadProject()
+      const { config, projectRoot } = await loadProject()
+      const cloudflare = config.security.adapter === 'cloudflare'
       const publicUrl = process.env['NYMBAL_PUBLIC_URL']
       if (publicUrl === undefined || originHost(publicUrl) === null) {
         fail(
@@ -324,6 +409,16 @@ export function webServerCommand(server: WebServer) {
       const port = process.env['PORT']?.trim() || '3001'
       if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
         fail(`PORT must be the API's port, a number from 1 to 65535`)
+      }
+      if (cloudflare) {
+        for (const flag of ['--real-ip-from', '--real-ip-header'] as const) {
+          const given = flag === '--real-ip-from' ? args.realIpFrom : args.realIpHeader
+          if (given !== undefined) {
+            fail(
+              `${flag}: on a Cloudflare store the web server admits and believes Cloudflare's published ranges only, and reads CF-Connecting-IP; remove the flag`,
+            )
+          }
+        }
       }
       const realIpFrom = (args.realIpFrom ?? '')
         .split(',')
@@ -339,19 +434,32 @@ export function webServerCommand(server: WebServer) {
       if (args.realIpHeader !== undefined && !TOKEN.test(args.realIpHeader)) {
         fail(`--real-ip-header: ${args.realIpHeader} is not an HTTP header name`)
       }
+      const ranges = cloudflare ? await cloudflareRanges(config.security) : undefined
+      const edge = ranges === undefined ? [] : [...ranges.ipv4Cidrs, ...ranges.ipv6Cidrs]
       const recipe = webServerRecipe(server, {
         publicUrl,
         upstream: `127.0.0.1:${port}`,
-        ...(realIpFrom.length > 0 && { realIpFrom }),
-        ...(args.realIpHeader !== undefined && { realIpHeader: args.realIpHeader }),
+        ...(ranges !== undefined
+          ? { realIpFrom: edge, allowFrom: edge, realIpHeader: 'CF-Connecting-IP' }
+          : {
+              ...(realIpFrom.length > 0 && { realIpFrom }),
+              ...(args.realIpHeader !== undefined && { realIpHeader: args.realIpHeader }),
+            }),
       })
+      const steps =
+        ranges === undefined
+          ? recipe.steps
+          : [
+              ...recipe.steps,
+              `The file admits only Cloudflare's published ranges as of ${ranges.fetchedAt} (etag ${ranges.etag}): when nymbal security:drift notes they changed, update the Cloudflare adapter and run this command again`,
+            ]
       const path = join(projectRoot, recipe.file)
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, recipe.content)
       // eslint-disable-next-line no-console
       console.log(`✓ wrote ${recipe.file}`)
       // eslint-disable-next-line no-console
-      console.log(`\nThe steps, on the server:\n${recipe.steps.map((s) => `  ${s}`).join('\n')}`)
+      console.log(`\nThe steps, on the server:\n${steps.map((s) => `  ${s}`).join('\n')}`)
     },
   })
 }

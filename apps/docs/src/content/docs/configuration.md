@@ -38,7 +38,7 @@ export default defineConfig({
 | `template`                         | `astro` or `nextjs`: which storefront `nymbal dev`, `build` and `start` run.                                                   |
 | `infrastructure`                   | Where commands and events are kept (`sqlite` or `postgres`), the read-model store, the event bus, media storage.               |
 | `commerce`                         | One provider per slot: payments, email, reviews, search, analytics, shipping, tax, AI.                                         |
-| `security`                         | Rate limits, bot protection, security headers, CSRF, sign-in token settings.                                                   |
+| `security`                         | Rate limits, bot protection, security headers, CSRF, sign-in token settings, the origin lock's header (`originLock.header`).   |
 | `http`                             | The API's port, CORS origins, the proxies in front (`trustedProxies`) and a client-address header (`clientIpHeader`).          |
 | `agents`                           | MCP and UCP, whether an agent's admin writes apply or wait as proposals, and what crawlers may read. See [Agents](../agents/). |
 | `events`, `deployment`, `features` | Event retention and archiving, the deployment strategy, optional features.                                                     |

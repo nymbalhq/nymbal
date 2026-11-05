@@ -1,9 +1,15 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nymbalConfigSchema, slotFolder, type NymbalConfig } from '@nymbalhq/config'
+import {
+  nymbalConfigSchema,
+  resolveOriginLock,
+  slotFolder,
+  type NymbalConfig,
+} from '@nymbalhq/config'
 import {
   boundedHealthCheck,
+  ConfigError,
   connectionSecrets,
   displayUrl,
   errorText,
@@ -13,6 +19,8 @@ import {
   type HealthReport,
   type HealthStatus,
   type Logger,
+  type OriginLockRule,
+  type ResolvedOriginLock,
   type SecurityNetwork,
   type Slot,
 } from '@nymbalhq/types'
@@ -64,6 +72,11 @@ export interface DiagnosisReport {
    * `unknown` when it failed to build or `network()` threw. Absent when the config did not parse.
    */
   network?: { adapter: string; contribution: SecurityNetwork } | 'unknown'
+  /**
+   * Whether the CDN sends the origin secret, present only when `NYMBAL_ORIGIN_SECRET` resolves: the security adapter's
+   * answer, `unmanaged` when it cannot tell (no `originLockRule`), `unknown` when it failed to build, threw or timed out.
+   */
+  originLock?: OriginLockRule | 'unknown' | 'unmanaged'
 }
 
 export interface DiagnoseOptions {
@@ -428,6 +441,7 @@ export async function diagnose(
       // The offer stays unknown, which the trust proxy check reports; it never reads as an empty one.
     }
   }
+  const originLock = await originLockOf(config, env, timeoutMs, securityAdapter)
   slots.push(
     securityAdapter.ok
       ? fromReport('slot security', providers.security, await health(securityAdapter.value))
@@ -482,7 +496,29 @@ export async function diagnose(
     ...check,
     detail: scrub(secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail)),
   }))
-  return { checks, network }
+  return { checks, network, ...(originLock !== undefined && { originLock }) }
+}
+
+async function originLockOf(
+  config: NymbalConfig,
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+  adapter: Outcome<{ originLockRule?: (lock: ResolvedOriginLock) => Promise<OriginLockRule> }>,
+): Promise<DiagnosisReport['originLock']> {
+  let lock: ResolvedOriginLock | undefined
+  try {
+    lock = resolveOriginLock(config, env)
+  } catch (error) {
+    // A malformed secret is the doctor's own `origin lock` line, from the same check.
+    if (error instanceof ConfigError) return undefined
+    throw error
+  }
+  if (lock === undefined) return undefined
+  if (!adapter.ok) return 'unknown'
+  const { originLockRule } = adapter.value
+  if (originLockRule === undefined) return 'unmanaged'
+  const read = await within(timeoutMs, () => originLockRule.call(adapter.value, lock))
+  return read.ok ? read.value : 'unknown'
 }
 
 /** How many events show when some are dead; the rest are counted. */

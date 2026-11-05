@@ -3,15 +3,17 @@ import { accessSync, constants, existsSync, readFileSync, writeFileSync } from '
 import { delimiter, join } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import { DEFAULT_JWT_SECRET, ORIGIN_SECRET_ENV, type NymbalConfig } from '@nymbalhq/config'
 import { loadProject } from '../utils/project.js'
-import { webServerCommand } from './deploy-web-server.js'
+import { originHost, webServerCommand } from './deploy-web-server.js'
 
 export interface DeployProject {
   /** The app's name on the platform. */
   name: string
   root: string
   config: NymbalConfig
+  /** NYMBAL_PUBLIC_URL from .env: a Cloudflare store's own domain, which its recipes use in place of the platform's. */
+  publicUrl?: string
 }
 
 const NYMBAL = 'node node_modules/nymbal/bin/nymbal.mjs'
@@ -19,6 +21,42 @@ const NYMBAL = 'node node_modules/nymbal/bin/nymbal.mjs'
 const KILL_TIMEOUT_S = 15
 /** Where a step's secret comes from; a dry run prints it, a live run puts the value from .env in its place. */
 const FROM_ENV = '<from .env>'
+/** One argument of a step: quoted, a `KEY=<from .env>` (whose placeholder holds a space), or a plain word. */
+const STEP_ARGUMENT = /'[^']*'|\S*<from \.env>|\S+/g
+const FROM_ENV_KEY = /([A-Z][A-Z0-9_]*)=<from \.env>/g
+/** What a store does about a variable a step takes from .env and .env lacks. */
+const MAKE_IT: Readonly<Record<string, string>> = {
+  NYMBAL_JWT_SECRET: 'add one made by `openssl rand -base64 32`',
+  [ORIGIN_SECRET_ENV]: 'nymbal security:apply creates it once the zone holds its rule',
+}
+
+/** The platform hosts a Cloudflare store must not be reached at: the origin lock refuses requests to them. */
+const PLATFORM_HOST = /(^|\.)(fly\.dev|railway\.app)$/i
+
+/** A Cloudflare store sets the origin secret on the host and is reached at its own domain, never the platform's. */
+const behindCloudflare = (config: NymbalConfig): boolean => config.security.adapter === 'cloudflare'
+
+/** Why `publicUrl` cannot be a Cloudflare store's public URL, or null. */
+export function cloudflarePublicUrlProblem(publicUrl: string | undefined): string | null {
+  const host = originHost(publicUrl)
+  const why =
+    publicUrl === undefined || publicUrl.trim() === ''
+      ? 'is not set in .env'
+      : host === null
+        ? `(${publicUrl}) is not an http or https origin with no path`
+        : PLATFORM_HOST.test(host)
+          ? `(${publicUrl}) is the platform's own host, which the origin lock refuses`
+          : null
+  return why === null
+    ? null
+    : `NYMBAL_PUBLIC_URL ${why}: on a Cloudflare store set it in .env to the store's domain proxied by Cloudflare, such as https://shop.example.com`
+}
+
+function cloudflarePublicUrl(project: DeployProject): string {
+  const problem = cloudflarePublicUrlProblem(project.publicUrl)
+  if (problem !== null) throw new Error(problem)
+  return project.publicUrl!.trim()
+}
 
 function usesPostgres(config: NymbalConfig): boolean {
   return config.infrastructure.commandStore === 'postgres'
@@ -68,7 +106,7 @@ export function flyRecipe(project: DeployProject): { file: string; toml: string;
     `  release_command = "${NYMBAL} migrate"`,
     '',
     '[env]',
-    `  NYMBAL_PUBLIC_URL = "https://${name}.fly.dev"`,
+    `  NYMBAL_PUBLIC_URL = ${JSON.stringify(behindCloudflare(config) ? cloudflarePublicUrl(project) : `https://${name}.fly.dev`)}`,
     `  NYMBAL_TRUSTED_PROXIES = "${PLATFORM_PROXIES}"`,
     '',
     '[http_service]',
@@ -101,6 +139,9 @@ export function flyRecipe(project: DeployProject): { file: string; toml: string;
     `flyctl secrets set NYMBAL_SECRETS_KEY=${FROM_ENV} --app ${name} --stage`,
     ...(jwtFromEnv(config)
       ? [`flyctl secrets set NYMBAL_JWT_SECRET=${FROM_ENV} --app ${name} --stage`]
+      : []),
+    ...(behindCloudflare(config)
+      ? [`flyctl secrets set ${ORIGIN_SECRET_ENV}=${FROM_ENV} --app ${name} --stage`]
       : []),
     `flyctl deploy --app ${name}`,
   ]
@@ -141,10 +182,15 @@ export function railwayRecipe(project: DeployProject): {
     ...(usesRedis(config)
       ? [`railway variables ${service} --set 'REDIS_URL=\${{Redis.REDIS_URL}}'`]
       : []),
-    `railway variables ${service} --set 'NYMBAL_PUBLIC_URL=https://\${{RAILWAY_PUBLIC_DOMAIN}}'`,
+    behindCloudflare(config)
+      ? `railway variables ${service} --set NYMBAL_PUBLIC_URL=${FROM_ENV}`
+      : `railway variables ${service} --set 'NYMBAL_PUBLIC_URL=https://\${{RAILWAY_PUBLIC_DOMAIN}}'`,
     `railway variables ${service} --set NYMBAL_SECRETS_KEY=${FROM_ENV}`,
     ...(jwtFromEnv(config)
       ? [`railway variables ${service} --set NYMBAL_JWT_SECRET=${FROM_ENV}`]
+      : []),
+    ...(behindCloudflare(config)
+      ? [`railway variables ${service} --set ${ORIGIN_SECRET_ENV}=${FROM_ENV}`]
       : []),
     `railway variables ${service} --set NYMBAL_TRUSTED_PROXIES=${PLATFORM_PROXIES}`,
     `railway domain ${service}`,
@@ -168,7 +214,7 @@ function onPath(command: string): boolean {
 }
 
 /** The app name from package.json: a platform name is lowercase letters, digits and dashes. */
-function appName(root: string): string {
+export function appName(root: string): string {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: string }
   const name = (pkg.name ?? '')
     .replace(/^@/, '')
@@ -177,6 +223,23 @@ function appName(root: string): string {
     .replace(/^-+|-+$/g, '')
   if (name === '') throw new Error('package.json needs a "name" to name the app')
   return name
+}
+
+/**
+ * Every variable a step takes from .env that .env lacks, named in one message, so a live run stops before its first
+ * step rather than after the app was created.
+ */
+function refuseMissingFromEnv(steps: string[]): void {
+  const keys = [
+    ...new Set(steps.flatMap((step) => [...step.matchAll(FROM_ENV_KEY)].map((m) => m[1]!))),
+  ]
+  const missing = keys.filter((key) => (process.env[key] ?? '').trim() === '')
+  if (missing.length === 0) return
+  const named = missing.map((key) => (MAKE_IT[key] ? `${key} (${MAKE_IT[key]})` : key))
+  process.stderr.write(
+    `${pc.red(`Not set in .env, and the steps need ${missing.length === 1 ? 'it' : 'them'}: ${named.join('; ')}`)}\n`,
+  )
+  process.exit(1)
 }
 
 /** The live run: each step as printed, with `<from .env>` filled from the project's .env and nothing printed of it. */
@@ -191,22 +254,14 @@ function runSteps(steps: string[], tool: string): void {
       )
       process.exit(1)
     }
-    const argv = (step.match(/'[^']*'|\S+/g) ?? []).map((part) =>
+    const argv = (step.match(STEP_ARGUMENT) ?? []).map((part) =>
       part.startsWith("'") ? part.slice(1, -1) : part,
     )
+    // Every variable was checked before the first step.
     const filled = argv.map((part) => {
-      const at = part.indexOf(FROM_ENV)
-      if (at < 0) return part
-      const key = part.slice(0, at - 1)
-      const value = process.env[key]
-      if (value === undefined || value === '') {
-        // A store scaffolded before create-nymbal-app wrote the JWT secret has none in .env.
-        const make =
-          key === 'NYMBAL_JWT_SECRET' ? ': add one made by `openssl rand -base64 32`' : ''
-        process.stderr.write(`${pc.red(`${key} is not set in .env${make}`)}\n`)
-        process.exit(1)
-      }
-      return `${key}=${value}`
+      if (!part.endsWith(`=${FROM_ENV}`)) return part
+      const key = part.slice(0, -FROM_ENV.length - 1)
+      return `${key}=${process.env[key]}`
     })
     const done = spawnSync(filled[0]!, filled.slice(1), { stdio: 'inherit' })
     if (done.status !== 0) {
@@ -233,13 +288,26 @@ function platformCommand(platform: 'fly' | 'railway') {
     },
     async run({ args }) {
       const { config, projectRoot } = await loadProject()
+      const publicUrl = process.env['NYMBAL_PUBLIC_URL']
+      if (behindCloudflare(config)) {
+        const problem = cloudflarePublicUrlProblem(publicUrl)
+        if (problem !== null) {
+          process.stderr.write(`${pc.red(problem)}\n`)
+          process.exit(1)
+        }
+      }
       if (!args.dryRun && !onPath(tool)) {
         process.stderr.write(
           `${pc.red(`${tool} is not on PATH.`)} Install it and log in, or run with --dry-run to see the steps.\n`,
         )
         process.exit(1)
       }
-      const project = { name: appName(projectRoot), root: projectRoot, config }
+      const project: DeployProject = {
+        name: appName(projectRoot),
+        root: projectRoot,
+        config,
+        ...(publicUrl !== undefined && { publicUrl }),
+      }
       const recipe = platform === 'fly' ? flyRecipe(project) : railwayRecipe(project)
       const content = 'toml' in recipe ? recipe.toml : recipe.json
       if (!existsSync(join(projectRoot, 'Dockerfile'))) {
@@ -254,6 +322,7 @@ function platformCommand(platform: 'fly' | 'railway') {
         console.log(`\nThe steps, with ${tool}:\n${recipe.steps.map((s) => `  ${s}`).join('\n')}`)
         return
       }
+      refuseMissingFromEnv(recipe.steps)
       const whoami = spawnSync(tool, platform === 'fly' ? ['auth', 'whoami'] : ['whoami'], {
         stdio: 'ignore',
       })

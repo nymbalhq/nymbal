@@ -13,7 +13,7 @@ export interface CloudflareConnection {
 
 export const CREDENTIALS_HINT =
   'check security.cloudflare.zoneId and apiToken (CLOUDFLARE_ZONE_ID, CLOUDFLARE_API_TOKEN): the token needs ' +
-  'Zone › Zone › Read, Zone › Zone WAF › Edit and Zone › Cache Rules › Edit on the zone'
+  'Zone › Zone › Read, Zone › Zone WAF › Edit, Zone › Cache Rules › Edit and Zone › Transform Rules › Edit on the zone'
 
 /** The token or zone was refused (401 or 403), or the config has none. */
 export class CloudflareCredentialsError extends AdapterError {
@@ -34,13 +34,22 @@ export interface Zone {
   plan?: { legacy_id?: string; name?: string }
 }
 
-/** The Cloudflare v4 API as the adapter uses it: the zone, and one phase's entrypoint ruleset. */
+/** Cloudflare's published edge ranges, as `GET /ips` answers them. */
+export interface CloudflareIps {
+  etag: string
+  ipv4Cidrs: string[]
+  ipv6Cidrs: string[]
+}
+
+/** The Cloudflare v4 API as the adapter uses it: the zone, one phase's entrypoint ruleset, and the edge ranges. */
 export interface CloudflareClient {
   zone(): Promise<Zone>
   /** The phase's rules, or undefined when the phase was never written (404). */
   entrypoint(phase: Phase): Promise<Rule[] | undefined>
   /** Replaces the phase's rules whole, creating the entrypoint when it is absent. */
   putEntrypoint(phase: Phase, rules: Rule[]): Promise<void>
+  /** Cloudflare's published ranges; public, so it is asked without the token. */
+  ips(): Promise<CloudflareIps>
 }
 
 export function hasCredentials(
@@ -64,8 +73,9 @@ export function createClient(connection: CloudflareConnection): CloudflareClient
     method: 'GET' | 'PUT',
     path: string,
     body?: unknown,
+    auth: 'token' | 'none' = 'token',
   ): Promise<{ status: number; body: unknown }> {
-    if (!hasCredentials(connection)) {
+    if (auth === 'token' && !hasCredentials(connection)) {
       throw new CloudflareCredentialsError('no zone ID or API token is configured')
     }
     let response: Response
@@ -74,7 +84,7 @@ export function createClient(connection: CloudflareConnection): CloudflareClient
       response = await fetch(`${base}${path}`, {
         method,
         headers: {
-          authorization: `Bearer ${connection.apiToken}`,
+          ...(auth === 'token' && { authorization: `Bearer ${connection.apiToken}` }),
           ...(body !== undefined && { 'content-type': 'application/json' }),
         },
         ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -138,6 +148,25 @@ export function createClient(connection: CloudflareConnection): CloudflareClient
       const path = `${zonePath}/rulesets/phases/${phase}/entrypoint`
       const { status, body } = await request('PUT', path, { rules })
       if (status !== 200) throw failed('PUT', path, status, body)
+    },
+    async ips() {
+      const { status, body } = await request('GET', '/ips', undefined, 'none')
+      if (status !== 200) throw failed('GET', '/ips', status, body)
+      const result = (
+        body as Envelope<{ etag?: unknown; ipv4_cidrs?: unknown; ipv6_cidrs?: unknown }>
+      ).result
+      const list = (value: unknown): string[] =>
+        Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+      if (typeof result?.etag !== 'string') {
+        throw new AdapterError('cloudflare_api', 'Cloudflare answered GET /ips without an etag', {
+          context: { method: 'GET', path: '/ips', status },
+        })
+      }
+      return {
+        etag: result.etag,
+        ipv4Cidrs: list(result.ipv4_cidrs),
+        ipv6Cidrs: list(result.ipv6_cidrs),
+      }
     },
   }
 }

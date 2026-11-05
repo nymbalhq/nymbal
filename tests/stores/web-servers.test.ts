@@ -24,7 +24,9 @@ import { FastifyHttpAdapter } from '../../packages/http/src/fastify-adapter.js'
 // rendered file's global options block, or a block of its own when the render opens with none, and the rendered file
 // is otherwise unchanged. Apache's wrapper loads the modules the steps enable (a2enmod) and the
 // HTTPS listener a distribution's ports.conf holds, then includes the rendered file. The API lists loopback and
-// uniquelocal, where a container's connection reaches the host from (Docker Desktop and Linux bridges).
+// uniquelocal, where a container's connection reaches the host from (Docker Desktop and Linux bridges). A config with an
+// admission list (a Cloudflare store's) lets only connections from the listed addresses reach the API, judged on the
+// connection's own address and never on the client address the CDN header names.
 // Needs Docker; pulls about 100 MB on the first run.
 
 const exec = promisify(execFile)
@@ -68,6 +70,8 @@ const BIG = {
 
 interface Api {
   port: number
+  /** How many requests have reached /api/echo. */
+  hits(): number
   /** When the API wrote stream `id`'s first event. */
   writtenAt(id: string): number | undefined
   /** Ends stream `id` now: its client has the first event. */
@@ -76,20 +80,24 @@ interface Api {
 }
 
 async function startApi(): Promise<Api> {
+  let hits = 0
   const adapter = new FastifyHttpAdapter({
     logger: silent,
     security: securitySchema.parse({ adapter: 'middleware', csrf: false }),
     trustedProxies: ['loopback', 'uniquelocal'],
   })
-  adapter.registerRoute('GET', '/api/echo', async (ctx) => ({
-    status: 200,
-    body: {
-      ip: ctx.ip,
-      forwardedFor: ctx.headers['x-forwarded-for'] ?? null,
-      realIp: ctx.headers['x-real-ip'] ?? null,
-      proto: ctx.headers['x-forwarded-proto'] ?? null,
-    },
-  }))
+  adapter.registerRoute('GET', '/api/echo', async (ctx) => {
+    hits += 1
+    return {
+      status: 200,
+      body: {
+        ip: ctx.ip,
+        forwardedFor: ctx.headers['x-forwarded-for'] ?? null,
+        realIp: ctx.headers['x-real-ip'] ?? null,
+        proto: ctx.headers['x-forwarded-proto'] ?? null,
+      },
+    }
+  })
   adapter.registerRoute('GET', '/api/big', async () => ({ status: 200, body: BIG }))
   // Cacheable on purpose: a server that caches responses would serve one shopper's answer to the next.
   adapter.registerRoute('GET', '/api/cookie', async (ctx) => ({
@@ -115,6 +123,7 @@ async function startApi(): Promise<Api> {
   await adapter.start(0, '0.0.0.0')
   return {
     port: adapter.boundPort,
+    hits: () => hits,
     writtenAt: (id) => streams.get(id)?.writtenAt,
     release: (id) => streams.get(id)?.end(),
     stop: () => adapter.stop(),
@@ -300,8 +309,16 @@ interface Running {
   http: number
 }
 
-/** The server's container running `content` as the store's config, its ports 443 and 80 on loopback. */
-async function run(server: WebServer, content: string, live: string): Promise<Running> {
+/**
+ * The server's container running `content` as the store's config, its ports 443 and 80 on loopback; serving once
+ * /api/echo answers one of `serving` (a config that refuses the test client answers 403).
+ */
+async function run(
+  server: WebServer,
+  content: string,
+  live: string,
+  serving: readonly number[] = [200],
+): Promise<Running> {
   const dir = mkdtempSync(join(scratch, `${server}-`))
   const site = join(dir, 'site')
   writeFileSync(site, server === 'caddy' ? withTestCertificates(content) : content)
@@ -362,11 +379,12 @@ async function run(server: WebServer, content: string, live: string): Promise<Ru
   const deadline = Date.now() + 60_000
   for (;;) {
     try {
-      if ((await https(running.https, '/api/echo')).status === 200) return running
+      if (serving.includes((await https(running.https, '/api/echo')).status)) return running
     } catch {
       // not listening yet
     }
-    if (Date.now() > deadline) throw await diagnosis('did not answer /api/echo within 60 s')
+    if (Date.now() > deadline)
+      throw await diagnosis(`did not answer /api/echo with ${serving.join(' or ')} within 60 s`)
     await new Promise((r) => setTimeout(r, 250))
   }
 }
@@ -476,5 +494,64 @@ describe.each(SERVERS)('AC-13: the %s config works in front of the API', (server
 
     expect([301, 302, 307, 308]).toContain(res.status)
     expect(res.headers.location).toMatch(/^https:\/\/shop\.example(\/|$)/)
+  })
+})
+
+/** webServerRecipe with the admission list the interface adds. */
+function admitting(
+  server: WebServer,
+  upstream: string,
+  lists: { allowFrom: string[]; realIpFrom: string[] },
+): string {
+  const options = {
+    publicUrl: PUBLIC_URL,
+    upstream,
+    realIpHeader: 'CF-Connecting-IP',
+    ...lists,
+  }
+  return webServerRecipe(server, options as Parameters<typeof webServerRecipe>[1]).content
+}
+
+/** A documentation range standing in for a CDN's, which the test client is never in. */
+const ELSEWHERE = ['192.0.2.0/24']
+const CLAIMED = '192.0.2.5'
+
+describe.each(SERVERS)('AC-15: the %s admission list judges the connection', (server) => {
+  let listedElsewhere: Running
+  let crossed: Running
+  let admitted: Running
+  beforeAll(async () => {
+    const upstream = `host.docker.internal:${api.port}`
+    listedElsewhere = await run(
+      server,
+      admitting(server, upstream, { allowFrom: ELSEWHERE, realIpFrom: ELSEWHERE }),
+      live,
+      [200, 403],
+    )
+    // The real-IP step trusts the test client, so the claimed address replaces its own if the admission check reads it.
+    crossed = await run(
+      server,
+      admitting(server, upstream, { allowFrom: ELSEWHERE, realIpFrom: CDN_RANGES }),
+      live,
+      [200, 403],
+    )
+    admitted = await run(
+      server,
+      admitting(server, upstream, { allowFrom: CDN_RANGES, realIpFrom: CDN_RANGES }),
+      live,
+    )
+  }, 300_000)
+
+  it(`AC-15: rendered with allowFrom and realIpFrom ${ELSEWHERE[0]} and CF-Connecting-IP, ${server} answers a request claiming CF-Connecting-IP ${CLAIMED} 403 without reaching the API, also when the real-IP step trusts the client; rendered with both the client's own ranges, CF-Connecting-IP ${SPOOFED} reaches the API as ip ${SPOOFED}`, async () => {
+    const claim = { 'cf-connecting-ip': CLAIMED }
+    const before = api.hits()
+    const refused = [await https(listedElsewhere.https, '/api/echo', claim)]
+    refused.push(await https(crossed.https, '/api/echo', claim))
+    const reached = api.hits() - before
+    const through = await echo(admitted.https, { 'cf-connecting-ip': SPOOFED })
+
+    expect(refused.map((r) => r.status)).toEqual([403, 403])
+    expect(reached).toBe(0)
+    expect(through.ip).toBe(SPOOFED)
   })
 })

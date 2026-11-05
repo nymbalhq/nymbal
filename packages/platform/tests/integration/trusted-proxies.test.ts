@@ -239,40 +239,4 @@ describe('AC-15: a security adapter that contributes nothing changes nothing; th
     expect(await withBlock.ipOf(headers)).toBe('203.0.113.9')
     expect(await withoutContribution.ipOf(headers)).toBe(HOST)
   })
-
-  it('AC-15: a contribution with clientIpRequiresLock true resolves every request to the same address as one with false', async () => {
-    const kernel = await kernelWith(listed())
-    const block = (lock: boolean) =>
-      resolveTrustedProxies(
-        kernel.config,
-        {},
-        {
-          adapter: 'fixture',
-          network: { clientIpHeader: 'X-Edge-Client', clientIpRequiresLock: lock },
-        },
-      )
-    const locked = await serve(kernel, block(true))
-    const unlocked = await serve(await kernelWith(listed()), block(false))
-    const requests: Array<Record<string, string>> = [
-      {},
-      { 'x-edge-client': '203.0.113.9' },
-      { 'x-edge-client': '2001:db8::9', 'x-forwarded-for': '198.51.100.1' },
-      { 'x-forwarded-for': '198.51.100.1' },
-      { 'x-edge-client': 'not-an-ip' },
-    ]
-
-    const lockedIps: string[] = []
-    const unlockedIps: string[] = []
-    for (const headers of requests) {
-      lockedIps.push(await locked.ipOf(headers))
-      unlockedIps.push(await unlocked.ipOf(headers))
-    }
-
-    expect([block(true).clientIpRequiresLock, block(false).clientIpRequiresLock]).toEqual([
-      true,
-      false,
-    ])
-    expect(lockedIps).toEqual(unlockedIps)
-    expect(lockedIps[1]).toBe('203.0.113.9')
-  })
 })

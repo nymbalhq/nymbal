@@ -5,7 +5,7 @@ import { connect, createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { defineCommand } from 'citty'
 import pc from 'picocolors'
-import { resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
+import { resolveOriginLock, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
 import { boundedHealthCheck, ConfigError, type HealthReport } from '@nymbalhq/types'
 import {
   createApp,
@@ -82,7 +82,8 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   } else if (publicOrigin(env['NYMBAL_PUBLIC_URL']) === null) {
     problems.push('NYMBAL_PUBLIC_URL must be an http or https origin with no path')
   }
-  // The app refuses a malformed NYMBAL_JWT_SECRET or trusted proxy setting under any NODE_ENV, by the same check.
+  // The app refuses a malformed NYMBAL_JWT_SECRET, trusted proxy setting or origin secret under any NODE_ENV, by the
+  // same check.
   const refusal = <T>(check: () => T): T | undefined => {
     try {
       return check()
@@ -94,6 +95,7 @@ export function checkStartEnv(config: NymbalConfig, env: NodeJS.ProcessEnv): str
   }
   const jwt = refusal(() => resolveAuthSecret(config, env))
   refusal(() => resolveTrustedProxies(config, env))
+  refusal(() => resolveOriginLock(config, env))
   if (env['NODE_ENV'] === 'development') {
     problems.push('NODE_ENV is development: nymbal start runs in production; unset it')
   }

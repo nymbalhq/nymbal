@@ -179,7 +179,12 @@ Show what security:apply would change on the Cloudflare zone
 
 ## `nymbal security:apply`
 
-Write the store's security rules to the Cloudflare zone, leaving the zone's own rules
+Write the store's security rules to the Cloudflare zone, leaving the zone's own rules; the first creates NYMBAL_ORIGIN_SECRET
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--adopt-origin-secret` | boolean | Put the secret the zone already sends into .env, writing nothing to the zone (another machine set the lock) | `false` |
+| `--new-origin-secret` | boolean | Replace the origin secret on the zone and in .env (a compromised one); the host refuses requests until it has the new one | `false` |
 
 ## `nymbal security:drift`
 

@@ -39,7 +39,10 @@ interface StartingPoint {
   outside: readonly string[]
   /** Shared files and SDKs the copy imports unchanged. */
   shared: readonly string[]
-  /** Files of the package, relative to it, a copy leaves out: they read what a copy does not carry (its recipes). */
+  /**
+   * Files of the package, relative to it, a copy leaves out: they read what a copy does not carry (its recipes, or the
+   * provider's live API under a project of the source's own).
+   */
   leaveOut?: readonly string[]
   /** The Vitest project its runners run in. */
   project: 'contracts-native'
@@ -106,7 +109,7 @@ export const SOURCES: readonly StartingPoint[] = [
     ident: 'Cloudflare',
     outside: ['tests/contracts/cloudflare-security.test.ts'],
     shared: [],
-    leaveOut: ['src/token-scopes.test.ts'],
+    leaveOut: ['src/token-scopes.test.ts', 'tests/live/origin-lock.live.test.ts'],
     project: 'contracts-native',
     default: true,
   },

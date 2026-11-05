@@ -86,6 +86,24 @@ const stripeLive =
       ]
     : []
 
+// The origin lock on a real Cloudflare zone and a deployed app: the project exists only when
+// `scripts/cloudflare-live.sh` sets NYMBAL_CLOUDFLARE_LIVE=1 (the file throws at collection without its inputs), so no
+// CI job, `pnpm test` or gate run can select it. Its calls cross the internet, and a Fly secret change restarts the app.
+const cloudflareLive =
+  process.env['NYMBAL_CLOUDFLARE_LIVE'] === '1'
+    ? [
+        {
+          test: {
+            name: 'cloudflare-live',
+            environment: 'node' as const,
+            include: ['packages/adapters/security/cloudflare/tests/live/**/*.test.ts'],
+            testTimeout: 300_000,
+            hookTimeout: 300_000,
+          },
+        },
+      ]
+    : []
+
 // Quarantined: each went red then green with no code change in a gate or CI. It runs in the `nightly` project
 // (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until it is fixed, and its home project leaves it out: through
 // that project's own `exclude` when it has one (cli), else behind `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the
@@ -389,6 +407,7 @@ export default defineConfig({
       ...scaffoldImage,
       ...quickstart,
       ...stripeLive,
+      ...cloudflareLive,
       ...nightly,
       {
         test: {

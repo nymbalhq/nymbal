@@ -1,6 +1,6 @@
 {
   "name": "cloudflare",
-  "summary": "Put the store's rate limits, geo blocks, custom rules and managed rulesets on its Cloudflare zone.",
+  "summary": "Put the store's rate limits, geo blocks, custom rules, managed rulesets and origin lock on its Cloudflare zone.",
   "install": ["@nymbalhq/security-cloudflare"],
   "set": [
     { "path": "security.adapter", "value": "cloudflare" },
@@ -23,12 +23,12 @@
       "name": "CLOUDFLARE_API_TOKEN",
       "example": "",
       "required": true,
-      "comment": "An API token scoped to that zone only, with Zone › Zone › Read, Zone › Zone WAF › Edit and Zone › Cache Rules › Edit"
+      "comment": "An API token scoped to that zone only, with Zone › Zone › Read, Zone › Zone WAF › Edit, Zone › Cache Rules › Edit and Zone › Transform Rules › Edit"
     }
   ],
   "next": [
-    "Create the API token in the Cloudflare dashboard (My Profile, API Tokens) with three permissions on this zone only: Zone › Zone › Read, Zone › Zone WAF › Edit and Zone › Cache Rules › Edit.",
-    "Behind Cloudflare every request reaches the API from an edge address, so the in-process rate limiter would key on the edge: list the proxy that connects to the API in NYMBAL_TRUSTED_PROXIES (Cloudflare's published ranges when it reaches the API directly, uniquelocal when your platform's proxy sits behind Cloudflare), and set NYMBAL_CLIENT_IP_HEADER=CF-Connecting-IP so the API reads the client from Cloudflare's header. Use the header only when every request to that proxy passes through Cloudflare: otherwise a client that reaches the origin directly can set it.",
+    "Create the API token in the Cloudflare dashboard (My Profile, API Tokens) with four permissions on this zone only: Zone › Zone › Read, Zone › Zone WAF › Edit, Zone › Cache Rules › Edit and Zone › Transform Rules › Edit.",
+    "Point your domain through Cloudflare and set NYMBAL_PUBLIC_URL in .env to it. The first nymbal security:apply creates NYMBAL_ORIGIN_SECRET in .env and a rule that sends it from Cloudflare; then set NYMBAL_ORIGIN_SECRET on your host (apply prints the command) and restart, so the API answers only requests that crossed Cloudflare and reads each shopper's address from CF-Connecting-IP on them. Leave NYMBAL_CLIENT_IP_HEADER unset (a header of your own replaces Cloudflare's and counts without the secret), and keep NYMBAL_TRUSTED_PROXIES to your platform's proxy, never Cloudflare's ranges.",
     "The zone's plan limits security.rateLimit: the Free plan allows one rate limit with a 10s window, Pro two with 10s or 1m (the scaffold's four fit Business and up). A throttle action needs the Enterprise plan: on Free, Pro or Business change the scaffold's two throttle entries (/api/*, /webhooks/*) to block or challenge. nymbal security:plan names each limit the plan refuses.",
     "Run nymbal security:plan to see the rules, then nymbal security:apply to put them on the zone; nymbal security:drift reports a dashboard edit."
   ]

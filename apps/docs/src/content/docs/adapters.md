@@ -41,6 +41,10 @@ suite on every change:
 | security       | Cloudflare                                              |
 | AI             | Anthropic, OpenAI ([customer data](../assistant-data/)) |
 
+Cloudflare's API token needs four permissions on the zone: Zone › Zone › Read, Zone › Zone WAF › Edit,
+Zone › Cache Rules › Edit and Zone › Transform Rules › Edit (the origin lock's rule; see
+[Deploying](../deploying/#behind-cloudflare)).
+
 ## The registry
 
 The [adapter registry](https://github.com/nymbalhq/nymbal/blob/main/registry/README.md) lists every adapter, first-party

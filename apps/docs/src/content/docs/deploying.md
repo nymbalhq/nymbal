@@ -38,6 +38,7 @@ user with `nymbal start` as its command. `--tag` names the image; arguments afte
 | `DATABASE_URL`                                                         | On Postgres.                                                           |
 | `REDIS_URL`                                                            | On the Redis document store or event bus.                              |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | On Stripe.                                                             |
+| `NYMBAL_ORIGIN_SECRET`                                                 | Optional: requests must cross your CDN ([below](#behind-cloudflare)).  |
 | `PORT`                                                                 | Optional: the port to listen on (default 3001).                        |
 
 Run `nymbal migrate` (and, for demo content, `nymbal seed`) against the database before the first start, or start with
@@ -69,6 +70,40 @@ A CDN that sends the client in one header (Cloudflare's `CF-Connecting-IP`, Akam
 with `NYMBAL_CLIENT_IP_HEADER` (or `http.clientIpHeader`), only from listed proxies. Use it only when every request to
 the listed proxy passes through the CDN: a client that reaches the origin directly could set it.
 
+## Behind Cloudflare
+
+Set `NYMBAL_ORIGIN_SECRET` and the API answers only requests that carry it in `X-Nymbal-Origin`
+(`security.originLock.header`): anything else is `403 origin_locked`, before the rate limiter sees it. `/health`,
+`/ready` and requests from the same machine stay open. With the Cloudflare adapter the API reads each shopper's address
+from `CF-Connecting-IP` on those requests, so no proxy list is needed.
+
+Point your domain through Cloudflare (proxied) and set `NYMBAL_PUBLIC_URL` in `.env` to it before the first deploy:
+the lock refuses the platform's own host (`*.fly.dev`, `*.railway.app`), so `nymbal deploy fly` and `railway` refuse
+it too. Give webhook providers and a storefront hosted elsewhere the same domain. Then, rule first and secret second:
+
+```sh
+npx nymbal security:apply
+npx nymbal deploy fly
+```
+
+The first `security:apply` creates `NYMBAL_ORIGIN_SECRET` in `.env` once the zone holds the rule that sends it, and
+prints the command that sets it on the host; the deploy steps set it from `.env`. The API token needs
+Zone › Transform Rules › Edit beside its other scopes. `nymbal doctor` is down when the secret is set and the zone
+does not send it.
+
+- **Locked out** (every request 403): unset `NYMBAL_ORIGIN_SECRET` on the host and restart, then run
+  `security:apply` again. On a second machine whose `.env` lacks the secret, `security:apply` refuses rather than
+  replace the zone's; `npx nymbal security:apply --adopt-origin-secret` copies the zone's into `.env`, and
+  `npx nymbal security:apply --new-origin-secret` replaces a compromised one (the host refuses traffic until it has the
+  new value).
+- **Rotating**: make `new` with `openssl rand -base64 32`, set the host to `new,old` and restart, run `security:apply`
+  with `NYMBAL_ORIGIN_SECRET=new,old` (the edge now sends `new`), then set the host to `new`.
+
+On your own server the web server is the lock instead: on a Cloudflare store `nymbal deploy nginx` admits only
+Cloudflare's published ranges (below). The secret is harmless there, and makes the doctor line ok.
+
+Anyone with Transform Rules read access on the zone can read the secret.
+
 ## On your own server
 
 ```sh
@@ -83,3 +118,6 @@ serves TLS (Let's Encrypt through certbot for nginx and Apache, automatic for Ca
 compresses JSON and text but never the admin assistant's stream, caches nothing, and overwrites `X-Forwarded-For`,
 `X-Real-IP` and `X-Forwarded-Proto` with what the web server saw, so the API keeps the `loopback` default. Behind a
 CDN, `--real-ip-from <ranges>` and `--real-ip-header <name>` let the web server take the client from the CDN's header.
+On a Cloudflare store the config admits only Cloudflare's published ranges, judged on the connection's own address, and
+reads `CF-Connecting-IP` from them; the steps name the snapshot's date, and `nymbal security:drift` notes when
+Cloudflare's ranges have changed since, so the file needs writing again with an updated adapter.

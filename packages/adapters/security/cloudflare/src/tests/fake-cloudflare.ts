@@ -9,6 +9,7 @@ import type { AddressInfo } from 'node:net'
 //   POST /zones/{zone}/rulesets                                 creates a phase's entrypoint (the deploy guide's way)
 //   GET  /zones/{zone}/rulesets/phases/{phase}/entrypoint       404 for a phase never written
 //   PUT  /zones/{zone}/rulesets/phases/{phase}/entrypoint       replaces the phase's rules whole, creating it if absent
+//   GET  /ips                                                   Cloudflare's published address ranges, without a token
 // Every write is checked against Cloudflare's plan limits over the whole phase (every rule, not only Nymbal's): the
 // rule counts, the periods, the managed rulesets, `cf.colo.id` in characteristics and `mitigation_timeout` by action
 // and plan. A violation is refused as Cloudflare refuses it: 400 with an `errors` array, and the phase is left as it
@@ -16,13 +17,16 @@ import type { AddressInfo } from 'node:net'
 // the dashboard: they change the zone without any check. Where a Cloudflare behaviour is unconfirmed, the fake takes
 // the reading the live proof checks: PUT creates an absent entrypoint, and a rule keeps its `ref`.
 // The cache phase holds `set_cache_settings` rules only, at most the plan's `cacheRules` (10 / 25 / 50 / 300), counted
-// over the whole phase like the custom rules.
+// over the whole phase like the custom rules. The request-header transform phase holds `rewrite` rules only, each
+// header operation `set` with a string value or `remove`, with no count limit. `refuseWrites` makes one zone's writes
+// to one phase fail with a status, as a token without that phase's scope would.
 
 export const PHASES = [
   'http_ratelimit',
   'http_request_firewall_custom',
   'http_request_firewall_managed',
   'http_request_cache_settings',
+  'http_request_late_transform',
 ] as const
 export type Phase = (typeof PHASES)[number]
 
@@ -105,6 +109,8 @@ export interface CfRule {
 export interface ZoneInit {
   /** Generated when absent. */
   id?: string
+  /** The zone's domain, as GET /zones/{zone} answers it; `<id>.example.com` when absent. */
+  name?: string
   plan: Plan
   /** The API token the zone accepts as `Authorization: Bearer <token>`. */
   token: string
@@ -118,6 +124,22 @@ export interface RecordedRequest {
   path: string
   body: unknown
   status: number
+  /** The request's Authorization header, as sent; undefined when it sent none. */
+  authorization: string | undefined
+}
+
+/** GET /ips's `result`, as Cloudflare answers it. */
+export interface CfIps {
+  etag: string
+  ipv4_cidrs: string[]
+  ipv6_cidrs: string[]
+}
+
+/** What GET /ips answers until `setIps`: a few of Cloudflare's ranges, under an etag no snapshot holds. */
+export const DEFAULT_IPS: CfIps = {
+  etag: 'fake-cloudflare-ips-etag',
+  ipv4_cidrs: ['173.245.48.0/20', '103.21.244.0/22', '104.16.0.0/13'],
+  ipv6_cidrs: ['2400:cb00::/32', '2606:4700::/32'],
 }
 
 export interface FakeCloudflare {
@@ -136,6 +158,12 @@ export interface FakeCloudflare {
   add(zone: string, phase: Phase, rule: CfRule): CfRule
   /** The PUT and POST requests so far, for one zone when given. */
   writes(zone?: string): RecordedRequest[]
+  /** What GET /ips answers from now on. */
+  setIps(ips: CfIps): void
+  /** GET /ips answers `status` from now on, until `setIps`. */
+  failIps(status: number): void
+  /** Every write (PUT or POST) of `phase` on `zone` answers `status` from now on, leaving the phase as it was. */
+  refuseWrites(zone: string, phase: Phase, status: number): void
   close(): Promise<void>
 }
 
@@ -147,6 +175,7 @@ interface Ruleset {
 
 interface Zone {
   id: string
+  name: string
   plan: Plan
   token: string
   phases: Map<Phase, Ruleset>
@@ -222,6 +251,28 @@ export function violations(plan: Plan, phase: Phase, rules: readonly CfRule[]): 
         out.push(`rules[${i}]: the http_request_cache_settings phase takes set_cache_settings only`)
     })
   }
+  if (phase === 'http_request_late_transform') {
+    rules.forEach((rule, i) => {
+      if (rule.action !== 'rewrite') {
+        out.push(`rules[${i}]: the http_request_late_transform phase takes rewrite only`)
+        return
+      }
+      const headers = rule.action_parameters?.['headers']
+      if (typeof headers !== 'object' || headers === null || Array.isArray(headers)) {
+        out.push(`rules[${i}]: action_parameters.headers is required`)
+        return
+      }
+      for (const [name, op] of Object.entries(headers as Record<string, unknown>)) {
+        const o = (op ?? {}) as { operation?: unknown; value?: unknown }
+        const valid =
+          (o.operation === 'set' && typeof o.value === 'string' && o.value !== '') ||
+          o.operation === 'remove'
+        if (!valid) {
+          out.push(`rules[${i}]: header ${name} needs operation set with a string value, or remove`)
+        }
+      }
+    })
+  }
   if (phase === 'http_request_firewall_managed' && !limits.managedRulesets) {
     const managed = new Set<string>(Object.values(MANAGED_RULESET_IDS))
     rules.forEach((rule, i) => {
@@ -250,6 +301,9 @@ async function readBody(req: IncomingMessage): Promise<string> {
 export async function startFakeCloudflare(): Promise<FakeCloudflare> {
   const zones = new Map<string, Zone>()
   const requests: RecordedRequest[] = []
+  let ips: CfIps | { failStatus: number } = structuredClone(DEFAULT_IPS)
+  /** `<zone>/<phase>` to the status its writes answer. */
+  const refused = new Map<string, number>()
 
   function zoneOf(id: string): Zone {
     const zone = zones.get(id)
@@ -292,6 +346,13 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
 
   /** Writes `rules` as the whole of `phase`, or the 400 Cloudflare answers. */
   function write(zone: Zone, phase: Phase, rules: unknown): { status: number; body: unknown } {
+    const refusal = refused.get(`${zone.id}/${phase}`)
+    if (refusal !== undefined) {
+      return {
+        status: refusal,
+        body: failure([{ code: 10000, message: `writing ${phase} is refused for this token` }]),
+      }
+    }
     if (!Array.isArray(rules)) {
       return {
         status: 400,
@@ -322,6 +383,14 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
     authorization: string | undefined,
     body: unknown,
   ): { status: number; body: unknown } {
+    if (path === '/ips' && method === 'GET') {
+      return 'failStatus' in ips
+        ? {
+            status: ips.failStatus,
+            body: failure([{ code: 10500, message: 'the address ranges are unavailable' }]),
+          }
+        : { status: 200, body: envelope(structuredClone(ips)) }
+    }
     const zoneMatch = /^\/zones\/([^/]+)(\/.*)?$/.exec(path)
     if (zoneMatch === null) {
       return { status: 404, body: failure([{ code: 7000, message: 'No route for that URI' }]) }
@@ -343,7 +412,7 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
         status: 200,
         body: envelope({
           id: zone.id,
-          name: `${zone.id}.example.com`,
+          name: zone.name,
           status: 'active',
           plan: { id: hex(), name: `${zone.plan} plan`, legacy_id: zone.plan },
         }),
@@ -441,7 +510,13 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
       body = raw
       answer = { status: 400, body: failure([{ code: 10002, message: 'malformed JSON body' }]) }
     }
-    requests.push({ method, path, body, status: answer.status })
+    requests.push({
+      method,
+      path,
+      body,
+      status: answer.status,
+      authorization: req.headers.authorization,
+    })
     res.writeHead(answer.status, { 'content-type': 'application/json' })
     res.end(JSON.stringify(answer.body))
   }
@@ -471,7 +546,13 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
     requests,
     addZone(init) {
       const id = init.id ?? hex()
-      const zone: Zone = { id, plan: init.plan, token: init.token, phases: new Map() }
+      const zone: Zone = {
+        id,
+        name: init.name ?? `${id}.example.com`,
+        plan: init.plan,
+        token: init.token,
+        phases: new Map(),
+      }
       for (const [phase, rules] of Object.entries(init.phases ?? {}) as Array<[Phase, CfRule[]]>) {
         zone.phases.set(phase, { id: hex(), version: 1, rules: stored(rules, []) })
       }
@@ -513,6 +594,16 @@ export async function startFakeCloudflare(): Promise<FakeCloudflare> {
           (r.method === 'PUT' || r.method === 'POST') &&
           (zone === undefined || r.path.startsWith(`/zones/${zone}/`)),
       )
+    },
+    setIps(next) {
+      ips = structuredClone(next)
+    },
+    failIps(status) {
+      ips = { failStatus: status }
+    },
+    refuseWrites(zone, phase, status) {
+      zoneOf(zone)
+      refused.set(`${zone}/${phase}`, status)
     },
     async close() {
       server.closeAllConnections()

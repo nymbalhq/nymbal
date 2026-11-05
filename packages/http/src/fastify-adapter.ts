@@ -1,10 +1,13 @@
 import Fastify, {
   errorCodes,
   type FastifyInstance,
+  type InjectOptions,
+  type LightMyRequestResponse,
   type FastifyPluginAsync,
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { isIP } from 'node:net'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
@@ -16,6 +19,7 @@ import type {
   Logger,
   MiddlewareHandler,
   RequestContext,
+  ResolvedOriginLock,
   ResponseEnvelope,
   RouteHandler,
   RouteOptions,
@@ -54,8 +58,21 @@ export interface FastifyAdapterOptions {
    * only when it holds exactly one IP address.
    */
   clientIpHeader?: string
-  /** Whether the header may count only on a request the origin lock admitted; carried, not yet read. */
+  /**
+   * Whether the header counts only on a locked request (one carrying the origin secret), from any peer, and on no
+   * other; when false it counts from a listed peer.
+   */
   clientIpRequiresLock?: boolean
+  /**
+   * The origin lock: a request from another machine that does not carry one of the secrets in the header is refused
+   * 403 `origin_locked` before anything else sees it, bar the routes `/health` and `/ready`.
+   */
+  originLock?: ResolvedOriginLock
+  /**
+   * The header the CDN sends the origin secret in, removed from every request whether or not the lock is on: an edge
+   * that sends it to a host without the variable must not hand it to handlers or the storefront.
+   */
+  originLockHeader?: string
   cors?: CorsOptions
   /** Whether the CSRF cookie carries `Secure`: `secureCookies(config, env)`. */
   secureCookies?: boolean
@@ -63,6 +80,13 @@ export interface FastifyAdapterOptions {
 
 /** How long a stream ended at shutdown may take to flush before its socket is destroyed regardless. */
 const STREAM_END_BOUND_MS = 500
+
+/** The platform's health checks reach the API directly, never through the CDN. */
+const UNLOCKED_ROUTES = new Set(['/health', '/ready'])
+const isLoopback = proxyAddr.compile('loopback')
+
+/** A fixed-length digest, so comparing it takes the same time whatever the length or content of the value sent. */
+const digest = (value: string): Buffer => createHash('sha256').update(value).digest()
 
 export class FastifyHttpAdapter implements HttpAdapter {
   readonly #app: FastifyInstance
@@ -81,14 +105,29 @@ export class FastifyHttpAdapter implements HttpAdapter {
   /** Lower-cased, as Node keys request headers. */
   readonly #clientIpHeader: string | undefined
   readonly clientIpRequiresLock: boolean
+  /** Lower-cased, as Node keys request headers. */
+  readonly #lockHeader: string | undefined
+  readonly #lockDigests: readonly Buffer[]
+  /** Lower-cased: every header the secret may arrive in, removed from each request. */
+  readonly #proofHeaders: readonly string[]
   #warnedUnlistedPeer = false
   #warnedClientIpHeader = false
+  #warnedOriginLocked = false
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
     this.#trusts = proxyAddr.compile(options.trustedProxies ?? ['loopback'])
     this.#clientIpHeader = options.clientIpHeader?.toLowerCase()
     this.clientIpRequiresLock = options.clientIpRequiresLock ?? false
+    this.#lockHeader = options.originLock?.header.toLowerCase()
+    this.#lockDigests = (options.originLock?.secrets ?? []).map(digest)
+    this.#proofHeaders = [
+      ...new Set(
+        [options.originLockHeader?.toLowerCase(), this.#lockHeader].filter(
+          (h): h is string => h !== undefined,
+        ),
+      ),
+    ]
     this.#guard = createSecurityGuard(options.security, {
       attestation: this.#attestation,
       secureCookies: options.secureCookies ?? false,
@@ -105,11 +144,16 @@ export class FastifyHttpAdapter implements HttpAdapter {
     // handler, and they carry the id too.
     this.#app.decorateRequest('correlationId', '')
     this.#app.decorateRequest('clientIp', '')
-    this.#app.addHook('onRequest', async (req) => {
+    this.#app.addHook('onRequest', async (req, reply) => {
       const inbound = req.headers[CORRELATION_ID_HEADER]
       if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
       else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
-      req.clientIp = this.#resolveClientIp(req)
+      const locked = this.#takeOriginProof(req)
+      if (!locked && this.#refusesUnlocked(req)) {
+        req.clientIp = req.raw.socket.remoteAddress ?? req.ip
+        return this.#refuseOrigin(req, reply)
+      }
+      req.clientIp = this.#resolveClientIp(req, locked)
     })
     this.#app.addHook('onSend', async (req, reply, payload) => {
       reply.header(CORRELATION_ID_HEADER, req.correlationId)
@@ -190,6 +234,11 @@ export class FastifyHttpAdapter implements HttpAdapter {
    */
   attestShopper(ip: string): string {
     return this.#attestation.mint(ip)
+  }
+
+  /** Fastify's `inject`: `remoteAddress` sets the socket peer, which a request from loopback cannot. */
+  inject(options: InjectOptions): Promise<LightMyRequestResponse> {
+    return this.#app.inject(options)
   }
 
   /** The guard every route passes, for a mounted handler that admits a request it serves on a route's behalf. */
@@ -429,15 +478,61 @@ export class FastifyHttpAdapter implements HttpAdapter {
   }
 
   /**
+   * Whether the request carries one of the origin secrets, compared by digest against every entry. The header is
+   * removed whatever the outcome and with the lock off too, so no handler, log line or storefront forward sees it.
+   */
+  #takeOriginProof(req: FastifyRequest): boolean {
+    const name = this.#lockHeader
+    const sent = name === undefined ? undefined : req.headers[name]
+    for (const header of this.#proofHeaders) delete req.headers[header]
+    if (typeof sent !== 'string') return false
+    const given = digest(sent)
+    let matched = false
+    for (const entry of this.#lockDigests) matched = timingSafeEqual(given, entry) || matched
+    return matched
+  }
+
+  /** An unlocked request is refused unless the lock is off, it comes from this machine, or it is a health check. */
+  #refusesUnlocked(req: FastifyRequest): boolean {
+    if (this.#lockHeader === undefined) return false
+    const peer = req.raw.socket.remoteAddress
+    if (peer !== undefined && isLoopback(peer, 0)) return false
+    return req.is404 || !UNLOCKED_ROUTES.has(req.routeOptions.url ?? '')
+  }
+
+  #refuseOrigin(req: FastifyRequest, reply: FastifyReply): FastifyReply {
+    if (!this.#warnedOriginLocked) {
+      this.#warnedOriginLocked = true
+      const peer = req.raw.socket.remoteAddress ?? req.ip
+      const header = this.#lockHeader!
+      this.#requestLogger(req).warn(
+        { peer, header },
+        `A request from ${peer} without the origin secret in ${header} was refused: requests must cross the CDN. If the CDN does send it, check it holds an entry of NYMBAL_ORIGIN_SECRET (nymbal doctor); later refusals are not logged`,
+      )
+    }
+    return this.#applyEnvelope(reply, {
+      status: 403,
+      body: {
+        error: {
+          code: 'origin_locked',
+          message: 'This API answers only requests that reach it through the store’s CDN',
+        },
+      },
+    })
+  }
+
+  /**
    * The one client address a request resolves to. An unlisted peer is the client, whatever it sends. From a listed peer,
    * the client-address header when one is configured (a single IP address, else the peer), otherwise X-Forwarded-For
-   * walked by Fastify with the same list.
+   * walked by Fastify with the same list. A header that requires the lock counts on a locked request from any peer and
+   * is not read on any other.
    */
-  #resolveClientIp(req: FastifyRequest): string {
+  #resolveClientIp(req: FastifyRequest, locked: boolean): string {
     const peer = req.raw.socket.remoteAddress
     if (peer === undefined) return req.ip
-    const header = this.#clientIpHeader
-    if (!this.#trusts(peer, 0)) {
+    const header = this.clientIpRequiresLock && !locked ? undefined : this.#clientIpHeader
+    const fromAnyPeer = this.clientIpRequiresLock && header !== undefined
+    if (!fromAnyPeer && !this.#trusts(peer, 0)) {
       const carried =
         req.headers['x-forwarded-for'] !== undefined
           ? 'x-forwarded-for'

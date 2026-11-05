@@ -298,6 +298,38 @@ const customRuleSchema = z.object({
   action: z.enum(['block', 'managed_challenge', 'js_challenge', 'log']),
 })
 
+/** An RFC 9110 field name. */
+const HEADER_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+/** Headers HTTP, the API or a CDN already gives a meaning, which a CDN would overwrite or the API would misread. */
+const OWNED_HEADERS = [
+  'host',
+  'cookie',
+  'authorization',
+  'content-length',
+  'content-type',
+  'transfer-encoding',
+  'connection',
+  'forwarded',
+  'x-nymbal-shopper',
+  'x-correlation-id',
+  'x-real-ip',
+]
+
+const originLockHeaderSchema = z.string().superRefine((header, ctx) => {
+  const lower = header.toLowerCase()
+  const problem = !HEADER_TOKEN.test(header)
+    ? 'is not an HTTP header name'
+    : OWNED_HEADERS.includes(lower) || lower.startsWith('x-forwarded-') || lower.startsWith('cf-')
+      ? 'is a header HTTP, a CDN or the API already uses; choose your own, such as X-Nymbal-Origin'
+      : null
+  if (problem !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `security.originLock.header '${header}' ${problem}`,
+    })
+  }
+})
+
 const securityFields = z.object({
   /** `middleware` is the kernel's own; any other resolves as a commerce provider does, `security-<adapter>`. */
   adapter: providerNameSchema('security.adapter'),
@@ -332,6 +364,8 @@ const securityFields = z.object({
     })
     .prefault({}),
   csrf: z.boolean().default(true),
+  /** The header a CDN proves a request crossed it in; `NYMBAL_ORIGIN_SECRET` holds the value and turns the lock on. */
+  originLock: z.object({ header: originLockHeaderSchema.default('X-Nymbal-Origin') }).prefault({}),
   auth: z
     .object({
       jwtSecret: z.string().min(16).default(DEFAULT_JWT_SECRET),

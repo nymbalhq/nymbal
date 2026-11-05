@@ -91,6 +91,8 @@ describe("AC-1: every member under packages/ is in each tool's view", () => {
     // Stripe proof by the stripe-live project, only under NYMBAL_STRIPE_LIVE (listing imports no test file).
     env['NYMBAL_NIGHTLY'] = '1'
     env['NYMBAL_STRIPE_LIVE'] = '1'
+    // The live Cloudflare proof is collected only by its own project; listing files imports none of them.
+    env['NYMBAL_CLOUDFLARE_LIVE'] = '1'
     const { stdout } = await exec(
       join(ROOT, 'node_modules/.bin/vitest'),
       ['list', '--filesOnly', '--json'],

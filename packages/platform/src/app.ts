@@ -1,4 +1,9 @@
-import { DEFAULT_JWT_SECRET, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
+import {
+  DEFAULT_JWT_SECRET,
+  resolveOriginLock,
+  resolveTrustedProxies,
+  type NymbalConfig,
+} from '@nymbalhq/config'
 import {
   ConfigError,
   type CommerceSlot,
@@ -58,8 +63,8 @@ export interface NymbalApp {
   /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
   relay: Relay
   /**
-   * The trusted proxies and client-address header, resolved once from the environment, the config and the security
-   * adapter's contribution: the block every HTTP server for this app is built with.
+   * The trusted proxies, client-address header and origin lock, resolved once from the environment, the config and the
+   * security adapter's contribution: the block every HTTP server for this app is built with.
    */
   network: ResolvedNetwork
   /**
@@ -270,10 +275,14 @@ export async function createApp(
   )
   refuseUnsafeProduction(config, payments, jwt.secret)
   const security = await resolveSecurityAdapter(config, adapterLogger)
-  const network = resolveTrustedProxies(config, process.env, {
-    adapter: config.security.adapter,
-    network: security.network?.() ?? {},
-  })
+  const originLock = resolveOriginLock(config, process.env)
+  const network: ResolvedNetwork = {
+    ...resolveTrustedProxies(config, process.env, {
+      adapter: config.security.adapter,
+      network: security.network?.() ?? {},
+    }),
+    ...(originLock !== undefined && { originLock }),
+  }
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
   // Until the app is returned, nothing else holds the connections the primitives and the command store open.

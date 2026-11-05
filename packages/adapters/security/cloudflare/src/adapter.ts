@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   AdapterError,
   boundedHealthCheck,
@@ -6,8 +7,11 @@ import {
   type DriftReport,
   type HttpAdapter,
   type Logger,
+  type OriginLockRule,
+  type ResolvedOriginLock,
   type SecurityAdapter,
   type SecurityConfigLike,
+  type SecurityNetwork,
   type SecurityState,
   type ValidationResult,
 } from '@nymbalhq/types'
@@ -17,8 +21,10 @@ import {
   hasCredentials,
   type CloudflareClient,
   type CloudflareConnection,
+  type CloudflareIps,
 } from './client.js'
 import {
+  ORIGIN_LOCK_REF,
   PHASES,
   WINDOW_PERIODS,
   desiredRules,
@@ -99,6 +105,53 @@ export interface CloudflareSecurityAdapter extends SecurityAdapter {
   plan(config: SecurityConfigLike): Promise<SecurityPlan>
   /** Writes each phase whose Nymbal rules differ, one by one; it rejects at the first refused write. */
   apply(config: SecurityConfigLike): Promise<SecurityPlan>
+  network(): SecurityNetwork
+  originLockRule(lock: ResolvedOriginLock): Promise<OriginLockRule>
+  /** The value the zone's enabled origin-lock rule sends, for a machine joining the lock; never to be printed. */
+  originLockValue(): Promise<string | undefined>
+  /** Cloudflare's live published ranges. */
+  ips(): Promise<CloudflareIps>
+  /** The zone's domain, as the health check reads it. */
+  zoneName(): Promise<string | undefined>
+}
+
+/** How a secret shows in anything the adapter returns: equal values look equal, and none can be read back. */
+const maskSecret = (value: string): string =>
+  `[secret ${createHash('sha256').update(value).digest('hex').slice(0, 8)}]`
+
+type HeaderOps = Record<string, { operation?: unknown; value?: unknown } | undefined>
+
+const headersOf = (rule: Rule): HeaderOps | undefined => {
+  const headers = rule.action_parameters?.['headers']
+  return typeof headers === 'object' && headers !== null ? (headers as HeaderOps) : undefined
+}
+
+/** The origin-lock rule with every header value it sets masked; any other rule as it is. */
+function masked(rule: Rule): Rule {
+  const headers = rule.ref === ORIGIN_LOCK_REF ? headersOf(rule) : undefined
+  if (headers === undefined) return rule
+  const shown = Object.fromEntries(
+    Object.entries(headers).map(([name, op]) => [
+      name,
+      typeof op?.value === 'string' ? { ...op, value: maskSecret(op.value) } : op,
+    ]),
+  )
+  return { ...rule, action_parameters: { ...rule.action_parameters, headers: shown } }
+}
+
+const maskedPhase = (plan: PhasePlan): PhasePlan => ({
+  phase: plan.phase,
+  add: plan.add.map(masked),
+  change: plan.change.map((c) => ({ ...c, from: masked(c.from), to: masked(c.to) })),
+  remove: plan.remove.map(masked),
+})
+
+/** The header an origin-lock rule sets and its value: `preferred` (any case) when it sets that one, else the first. */
+function setHeader(rule: Rule, preferred?: string): { header: string; value: string } | undefined {
+  const set = Object.entries(headersOf(rule) ?? {}).flatMap(([header, op]) =>
+    op?.operation === 'set' && typeof op.value === 'string' ? [{ header, value: op.value }] : [],
+  )
+  return set.find((h) => h.header.toLowerCase() === preferred?.toLowerCase()) ?? set[0]
 }
 
 /** `desired` holds in `live`: every field `desired` sets, at any depth, has the same value there. */
@@ -192,8 +245,10 @@ function nextRules(live: readonly Rule[], desired: readonly Rule[]): Rule[] {
 export function createCloudflareSecurityAdapter(deps: {
   connection: CloudflareConnection
   logger: Logger
+  /** The secret the origin-lock rule sends; without it the zone gets no such rule. */
+  originSecret?: string
 }): CloudflareSecurityAdapter {
-  const { connection, logger } = deps
+  const { connection, logger, originSecret } = deps
   const client: CloudflareClient = createClient(connection)
   let lastValidatedAt = ''
 
@@ -205,7 +260,14 @@ export function createCloudflareSecurityAdapter(deps: {
     >
   }
 
-  const desiredOf = (config: SecurityConfigLike) => desiredRules(config as EdgeRulesConfig)
+  const desiredOf = (config: SecurityConfigLike) =>
+    desiredRules(config as EdgeRulesConfig, originSecret)
+
+  /** The zone's enabled origin-lock rule, if any. */
+  const liveOriginLock = async (): Promise<Rule | undefined> =>
+    ((await client.entrypoint('http_request_late_transform')) ?? []).find(
+      (r) => r.ref === ORIGIN_LOCK_REF && r.enabled !== false,
+    )
 
   /** Errors a config has whatever the zone: keys, windows and geo codes. */
   function configErrors(config: EdgeRulesConfig): ValidationResult['errors'] {
@@ -264,7 +326,8 @@ export function createCloudflareSecurityAdapter(deps: {
       }
     }
     const desired = desiredRules(config)
-    const counted: Array<[Phase, number, string]> = [
+    // The transform phase holds one rule of Nymbal's; the API's own refusal names any limit it meets.
+    const counted: Array<[Exclude<Phase, 'http_request_late_transform'>, number, string]> = [
       ['http_ratelimit', limits.rateLimitRules, 'rate limiting rules'],
       ['http_request_firewall_custom', limits.customRules, 'custom rules'],
       ['http_request_cache_settings', limits.cacheRules, 'cache rules'],
@@ -293,7 +356,11 @@ export function createCloudflareSecurityAdapter(deps: {
   async function plan(config: SecurityConfigLike): Promise<SecurityPlan> {
     const live = await livePhases()
     const desired = desiredOf(config)
-    return { phases: PHASES.map((phase) => diffPhase(phase, live[phase], desired[phase])) }
+    return {
+      phases: PHASES.map((phase) =>
+        maskedPhase(diffPhase(phase, live[phase], desired[phase] ?? [])),
+      ),
+    }
   }
 
   return {
@@ -362,10 +429,10 @@ export function createCloudflareSecurityAdapter(deps: {
       const written: PhasePlan[] = []
       for (const phase of PHASES) {
         const live = await client.entrypoint(phase)
-        const change = diffPhase(phase, live ?? [], desired[phase])
+        const change = diffPhase(phase, live ?? [], desired[phase] ?? [])
         if (change.add.length + change.change.length + change.remove.length === 0) continue
         try {
-          await client.putEntrypoint(phase, nextRules(live ?? [], desired[phase]))
+          await client.putEntrypoint(phase, nextRules(live ?? [], desired[phase] ?? []))
         } catch (error) {
           const done = written.map((p) => p.phase)
           throw new AdapterError(
@@ -383,7 +450,7 @@ export function createCloudflareSecurityAdapter(deps: {
           },
           `wrote ${phase}`,
         )
-        written.push(change)
+        written.push(maskedPhase(change))
       }
       return { phases: written }
     },
@@ -393,16 +460,20 @@ export function createCloudflareSecurityAdapter(deps: {
       const desired = desiredOf(config)
       const differences: DriftReport['differences'] = []
       for (const phase of PHASES) {
-        const { add, change, remove } = diffPhase(phase, live[phase], desired[phase])
+        const { add, change, remove } = diffPhase(phase, live[phase], desired[phase] ?? [])
         for (const rule of add) {
-          differences.push({ path: `${phase}/${rule.ref}`, configured: rule, actual: undefined })
+          differences.push({
+            path: `${phase}/${rule.ref}`,
+            configured: masked(rule),
+            actual: undefined,
+          })
         }
         for (const { ref, from, to, position } of change) {
           for (const field of changedFields(to, from)) {
             differences.push({
               path: `${phase}/${ref}/${field}`,
-              configured: to[field],
-              actual: from[field],
+              configured: masked(to)[field],
+              actual: masked(from)[field],
             })
           }
           if (position !== undefined) {
@@ -414,7 +485,11 @@ export function createCloudflareSecurityAdapter(deps: {
           }
         }
         for (const rule of remove) {
-          differences.push({ path: `${phase}/${rule.ref}`, configured: undefined, actual: rule })
+          differences.push({
+            path: `${phase}/${rule.ref}`,
+            configured: undefined,
+            actual: masked(rule),
+          })
         }
       }
       return { drift: differences.length > 0, differences }
@@ -429,5 +504,26 @@ export function createCloudflareSecurityAdapter(deps: {
         lastValidatedAt,
       }
     },
+
+    // The shopper's address is Cloudflare's header, believed only on a request that proved it crossed the edge: a
+    // proxy list of Cloudflare's ranges would let any client behind them choose its own.
+    network: () => ({ clientIpHeader: 'CF-Connecting-IP', clientIpRequiresLock: true }),
+
+    async originLockRule(lock: ResolvedOriginLock): Promise<OriginLockRule> {
+      const rule = await liveOriginLock()
+      const sent = rule === undefined ? undefined : setHeader(rule, lock.header)
+      if (sent === undefined) return { state: 'missing' }
+      const entry = lock.secrets.indexOf(sent.value)
+      return { state: 'present', header: sent.header, entry: entry < 0 ? null : entry }
+    },
+
+    async originLockValue(): Promise<string | undefined> {
+      const rule = await liveOriginLock()
+      return rule === undefined ? undefined : setHeader(rule)?.value
+    },
+
+    ips: () => client.ips(),
+
+    zoneName: async () => (await client.zone()).name,
   }
 }

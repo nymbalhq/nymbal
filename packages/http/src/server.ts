@@ -17,7 +17,7 @@ export interface HttpServerDeps {
   logger: Logger
   documentStore: DocumentStoreAdapter
   version: string
-  /** The trusted proxies and client-address header, resolved once by `createApp`: pass `app.network`. */
+  /** The trusted proxies, client-address header and origin lock, resolved once by `createApp`: pass `app.network`. */
   network: ResolvedNetwork
 }
 
@@ -46,6 +46,8 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     trustedProxies: network.trustedProxies,
     ...(network.clientIpHeader !== undefined && { clientIpHeader: network.clientIpHeader }),
     clientIpRequiresLock: network.clientIpRequiresLock,
+    ...(network.originLock !== undefined && { originLock: network.originLock }),
+    originLockHeader: config.security.originLock.header,
     secureCookies: secureCookies(config, process.env),
   })
 
