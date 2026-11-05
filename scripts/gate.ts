@@ -1005,21 +1005,57 @@ export async function mutateSet(
   )
 }
 
-/** A path whose change can move a mutation score without touching a mutated file: the platform's tests and Stryker's configs. */
+/**
+ * The paths whose change can move a mutation score without touching a mutated file: Stryker's configs and the tests
+ * vitest.stryker.config.ts includes. Listed by hand; a test in tests/tooling checks a file of each include glob
+ * against this list. The platform's unit-test helpers (packages/platform/src/tests) are left to the nightly's
+ * `--force` run: Stryker's incremental mode reuses a result whenever the mutated code and the test files that killed
+ * or covered it are unchanged, so a helper change re-measures nothing unless the cache is pruned, and pruning the
+ * whole platform set would outlast the mutation job.
+ */
+const STRYKER_INPUTS = [
+  'stryker.config.mjs',
+  'vitest.stryker.config.ts',
+  'packages/platform/src/**/*.test.ts',
+  'packages/importers/tests/mappers/**/*.test.ts',
+].map(globToRegExp)
+
 function isStrykerInput(path: string): boolean {
-  return (
-    path === 'stryker.config.mjs' ||
-    path === 'vitest.stryker.config.ts' ||
-    (path.startsWith('packages/platform/src/') && path.endsWith('.test.ts'))
+  return STRYKER_INPUTS.some((re) => re.test(path))
+}
+
+/**
+ * What the importer's mapper tests read besides their own files: their support, the order generators they share with
+ * the integration tests, and the recorded stores support/wc.ts reads. Stryker's incremental mode never looks at these,
+ * so a change here prunes the mappers' cached statuses (`mapperRemeasured`) rather than only selecting them.
+ */
+const MAPPER_TEST_READS = [
+  'packages/importers/tests/mappers/**',
+  'packages/importers/tests/integration/support/wc-orders.ts',
+  'packages/importers/tests/integration/fixtures/recorded/store-a-gbp/**',
+  'packages/importers/tests/integration/fixtures/recorded/store-b-jpy/**',
+].map(globToRegExp)
+
+const MAPPERS = globToRegExp('packages/importers/src/woocommerce/mappers/**')
+
+/** The mutate set's mapper files when something the mapper tests read changed, to be measured afresh; else none. */
+export async function mapperRemeasured(root: string, changed: string[]): Promise<string[]> {
+  const read = changed.some(
+    (path) => !isStrykerInput(path) && MAPPER_TEST_READS.some((re) => re.test(path)),
   )
+  if (!read) return []
+  const candidates = [...new Set([...lines(git(root, ['ls-files'])), ...changed])].filter(
+    (path) => MAPPERS.test(path) && existsSync(resolve(root, path)),
+  )
+  return mutateSet(root, candidates)
 }
 
 /**
  * The files Stryker mutates for this change set: the whole mutate set whenever one of its tests or configs changed,
  * otherwise the changed ones in the set. A changed test invalidates cached kills in files it did not change, and a
  * `--mutate` narrowed to the changed sources leaves those unmeasured; incremental mode re-measures only the mutants
- * the changed tests can move, so the whole set costs only those. `remeasured` (the files whose ratchet entry moved)
- * are mutated as well, whatever changed.
+ * the changed tests can move, so the whole set costs only those. `remeasured` (the files whose cached statuses the
+ * stryker step drops) are mutated as well, whatever changed.
  */
 export async function strykerTargets(
   root: string,
@@ -1147,7 +1183,7 @@ async function pruneIncremental(root: string, files: string[]): Promise<void> {
   for (const path of dropped) delete cached[path]
   writeFileSync(report, JSON.stringify(data))
   process.stderr.write(
-    `stryker: ratchet entries moved, measured afresh: ${files.join(', ')} (${dropped.length} in the cache)\n`,
+    `stryker: measured afresh: ${files.join(', ')} (${dropped.length} in the cache)\n`,
   )
 }
 
@@ -1158,7 +1194,10 @@ export type PlanInput = {
   noBase?: boolean | undefined
   changed: string[]
   mutated: string[]
-  /** Files in `mutated` whose cached mutants the stryker step drops first (`ratchetChanges`). None when not given. */
+  /**
+   * Files in `mutated` whose cached mutants the stryker step drops first (`belowCachedScore`, `mapperRemeasured`). None
+   * when not given.
+   */
   remeasured?: string[] | undefined
   /** Run only these steps, in plan order. A name the plan does not have is an error. */
   only?: string[] | undefined
@@ -2111,14 +2150,21 @@ async function main(argv: string[]): Promise<number> {
       ? await strykerChanges(root, base, changed)
       : { changed: [], moved: [] }
   const moved = forStryker.moved
+  const readsChanged =
+    values.full && strykerMode !== 'off' ? await mapperRemeasured(root, forStryker.changed) : []
   const mutated =
     values.full && strykerMode !== 'off'
-      ? await strykerTargets(root, forStryker.changed, moved)
+      ? await strykerTargets(root, forStryker.changed, [...moved, ...readsChanged])
       : []
-  const remeasured = await belowCachedScore(
-    root,
-    moved.filter((path) => mutated.includes(path)),
-  )
+  const remeasured = [
+    ...new Set([
+      ...(await belowCachedScore(
+        root,
+        moved.filter((path) => mutated.includes(path)),
+      )),
+      ...readsChanged,
+    ]),
+  ]
   const held = moved.filter((path) => mutated.includes(path) && !remeasured.includes(path))
   if (held.length > 0) {
     process.stderr.write(

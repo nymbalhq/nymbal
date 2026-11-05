@@ -110,11 +110,11 @@ const INCREMENTAL_REPORT: Incremental = {
   },
 }
 
-function strykerRepo(): Scratch {
+function strykerRepo(base: Record<string, number> = { [A]: 50, [B]: 60 }): Scratch {
   const repo = scratchRepo({
     'package.json': GATE_PACKAGE_JSON,
     'stryker.config.mjs': STRYKER_CONFIG,
-    'mutation-ratchet.json': ratchet({ [A]: 50, [B]: 60 }),
+    'mutation-ratchet.json': ratchet(base),
     'packages/platform/package.json': JSON.stringify({ name: '@nymbalhq/platform' }),
     [A]: 'export const a = 1\n',
     [B]: 'export const b = 1\n',
@@ -163,7 +163,7 @@ describe('AC-2: the stryker step after a ratchet change', () => {
   })
 
   it("a raised entry the cached report already meets keeps its statuses; one the report falls short of is measured fresh", async () => {
-    const repo = strykerRepo()
+    const repo = strykerRepo({ [A]: 50, [B]: 30 })
     const killedA: Incremental = {
       files: {
         ...INCREMENTAL_REPORT.files,
@@ -175,7 +175,8 @@ describe('AC-2: the stryker step after a ratchet change', () => {
       },
     }
     write(repo.root, INCREMENTAL, `${JSON.stringify(killedA)}\n`)
-    // A's report scores 100 and B's 33.33: the raise to 100 is met for A and not for B.
+    // A's report scores 100 and B's 33.33. B's 33.33 sits between its base entry (30) and its head entry (90), so only
+    // a comparison against the head's entries measures B fresh; one against the base's would keep B's statuses.
     write(
       repo.root,
       'mutation-ratchet.json',
