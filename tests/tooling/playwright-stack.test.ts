@@ -515,6 +515,7 @@ const CAPABILITY_JOURNEYS = [
   'resend-confirmation.spec.ts AC-11',
   'search-pages.spec.ts AC-8',
   'search.spec.ts AC-3',
+  'shipped-email.spec.ts AC-10',
 ]
 
 type Listed = { file: string; title: string; tags: string[]; project: string }
