@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/dates'
 import { tid } from '@/lib/testid'
 import { cn } from '@/lib/utils'
+import { ProposalChanges } from './ProposalChanges'
 
 const STATUS_STYLES: Record<ProposalStatus, string> = {
   pending: 'bg-amber-50 text-amber-700',
@@ -98,6 +99,8 @@ export function ProposalCard({ proposal, me, onReject }: ProposalCardProps) {
         {proposer === null ? 'a shopper' : proposer === me ? 'you' : `admin ${proposer}`},{' '}
         {formatDate(proposal.createdAt)}
       </p>
+
+      <ProposalChanges proposal={proposal} scope="inbox" />
 
       {(args.length > 0 || proposal.handles.length > 0) && (
         <dl className="grid min-w-0 grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-zinc-50 p-2 text-xs">

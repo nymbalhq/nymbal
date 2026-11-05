@@ -32,7 +32,17 @@ export interface RouteSchema {
    * cookie name. An agent holds no cookie jar, so the cart travels as a `cart` handle.
    */
   handles?: Record<string, string>
+  /**
+   * The customer fields a read's answer can carry. The assistant sends a tool's result to the AI provider as it is, so
+   * `agents.assistant.customerData: false` leaves every marked route off the assistant, and the docs list them.
+   */
+  personal?: readonly PersonalField[]
 }
+
+/** A customer field a route's answer can carry. */
+export type PersonalField = 'email' | 'phone' | 'address'
+
+const ALL_PERSONAL = ['email', 'phone', 'address'] as const
 
 const id = z.string().min(1)
 const cartHandle = { cart: 'nymbal.cart' }
@@ -369,15 +379,19 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'DELETE /api/admin/settings/:slot/:path': {
     name: 'admin.settings.delete',
     command: 'settings.delete',
+    // Like saving a value, clearing one is a person's act in Settings, never an agent's.
+    tool: false,
     description: 'Clear the saved value of a field; it applies at the next start.',
     params: settingParams,
   },
   'GET /api/admin/dashboard': {
     name: 'admin.dashboard',
+    personal: ALL_PERSONAL,
     description: "Today's order figures, recent orders and low stock.",
   },
   'GET /api/admin/search': {
     name: 'admin.search',
+    personal: ALL_PERSONAL,
     description: 'Search orders, products and customers.',
     query: z.object({ q: queryValue }),
   },
@@ -385,6 +399,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: orders
   'GET /api/admin/orders': {
     name: 'admin.orders.list',
+    personal: ALL_PERSONAL,
     description: 'List orders, filtered by status, date, customer or text.',
     query: z.object({
       status: queryValue,
@@ -397,6 +412,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/orders/:orderNumber': {
     name: 'admin.orders.get',
+    personal: ALL_PERSONAL,
     description:
       'Get one order with its status history; with `at`, the order as the event log folds it at that time.',
     params: orderNumberParams,
@@ -603,11 +619,13 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: customers
   'GET /api/admin/customers': {
     name: 'admin.customers.list',
+    personal: ALL_PERSONAL,
     description: 'List customers, filtered and sorted.',
     query: z.object({ q: queryValue, sort: queryValue, ...paging }),
   },
   'GET /api/admin/customers/:id': {
     name: 'admin.customers.get',
+    personal: ALL_PERSONAL,
     description:
       'Get one customer with order statistics; with `at`, the customer as the event log folds it at that time.',
     params: idParams,
@@ -615,12 +633,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   },
   'GET /api/admin/customers/:id/history': {
     name: 'admin.customers.history',
+    personal: ['phone', 'address'],
     description: "List a customer's changes from the event log, newest first.",
     params: idParams,
     query: historyQuery,
   },
   'GET /api/admin/customers/:id/orders': {
     name: 'admin.customers.orders',
+    personal: ALL_PERSONAL,
     description: "List one customer's orders.",
     params: idParams,
   },
@@ -679,7 +699,12 @@ export const routeSchemas: Record<string, RouteSchema> = {
         .refine((turns) => turns[0]?.role === 'user' && turns.at(-1)?.role === 'user', {
           message: 'the first and the last turn are the user’s',
         }),
-      page: z.string().max(200).optional(),
+      // The admin's own path characters; the prompt names only the route the path matches (assistant/loop.ts).
+      page: z
+        .string()
+        .max(200)
+        .regex(/^\/[A-Za-z0-9/_.-]*$/)
+        .optional(),
     }),
   },
   'GET /api/admin/assistant/turns/:id/stream': {
@@ -716,12 +741,14 @@ export const routeSchemas: Record<string, RouteSchema> = {
   // Admin: proposals (agent writes a person decides). Agents read them; only a person approves or rejects.
   'GET /api/admin/proposals': {
     name: 'admin.proposals.list',
+    personal: ALL_PERSONAL,
     description:
       'List agent proposals newest first, a page at a time: status pending, decided or all, and how many are pending.',
     query: z.object({ status: queryValue, cursor: queryValue, limit: queryValue }),
   },
   'GET /api/admin/proposals/:id': {
     name: 'admin.proposals.get',
+    personal: ALL_PERSONAL,
     description: 'Get one agent proposal: what it asks, who asked, and how it was decided and ran.',
     params: idParams,
   },

@@ -224,7 +224,11 @@ describe('AC-9: a write the assistant asks for is a proposal', () => {
             'GET',
             `/api/admin/proposals/${card.id}`,
           )
-          expect(read.body.data).toEqual(card)
+          // A pending update, adjust, cancel or refund is also read with its preview; the rest is the frame.
+          const { preview: _preview, ...view } = read.body.data as ProposalView & {
+            preview?: unknown
+          }
+          expect(view).toEqual(card)
         }
         expect(framesOf(frames, 'done').map((f) => f.data['proposals'])).toEqual([
           cards.map((c) => c.id),
@@ -493,7 +497,7 @@ describe('AC-11: a turn is bounded, and a refusal is a result the model reads', 
 })
 
 describe('AC-12: the tools the model is offered', () => {
-  it('AC-12: the offered tools are exactly the admin’s admin-scope tools and the public reads that take no handle: admin_products_update and admin_proposals_list among them, no approve, reject, settings put, enhance, assistant route, cart, checkout, alert or order-link tool', async () => {
+  it('AC-12: the offered tools are exactly the admin’s admin-scope tools and the public reads that take no handle: admin_products_update and admin_proposals_list among them, no approve, reject, settings put or delete, enhance, assistant route, cart, checkout, alert or order-link tool', async () => {
     const { store } = main
     const listed = [...adminTools(store).values()]
     const handles = (t: (typeof listed)[number]) =>
@@ -519,6 +523,7 @@ describe('AC-12: the tools the model is offered', () => {
         'admin_proposals_approve',
         'admin_proposals_reject',
         'admin_settings_put',
+        'admin_settings_delete',
         'admin_products_enhance',
         'admin_assistant_turn',
         'admin_assistant_stream',

@@ -22,7 +22,7 @@ import { RouteTable, recordingAdapter } from './route-table.js'
 
 /**
  * Every entry the registry keeps from the tool list: credentials, streams, provider-signed bytes, files, view history,
- * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal; the
+ * the AI key; a proposal's decision, so no agent approves its own; a settings value, so none sits in a proposal, and its clearing, so no agent clears one; the
  * assistant's turn and stream, which spend the AI key, so no agent calls the assistant.
  */
 const EXCLUDED = [
@@ -43,6 +43,7 @@ const EXCLUDED = [
   'admin.proposals.approve',
   'admin.proposals.reject',
   'admin.settings.put',
+  'admin.settings.delete',
   'admin.assistant.turn',
   'admin.assistant.stream',
 ].sort()
@@ -209,7 +210,7 @@ describe('AC-1: one tool per registry entry', () => {
     }
   })
 
-  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and the assistant’s turn and stream, and every stream route is among them', () => {
+  it('AC-13: the entries marked tool: false are exactly the fourteen kept from agents plus proposal approve, proposal reject, settings put and delete and the assistant’s turn and stream, and every stream route is among them', () => {
     const marked = Object.values(routeSchemas)
       .filter((entry) => entry.tool === false)
       .map((entry) => entry.name)
@@ -304,7 +305,7 @@ describe('AC-1: one tool per registry entry', () => {
 })
 
 describe('AC-13: proposals are read by agents and decided by people', () => {
-  it('AC-13: admin_proposals_list and admin_proposals_get are admin read tools of GET /api/admin/proposals and GET /api/admin/proposals/:id; no tool approves or rejects a proposal or puts a setting', () => {
+  it('AC-13: admin_proposals_list and admin_proposals_get are admin read tools of GET /api/admin/proposals and GET /api/admin/proposals/:id; no tool approves or rejects a proposal or puts or clears a setting', () => {
     const byName = new Map(tools.map((tool) => [tool.name, tool]))
     const shape = (name: string) => {
       const tool = byName.get(name)
@@ -316,9 +317,12 @@ describe('AC-13: proposals are read by agents and decided by people', () => {
       { kind: 'read', scope: 'admin', route: 'GET /api/admin/proposals/:id' },
     ])
     expect(
-      ['admin_proposals_approve', 'admin_proposals_reject', 'admin_settings_put'].filter((name) =>
-        byName.has(name),
-      ),
+      [
+        'admin_proposals_approve',
+        'admin_proposals_reject',
+        'admin_settings_put',
+        'admin_settings_delete',
+      ].filter((name) => byName.has(name)),
     ).toEqual([])
     expect(
       tools.filter(

@@ -189,8 +189,10 @@ export function registerAdminAssistantRoutes(
           proposals: deps.proposals,
           logger: ctx.logger,
           store: { name: config.store.name, currency: config.store.currency },
+          customerData: config.agents.assistant.customerData,
         },
         {
+          turnId,
           caller: {
             auth: { userId: turn.uid, roles: turn.roles },
             agent: { name: ASSISTANT_AGENT },

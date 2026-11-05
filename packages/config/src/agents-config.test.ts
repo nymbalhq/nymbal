@@ -178,6 +178,7 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
         allow: [...DEFAULT_AGENT_CRAWLERS],
         others: 'allow',
       },
+      assistant: { customerData: true },
     })
     expect(DEFAULT_AGENT_CRAWLERS.length).toBeGreaterThan(0)
     expect(NAMED_CRAWLERS).toEqual(expect.arrayContaining([...DEFAULT_AGENT_CRAWLERS]))
@@ -237,5 +238,31 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
         },
       ),
     )
+  })
+})
+
+describe('AC-20: agents.assistant.customerData in the config', () => {
+  it('AC-20: property: agents.assistant.customerData keeps any boolean a config sets and is true when the value or the whole block is left out; a non-boolean value and an unknown key in agents.assistant are refused at the field they name', () => {
+    fc.assert(
+      fc.property(fc.option(fc.boolean(), { nil: undefined }), fc.boolean(), (set, withBlock) => {
+        const agents =
+          set !== undefined
+            ? { assistant: { customerData: set } }
+            : withBlock
+              ? { assistant: {} }
+              : {}
+        const parsed = nymbalConfigSchema.parse({ ...baseConfig(), agents } as NymbalConfigInput)
+
+        expect((parsed.agents as { assistant?: unknown }).assistant).toEqual({
+          customerData: set ?? true,
+        })
+      }),
+    )
+    expect(refusals({ assistant: { customerData: 'no' } })).toEqual([
+      expect.stringMatching(/^agents\.assistant\.customerData: /),
+    ])
+    expect(refusals({ assistant: { customerdata: false } })).toEqual([
+      expect.stringMatching(/^agents\.assistant: .*customerdata/),
+    ])
   })
 })

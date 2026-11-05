@@ -21,6 +21,8 @@ import { goldenScript } from '../../../support/assistant-golden'
 //   URL requested once.
 // - AC-20: a write is a pending card, the store unchanged until a double-clicked Approve applies it once.
 // - AC-21: rapid Enters send one turn and make one proposal; rapid clicks on Reject decide once.
+// - AC-13 (cards that show the change): the price and stock questions show pending cards naming what they act on and
+//   the value now beside the value proposed, in the panel and in the inbox, and change nothing.
 // - AC-22: Esc mid-answer stops the turn (the provider request closed, nothing after it) and the answer reads Stopped;
 //   on a store with no provider, Ask points to Settings and proposes nothing.
 
@@ -196,6 +198,18 @@ const mugPrice = async (request: APIRequestContext, base: string, token: string)
     )
   ).variants[0]!.priceMinor
 
+/** Minor units as the admin shows them (`formatMoney`, en-GB). */
+const pounds = (minor: number): string =>
+  new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 2,
+  }).format(minor / 100)
+
+/** An element's text with its whitespace collapsed. */
+const textOf = async (locator: ReturnType<Page['getByTestId']>): Promise<string[]> =>
+  (await locator.allTextContents()).map((t) => t.replace(/\s+/g, ' ').trim())
+
 // ─── The page ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every EventSource the page opens, kept in `window.__assistantSources`. */
@@ -344,6 +358,81 @@ test.describe('the assistant in the admin palette', () => {
     expect(streams.length).toBe(posts.length)
     expect(new Set(streams).size).toBe(streams.length)
     expect(await assistantSources(page)).toEqual([2, 2])
+  })
+
+  test('AC-13: assistant.card-shows-change and proposals.card-shows-change: the price question shows a pending card naming the Stoneware Mug and its price now beside 21.00, the stock question one naming the Runner Socks variant and its stock now beside it plus 40, the inbox rows of both show the same, and neither product changes', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(120_000)
+    const mug = await getData<{
+      name: string
+      variants: Array<{ id: string; name: string; priceMinor: number }>
+    }>(request, store.base, token, '/api/admin/products/ceramic-mug')
+    const stockOf = async (variantId: string): Promise<number> =>
+      (
+        await getData<Array<{ variantId: string; stock: number }>>(
+          request,
+          store.base,
+          token,
+          `/api/admin/inventory?q=${encodeURIComponent('Runner Socks')}`,
+        )
+      ).find((r) => r.variantId === variantId)!.stock
+    const known = new Set((await proposals(request, store.base, token)).items.map((p) => p.id))
+    const signed = await signedInContext(browser, store.base)
+    context = signed.context
+    const page = signed.page
+    await openAsk(page)
+
+    await askQuestion(page, RAISE)
+    const priceId = await newCard(page, known)
+    await expect(lastAnswer(page)).toHaveAttribute('data-state', 'done', { timeout: 15_000 })
+    known.add(priceId)
+    await askQuestion(page, SOCKS)
+    const stockId = await newCard(page, known)
+    await expect(lastAnswer(page)).toHaveAttribute('data-state', 'done', { timeout: 15_000 })
+
+    const all = await proposals(request, store.base, token)
+    const stockArgs = (
+      await getData<{ args: { variantId: string } }>(
+        request,
+        store.base,
+        token,
+        `/api/admin/proposals/${stockId}`,
+      )
+    ).args
+    const socks = (
+      await getData<Array<{ variantId: string; productName: string; sku: string; stock: number }>>(
+        request,
+        store.base,
+        token,
+        `/api/admin/inventory?q=${encodeURIComponent('Runner Socks')}`,
+      )
+    ).find((r) => r.variantId === stockArgs.variantId)!
+    const priceLine = `Price of ${mug.variants[0]!.name}: ${pounds(mug.variants[0]!.priceMinor)} → ${pounds(2100)}`
+    const stockLine = `Stock: ${socks.stock} → ${socks.stock + 40}`
+
+    expect(
+      all.items.filter((p) => p.id === priceId || p.id === stockId).map((p) => p.status),
+    ).toEqual(['pending', 'pending'])
+    await expect(page.getByTestId(`admin-assistant-target-${priceId}`)).toContainText(mug.name)
+    expect(await textOf(page.getByTestId(`admin-assistant-change-${priceId}`))).toEqual([priceLine])
+    await expect(page.getByTestId(`admin-assistant-target-${stockId}`)).toContainText(socks.sku)
+    expect(await textOf(page.getByTestId(`admin-assistant-change-${stockId}`))).toEqual([stockLine])
+
+    const inbox = await context.newPage()
+    await inbox.goto('inbox')
+    await inbox.getByTestId('admin-inbox-tab-pending').click()
+    await expect(inbox.getByTestId(`admin-inbox-target-${priceId}`)).toContainText(mug.name, {
+      timeout: 15_000,
+    })
+    expect(await textOf(inbox.getByTestId(`admin-inbox-change-${priceId}`))).toEqual([priceLine])
+    await expect(inbox.getByTestId(`admin-inbox-target-${stockId}`)).toContainText(socks.sku)
+    expect(await textOf(inbox.getByTestId(`admin-inbox-change-${stockId}`))).toEqual([stockLine])
+    await inbox.close()
+
+    expect(await mugPrice(request, store.base, token)).toBe(mug.variants[0]!.priceMinor)
+    expect(await stockOf(socks.variantId)).toBe(socks.stock)
   })
 
   test('AC-20: assistant.write-is-proposal and approve-applies-once: the price question shows a pending admin.products.update card with its arguments while the product is unchanged and the inbox lists it pending; a double-clicked Approve applies it once: price 2100, one product.update entry by the admin under the proposal’s correlation id, the card reads Applied and the inbox’s decided tab shows it applied by nymbal-assistant', async ({

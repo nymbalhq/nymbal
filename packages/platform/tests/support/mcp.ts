@@ -16,10 +16,16 @@ export const AGENT = { name: 'acceptance-agent', version: '1.0.0' } as const
 /** No bearer: what a transport passes when the request carried none. */
 export const ANONYMOUS: Caller = { agent: AGENT }
 
+/** What a caller of the tool surface may ask of one call beside its arguments. */
+export interface CallOptions {
+  correlationId?: string
+  proposeWrites?: boolean
+}
+
 /** The in-process tool surface `attachHttp` builds on the app. */
 export interface ToolSurface {
   list(caller: Caller): ToolDefinition[] | Promise<ToolDefinition[]>
-  call(name: string, args: unknown, caller: Caller): Promise<ToolResult>
+  call(name: string, args: unknown, caller: Caller, options?: CallOptions): Promise<ToolResult>
 }
 
 /** The app's tool surface; it exists once `attachHttp` has run. */

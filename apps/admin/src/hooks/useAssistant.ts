@@ -4,6 +4,9 @@ import { api, ApiError } from '@/lib/api'
 
 type FrameData<E extends AssistantFrame['event']> = Extract<AssistantFrame, { event: E }>['data']
 
+/** The page characters the turn route takes; a path with any other (a percent-encoded slug) is sent without it. */
+const PAGE = /^\/[A-Za-z0-9/_.-]*$/
+
 export type AnswerState = 'streaming' | 'done' | 'stopped' | 'error'
 
 export interface AssistantStep {
@@ -127,10 +130,11 @@ export const useAssistant = create<AssistantStore>((set, get) => {
           { id, question: text, answer: '', state: 'streaming', steps: [], proposals: [] },
         ],
       }))
+      const sent = page.slice(0, 200)
       api
         .post<AssistantTurnIssued>('/api/admin/assistant/turns', {
           messages,
-          page: page.slice(0, 200),
+          ...(PAGE.test(sent) && { page: sent }),
         })
         .then((issued) => {
           if (get().exchanges.find((e) => e.id === id)?.state !== 'streaming') return

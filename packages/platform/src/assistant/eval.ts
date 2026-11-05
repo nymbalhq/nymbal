@@ -31,7 +31,7 @@ export interface GoldenReport {
 }
 
 export interface RunGoldenOptions {
-  /** Question ids to run; all twenty when omitted. */
+  /** Question ids to run; all of them when omitted. */
   only?: string[]
   onResult?: (result: GoldenResult) => void
 }
@@ -179,6 +179,7 @@ export async function runGolden(
         proposals: app.services.proposals,
         logger,
         store: { name: config.store.name, currency: config.store.currency },
+        customerData: config.agents.assistant.customerData,
       },
       {
         caller,

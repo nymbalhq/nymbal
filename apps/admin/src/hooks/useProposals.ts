@@ -18,6 +18,15 @@ export function useProposals(status: ProposalTab) {
   })
 }
 
+/** One proposal as its own read answers it: a pending write of a previewed command with what it would change. */
+export function useProposal(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['proposals', 'one', id],
+    queryFn: () => api.get<ProposalView>(`/api/admin/proposals/${encodeURIComponent(id)}`),
+    enabled,
+  })
+}
+
 /** How many proposals wait for a decision. */
 export function usePendingProposalCount() {
   return useQuery({

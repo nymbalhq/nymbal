@@ -153,8 +153,16 @@ export interface ToolResult {
   isError?: boolean
 }
 
+/** What a caller of the tool surface may ask of one call beside its arguments. */
+export interface ToolCallOptions {
+  /** The correlation id the call's request, its proposal and its audit entries carry; a fresh one when absent. */
+  correlationId?: string
+  /** Keep a command as a pending proposal whatever the policy says (`agents.autoApprove`, `agents.mcp.writes`). */
+  proposeWrites?: boolean
+}
+
 /** The tools a store serves to agents; the transports (HTTP, stdio) bind it. */
 export interface ToolSurface {
   list(caller: Caller): ToolDefinition[]
-  call(name: string, args: unknown, caller: Caller): Promise<ToolResult>
+  call(name: string, args: unknown, caller: Caller, options?: ToolCallOptions): Promise<ToolResult>
 }

@@ -12,12 +12,16 @@ import { cliEnv, migratedSqlite, runCli, type CliRun } from '../../../../tests/s
 import { project, workspace } from '../../../../tests/support/project.js'
 import { leaks, settingsConfigInput } from '../../../platform/tests/support/settings.js'
 
+// AC-15: the twenty-five golden questions, the threshold at 22 and the injection questions' tally on a line of its own.
 // AC-18: `nymbal eval assistant` in a store project whose `ai` block points at a provider stand-in in `script` mode
 // (tests/support/assistant-golden.ts, the scripted model of the golden set). The eval boots a throwaway store of its
 // own, so the project's database file is never opened for writing; the threshold decides the exit code; a missing
 // provider or key exits 2 before any question runs. Spawns the built CLI (`pnpm build` first).
 
 const SUMMARY = /^assistant eval: (\d+)\/(\d+) passed \(threshold (\d+)\)$/m
+const INJECTION = /^injection questions: (\d+)\/(\d+) passed$/m
+/** The rows of the scripted model whose questions read injected text. */
+const INJECTION_ROWS = [21, 22, 23, 24, 25]
 const CURRENCY = 'GBP'
 
 let anthropic: AiStandIn
@@ -82,13 +86,17 @@ const digest = (file: string): string =>
   createHash('sha256').update(readFileSync(file)).digest('hex')
 const linesOf = (out: string, verdict: 'PASS' | 'FAIL'): string[] =>
   out.split('\n').filter((line) => line.startsWith(`${verdict} `))
+const injectionOf = (out: string) => {
+  const m = INJECTION.exec(out)
+  return m === null ? null : { passed: Number(m[1]), total: Number(m[2]) }
+}
 const summaryOf = (out: string) => {
   const m = SUMMARY.exec(out)
   return m === null ? null : { passed: Number(m[1]), total: Number(m[2]), threshold: Number(m[3]) }
 }
 
 describe('AC-18: nymbal eval assistant', () => {
-  it('AC-18: against the scripted stand-in all 20 pass: 20 PASS lines, "assistant eval: 20/20 passed (threshold 17)", exit 0; the project database is byte-identical before and after and no output carries the key', async () => {
+  it('AC-15: against the scripted stand-in all 25 pass: 25 PASS lines, "assistant eval: 25/25 passed (threshold 22)" and "injection questions: 5/5 passed", exit 0; the project database is byte-identical before and after and no output carries the key', async () => {
     const key = `sk-ant-eval-${randomBytes(18).toString('base64url')}`
     const p = await storeProject(block('anthropic', anthropic, key))
     const before = digest(p.db)
@@ -98,10 +106,15 @@ describe('AC-18: nymbal eval assistant', () => {
 
     expect(run.code, run.out).toBe(0)
     expect(linesOf(run.out, 'PASS').length).toBe(GOLDEN_ROWS.length)
+    expect(GOLDEN_ROWS.length).toBe(25)
     expect(summaryOf(run.out)).toEqual({
       passed: GOLDEN_ROWS.length,
       total: GOLDEN_ROWS.length,
-      threshold: 17,
+      threshold: 22,
+    })
+    expect(injectionOf(run.out)).toEqual({
+      passed: INJECTION_ROWS.length,
+      total: INJECTION_ROWS.length,
     })
     expect(anthropic.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
     expect(anthropic.credentials().every((c) => c === key)).toBe(true)
@@ -109,27 +122,41 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(leaks([run.stdout, run.stderr], key)).toEqual([])
   }, 240_000)
 
-  it('AC-18: with the script failing four questions it prints 16/20 and four FAIL lines for exactly those questions and exits 1; with --threshold 16 the same run exits 0', async () => {
-    const failing = [1, 3, 5, 7]
+  it('AC-15: with the script failing four questions, two of them injection questions, it prints 21/25, "injection questions: 3/5 passed" and four FAIL lines for exactly those questions and exits 1; with --threshold 21 the same run exits 0', async () => {
+    const failing = [1, 3, 21, 24]
     const p = await storeProject(
       block('anthropic', anthropic, `sk-ant-eval-${randomBytes(12).toString('hex')}`),
     )
     anthropic.script = goldenScript({
       currency: CURRENCY,
-      deviate: Object.fromEntries(failing.map((row) => [row, 'no-fact' as const])),
+      deviate: Object.fromEntries(
+        failing.map((row) => [
+          row,
+          INJECTION_ROWS.includes(row) ? ('obey-injection' as const) : ('no-fact' as const),
+        ]),
+      ),
     })
     try {
       const strict = await evalAssistant(p)
-      const lenient = await evalAssistant(p, ['--threshold', '16'])
+      const lenient = await evalAssistant(p, ['--threshold', '21'])
 
       const failedRows = linesOf(strict.out, 'FAIL')
         .map((line) => rowOf(line.replace(/^FAIL \S+ /, '').replace(/: .*$/, ''))?.row)
         .sort((a, b) => (a ?? 0) - (b ?? 0))
       expect(failedRows).toEqual(failing)
       expect(linesOf(strict.out, 'PASS').length).toBe(GOLDEN_ROWS.length - failing.length)
-      expect(summaryOf(strict.out)).toEqual({ passed: 16, total: 20, threshold: 17 })
+      const injectedFailing = failing.filter((row) => INJECTION_ROWS.includes(row)).length
+      expect(summaryOf(strict.out)).toEqual({
+        passed: GOLDEN_ROWS.length - failing.length,
+        total: GOLDEN_ROWS.length,
+        threshold: 22,
+      })
+      expect(injectionOf(strict.out)).toEqual({
+        passed: INJECTION_ROWS.length - injectedFailing,
+        total: INJECTION_ROWS.length,
+      })
       expect(strict.code, strict.out).toBe(1)
-      expect(summaryOf(lenient.out)).toEqual({ passed: 16, total: 20, threshold: 16 })
+      expect(summaryOf(lenient.out)).toEqual({ passed: 21, total: 25, threshold: 21 })
       expect(lenient.code, lenient.out).toBe(0)
     } finally {
       anthropic.script = goldenScript({ currency: CURRENCY })
@@ -152,14 +179,14 @@ describe('AC-18: nymbal eval assistant', () => {
     expect(anthropic.requests.length).toBe(0)
   }, 120_000)
 
-  it('AC-18: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval runs and passes 20/20 against it', async () => {
+  it('AC-15: an OpenAI-compatible server on a host other than api.openai.com needs no key: with none in the block or the environment the eval runs and passes 25/25 against it', async () => {
     const p = await storeProject(block('openai', openai))
     openai.reset()
 
     const run = await evalAssistant(p)
 
     expect(run.code, run.out).toBe(0)
-    expect(summaryOf(run.out)).toEqual({ passed: 20, total: 20, threshold: 17 })
+    expect(summaryOf(run.out)).toEqual({ passed: 25, total: 25, threshold: 22 })
     expect(openai.requests.length).toBeGreaterThanOrEqual(GOLDEN_ROWS.length)
   }, 240_000)
 })

@@ -1,12 +1,15 @@
 import type { HttpAdapter, Logger, RequestContext } from '@nymbalhq/types'
 import { ProposalError } from '../mcp/proposals.js'
 import { decodeProposalCursor, type ProposalQuery } from '../repositories/proposal.js'
+import { previewOf, type PreviewReads } from '../services/proposal-preview.js'
 import type { ProposalService } from '../services/proposal-service.js'
 import { fail, ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
 
 export interface RegisterAdminProposalRoutesDeps {
   proposals: ProposalService
+  /** What a pending proposal read on its own is previewed from: the store as it is at the read. */
+  preview: PreviewReads
 }
 
 const STATUSES = new Set<string>(['pending', 'decided', 'all'])
@@ -54,7 +57,7 @@ export function registerAdminProposalRoutes(
   adapter: HttpAdapter,
   deps: RegisterAdminProposalRoutesDeps,
 ): void {
-  const { proposals } = deps
+  const { proposals, preview } = deps
 
   adapter.registerRoute(
     'GET',
@@ -74,9 +77,11 @@ export function registerAdminProposalRoutes(
     requireRole('admin', async (ctx) => {
       try {
         const view = await proposals.get(idOf(ctx))
-        return view === null
-          ? answerError(new ProposalError('proposal.not_found', idOf(ctx)), ctx.logger)
-          : ok(view)
+        if (view === null) {
+          return answerError(new ProposalError('proposal.not_found', idOf(ctx)), ctx.logger)
+        }
+        const previewed = await previewOf(view, preview)
+        return ok(previewed === undefined ? view : { ...view, preview: previewed })
       } catch (err) {
         return answerError(err, ctx.logger)
       }

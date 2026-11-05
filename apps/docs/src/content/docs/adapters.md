@@ -29,17 +29,17 @@ its package name.
 These live in the Nymbal repository, are published as `@nymbalhq/<slot>-<provider>`, and pass their slot's contract
 suite on every change:
 
-| Slot           | Providers                         |
-| -------------- | --------------------------------- |
-| payments       | Stripe                            |
-| email          | Mailgun, Resend, Amazon SES, SMTP |
-| search         | Algolia                           |
-| shipping       | EasyPost                          |
-| document store | Postgres (JSONB), Redis           |
-| event bus      | Redis Streams                     |
-| media          | S3 and S3-compatible storage      |
-| security       | Cloudflare                        |
-| AI             | Anthropic, OpenAI                 |
+| Slot           | Providers                                               |
+| -------------- | ------------------------------------------------------- |
+| payments       | Stripe                                                  |
+| email          | Mailgun, Resend, Amazon SES, SMTP                       |
+| search         | Algolia                                                 |
+| shipping       | EasyPost                                                |
+| document store | Postgres (JSONB), Redis                                 |
+| event bus      | Redis Streams                                           |
+| media          | S3 and S3-compatible storage                            |
+| security       | Cloudflare                                              |
+| AI             | Anthropic, OpenAI ([customer data](../assistant-data/)) |
 
 ## The registry
 

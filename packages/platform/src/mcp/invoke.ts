@@ -250,6 +250,7 @@ export function createInvoker(deps: InvokerDeps): Invoker {
     args: Record<string, unknown>,
     ctx: RequestContext,
     caller: Caller,
+    proposeWrites: boolean,
   ): Promise<ToolResult> {
     const refused = route.gate?.(ctx)
     if (refused) return resultOfEnvelope(refused, entry)
@@ -265,7 +266,7 @@ export function createInvoker(deps: InvokerDeps): Invoker {
         'idempotencyKey must be 1-128 characters of A-Z, a-z, 0-9, ".", "_", ":" and "-"',
       )
     }
-    const decider = policy(command)
+    const decider = proposeWrites ? null : policy(command)
     if (!admin && decider === null) {
       ctx.logger.info(
         { command, userId: caller.auth?.userId, agent: caller.agent },
@@ -305,15 +306,17 @@ export function createInvoker(deps: InvokerDeps): Invoker {
       return tools.filter((tool) => RANK[tool.scope] <= level && !UNLISTED.has(tool.name))
     },
 
-    async call(name, args, caller) {
+    async call(name, args, caller, options = {}) {
       const found = lookup(name)
       if (found === undefined) return refusal('tool.unknown', `No tool is named ${name}`)
       if (args !== undefined && args !== null && !isRecord(args)) {
         return refusal('validation.failed', 'A tool takes its arguments as one object')
       }
       const { tool, entry, route } = found
-      const ctx = contextOf(tool, entry, args ?? {}, caller)
-      if (tool.kind === 'command') return propose(tool, entry, route, args ?? {}, ctx, caller)
+      const ctx = contextOf(tool, entry, args ?? {}, caller, options.correlationId)
+      if (tool.kind === 'command') {
+        return propose(tool, entry, route, args ?? {}, ctx, caller, options.proposeWrites === true)
+      }
       return resultOfEnvelope(await run(route, ctx), entry)
     },
 

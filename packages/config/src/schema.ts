@@ -508,7 +508,8 @@ const CRAWL_OTHERS = ['allow', 'disallow'] as const
  * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
  * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
  * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `crawl`
- * is what `robots.txt`, `llms.txt` and the product feed serve.
+ * is what `robots.txt`, `llms.txt` and the product feed serve. `assistant` is what the admin's assistant may send its
+ * AI provider.
  */
 export const agentsSchema = z
   .object({
@@ -558,6 +559,13 @@ export const agentsSchema = z
                 : undefined,
           })
           .default('allow'),
+      })
+      .strict()
+      .prefault({}),
+    assistant: z
+      .object({
+        /** false keeps every tool that answers a customer's email, phone or address off the admin's assistant. */
+        customerData: z.boolean().default(true),
       })
       .strict()
       .prefault({}),

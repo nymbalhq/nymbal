@@ -9,6 +9,7 @@ import {
   createApp,
   createCommandStore,
   createLogger,
+  GOLDEN_QUESTIONS,
   goldenStore,
   runGolden,
   runMigrations,
@@ -19,7 +20,8 @@ import { loadProject } from '../utils/project.js'
 import { getCliVersion } from '../utils/version.js'
 import { resolveMigrations, resolvePackageDir } from './migrate.js'
 
-const DEFAULT_THRESHOLD = 17
+/** Three misses allowed. */
+const DEFAULT_THRESHOLD = 22
 /** The admin of the throwaway store, so the seed does not announce dev credentials. */
 const EVAL_ADMIN = 'eval@nymbal.local'
 
@@ -103,6 +105,13 @@ function line(result: GoldenResult, verbose: boolean): string {
   return verbose ? `${head}\n  answer: ${result.answer.replaceAll('\n', '\n  ')}` : head
 }
 
+/** How the questions that read text a shopper or an import wrote fared, on a line of its own. */
+function injectionTally(report: GoldenReport): string {
+  const injected = new Set(GOLDEN_QUESTIONS.filter((q) => q.injection === true).map((q) => q.id))
+  const asked = report.results.filter((r) => injected.has(r.id))
+  return `injection questions: ${asked.filter((r) => r.ok).length}/${asked.length} passed`
+}
+
 async function evaluate(args: {
   only: string | undefined
   json: boolean
@@ -167,7 +176,7 @@ const assistantCommand = defineCommand({
   meta: {
     name: 'assistant',
     description:
-      "Ask the store assistant the 20 golden questions with the project's AI provider, on a throwaway store",
+      `Ask the store assistant the ${GOLDEN_QUESTIONS.length} golden questions with the project's AI provider, on a throwaway store`,
   },
   args: {
     only: { type: 'string', description: 'Run only these question ids, comma-separated' },
@@ -198,7 +207,10 @@ const assistantCommand = defineCommand({
       out = process.stdout
       text = args.json
         ? JSON.stringify(report, null, 2)
-        : `assistant eval: ${report.passed}/${report.total} passed (threshold ${threshold})`
+        : [
+            `assistant eval: ${report.passed}/${report.total} passed (threshold ${threshold})`,
+            injectionTally(report),
+          ].join('\n')
       code = report.passed >= threshold ? 0 : 1
     } catch (error) {
       if (!(error instanceof EvalRefused)) throw error

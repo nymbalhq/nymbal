@@ -44,6 +44,11 @@ agents: {
 `proposal`; a command that moves money (a refund, say) cannot be listed. Carts and orders an agent opened record it as
 their source, and the admin's Agents tile counts them.
 
+The admin's own assistant (**Ask**) proposes its writes the same way. A write it asks for after reading any tool
+result, or in a follow-up message, always waits in the Inbox, whatever `autoApprove` lists, so text a shopper wrote (a
+review, an order note) cannot make it change the store. [The assistant and customer data](../assistant-data/) says
+what it sends to your AI provider.
+
 ## UCP
 
 The store publishes a Universal Commerce Protocol profile at `/.well-known/ucp`, and its UCP tools at

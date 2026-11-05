@@ -10,7 +10,10 @@ export default defineConfig({
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/nymbalhq/nymbal' }],
       sidebar: [
         { label: 'Start', items: ['index', 'quickstart', 'configuration'] },
-        { label: 'Guides', items: ['adapters', 'agents', 'deploying', 'importing', 'upgrading'] },
+        {
+          label: 'Guides',
+          items: ['adapters', 'agents', 'assistant-data', 'deploying', 'importing', 'upgrading'],
+        },
         { label: 'Reference', items: ['reference/cli'] },
         { label: 'Help', items: ['help'] },
       ],

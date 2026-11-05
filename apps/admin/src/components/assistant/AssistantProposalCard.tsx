@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Check, Loader2, X } from 'lucide-react'
 import type { ProposalStatus, ProposalView } from '@nymbalhq/types'
+import { ProposalChanges } from '@/components/proposals/ProposalChanges'
 import { Button } from '@/components/ui/button'
 import { useApproveProposal, useRejectProposal } from '@/hooks/useProposals'
 import { useAssistant } from '@/hooks/useAssistant'
@@ -58,6 +59,7 @@ export function AssistantProposalCard({ proposal }: { proposal: ProposalView }) 
           {STATUS[status].label}
         </span>
       </div>
+      <ProposalChanges proposal={proposal} scope="assistant" />
       <pre className="max-h-32 overflow-auto rounded bg-zinc-50 p-2 font-mono text-[11px] whitespace-pre-wrap break-all text-zinc-700">
         {JSON.stringify(proposal.args, null, 1)}
       </pre>
