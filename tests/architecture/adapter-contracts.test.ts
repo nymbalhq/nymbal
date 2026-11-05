@@ -30,13 +30,16 @@ const SUITE: Record<string, string> = {
 }
 
 /**
- * Adapters held to another suite of their slot, with why. EasyPost serves tracker webhooks only: its rate, createLabel
- * and track reject by design (its README), so the slot's rate suite cannot pass on it; the tracking suite holds it.
+ * Adapters held to another suite of their slot, with why and the methods whose rejection is the why. EasyPost serves
+ * tracker webhooks only: its rate, createLabel and track reject by design (its README), so the slot's rate suite cannot
+ * pass on it; the tracking suite holds it. The hold follows the code, not the name: it lapses once the listed adapter
+ * implements one of those methods, and `pnpm new-adapter` copies of it, which reject the same methods, are held the same.
  */
-const HELD_TO: Record<string, { suite: string; why: string }> = {
+const HELD_TO: Record<string, { suite: string; why: string; rejects: readonly string[] }> = {
   '@nymbalhq/shipping-easypost': {
     suite: 'runShippingTrackingContract',
     why: 'tracker webhooks only: rate, createLabel and track reject as unsupported',
+    rejects: ['rate', 'createLabel', 'track'],
   },
 }
 
@@ -47,6 +50,26 @@ const camel = (slot: string): string => slot.replace(/-([a-z])/g, (_, c: string)
 const entries = (
   JSON.parse(readFileSync(join(ROOT, 'registry/adapters.json'), 'utf8')) as { adapters: Entry[] }
 ).adapters.filter((e) => e.tier === 'first-party' && SUITE[camel(e.slot)] !== undefined)
+
+/** Whether every method in `methods` is, in the adapter's source, `<method>: () => unsupported('<method>')`. */
+function rejectsAll(e: Entry, methods: readonly string[]): boolean {
+  const source = globSync(`${e.source.dir}/src/**/*.ts`, { cwd: ROOT })
+    .filter((f) => !f.endsWith('.test.ts'))
+    .map((f) => readFileSync(join(ROOT, f), 'utf8'))
+    .join('\n')
+  return methods.every((m) =>
+    new RegExp(`\\b${m}\\s*:\\s*\\(\\)\\s*=>\\s*unsupported\\(\\s*'${m}'\\s*\\)`).test(source),
+  )
+}
+
+/** The suite `e` is held to: that of a held adapter of its slot whose rejections it shares, else its slot's. */
+function suiteOf(e: Entry): string {
+  const held = Object.entries(HELD_TO).find(
+    ([pkg, h]) =>
+      entries.find((x) => x.package === pkg)?.slot === e.slot && rejectsAll(e, h.rejects),
+  )
+  return held?.[1].suite ?? SUITE[camel(e.slot)]!
+}
 
 /** The candidate runner files: the contract and store suites, and each adapter's own contract test. */
 function runnerFiles(): string[] {
@@ -137,7 +160,7 @@ describe('AC-8: every first-party adapter runs its slot’s suite in CI', () => 
       text: readFileSync(join(ROOT, file), 'utf8'),
     }))
     const missing = entries.flatMap((e) => {
-      const suite = HELD_TO[e.package]?.suite ?? SUITE[camel(e.slot)]!
+      const suite = suiteOf(e)
       const runners = files.filter((f) => calls(f.text, suite) && importsAdapter(f.file, f.text, e))
       if (runners.length === 0) return [`${e.package}: no runner calls ${suite} with its package`]
       const inCi = runners.filter((f) => run.has(projects.get(f.file) ?? ''))

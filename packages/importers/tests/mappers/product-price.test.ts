@@ -143,4 +143,22 @@ describe('mapProduct prices', () => {
     expect([variant.priceMinor, variant.compareAtPriceMinor]).toEqual([1500, 2000])
     expect(productWarnings(wc, [], store)).toEqual([])
   })
+
+  // The properties above reach these two edges only on some random runs; each is pinned here.
+  it('a live sale at the regular price imports with no compare-at, since the sale lowers nothing', () => {
+    const wc = wcProduct({
+      price: '20.00',
+      regular_price: '20.00',
+      sale_price: '20.00',
+      on_sale: true,
+    })
+    const variant = mapProduct(wc, [], [], [], '', storeContext()).variants![0]!
+    expect([variant.priceMinor, variant.compareAtPriceMinor]).toEqual([2000, null])
+  })
+
+  it('a price below the regular price with no live sale imports at that price with no compare-at', () => {
+    const wc = wcProduct({ price: '15.00', regular_price: '20.00', sale_price: '', on_sale: false })
+    const variant = mapProduct(wc, [], [], [], '', storeContext()).variants![0]!
+    expect([variant.priceMinor, variant.compareAtPriceMinor]).toEqual([1500, null])
+  })
 })
