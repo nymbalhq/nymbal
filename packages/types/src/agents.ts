@@ -1,4 +1,4 @@
-import type { ToolSurface } from './adapters/http.js'
+import type { ResponseEnvelope, ToolSurface } from './adapters/http.js'
 
 /** The origins a surface builds its absolute URLs from: never the request's `Host`. */
 export interface AgentSurfaceUrls {
@@ -16,7 +16,27 @@ export interface AgentSurfaceCapabilities {
   checkout: 'handoff' | 'agentic' | 'none'
 }
 
-/** One agent protocol a store serves (UCP, ACP): a discovery document and a tool endpoint, either optional. */
+/** What a surface's REST route is handed: the request as its transport received it. */
+export interface AgentRouteRequest {
+  params: Record<string, string>
+  query: Record<string, string | string[] | undefined>
+  /** Lower-cased names. */
+  headers: Record<string, string | string[] | undefined>
+  body: unknown
+  ip: string
+  requestId: string
+}
+
+/** A REST route of an agent surface, served server to server under the surface's own credential (no CSRF). */
+export interface AgentRoute {
+  method: 'GET' | 'POST'
+  path: string
+  handle(request: AgentRouteRequest): Promise<ResponseEnvelope>
+}
+
+/**
+ * One agent protocol a store serves (UCP, ACP): a discovery document, a tool endpoint and REST routes, each optional.
+ */
 export interface AgentSurfaceAdapter {
   name: string
   capabilities: AgentSurfaceCapabilities
@@ -28,6 +48,7 @@ export interface AgentSurfaceAdapter {
     path: string
     tools: ToolSurface
   }
+  routes?: AgentRoute[]
 }
 
 /** The agent surfaces a store serves and the crawl files beside them; built by `attachHttp`. */

@@ -16,6 +16,11 @@ export interface PaymentIntentParams {
   /** Where the provider sends its receipt (Stripe's `receipt_email`). */
   receiptEmail?: string
   metadata?: Record<string, string>
+  /**
+   * A payment credential an agent was granted for this charge (a Stripe Shared Payment Token): the intent is confirmed
+   * with it at creation. Only an adapter with the `delegated` capability takes one.
+   */
+  delegatedToken?: string
 }
 
 export interface PaymentIntent {

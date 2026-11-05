@@ -26,6 +26,8 @@ export {
   trustSuggestion,
 } from './trusted-proxies.js'
 export {
+  ACP_KEY_MIN_LENGTH,
+  ACP_LINK_TYPES,
   DEFAULT_JWT_SECRET,
   DEFAULT_AGENT_CRAWLERS,
   nymbalConfigSchema,

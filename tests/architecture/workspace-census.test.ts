@@ -87,8 +87,10 @@ describe("AC-1: every member under packages/ is in each tool's view", () => {
     for (const [key, value] of Object.entries(process.env)) {
       if (!key.startsWith('VITEST') && !key.startsWith('NYMBAL_')) env[key] = value
     }
-    // The quarantined files are collected by the nightly project, which exists only under NYMBAL_NIGHTLY.
+    // The quarantined files are collected by the nightly project, which exists only under NYMBAL_NIGHTLY, and the live
+    // Stripe proof by the stripe-live project, only under NYMBAL_STRIPE_LIVE (listing imports no test file).
     env['NYMBAL_NIGHTLY'] = '1'
+    env['NYMBAL_STRIPE_LIVE'] = '1'
     const { stdout } = await exec(
       join(ROOT, 'node_modules/.bin/vitest'),
       ['list', '--filesOnly', '--json'],

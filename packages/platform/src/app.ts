@@ -45,6 +45,9 @@ import { toolsOf } from './mcp/registry.js'
 import { createInvoker, type Invoker } from './mcp/invoke.js'
 import { policyOf } from './mcp/proposals.js'
 import { createAgentSurfaces } from './agents/surfaces.js'
+import { resolveAcpSettings } from './agents/acp/settings.js'
+import { idempotentCommand } from './audit/idempotency.js'
+import { runAsActor, type Actor } from './audit/actor.js'
 
 export interface NymbalApp {
   platform: Platform
@@ -97,6 +100,9 @@ export interface CreateAppOptions extends ResolvePrimitivesOptions {
   /** How often expired and used refresh tokens are deleted; tests shorten it. */
   refreshTokenSweep?: { intervalMs?: number }
 }
+
+/** Who an ACP agent's keyed requests are recorded as: the agent's own name is a label anyone holding the key can set. */
+const ACP_ACTOR: Actor = { kind: 'system', id: 'acp' }
 
 /**
  * A production process must not run on the stub payments adapter (its unsigned webhook confirms any order) or sign
@@ -415,6 +421,14 @@ export async function createApp(
             { code: 'config.default_jwt_secret_exposed', context: { host: config.http.host } },
           )
         }
+        const acp = resolveAcpSettings(config, adapters.payments)
+        if (acp !== null) {
+          addSecret(acp.apiKey)
+          logger.warn(
+            {},
+            'agents.acp is on: Agentic Commerce Protocol checkout is beta, and its API may change',
+          )
+        }
         await adapters.security.applyMiddleware(adapter, config.security)
         const { registerAllRoutes } = await import('./routes/register.js')
         const table = new RouteTable()
@@ -456,6 +470,35 @@ export async function createApp(
             const cart = await services.cart.get(token)
             return cart === null || cart.customerId === null ? cart : null
           },
+          ...(acp !== null && {
+            acp: {
+              orders: {
+                converted: (token) =>
+                  platform.commandStore.read((tx) =>
+                    repos.order.findLastConvertedByCartToken(tx, token),
+                  ),
+                pending: (token) =>
+                  platform.commandStore.read((tx) => repos.order.findPendingByCartToken(tx, token)),
+              },
+              sessions: platform.documentStore,
+              checkout: services.checkout,
+              idempotent: (command, { key, hash }, run) =>
+                runAsActor(ACP_ACTOR, () =>
+                  idempotentCommand(
+                    platform.commandStore,
+                    command,
+                    { actor: ACP_ACTOR, key, hash, provider: true },
+                    run,
+                  ),
+                ),
+              payments: {
+                providerName: adapters.payments.providerName,
+                environment: acp.environment,
+              },
+              config: acp,
+              logger: logger.child({ surface: 'acp' }),
+            },
+          }),
         })
       },
       get mcp() {

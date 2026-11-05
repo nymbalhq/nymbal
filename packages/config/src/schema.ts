@@ -536,13 +536,29 @@ export const DEFAULT_AGENT_CRAWLERS: readonly string[] = Object.freeze([
 
 const CRAWL_OTHERS = ['allow', 'disallow'] as const
 
+/** The link types the Agentic Commerce Protocol (2026-04-17) names for a session's `links`. */
+export const ACP_LINK_TYPES = [
+  'terms_of_use',
+  'privacy_policy',
+  'return_policy',
+  'shipping_policy',
+  'contact_us',
+  'about_us',
+  'faq',
+  'support',
+] as const
+
+/** The shortest ACP key the store takes, from the config or `NYMBAL_ACP_API_KEY`. */
+export const ACP_KEY_MIN_LENGTH = 32
+
 /**
  * How agents reach the store. Under `mcp.writes: 'proposal'` an admin command tool's call is kept as a proposal an
  * admin approves or rejects, unless `autoApprove` lists its command; `'apply'` approves every command at the call.
  * Either way the proposal is recorded. A command that moves money cannot be listed in `autoApprove`. `ucp` is the
- * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `crawl`
- * is what `robots.txt`, `llms.txt` and the product feed serve. `assistant` is what the admin's assistant may send its
- * AI provider.
+ * Universal Commerce Protocol profile and its MCP endpoint; `links` are the legal pages a UCP checkout names. `acp`
+ * is the Agentic Commerce Protocol's checkout (beta, off unless enabled), held by a bearer key of at least 32
+ * characters (`apiKey`, else `NYMBAL_ACP_API_KEY`). `crawl` is what `robots.txt`, `llms.txt` and the product feed serve.
+ * `assistant` is what the admin's assistant may send its AI provider.
  */
 export const agentsSchema = z
   .object({
@@ -575,6 +591,28 @@ export const agentsSchema = z
               .strict(),
           )
           .default([]),
+      })
+      .strict()
+      .prefault({}),
+    acp: z
+      .object({
+        enabled: z.boolean().default(false),
+        apiKey: z
+          .string()
+          .min(ACP_KEY_MIN_LENGTH, { error: `must be at least ${ACP_KEY_MIN_LENGTH} characters` })
+          .optional(),
+        links: z
+          .array(
+            z
+              .object({
+                type: z.enum(ACP_LINK_TYPES),
+                url: z.string().url(),
+                title: z.string().optional(),
+              })
+              .strict(),
+          )
+          .default([]),
+        merchantId: z.string().min(1).optional(),
       })
       .strict()
       .prefault({}),

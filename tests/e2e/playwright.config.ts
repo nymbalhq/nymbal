@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -98,6 +99,10 @@ const storeEnvFile = (process.env.NYMBAL_E2E_STORE_ENV_FILE ??= join(
   `nymbal-e2e-store-env-${Date.now()}-${process.pid}.json`,
 ))
 
+// The store's ACP key: the native API turns agentic checkout on under it (nymbal.config.ts), and the journeys send it.
+// Made once here and inherited by the workers, which load this file again.
+const acpKey = (process.env.NYMBAL_ACP_API_KEY ??= randomBytes(24).toString('hex'))
+
 // Servers are dev servers started in place: the packages they import come from the build, which this file never runs.
 const apiServer = {
   command: `node scripts/e2e-server.mjs -- node packages/cli/bin/nymbal.mjs dev --api-only --port ${block.api}`,
@@ -109,6 +114,7 @@ const apiServer = {
     NYMBAL_SQLITE_PATH: sqlitePath,
     NYMBAL_CORS_ORIGINS: corsOrigins(astroURL, nextjsURL),
     NYMBAL_E2E_STORE_ENV_FILE: storeEnvFile,
+    NYMBAL_ACP_API_KEY: acpKey,
   },
   gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10000 },
 }

@@ -49,6 +49,11 @@ export interface BeginCheckoutInput {
   billingAddress: Address
   shippingAddress: Address
   notes?: string
+  /**
+   * A payment credential an agent holds for the buyer (an ACP Shared Payment Token), charged at once. No one is there
+   * to complete a challenge, so an intent that neither succeeds nor fails is cancelled.
+   */
+  delegatedPayment?: { token: string }
 }
 
 export interface BeginCheckoutResult {
@@ -787,6 +792,7 @@ export function createCheckoutService(
       metadata: { orderId: order.id, orderNumber: order.orderNumber },
     }
     if (input.customerId != null) params.customerId = input.customerId
+    if (input.delegatedPayment !== undefined) params.delegatedToken = input.delegatedPayment.token
     let intent: PaymentIntent
     try {
       intent = await payments.createPaymentIntent(params)
@@ -854,7 +860,38 @@ export function createCheckoutService(
       )
       return { ...answer, orderStatus: 'cancelled' }
     }
+    if (input.delegatedPayment !== undefined && answer.payment.status === 'requires_action') {
+      return closeUnattended(order, intent, answer)
+    }
     return answer
+  }
+
+  /**
+   * A delegated payment's intent that waits on the buyer (3-D Secure), whom no page is open to: cancelled with the
+   * provider and its order cancelled, so nothing stays held. An intent the provider will not cancel is already under
+   * way, and its order is left pending for the provider's webhook.
+   */
+  async function closeUnattended(
+    order: Order,
+    intent: PaymentIntent,
+    answer: Answer,
+  ): Promise<Answer> {
+    try {
+      await payments.cancelPaymentIntent(intent.id)
+    } catch (err) {
+      if (err instanceof PaymentError && err.code === 'payment.cancel_refused') return answer
+      throw err
+    }
+    const reason = `payment_${intent.status}`
+    await store.transaction(async () => {
+      await cancelDraft(order.id, reason)
+      await publisher.publish(EVT_PAYMENT_FAILED, {
+        paymentId: intent.id,
+        orderId: order.id,
+        reason,
+      })
+    })
+    return { ...answer, orderStatus: 'cancelled', payment: { status: 'failed', reason } }
   }
 
   async function finalize(paymentIntentId: string, paid: CapturedPayment): Promise<FinalizeResult> {

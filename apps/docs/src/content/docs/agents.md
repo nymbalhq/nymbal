@@ -65,6 +65,22 @@ agents: {
 
 `nymbal doctor` warns when UCP checkout has no privacy or terms link, or the public URL is plain http.
 
+## ACP (beta)
+
+With `agents.acp` on, a shopping agent holding the store's key buys over the Agentic Commerce Protocol (2026-04-17) at
+`/api/acp`: it reads the product feed (`GET /api/acp/feed`), opens and updates a checkout session, and completes it
+with a delegated payment token (a Stripe Shared Payment Token), which the store charges through its payments provider.
+The order is the one the storefront's checkout makes, with its source `agent:<name>`. It is off by default:
+
+```ts
+agents: {
+  acp: { enabled: true, links: [{ type: 'terms_of_use', url: 'https://example.com/terms' }] },
+},
+```
+
+The key is `NYMBAL_ACP_API_KEY` (or `agents.acp.apiKey`), at least 32 characters (`openssl rand -base64 32`); the
+store refuses to start without it, or on a payments provider that cannot charge a delegated token (Stripe can).
+
 ## Crawlers
 
 `agents.crawl` sets what `robots.txt`, `llms.txt` and the product feed (`/agents/products.json`) serve, and which AI

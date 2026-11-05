@@ -1,6 +1,7 @@
 import type { HttpAdapter } from '@nymbalhq/types'
 import type { NymbalConfig } from '@nymbalhq/config'
 import { UCP_PROFILE_PATH } from '../agents/profile.js'
+import { ACP_CAPABILITIES } from '../agents/acp/constants.js'
 import { UCP_CAPABILITIES } from '../agents/ucp-surface.js'
 import type { Repositories } from '../repositories/index.js'
 import { ok, renderError } from './envelope.js'
@@ -102,7 +103,12 @@ export function registerAdminDashboardRoute(
           agents: {
             since: since.toISOString(),
             currency: config.store.currency,
-            surfaces: ucpOn ? [{ name: 'ucp', capabilities: { ...UCP_CAPABILITIES } }] : [],
+            surfaces: [
+              ...(ucpOn ? [{ name: 'ucp', capabilities: { ...UCP_CAPABILITIES } }] : []),
+              ...(config.agents.acp.enabled
+                ? [{ name: 'acp', capabilities: { ...ACP_CAPABILITIES } }]
+                : []),
+            ],
             mcp: { enabled: config.agents.mcp.enabled, writes: config.agents.mcp.writes },
             profilePath: ucpOn ? UCP_PROFILE_PATH : null,
             orders: { count: agentOrders.count, revenueMinor: agentOrders.revenueMinor },

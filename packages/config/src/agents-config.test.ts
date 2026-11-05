@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_AGENT_CRAWLERS } from './index.js'
+import { readFileSync } from 'node:fs'
+import { ACP_LINK_TYPES, DEFAULT_AGENT_CRAWLERS } from './index.js'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
 // AC-12: the `agents` block. A store that never mentions agents serves MCP with writes held as proposals; `writes`
@@ -164,13 +165,14 @@ const link = fc.record(
 )
 
 describe('AC-1: agents.ucp and agents.crawl in the config', () => {
-  it('AC-1: a config with no agents block parses to ucp enabled with no links and every crawl file on, allowing the named crawlers and others, beside the unchanged mcp defaults', () => {
+  it('AC-1: a config with no agents block parses to ucp enabled with no links, acp off with no links and every crawl file on, allowing the named crawlers and others, beside the unchanged mcp defaults', () => {
     const parsed = nymbalConfigSchema.parse(baseConfig())
 
     expect(parsed.agents).toEqual({
       mcp: { enabled: true, writes: 'proposal' },
       autoApprove: [],
       ucp: { enabled: true, links: [] },
+      acp: { enabled: false, links: [] },
       crawl: {
         robots: true,
         llms: true,
@@ -235,6 +237,109 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
             others: crawlSet.others ?? 'allow',
           })
           expect(parsed.agents.mcp).toEqual({ enabled: true, writes: 'proposal' })
+        },
+      ),
+    )
+  })
+})
+
+// AC-1: `agents.acp`, beside the other agents blocks: off unless a store turns it on, a key of at least 32 characters
+// when one is given, links only of the types ACP's Link names, and nothing else.
+
+/** The link types the pinned ACP 2026-04-17 schema's `Link` allows. */
+function pinnedLinkTypes(): string[] {
+  const schema = JSON.parse(
+    readFileSync(
+      new URL(
+        '../../../tests/fixtures/acp/2026-04-17/schema.agentic_checkout.json',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  ) as { $defs: { Link: { properties: { type: { enum: string[] } } } } }
+  return schema.$defs.Link.properties.type.enum
+}
+
+const acpKey = fc.string({ minLength: 32, maxLength: 64 })
+
+describe('AC-1: agents.acp in the config', () => {
+  // Kills: the config's link types drifting from the protocol's.
+  it("AC-1: ACP_LINK_TYPES are exactly the link types of the pinned ACP schema's Link", () => {
+    expect([...ACP_LINK_TYPES].sort()).toEqual(pinnedLinkTypes().sort())
+  })
+
+  // Kills: a short key accepted; an off-protocol link type accepted; an unknown key stripped instead of refused.
+  it('AC-1: an apiKey of 31 characters, a link type outside ACP_LINK_TYPES, a link url that is not a URL and an unknown key are each refused at the field they name; a 32-character key and a link of each allowed type are accepted', () => {
+    expect(refusals({ acp: { apiKey: 'k'.repeat(31) } })).toEqual([
+      expect.stringMatching(/^agents\.acp\.apiKey: /),
+    ])
+    expect(
+      refusals({ acp: { links: [{ type: 'refund_policy', url: 'https://x.example/r' }] } }),
+    ).toEqual([expect.stringMatching(/^agents\.acp\.links\.0\.type: /)])
+    expect(refusals({ acp: { links: [{ type: 'terms_of_use', url: 'not a url' }] } })).toEqual([
+      expect.stringMatching(/^agents\.acp\.links\.0\.url: /),
+    ])
+    expect(refusals({ acp: { enabeld: true } })).toEqual([
+      expect.stringMatching(/^agents\.acp: .*enabeld/),
+    ])
+    expect(
+      refusals({
+        acp: {
+          enabled: true,
+          apiKey: 'k'.repeat(32),
+          links: ACP_LINK_TYPES.map((type: string) => ({
+            type,
+            url: `https://shop.example/${type}`,
+          })),
+        },
+      }),
+    ).toEqual([])
+  })
+
+  // Kills: the length bound off by one on either side.
+  it('AC-1: property: an apiKey is refused at agents.acp.apiKey exactly when it is shorter than 32 characters', () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 64 }), (apiKey) => {
+        const refused = refusals({ acp: { apiKey } }).some((r) =>
+          r.startsWith('agents.acp.apiKey: '),
+        )
+
+        expect(refused).toBe(apiKey.length < 32)
+      }),
+    )
+  })
+
+  // Kills: ACP on by default; a set part dropped; a part left out not given its default; the other blocks disturbed.
+  it('AC-1: property: whatever part of agents.acp a config sets is kept, and every part it leaves out takes its default, beside the other agents blocks at theirs', () => {
+    const optional = <T>(arb: fc.Arbitrary<T>) => fc.option(arb, { nil: undefined })
+    const acpLink = fc.record(
+      {
+        type: fc.constantFrom(...ACP_LINK_TYPES),
+        url: fc.webUrl(),
+        title: fc.string({ maxLength: 40 }),
+      },
+      { requiredKeys: ['type', 'url'] },
+    )
+    fc.assert(
+      fc.property(
+        fc.record({
+          enabled: optional(fc.boolean()),
+          apiKey: optional(acpKey),
+          links: optional(fc.array(acpLink, { maxLength: 3 })),
+          merchantId: optional(fc.string({ minLength: 1, maxLength: 30 })),
+        }),
+        (set) => {
+          const given = Object.fromEntries(Object.entries(set).filter(([, v]) => v !== undefined))
+          const parsed = nymbalConfigSchema.parse({ ...baseConfig(), agents: { acp: given } })
+          const bare = nymbalConfigSchema.parse(baseConfig())
+
+          expect(parsed.agents.acp).toEqual({
+            enabled: set.enabled ?? false,
+            links: set.links ?? [],
+            ...(set.apiKey !== undefined && { apiKey: set.apiKey }),
+            ...(set.merchantId !== undefined && { merchantId: set.merchantId }),
+          })
+          expect({ ...parsed.agents, acp: undefined }).toEqual({ ...bare.agents, acp: undefined })
         },
       ),
     )

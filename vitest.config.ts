@@ -68,6 +68,24 @@ const quickstart = process.env['NYMBAL_CONTAINER']
     ]
   : []
 
+// The live Stripe test-mode proof of agentic checkout (real PaymentIntents, on the test keys scripts/stripe-live.sh
+// finds): the project exists only when that script has set NYMBAL_STRIPE_LIVE=1, never because a Stripe key is in the
+// environment, so `pnpm test`, coverage and tests-fail-on-base cannot select it.
+const stripeLive =
+  process.env['NYMBAL_STRIPE_LIVE'] === '1'
+    ? [
+        {
+          test: {
+            name: 'stripe-live',
+            environment: 'node' as const,
+            include: ['packages/platform/tests/live/**/*.test.ts'],
+            testTimeout: 120000,
+            hookTimeout: 120000,
+          },
+        },
+      ]
+    : []
+
 // Quarantined: each went red then green with no code change in a gate or CI. It runs in the `nightly` project
 // (NYMBAL_NIGHTLY=1; .github/workflows/nightly.yml) until it is fixed, and its home project leaves it out: through
 // that project's own `exclude` when it has one (cli), else behind `describe.runIf(process.env.NYMBAL_NIGHTLY)` in the
@@ -370,6 +388,7 @@ export default defineConfig({
       ...scaffoldClean,
       ...scaffoldImage,
       ...quickstart,
+      ...stripeLive,
       ...nightly,
       {
         test: {

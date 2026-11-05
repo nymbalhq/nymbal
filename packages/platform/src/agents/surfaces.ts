@@ -1,5 +1,6 @@
 import type { NymbalConfig } from '@nymbalhq/config'
 import type { AgentSurfaces, AgentSurfaceUrls, Caller } from '@nymbalhq/types'
+import { createAcpSurface, type AcpSurfaceDeps } from './acp/surface.js'
 import { llmsTxt, robotsTxt } from './documents.js'
 import { createUcpSurface, searchCatalog, type UcpSurfaceDeps } from './ucp-surface.js'
 
@@ -8,6 +9,8 @@ export interface AgentSurfacesDeps {
   mcp: UcpSurfaceDeps['mcp']
   variants: UcpSurfaceDeps['variants']
   cart: UcpSurfaceDeps['cart']
+  /** What the ACP surface needs beside these, when `agents.acp` is on. */
+  acp?: Omit<AcpSurfaceDeps, 'mcp' | 'cart' | 'variants' | 'urls' | 'store'>
 }
 
 /** Who reads the catalogue for a crawl file. */
@@ -17,7 +20,8 @@ const CRAWL: Caller = { agent: { name: 'nymbal-crawl-files' } }
 const LLMS_PRODUCTS = 100
 
 /**
- * The agent surfaces the config turns on (UCP today) and the crawl files beside them. The surfaces' tools take their
+ * The agent surfaces the config turns on (UCP, and ACP when it is given its dependencies) and the crawl files beside
+ * them. The surfaces' tools take their
  * origins from whoever serves them (`useUrls`); until then links are made on the configured storefront, if any.
  */
 export function createAgentSurfaces(deps: AgentSurfacesDeps): AgentSurfaces {
@@ -31,6 +35,17 @@ export function createAgentSurfaces(deps: AgentSurfacesDeps): AgentSurfaces {
     urls: () => urls(),
     links: ucp.links,
   })
+  const acp =
+    deps.acp === undefined
+      ? undefined
+      : createAcpSurface({
+          ...deps.acp,
+          mcp,
+          cart: deps.cart,
+          variants: deps.variants,
+          urls: () => urls(),
+          store: { currency: config.store.currency, name: config.store.name },
+        })
 
   async function items<T>(tool: string, args: Record<string, unknown>): Promise<T[]> {
     const result = await mcp.call(tool, args, CRAWL)
@@ -42,7 +57,7 @@ export function createAgentSurfaces(deps: AgentSurfacesDeps): AgentSurfaces {
   }
 
   return {
-    surfaces: ucp.enabled ? [surface] : [],
+    surfaces: [...(ucp.enabled ? [surface] : []), ...(acp === undefined ? [] : [acp])],
     useUrls(next) {
       urls = next
     },

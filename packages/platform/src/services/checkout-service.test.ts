@@ -1480,6 +1480,140 @@ describe('CheckoutService.beginCheckout: payment outcomes, resubmits, changed ca
     await env.commandStore.close()
   })
 
+  /** A checkout paid with a token an agent was given: no shopper is on a page to act on the intent. */
+  const beginDelegated = (
+    checkout: Checkout,
+    cartToken: string,
+    token: string,
+    email = 'shopper+stub-pending@example.com',
+  ) =>
+    checkout.beginCheckout({
+      cartToken,
+      email,
+      billingAddress: makeAddr(),
+      shippingAddress: makeAddr(),
+      delegatedPayment: { token },
+    })
+
+  // Defect: a delegated token is dropped before the provider (the intent is made with no payment method), or sent as
+  // `delegatedToken: undefined` for an ordinary checkout; a delegated intent captured at creation is cancelled anyway.
+  it('a delegated token reaches the intent as delegatedToken only when given, and a captured one confirms the order', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+    const a = await cartWith(env, [{ priceMinor: 600, stock: 4, qty: 1 }])
+    const delegated = await beginDelegated(checkout, a.token, 'spt_abc', 'agent@example.com')
+    const b = await cartWith(env, [{ priceMinor: 600, stock: 4, qty: 1 }])
+    await begin(checkout, b.token)
+
+    expect(calls.created[0]!.delegatedToken).toBe('spt_abc')
+    expect('delegatedToken' in calls.created[1]!).toBe(false)
+    expect(delegated.payment).toEqual({ status: 'succeeded' })
+    expect(delegated.orderStatus).toBe('confirmed')
+    expect((await orderOf(env, delegated.orderId)).status).toBe('confirmed')
+    expect(calls.cancelled).toEqual([])
+    await env.commandStore.close()
+  })
+
+  // Defect: a delegated intent that waits on 3-D Secure is left pending (its stock held for a buyer who never comes),
+  // is not cancelled with the provider, or the order is cancelled with no payment.failed, the wrong reason or an answer
+  // that still says requires_action.
+  it('a delegated payment whose intent requires action is cancelled with the provider, and its order cancelled with payment_requires_action', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 900, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    const started = await beginDelegated(checkout, token, 'spt_3ds')
+
+    expect(calls.cancelled).toEqual([started.paymentIntent.id])
+    expect(started.orderStatus).toBe('cancelled')
+    expect(started.payment).toEqual({ status: 'failed', reason: 'payment_requires_action' })
+    expect((await orderOf(env, started.orderId)).status).toBe('cancelled')
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock)
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toEqual([
+      {
+        paymentId: started.paymentIntent.id,
+        orderId: started.orderId,
+        reason: 'payment_requires_action',
+      },
+    ])
+    await env.commandStore.close()
+  })
+
+  // Defect: an intent the provider will not cancel (already under way) has its order cancelled anyway, so the capture
+  // its webhook delivers lands on a cancelled order; or the refusal escapes to the agent as an error.
+  it('a delegated intent whose cancel the provider refuses leaves the order pending and answers requires_action, recording no payment.failed', async () => {
+    const env = await setup()
+    const { payments, calls } = provider(() => ({
+      async cancelPaymentIntent(id) {
+        throw new PaymentError('cancel_refused', `intent ${id} is processing`)
+      },
+    }))
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 900, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    const started = await beginDelegated(checkout, token, 'spt_3ds')
+
+    expect(calls.cancelled).toEqual([started.paymentIntent.id])
+    expect(started.orderStatus).toBe('pending')
+    expect(started.payment).toEqual({ status: 'requires_action' })
+    expect((await orderOf(env, started.orderId)).status).toBe('pending')
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toEqual([])
+    await env.commandStore.close()
+  })
+
+  // Defect: any provider error on the cancel is swallowed as a refusal (the agent told the order is pending while the
+  // provider's state is unknown), or the order is cancelled though the intent may still be live.
+  it('any other provider error cancelling a delegated intent is rethrown as it is, and the order stays pending', async () => {
+    const env = await setup()
+    const { payments, calls } = provider(() => ({
+      async cancelPaymentIntent() {
+        throw new PaymentError('intent_failed', 'provider unreachable')
+      },
+    }))
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 900, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    await expect(beginDelegated(checkout, token, 'spt_3ds')).rejects.toMatchObject({
+      code: 'payment.intent_failed',
+    })
+
+    expect(calls.cancelled).toHaveLength(1)
+    const intentId = calls.cancelled[0]!
+    const order = (await env.commandStore.read((tx) =>
+      env.repos.order.findByPaymentIntentId(tx, intentId),
+    ))!
+    expect(order.status).toBe('pending')
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    expect(await events(env, EVT_PAYMENT_FAILED, order.id)).toEqual([])
+    await env.commandStore.close()
+  })
+
+  // Defect: an ordinary checkout whose intent waits on the shopper (who is on the page to act on it) is cancelled as
+  // though it were delegated.
+  it('an ordinary checkout whose intent requires action cancels nothing and leaves its order pending', async () => {
+    const env = await setup()
+    const { payments, calls } = provider()
+    const checkout = checkoutWith(env, payments)
+    const line = { priceMinor: 900, stock: 5, qty: 2 }
+    const { token, variants } = await cartWith(env, [line])
+
+    const started = await begin(checkout, token)
+
+    expect(calls.cancelled).toEqual([])
+    expect(started.orderStatus).toBe('pending')
+    expect(started.payment).toEqual({ status: 'requires_action' })
+    expect((await orderOf(env, started.orderId)).status).toBe('pending')
+    expect(await stockOf(env, variants[0]!.id)).toBe(line.stock - line.qty)
+    expect(await events(env, EVT_PAYMENT_FAILED, started.orderId)).toEqual([])
+    await env.commandStore.close()
+  })
+
   // Defect: a resubmit makes a second intent or order, reserves the lines again, or answers without the intent.
   it('a resubmit of the same cart answers its pending order and intent, and reserves, creates and publishes nothing', async () => {
     const env = await setup()

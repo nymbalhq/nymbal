@@ -50,9 +50,9 @@ function queryValue(value: string | string[] | undefined): string | undefined {
 }
 
 /**
- * Each agent surface's discovery document and MCP endpoint, the crawl files (`/robots.txt`, `/llms.txt`, the product
- * feed) and the checkout handoff. Mounted after `attachHttp` and `mountMcp`, outside the route registry: none of these
- * is an agent tool.
+ * Each agent surface's discovery document, MCP endpoint and REST routes, the crawl files (`/robots.txt`, `/llms.txt`,
+ * the product feed) and the checkout handoff. Mounted after `attachHttp` and `mountMcp`, outside the route registry:
+ * none of these is an agent tool.
  */
 export async function mountAgentSurfaces(
   server: HttpServer,
@@ -68,7 +68,7 @@ export async function mountAgentSurfaces(
   agents.useUrls(deps.urls)
 
   for (const surface of agents.surfaces) {
-    const { wellKnown, endpoint } = surface
+    const { wellKnown, endpoint, routes = [] } = surface
     if (wellKnown !== undefined) {
       adapter.registerRoute('GET', wellKnown.path, async () => ({
         status: 200,
@@ -85,6 +85,23 @@ export async function mountAgentSurfaces(
         admitTools: false,
         ...(deps.version !== undefined && { version: deps.version }),
       })
+    }
+    // Server to server under the surface's own bearer, with no cookie to ride on: no CSRF token, as for a webhook.
+    for (const route of routes) {
+      adapter.registerRoute(
+        route.method,
+        route.path,
+        (ctx) =>
+          route.handle({
+            params: ctx.params,
+            query: ctx.query,
+            headers: ctx.headers,
+            body: ctx.body,
+            ip: ctx.ip,
+            requestId: ctx.requestId,
+          }),
+        { csrf: false },
+      )
     }
   }
 

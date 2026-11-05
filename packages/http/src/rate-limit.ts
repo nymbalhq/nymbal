@@ -45,6 +45,8 @@ export const BUILT_IN_RATE_LIMITS: RateLimitRules = {
   '/api/mcp': { requests: 120, window: '1m', action: 'block' },
   // A UCP tool is not a route: each request counts once here, however many routes its tool runs.
   '/api/ucp/mcp': { requests: 120, window: '1m', action: 'block' },
+  // `**`: every ACP path, the session's own and the ones below it, counts in the one bucket.
+  '/api/acp/**': { requests: 120, window: '1m', action: 'block' },
 }
 
 interface Bucket {
