@@ -13,13 +13,25 @@ export interface OwnProduct {
   name: string
 }
 
-export async function adminToken(request: APIRequestContext): Promise<string> {
-  const res = await request.post(`${API_URL}/api/auth/login`, {
-    headers: await csrf(request),
-    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  })
-  expect(res.ok(), `admin API login: ${await res.text()}`).toBe(true)
-  return ((await res.json()) as { data: { accessToken: string } }).data.accessToken
+/**
+ * The admin's bearer, from a sign-in on a context of its own: never on the caller's. A sign-in points the jar's cart
+ * cookie at the admin's customer cart, which every admin sign-in shares, so a guest checkout on the caller's context
+ * would place, or find emptied, the cart of whichever test checked out on it last. The caller's jar still gets its
+ * CSRF cookie here, so the writes it then sends at once (`ownProduct` in parallel) carry one token, not a race of them.
+ */
+export async function adminToken(caller: APIRequestContext): Promise<string> {
+  await csrf(caller)
+  const admin = await playwrightRequest.newContext()
+  try {
+    const res = await admin.post(`${API_URL}/api/auth/login`, {
+      headers: await csrf(admin),
+      data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
+    })
+    expect(res.ok(), `admin API login: ${await res.text()}`).toBe(true)
+    return ((await res.json()) as { data: { accessToken: string } }).data.accessToken
+  } finally {
+    await admin.dispose()
+  }
 }
 
 /** An active product with one variant at `stock`, served by the read side before this returns. */
