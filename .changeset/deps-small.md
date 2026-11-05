@@ -1,8 +1,8 @@
 ---
-'@nymbalhq/email-smtp': patch
-'@nymbalhq/email-mailgun': patch
-'@nymbalhq/email-ses': patch
-'@nymbalhq/email-resend': patch
+'@nymbalhq/email-smtp': minor
+'@nymbalhq/email-mailgun': minor
+'@nymbalhq/email-ses': minor
+'@nymbalhq/email-resend': minor
 ---
 
-The email adapters accept nodemailer 6 to 10; upgrade to nodemailer 10.3.1 or later for its security fixes.
+Breaking: the email adapters now need nodemailer 10.1.4 or later, the first release with every published security fix; on nodemailer 6 to 9, upgrade it with the adapter.

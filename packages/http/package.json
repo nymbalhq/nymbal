@@ -40,11 +40,10 @@
     "@nymbalhq/config": "workspace:*",
     "@nymbalhq/types": "workspace:*",
     "fastify": "^5.12.7",
-    "uuid": "^10.0.0"
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
-    "@types/uuid": "^10.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "tsup": "^9.0.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2"

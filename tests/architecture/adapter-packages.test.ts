@@ -25,8 +25,8 @@ const ADAPTERS = FIRST_PARTY_ADAPTERS.map((a) => ({
   ]?.sdk,
 }))
 
-/** Every nodemailer major the SMTP send path works on, so a store can take nodemailer's security fixes. */
-const NODEMAILER = '^6.9.16 || ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0'
+/** The first nodemailer release with every published security fix, so no install resolves a vulnerable one. */
+const NODEMAILER = '^10.1.4'
 
 /** The exact SDK range an adapter peers, where it is pinned, by package. */
 const SDK_RANGES: Readonly<Record<string, string>> = {

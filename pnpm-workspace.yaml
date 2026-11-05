@@ -36,3 +36,7 @@ packageExtensions:
         optional: true
       "@types/react-dom":
         optional: true
+
+# A patched uuid for the Lighthouse CI tooling (a devDependency; it calls only uuid.v4).
+overrides:
+  "@lhci/cli>uuid": "^11.1.1"
