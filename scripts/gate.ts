@@ -1046,8 +1046,8 @@ function ratchetFiles(text: string): Record<string, unknown> {
 
 /**
  * The files whose entry in the head's mutation-ratchet.json is new or differs from the base's (both given as text;
- * an empty text is a ratchet with no entries). Their cached mutant statuses predate the entry, so they are measured
- * fresh; every other file keeps its cache.
+ * an empty text is a ratchet with no entries). Their cached statuses predate the entry; `belowCachedScore` says which
+ * of them are measured fresh.
  */
 export function ratchetChanges(base: string, head: string): string[] {
   const before = ratchetFiles(base)
@@ -1110,6 +1110,28 @@ export async function strykerChanges(
     changed: [...new Set([...changed, ...changedFiles(root, at)])].sort(),
     moved: [...new Set([...moved, ...ratchetChangesSince(root, at)])],
   }
+}
+
+/**
+ * Of the files whose ratchet entry moved, those the incremental report scores below their new entry or holds no
+ * mutants of. Only those are measured afresh: a cached score under the entry would fail a file no change touched.
+ * A file the report already holds at its entry keeps its statuses, and Stryker re-measures what changed sources and
+ * tests reach in it, as in every other file. Dropping every moved entry's statuses measured 3,931 of 4,657 mutants
+ * cold after a ratchet raised from a full run, past the mutation job's timeout.
+ */
+export async function belowCachedScore(root: string, moved: string[]): Promise<string[]> {
+  if (moved.length === 0) return moved
+  const report = await incrementalReport(root)
+  const ratchet = resolve(root, RATCHET)
+  if (!existsSync(report) || !existsSync(ratchet)) return moved
+  const { scoreByFile } = await import('./mutation-ratchet')
+  const cached = scoreByFile(JSON.parse(readFileSync(report, 'utf8')))
+  const entries = ratchetFiles(readFileSync(ratchet, 'utf8'))
+  return moved.filter((path) => {
+    const entry = entries[path]
+    const score = cached[path]
+    return typeof entry !== 'number' || score === undefined || score < entry
+  })
 }
 
 /** Drops `files` from Stryker's incremental report, so its next run measures their mutants afresh. */
@@ -2093,7 +2115,16 @@ async function main(argv: string[]): Promise<number> {
     values.full && strykerMode !== 'off'
       ? await strykerTargets(root, forStryker.changed, moved)
       : []
-  const remeasured = moved.filter((path) => mutated.includes(path))
+  const remeasured = await belowCachedScore(
+    root,
+    moved.filter((path) => mutated.includes(path)),
+  )
+  const held = moved.filter((path) => mutated.includes(path) && !remeasured.includes(path))
+  if (held.length > 0) {
+    process.stderr.write(
+      `stryker: ratchet entries moved, the cached report already at them: ${held.join(', ')}\n`,
+    )
+  }
   const buildStale = !values.full && !buildIsCurrent(root)
   // A stale admin build is rebuilt; a missing one is left to whoever serves it (the walk's check, gate:full's build).
   const adminStale =

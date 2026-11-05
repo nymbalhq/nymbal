@@ -281,8 +281,8 @@ jobs:
           # stryker-incremental-v3-nightly-<sha>, which the restore prefix matches, seeding the chain; a key of its own
           # keeps a passing push at the same sha from taking the save. Bumping the prefix drops the statuses carried forward and restores nothing until the next nightly;
           # a push that mutates the whole set cold before then can outlast the timeout. A
-          # ratchet change keeps the chain: the gate measures the files whose entry moved afresh, dropping their
-          # cached statuses, and the nightly full run stays the ground truth for the rest.
+          # ratchet change keeps the chain: the gate measures afresh only the moved entries the cached report scores
+          # below (belowCachedScore in gate.ts), and the nightly full run stays the ground truth for the rest.
           key: stryker-incremental-v3-${{ github.sha }}
           restore-keys: stryker-incremental-v3-
       - name: Mutation
