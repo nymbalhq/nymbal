@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   existsSync,
@@ -17,7 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { parseCsv } from '../support/csv.js'
 import { startWooCommerceServer, type WooCommerceServer } from '../support/woocommerce-server.js'
 
-// `npx nymbal preview` in the scaffolded store while its `nymbal dev` keeps running (scripts/scaffold-clean.sh sets the
+// `nymbal preview` (the project's bin, which `npx nymbal` runs) in the scaffolded store while its `nymbal dev` keeps running (scripts/scaffold-clean.sh sets the
 // variables below), against the recorded GBP store, whose images are real PNGs a browser decodes. The preview is
 // asked for dev's own ports and must pick others; its storefront is the project's template, served on the preview's
 // API. Afterwards nothing of the project's has changed and dev serves what it served.
@@ -139,6 +139,23 @@ async function productSlugs(api: string): Promise<Set<string>> {
   return slugs
 }
 
+/** The pids of `pid`'s direct children, none when it has none. */
+function childrenOf(pid: number): number[] {
+  const res = spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' })
+  return res.stdout.split(/\s+/).filter(Boolean).map(Number)
+}
+
+/** SIGKILLs every process group led by one of `leaders`; a group already gone is skipped. */
+function killGroups(leaders: number[]): void {
+  for (const leader of leaders) {
+    try {
+      process.kill(-leader, 'SIGKILL')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
+  }
+}
+
 const portOf = (url: string) =>
   Number(new URL(url).port || (new URL(url).protocol === 'https:' ? 443 : 80))
 
@@ -164,6 +181,10 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
   let liveError: string | null = null
   let exit: { code: number | null; signal: NodeJS.Signals | null } | null = null
   let afterStop: { api: boolean; storefront: boolean; dirs: string[] } | null = null
+  /** Seconds from spawn to Preview ready, to the SIGINT, to the bound's SIGKILL and to the exit. */
+  const times: { ready?: number; sigint?: number; killed?: number; exit?: number } = {}
+  /** The preview's children when it was ready: the storefront, which leads a process group of its own. */
+  let storefrontGroups: number[] = []
 
   beforeAll(async () => {
     woo = await startWooCommerceServer({ recorded: 'store-a-gbp' })
@@ -171,10 +192,14 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
     devSlugsBefore = await productSlugs(DEV_API)
     before = treeOf(DIR)
 
+    // The project's own bin, which `npx nymbal` runs: npx runs it under `sh -c`, and Linux's sh (dash) forks rather
+    // than execs, so a SIGINT sent to npx never reaches the preview, and one sent to the group makes npm exit by the
+    // signal whatever the preview's own exit code.
+    const started = Date.now()
+    const seconds = () => Math.round((Date.now() - started) / 100) / 10
     const child = spawn(
-      'npx',
+      join(DIR, 'node_modules', '.bin', 'nymbal'),
       [
-        'nymbal',
         'preview',
         ...[
           '--source',
@@ -207,24 +232,29 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
       )
       if (m === null) return
       triggered = true
+      times.ready = seconds()
       urls = { api: m[1]!.replace(/\/+$/, ''), storefront: m[2]!.replace(/\/+$/, '') }
+      storefrontGroups = childrenOf(child.pid!)
       void browse(urls)
         .then((l) => (live = l))
         .catch(
           (error: unknown) => (liveError = error instanceof Error ? error.message : String(error)),
         )
-        .finally(() => child.kill('SIGINT'))
+        .finally(() => {
+          times.sigint = seconds()
+          child.kill('SIGINT')
+        })
     }
     child.stdout.on('data', onOutput)
     child.stderr.on('data', onOutput)
+    // About 10 s from spawn to Preview ready on a CI runner and under a second to browse: this bound is reached only
+    // by a preview that hangs.
     const timer = setTimeout(() => {
-      try {
-        process.kill(-child.pid!, 'SIGKILL')
-      } catch {
-        // already gone
-      }
+      times.killed = seconds()
+      killGroups([child.pid!, ...storefrontGroups])
     }, 400_000)
     exit = await exited
+    times.exit = seconds()
     clearTimeout(timer)
     // Probed before the group is killed: a storefront the preview left running still answers here.
     const printed = urls as { api: string; storefront: string } | null
@@ -233,17 +263,15 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
       storefront: printed === null ? false : await gone(printed.storefront),
       dirs: readdirSync(tmp).filter((n) => n.startsWith('nymbal-preview-')),
     }
-    try {
-      process.kill(-child.pid!, 'SIGKILL')
-    } catch {
-      // the whole group is gone, as it should be
-    }
+    // Gone already when the preview stopped as it should; the storefront runs in a group of its own.
+    killGroups([child.pid!, ...storefrontGroups])
     after = treeOf(DIR)
     devSlugsAfter = await productSlugs(DEV_API)
     devHomeAfter = (await fetch(DEV_STORE)).status
   }, 500_000)
 
   afterAll(async () => {
+    killGroups(storefrontGroups)
     await woo?.close()
     if (tmp !== undefined) rmSync(tmp, { recursive: true, force: true })
     for (const f of OUTPUTS) rmSync(join(DIR, f), { force: true })
@@ -331,7 +359,8 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
   })
 
   it("AC-10: after SIGINT the preview exits 0, its API and storefront answer no more, its directory is gone, and no file of the project's changed", () => {
-    expect(exit, out.slice(-3000)).toEqual({ code: 0, signal: null })
+    // Seconds from spawn: no SIGINT means the browse ran out the bound; a SIGKILL long after the SIGINT, the stop hung.
+    expect(exit, `${JSON.stringify(times)}\n${out.slice(-3000)}`).toEqual({ code: 0, signal: null })
     expect(afterStop).toEqual({ api: true, storefront: true, dirs: [] })
     expect(changedSince(before, after)).toEqual({ added: [], changed: [], removed: [] })
     expect(OUTPUTS.filter((f) => !existsSync(join(DIR, f)))).toEqual([])
