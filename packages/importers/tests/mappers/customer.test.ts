@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
-import { mapCustomer } from '../../src/woocommerce/mappers/customer.js'
+import { anonymisedCustomerEmail, mapCustomer } from '../../src/woocommerce/mappers/customer.js'
 import type { WcCustomer } from '../../src/woocommerce/client.js'
 
 function makeCustomer(overrides: Partial<WcCustomer> = {}): WcCustomer {
@@ -89,5 +90,56 @@ describe('mapCustomer', () => {
       false,
     )
     expect(result.addresses).toBeUndefined()
+  })
+
+  it('carries the billing address line by line, defaulting only the country', () => {
+    const billing = {
+      ...makeCustomer().billing,
+      address_2: 'Flat 3',
+      company: 'Acme Ltd',
+      phone: '07700900001',
+      country: '',
+    }
+    const addr = mapCustomer(makeCustomer({ billing }), false).addresses?.[0]
+    expect(addr).toMatchObject({
+      firstName: 'Alice',
+      lastName: 'Smith',
+      addressLine1: '1 Main St',
+      addressLine2: 'Flat 3',
+      company: 'Acme Ltd',
+      phone: '07700900001',
+      city: 'London',
+      region: 'England',
+      postalCode: 'E1 6AN',
+      country: 'US',
+      isDefaultBilling: true,
+      isDefaultShipping: false,
+    })
+  })
+
+  it('leaves out an empty second line, company and phone, and keeps a given country', () => {
+    const billing = { ...makeCustomer().billing, address_2: '', company: '', phone: '' }
+    const addr = mapCustomer(makeCustomer({ billing }), false).addresses?.[0]
+    expect(addr?.country).toBe('GB')
+    expect(
+      Object.keys(addr ?? {}).filter((k) => ['addressLine2', 'company', 'phone'].includes(k)),
+    ).toEqual([])
+  })
+
+  it('leaves out an empty first or last name', () => {
+    const result = mapCustomer(makeCustomer({ first_name: '', last_name: '' }), false)
+    expect('firstName' in result).toBe(false)
+    expect('lastName' in result).toBe(false)
+  })
+
+  it("anonymises to the first 12 hex digits of the id's SHA-256, and keeps the id and sync time", () => {
+    const before = Date.now()
+    const result = mapCustomer(makeCustomer({ id: 42 }), true)
+    const hash = createHash('sha256').update('42').digest('hex').slice(0, 12)
+    expect(result.email).toBe(`customer-${hash}@imported.nymbal.local`)
+    expect(anonymisedCustomerEmail(42)).toBe(result.email)
+    const meta = result.metadata?.['woocommerce'] as Record<string, unknown>
+    expect(meta['customerId']).toBe(42)
+    expect(Date.parse(String(meta['syncedAt']))).toBeGreaterThanOrEqual(before - 1000)
   })
 })

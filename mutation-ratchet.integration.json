@@ -1,16 +1,23 @@
 {
-  "measuredAt": "2026-10-27T12:46:10.397Z",
+  "measuredAt": "2026-11-04T23:04:37.124Z",
   "command": "pnpm mutation:integration",
-  "total": 68,
+  "total": 69.6,
   "files": {
-    "packages/platform/src/events/publisher.ts": 82.14,
-    "packages/platform/src/events/relay.ts": 77.78,
-    "packages/platform/src/repositories/alert-subscription.ts": 60,
+    "packages/platform/src/events/publisher.ts": 100,
+    "packages/platform/src/events/relay.ts": 90.74,
+    "packages/platform/src/repositories/alert-subscription.ts": 63.39,
+    "packages/platform/src/repositories/audit-entry.ts": 30.08,
     "packages/platform/src/repositories/email-suppression.ts": 51.43,
     "packages/platform/src/repositories/order-access-key.ts": 85.37,
-    "packages/platform/src/repositories/processed-event.ts": 59.18,
-    "packages/platform/src/repositories/order-sequence.ts": 93.33,
-    "packages/platform/src/services/alert-service.ts": 74.02,
-    "packages/platform/src/services/recently-viewed-service.ts": 68.18
+    "packages/platform/src/repositories/order-sequence.ts": 100,
+    "packages/platform/src/repositories/processed-event.ts": 69.39,
+    "packages/platform/src/repositories/proposal.ts": 68.67,
+    "packages/platform/src/repositories/review.ts": 65.32,
+    "packages/platform/src/services/alert-service.ts": 77.62,
+    "packages/platform/src/services/description.ts": 70,
+    "packages/platform/src/services/import-removal-service.ts": 68.97,
+    "packages/platform/src/services/proposal-service.ts": 83.78,
+    "packages/platform/src/services/recently-viewed-service.ts": 68.18,
+    "packages/platform/src/services/review-service.ts": 57.45
   }
 }

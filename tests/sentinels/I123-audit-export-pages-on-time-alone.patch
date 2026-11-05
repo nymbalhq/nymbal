@@ -1,0 +1,18 @@
+# id: I123
+# kind: injected
+# defect: the audit export pages oldest first on the entry's time alone, so entries stamped at the same instant as a page's last one are skipped from the CSV and JSON exports
+# where: packages/platform/src/repositories/audit-entry.ts:84
+# killed-by: packages/platform/src/repositories/audit-entry.test.ts (pages through every matching entry once, oldest first, for any page size)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/repositories/audit-entry.test.ts
+diff --git a/packages/platform/src/repositories/audit-entry.ts b/packages/platform/src/repositories/audit-entry.ts
+--- a/packages/platform/src/repositories/audit-entry.ts
++++ b/packages/platform/src/repositories/audit-entry.ts
+@@ -81,7 +81,7 @@ function where(
+       ? undefined
+       : q.order === 'desc'
+         ? or(lt(t.at, at(cursor.at)), and(eq(t.at, at(cursor.at)), lt(t.id, cursor.id)))
+-        : or(gt(t.at, at(cursor.at)), and(eq(t.at, at(cursor.at)), gt(t.id, cursor.id)))
++        : gt(t.at, at(cursor.at))
+   return and(
+     q.actor === undefined ? undefined : actorFilter(t, q.actor),
+     q.command === undefined ? undefined : eq(t.command, q.command),

@@ -13,7 +13,7 @@ export default {
   mutate: [
     'packages/platform/src/services/**/*.ts',
     'packages/platform/src/repositories/**/*.ts',
-    // Measured by the integration run alone (stryker.integration.config.mjs); held at 0 here.
+    // Measured by the integration run too (stryker.integration.config.mjs); here by the unit tests beside them.
     'packages/platform/src/events/relay.ts',
     'packages/platform/src/events/publisher.ts',
     'packages/importers/src/woocommerce/mappers/**/*.ts',

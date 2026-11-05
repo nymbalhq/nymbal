@@ -20,6 +20,13 @@ export default {
     'packages/platform/src/repositories/processed-event.ts',
     'packages/platform/src/repositories/email-suppression.ts',
     'packages/platform/src/repositories/order-sequence.ts',
+    'packages/platform/src/services/review-service.ts',
+    'packages/platform/src/repositories/review.ts',
+    'packages/platform/src/services/proposal-service.ts',
+    'packages/platform/src/repositories/proposal.ts',
+    'packages/platform/src/services/import-removal-service.ts',
+    'packages/platform/src/services/description.ts',
+    'packages/platform/src/repositories/audit-entry.ts',
   ],
   ignorePatterns: [
     '/*',

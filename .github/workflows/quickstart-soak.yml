@@ -3,9 +3,12 @@ name: Quickstart soak
 # The quickstart page (apps/docs/src/content/docs/quickstart.md), followed end to end by scripts/quickstart.sh on fresh
 # runners: each job publishes this commit's packages to a local registry, scaffolds a store, runs its production image
 # with Postgres, and has an agent call it over MCP. A job fails on a crash or a step that fails, and the run is green
-# only when every job is. Dispatched by hand and before a release, never on a push: a network hiccup in one job must
-# not hold a merge. No secret is read and nothing is published to npmjs.
+# only when every job is. Dispatched by hand, and run on the release pull request into main (only promotions target
+# main) with 20 runs; never on a push: a network hiccup in one job must not hold a merge. No secret is read and nothing
+# is published to npmjs.
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       runs:
@@ -23,7 +26,7 @@ jobs:
     steps:
       - id: matrix
         env:
-          RUNS: ${{ inputs.runs }}
+          RUNS: ${{ inputs.runs || 20 }}
         run: |
           node -e '
           const runs = Number(process.env.RUNS)

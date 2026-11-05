@@ -1,0 +1,26 @@
+# id: I124
+# kind: injected
+# defect: a category's products are read by matching the category id against the product column, so every category lists no products while its products still list it
+# where: packages/platform/src/repositories/product-category.ts:92
+# killed-by: packages/platform/src/repositories/product-category.test.ts (property: after any attaches and detaches, each side reads exactly the links a set model holds)
+# suite: pnpm vitest run --project platform-unit packages/platform/src/repositories/product-category.test.ts
+diff --git a/packages/platform/src/repositories/product-category.ts b/packages/platform/src/repositories/product-category.ts
+--- a/packages/platform/src/repositories/product-category.ts
++++ b/packages/platform/src/repositories/product-category.ts
+@@ -89,14 +89,14 @@ export function createProductCategoryRepository(store: CommandStore): ProductCat
+         const rows = sqliteDb(tx)
+           .select({ productId: sqliteSchema.productCategories.productId })
+           .from(sqliteSchema.productCategories)
+-          .where(eq(sqliteSchema.productCategories.categoryId, categoryId))
++          .where(eq(sqliteSchema.productCategories.productId, categoryId))
+           .all()
+         return rows.map((r) => r.productId)
+       }
+       const rows = await postgresDb(tx)
+         .select({ productId: postgresSchema.productCategories.productId })
+         .from(postgresSchema.productCategories)
+-        .where(eq(postgresSchema.productCategories.categoryId, categoryId))
++        .where(eq(postgresSchema.productCategories.productId, categoryId))
+       return rows.map((r) => r.productId)
+     },
+   }

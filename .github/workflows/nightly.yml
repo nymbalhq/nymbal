@@ -107,7 +107,8 @@ jobs:
     name: Mutation — integration-tested files
     runs-on: ubuntu-24.04
     needs: [build]
-    timeout-minutes: 45
+    # Nine files ran 555 mutants in 34 min here (2026-11-04); sixteen run about 1200, so about 75 min.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

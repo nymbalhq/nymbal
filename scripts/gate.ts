@@ -956,7 +956,7 @@ function testQualityStep(root: string, base: string, startedMs: number): number 
 // The steps of gate and gate:full
 // ---------------------------------------------------------------------------------------------------------------
 
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let source = ''
   for (let i = 0; i < glob.length; i += 1) {
     const ch = glob[i] as string

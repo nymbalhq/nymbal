@@ -1,0 +1,18 @@
+# id: I127
+# kind: injected
+# defect: Resend refuses to send unless smtp.user is set, though the relay's user defaults to "resend" and the API key alone is the documented login, so a store configured as documented sends nothing
+# where: packages/adapters/email/resend/src/resend-adapter.ts:98
+# killed-by: tests/contracts/resend-email.test.ts (sendTransactional resolves with accepted or messageId)
+# suite: pnpm vitest run --project contracts-native tests/contracts/resend-email.test.ts
+diff --git a/packages/adapters/email/resend/src/resend-adapter.ts b/packages/adapters/email/resend/src/resend-adapter.ts
+--- a/packages/adapters/email/resend/src/resend-adapter.ts
++++ b/packages/adapters/email/resend/src/resend-adapter.ts
+@@ -95,7 +95,7 @@ export function createResendEmailAdapter(deps: {
+             }
+       }),
+     sendTransactional: (params) => {
+-      if (!set(cfg.smtp?.pass)) {
++      if (!set(cfg.smtp?.pass) || !set(cfg.smtp?.user)) {
+         return Promise.reject(
+           new AdapterError('email.misconfigured', NO_PASS, { context: { missing: ['smtp.pass'] } }),
+         )

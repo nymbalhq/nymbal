@@ -1,0 +1,3103 @@
+{
+  "sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+  "runs": {
+    "total_count": 7,
+    "workflow_runs": [
+      {
+        "id": 42000000199,
+        "name": "CI",
+        "path": ".github/workflows/ci.yml",
+        "head_sha": "9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199",
+        "created_at": "2026-11-05T09:00:00Z"
+      },
+      {
+        "id": 42000000101,
+        "name": "CI",
+        "path": ".github/workflows/ci.yml",
+        "head_sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101",
+        "created_at": "2026-11-05T00:10:00Z"
+      },
+      {
+        "id": 42000000100,
+        "name": "CI",
+        "path": ".github/workflows/ci.yml",
+        "head_sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000100",
+        "created_at": "2026-11-04T23:00:00Z"
+      },
+      {
+        "id": 42000000299,
+        "name": "Nightly",
+        "path": ".github/workflows/nightly.yml",
+        "head_sha": "9c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299",
+        "created_at": "2026-11-05T09:05:00Z"
+      },
+      {
+        "id": 42000000201,
+        "name": "Nightly",
+        "path": ".github/workflows/nightly.yml",
+        "head_sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201",
+        "created_at": "2026-11-05T00:12:00Z"
+      },
+      {
+        "id": 42000000301,
+        "name": "Registry",
+        "path": ".github/workflows/registry.yml",
+        "head_sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000301",
+        "created_at": "2026-11-05T00:13:00Z"
+      },
+      {
+        "id": 42000000401,
+        "name": "Quickstart soak",
+        "path": ".github/workflows/quickstart-soak.yml",
+        "head_sha": "2efa5079f3e1c0d4b8a6e2f19c7d3b5a40e6c812",
+        "event": "pull_request",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401",
+        "created_at": "2026-11-05T00:30:00Z"
+      }
+    ]
+  },
+  "jobs": {
+    "42000000101": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010100,
+        "name": "Build all packages, templates and admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010100",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010101,
+        "name": "Gate — tests (shard 1 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010101",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010102,
+        "name": "Gate — tests (shard 2 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010102",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010103,
+        "name": "Gate — tests (shard 3 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010103",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010104,
+        "name": "Performance budgets — both templates, five pages",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010104",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v7",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run pnpm/action-setup@v6",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v7",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run pnpm install --frozen-lockfile",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/download-artifact@v8",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "perf:budgets --bytes",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "perf:budgets (tests/perf)",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Playwright version",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 10,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010105,
+        "name": "Integration — integration-postgres",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010105",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010106,
+        "name": "Integration — integration-stores",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010106",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010107,
+        "name": "Integration — proof-kit-services",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010107",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010108,
+        "name": "Mutation — Stryker (incremental)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010108",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010109,
+        "name": "Sentinels and tests-fail-on-base",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010109",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010110,
+        "name": "E2E — Astro",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010110",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010111,
+        "name": "E2E — Next.js",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010111",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010112,
+        "name": "E2E — Admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010112",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010113,
+        "name": "E2E — Astro on custom providers",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010113",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010114,
+        "name": "E2E — Next.js on custom providers",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010114",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010115,
+        "name": "Scaffold from a clean machine (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010115",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010116,
+        "name": "Scaffold from a clean machine (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010116",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010117,
+        "name": "Scaffold into an image and run it (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010117",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010118,
+        "name": "Scaffold into an image and run it (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010118",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010119,
+        "name": "Build the docs site",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000101/job/4200000010119",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000100": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000010000,
+        "name": "Build all packages, templates and admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000100/job/4200000010000",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000199": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019900,
+        "name": "Build all packages, templates and admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019900",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019901,
+        "name": "Gate — tests (shard 1 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019901",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019902,
+        "name": "Gate — tests (shard 2 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019902",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019903,
+        "name": "Gate — tests (shard 3 of 3)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019903",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019904,
+        "name": "Performance budgets — both templates, five pages",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019904",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/checkout@v7",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run pnpm/action-setup@v6",
+            "number": 3,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/setup-node@v7",
+            "number": 4,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run pnpm install --frozen-lockfile",
+            "number": 5,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run actions/download-artifact@v8",
+            "number": 6,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "perf:budgets --bytes",
+            "number": 7,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "perf:budgets (tests/perf)",
+            "number": 8,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Playwright version",
+            "number": 9,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 10,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019905,
+        "name": "Integration — integration-postgres",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019905",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019906,
+        "name": "Integration — integration-stores",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019906",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019907,
+        "name": "Integration — proof-kit-services",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019907",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019908,
+        "name": "Mutation — Stryker (incremental)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019908",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019909,
+        "name": "Sentinels and tests-fail-on-base",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019909",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019910,
+        "name": "E2E — Astro",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019910",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019911,
+        "name": "E2E — Next.js",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019911",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019912,
+        "name": "E2E — Admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019912",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019913,
+        "name": "E2E — Astro on custom providers",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019913",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019914,
+        "name": "E2E — Next.js on custom providers",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019914",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019915,
+        "name": "Scaffold from a clean machine (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019915",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019916,
+        "name": "Scaffold from a clean machine (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019916",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019917,
+        "name": "Scaffold into an image and run it (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019917",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019918,
+        "name": "Scaffold into an image and run it (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019918",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000019919,
+        "name": "Build the docs site",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000199/job/4200000019919",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000201": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020100,
+        "name": "Performance budgets — both templates, five pages",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020100",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020101,
+        "name": "Build all packages, templates and admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020101",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020102,
+        "name": "Mutation — full Stryker run",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020102",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020103,
+        "name": "Mutation — integration-tested files",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020103",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020104,
+        "name": "Quarantined tests",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020104",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020105,
+        "name": "Gate — tests, the harness projects included",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020105",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020106,
+        "name": "E2E — astro, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020106",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020107,
+        "name": "E2E — nextjs, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020107",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020108,
+        "name": "E2E — admin, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020108",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020109,
+        "name": "E2E — astro on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020109",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020110,
+        "name": "E2E — nextjs on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020110",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020111,
+        "name": "E2E — admin on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020111",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020112,
+        "name": "E2E — astro on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020112",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020113,
+        "name": "E2E — nextjs on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020113",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000020114,
+        "name": "E2E — admin on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000201/job/4200000020114",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000299": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029900,
+        "name": "Performance budgets — both templates, five pages",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029900",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029901,
+        "name": "Build all packages, templates and admin",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029901",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029902,
+        "name": "Mutation — full Stryker run",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029902",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029903,
+        "name": "Mutation — integration-tested files",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029903",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029904,
+        "name": "Quarantined tests",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029904",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029905,
+        "name": "Gate — tests, the harness projects included",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029905",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029906,
+        "name": "E2E — astro, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029906",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029907,
+        "name": "E2E — nextjs, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029907",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029908,
+        "name": "E2E — admin, mobile",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029908",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029909,
+        "name": "E2E — astro on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029909",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029910,
+        "name": "E2E — nextjs on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029910",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029911,
+        "name": "E2E — admin on postgres-redis",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029911",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029912,
+        "name": "E2E — astro on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029912",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029913,
+        "name": "E2E — nextjs on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029913",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000029914,
+        "name": "E2E — admin on postgres-jsonb",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000299/job/4200000029914",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000301": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000030100,
+        "name": "Certify the listed adapters",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000301/job/4200000030100",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ],
+    "42000000401": [
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040100,
+        "name": "Plan the runs",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040100",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040101,
+        "name": "Quickstart 1 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040101",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040102,
+        "name": "Quickstart 2 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040102",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040103,
+        "name": "Quickstart 3 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040103",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040104,
+        "name": "Quickstart 4 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040104",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040105,
+        "name": "Quickstart 5 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040105",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040106,
+        "name": "Quickstart 6 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040106",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040107,
+        "name": "Quickstart 7 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040107",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040108,
+        "name": "Quickstart 8 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040108",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040109,
+        "name": "Quickstart 9 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040109",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040110,
+        "name": "Quickstart 10 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040110",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040111,
+        "name": "Quickstart 11 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040111",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040112,
+        "name": "Quickstart 12 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040112",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040113,
+        "name": "Quickstart 13 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040113",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040114,
+        "name": "Quickstart 14 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040114",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040115,
+        "name": "Quickstart 15 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040115",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040116,
+        "name": "Quickstart 16 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040116",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040117,
+        "name": "Quickstart 17 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040117",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040118,
+        "name": "Quickstart 18 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040118",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040119,
+        "name": "Quickstart 19 (astro)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040119",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      },
+      {
+        "completedAt": "2026-11-05T01:00:00Z",
+        "conclusion": "success",
+        "databaseId": 4200000040120,
+        "name": "Quickstart 20 (nextjs)",
+        "startedAt": "2026-11-05T00:20:00Z",
+        "status": "completed",
+        "url": "https://github.com/nymbalhq/nymbal/actions/runs/42000000401/job/4200000040120",
+        "steps": [
+          {
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Run the job",
+            "number": 2,
+            "status": "completed"
+          },
+          {
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 3,
+            "status": "completed"
+          }
+        ]
+      }
+    ]
+  },
+  "artifacts": {
+    "42000000301": {
+      "registry-site": {
+        "status.json": {
+          "generatedAt": "2026-11-05T00:40:00.000Z",
+          "adapters": [
+            {
+              "package": "@nymbalhq/ai-anthropic",
+              "slot": "ai",
+              "provider": "anthropic",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/ai/anthropic"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/ai-openai",
+              "slot": "ai",
+              "provider": "openai",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/ai/openai"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/document-store-postgres-jsonb",
+              "slot": "document-store",
+              "provider": "postgres-jsonb",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/document-store/postgres-jsonb"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/document-store-redis",
+              "slot": "document-store",
+              "provider": "redis",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/document-store/redis"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/email-mailgun",
+              "slot": "email",
+              "provider": "mailgun",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/email/mailgun"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/email-resend",
+              "slot": "email",
+              "provider": "resend",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/email/resend"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/email-ses",
+              "slot": "email",
+              "provider": "ses",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/email/ses"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/email-smtp",
+              "slot": "email",
+              "provider": "smtp",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/email/smtp"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/event-bus-redis-streams",
+              "slot": "event-bus",
+              "provider": "redis-streams",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/event-bus/redis-streams"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/media-s3",
+              "slot": "media",
+              "provider": "s3",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/media/s3"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/payments-stripe",
+              "slot": "payments",
+              "provider": "stripe",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/payments/stripe"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/search-algolia",
+              "slot": "search",
+              "provider": "algolia",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/search/algolia"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/security-cloudflare",
+              "slot": "security",
+              "provider": "cloudflare",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/security/cloudflare"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            },
+            {
+              "package": "@nymbalhq/shipping-easypost",
+              "slot": "shipping",
+              "provider": "easypost",
+              "tier": "first-party",
+              "source": {
+                "dir": "packages/adapters/shipping/easypost"
+              },
+              "history": {
+                "status": "first-party",
+                "failingSince": null,
+                "lastRun": "2026-11-05T00:40:00.000Z",
+                "line": ""
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
