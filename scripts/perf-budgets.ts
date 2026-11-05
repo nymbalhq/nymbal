@@ -15,7 +15,7 @@ import { delimiter, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { gzipSync } from 'node:zlib'
-import { launch } from 'chrome-launcher'
+import { killAll, launch, type LaunchedChrome } from 'chrome-launcher'
 import lighthouse from 'lighthouse'
 import { defaultSettings } from 'lighthouse/core/config/constants.js'
 import puppeteer, { type Browser, type HTTPRequest } from 'puppeteer-core'
@@ -316,6 +316,29 @@ function culprits(audits: Audits): string {
 }
 
 /**
+ * A fresh headless Chrome, launched as the Lighthouse CLI launches it. When Chrome is slow to print its debugging port
+ * (a cold first start on a loaded runner), chrome-launcher rejects but leaves that Chrome running, and its child handle
+ * keeps this process alive after the report: kill it, and launch once more.
+ */
+async function launchChrome(chromePath: string): Promise<LaunchedChrome> {
+  const attempts = 2
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await launch({
+        chromePath,
+        chromeFlags: ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage'],
+      })
+    } catch (error) {
+      killAll()
+      if (attempt === attempts) throw error
+      process.stderr.write(
+        `Chrome did not start (${error instanceof Error ? error.message : String(error)}); launching again\n`,
+      )
+    }
+  }
+}
+
+/**
  * One Lighthouse run in a fresh Chrome, launched as the Lighthouse CLI launches it (so the numbers are the ones anyone
  * running Lighthouse sees), with a fresh profile, so the cache is cold.
  */
@@ -324,10 +347,7 @@ async function measureOnce(
   origin: string,
   spec: PageSpec,
 ): Promise<{ metrics: Metrics; culprits: string }> {
-  const chrome = await launch({
-    chromePath,
-    chromeFlags: ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage'],
-  })
+  const chrome = await launchChrome(chromePath)
   try {
     if (spec.line) {
       const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}` })
@@ -402,10 +422,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Ma
  * scripts are the page's script requests over http(s), summed as `scriptBytes` sums Lighthouse's.
  */
 async function bytesOnce(chromePath: string, origin: string, spec: PageSpec): Promise<number> {
-  const chrome = await launch({
-    chromePath,
-    chromeFlags: ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage'],
-  })
+  const chrome = await launchChrome(chromePath)
   try {
     const browser = await puppeteer.connect({ browserURL: `http://127.0.0.1:${chrome.port}` })
     try {
