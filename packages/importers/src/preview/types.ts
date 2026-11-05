@@ -1,4 +1,5 @@
 import type { ImportEntity, ImportPlan, ImportReport, ImportWarning } from '../types.js'
+import type { LighthouseSection } from './lighthouse.js'
 
 export type DiffField = 'name' | 'price' | 'variants' | 'images' | 'categories'
 
@@ -51,4 +52,6 @@ export interface PreviewReport {
     unredirected: Unredirected[]
     duplicates: Array<{ from: string; wcIds: number[] }>
   }
+  /** Lighthouse on the source's pages against the preview's; null unless asked for. */
+  lighthouse: LighthouseSection | null
 }

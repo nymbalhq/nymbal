@@ -128,6 +128,10 @@ export function startEnv(extra: Record<string, string | undefined> = {}): NodeJS
 export interface UpstreamRequest {
   method: string
   path: string
+  /** Date.now() in the stand-in when the request arrived. */
+  at: number
+  userAgent: string | null
+  accept: string | null
 }
 
 export interface Upstream {
@@ -190,13 +194,22 @@ export async function upstream(dir: string): Promise<Upstream> {
           pid?: number
           path?: string
           method?: string
+          at?: number
+          userAgent?: string | null
+          accept?: string | null
         }
         if (message.event === 'up') {
           count += 1
           ups.push(message.pid!)
         } else if (message.event === 'arrived') arrivals.push(message.path!)
         else if (message.event === 'request') {
-          requests.push({ method: message.method!, path: message.path! })
+          requests.push({
+            method: message.method!,
+            path: message.path!,
+            at: message.at ?? Date.now(),
+            userAgent: message.userAgent ?? null,
+            accept: message.accept ?? null,
+          })
         }
       }
     })

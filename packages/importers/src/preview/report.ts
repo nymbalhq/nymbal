@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ImportEntity, PlanEntity } from '../types.js'
+import type { LighthouseSection, LighthouseSide } from './lighthouse.js'
 import { formatRedirectsCsv } from './redirects.js'
 import { DIFF_FIELDS, type PreviewReport, type RedirectRow } from './types.js'
 
@@ -79,8 +80,55 @@ export function formatPreviewReport(report: PreviewReport, storeName: string): s
     for (const f of report.unmapped[e]) lines.push(`- ${code(f.field)}: ${f.records} records`)
     lines.push('')
   }
+  if (report.lighthouse !== null) lines.push(...lighthouseLines(report.lighthouse))
   lines.push('')
   return lines.join('\n')
+}
+
+const DASH = '—'
+const ms = (v: number | null) => (v === null ? DASH : `${Math.round(v)} ms`)
+
+/** A side's metric cells: its medians, or `n/a (<reason>)` and dashes when it measured nothing. */
+function metricCells(side: LighthouseSide): string[] {
+  const m = side.median
+  if (m === null)
+    return [cell(`n/a (${side.reason ?? 'no run measured'})`), ...Array<string>(5).fill(DASH)]
+  return [
+    m.performance === null ? 'n/a (no score)' : String(Math.round(m.performance)),
+    ms(m.lcpMs),
+    m.cls === null ? DASH : m.cls.toFixed(3),
+    ms(m.tbtMs),
+    m.bytes === null ? DASH : `${Math.round(m.bytes / 1024)} KiB`,
+    ms(m.serverMs),
+  ]
+}
+
+function lighthouseLines(section: LighthouseSection): string[] {
+  const runs = `${section.runs} run${section.runs === 1 ? '' : 's'}`
+  const lines = [
+    '',
+    '## Lighthouse',
+    '',
+    `Lighthouse ${section.lighthouseVersion}, mobile, simulated throttling, median of ${runs} a page, measured on this machine (benchmark index ${section.benchmarkIndex ?? 'unknown'}).`,
+    '',
+    '| Page | Side | URL | Performance | LCP | CLS | TBT | Transferred | Server response |',
+    '|---|---|---|---|---|---|---|---|---|',
+  ]
+  for (const pair of section.pairs) {
+    for (const [name, side] of [
+      ['source', pair.source],
+      ['preview', pair.preview],
+    ] as const) {
+      const url = side.url === null ? DASH : cell(side.url)
+      lines.push(`| ${pair.page} | ${name} | ${url} | ${metricCells(side).join(' | ')} |`)
+    }
+  }
+  lines.push(
+    '',
+    "Server response is the preview's server on this machine against the store's own host.",
+    'The preview serves its pages over HTTP/1.1 without compressing static assets, and its images from its local API on a second origin, without a CDN and without resizing.',
+  )
+  return lines
 }
 
 /** `nymbal-preview-report.json`, `nymbal-preview-report.md` and `nymbal-redirects.csv` in `projectRoot`. */

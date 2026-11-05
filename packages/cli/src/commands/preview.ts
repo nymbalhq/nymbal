@@ -24,6 +24,8 @@ import {
   currencyRefusal,
   diffProduct,
   DIFF_FIELDS,
+  lighthousePairs,
+  lighthouseSection,
   loadState,
   planWooCommerceImport,
   runWooCommerceImport,
@@ -49,6 +51,17 @@ import { getCliVersion } from '../utils/version.js'
 import { defaultStorefrontPort, storefrontEnv } from './dev.js'
 import { resolveMigrations } from './migrate.js'
 import { previewConfig } from './preview-config.js'
+import {
+  buildPreviewStorefront,
+  checkChrome,
+  measurePairs,
+  planPreviewStorefront,
+  resolveLighthouse,
+  scoreLines,
+  startPreviewStorefront,
+  stopLighthouse,
+  type PreviewStorefront,
+} from './preview-lighthouse.js'
 
 type Rec = Record<string, unknown>
 
@@ -92,6 +105,21 @@ function printProgress(event: ProgressEvent): void {
   } else if (event.kind === 'error') {
     process.stdout.write(`${pc.red(`  ✗ ${event.phase} [${event.id}]: ${event.message}`)}\n`)
   }
+}
+
+function integerArg(
+  flag: string,
+  raw: string | undefined,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (raw === undefined || raw.trim() === '') return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new PreviewError(`${flag} must be an integer from ${min} to ${max}, got "${raw}"`)
+  }
+  return n
 }
 
 function portArg(flag: string, raw: string | undefined): number | undefined {
@@ -351,6 +379,7 @@ async function buildPreview({
       unredirected: [...redirects.unredirected, ...refused],
       duplicates: redirects.duplicates,
     },
+    lighthouse: null,
   }
   return { preview, rows: redirects.rows }
 }
@@ -369,6 +398,38 @@ interface PreviewArgs {
   apiOnly: boolean
   port?: string
   storefrontPort?: string
+  lighthouse: boolean
+  'lighthouse-runs'?: string
+  'lighthouse-timeout'?: string
+}
+
+interface LighthousePlan {
+  cli: string
+  runs: number
+  timeoutMs: number
+  storefront: PreviewStorefront
+}
+
+/** `--lighthouse`'s refusals, all before the source is read: its flags, Lighthouse, Chrome and the build's tools. */
+async function lighthousePlan(
+  args: PreviewArgs,
+  projectRoot: string,
+  template: NymbalConfig['template'],
+): Promise<LighthousePlan> {
+  if (args.apiOnly) {
+    throw new PreviewError(
+      '--lighthouse measures the storefront: it cannot be used with --api-only',
+    )
+  }
+  const runs = integerArg('--lighthouse-runs', args['lighthouse-runs'], 1, 9, 3)
+  const timeout = integerArg('--lighthouse-timeout', args['lighthouse-timeout'], 10, 600, 120)
+  const lighthouse = resolveLighthouse(projectRoot, process.env)
+  if ('error' in lighthouse) throw new PreviewError(lighthouse.error)
+  const chrome = await checkChrome(lighthouse, process.env)
+  if (chrome !== null) throw new PreviewError(chrome)
+  const storefront = planPreviewStorefront(projectRoot, template, process.env)
+  if ('error' in storefront) throw new PreviewError(storefront.error)
+  return { cli: lighthouse.cli, runs, timeoutMs: timeout * 1000, storefront }
 }
 
 function credentialsOf(args: PreviewArgs): WooCommerceCredentials {
@@ -421,6 +482,10 @@ interface Running {
   app?: NymbalApp
   http?: HttpServer
   storefront?: ChildProcess
+  /** The production build under --lighthouse, while it runs. */
+  build?: ChildProcess
+  /** The Lighthouse run under way. */
+  lighthouse?: ChildProcess | null
   /** The project files `next dev` rewrites, as they were: null for one that did not exist. */
   nextFiles?: Map<string, Buffer | null>
   nextDistDir?: string
@@ -452,6 +517,18 @@ async function runPreview(args: PreviewArgs): Promise<void> {
     stopping = true
     return runShutdown(
       [
+        {
+          name: 'lighthouse.stop',
+          run: async () => {
+            if (running.lighthouse) await stopLighthouse(running.lighthouse)
+          },
+        },
+        {
+          name: 'build.stop',
+          run: async () => {
+            if (running.build !== undefined) await stopStorefront(running.build)
+          },
+        },
         {
           name: 'storefront.stop',
           run: async () => {
@@ -497,6 +574,9 @@ async function runPreview(args: PreviewArgs): Promise<void> {
     const loaded = await loadProject()
     const { projectRoot } = loaded
     const config = loaded.config
+    const lighthouse = args.lighthouse
+      ? await lighthousePlan(args, projectRoot, config.template)
+      : null
 
     // ── 1. Ports, and 2. the storefront's launch, before anything is read ─────────────────────────────────────────
     const apiPort = await freePortFrom(portArg('--port', args.port) ?? config.http.port)
@@ -506,10 +586,16 @@ async function runPreview(args: PreviewArgs): Promise<void> {
       const preferred =
         portArg('--storefront-port', args.storefrontPort) ?? defaultStorefrontPort(config.template)
       storefrontPort = await freePortFrom(preferred, [apiPort])
-      launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
+      if (lighthouse === null)
+        launch = planTemplateLaunch(projectRoot, config.template, storefrontPort)
     }
     const apiUrl = `http://127.0.0.1:${apiPort}`
-    const storefrontUrl = storefrontPort === null ? null : `http://localhost:${storefrontPort}`
+    const storefrontOrigin = storefrontPort === null ? null : `http://localhost:${storefrontPort}`
+    // The production storefront binds 127.0.0.1 only, so Chrome is never sent to localhost's ::1.
+    const storefrontUrl =
+      lighthouse !== null && storefrontPort !== null
+        ? `http://127.0.0.1:${storefrontPort}`
+        : storefrontOrigin
 
     await checkSource(credentials, config.store.currency)
 
@@ -529,7 +615,7 @@ async function runPreview(args: PreviewArgs): Promise<void> {
     const preview = previewConfig(config, {
       dir,
       apiPort,
-      storefrontOrigin: storefrontUrl,
+      storefrontOrigin,
       ai: args.ai,
     })
 
@@ -642,6 +728,63 @@ async function runPreview(args: PreviewArgs): Promise<void> {
       await storefrontUp(storefrontUrl, running.storefront)
     }
 
+    // ── 7 with --lighthouse: a production build of the storefront, then Lighthouse on both sides ───────────────
+    if (lighthouse !== null && storefrontPort !== null && storefrontUrl !== null) {
+      const storefront = lighthouse.storefront
+      const env: NodeJS.ProcessEnv = {
+        ...storefrontEnv(preview, apiUrl, storefrontPort),
+        NODE_ENV: 'production',
+        HOST: '127.0.0.1',
+        PORT: String(storefrontPort),
+      }
+      if (storefront.template === 'nextjs' && storefront.bin !== null) {
+        const files = new Map<string, Buffer | null>()
+        for (const name of NEXT_REWRITES) {
+          const path = join(storefront.cwd, name)
+          files.set(path, existsSync(path) ? await readFile(path) : null)
+        }
+        running.nextFiles = files
+        running.nextDistDir = join(storefront.cwd, NEXT_DIST_DIR)
+        env['NYMBAL_NEXT_DIST_DIR'] = NEXT_DIST_DIR
+      }
+      if (storefront.bin !== null) {
+        process.stdout.write('storefront: building for production\n')
+        await buildPreviewStorefront(storefront, {
+          dir,
+          env,
+          onChild: (child) => (running.build = child),
+          stopped: () => stopping,
+        })
+      }
+      if (stopping) return
+      running.storefront = startPreviewStorefront(storefront, { dir, port: storefrontPort, env })
+      await storefrontUp(storefrontUrl, running.storefront)
+
+      const pairs = await measurePairs(
+        lighthousePairs({
+          sourceUrl: credentials.url,
+          storefrontOrigin: storefrontUrl,
+          rows: built.rows,
+        }),
+        {
+          cli: lighthouse.cli,
+          runs: lighthouse.runs,
+          timeoutMs: lighthouse.timeoutMs,
+          dir,
+          stopped: () => stopping,
+          onChild: (child) => (running.lighthouse = child),
+        },
+      )
+      if (stopping) return
+      await writePreview(
+        { ...built.preview, lighthouse: lighthouseSection(lighthouse.runs, pairs) },
+        built.rows,
+        projectRoot,
+        config.store.name,
+      )
+      process.stdout.write(`${scoreLines(pairs).join('\n')}\n`)
+    }
+
     process.stdout.write(
       `${[
         '',
@@ -718,6 +861,20 @@ export const previewCommand = defineCommand({
       alias: 'storefront-port',
       description:
         'Port for the storefront (default: 4321 Astro / 3000 Next.js, or the next free one)',
+    },
+    lighthouse: {
+      type: 'boolean',
+      description:
+        "Build the storefront for production and compare Lighthouse scores of the store's home, a product and a category with the preview's (needs lighthouse@^12 and Chrome)",
+      default: false,
+    },
+    'lighthouse-runs': {
+      type: 'string',
+      description: 'Lighthouse runs per page, 1 to 9; the report shows the median (default: 3)',
+    },
+    'lighthouse-timeout': {
+      type: 'string',
+      description: 'Seconds one Lighthouse run may take, 10 to 600 (default: 120)',
     },
   },
   async run({ args }) {

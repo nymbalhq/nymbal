@@ -50,6 +50,14 @@
     "magicast": "^0.5.5",
     "picocolors": "^1.1.1"
   },
+  "peerDependencies": {
+    "lighthouse": "^12"
+  },
+  "peerDependenciesMeta": {
+    "lighthouse": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@typescript/native": "npm:typescript@^7.0.2",
     "tsup": "^9.0.0",

@@ -20,6 +20,10 @@ import { fileURLToPath } from 'node:url'
 // with WooCommerce's totals headers. Each image `src` (products' and variations') moves to the same path on this
 // server, which answers a 1x1 PNG a browser decodes; permalinks are kept as recorded. `failImages` answers 404 for
 // every image of the products it names.
+//
+// `pages` makes the server the store's website too: any GET outside /wp-json/ and the image paths answers a small HTML
+// page, 200, and a product's page (its permalink's path, or WooCommerce's default /product/<slug>/) holds its name and
+// first image. `pageStatus` answers a path with that status instead, or never answers it (`'never'`).
 
 const FIXTURES = fileURLToPath(
   new URL('../../packages/importers/tests/integration/fixtures', import.meta.url),
@@ -50,7 +54,14 @@ export interface ServedRequest {
   method: string
   /** The pathname, without the query. */
   path: string
+  /** Date.now() when the request arrived. */
+  at: number
+  userAgent: string | null
+  accept: string | null
 }
+
+/** A page path's answer: a status, or no answer at all. */
+export type PageAnswer = number | 'never'
 
 /** A probe's answer: a list total in `X-WP-Total`, a JSON body as is, or a bare status. */
 export type ProbeAnswer = { total: number } | { body: unknown } | { status: number }
@@ -62,6 +73,10 @@ export interface WooCommerceServerOptions {
   recorded?: RecordedStoreName
   /** WooCommerce product ids whose images (the product's and its variations') answer 404. */
   failImages?: number[]
+  /** Answers the store's pages (any GET outside /wp-json/ and the images) with HTML. */
+  pages?: boolean
+  /** A page path's status instead of 200, or `'never'` to hold it unanswered. */
+  pageStatus?: Record<string, PageAnswer>
   imagesPerProduct?: number
   /** Served after the fixture categories. */
   extraCategories?: Array<Record<string, unknown>>
@@ -118,6 +133,54 @@ const PNG = Buffer.from(
 
 type Rec = Record<string, unknown>
 
+function logged(req: IncomingMessage, path: string): ServedRequest {
+  return {
+    method: req.method ?? 'GET',
+    path,
+    at: Date.now(),
+    userAgent: req.headers['user-agent'] ?? null,
+    accept: req.headers.accept ?? null,
+  }
+}
+
+/** A product's page path on the store: its permalink's, or WooCommerce's default product base. */
+export function productPagePath(product: Rec): string {
+  const permalink = product['permalink']
+  if (typeof permalink === 'string' && URL.canParse(permalink)) {
+    const url = new URL(permalink)
+    if (/^https?:$/.test(url.protocol) && url.search === '') return url.pathname
+  }
+  return `/product/${String(product['slug'])}/`
+}
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/**
+ * The store's website, when `pages` is on: false when the request is not a page. A product's page holds its name and
+ * first image; `pageStatus` overrides a path's status or holds it unanswered.
+ */
+function answerPage(
+  opts: Pick<WooCommerceServerOptions, 'pages' | 'pageStatus'>,
+  productPages: Map<string, { name: string; image: string | null }>,
+  path: string,
+  res: ServerResponse,
+): boolean {
+  if (opts.pages !== true || path.startsWith('/wp-json/')) return false
+  const answer = opts.pageStatus?.[path] ?? 200
+  if (answer === 'never') return true
+  const product = productPages.get(path)
+  const body =
+    product === undefined
+      ? '<h1>Store page</h1>'
+      : `<h1>${escapeHtml(product.name)}</h1>${product.image === null ? '' : `<img src="${escapeHtml(product.image)}" alt="" width="600" height="600">`}`
+  res.writeHead(answer, { 'content-type': 'text/html; charset=utf-8' })
+  res.end(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Store</title></head><body>${body}</body></html>`,
+  )
+  return true
+}
+
 /** A recorded store's answers, read from its directory: the file a request was recorded in, or undefined. */
 function recordedAnswers(name: RecordedStoreName): {
   products: Rec[]
@@ -136,9 +199,11 @@ function recordedAnswers(name: RecordedStoreName): {
 async function startRecordedServer(
   name: RecordedStoreName,
   failImages: readonly number[],
+  pageOpts: Pick<WooCommerceServerOptions, 'pages' | 'pageStatus'>,
 ): Promise<WooCommerceServer> {
   const recording = recordedAnswers(name)
   const requests: ServedRequest[] = []
+  const productPages = new Map<string, { name: string; image: string | null }>()
   const imagePaths = new Set<string>()
   const failedPaths = new Set<string>()
   let base = ''
@@ -155,7 +220,7 @@ async function startRecordedServer(
 
   const server = createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://fixture.invalid')
-    requests.push({ method: req.method ?? 'GET', path: u.pathname })
+    requests.push(logged(req, u.pathname))
     const send = (status: number, body: unknown, headers: Record<string, string> = {}) => {
       res.writeHead(status, { 'content-type': 'application/json', ...headers })
       res.end(JSON.stringify(body))
@@ -166,6 +231,7 @@ async function startRecordedServer(
       res.end(PNG)
       return
     }
+    if (answerPage(pageOpts, productPages, u.pathname, res)) return
     if (!u.pathname.startsWith('/wp-json/wc/v3/')) return send(404, { code: 'rest_no_route' })
     if (!(req.headers.authorization ?? '').startsWith('Basic ')) {
       return send(401, { code: 'woocommerce_rest_cannot_view' })
@@ -228,9 +294,22 @@ async function startRecordedServer(
     }
     const servedImages = (own as Rec[])
       .filter((i) => typeof i['src'] === 'string' && i['src'] !== '')
-      .map((i) => ({ src: i['src'] as string, bytes: new Uint8Array(PNG), contentType: 'image/png' }))
+      .map((i) => ({
+        src: i['src'] as string,
+        bytes: new Uint8Array(PNG),
+        contentType: 'image/png',
+      }))
     for (const image of servedImages) images.set(image.src, image)
-    served.push({ id, slug: wc['slug'] as string, name: wc['name'] as string, images: servedImages })
+    served.push({
+      id,
+      slug: wc['slug'] as string,
+      name: wc['name'] as string,
+      images: servedImages,
+    })
+    productPages.set(productPagePath(wc), {
+      name: wc['name'] as string,
+      image: servedImages[0]?.src ?? null,
+    })
   }
 
   return {
@@ -250,7 +329,9 @@ async function startRecordedServer(
 export async function startWooCommerceServer(
   opts: WooCommerceServerOptions = {},
 ): Promise<WooCommerceServer> {
-  if (opts.recorded !== undefined) return startRecordedServer(opts.recorded, opts.failImages ?? [])
+  if (opts.recorded !== undefined) {
+    return startRecordedServer(opts.recorded, opts.failImages ?? [], opts)
+  }
   const perProduct = opts.imagesPerProduct ?? 2
   const categories = [...fixture('categories'), ...(opts.extraCategories ?? [])]
   const variations = fixture('variations')
@@ -260,6 +341,7 @@ export async function startWooCommerceServer(
   const requests: ServedRequest[] = []
   const served: Array<Record<string, unknown>> = []
   const orders = [...(opts.orders ?? [])]
+  const productPages = new Map<string, { name: string; image: string | null }>()
 
   const send = (res: ServerResponse, status: number, body: unknown, total?: number) => {
     res.writeHead(status, {
@@ -278,7 +360,7 @@ export async function startWooCommerceServer(
 
   const handle = (req: IncomingMessage, res: ServerResponse) => {
     const u = new URL(req.url ?? '/', 'http://fixture.invalid')
-    requests.push({ method: req.method ?? 'GET', path: u.pathname })
+    requests.push(logged(req, u.pathname))
     const image = images.get(`${base}${u.pathname}`)
     if (image !== undefined) {
       res.writeHead(200, {
@@ -288,6 +370,7 @@ export async function startWooCommerceServer(
       res.end(Buffer.from(image.bytes))
       return
     }
+    if (answerPage(opts, productPages, u.pathname, res)) return
     if (!u.pathname.startsWith('/wp-json/wc/v3/')) return send(res, 404, { code: 'rest_no_route' })
     if (!(req.headers.authorization ?? '').startsWith('Basic ')) {
       return send(res, 401, { code: 'woocommerce_rest_cannot_view' })
@@ -335,6 +418,10 @@ export async function startWooCommerceServer(
       slug: wc['slug'] as string,
       name: wc['name'] as string,
       images: own,
+    })
+    productPages.set(productPagePath(wc), {
+      name: wc['name'] as string,
+      image: own[0]?.src ?? null,
     })
     served.push({
       ...wc,

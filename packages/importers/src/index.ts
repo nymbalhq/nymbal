@@ -30,11 +30,7 @@ export type {
   RollbackReport,
 } from './types.js'
 export { buildReport, formatReport, writeReport } from './report.js'
-export {
-  ImportSinceError,
-  resolveSince,
-  type ImportSinceReason,
-} from './woocommerce/delta.js'
+export { ImportSinceError, resolveSince, type ImportSinceReason } from './woocommerce/delta.js'
 export { formatPlan, writePlan } from './plan-report.js'
 export {
   appendJournal,
@@ -60,6 +56,20 @@ export {
   type RedirectInput,
   type Redirects,
 } from './preview/redirects.js'
+export {
+  LIGHTHOUSE_METRICS,
+  lighthousePairs,
+  lighthouseSection,
+  readLighthouseResult,
+  summariseSide,
+  type LighthouseMetric,
+  type LighthousePage,
+  type LighthousePair,
+  type LighthouseSample,
+  type LighthouseSection,
+  type LighthouseSide,
+  type PlannedPair,
+} from './preview/lighthouse.js'
 export { formatPreviewReport, writePreview } from './preview/report.js'
 export {
   DIFF_FIELDS,

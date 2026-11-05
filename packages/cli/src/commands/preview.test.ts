@@ -112,6 +112,7 @@ interface PreviewReport {
     unredirected: Array<{ kind: 'product' | 'category'; wcId: number; reason: string }>
     duplicates: Array<{ from: string; wcIds: number[] }>
   }
+  lighthouse?: unknown
 }
 interface KeptState {
   warnings: Array<{ phase: string; id?: string; message: string }>
@@ -825,7 +826,7 @@ describe("AC-6: counts, warnings and the report's shape", () => {
     )
   })
 
-  it('AC-6: the JSON holds every report key and the Markdown the seven sections in order', () => {
+  it('AC-6: the JSON holds every report key, lighthouse null without --lighthouse, and the Markdown the seven sections in order', () => {
     const { outputs } = got()
     const { report, markdown } = outputs
     expect(Object.keys(report).sort()).toEqual(
@@ -836,6 +837,7 @@ describe("AC-6: counts, warnings and the report's shape", () => {
         'entities',
         'errors',
         'generatedAt',
+        'lighthouse',
         'notListed',
         'redirects',
         'source',
@@ -843,13 +845,14 @@ describe("AC-6: counts, warnings and the report's shape", () => {
         'warnings',
       ].sort(),
     )
+    expect(report.lighthouse).toBeNull()
     expect(ENTITIES.map((e) => Object.keys(report.counts[e]).sort())).toEqual(
       ENTITIES.map(() => ['imported', 'planned', 'refused', 'served', 'skipped', 'source']),
     )
     expect(Object.keys(report.differences.byField).sort()).toEqual([...FIELDS].sort())
     expect(Object.keys(report.redirects).sort()).toEqual(['duplicates', 'rows', 'unredirected'])
     expect(report.source.url).toBe(server.url)
-    expect(markdown.split('\n').filter((l) => SECTIONS.includes(l.trim()))).toEqual(SECTIONS)
+    expect(markdown.split('\n').filter((l) => l.startsWith('## '))).toEqual(SECTIONS)
   })
 
   it("AC-6: neither the key and secret nor, under --gdpr, any customer's or order's email, name, phone, address line or postcode is in an output file, stdout or stderr", () => {

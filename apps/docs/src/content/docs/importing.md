@@ -34,3 +34,20 @@ npx nymbal import --rollback
 `--since last` (or a date, such as `--since 2026-10-01`) brings over only what changed since the last finished import:
 new records are created, and imported products take their new names, copy, images and prices. `--rollback` removes
 every record the imports in this project created; it asks first, unless you add `--yes`.
+
+## Comparing speed with Lighthouse
+
+`nymbal preview` imports your store into a throwaway copy and serves it on your storefront. With `--lighthouse` it
+builds the storefront for production and runs Lighthouse on your WooCommerce home page, one product and one category,
+against the same pages in the preview:
+
+```sh
+npm install -D lighthouse@^12
+npx nymbal preview --source woocommerce --url https://mystore.com --key <ck_…> --secret <cs_…> --lighthouse
+```
+
+Lighthouse is not installed with `nymbal`: add it with your package manager, or set `NYMBAL_LIGHTHOUSE_CLI` to the
+`lighthouse/cli/index.js` of an install elsewhere. It needs Google Chrome or Chromium; set `CHROME_PATH` if it is not
+in the usual place. Each page is measured 3 times (`--lighthouse-runs`, 1 to 9) with Lighthouse's mobile settings, and
+`nymbal-preview-report.md` gains a `## Lighthouse` table of the medians. A page that cannot be measured shows `n/a` and
+why.

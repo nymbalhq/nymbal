@@ -113,6 +113,9 @@ Import a WooCommerce store into a throwaway store and serve it on your storefron
 | `--api-only` | boolean | Serve only the API (no storefront) | `false` |
 | `--port` | string | Port for the preview's API (default: the config's http.port, or the next free one) |  |
 | `--storefront-port` | string | Port for the storefront (default: 4321 Astro / 3000 Next.js, or the next free one) |  |
+| `--lighthouse` | boolean | Build the storefront for production and compare Lighthouse scores of the store's home, a product and a category with the preview's (needs lighthouse@^12 and Chrome) | `false` |
+| `--lighthouse-runs` | string | Lighthouse runs per page, 1 to 9; the report shows the median (default: 3) |  |
+| `--lighthouse-timeout` | string | Seconds one Lighthouse run may take, 10 to 600 (default: 120) |  |
 
 ## `nymbal config:validate`
 

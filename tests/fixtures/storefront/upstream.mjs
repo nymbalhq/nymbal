@@ -8,7 +8,7 @@ import { connect } from 'node:net'
 //
 // A test copies this file into a directory of its own and writes `storefront-upstream.json` beside it,
 // `{ "controlPort": <n> }`; the stand-in then connects to that port and reports, one JSON line each, that it is up
-// (with its pid) and every request it gets. A request under /held waits until the test writes a `release` line, then
+// (with its pid) and every request it gets, with when it arrived and its user agent and Accept header. A request under /held waits until the test writes a `release` line, then
 // calls GET /api/products on NYMBAL_API_URL and answers 200 with what it got. Any other request answers 200 at once
 // with the path and the environment it was started with.
 
@@ -48,7 +48,14 @@ async function products() {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://upstream')
-  report({ event: 'request', method: req.method, path: url.pathname })
+  report({
+    event: 'request',
+    method: req.method,
+    path: url.pathname,
+    at: Date.now(),
+    userAgent: req.headers['user-agent'] ?? null,
+    accept: req.headers.accept ?? null,
+  })
   if (url.pathname.startsWith('/held')) {
     await new Promise((resolve) => {
       waiting.push(resolve)
