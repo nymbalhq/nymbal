@@ -240,6 +240,7 @@ export const devCommand = defineCommand({
       logger: platform.logger,
       documentStore: platform.documentStore,
       version,
+      network: app.network,
     })
     const adminRoot = resolveAdminRoot()
     await app.attachHttp(http.adapter, { adminRoot })

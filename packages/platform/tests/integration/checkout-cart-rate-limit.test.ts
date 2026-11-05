@@ -14,18 +14,24 @@ const HOST = '127.0.0.1'
 const REQUESTS = 30
 const CEILING = 10 * REQUESTS
 const CART_COOKIE = 'nymbal.cart'
-const VARIABLE = 'NYMBAL_TRUST_PROXY_HOPS'
+const NETWORK_VARS = [
+  'NYMBAL_TRUSTED_PROXIES',
+  'NYMBAL_CLIENT_IP_HEADER',
+  'NYMBAL_TRUST_PROXY_HOPS',
+]
 
-/** The kernel config with the built-in checkout rule, CSRF off (the limiter alone), and `trustProxy` as given. */
-function builtInCheckout(trustProxy: number | undefined): (c: NymbalConfig) => NymbalConfig {
+/**
+ * The kernel config with the built-in checkout rule, CSRF off (the limiter alone), and `http.trustedProxies` as given
+ * (absent: the default, loopback, so the 127.0.0.1 peer's X-Forwarded-For names the client).
+ */
+function builtInCheckout(trustedProxies: string[] | undefined): (c: NymbalConfig) => NymbalConfig {
   return (c) => {
     const rateLimit = { ...c.security.rateLimit }
     delete rateLimit['/api/checkout']
-    const { trustProxy: _default, ...http } = c.http
     return nymbalConfigSchema.parse({
       ...c,
       security: { ...c.security, csrf: false, rateLimit },
-      http: trustProxy === undefined ? http : { ...http, trustProxy },
+      http: trustedProxies === undefined ? c.http : { ...c.http, trustedProxies },
     })
   }
 }
@@ -63,11 +69,17 @@ afterAll(async () => {
   for (const stop of open.splice(0)) await stop()
 })
 
-async function serve(trustProxy: number | undefined): Promise<Served> {
-  const kernel = await createKernel({ dialect: 'sqlite', configure: builtInCheckout(trustProxy) })
+async function serve(trustedProxies: string[] | undefined): Promise<Served> {
+  // The kernel resolves the proxy list from config and environment when it is built: none of the variables applies.
+  const saved = NETWORK_VARS.map((name) => [name, process.env[name]] as const)
+  for (const name of NETWORK_VARS) delete process.env[name]
+  let kernel: Awaited<ReturnType<typeof createKernel>>
+  try {
+    kernel = await createKernel({ dialect: 'sqlite', configure: builtInCheckout(trustedProxies) })
+  } finally {
+    for (const [name, value] of saved) if (value !== undefined) process.env[name] = value
+  }
   const port = await freePort()
-  const saved = process.env[VARIABLE]
-  delete process.env[VARIABLE]
   let reached = 0
   try {
     const http = createHttpServer({
@@ -75,6 +87,7 @@ async function serve(trustProxy: number | undefined): Promise<Served> {
       logger: kernel.logger,
       documentStore: kernel.documentStore,
       version: '0.0.0',
+      network: kernel.app.network,
     })
     // Middlewares run after the limiter and before the handler: this one counts what the limiter let through.
     http.registerMiddleware((ctx) => {
@@ -89,8 +102,6 @@ async function serve(trustProxy: number | undefined): Promise<Served> {
   } catch (error) {
     await kernel.close()
     throw error
-  } finally {
-    if (saved !== undefined) process.env[VARIABLE] = saved
   }
   const base = `http://${HOST}:${port}`
   return {
@@ -143,7 +154,7 @@ function refusedBy(sequence: Array<string | undefined>): boolean[] {
 
 describe('AC-3: checkout limits by cart behind one address', () => {
   it("AC-3: from one address, cart A's 31st checkout in a minute answers 429 with retry-after of at most 60 s and never reaches the handler; cart B's first then reaches it; cartless checkouts share one bucket and 429 on their own 31st", async () => {
-    const s = await serve(1)
+    const s = await serve(undefined)
     const client = nextClient()
     const [a, b] = [nextCart(), nextCart()]
 
@@ -170,7 +181,7 @@ describe('AC-3: checkout limits by cart behind one address', () => {
   })
 
   it('AC-3: over 2 to 12 carts checking out 31 times each, interleaved, from one address, exactly the checkouts past a cart’s 30 or past the address’s 300 are refused, and every other one reaches the handler', async () => {
-    const s = await serve(1)
+    const s = await serve(undefined)
     await fc.assert(
       fc.asyncProperty(fc.integer({ min: 2, max: 12 }), async (cartCount) => {
         const client = nextClient()
@@ -190,8 +201,8 @@ describe('AC-3: checkout limits by cart behind one address', () => {
     )
   }, 120_000)
 
-  it('AC-3: with trustProxy at its default, every checkout through one loopback peer with differing X-Forwarded-For, cart A’s 31st is refused and cart B’s first still reaches the handler', async () => {
-    const s = await serve(undefined)
+  it('AC-3: with no proxy listed (trustedProxies []), every checkout through one loopback peer with differing X-Forwarded-For, cart A’s 31st is refused and cart B’s first still reaches the handler', async () => {
+    const s = await serve([])
     const [a, b] = [nextCart(), nextCart()]
 
     const cartA: number[] = []

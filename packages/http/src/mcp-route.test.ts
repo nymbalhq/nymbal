@@ -72,6 +72,7 @@ async function served(configure?: (config: NymbalConfig) => NymbalConfig): Promi
     logger: kernel.logger,
     documentStore: kernel.documentStore,
     version: '0.0.0',
+    network: kernel.app.network,
   })
   await kernel.app.attachHttp(server.adapter)
   await mountMcp(server, {

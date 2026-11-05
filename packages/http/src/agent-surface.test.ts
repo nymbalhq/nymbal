@@ -73,6 +73,7 @@ async function served(configure?: (config: NymbalConfig) => NymbalConfig): Promi
     logger: kernel.logger,
     documentStore: kernel.documentStore,
     version: '0.0.0',
+    network: kernel.app.network,
   })
   const urls: AgentSurfaceUrls = { api: base, storefront: STOREFRONT }
   const verify = (token: string) => kernel.services.auth.verifyAccessToken(token)

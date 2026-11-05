@@ -4,13 +4,14 @@ import { basename, join } from 'node:path'
 import fc from 'fast-check'
 import { parse as parseToml } from 'smol-toml'
 import { afterAll, describe, expect, it } from 'vitest'
-import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { nymbalConfigSchema, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
 import { flyRecipe, railwayRecipe } from './deploy.js'
 
 // AC-9: the Fly and Railway recipes deploy with readiness, migrations once per deploy and the secrets key from the
 // platform's secret store. AC-10 (unit half): no recipe file and no step holds a value from the project's .env.
 // AC-6: a config on the default JWT secret deploys with NYMBAL_JWT_SECRET from .env as a platform secret, never a
-// hand edit; both recipes trust one proxy hop through NYMBAL_TRUST_PROXY_HOPS.
+// hand edit. AC-10 (trusted proxies): both recipes list the platform's proxy through NYMBAL_TRUSTED_PROXIES, a value the
+// app resolves in production, and neither sets the removed hop count.
 
 /** `start`'s shutdown bound when NYMBAL_SHUTDOWN_MS is unset. */
 const DEFAULT_SHUTDOWN_MS = 10_000
@@ -243,7 +244,7 @@ describe('AC-10: no .env value leaves .env', () => {
   })
 })
 
-describe('AC-6: the JWT secret and the proxy hop count', () => {
+describe('AC-6: the JWT secret', () => {
   it('AC-6: for any config, with the default secret each recipe sets NYMBAL_JWT_SECRET=<from .env> as a platform secret before its deploy step; with an own secret no step names NYMBAL_JWT_SECRET, and neither file nor any step holds the secret', () => {
     fc.assert(
       fc.property(
@@ -290,23 +291,43 @@ describe('AC-6: the JWT secret and the proxy hop count', () => {
       { numRuns: 40 },
     )
   })
+})
 
-  it('AC-6: for any app name, fly.toml sets NYMBAL_TRUST_PROXY_HOPS to 1 in [env], and the railway steps set it to 1 as a service variable before railway up', () => {
+describe('AC-10: the recipes list the platform proxy', () => {
+  it('AC-10: for any app name, fly.toml [env] sets NYMBAL_TRUSTED_PROXIES and no NYMBAL_TRUST_PROXY_HOPS, the railway steps set it as a service variable before railway up and name no hop count, and each value resolves under production to uniquelocal', () => {
     fc.assert(
       fc.property(appName, fc.constantFrom('native', 'stripe'), (name, payments) => {
         const root = projectDir(name)
         const variant = variantOf(payments, undefined)
         const fly = flyRecipe({ name, root, config: variant })
         const railway = railwayRecipe({ name, root, config: variant })
-        const hopSteps = railway.steps.filter((step) => step.includes('NYMBAL_TRUST_PROXY_HOPS'))
+        const flyEnv = (parseToml(fly.toml) as FlyToml).env ?? {}
+        const listSteps = railway.steps.filter((step) => step.includes('NYMBAL_TRUSTED_PROXIES'))
         const at = (pattern: RegExp) => railway.steps.findIndex((step) => pattern.test(step))
+        const railwayValue = /NYMBAL_TRUSTED_PROXIES=([^'\s]+)/.exec(listSteps[0] ?? '')?.[1]
 
-        expect((parseToml(fly.toml) as FlyToml).env?.['NYMBAL_TRUST_PROXY_HOPS']).toBe('1')
-        expect(hopSteps).toHaveLength(1)
-        expect(hopSteps[0]).toMatch(
-          new RegExp(`^railway variables --service ${name} --set '?NYMBAL_TRUST_PROXY_HOPS=1'?$`),
+        expect(Object.keys(flyEnv)).not.toContain('NYMBAL_TRUST_PROXY_HOPS')
+        expect(
+          [fly.toml, ...fly.steps, ...railway.steps].filter((t) =>
+            t.includes('NYMBAL_TRUST_PROXY_HOPS'),
+          ),
+        ).toEqual([])
+        expect(listSteps).toHaveLength(1)
+        expect(listSteps[0]).toMatch(
+          new RegExp(
+            `^railway variables --service ${name} --set '?NYMBAL_TRUSTED_PROXIES=[^'\\s]+'?$`,
+          ),
         )
-        expect(at(/^railway up\b/)).toBeGreaterThan(at(/NYMBAL_TRUST_PROXY_HOPS/))
+        expect(at(/^railway up\b/)).toBeGreaterThan(at(/NYMBAL_TRUSTED_PROXIES/))
+        // What each sets is a list the app accepts in production, and it is the platform proxy's range.
+        const resolved = [flyEnv['NYMBAL_TRUSTED_PROXIES'], railwayValue].map(
+          (value) =>
+            resolveTrustedProxies(variant, {
+              NODE_ENV: 'production',
+              ...(value !== undefined && { NYMBAL_TRUSTED_PROXIES: value }),
+            }).trustedProxies,
+        )
+        expect(resolved).toEqual([['uniquelocal'], ['uniquelocal']])
       }),
       { numRuns: 30 },
     )

@@ -58,7 +58,28 @@ must be installed and logged in. Set your Stripe keys on the platform yourself, 
 
 ## Behind a proxy
 
-When a load balancer, CDN or tunnel sits in front of the store, set `NYMBAL_TRUST_PROXY_HOPS` to the number of proxies
-in front (1 for one). Without it every shopper seems to come from the proxy and shares one rate-limit bucket;
-`nymbal doctor` warns when it is missing on a public origin. Never set `http.trustProxy: true`: it lets any client
-choose its own address, and production refuses to start with it. The Fly and Railway recipes set one hop.
+The API believes a forwarded client address (`X-Forwarded-For`) only when the connection comes from a proxy listed in
+`NYMBAL_TRUSTED_PROXIES` (or `http.trustedProxies`): comma-separated `loopback`, `linklocal`, `uniquelocal`, addresses
+or CIDRs, `loopback` by default. From any other address the connection's own address stands, and the first such request
+logs a warning naming the address and the value to set. The Fly and Railway recipes set `uniquelocal`, where their
+proxies connect from. `nymbal doctor` warns when the list is the default and `NYMBAL_PUBLIC_URL` is public: behind a
+platform proxy every shopper would share one rate-limit bucket. A list holding every address (`0.0.0.0/0`) is refused.
+
+A CDN that sends the client in one header (Cloudflare's `CF-Connecting-IP`, Akamai's `True-Client-IP`) can be read
+with `NYMBAL_CLIENT_IP_HEADER` (or `http.clientIpHeader`), only from listed proxies. Use it only when every request to
+the listed proxy passes through the CDN: a client that reaches the origin directly could set it.
+
+## On your own server
+
+```sh
+npx nymbal deploy nginx
+npx nymbal deploy apache
+npx nymbal deploy caddy
+```
+
+Each writes a web server config (`deploy/nginx.conf`, `deploy/apache.conf` or `deploy/Caddyfile`) for the host in
+`NYMBAL_PUBLIC_URL` and the API on `127.0.0.1:<PORT>`, and prints the steps to install it; it runs nothing. The config
+serves TLS (Let's Encrypt through certbot for nginx and Apache, automatic for Caddy), redirects http to https,
+compresses JSON and text but never the admin assistant's stream, caches nothing, and overwrites `X-Forwarded-For`,
+`X-Real-IP` and `X-Forwarded-Proto` with what the web server saw, so the API keeps the `loopback` default. Behind a
+CDN, `--real-ip-from <ranges>` and `--real-ip-header <name>` let the web server take the client from the CDN's header.

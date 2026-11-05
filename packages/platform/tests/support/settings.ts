@@ -229,6 +229,7 @@ export async function openStore(opts: {
       logger: app.platform.logger,
       documentStore: app.platform.documentStore,
       version: '0.0.0',
+      network: app.network,
     })
     try {
       await app.attachHttp(http.adapter)

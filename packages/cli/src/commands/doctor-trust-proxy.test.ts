@@ -2,8 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { nymbalConfigSchema } from '@nymbalhq/config'
-import { resolveTrustProxy } from '@nymbalhq/http'
+import { nymbalConfigSchema, resolveTrustedProxies } from '@nymbalhq/config'
 import { ConfigError } from '@nymbalhq/types'
 import repoConfig from '../../../../nymbal.config.js'
 import {
@@ -15,11 +14,14 @@ import {
   type CliRun,
 } from '../../../../tests/support/doctor.js'
 
-// doctor reads the proxy hop count the server would resolve and says, before the first shopper arrives, when every
-// shopper would share one rate-limit bucket: no hop trusted while the store has a public, non-loopback origin. Trusting
-// every hop is a warning too; a hop count the server refuses is down. Spawns the built CLI (`pnpm build` first).
+// doctor reads the trusted proxy list the server would resolve, and where it came from, and says before the first
+// shopper arrives when every shopper would share one rate-limit bucket: the list left at its default while the store
+// has a public, non-loopback origin. Stating any list clears it; a list or setting the server refuses is down, with
+// the server's own message. Spawns the built CLI (`pnpm build` first).
 
-const VARIABLE = 'NYMBAL_TRUST_PROXY_HOPS'
+const LIST_VAR = 'NYMBAL_TRUSTED_PROXIES'
+const HEADER_VAR = 'NYMBAL_CLIENT_IP_HEADER'
+const HOPS_VAR = 'NYMBAL_TRUST_PROXY_HOPS'
 const PUBLIC = 'https://shop.example'
 
 let dir = ''
@@ -30,8 +32,9 @@ afterAll(() => {
   if (dir !== '') rmSync(dir, { recursive: true, force: true })
 })
 
-/** The project config with `http.trustProxy` as given (absent when undefined), on the default stores. */
-function rawConfig(trustProxy: boolean | number | undefined) {
+/** The project config with `http.trustedProxies` as given (absent when undefined), on the default stores. */
+function rawConfig(trustedProxies?: string[]) {
+  const http = repoConfig.http
   return {
     ...repoConfig,
     infrastructure: {
@@ -39,12 +42,14 @@ function rawConfig(trustProxy: boolean | number | undefined) {
       documentStore: { provider: 'in-memory' },
       eventBus: { provider: 'in-process' },
     },
-    http: trustProxy === undefined ? { ...repoConfig.http } : { ...repoConfig.http, trustProxy },
+    http: trustedProxies === undefined ? http : { ...http, trustedProxies },
   }
 }
 
 interface Case {
-  trustProxy?: boolean | number
+  trustedProxies?: string[]
+  list?: string
+  header?: string
   hops?: string
   publicUrl?: string
 }
@@ -58,14 +63,16 @@ async function doctor(c: Case, json = true): Promise<CliRun> {
   )
   writeFileSync(
     join(project, 'nymbal.config.ts'),
-    `export default ${JSON.stringify(rawConfig(c.trustProxy), null, 2)}\n`,
+    `export default ${JSON.stringify(rawConfig(c.trustedProxies), null, 2)}\n`,
   )
   const sqlitePath = join(project, 'nymbal.db')
   await migratedSqlite(sqlitePath)
   const env = cliEnv({
     NYMBAL_SQLITE_PATH: sqlitePath,
     NODE_ENV: undefined,
-    [VARIABLE]: c.hops,
+    [LIST_VAR]: c.list,
+    [HEADER_VAR]: c.header,
+    [HOPS_VAR]: c.hops,
     NYMBAL_PUBLIC_URL: c.publicUrl,
   })
   return runCli(json ? ['doctor', '--json'] : ['doctor'], { cwd: project, env })
@@ -73,65 +80,51 @@ async function doctor(c: Case, json = true): Promise<CliRun> {
 
 const trustProxyCheck = (run: CliRun) =>
   doctorJson(run.stdout).checks.find((check) => check.name === 'trust proxy')
+const downNames = (run: CliRun) =>
+  doctorJson(run.stdout)
+    .checks.filter((check) => check.status === 'down')
+    .map((check) => check.name)
 
-describe('AC-6: nymbal doctor reports the trust proxy setting', () => {
-  it(`AC-6: the default config, ${VARIABLE} unset and NYMBAL_PUBLIC_URL ${PUBLIC} is degraded naming ${VARIABLE}, printed as warn, and doctor exits 0`, async () => {
+/** The server's own refusal for this environment on the default config: its ConfigError message. */
+function serverRefusal(env: NodeJS.ProcessEnv): string {
+  try {
+    resolveTrustedProxies(nymbalConfigSchema.parse(rawConfig()), env)
+  } catch (error) {
+    if (error instanceof ConfigError) return error.message
+    throw error
+  }
+  return '(the server resolved it)'
+}
+
+describe('AC-8: nymbal doctor reports the trusted proxy list', () => {
+  it(`AC-8: the default list with NYMBAL_PUBLIC_URL ${PUBLIC} is degraded naming ${LIST_VAR} and uniquelocal, printed as warn, and doctor exits 0`, async () => {
     const run = await doctor({ publicUrl: PUBLIC })
     const text = await doctor({ publicUrl: PUBLIC }, false)
     const check = trustProxyCheck(run)
 
     expect(check?.status, run.out.slice(-3000)).toBe('degraded')
-    expect(check?.detail).toContain(VARIABLE)
+    expect(check?.detail).toContain(LIST_VAR)
+    expect(check?.detail).toContain('uniquelocal')
     expect(run.code).toBe(0)
     expect(doctorLines(text.out).find((l) => l.name === 'trust proxy')?.status).toBe('warn')
     expect(text.code).toBe(0)
   }, 60_000)
 
-  it(`AC-6: ${VARIABLE}=1 is ok naming 1 hop, with the same public URL`, async () => {
-    const run = await doctor({ hops: '1', publicUrl: PUBLIC })
-    const check = trustProxyCheck(run)
-
-    expect(check?.status, run.out.slice(-3000)).toBe('ok')
-    expect(check?.detail).toMatch(/\b1 hop\b/)
-    expect(run.code).toBe(0)
-    // The count doctor names is the one the server resolves from the same config and variable.
-    expect(Number.parseInt(check?.detail ?? '', 10)).toBe(
-      resolveTrustProxy(nymbalConfigSchema.parse(rawConfig(undefined)), { [VARIABLE]: '1' }),
+  it(`AC-8: ${LIST_VAR}=loopback with the same public URL is ok naming loopback from ${LIST_VAR}; http.trustedProxies ['uniquelocal'] is ok naming from http.trustedProxies`, async () => {
+    const fromEnv = trustProxyCheck(await doctor({ list: 'loopback', publicUrl: PUBLIC }))
+    const fromConfig = trustProxyCheck(
+      await doctor({ trustedProxies: ['uniquelocal'], publicUrl: PUBLIC }),
     )
-  }, 60_000)
+    const unstated = trustProxyCheck(await doctor({ publicUrl: PUBLIC }))
 
-  it('AC-6: http.trustProxy true is degraded naming the hop count, and doctor exits 0', async () => {
-    const run = await doctor({ trustProxy: true, publicUrl: PUBLIC })
-    const check = trustProxyCheck(run)
+    expect([fromEnv?.status, fromConfig?.status]).toEqual(['ok', 'ok'])
+    expect(fromEnv?.detail).toContain(`loopback from ${LIST_VAR}`)
+    expect(fromConfig?.detail).toContain('uniquelocal from http.trustedProxies')
+    // The same public URL with the list unstated is not ok: stating the list is what clears it.
+    expect(unstated?.status).not.toBe(fromEnv?.status)
+  }, 90_000)
 
-    expect(check?.status, run.out.slice(-3000)).toBe('degraded')
-    expect(check?.detail).toMatch(/hop count/)
-    expect(run.code).toBe(0)
-  }, 60_000)
-
-  it(`AC-6: ${VARIABLE}=x is down with the server's own ConfigError message, the only down check, and doctor exits 1`, async () => {
-    const run = await doctor({ hops: 'x', publicUrl: PUBLIC })
-    const check = trustProxyCheck(run)
-    let refusal = ''
-    try {
-      resolveTrustProxy(nymbalConfigSchema.parse(rawConfig(undefined)), { [VARIABLE]: 'x' })
-    } catch (error) {
-      if (!(error instanceof ConfigError)) throw error
-      refusal = error.message
-    }
-
-    expect(refusal).toContain(VARIABLE)
-    expect(check?.status, run.out.slice(-3000)).toBe('down')
-    expect(check?.detail).toBe(refusal)
-    expect(
-      doctorJson(run.stdout)
-        .checks.filter((c) => c.status === 'down')
-        .map((c) => c.name),
-    ).toEqual(['trust proxy'])
-    expect(run.code).toBe(1)
-  }, 60_000)
-
-  it('AC-6: with no hop set, an unset or loopback public URL is ok', async () => {
+  it('AC-8: the default list with no public URL, or a loopback one, is ok', async () => {
     const runs = [
       await doctor({}),
       await doctor({ publicUrl: 'http://localhost:4321' }),
@@ -142,16 +135,37 @@ describe('AC-6: nymbal doctor reports the trust proxy setting', () => {
     expect(runs.map((run) => run.code)).toEqual([0, 0, 0])
   }, 90_000)
 
-  it(`AC-6: an explicit 0, from ${VARIABLE}=0 or http.trustProxy 0, is ok naming 0 hops with a public URL`, async () => {
-    const runs = [
-      await doctor({ hops: '0', publicUrl: PUBLIC }),
-      await doctor({ trustProxy: 0, publicUrl: PUBLIC }),
-    ]
-    const checks = runs.map((run) => trustProxyCheck(run))
+  it(`AC-8: ${LIST_VAR}=10.0.0.0/33 is down with resolveTrustedProxies' own message, the only down check, and doctor exits 1`, async () => {
+    const run = await doctor({ list: '10.0.0.0/33', publicUrl: PUBLIC })
+    const refusal = serverRefusal({ [LIST_VAR]: '10.0.0.0/33' })
 
-    expect(checks.map((check) => check?.status)).toEqual(['ok', 'ok'])
-    expect(checks.map((check) => /\b0 hops\b/.test(check?.detail ?? ''))).toEqual([true, true])
-    // The unset default with the same public URL is not ok: the explicit 0 is what clears it.
-    expect(trustProxyCheck(await doctor({ publicUrl: PUBLIC }))?.status).not.toBe(checks[0]?.status)
+    expect(refusal).toContain('10.0.0.0/33')
+    expect(trustProxyCheck(run)?.status, run.out.slice(-3000)).toBe('down')
+    expect(trustProxyCheck(run)?.detail).toBe(refusal)
+    expect(downNames(run)).toEqual(['trust proxy'])
+    expect(run.code).toBe(1)
+  }, 60_000)
+
+  it(`AC-8: ${HOPS_VAR}=1 is down naming ${LIST_VAR}, and ${LIST_VAR}=0.0.0.0/0 is down with the trust-everyone refusal; doctor exits 1 for each`, async () => {
+    const hops = await doctor({ hops: '1', publicUrl: PUBLIC })
+    const everyone = await doctor({ list: '0.0.0.0/0' })
+
+    expect(trustProxyCheck(hops)?.status, hops.out.slice(-3000)).toBe('down')
+    expect(trustProxyCheck(hops)?.detail).toContain(LIST_VAR)
+    expect(trustProxyCheck(hops)?.detail).toBe(serverRefusal({ [HOPS_VAR]: '1' }))
+    expect(trustProxyCheck(everyone)?.status).toBe('down')
+    expect(trustProxyCheck(everyone)?.detail).toBe(serverRefusal({ [LIST_VAR]: '0.0.0.0/0' }))
+    expect([downNames(hops), downNames(everyone)]).toEqual([['trust proxy'], ['trust proxy']])
+    expect([hops.code, everyone.code]).toEqual([1, 1])
+  }, 90_000)
+
+  it(`AC-8: ${HEADER_VAR}=True-Client-IP is ok naming the header`, async () => {
+    const run = await doctor({ header: 'True-Client-IP' })
+    const without = await doctor({})
+    const check = trustProxyCheck(run)
+
+    expect(check?.status, run.out.slice(-3000)).toBe('ok')
+    expect(check?.detail.toLowerCase()).toContain('true-client-ip')
+    expect(trustProxyCheck(without)?.detail.toLowerCase()).not.toContain('true-client-ip')
   }, 90_000)
 })

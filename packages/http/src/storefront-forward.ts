@@ -37,9 +37,10 @@ function pageHeaders(
   }).headers,
 ): Record<string, string> {
   return {
-    ...(hsts && origin.protocol === 'https:' && {
-      'strict-transport-security': 'max-age=31536000; includeSubDomains',
-    }),
+    ...(hsts &&
+      origin.protocol === 'https:' && {
+        'strict-transport-security': 'max-age=31536000; includeSubDomains',
+      }),
     'content-security-policy': "frame-ancestors 'none'; object-src 'none'; base-uri 'self'",
     'x-content-type-options': 'nosniff',
     'x-frame-options': xFrameOptions === 'deny' ? 'DENY' : 'SAMEORIGIN',
@@ -111,7 +112,7 @@ export function forwardToStorefront(
             'x-forwarded-proto': proto,
             'x-forwarded-for': [prior, peer].flat().filter(Boolean).join(', '),
             // Replaces whatever the client sent: only this API's own attestation of the address it resolved.
-            [SHOPPER_ATTESTATION_HEADER]: adapter.attestShopper(req.ip),
+            [SHOPPER_ATTESTATION_HEADER]: adapter.attestShopper(req.clientIp),
           }
         },
         rewriteHeaders: (headers) => ({ ...filled, ...headers }),

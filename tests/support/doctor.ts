@@ -181,7 +181,7 @@ function hasPackage(slot: Slot, provider: string): boolean {
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
  * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
  * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
- * surfaces are) and `trust proxy` (the hop count the server reads client addresses through). A slot is named as its
+ * surfaces are) and `trust proxy` (the proxy list, and client-address header, the server reads client addresses through). A slot is named as its
  * folder is (`document-store`), never by its config key.
  */
 export function expectedCheckNames(config: NymbalConfig): string[] {

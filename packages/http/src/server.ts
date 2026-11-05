@@ -1,12 +1,12 @@
 import { secureCookies, type NymbalConfig } from '@nymbalhq/config'
-import {
-  ConfigError,
-  type DocumentStoreAdapter,
-  type HttpMethod,
-  type Logger,
-  type MiddlewareHandler,
-  type RouteHandler,
-  type RouteOptions,
+import type {
+  DocumentStoreAdapter,
+  HttpMethod,
+  Logger,
+  MiddlewareHandler,
+  ResolvedNetwork,
+  RouteHandler,
+  RouteOptions,
 } from '@nymbalhq/types'
 import { FastifyHttpAdapter } from './fastify-adapter.js'
 import { createHealthRoute } from './routes/health.js'
@@ -17,6 +17,8 @@ export interface HttpServerDeps {
   logger: Logger
   documentStore: DocumentStoreAdapter
   version: string
+  /** The trusted proxies and client-address header, resolved once by `createApp`: pass `app.network`. */
+  network: ResolvedNetwork
 }
 
 export interface HttpServer {
@@ -32,39 +34,8 @@ export interface HttpServer {
   stop(): Promise<void>
 }
 
-const TRUST_PROXY_HOPS_ENV = 'NYMBAL_TRUST_PROXY_HOPS'
-
-/**
- * `http.trustProxy`, with NYMBAL_TRUST_PROXY_HOPS filling it when the config leaves it `false`: the hop count is the
- * platform's, so it is set where the store runs, not in the config the image is built from. A set variable must be an
- * integer of 0 or more, whatever the config holds; Fastify would trust nothing, silently, below 0. `true` trusts every
- * hop, so any client chooses its own address: production refuses it.
- */
-export function resolveTrustProxy(config: NymbalConfig, env: NodeJS.ProcessEnv): boolean | number {
-  const raw = env[TRUST_PROXY_HOPS_ENV]
-  const hops = raw === undefined ? undefined : /^\d+$/.test(raw.trim()) ? Number(raw) : NaN
-  if (hops !== undefined && !Number.isSafeInteger(hops)) {
-    throw new ConfigError(`${TRUST_PROXY_HOPS_ENV} must be a whole number of proxy hops, 0 or more`, {
-      code: 'config.trust_proxy_hops_invalid',
-      context: { variable: TRUST_PROXY_HOPS_ENV },
-    })
-  }
-  const configured = config.http.trustProxy
-  const resolved = configured === false && hops !== undefined ? hops : configured
-  if (resolved === true && env.NODE_ENV === 'production') {
-    throw new ConfigError(
-      `http.trustProxy: true trusts every X-Forwarded-For hop, so a client can choose its own address; set http.trustProxy or ${TRUST_PROXY_HOPS_ENV} to the number of proxies in front`,
-      {
-        code: 'config.trust_proxy_true_production',
-        context: { variable: TRUST_PROXY_HOPS_ENV },
-      },
-    )
-  }
-  return resolved
-}
-
 export function createHttpServer(deps: HttpServerDeps): HttpServer {
-  const { config, logger, documentStore, version } = deps
+  const { config, logger, documentStore, version, network } = deps
   if (config.http.adapter !== 'fastify') {
     throw new Error(`Unsupported http.adapter: ${config.http.adapter}`)
   }
@@ -72,7 +43,9 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     logger,
     cors: config.http.cors,
     security: config.security,
-    trustProxy: resolveTrustProxy(config, process.env),
+    trustedProxies: network.trustedProxies,
+    ...(network.clientIpHeader !== undefined && { clientIpHeader: network.clientIpHeader }),
+    clientIpRequiresLock: network.clientIpRequiresLock,
     secureCookies: secureCookies(config, process.env),
   })
 

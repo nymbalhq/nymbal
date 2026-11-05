@@ -42,6 +42,7 @@ async function startupOf(adapters: InjectedAdapters): Promise<unknown> {
       logger: k.logger,
       documentStore: k.documentStore,
       version: '0.0.0',
+      network: k.app.network,
     })
     await k.app.attachHttp(http.adapter)
     return null

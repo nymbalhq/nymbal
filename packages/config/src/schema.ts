@@ -7,6 +7,11 @@ import {
   type InfrastructureSlot,
 } from './known-infrastructure.js'
 import { type CommerceSlot } from './known-providers.js'
+import {
+  clientIpHeaderProblem,
+  trustedProxyMessage,
+  trustedProxyProblem,
+} from './trusted-proxies.js'
 
 const rateLimitRuleSchema = z.object({
   requests: z.number().int().positive(),
@@ -423,12 +428,40 @@ export const httpSchema = z.object({
   port: z.number().int().positive().default(3001),
   host: z.string().default('0.0.0.0'),
   /**
-   * Which `X-Forwarded-For` entries set the client IP the rate limiter keys on. A number trusts that many proxy hops
-   * nearest the server (`1` behind one platform proxy); `0` trusts none. `true` trusts every entry, so a client's own
-   * left-most value wins: spoofable unless your proxy overwrites the header. Left at `false` (explicitly or not),
-   * NYMBAL_TRUST_PROXY_HOPS fills it at run time.
+   * The proxies in front whose `X-Forwarded-For` sets the client address the rate limiter keys on: `loopback`,
+   * `linklocal`, `uniquelocal`, an IP address or a CIDR. Unset, `loopback`; NYMBAL_TRUSTED_PROXIES replaces it.
    */
-  trustProxy: z.union([z.boolean(), z.number().int().min(0)]).default(false),
+  trustedProxies: z
+    .array(
+      z.string().superRefine((entry, ctx) => {
+        const problem = trustedProxyProblem(entry)
+        if (problem !== null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: trustedProxyMessage(entry, 'http.trustedProxies', problem),
+          })
+        }
+      }),
+    )
+    .optional(),
+  /**
+   * One header a listed proxy sets to the client's address (`True-Client-IP`, `CF-Connecting-IP`), read in place of
+   * `X-Forwarded-For` and only from a listed proxy. NYMBAL_CLIENT_IP_HEADER replaces it.
+   */
+  clientIpHeader: z
+    .string()
+    .superRefine((name, ctx) => {
+      const problem = clientIpHeaderProblem(name)
+      if (problem !== null)
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `'${name}' ${problem}` })
+    })
+    .optional(),
+  trustProxy: z
+    .never({
+      error:
+        "http.trustProxy was removed: list the proxies in front in http.trustedProxies (or NYMBAL_TRUSTED_PROXIES), such as ['loopback'] or ['uniquelocal']",
+    })
+    .optional(),
   cors: z
     .object({
       allowedOrigins: z

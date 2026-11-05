@@ -61,6 +61,7 @@ async function serve(
       logger,
       documentStore: app.platform.documentStore,
       version: '0.0.0',
+      network: app.network,
     })
     await app.attachHttp(http.adapter)
     try {

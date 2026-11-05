@@ -42,11 +42,41 @@ export interface SecurityState {
   lastValidatedAt: string
 }
 
+/**
+ * What a security adapter tells the HTTP layer about the network in front of the store. Each value counts only when the
+ * store sets neither its variable nor its config key.
+ */
+export interface SecurityNetwork {
+  /** The proxies whose `X-Forwarded-For` (and client-address header) the API believes: presets, addresses or CIDRs. */
+  trustedProxies?: string[]
+  /** One header a listed proxy sets to the client's address, such as `CF-Connecting-IP`. */
+  clientIpHeader?: string
+  /** Whether `clientIpHeader` may be honoured only on a request the origin lock admitted. */
+  clientIpRequiresLock?: boolean
+}
+
+/** Where a resolved network value came from: the variable, the config key, the adapter's name, or `default`. */
+export interface NetworkSource {
+  kind: 'env' | 'config' | 'adapter' | 'default'
+  name: string
+}
+
+/** The network block the HTTP server is built from, resolved once at boot. */
+export interface ResolvedNetwork {
+  trustedProxies: string[]
+  trustedProxiesSource: NetworkSource
+  clientIpHeader?: string
+  clientIpHeaderSource?: NetworkSource
+  clientIpRequiresLock: boolean
+}
+
 export interface SecurityAdapter extends AdapterBase {
   applyMiddleware(app: HttpAdapter, config: SecurityConfigLike): Promise<void>
   validate(config: SecurityConfigLike): Promise<ValidationResult>
   drift?(config: SecurityConfigLike): Promise<DriftReport>
   inspect?(): Promise<SecurityState>
+  /** The adapter's network settings, offered at boot; synchronous and without I/O. */
+  network?(): SecurityNetwork
 }
 
 /** The response headers every security adapter sets in process, from the config's `headers` block. */

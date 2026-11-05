@@ -49,11 +49,11 @@ checks the project without changing anything, and `npx nymbal add` lists the pro
 
 ## Running behind a proxy
 
-When a reverse proxy, load balancer or tunnel sits in front of the store, set `NYMBAL_TRUST_PROXY_HOPS` to the
-number of proxies in front (`NYMBAL_TRUST_PROXY_HOPS=1` for one). Without it every shopper arrives from the proxy's
-address and shares one rate-limit bucket: `nymbal doctor` warns when the variable is missing and `NYMBAL_PUBLIC_URL`
-is a public origin. Never use `http.trustProxy: true`: it lets any client choose its own address, and production
-refuses to start with it.
+The API believes a forwarded client address (`X-Forwarded-For`) only from the proxies listed in
+`NYMBAL_TRUSTED_PROXIES`: `loopback` by default, for a web server on the same machine. On your own server,
+`npx nymbal deploy nginx` (or `apache`, `caddy`) writes a web server config with TLS that sets the header itself.
+Behind a platform proxy, list its range (`NYMBAL_TRUSTED_PROXIES=uniquelocal` on Fly and Railway); otherwise every shopper
+shares one rate-limit bucket, and `nymbal doctor` warns when the list is the default and `NYMBAL_PUBLIC_URL` is public.
 
 ## Help
 

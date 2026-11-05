@@ -102,6 +102,7 @@ async function attach(cell: Cell): Promise<Outcome> {
     logger: kernel.logger,
     documentStore: kernel.documentStore,
     version: '0.0.0',
+    network: kernel.app.network,
   })
   try {
     await kernel.app.attachHttp(http.adapter)

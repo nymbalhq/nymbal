@@ -58,7 +58,8 @@ export const doctorCommand = defineCommand({
             timeoutMs,
             ...migrationsOf(loaded.projectRoot),
           })
-    if (!('error' in loaded)) report.checks.push(trustProxyCheck(loaded.config, process.env))
+    if (!('error' in loaded))
+      report.checks.push(trustProxyCheck(loaded.config, process.env, report.network))
     const text = formatDoctorReport(report, {
       json: args.json,
       config: 'error' in loaded ? undefined : loaded.config,

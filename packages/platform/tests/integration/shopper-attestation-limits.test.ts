@@ -13,7 +13,7 @@ const HOST = '127.0.0.1'
 const SHOPPER_HEADER = 'x-nymbal-shopper'
 const ORDER_EMAIL_HEADER = 'x-nymbal-order-email'
 const ORDER_KEY_HEADER = 'x-nymbal-order-key'
-const VARIABLE = 'NYMBAL_TRUST_PROXY_HOPS'
+const NETWORK_VARS = ['NYMBAL_TRUSTED_PROXIES', 'NYMBAL_CLIENT_IP_HEADER']
 const LINK_LIMIT = 5
 const READ_LIMIT = 10
 
@@ -53,10 +53,16 @@ afterAll(async () => {
 })
 
 async function serve(): Promise<Served> {
-  const kernel = await createKernel({ dialect: 'sqlite', configure: builtInOrderRules })
+  // The kernel resolves the proxy list from config and environment when it is built: none of the variables applies.
+  const saved = NETWORK_VARS.map((name) => [name, process.env[name]] as const)
+  for (const name of NETWORK_VARS) delete process.env[name]
+  let kernel: Awaited<ReturnType<typeof createKernel>>
+  try {
+    kernel = await createKernel({ dialect: 'sqlite', configure: builtInOrderRules })
+  } finally {
+    for (const [name, value] of saved) if (value !== undefined) process.env[name] = value
+  }
   const port = await freePort()
-  const saved = process.env[VARIABLE]
-  delete process.env[VARIABLE]
   let adapter: FastifyHttpAdapter
   try {
     const http = createHttpServer({
@@ -64,6 +70,7 @@ async function serve(): Promise<Served> {
       logger: kernel.logger,
       documentStore: kernel.documentStore,
       version: '0.0.0',
+      network: kernel.app.network,
     })
     adapter = http.adapter as FastifyHttpAdapter
     await kernel.app.attachHttp(http.adapter)
@@ -75,8 +82,6 @@ async function serve(): Promise<Served> {
   } catch (error) {
     await kernel.close()
     throw error
-  } finally {
-    if (saved !== undefined) process.env[VARIABLE] = saved
   }
   const base = `http://${HOST}:${port}`
   const shopperHeader = (token: string | undefined) =>

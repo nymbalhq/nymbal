@@ -13,12 +13,7 @@ export {
 export { SHOPPER_ATTESTATION_HEADER } from '@nymbalhq/types'
 export { CHECKOUT_ADDRESS_CEILING, RateLimiter } from './rate-limit.js'
 export { createShopperAttestation, type ShopperAttestation } from './shopper-attestation.js'
-export {
-  createHttpServer,
-  resolveTrustProxy,
-  type HttpServer,
-  type HttpServerDeps,
-} from './server.js'
+export { createHttpServer, type HttpServer, type HttpServerDeps } from './server.js'
 export { createHealthRoute } from './routes/health.js'
 export { createReadyRoute, type ReadyState } from './routes/ready.js'
 export {

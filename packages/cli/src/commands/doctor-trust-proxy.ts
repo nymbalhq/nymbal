@@ -1,9 +1,7 @@
-import type { NymbalConfig } from '@nymbalhq/config'
-import { resolveTrustProxy } from '@nymbalhq/http'
-import type { DiagnosisCheck } from '@nymbalhq/platform'
-import { ConfigError } from '@nymbalhq/types'
+import { TRUSTED_PROXIES_ENV, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
+import type { DiagnosisCheck, DiagnosisReport } from '@nymbalhq/platform'
+import { ConfigError, type NetworkSource, type ResolvedNetwork } from '@nymbalhq/types'
 
-const VARIABLE = 'NYMBAL_TRUST_PROXY_HOPS'
 const NAME = 'trust proxy'
 
 /** Whether `value` is an http(s) origin on a host other than this machine: one a reverse proxy may sit in front of. */
@@ -22,39 +20,55 @@ function isPublicOrigin(value: string | undefined): boolean {
   }
 }
 
+function from(source: NetworkSource): string {
+  if (source.kind === 'default') return 'the default'
+  return source.kind === 'adapter' ? `from adapter ${source.name}` : `from ${source.name}`
+}
+
+function describe(network: ResolvedNetwork): string {
+  const list = network.trustedProxies.length === 0 ? 'none' : network.trustedProxies.join(', ')
+  const joiner = network.trustedProxiesSource.kind === 'default' ? ', ' : ' '
+  const listed = `trusted proxies: ${list}${joiner}${from(network.trustedProxiesSource)}`
+  if (network.clientIpHeader === undefined || network.clientIpHeaderSource === undefined) {
+    return listed
+  }
+  return `${listed}; client address header: ${network.clientIpHeader} ${from(network.clientIpHeaderSource)}`
+}
+
 /**
- * The proxy hop count the server would resolve, read before the first shopper: with none set and a public origin,
- * every shopper behind a reverse proxy would share the proxy's rate-limit buckets.
+ * The trusted proxy list and client-address header the server would resolve, each with where it came from, read before
+ * the first shopper. The default list with a public origin is degraded: behind a platform proxy every shopper would
+ * share the proxy's rate-limit buckets. A security adapter's offer that could not be read is never taken as empty.
  */
-export function trustProxyCheck(config: NymbalConfig, env: NodeJS.ProcessEnv): DiagnosisCheck {
-  let resolved: boolean | number
+export function trustProxyCheck(
+  config: NymbalConfig,
+  env: NodeJS.ProcessEnv,
+  offer: DiagnosisReport['network'] = 'unknown',
+): DiagnosisCheck {
+  let network: ResolvedNetwork
   try {
-    resolved = resolveTrustProxy(config, env)
+    network = resolveTrustedProxies(
+      config,
+      env,
+      offer === 'unknown' ? undefined : { adapter: offer.adapter, network: offer.contribution },
+    )
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error
     return { name: NAME, status: 'down', detail: error.message }
   }
-  if (resolved === true) {
+  if (offer === 'unknown') {
     return {
       name: NAME,
       status: 'degraded',
-      detail:
-        'every X-Forwarded-For hop is trusted: a client can choose its own address; set a hop count',
+      detail: `the security adapter's contribution is unknown (it did not build, or its network() threw); without it, ${describe(network)}`,
     }
   }
-  if (resolved === false) {
-    return isPublicOrigin(env['NYMBAL_PUBLIC_URL'])
-      ? {
-          name: NAME,
-          status: 'degraded',
-          detail: `0 hops and a public origin: behind a reverse proxy every shopper shares one rate-limit bucket; set ${VARIABLE}`,
-        }
-      : { name: NAME, status: 'ok', detail: '0 hops, the default: no proxy in front' }
+  if (network.trustedProxiesSource.kind === 'default' && isPublicOrigin(env['NYMBAL_PUBLIC_URL'])) {
+    return {
+      name: NAME,
+      status: 'degraded',
+      detail: `${describe(network)}, and the public origin is not this machine: behind a platform proxy every shopper shares one rate-limit bucket; set ${TRUSTED_PROXIES_ENV} to the proxy's range (uniquelocal on Fly and Railway), or to loopback for a web server on this machine`,
+    }
   }
-  const source = config.http.trustProxy === false ? VARIABLE : 'http.trustProxy'
-  return {
-    name: NAME,
-    status: 'ok',
-    detail: `${resolved} ${resolved === 1 ? 'hop' : 'hops'}, from ${source}`,
-  }
+  return { name: NAME, status: 'ok', detail: describe(network) }
 }

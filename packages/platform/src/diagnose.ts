@@ -13,6 +13,7 @@ import {
   type HealthReport,
   type HealthStatus,
   type Logger,
+  type SecurityNetwork,
   type Slot,
 } from '@nymbalhq/types'
 import {
@@ -58,6 +59,11 @@ export interface DiagnosisCheck {
 
 export interface DiagnosisReport {
   checks: DiagnosisCheck[]
+  /**
+   * What the security adapter offers the HTTP layer (`network()`), read from the adapter built for `slot security`:
+   * `unknown` when it failed to build or `network()` threw. Absent when the config did not parse.
+   */
+  network?: { adapter: string; contribution: SecurityNetwork } | 'unknown'
 }
 
 export interface DiagnoseOptions {
@@ -411,6 +417,17 @@ export async function diagnose(
   const securityAdapter = await within(timeoutMs, () =>
     resolveSecurityAdapter(config, adapterLogger, env),
   )
+  let network: DiagnosisReport['network'] = 'unknown'
+  if (securityAdapter.ok) {
+    try {
+      network = {
+        adapter: config.security.adapter,
+        contribution: securityAdapter.value.network?.() ?? {},
+      }
+    } catch {
+      // The offer stays unknown, which the trust proxy check reports; it never reads as an empty one.
+    }
+  }
   slots.push(
     securityAdapter.ok
       ? fromReport('slot security', providers.security, await health(securityAdapter.value))
@@ -465,7 +482,7 @@ export async function diagnose(
     ...check,
     detail: scrub(secrets.reduce((text, secret) => text.split(secret).join('***'), check.detail)),
   }))
-  return { checks }
+  return { checks, network }
 }
 
 /** How many events show when some are dead; the rest are counted. */

@@ -14,8 +14,8 @@ import { install, workspace } from '../../../tests/support/project.js'
 import { main, parseCliFlags, scaffold } from '../src/index.js'
 
 // Scaffold from a clean machine, AC-1 to AC-6. AC-1's type half lives in tests/scaffold/scaffold-answers.test-d.ts
-// (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the cli project. AC-12: the scaffold documents
-// NYMBAL_TRUST_PROXY_HOPS in a form the project's `nymbal doctor` reads. The scaffold is read from scaffold/templates,
+// (root typecheck); AC-6's `nymbal dev` half and AC-7 to AC-10 are in the cli project. AC-11 (trusted proxies): the
+// scaffold documents NYMBAL_TRUSTED_PROXIES in a form the project's `nymbal doctor` reads. The scaffold is read from scaffold/templates,
 // and doctor is the built CLI, so run `pnpm build` first.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -410,9 +410,9 @@ async function importedNymbalPackages(root: string): Promise<Set<string>> {
   return names
 }
 
-// ─── AC-12: the proxy hop count, documented where a store developer reads it ─────────────────────────────────────
+// ─── AC-11: the trusted proxy list, documented where a store developer reads it ────────────────────────────────
 
-const HOPS_VARIABLE = 'NYMBAL_TRUST_PROXY_HOPS'
+const LIST_VARIABLE = 'NYMBAL_TRUSTED_PROXIES'
 const PUBLIC_URL = 'https://shop.example'
 
 /** The README section whose heading names a proxy: its heading line to the next heading of any level. */
@@ -424,7 +424,7 @@ function proxySection(readme: string): string {
   return lines.slice(start, end < 0 ? undefined : end).join('\n')
 }
 
-describe('AC-12: the scaffold documents the proxy hop count', () => {
+describe('AC-11: the scaffold documents the trusted proxy list', () => {
   const originalCwd = process.cwd()
   const originalUa = process.env['npm_config_user_agent']
   afterEach(() => {
@@ -434,7 +434,7 @@ describe('AC-12: the scaffold documents the proxy hop count', () => {
   })
 
   for (const template of TEMPLATES) {
-    it(`AC-12: in a --yes ${template} scaffold, .env.example's commented ${HOPS_VARIABLE} line, copied into .env, makes nymbal doctor report trust proxy ok with 1 hop; without it and with a public URL doctor reports degraded naming the variable; the README has a proxy section naming it`, async () => {
+    it(`AC-11: in a --yes ${template} scaffold, .env.example has # ${LIST_VARIABLE}=loopback, which uncommented into .env makes nymbal doctor report trust proxy ok naming loopback from ${LIST_VARIABLE}; without it and with a public URL doctor reports degraded naming it; the README's proxy section names it and nymbal deploy nginx, and neither file names the hop count`, async () => {
       const cwd = await tempDir(`proxy-${template}`)
       process.chdir(cwd)
       process.env['npm_config_user_agent'] = 'pnpm/9.12.3 npm/? node/v22.23.3 darwin arm64'
@@ -450,10 +450,12 @@ describe('AC-12: the scaffold documents the proxy hop count', () => {
       const readme = await readFile(join(dir, 'README.md'), 'utf8')
       const commented = example
         .split('\n')
-        .find((line) => new RegExp(`^#\\s*${HOPS_VARIABLE}=`).test(line))
+        .find((line) => new RegExp(`^#\\s*${LIST_VARIABLE}=`).test(line))
       const dotEnv = await readFile(join(dir, '.env'), 'utf8')
       const env = cliEnv({
-        [HOPS_VARIABLE]: undefined,
+        [LIST_VARIABLE]: undefined,
+        NYMBAL_CLIENT_IP_HEADER: undefined,
+        NYMBAL_TRUST_PROXY_HOPS: undefined,
         NYMBAL_PUBLIC_URL: PUBLIC_URL,
         NODE_ENV: undefined,
       })
@@ -472,14 +474,16 @@ describe('AC-12: the scaffold documents the proxy hop count', () => {
 
       // doctor read the scaffold's own config both times, so its checks are about this project.
       expect(configStatus).toEqual(['ok', 'ok'])
-      expect(commented ?? '', `.env.example:\n${example}`).toMatch(
-        new RegExp(`^#\\s*${HOPS_VARIABLE}=1\\s*$`),
-      )
-      expect(proxySection(readme)).toContain(HOPS_VARIABLE)
+      expect(commented ?? '', `.env.example:\n${example}`).toBe(`# ${LIST_VARIABLE}=loopback`)
+      expect(proxySection(readme)).toContain(LIST_VARIABLE)
+      expect(proxySection(readme)).toContain('nymbal deploy nginx')
+      expect(
+        [example, readme].filter((text) => /NYMBAL_TRUST_PROXY_HOPS|trustProxy\b/.test(text)),
+      ).toEqual([])
       expect(withLine?.status).toBe('ok')
-      expect(withLine?.detail).toMatch(/\b1 hop\b/)
+      expect(withLine?.detail).toContain(`loopback from ${LIST_VARIABLE}`)
       expect(withoutLine?.status).toBe('degraded')
-      expect(withoutLine?.detail).toContain(HOPS_VARIABLE)
+      expect(withoutLine?.detail).toContain(LIST_VARIABLE)
     }, 120_000)
   }
 })

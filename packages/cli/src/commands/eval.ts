@@ -69,10 +69,7 @@ function migrationsRoot(projectRoot: string): string {
 }
 
 /** The project's config on a store of the eval's own: a temporary SQLite, in-process primitives, native providers. */
-function throwawayConfig(
-  config: NymbalConfig,
-  ai: NymbalConfig['commerce']['ai'],
-): NymbalConfig {
+function throwawayConfig(config: NymbalConfig, ai: NymbalConfig['commerce']['ai']): NymbalConfig {
   const native = { provider: 'native' } as const
   return {
     ...config,
@@ -150,6 +147,7 @@ async function evaluate(args: {
         logger,
         documentStore: app.platform.documentStore,
         version: getCliVersion(),
+        network: app.network,
       })
       // The routes are the tools; nothing listens.
       await app.attachHttp(http.adapter, { adminRoot: null })

@@ -40,9 +40,9 @@ Run the built store in production: the API, the admin and the storefront on one 
 
 ## `nymbal deploy`
 
-Deploy the store to Fly or Railway
+Deploy the store to Fly or Railway, or write a web server config for your own server
 
-Subcommands: `nymbal deploy fly`, `nymbal deploy railway`.
+Subcommands: `nymbal deploy fly`, `nymbal deploy railway`, `nymbal deploy nginx`, `nymbal deploy apache`, `nymbal deploy caddy`.
 
 ## `nymbal deploy fly`
 
@@ -59,6 +59,33 @@ Write railway.json and deploy with railway
 | Argument | Type | Description | Default |
 | --- | --- | --- | --- |
 | `--dry-run` | boolean | Write the recipe and print the steps; run nothing | `false` |
+
+## `nymbal deploy nginx`
+
+Write deploy/nginx.conf: nginx with TLS in front of the API on this machine
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--real-ip-from` | string | A CDN's address ranges, comma-separated, trusted to name the client |  |
+| `--real-ip-header` | string | The header that CDN names the client in, such as CF-Connecting-IP |  |
+
+## `nymbal deploy apache`
+
+Write deploy/apache.conf: apache with TLS in front of the API on this machine
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--real-ip-from` | string | A CDN's address ranges, comma-separated, trusted to name the client |  |
+| `--real-ip-header` | string | The header that CDN names the client in, such as CF-Connecting-IP |  |
+
+## `nymbal deploy caddy`
+
+Write deploy/Caddyfile: caddy with TLS in front of the API on this machine
+
+| Argument | Type | Description | Default |
+| --- | --- | --- | --- |
+| `--real-ip-from` | string | A CDN's address ranges, comma-separated, trusted to name the client |  |
+| `--real-ip-header` | string | The header that CDN names the client in, such as CF-Connecting-IP |  |
 
 ## `nymbal migrate`
 

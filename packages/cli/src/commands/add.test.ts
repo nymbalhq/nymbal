@@ -310,14 +310,16 @@ describe('AC-9: nymbal add cloudflare', () => {
   }, 60_000)
 
   // The fragment cache rule needs Zone › Cache Rules › Edit, named beside the other two scopes in the same step.
-  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit, Cache Rules Edit), http.trustProxy, that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
+  it("AC-9: the recipe's next steps name the token scopes (Zone Read, Zone WAF Edit, Cache Rules Edit), NYMBAL_TRUSTED_PROXIES and NYMBAL_CLIENT_IP_HEADER (and no hop count), that throttle needs the Enterprise plan and that the plan caps the rate limits", async () => {
     const dir = project('cloudflare-next')
     const next = (await readRecipe('cloudflare', dir)).next.join('\n')
     expect(next).toMatch(/Zone WAF/)
     expect(next).toMatch(/Zone\s*›?\s*Zone\s*›?\s*Read|Zone Read/)
     const tokenStep = (await readRecipe('cloudflare', dir)).next.find((s) => /Zone WAF/.test(s))
     expect(tokenStep).toMatch(/Zone\s*›\s*Cache Rules\s*›\s*Edit/)
-    expect(next).toContain('trustProxy')
+    expect(next).toContain('NYMBAL_TRUSTED_PROXIES')
+    expect(next).toContain('NYMBAL_CLIENT_IP_HEADER')
+    expect(next).not.toMatch(/trustProxy\b|NYMBAL_TRUST_PROXY_HOPS/)
     expect(next).toMatch(/throttle[^.]*Enterprise/)
     expect(next).toMatch(/block or challenge/)
     expect(next).toMatch(/Free plan allows one rate limit/)

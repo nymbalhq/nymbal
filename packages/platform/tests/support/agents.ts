@@ -48,6 +48,7 @@ export async function serveWithAgents(kernel: Kernel): Promise<AgentStore> {
     logger: kernel.logger,
     documentStore: kernel.documentStore,
     version: '0.0.0',
+    network: kernel.app.network,
   })
   const verify = (token: string) => kernel.services.auth.verifyAccessToken(token)
   await kernel.app.attachHttp(server.adapter)

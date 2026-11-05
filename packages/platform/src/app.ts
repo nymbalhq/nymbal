@@ -1,9 +1,10 @@
-import { DEFAULT_JWT_SECRET, type NymbalConfig } from '@nymbalhq/config'
+import { DEFAULT_JWT_SECRET, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
 import {
   ConfigError,
   type CommerceSlot,
   type HealthReport,
   type PaymentsAdapter,
+  type ResolvedNetwork,
 } from '@nymbalhq/types'
 import { createPlatform, resolvePrimitives, type Platform } from './platform.js'
 import type { ResolvePrimitivesOptions } from './platform.js'
@@ -53,6 +54,11 @@ export interface NymbalApp {
   publisher: EventPublisher
   /** Delivers the event log to the bus; started by createApp, stopped by stop(). */
   relay: Relay
+  /**
+   * The trusted proxies and client-address header, resolved once from the environment, the config and the security
+   * adapter's contribution: the block every HTTP server for this app is built with.
+   */
+  network: ResolvedNetwork
   /**
    * Registers the API on the adapter. The admin is served at /admin/ when `adminRoot` is passed (its dist directory,
    * or null for a 404 that says how to build it) or `NYMBAL_ADMIN_DIST` is set.
@@ -258,6 +264,10 @@ export async function createApp(
   )
   refuseUnsafeProduction(config, payments, jwt.secret)
   const security = await resolveSecurityAdapter(config, adapterLogger)
+  const network = resolveTrustedProxies(config, process.env, {
+    adapter: config.security.adapter,
+    network: security.network?.() ?? {},
+  })
   const archive = await eventArchiveWriter(config)
   const primitives = await resolvePrimitives(config, { ...options, logger })
   // Until the app is returned, nothing else holds the connections the primitives and the command store open.
@@ -396,6 +406,7 @@ export async function createApp(
       services,
       publisher,
       relay,
+      network,
       async attachHttp(adapter, options = {}) {
         // Anyone can sign a token with the published default secret, so it is served on loopback only.
         if (jwt.source === 'default' && !isLoopbackHost(config.http.host)) {

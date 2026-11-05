@@ -1,14 +1,14 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { nymbalConfigSchema, type NymbalConfig } from '@nymbalhq/config'
+import { nymbalConfigSchema, resolveTrustedProxies, type NymbalConfig } from '@nymbalhq/config'
 import { ConfigError } from '@nymbalhq/types'
 import { checkStartEnv } from './start.js'
 
 // `nymbal start` checks its environment in one pass before it builds anything, and names every problem by its
 // variable, never by its value. In production it also names the config the app would refuse while it is built: the
-// default JWT secret only when NYMBAL_JWT_SECRET does not replace it. A malformed NYMBAL_JWT_SECRET or
-// NYMBAL_TRUST_PROXY_HOPS fails the app's boot whatever NODE_ENV is, so start names it whatever NODE_ENV is; an
-// `http.trustProxy: true` fails it in production only, and start names the hop count to set instead.
+// default JWT secret only when NYMBAL_JWT_SECRET does not replace it. A malformed NYMBAL_JWT_SECRET fails the app's
+// boot whatever NODE_ENV is, so start names it whatever NODE_ENV is. The trusted proxy settings fail the boot exactly
+// when the app's own resolveTrustedProxies refuses them, and start lists that refusal word for word.
 
 const VARIABLES = [
   'DATABASE_URL',
@@ -19,7 +19,6 @@ const VARIABLES = [
   'commerce.payments.provider',
   'security.auth.jwtSecret',
   'NYMBAL_JWT_SECRET',
-  'NYMBAL_TRUST_PROXY_HOPS',
 ] as const
 type Variable = (typeof VARIABLES)[number]
 
@@ -37,9 +36,7 @@ function named(line: string): Variable[] {
 function kinds(line: string): Variable[] {
   if (line.includes('config.production_default_jwt_secret')) return ['security.auth.jwtSecret']
   const names = named(line)
-  for (const variable of ['NYMBAL_JWT_SECRET', 'NYMBAL_TRUST_PROXY_HOPS'] as const) {
-    if (names.includes(variable)) return [variable]
-  }
+  if (names.includes('NYMBAL_JWT_SECRET')) return ['NYMBAL_JWT_SECRET']
   return names
 }
 
@@ -70,14 +67,20 @@ const caseArb = fc
     envJwt: fc.constantFrom('unset', 'empty', 'short', 'valid'),
     envJwtValid: fc.stringMatching(/^[A-Za-z0-9_-]{16,48}$/).filter((s) => new Set(s).size >= 6),
     envJwtShort: fc.stringMatching(/^[A-Za-z0-9_-]{8,15}$/).filter((s) => new Set(s).size >= 6),
-    hops: fc.constantFrom('unset', 'valid', 'bad'),
-    hopsValid: fc.integer({ min: 0, max: 4 }),
-    trustProxy: fc.constantFrom('default', 'true', 'hops'),
-    trustProxyHops: fc.integer({ min: 0, max: 4 }),
-    hopsBad: fc.oneof(
-      fc.constantFrom('1.5', '-1', 'x', '2.0e1x', 'one'),
-      fc.stringMatching(/^[a-z]{8,14}$/).filter((s) => new Set(s).size >= 6),
+    proxiesEnv: fc.constantFrom('unset', 'blank', 'valid', 'invalid', 'everyone'),
+    proxiesConfig: fc.constantFrom('unset', 'valid', 'invalid', 'everyone'),
+    validProxies: fc.subarray(
+      ['loopback', 'uniquelocal', '10.0.0.5', '2001:db8::1', '192.0.2.0/24'],
+      {
+        minLength: 1,
+      },
     ),
+    invalidProxy: fc.constantFrom('10.0.0.0/33', '300.1.1.1', 'fe80::/129', 'localhost', 'loopbak'),
+    everyone: fc.constantFrom('0.0.0.0/0', '::/0'),
+    header: fc.constantFrom('unset', 'valid', 'invalid'),
+    validHeader: fc.constantFrom('True-Client-IP', 'CF-Connecting-IP', 'X-Real-IP'),
+    invalidHeader: fc.constantFrom('X-Forwarded-For', 'forwarded', 'bad header'),
+    oldHops: fc.constantFrom(undefined, '', '0', '1', 'x'),
     noise: fc.dictionary(fc.stringMatching(/^X_[A-Z]{3,8}$/), token, { maxKeys: 4 }),
   })
   .map((c) => ({
@@ -128,13 +131,19 @@ function made(c: Case): {
       tax: { provider: 'native' },
       ai: { provider: 'none' },
     },
-    http: {
-      adapter: 'fastify',
-      ...(c.trustProxy === 'true' && { trustProxy: true }),
-      ...(c.trustProxy === 'hops' && { trustProxy: c.trustProxyHops }),
-    },
+    http: { adapter: 'fastify' },
     deployment: { strategy: 'standard' },
   })
+  // Set past the schema, so a list it would refuse still reaches start and the app as the same value.
+  const configProxies =
+    c.proxiesConfig === 'valid'
+      ? c.validProxies
+      : c.proxiesConfig === 'invalid'
+        ? ['loopback', c.invalidProxy]
+        : c.proxiesConfig === 'everyone'
+          ? [c.everyone]
+          : undefined
+  if (configProxies !== undefined) config.http = { ...config.http, trustedProxies: configProxies }
   const databaseUrl =
     c.database === undefined
       ? undefined
@@ -163,12 +172,25 @@ function made(c: Case): {
         : c.envJwt === 'empty'
           ? ''
           : undefined
-  const hops = c.hops === 'valid' ? String(c.hopsValid) : c.hops === 'bad' ? c.hopsBad : undefined
+  const proxiesEnv =
+    c.proxiesEnv === 'blank'
+      ? ' '
+      : c.proxiesEnv === 'valid'
+        ? c.validProxies.join(',')
+        : c.proxiesEnv === 'invalid'
+          ? `loopback,${c.invalidProxy}`
+          : c.proxiesEnv === 'everyone'
+            ? c.everyone
+            : undefined
+  const header =
+    c.header === 'valid' ? c.validHeader : c.header === 'invalid' ? c.invalidHeader : undefined
   const env: NodeJS.ProcessEnv = {
     PATH: '/usr/bin:/bin',
     ...c.noise,
     ...(envJwt !== undefined && { NYMBAL_JWT_SECRET: envJwt }),
-    ...(hops !== undefined && { NYMBAL_TRUST_PROXY_HOPS: hops }),
+    ...(proxiesEnv !== undefined && { NYMBAL_TRUSTED_PROXIES: proxiesEnv }),
+    ...(header !== undefined && { NYMBAL_CLIENT_IP_HEADER: header }),
+    ...(c.oldHops !== undefined && { NYMBAL_TRUST_PROXY_HOPS: c.oldHops }),
     ...(databaseUrl !== undefined && { DATABASE_URL: databaseUrl }),
     ...(redisUrl !== undefined && { REDIS_URL: redisUrl }),
     ...(key !== undefined && { NYMBAL_SECRETS_KEY: key }),
@@ -192,9 +214,6 @@ function made(c: Case): {
     else if (malformedJwt) optional.push('security.auth.jwtSecret')
   }
   if (malformedJwt) expected.push('NYMBAL_JWT_SECRET')
-  if (c.hops === 'bad' || (c.nodeEnv === 'production' && c.trustProxy === 'true')) {
-    expected.push('NYMBAL_TRUST_PROXY_HOPS')
-  }
   const values = [
     ...Object.values(c.noise),
     configRedisUrl,
@@ -203,10 +222,35 @@ function made(c: Case): {
       (v): v is string => v !== undefined,
     ),
     ...(c.envJwt === 'valid' || c.envJwt === 'short' ? [envJwt!] : []),
-    // A bad count of the generated, word-like kind; '1.5' or 'x' may sit in a line's own words.
-    ...(c.hops === 'bad' && c.hopsBad.length >= 8 ? [c.hopsBad] : []),
   ]
   return { config, env, expected, optional, values }
+}
+
+/** What names the trusted proxy settings: the variables, the old hop count and the config keys. */
+const NETWORK_NAMES = [
+  'NYMBAL_TRUSTED_PROXIES',
+  'NYMBAL_CLIENT_IP_HEADER',
+  'NYMBAL_TRUST_PROXY_HOPS',
+  'http.trustedProxies',
+  'http.clientIpHeader',
+]
+
+/** The app's refusal: a ConfigError's message, or null. Anything else is the test's own failure and propagates. */
+function refusal(fn: () => unknown): string | null {
+  try {
+    fn()
+    return null
+  } catch (error) {
+    if (error instanceof ConfigError) return error.message
+    throw error
+  }
+}
+
+/** The lines about the trusted proxy settings: the app's own refusal, or any line naming those settings. */
+function networkLines(lines: string[], appRefusal: string | null): string[] {
+  return lines.filter(
+    (line) => line === appRefusal || NETWORK_NAMES.some((name) => line.includes(name)),
+  )
 }
 
 describe('AC-1: checkStartEnv names every problem at once', () => {
@@ -214,7 +258,13 @@ describe('AC-1: checkStartEnv names every problem at once', () => {
     fc.assert(
       fc.property(caseArb, (c) => {
         const { config, env, expected, optional, values } = made(c)
-        const lines: string[] = checkStartEnv(config, env)
+        const all: string[] = checkStartEnv(config, env)
+        // The trusted proxy line is AC-9's: it names the entry it refuses, by design.
+        const network = networkLines(
+          all,
+          refusal(() => resolveTrustedProxies(config, env)),
+        )
+        const lines = all.filter((line) => !network.includes(line))
         const reported = lines.flatMap(kinds)
 
         expect(lines.map((line) => kinds(line).length)).toEqual(lines.map(() => 1))
@@ -246,46 +296,53 @@ describe('AC-1: checkStartEnv names every problem at once', () => {
   })
 })
 
-describe('AC-4: start agrees with the app on the JWT secret and the proxy hop count', () => {
-  it("AC-4: under production, start names the default secret exactly when the app's resolveAuthSecret resolves to the default, names NYMBAL_JWT_SECRET exactly when it throws (an own config secret beside it included), and lists the server's resolveTrustProxy refusal, word for word, exactly when it throws, which a malformed NYMBAL_TRUST_PROXY_HOPS or an http.trustProxy of true makes it do, with no value in any line", async () => {
+describe('AC-4: start agrees with the app on the JWT secret', () => {
+  it("AC-4: under production, start names the default secret exactly when the app's resolveAuthSecret resolves to the default, and names NYMBAL_JWT_SECRET exactly when it throws (an own config secret beside it included), with no value in any line", async () => {
     const { resolveAuthSecret } = (await import('@nymbalhq/platform')) as unknown as {
       resolveAuthSecret: (config: NymbalConfig, env: NodeJS.ProcessEnv) => { source: string }
-    }
-    const { resolveTrustProxy } = (await import('@nymbalhq/http')) as unknown as {
-      resolveTrustProxy: (config: NymbalConfig, env: NodeJS.ProcessEnv) => boolean | number
-    }
-    /** The app's refusal: a ConfigError's message, or null. Anything else is the test's own failure and propagates. */
-    const refusal = (fn: () => unknown): string | null => {
-      try {
-        fn()
-        return null
-      } catch (error) {
-        if (error instanceof ConfigError) return error.message
-        throw error
-      }
     }
     const throws = (fn: () => unknown): boolean => refusal(fn) !== null
 
     fc.assert(
       fc.property(caseArb, (c) => {
         const { config, env, values } = made({ ...c, nodeEnv: 'production' })
-        const lines: string[] = checkStartEnv(config, env)
-        const reported = lines.flatMap(kinds)
+        const all: string[] = checkStartEnv(config, env)
+        const network = networkLines(
+          all,
+          refusal(() => resolveTrustedProxies(config, env)),
+        )
+        const reported = all.filter((line) => !network.includes(line)).flatMap(kinds)
         const secretRefused = throws(() => resolveAuthSecret(config, env))
-        const hopsRefusal = refusal(() => resolveTrustProxy(config, env))
-        const hopsRefused = hopsRefusal !== null
 
         // Beside a refused variable the app's verdict on the default is unknown, so it is not compared.
         const onDefault = secretRefused ? null : resolveAuthSecret(config, env).source === 'default'
 
         expect(reported.includes('NYMBAL_JWT_SECRET')).toBe(secretRefused)
         expect(secretRefused ? null : reported.includes('security.auth.jwtSecret')).toBe(onDefault)
-        expect(reported.includes('NYMBAL_TRUST_PROXY_HOPS')).toBe(hopsRefused)
-        expect(hopsRefusal !== null && lines.includes(hopsRefusal)).toBe(hopsRefused)
-        expect(hopsRefused).toBe(c.hops === 'bad' || c.trustProxy === 'true')
-        expect(values.filter((value) => lines.some((line) => line.includes(value)))).toEqual([])
+        expect(values.filter((value) => all.some((line) => line.includes(value)))).toEqual([])
       }),
       { numRuns: 300 },
     )
+  })
+})
+
+describe('AC-9: start and the app agree on the trusted proxy settings', () => {
+  it('AC-9: over generated configs and environments (lists valid and not, /0, the old hop variable, client-address headers valid and not, NODE_ENV production or unset), checkStartEnv names a trusted proxy problem exactly when resolveTrustedProxies(config, env) throws, and lists its message word for word', () => {
+    const seen = { refused: 0, resolved: 0 }
+    fc.assert(
+      fc.property(caseArb, fc.constantFrom('production', 'unset'), (c, nodeEnv) => {
+        const { config, env } = made({ ...c, nodeEnv })
+        const lines: string[] = checkStartEnv(config, env)
+        const appRefusal = refusal(() => resolveTrustedProxies(config, env))
+        const network = networkLines(lines, appRefusal)
+        seen[appRefusal === null ? 'resolved' : 'refused'] += 1
+
+        expect(network.length > 0).toBe(appRefusal !== null)
+        expect(appRefusal === null || lines.includes(appRefusal)).toBe(true)
+      }),
+      { numRuns: 400 },
+    )
+    // Both outcomes were generated, so the agreement above is tested both ways.
+    expect(Math.min(seen.refused, seen.resolved)).toBeGreaterThanOrEqual(20)
   })
 })

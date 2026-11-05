@@ -42,12 +42,15 @@ async function registered(s: ServedKernel): Promise<{ email: string; id: string 
 }
 
 /**
- * The built-in login limits behind one proxy hop: the socket peer (127.0.0.1) is the proxy, and the X-Forwarded-For
- * entry it appended is the client.
+ * The built-in login limits behind a proxy on this machine: the socket peer (127.0.0.1) is the proxy, listed by the
+ * default `loopback`, and the X-Forwarded-For entry it appended is the client.
  */
-function oneHop(c: NymbalConfig): NymbalConfig {
+const behindLoopbackProxy = withoutAuthRateRules
+
+/** The built-in login limits with no proxy listed: X-Forwarded-For from any peer is ignored. */
+function noProxyListed(c: NymbalConfig): NymbalConfig {
   const base = withoutAuthRateRules(c)
-  return { ...base, http: { ...base.http, trustProxy: 1 } }
+  return { ...base, http: { ...base.http, trustedProxies: [] } }
 }
 
 function eventsNaming(raw: RawReader, email: string): Promise<number> {
@@ -144,8 +147,8 @@ describe('login rate limit (built-in default)', () => {
     })
   })
 
-  it('AC-1: with trustProxy 1, for 1 to 10 attacker addresses sharing ten wrong logins for one email, the owner signing in from an eleventh address answers 200 with a new session, and a further wrong login for that email from an attacker address answers 401, or 429 only when that address holds ten failures of its own', async () => {
-    await withServed(oneHop, async (s, raw) => {
+  it('AC-1: with the loopback proxy listed, for 1 to 10 attacker addresses sharing ten wrong logins for one email, the owner signing in from an eleventh address answers 200 with a new session, and a further wrong login for that email from an attacker address answers 401, or 429 only when that address holds ten failures of its own', async () => {
+    await withServed(behindLoopbackProxy, async (s, raw) => {
       const shop = await primedShopper(s.baseUrl)
       let run = 0
       await fc.assert(
@@ -193,8 +196,8 @@ describe('login rate limit (built-in default)', () => {
     })
   }, 90_000)
 
-  it("AC-1: with trustProxy 1, ten wrong logins from one address across ten emails make that address's eleventh login, the right password included, 429 rate_limit.block, while the same account signs in from another address", async () => {
-    await withServed(oneHop, async (s) => {
+  it("AC-1: with the loopback proxy listed, ten wrong logins from one address across ten emails make that address's eleventh login, the right password included, 429 rate_limit.block, while the same account signs in from another address", async () => {
+    await withServed(behindLoopbackProxy, async (s) => {
       const owner = await registered(s)
       const shop = await primedShopper(s.baseUrl)
       const sprayer = '10.32.0.1'
@@ -230,8 +233,8 @@ describe('login rate limit (built-in default)', () => {
     })
   })
 
-  it('AC-6a: with trustProxy 1, eleven wrong logins for eleven emails from eleven X-Forwarded-For addresses all answer 401', async () => {
-    await withServed(oneHop, async (s) => {
+  it('AC-6a: with the loopback proxy listed, eleven wrong logins for eleven emails from eleven X-Forwarded-For addresses all answer 401', async () => {
+    await withServed(behindLoopbackProxy, async (s) => {
       const shop = await primedShopper(s.baseUrl)
 
       const control: number[] = []
@@ -248,8 +251,8 @@ describe('login rate limit (built-in default)', () => {
     })
   })
 
-  it('AC-6b: with trustProxy at its default, X-Forwarded-For does not change the IP bucket: eleven wrong logins for eleven emails from eleven claimed addresses give 429 on the 11th', async () => {
-    await withServed(withoutAuthRateRules, async (s) => {
+  it('AC-6b: with no proxy listed (trustedProxies []), X-Forwarded-For does not change the IP bucket: eleven wrong logins for eleven emails from eleven claimed addresses give 429 on the 11th', async () => {
+    await withServed(noProxyListed, async (s) => {
       const shop = await primedShopper(s.baseUrl)
 
       const statuses: number[] = []
@@ -264,7 +267,7 @@ describe('login rate limit (built-in default)', () => {
       }
       expect(statuses.slice(0, LIMIT)).toEqual(Array.from({ length: LIMIT }, () => 401))
       expect(statuses[LIMIT]).toBe(429)
-      expect(s.kernel.config.http.trustProxy).toBe(false)
+      expect(s.kernel.app.network.trustedProxies).toEqual([])
     })
   })
 })

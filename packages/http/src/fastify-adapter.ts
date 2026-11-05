@@ -5,8 +5,10 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify'
+import { isIP } from 'node:net'
 import fastifyCookie from '@fastify/cookie'
 import fastifyCors from '@fastify/cors'
+import proxyAddr from '@fastify/proxy-addr'
 import { v7 as uuidv7 } from 'uuid'
 import type {
   HttpAdapter,
@@ -28,7 +30,7 @@ import {
   isValidCorrelationId,
   NymbalError,
 } from '@nymbalhq/types'
-import type { NymbalConfig } from '@nymbalhq/config'
+import { TRUSTED_PROXIES_ENV, trustSuggestion, type NymbalConfig } from '@nymbalhq/config'
 import { createSecurityGuard, type SecurityGuard } from './security-middleware.js'
 import { createShopperAttestation, type ShopperAttestation } from './shopper-attestation.js'
 
@@ -42,26 +44,21 @@ export interface FastifyAdapterOptions {
   /** The guard every route passes before its middlewares and handler: rate limit, then CSRF on unsafe methods. */
   security: NymbalConfig['security']
   /**
-   * Which `X-Forwarded-For` entries set the request IP: a hop count, or every entry (`true`). Off by default; left
-   * unset, the first request that carries the header logs a warning. An explicit `0` says no proxy is in front.
+   * The proxies whose `X-Forwarded-For` sets the client address, walked from the socket peer while each hop is listed:
+   * `loopback`, `linklocal`, `uniquelocal`, addresses and CIDRs. Default `['loopback']`. The first request from an
+   * unlisted peer that carries a forwarded address logs a warning naming the peer.
    */
-  trustProxy?: boolean | number
+  trustedProxies?: string[]
+  /**
+   * One header a listed proxy sets to the client's address; when set, it decides in place of `X-Forwarded-For`, and
+   * only when it holds exactly one IP address.
+   */
+  clientIpHeader?: string
+  /** Whether the header may count only on a request the origin lock admitted; carried, not yet read. */
+  clientIpRequiresLock?: boolean
   cors?: CorsOptions
   /** Whether the CSRF cookie carries `Secure`: `secureCookies(config, env)`. */
   secureCookies?: boolean
-}
-
-/**
- * Fastify refuses a numeric trustProxy, failing closed against X-Forwarded-* headers spoofed by a client that reaches
- * the server directly (GHSA-3m5p-2c4r-xxw2). The function keeps Nymbal's hop-count contract: hop 0 is the socket peer,
- * so `hop < n` trusts the peer and the n-1 X-Forwarded-For entries nearest it. A client that reaches the API directly
- * can still spoof those entries; trust by proxy address would close that.
- */
-function trustedHops(
-  trustProxy: boolean | number,
-): boolean | ((address: string, hop: number) => boolean) {
-  if (typeof trustProxy !== 'number') return trustProxy
-  return (_address, hop) => hop < trustProxy
 }
 
 /** How long a stream ended at shutdown may take to flush before its socket is destroyed regardless. */
@@ -79,18 +76,26 @@ export class FastifyHttpAdapter implements HttpAdapter {
   #started = false
   #stopping = false
   #boundPort = 0
-  #warnedForwardedFor = false
+  /** Decides both Fastify's walk of X-Forwarded-For and whether the peer may speak for the client. */
+  readonly #trusts: (address: string, hop: number) => boolean
+  /** Lower-cased, as Node keys request headers. */
+  readonly #clientIpHeader: string | undefined
+  readonly clientIpRequiresLock: boolean
+  #warnedUnlistedPeer = false
+  #warnedClientIpHeader = false
 
   constructor(options: FastifyAdapterOptions) {
     this.#logger = options.logger
+    this.#trusts = proxyAddr.compile(options.trustedProxies ?? ['loopback'])
+    this.#clientIpHeader = options.clientIpHeader?.toLowerCase()
+    this.clientIpRequiresLock = options.clientIpRequiresLock ?? false
     this.#guard = createSecurityGuard(options.security, {
       attestation: this.#attestation,
       secureCookies: options.secureCookies ?? false,
     })
-    const noHopSet = options.trustProxy === undefined || options.trustProxy === false
     this.#app = Fastify({
       logger: false,
-      trustProxy: trustedHops(options.trustProxy ?? false),
+      trustProxy: this.#trusts,
       disableRequestLogging: true,
       // Fastify's default takes `req.id` from an inbound `request-id` header, unvalidated; the id is always ours.
       requestIdHeader: false,
@@ -99,19 +104,12 @@ export class FastifyHttpAdapter implements HttpAdapter {
     // Hooks rather than #buildContext and #applyEnvelope: Fastify's own 404 and body-parse 400 never reach a route
     // handler, and they carry the id too.
     this.#app.decorateRequest('correlationId', '')
+    this.#app.decorateRequest('clientIp', '')
     this.#app.addHook('onRequest', async (req) => {
       const inbound = req.headers[CORRELATION_ID_HEADER]
       if (typeof inbound === 'string' && isValidCorrelationId(inbound)) req.correlationId = inbound
       else req.correlationId = isValidCorrelationId(req.id) ? req.id : uuidv7()
-      if (noHopSet && !this.#warnedForwardedFor && req.headers['x-forwarded-for'] !== undefined) {
-        this.#warnedForwardedFor = true
-        this.#logger
-          .child({ requestId: req.id, correlationId: req.correlationId })
-          .warn(
-            { header: 'x-forwarded-for', variable: 'NYMBAL_TRUST_PROXY_HOPS' },
-            'X-Forwarded-For arrives but no proxy hop is trusted: every shopper shares one rate-limit bucket; set NYMBAL_TRUST_PROXY_HOPS',
-          )
-      }
+      req.clientIp = this.#resolveClientIp(req)
     })
     this.#app.addHook('onSend', async (req, reply, payload) => {
       reply.header(CORRELATION_ID_HEADER, req.correlationId)
@@ -430,6 +428,51 @@ export class FastifyHttpAdapter implements HttpAdapter {
     return handler(ctx)
   }
 
+  /**
+   * The one client address a request resolves to. An unlisted peer is the client, whatever it sends. From a listed peer,
+   * the client-address header when one is configured (a single IP address, else the peer), otherwise X-Forwarded-For
+   * walked by Fastify with the same list.
+   */
+  #resolveClientIp(req: FastifyRequest): string {
+    const peer = req.raw.socket.remoteAddress
+    if (peer === undefined) return req.ip
+    const header = this.#clientIpHeader
+    if (!this.#trusts(peer, 0)) {
+      const carried =
+        req.headers['x-forwarded-for'] !== undefined
+          ? 'x-forwarded-for'
+          : header !== undefined && req.headers[header] !== undefined
+            ? header
+            : undefined
+      if (carried !== undefined && !this.#warnedUnlistedPeer) {
+        this.#warnedUnlistedPeer = true
+        const suggested = trustSuggestion(peer)
+        this.#requestLogger(req).warn(
+          { peer, header: carried, variable: TRUSTED_PROXIES_ENV, suggested },
+          `${carried} from ${peer} is ignored: ${peer} is not a listed proxy, so it is the client address. If ${peer} is your proxy, set ${TRUSTED_PROXIES_ENV}=${suggested}`,
+        )
+      }
+      return peer
+    }
+    if (header === undefined) return req.ip
+    const value = req.headers[header]
+    if (value === undefined) return peer
+    if (typeof value === 'string' && !value.includes(',') && isIP(value) !== 0) return value
+    const reason = typeof value !== 'string' || value.includes(',') ? 'multiple' : 'invalid'
+    if (!this.#warnedClientIpHeader) {
+      this.#warnedClientIpHeader = true
+      this.#requestLogger(req).warn(
+        { peer, header, reason },
+        `${header} from ${peer} does not hold one IP address (${reason}), so the address is the peer; the proxy should set it to the client's address alone`,
+      )
+    }
+    return peer
+  }
+
+  #requestLogger(req: FastifyRequest): Logger {
+    return this.#logger.child({ requestId: req.id, correlationId: req.correlationId })
+  }
+
   #buildContext(req: FastifyRequest, includeRawBody: boolean): RequestContext {
     const { correlationId } = req
     const logger = this.#logger.child({ requestId: req.id, correlationId })
@@ -445,7 +488,7 @@ export class FastifyHttpAdapter implements HttpAdapter {
       requestId: req.id,
       correlationId,
       logger,
-      ip: req.ip,
+      ip: req.clientIp,
     }
     if (includeRawBody && Buffer.isBuffer(req.rawBody)) {
       ctx.rawBody = req.rawBody
@@ -510,5 +553,7 @@ declare module 'fastify' {
     rawBody?: Buffer
     /** Set by the onRequest hook before anything else runs. */
     correlationId: string
+    /** The client address the request resolves to, set by the onRequest hook: what every reader of the address uses. */
+    clientIp: string
   }
 }

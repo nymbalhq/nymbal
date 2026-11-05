@@ -694,6 +694,7 @@ async function runPreview(args: PreviewArgs): Promise<void> {
       logger,
       documentStore: app.platform.documentStore,
       version,
+      network: app.network,
     })
     await app.attachHttp(http.adapter, { adminRoot: null })
     const media = mediaRoute(mediaRoot)

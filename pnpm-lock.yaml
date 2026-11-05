@@ -827,6 +827,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@fastify/proxy-addr':
+        specifier: ^5.1.2
+        version: 5.1.2
       '@nymbalhq/types':
         specifier: workspace:*
         version: link:../types
@@ -902,6 +905,9 @@ importers:
       '@fastify/http-proxy':
         specifier: ^11.6.6
         version: 11.6.6
+      '@fastify/proxy-addr':
+        specifier: ^5.1.2
+        version: 5.1.2
       '@modelcontextprotocol/node':
         specifier: ^2.1.2
         version: 2.1.2(@modelcontextprotocol/server@2.4.0)
