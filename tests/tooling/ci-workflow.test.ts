@@ -1,8 +1,8 @@
 // Reads: .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, package.json
-// Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts
+// Reads: stryker.config.mjs, stryker.integration.config.mjs, scripts/mutation-ratchet.ts, pnpm-workspace.yaml
 // Reads: tests/perf/perf-budgets.test.ts, tests/sentinels/*.patch
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, globSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, matchesGlob } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -1685,6 +1685,60 @@ describe('every E2E target runs once on a push, and its job keeps its Playwright
     expect(targets.length).toBeGreaterThan(0)
     expect(ran.sort()).toEqual(targets)
     expect(missing).toEqual([])
+  })
+
+  // A test that hangs and then passes on its retry leaves the job green, and its JSON report says only "timed out": the
+  // trace of the try that hung is the only record of what the page was doing.
+  it('on a push to dev, each job always uploads the Playwright output directory gate.ts gives each target it runs, kept 1 to 7 days, so a failed try’s trace.zip is there to open', () => {
+    const ci = loadWorkflow(WORKFLOW)
+    // Playwright runs in the workspace package the step's `pnpm --filter <name> exec` names, so --output is under its
+    // directory.
+    const dirOf = new Map(
+      [...readFileSync(join(REPO, 'pnpm-workspace.yaml'), 'utf8').matchAll(/^ {2}- "([^"]+)"$/gm)]
+        .flatMap(([, glob]) => globSync(`${glob}/package.json`, { cwd: REPO }))
+        .map((file) => [
+          (JSON.parse(readFileSync(join(REPO, file), 'utf8')) as { name: string }).name,
+          dirname(file),
+        ]),
+    )
+    const outputOf = new Map(
+      plan({ full: true, base: 'HEAD', changed: [], mutated: [] })
+        .steps.filter((s) => s.name.startsWith('e2e '))
+        .map((s) => {
+          const pkg = /pnpm --filter (\S+) exec playwright/.exec(s.command)?.[1] ?? ''
+          return [
+            s.name.slice('e2e '.length),
+            `${dirOf.get(pkg)}/${/--output (\S+)/.exec(s.command)?.[1]}`,
+          ]
+        }),
+    )
+    const rows: string[] = []
+    for (const call of gateCalls(ci, DEV_PUSH)) {
+      const uploads = stepsRun(ci, DEV_PUSH, call.job, {}).filter(
+        (s) => s.uses?.startsWith('actions/upload-artifact@') && bareCondition(s.if) === 'always()',
+      )
+      for (const name of onlyOf(call.args).filter((n) => n.startsWith('e2e '))) {
+        const target = name.slice('e2e '.length)
+        // A failed first try's directory has no -retry suffix; a failed retry's is beside it.
+        const trace = `${outputOf.get(target)}/some-journey-${target}/trace.zip`
+        const days = uploads
+          .filter((s) =>
+            (s.with?.path ?? '')
+              .split('\n')
+              .map((p) => p.trim().replace(/\/$/, '/**'))
+              .some((glob) => glob !== '' && matchesGlob(trace, glob)),
+          )
+          .map((s) => Number(text(s.with?.['retention-days'])))
+        rows.push(`${call.job}: ${name}: retention ${days.join(',') || 'none'}`)
+      }
+    }
+    expect(rows.length).toBe(outputOf.size)
+    expect(
+      rows.filter((row) => {
+        const days = row.split('retention ')[1]!.split(',').map(Number)
+        return days.length !== 1 || !(days[0]! >= 1 && days[0]! <= 7)
+      }),
+    ).toEqual([])
   })
 
   it('on a push to dev, no two upload steps that run name the same artefact', () => {

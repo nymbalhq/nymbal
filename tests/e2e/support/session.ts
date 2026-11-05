@@ -2,9 +2,12 @@ import type { BrowserContext, Page } from '@playwright/test'
 
 // The shopper's session as the browser holds it: the access tokens this browser's pages hold, read off the wire (the
 // bearer each page sends the API, and the token in each sign-in, register and refresh answer whose body is still
-// there to read; a body is gone once its page navigates away), and what of them the storefront's Web Storage holds.
+// readable once it is in), and what of them the storefront's Web Storage holds.
 
 const ISSUING = new Set(['/api/auth/login', '/api/auth/register', '/api/auth/refresh'])
+
+/** How long all() waits for the answers it is still reading; each is read once its body is in, so this is slack. */
+const READ_BOUND_MS = 10_000
 
 export interface IssuedTokens {
   /** Every access token seen on any page of the context so far, each once. */
@@ -13,30 +16,49 @@ export interface IssuedTokens {
 
 /** Records every access token the context's pages send or are answered from now on. */
 export function watchAccessTokens(context: BrowserContext): IssuedTokens {
-  const pending: Array<Promise<string | null>> = []
+  const tokens: Array<string | null> = []
+  const reading = new Map<Promise<void>, string>()
   context.on('request', (req) => {
     if (!new URL(req.url()).pathname.startsWith('/api/')) return
     // The headers as the page sent them, read now: headerValue() waits for the raw headers, which never come for a
-    // request a navigation cancels (a reload during the session's refresh), and would hold all() forever.
-    const value = req.headers()['authorization']
-    pending.push(Promise.resolve(/^Bearer (.+)$/i.exec(value ?? '')?.[1] ?? null))
+    // request a navigation cancels (a reload during the session's refresh).
+    tokens.push(/^Bearer (.+)$/i.exec(req.headers()['authorization'] ?? '')?.[1] ?? null)
   })
-  context.on('response', (res) => {
-    if (res.request().method() !== 'POST' || !res.ok()) return
-    if (!ISSUING.has(new URL(res.url()).pathname)) return
-    pending.push(
-      res
-        .json()
-        .then((body: { data?: { accessToken?: string } }) => body.data?.accessToken ?? null)
-        .catch(() => null),
-    )
+  // An answer is read once its body is in. Read on `response` (headers in), the body of an answer a reload cut
+  // mid-body never settles until the page closes, and all() with it; such a body never reached the page either.
+  context.on('requestfinished', (req) => {
+    if (req.method() !== 'POST' || !ISSUING.has(new URL(req.url()).pathname)) return
+    const read = req
+      .response()
+      .then(async (res) =>
+        res?.ok() ? ((await res.json()) as { data?: { accessToken?: string } }) : null,
+      )
+      .then((body) => {
+        tokens.push(body?.data?.accessToken ?? null)
+      })
+      .catch(() => {})
+      .finally(() => reading.delete(read))
+    reading.set(read, `POST ${new URL(req.url()).pathname}`)
   })
   return {
-    all: async () => [
-      ...new Set(
-        (await Promise.all(pending)).filter((t): t is string => typeof t === 'string' && t !== ''),
-      ),
-    ],
+    all: async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const bound = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `watchAccessTokens: ${reading.size} answer bodies still unread after ${READ_BOUND_MS} ms: ${[...reading.values()].join(', ')}`,
+            ),
+          )
+        }, READ_BOUND_MS)
+      })
+      try {
+        await Promise.race([Promise.all(reading.keys()), bound])
+      } finally {
+        clearTimeout(timer)
+      }
+      return [...new Set(tokens.filter((t): t is string => typeof t === 'string' && t !== ''))]
+    },
   }
 }
 

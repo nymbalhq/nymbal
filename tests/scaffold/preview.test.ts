@@ -183,7 +183,7 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
   let afterStop: { api: boolean; storefront: boolean; dirs: string[] } | null = null
   /** Seconds from spawn to Preview ready, to the SIGINT, to the bound's SIGKILL and to the exit. */
   const times: { ready?: number; sigint?: number; killed?: number; exit?: number } = {}
-  /** The preview's children when it was ready: the storefront, which leads a process group of its own. */
+  /** The preview's children at Preview ready or at the bound: the storefront, leading a process group of its own. */
   let storefrontGroups: number[] = []
 
   beforeAll(async () => {
@@ -251,6 +251,9 @@ describe('AC-10: the preview storefront beside a running nymbal dev', () => {
     // by a preview that hangs.
     const timer = setTimeout(() => {
       times.killed = seconds()
+      // A preview that hangs before Preview ready never had its storefront groups read: read them while it is still
+      // alive to parent them, so its `astro dev` or `next dev` dies with it.
+      storefrontGroups = [...new Set([...storefrontGroups, ...childrenOf(child.pid!)])]
       killGroups([child.pid!, ...storefrontGroups])
     }, 400_000)
     exit = await exited

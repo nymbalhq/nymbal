@@ -266,7 +266,9 @@ export default defineConfig({
   globalTimeout,
   snapshotPathTemplate: '{testDir}/{testFileDir}/snapshots/{arg}-{projectName}{ext}',
   use: {
-    trace: 'on-first-retry',
+    // Every try is traced and only a failed try's trace is kept, so a test that hangs and then passes on its retry
+    // leaves the trace of the try that hung.
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     ignoreHTTPSErrors: true,
   },

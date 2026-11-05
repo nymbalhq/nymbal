@@ -425,6 +425,17 @@ jobs:
             !reports/e2e-shutdown.json
           if-no-files-found: warn
           retention-days: 7
+      # Each target's Playwright output (gate.ts --output): the trace and the screenshot of each failed try, so a
+      # failure or a flake on CI can be opened in the trace viewer. Empty on a run where every test passed first time,
+      # and then nothing is uploaded.
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-astro
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   e2e-nextjs:
     name: E2E — Next.js
@@ -474,6 +485,14 @@ jobs:
             !reports/e2e-shutdown.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-nextjs
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   e2e-admin:
     name: E2E — Admin
@@ -523,6 +542,14 @@ jobs:
             !reports/e2e-shutdown.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-admin
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   # The same journeys on the custom-providers fixture store (search and payments swapped for custom adapters), in
   # jobs of their own so the native ones keep their time.
@@ -591,6 +618,14 @@ jobs:
             !reports/e2e-shutdown.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-astro-custom
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   e2e-nextjs-custom:
     name: E2E — Next.js on custom providers
@@ -658,6 +693,14 @@ jobs:
             !reports/e2e-shutdown.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload the Playwright traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces-nextjs-custom
+          path: tests/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 3
 
   scaffold-clean:
     name: Scaffold from a clean machine (${{ matrix.template }})
