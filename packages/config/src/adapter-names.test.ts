@@ -34,7 +34,7 @@ const KNOWN_BEFORE: Record<(typeof COMMERCE)[number], readonly string[]> = {
   reviews: ['native'],
   search: ['native', 'algolia'],
   analytics: ['native'],
-  shipping: ['native', 'easypost'],
+  shipping: ['native', 'easypost', 'aftership'],
   tax: ['native'],
 }
 

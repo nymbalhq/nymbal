@@ -92,6 +92,13 @@
       "source": { "dir": "packages/adapters/security/cloudflare" }
     },
     {
+      "package": "@nymbalhq/shipping-aftership",
+      "slot": "shipping",
+      "provider": "aftership",
+      "tier": "first-party",
+      "source": { "dir": "packages/adapters/shipping/aftership" }
+    },
+    {
       "package": "@nymbalhq/shipping-easypost",
       "slot": "shipping",
       "provider": "easypost",

@@ -34,6 +34,7 @@ export const NON_SCAFFOLD_PACKAGES = new Set([
   '@nymbalhq/proof-kit',
   '@nymbalhq/search-algolia',
   '@nymbalhq/security-cloudflare',
+  '@nymbalhq/shipping-aftership',
   '@nymbalhq/shipping-easypost',
   '@nymbalhq/test-factories',
 ])

@@ -30,18 +30,12 @@ const SUITE: Record<string, string> = {
 }
 
 /**
- * Adapters held to another suite of their slot, with why and the methods whose rejection is the why. EasyPost serves
- * tracker webhooks only: its rate, createLabel and track reject by design (its README), so the slot's rate suite cannot
- * pass on it; the tracking suite holds it. The hold follows the code, not the name: it lapses once the listed adapter
- * implements one of those methods, and `pnpm new-adapter` copies of it, which reject the same methods, are held the same.
+ * Adapters held to another suite of their slot, with why and the methods whose rejection is the why. The hold follows
+ * the code, not the name: it lapses once the listed adapter implements one of those methods, and `pnpm new-adapter`
+ * copies of it, which reject the same methods, are held the same. None today: every shipping adapter, a webhook-only
+ * one too, passes the shipping suite, whose cases run under the words it declares.
  */
-const HELD_TO: Record<string, { suite: string; why: string; rejects: readonly string[] }> = {
-  '@nymbalhq/shipping-easypost': {
-    suite: 'runShippingTrackingContract',
-    why: 'tracker webhooks only: rate, createLabel and track reject as unsupported',
-    rejects: ['rate', 'createLabel', 'track'],
-  },
-}
+const HELD_TO: Record<string, { suite: string; why: string; rejects: readonly string[] }> = {}
 
 type Entry = { package: string; slot: string; tier: string; source: { dir: string } }
 
@@ -172,4 +166,29 @@ describe('AC-8: every first-party adapter runs its slot’s suite in CI', () => 
     })
     expect(missing).toEqual([])
   }, 60_000)
+})
+
+describe('AC-16: every first-party shipping adapter runs the shipping suite', () => {
+  // Kills: a shipping adapter dodging the words-against-methods check by being held to the tracking suite instead.
+  it('AC-16: easypost and aftership are each run by a runner calling runShippingContract with a build of their own package, and no shipping adapter is held to another suite', () => {
+    const shipping = entries.filter((e) => e.slot === 'shipping').map((e) => e.package)
+    const files = runnerFiles().map((file) => ({
+      file,
+      text: readFileSync(join(ROOT, file), 'utf8'),
+    }))
+    const run = entries
+      .filter((e) => e.slot === 'shipping')
+      .filter((e) =>
+        files.some(
+          (f) => calls(f.text, 'runShippingContract') && importsAdapter(f.file, f.text, e),
+        ),
+      )
+      .map((e) => e.package)
+
+    expect(shipping).toEqual(
+      expect.arrayContaining(['@nymbalhq/shipping-aftership', '@nymbalhq/shipping-easypost']),
+    )
+    expect(run.sort()).toEqual([...shipping].sort())
+    expect(Object.keys(HELD_TO).filter((p) => shipping.includes(p))).toEqual([])
+  })
 })

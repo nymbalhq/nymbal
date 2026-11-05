@@ -34,7 +34,7 @@ suite on every change:
 | payments       | Stripe                                                  |
 | email          | Mailgun, Resend, Amazon SES, SMTP                       |
 | search         | Algolia                                                 |
-| shipping       | EasyPost                                                |
+| shipping       | EasyPost, AfterShip                                     |
 | document store | Postgres (JSONB), Redis                                 |
 | event bus      | Redis Streams                                           |
 | media          | S3 and S3-compatible storage                            |

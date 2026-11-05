@@ -37,7 +37,7 @@ export {
   type ContractProduct,
 } from './search-oracle.js'
 export { runAnalyticsContract } from './analytics.js'
-export { runShippingContract } from './shipping.js'
+export { runShippingContract, type ShippingContractOptions } from './shipping.js'
 export { runTaxContract } from './tax.js'
 export { runWebhookContract, type WebhookContractOptions, type WebhookRequest } from './webhook.js'
 export {

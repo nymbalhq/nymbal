@@ -34,7 +34,10 @@ const CASES = [
     source: 'easypost',
     provider: 'acme',
     fake: 'under tests/support',
-    runners: ['tests/contracts/easypost-shipping-tracking.test.ts'],
+    runners: [
+      'tests/contracts/easypost-shipping.test.ts',
+      'tests/contracts/easypost-shipping-tracking.test.ts',
+    ],
   },
   {
     slot: 'payments',

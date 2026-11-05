@@ -18,6 +18,7 @@ function report(reviews: string[]): StoreCapabilities {
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
     email: { delivers: false },
     reviews: { capabilities: reviews },
+    shipping: { capabilities: [] },
   }
 }
 

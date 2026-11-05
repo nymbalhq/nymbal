@@ -73,6 +73,7 @@
     "@nymbalhq/payments-stripe": "workspace:*",
     "@nymbalhq/search-algolia": "workspace:*",
     "@nymbalhq/security-cloudflare": "workspace:*",
+    "@nymbalhq/shipping-aftership": "workspace:*",
     "@nymbalhq/shipping-easypost": "workspace:*",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",

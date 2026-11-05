@@ -26,6 +26,20 @@ const rateLimitPathPattern = /^\/[\w\-/*:]*$/
 /** The schema's JWT secret when none is configured: fine for development, refused in production. */
 export const DEFAULT_JWT_SECRET = 'dev-secret-please-override-me-1234567890'
 
+/** An address the store ships from; `region` may be empty, for countries without one. */
+const shipFromSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  company: z.string().optional(),
+  addressLine1: z.string().min(1),
+  addressLine2: z.string().optional(),
+  city: z.string().min(1),
+  region: z.string(),
+  postalCode: z.string().min(1),
+  country: z.string().regex(/^[A-Z]{2}$/, 'country must be two upper-case letters, such as "GB"'),
+  phone: z.string().optional(),
+})
+
 export const storeSchema = z.object({
   name: z.string().min(1),
   currency: z.string().length(3),
@@ -37,6 +51,8 @@ export const storeSchema = z.object({
     .url()
     .transform((url) => url.replace(/\/+$/, ''))
     .optional(),
+  /** Where parcels are sent from, for shipping rates. */
+  shipFrom: shipFromSchema.optional(),
 })
 
 const quotedList = (values: readonly string[]): string => values.map((v) => `'${v}'`).join(', ')

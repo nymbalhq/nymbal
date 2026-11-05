@@ -35,7 +35,7 @@ const projectOf = (slot: Slot): string =>
 
 /**
  * The twelve first-party adapters. Their test files are the ones each package had at the base, plus
- * the SES provider's, each run by the project it ran in before the move.
+ * the SES provider's and EasyPost's rates and failures tests, each run by the project it ran in before the move.
  */
 export const MOVED_ADAPTERS: readonly MovedAdapter[] = (
   [
@@ -100,7 +100,13 @@ export const MOVED_ADAPTERS: readonly MovedAdapter[] = (
       dir: 'packages/adapters/shipping/easypost',
       name: '@nymbalhq/shipping-easypost',
       retired: scoped('adapter-', 'easypost'),
-      tests: ['src/adapter.test.ts', 'src/health.test.ts', 'src/receive-webhook.test.ts'],
+      tests: [
+        'src/adapter.test.ts',
+        'src/failures.test.ts',
+        'src/health.test.ts',
+        'src/rates-labels.test.ts',
+        'src/receive-webhook.test.ts',
+      ],
     },
     {
       from: 'packages/doc-store-redis',

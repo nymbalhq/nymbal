@@ -8,6 +8,7 @@ import type {
   WebhookResult,
 } from '../domain/payment.js'
 import type { CustomerProfile } from '../domain/customer.js'
+import type { Address } from '../domain/order.js'
 import type { Review, ReviewModerationStatus, AggregateRating } from '../domain/review.js'
 import type { JsonSchemaObject } from './http.js'
 
@@ -207,44 +208,64 @@ export interface AnalyticsAdapter extends CommerceAdapter {
 
 // --- Shipping --------------------------------------------------------------
 
+/** What a shipping adapter does; each word is declared exactly when the method it names is present. */
+export const SHIPPING_CAPABILITIES = ['rates', 'labels', 'tracking'] as const
+
+/** `rates` has `rate`, `labels` has `createLabel` (and needs `rates`), `tracking` has `startTracking` and `receiveWebhook`. */
+export type ShippingCapability = (typeof SHIPPING_CAPABILITIES)[number]
+
+/** A parcel has all three dimensions or none. Grams and millimetres, each positive. */
+export type Parcel =
+  | { weightGrams: number; lengthMm?: never; widthMm?: never; heightMm?: never }
+  | { weightGrams: number; lengthMm: number; widthMm: number; heightMm: number }
+
 export interface ShippingRateParams {
-  fromPostalCode: string
-  toPostalCode: string
-  toCountry: string
-  weightGrams: number
-  currency: string
+  from: Address
+  to: Address
+  parcel: Parcel
 }
 
 export interface ShippingRate {
+  /** Opaque to the kernel: handed back unchanged as `ShippingLabelParams.rateId`. */
+  id: string
   carrier: string
   service: string
   amountMinor: number
   currency: string
-  estimatedDays: number
+  estimatedDays: number | null
 }
 
 export interface ShippingLabelParams {
-  orderId: string
-  carrier: string
-  service: string
+  rateId: string
 }
 
 export interface ShippingLabel {
   labelUrl: string
   trackingNumber: string
   carrier: string
+  service: string
+  amountMinor: number
+  currency: string
 }
 
-export interface ShippingTracking {
-  status: string
-  lastUpdateAt: string
+export interface StartTrackingParams {
+  trackingNumber: string
+  /** As the merchant typed it; null leaves the carrier to the provider. */
+  carrier: string | null
 }
+
+/**
+ * `tracking`: the provider holds the number, now or from before. `refused`: it never will (an invalid number, an
+ * unknown carrier, a refused key). An outage rejects instead, so the caller may try again.
+ */
+export type StartTrackingResult = { status: 'tracking' } | { status: 'refused'; reason: string }
 
 export interface ShippingAdapter extends CommerceAdapter {
   readonly kind: 'shipping'
-  rate(params: ShippingRateParams): Promise<ShippingRate[]>
-  createLabel(params: ShippingLabelParams): Promise<ShippingLabel>
-  track(trackingNumber: string): Promise<ShippingTracking>
+  capabilities(): readonly ShippingCapability[]
+  rate?(params: ShippingRateParams): Promise<ShippingRate[]>
+  createLabel?(params: ShippingLabelParams): Promise<ShippingLabel>
+  startTracking?(params: StartTrackingParams): Promise<StartTrackingResult>
 }
 
 // --- Tax -------------------------------------------------------------------

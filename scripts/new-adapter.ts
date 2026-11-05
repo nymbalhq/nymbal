@@ -114,7 +114,11 @@ export const SOURCES: readonly StartingPoint[] = [
     slot: 'shipping',
     provider: 'easypost',
     ident: 'EasyPost',
-    outside: ['tests/contracts/easypost-shipping-tracking.test.ts', 'tests/support/easypost.ts'],
+    outside: [
+      'tests/contracts/easypost-shipping.test.ts',
+      'tests/contracts/easypost-shipping-tracking.test.ts',
+      'tests/support/easypost.ts',
+    ],
     shared: [],
     project: 'contracts-native',
     default: true,

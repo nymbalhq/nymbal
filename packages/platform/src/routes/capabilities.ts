@@ -6,6 +6,7 @@ import {
   type PaymentsAdapter,
   type ReviewsAdapter,
   type SearchAdapter,
+  type ShippingAdapter,
   type StoreCapabilities,
 } from '@nymbalhq/types'
 import { emailDelivers } from '../services/index.js'
@@ -20,6 +21,7 @@ interface ReportedAdapters {
   search: SearchAdapter
   email: EmailAdapter
   reviews?: ReviewsAdapter | undefined
+  shipping: ShippingAdapter
 }
 
 function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
@@ -34,6 +36,7 @@ function storeCapabilities(adapters: ReportedAdapters): StoreCapabilities {
     catalog: { sortKeys: [...PRODUCT_SORT_KEYS], defaultSort: DEFAULT_PRODUCT_SORT },
     email: { delivers: emailDelivers(adapters.email) },
     reviews: { capabilities: [...(adapters.reviews?.capabilities() ?? [])] },
+    shipping: { capabilities: [...adapters.shipping.capabilities()] },
   }
 }
 

@@ -156,7 +156,7 @@ export const routeSchemas: Record<string, RouteSchema> = {
   'GET /api/capabilities': {
     name: 'capabilities.get',
     description:
-      'What the store can do, for a storefront: payments client half, search capabilities, sort keys and whether email delivers.',
+      'What the store can do, for a storefront: payments client half, search, reviews and shipping capabilities, sort keys and whether email delivers.',
   },
 
   // Catalogue

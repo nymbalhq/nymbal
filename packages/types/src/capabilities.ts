@@ -14,4 +14,6 @@ export interface StoreCapabilities {
   email: { delivers: boolean }
   /** What the reviews adapter can do: without `submit` the store takes no review on its own site. */
   reviews: { capabilities: string[] }
+  /** What the shipping adapter can do (`rates`, `labels`, `tracking`); none on a store that only ships by hand. */
+  shipping: { capabilities: string[] }
 }

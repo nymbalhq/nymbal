@@ -17,6 +17,7 @@ import { registerReviewsHandler } from './side-effects/reviews-handler.js'
 import { registerAlertHandler } from './side-effects/alert-handler.js'
 import { registerEmailFeedbackHandler } from './side-effects/email-feedback-handler.js'
 import { registerShippingTrackingHandler } from './side-effects/shipping-tracking-handler.js'
+import { registerShippingStartTrackingHandler } from './side-effects/shipping-start-tracking-handler.js'
 
 export interface RegisterHandlersDeps {
   config: NymbalConfig
@@ -109,6 +110,12 @@ export async function registerHandlers(deps: RegisterHandlersDeps): Promise<void
     repos,
     orderService: orders,
     logger: handlerLogger.child({ handler: 'shipping-tracking' }),
+  })
+  await registerShippingStartTrackingHandler({
+    eventBus,
+    shipping: adapters.shipping,
+    processedEventRepo: repos.processedEvent,
+    logger: handlerLogger.child({ handler: 'shipping-start-tracking' }),
   })
   await registerSearchHandler({
     eventBus,
