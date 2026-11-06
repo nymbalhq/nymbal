@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import fc from 'fast-check'
 import { seedRandom, resetRandom, createProduct, createOrder, createCart, createCustomer } from './index.js'
 
 beforeEach(() => resetRandom())
@@ -36,10 +37,22 @@ describe('factory shapes', () => {
     expect(p.status).toBe('draft')
   })
 
-  it('createOrder has consistent totals', () => {
-    const o = createOrder()
-    expect(o.totalMinor).toBeGreaterThan(0)
-    expect(o.lineItems.length).toBeGreaterThan(0)
+  // Defect: an order whose total is not its lines plus shipping and tax less discount, which money assertions then trust.
+  it('property: createOrder has consistent totals for any seed', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 2 ** 32 - 1 }), (seed) => {
+        seedRandom(seed)
+        const o = createOrder()
+        const sum = (pick: (l: (typeof o.lineItems)[number]) => number) =>
+          o.lineItems.reduce((acc, l) => acc + pick(l), 0)
+        expect(o.subtotalMinor).toBe(sum((l) => l.lineSubtotalMinor))
+        expect(o.taxTotalMinor).toBe(sum((l) => l.lineTaxMinor))
+        expect(o.totalMinor).toBe(
+          o.subtotalMinor + o.shippingTotalMinor + o.taxTotalMinor - o.discountTotalMinor,
+        )
+        expect(o.totalMinor).toBe(sum((l) => l.lineTotalMinor))
+      }),
+    )
   })
 
   it('createCart items sum matches subtotal', () => {

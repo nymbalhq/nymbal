@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import fc from 'fast-check'
 import { AuthError, EVT_CUSTOMER_CREATED, ValidationError } from '@nymbalhq/types'
-import { SignJWT } from 'jose'
+import { SignJWT, decodeJwt } from 'jose'
 import { InMemoryDocumentStore } from '../document-store/in-memory.js'
 import { InProcessEventBus } from '../event-bus/in-process.js'
 import { createCommandStore, rawClients } from '../db/command-store.js'
@@ -40,7 +41,7 @@ async function setup() {
     accessTtl: '15m',
     refreshTtl: '7d',
   })
-  return { auth, repos, eventBus, commandStore }
+  return { auth, repos, eventBus, commandStore, publisher, logger }
 }
 
 describe('AuthService', () => {
@@ -184,9 +185,19 @@ describe('AuthService', () => {
     await commandStore.close()
   })
 
-  it('logout of invalid token is silent', async () => {
-    const { auth, commandStore } = await setup()
-    await expect(auth.logout('garbage')).resolves.not.toThrow()
+  // Defect: logout trusts a token it has not verified, so a forged one signs another shopper out; or it throws.
+  it('logout of an invalid or forged token is silent and leaves the session as it was', async () => {
+    const { auth, repos, commandStore } = await setup()
+    const { tokens } = await auth.register({ email: 'silent@test.com', password: 'password123' })
+    const claims = decodeJwt(tokens.refreshToken)
+    const forged = await new SignJWT({ ...claims })
+      .setProtectedHeader({ alg: 'HS256' })
+      .sign(new TextEncoder().encode('not-the-store-secret-32-chars-xx'))
+    const row = () => commandStore.read((tx) => repos.refreshToken.findById(tx, claims.jti!))
+    const before = await row()
+    expect(before?.revokedAt).toBeNull()
+    for (const token of ['garbage', forged]) await auth.logout(token)
+    expect(await row()).toEqual(before)
     await commandStore.close()
   })
 
@@ -283,65 +294,55 @@ describe('AuthService', () => {
     await commandStore.close()
   })
 
-  it('createAuthService accepts ms and h duration units', async () => {
-    // Exercises the 'ms' and 'h' branches of parseDurationToMs
-    const commandStore2 = createCommandStore(
-      // @ts-expect-error minimal config
-      { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
-      { sqlitePath: ':memory:' },
-    )
-    await runMigrations(commandStore2, {
-      migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
-    })
-    const ds = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const logger = createLogger({ pretty: false, level: 'error' })
-    const eb = new InProcessEventBus({ logger })
-    const repos = buildRepositories(commandStore2, ds)
-    const publisher = wirePublisher(
-      { createEventPublisher, createRelay },
-      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
-    ).publisher
-    const auth = createAuthService({
-      repos,
-      publisher,
-      logger,
-      jwtSecret: 'test-secret-32-characters-long-x',
-      accessTtl: '500ms',
-      refreshTtl: '1h',
-    })
-    const { tokens } = await auth.register({ email: 'ms-unit@test.com', password: 'password123' })
-    expect(tokens.accessToken).toBeTruthy()
-    await commandStore2.close()
-  })
-
-  it('createAuthService accepts s duration unit', async () => {
-    const commandStore2 = createCommandStore(
-      // @ts-expect-error minimal config
-      { infrastructure: { commandStore: 'sqlite' }, store: { name: 'test', currency: 'GBP' } },
-      { sqlitePath: ':memory:' },
-    )
-    await runMigrations(commandStore2, {
-      migrationsRoot: new URL('../../migrations', import.meta.url).pathname,
-    })
-    const ds = new InMemoryDocumentStore({ sweepIntervalMs: 0 })
-    const logger = createLogger({ pretty: false, level: 'error' })
-    const eb = new InProcessEventBus({ logger })
-    const repos = buildRepositories(commandStore2, ds)
-    const publisher = wirePublisher(
-      { createEventPublisher, createRelay },
-      { store: commandStore2, eventLog: repos.eventLog, eventBus: eb, logger },
-    ).publisher
-    const auth = createAuthService({
-      repos,
-      publisher,
-      logger,
-      jwtSecret: 'test-secret-32-characters-long-x',
-      accessTtl: '900s',
-      refreshTtl: '604800s',
-    })
-    const { tokens } = await auth.register({ email: 's-unit@test.com', password: 'password123' })
-    expect(tokens.accessToken).toBeTruthy()
-    await commandStore2.close()
+  // Defect: a unit scaled wrongly (an hour read as minutes), or the access and refresh lifetimes crossed.
+  it('property: for every duration unit, each minted token lives the ttl configured for it', async () => {
+    const unitMs = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const
+    const units = Object.keys(unitMs) as Array<keyof typeof unitMs>
+    // A refresh token must outlive the second it is minted in to be presented by the next run.
+    const ttl = (minMs: number) =>
+      fc
+        .constantFrom(...units)
+        .chain((unit) =>
+          fc
+            .integer({
+              min: Math.max(1, Math.ceil(minMs / unitMs[unit])),
+              max: unit === 'ms' ? 1_000_000 : 1000,
+            })
+            .map((qty) => ({ text: `${qty}${unit}`, ms: qty * unitMs[unit] })),
+        )
+    // A whole second, so exp − iat is the ttl's whole seconds with nothing lost to truncation.
+    vi.useFakeTimers({ toFake: ['Date'], now: 1_800_000_000_000 })
+    try {
+      const { auth, repos, publisher, logger, commandStore } = await setup()
+      let { refreshToken } = (
+        await auth.register({ email: 'ttl@test.com', password: 'password123' })
+      ).tokens
+      await fc.assert(
+        fc.asyncProperty(ttl(0), ttl(1000), async (access, refresh) => {
+          const service = createAuthService({
+            repos,
+            publisher,
+            logger,
+            jwtSecret: 'test-secret-32-characters-long-x',
+            accessTtl: access.text,
+            refreshTtl: refresh.text,
+          })
+          const tokens = await service.refresh(refreshToken)
+          refreshToken = tokens.refreshToken
+          const minted = {
+            access: decodeJwt(tokens.accessToken),
+            refresh: decodeJwt(tokens.refreshToken),
+          }
+          expect(tokens.expiresIn).toBe(Math.floor(access.ms / 1000))
+          expect(minted.access.exp! - minted.access.iat!).toBe(Math.floor(access.ms / 1000))
+          expect(minted.refresh.exp! - minted.refresh.iat!).toBe(Math.floor(refresh.ms / 1000))
+        }),
+        { numRuns: 50 },
+      )
+      await commandStore.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('refresh rejects valid JWT whose JTI has no DB record', async () => {

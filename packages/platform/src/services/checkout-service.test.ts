@@ -202,6 +202,7 @@ describe('CheckoutService', () => {
     await env.commandStore.close()
   })
 
+  // Defect: the shopper's notes are dropped between the checkout and the order it places.
   it('beginCheckout with notes passes them to the order', async () => {
     const env = await setup()
     const productSnap = await env.product.create({
@@ -230,14 +231,16 @@ describe('CheckoutService', () => {
       imageUrl: '',
       qty: 1,
     })
-    const started = await env.checkout.beginCheckout({
+    const input = {
       cartToken: cart.token,
       email: 'notes@example.com',
       notes: 'Please gift wrap',
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
-    })
-    expect(started.paymentIntent).toBeTruthy()
+    }
+    const started = await env.checkout.beginCheckout(input)
+    const order = await env.order.getById(started.orderId)
+    expect(order.notes).toBe(input.notes)
     await env.commandStore.close()
   })
 
@@ -451,7 +454,8 @@ describe('CheckoutService', () => {
     await env.commandStore.close()
   })
 
-  it('beginCheckout with customerId wires customer to payment intent', async () => {
+  // Defect: the order is placed as a guest's, or not tied to the intent made for it.
+  it('beginCheckout with customerId places the order for that customer, tied to its payment intent', async () => {
     const env = await setup()
     const productSnap = await env.product.create({
       slug: 'cust-widget',
@@ -487,7 +491,11 @@ describe('CheckoutService', () => {
       billingAddress: makeAddr(),
       shippingAddress: makeAddr(),
     })
-    expect(started.paymentIntent).toBeTruthy()
+    const order = await env.order.getById(started.orderId)
+    expect({ customerId: order.customerId, paymentIntentId: order.paymentIntentId }).toEqual({
+      customerId,
+      paymentIntentId: started.paymentIntent.id,
+    })
     await env.commandStore.close()
   })
 
@@ -540,7 +548,8 @@ describe('CheckoutService', () => {
     await env.commandStore.close()
   })
 
-  it('cancel handles order metadata with no reservationIds array', async () => {
+  // Defect: cancel iterates reservationIds the metadata does not hold, and throws instead of cancelling.
+  it('cancel of an order whose metadata holds no reservationIds cancels it', async () => {
     const env = await setup()
     // Create a draft order directly (no checkout flow) — metadata has no reservationIds
     const draftOrder = await env.order.createFromCheckout({
@@ -558,7 +567,13 @@ describe('CheckoutService', () => {
       currency: 'GBP',
       metadata: {},
     })
-    await expect(env.checkout.cancel(draftOrder.id, 'test')).resolves.not.toThrow()
+    const cancelled = await env.checkout.cancel(draftOrder.id, 'test')
+    const stored = await env.order.getById(draftOrder.id)
+    expect([draftOrder.status, cancelled.status, stored.status]).toEqual([
+      'pending',
+      'cancelled',
+      'cancelled',
+    ])
     await env.commandStore.close()
   })
 

@@ -8,6 +8,8 @@ import {
   type PaymentDriver,
 } from '@nymbalhq/sdk'
 import { setupMockClient } from '../testing/index.js'
+import { stripeDriver } from '../payment-drivers/stripe.js'
+import { testModeDriver } from '../payment-drivers/test-mode.js'
 import {
   installFakeStripe,
   STRIPE_JS,
@@ -109,9 +111,12 @@ const arbConfirmation: fc.Arbitrary<Confirmation> = fc.oneof(
 )
 
 describe('nymbal-payment-element', () => {
+  // Defect: a built-in driver is missing from the registry, or registered under the other's name.
   it('AC-2: registerComponents registers the built-in test-mode and stripe drivers', () => {
-    expect(typeof getPaymentDriver('test-mode')?.confirm).toBe('function')
-    expect(typeof getPaymentDriver('stripe')?.confirm).toBe('function')
+    expect(['test-mode', 'stripe'].map((name) => getPaymentDriver(name))).toEqual([
+      testModeDriver,
+      stripeDriver,
+    ])
   })
 
   it('AC-2: test-mode renders "Test mode — payment skipped" and, for any client secret, confirm resolves ok and not confirmed', async () => {
