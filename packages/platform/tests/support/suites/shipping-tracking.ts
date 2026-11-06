@@ -443,6 +443,7 @@ export function shippingTrackingSuite(
         fc.asyncProperty(arbSpelling, arbSpelling, arbCarrier, async (shipped, sent, carrier) => {
           const n = freshNumber()
           const placed = await checkoutOf(k, stock, 1, `buyer-${randomUUID()}@tracking.test`)
+          if (placed.orderKey === undefined) throw new Error('a guest checkout answered no order key')
           const process = await admin.call(
             'POST',
             `/api/admin/orders/${placed.orderId}/process`,

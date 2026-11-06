@@ -119,6 +119,7 @@ async function placeAndRegister(store: TestStore, sink: MailSink): Promise<Place
     billingAddress: address,
     shippingAddress: address,
   })
+  if (checkout.orderKey === undefined) throw new Error('a guest checkout answered no order key')
   const { customer } = await services.auth.register({ email: member, password: 'password123' })
   await sink.waitFor({ to: buyer, count: 1 }, { timeoutMs: 10_000 })
   await sink.waitFor({ to: member, count: 1 }, { timeoutMs: 10_000 })

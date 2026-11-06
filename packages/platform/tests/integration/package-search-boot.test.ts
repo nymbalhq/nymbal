@@ -93,6 +93,7 @@ function recordingSearch(): { adapter: SearchAdapter; replaced: string[][] } {
     producesEvents: [],
     consumesEvents: [],
     initialize: async () => undefined,
+    healthCheck: async () => ({ status: 'healthy' }),
     index: async (docs: SearchDocument[]): Promise<IndexResult> => ({ indexed: docs.length }),
     remove: async () => undefined,
     async replaceAll(docs) {

@@ -42,6 +42,7 @@ const enrichingAi: AiAdapter = {
     stopReason: 'end',
     usage: { inputTokens: 0, outputTokens: 0 },
     model: 'fake',
+    toolCalls: [],
   }),
 }
 

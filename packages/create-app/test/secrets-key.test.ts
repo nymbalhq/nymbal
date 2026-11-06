@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'n
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { main } from '../src/index.js'
 
 // AC-9: `create-nymbal-app` writes a fresh NYMBAL_SECRETS_KEY (32 bytes, canonical base64) into `.env` and never into
@@ -21,7 +21,7 @@ const GENERATED = new Set([
 const scratch: string[] = []
 const originalCwd = process.cwd()
 const savedUa = process.env['npm_config_user_agent']
-let stdoutSpy: ReturnType<typeof vi.spyOn>
+let stdoutSpy: MockInstance<typeof process.stdout.write>
 
 beforeEach(() => {
   process.env['npm_config_user_agent'] = 'pnpm/9.12.3 npm/? node/v22.23.3 darwin arm64'

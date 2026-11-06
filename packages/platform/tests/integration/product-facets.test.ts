@@ -33,7 +33,6 @@ function makeAdapter() {
       params: {},
       query,
       body: null,
-      rawBody: undefined,
       headers: {},
       cookies: {},
       requestId: 'int-req',

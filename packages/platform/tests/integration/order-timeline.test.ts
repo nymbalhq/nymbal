@@ -204,6 +204,7 @@ describe('AC-2: the served timeline is the order’s lifecycle events (sqlite)',
         const seeded = await seedVariant(k, 2, { priceMinor })
         const email = `timeline-${randomUUID()}${pending ? '+stub-pending' : ''}@timeline.test`
         const order = await checkoutOf(k, seeded, 1, email)
+        if (order.orderKey === undefined) throw new Error('a guest checkout answered no order key')
         await caughtUp(order.orderId, order.orderNumber, order.orderKey)
 
         for (const [pick, pct] of steps) {

@@ -188,7 +188,7 @@ function start(
   const run = { handler, event, hold, returned: false } as Run
   const handled =
     hold === null ? handler.handle(event) : b.holds.run(hold, () => handler.handle(event))
-  run.done = handled.then(
+  run.done = Promise.resolve(handled).then(
     () => {
       run.returned = true
     },
@@ -250,7 +250,7 @@ async function finish(runs: readonly Run[]): Promise<string[]> {
     let error: unknown = run.error
     for (let attempt = 0; attempt < 3 && error !== undefined; attempt += 1) {
       error = undefined
-      await run.handler.handle(run.event).catch((err: unknown) => {
+      await Promise.resolve(run.handler.handle(run.event)).catch((err: unknown) => {
         error = err
       })
     }

@@ -744,7 +744,7 @@ describe('AC-8: the assistant cannot clear a saved setting', () => {
 
       const client = { call: store.admin.send.bind(store.admin) }
       const saved = await putSetting(
-        client as Parameters<typeof putSetting>[0],
+        client,
         'email',
         'smtp.user',
         `shop-${randomUUID()}`,

@@ -415,6 +415,7 @@ describe('AC-6: a store with activity of its own refuses the rollback', () => {
         productId: seeded.productId,
         customerId: null,
         orderId: null,
+        author: null,
         rating: 5,
         title: '',
         body: 'bought after the import',

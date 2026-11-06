@@ -35,8 +35,8 @@ describe('Cache-Control on API answers', () => {
 
   beforeAll(async () => {
     // adminRoot null: /admin/ answers its build hint, so the route outside /api/ is served.
-    k = await createKernel({ dialect: 'sqlite', appOptions: { adminRoot: null } })
-    served = await serveKernel(k)
+    k = await createKernel({ dialect: 'sqlite' })
+    served = await serveKernel(k, { adminRoot: null })
     seeded = await seedVariant(k, 50)
     const email = `cache-${randomUUID()}@cache.test`
     const password = 'correct-horse-battery'

@@ -100,8 +100,12 @@ describe('a bounce from another slot under the email adapter’s name', () => {
 
   beforeAll(async () => {
     // The email adapter is named acme and takes no webhooks (its receiveWebhook is undefined, which the route counts
-    // as hookless); the shipping adapter, also acme, takes them and declares acme.bounced.v1.
-    mail = { ...createTestMailAdapter({ providerName: 'acme' }), receiveWebhook: undefined }
+    // as hookless); the shipping adapter, also acme, takes them and declares acme.bounced.v1. The key is present and
+    // undefined on purpose, which the adapter type does not allow.
+    mail = {
+      ...createTestMailAdapter({ providerName: 'acme' }),
+      receiveWebhook: undefined,
+    } as unknown as TestMailAdapter
     k = await createKernel({
       dialect: 'sqlite',
       configure: customSlots('email', 'shipping'),

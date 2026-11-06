@@ -118,10 +118,12 @@ describe.each(cases)(
             expect(mails[0]!.subject).toContain(order.order_number)
 
             const admin = await adminClient(
+              // The store's types come from the platform's dist and the helper's from its src: one object, two
+              // declarations of the read brand.
               {
                 store: first.app.platform.commandStore,
                 repos: first.app.repos,
-              } satisfies Pick<Kernel, 'store' | 'repos'> as Kernel,
+              } as unknown as Pick<Kernel, 'store' | 'repos'>,
               first.baseUrl,
             )
             const res = await admin.call<{ id: string; status: string }>(

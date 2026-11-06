@@ -35,7 +35,7 @@ function hostileCatalogue(): ReturnType<typeof sourceCatalogue> {
     { id: 302, slug: '', name: 'Ünïcode Tee' },
   ]
   const images = new Map<string, SourceImage>()
-  const products = []
+  const products: Array<{ id: number; slug: string; images: SourceImage[] }> = []
   const wcProducts = shapes.map((shape) => {
     const src = `${WC_URL}/img/${shape.id}-1.jpg`
     const image = {

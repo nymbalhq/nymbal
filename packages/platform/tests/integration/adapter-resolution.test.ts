@@ -158,9 +158,12 @@ describe('AC-4: a custom slot uses the injected adapter', () => {
 
 describe('AC-6: a typo or an unknown provider gets no install line', () => {
   it("AC-6: payments 'strpe' fails adapter.provider_unknown with did you mean 'stripe'; 'custm' suggests custom; 'acme' names package:; none prints an install verb", async () => {
-    const [strpe, custm, acme] = await Promise.all(
-      ['strpe', 'custm', 'acme'].map((provider) => boot(withPayments({ provider }))),
-    )
+    const bootAs = (provider: string) => boot(withPayments({ provider }))
+    const [strpe, custm, acme] = await Promise.all([
+      bootAs('strpe'),
+      bootAs('custm'),
+      bootAs('acme'),
+    ])
 
     for (const [label, { outcome }] of [
       ['strpe', strpe],

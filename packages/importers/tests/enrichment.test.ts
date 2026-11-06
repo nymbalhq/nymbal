@@ -14,6 +14,7 @@ function makeAiAdapter(responseText: string): AiAdapter {
     healthCheck: async () => ({ status: 'healthy' }),
     embed: async () => { throw new Error('not impl') },
     complete: vi.fn(async () => responseText),
+    chat: async () => { throw new Error('not impl') },
   }
 }
 

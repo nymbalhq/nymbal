@@ -84,6 +84,7 @@ export function stubAdapter(data: StubData = defaultData()): CommerceAdapter {
     items: data.cartItems,
     subtotalMinor: data.cartItems.reduce((sum, i) => sum + i.priceMinor * i.qty, 0),
     currency: 'GBP',
+    source: 'storefront',
     expiresAt: '2026-11-30T00:00:00.000Z',
     createdAt: '2026-10-30T00:00:00.000Z',
     updatedAt: '2026-10-30T00:00:00.000Z',
