@@ -1,5 +1,11 @@
 # @nymbalhq/types
 
+## 1.7.0
+
+### Minor Changes
+
+- 071e340: The admin's assistant sends a customer's email, phone, street lines and postcode to the AI provider as placeholders (`[email-1]`) and shows you the real values; choose the fields in `agents.assistant.mask` (`[]` turns it off). `nymbal doctor` names the AI host and what it receives.
+
 ## 1.6.0
 
 ### Minor Changes

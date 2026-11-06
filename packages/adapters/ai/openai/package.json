@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/ai-openai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenAI AI for Nymbal: the `openai` ai provider, for OpenAI and any OpenAI-compatible server",
   "license": "MIT",
   "repository": {

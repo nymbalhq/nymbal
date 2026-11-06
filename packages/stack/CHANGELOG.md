@@ -1,5 +1,19 @@
 # @nymbalhq/stack
 
+## 1.7.0
+
+### Patch Changes
+
+- Updated dependencies [071e340]
+  - @nymbalhq/platform@1.7.0
+  - @nymbalhq/config@1.7.0
+  - @nymbalhq/types@1.7.0
+  - nymbal@1.7.0
+  - @nymbalhq/http@1.7.0
+  - @nymbalhq/react@1.7.0
+  - @nymbalhq/sdk@1.7.0
+  - @nymbalhq/web-components@1.7.0
+
 ## 1.6.0
 
 ### Patch Changes

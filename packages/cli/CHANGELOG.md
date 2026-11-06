@@ -1,5 +1,17 @@
 # nymbal
 
+## 1.7.0
+
+### Patch Changes
+
+- Updated dependencies [071e340]
+  - @nymbalhq/platform@1.7.0
+  - @nymbalhq/config@1.7.0
+  - @nymbalhq/types@1.7.0
+  - @nymbalhq/importers@0.4.1
+  - @nymbalhq/http@1.7.0
+  - @nymbalhq/admin@1.7.0
+
 ## 1.6.0
 
 ### Minor Changes
