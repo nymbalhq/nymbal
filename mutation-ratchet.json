@@ -52,7 +52,7 @@
     "packages/platform/src/services/order-correlation.ts": 100,
     "packages/platform/src/services/order-service.ts": 68.63,
     "packages/platform/src/services/product-service.ts": 62.92,
-    "packages/platform/src/services/proposal-preview.ts": 0,
+    "packages/platform/src/services/proposal-preview.ts": 97.67,
     "packages/platform/src/services/proposal-service.ts": 0,
     "packages/platform/src/services/recently-viewed-service.ts": 0,
     "packages/platform/src/services/refund-service.ts": 83.41,
