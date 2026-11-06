@@ -1,5 +1,41 @@
 # create-nymbal-app
 
+## 0.8.0
+
+### Minor Changes
+
+- ec1e87b: Breaking for new stores: both storefront templates send a content security policy (`pagePolicy` in `lib/page-policy`), which refuses framing the store, http images and any third-party script, font, pixel, browser-side call or form target (analytics, chat, Google Fonts) until you add it there. `nymbal start` adds HSTS (https only), `nosniff`, `X-Frame-Options`, a `Referrer-Policy` and a minimal policy to any page that sets none.
+  The shopper's access token now stays in page memory: `client.auth.restore()` brings the session back from the refresh cookie on each page load, guests send nothing, and requests made meanwhile wait for it. A token an earlier version left in `localStorage` is removed and its shopper stays signed in.
+  A client built on `@nymbalhq/sdk/core`, as the Astro template's is, calls `resumeSession(client)` from `@nymbalhq/sdk/core` once per page load before its first request; a store that keeps its own older `lib/client.ts` must add it.
+- c52ac10: Failed logins for an email from other addresses no longer lock its owner out (each address still is); checkouts behind one address count per cart, up to 300 a minute per address; no-JS order and alert requests sent through `nymbal start` count against the shopper, except across several API processes, where they share the storefront's.
+  `create-nymbal-app` asks for the admin email (`--admin-email` with `--yes`) and otherwise draws a random one.
+- 1a5b417: Breaking: `http.trustProxy` and `NYMBAL_TRUST_PROXY_HOPS` are removed; list the proxies in front in `NYMBAL_TRUSTED_PROXIES` (default `loopback`; `uniquelocal` on Fly and Railway, which `nymbal deploy` now sets). `X-Forwarded-For` counts only from a listed proxy, and `NYMBAL_CLIENT_IP_HEADER` reads one header such as `True-Client-IP` from them.
+  `nymbal deploy nginx|apache|caddy` writes a web server config for your own server.
+  `createHttpServer` takes `network: app.network`; a security adapter may offer these values through `network()`.
+
+### Patch Changes
+
+- 0f751fe: A page the browser restores on Back reloads the mini-cart's count and unlocks a sign-in, register or Astro alert form that locked as it left. Text typed into a server-rendered form field before its element upgrades stays in the field.
+- 366760e: A new store's `.env.example` no longer lists `ANTHROPIC_API_KEY`: AI is off until you add it.
+- 73c9738: `nymbal preview --source woocommerce --url … --key … --secret …` imports your WooCommerce store into a throwaway store and serves it on your storefront, and writes `nymbal-preview-report.{json,md}` (counts, differences, drafts) and `nymbal-redirects.csv`; your own store is not touched. A store already scaffolded copies `src/lib/page-policy.ts` (Astro) or `lib/page-policy.mjs` (Next.js) so images load from the API's origin.
+
+  `nymbal import`: of two products whose slugs clash, the first in WooCommerce keeps the slug.
+
+- 1924ab1: The order page reopens an expired order link by email and sends "send me my order link" without JavaScript, and a signed-in shopper opening their own order's link lands on their account's order page. A store already scaffolded copies the order page, `src/lib/api.ts` and `src/scripts/order-access.ts` (Astro) or `app/(shopper)/order/[orderNumber]/` and `lib/api.ts` (Next.js) from the new template; the Next.js order route now sends `Referrer-Policy: strict-origin`.
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+- 13a6b2d: Product listings, search, recently viewed and `GET /api/products/:slug` serve each product's `rating` (`{ average, count }`, or null with no approved review) from the reviews adapter; the native aggregate now counts every approved review. Product cards show the stars, average and count, `nymbal-review-list` takes a `rating` for its summary, and the product page's JSON-LD carries `aggregateRating`.
+  A scaffolded store copies `src/lib/seo.ts` and `src/pages/product/[slug].astro` (Astro) or `lib/seo.ts` and `app/(catalog)/product/[slug]/page.tsx` (Next.js, whose JSON-LD `url` now names `/product/<slug>`).
+- f2c9a19: Signed-in shoppers can review a product (`POST /api/reviews`, 10 an hour per IP): one review per product, pending moderation, verified when they bought it (event `review.submitted.v1`); a guest sees "Sign in to write a review". `GET /api/products/:id/reviews` no longer publishes customer or order ids, and `GET /api/capabilities` reports `reviews`, so a reviews provider without `submit` shows no form.
+  Breaking for a reviews adapter or a kernel composed by hand: `ReviewSubmission` carries `author`, an adapter without `submit` rejects with `ReviewRefusedError`, and `buildServices` takes `reviews`. A scaffolded store copies `src/lib/reviews.ts` and `src/pages/product/[slug].astro` (Astro) or `lib/reviews.ts` and `app/(catalog)/product/[slug]/page.tsx` (Next.js).
+- 7a4c608: The Next.js search page draws no filter column when the results' facets have no values. A store already scaffolded copies the `filtered` line of `app/(catalog)/search/SearchView.tsx` from the new template.
+- ac55979: A product's name or description can no longer run script on its product page, and Next.js renders the description as HTML like Astro. A store already scaffolded copies `src/lib/seo.ts`, `src/layouts/BaseLayout.astro` and `src/pages/product/[slug].astro` (Astro) or `lib/seo.ts`, `app/(catalog)/product/[slug]/page.tsx` and `app/(catalog)/home/[key]/page.tsx` (Next.js) from the new template.
+  Descriptions saved before this version are not rewritten, so re-save any that came from an untrusted source before upgrading a Next.js store.
+- 07ff236: Signing in follows `?redirect` only to a path on the store's own origin; anything else goes to `/account`.
+  A store already scaffolded copies `lib/signed-in-target.ts` (Next.js) or `src/scripts/signed-in-redirect.ts` (Astro)
+  from the new template.
+- b9cd800: `/products?category=<slug>` lists that category, the empty cart shows without JavaScript, the sticky header no longer covers what is scrolled into view, and on Next.js a failed capabilities read leaves a shopper page standing (no search bar) while Try Again refetches. A store already scaffolded copies `src/lib/api.ts`, `src/pages/cart.astro`, `src/pages/products/index.astro`, `src/styles/global.css` and `src/styles/pages/pdp.css` (Astro) or `lib/{api,header,chrome}.ts`, `components/server/Header.tsx`, `app/error.tsx`, `app/globals.css`, `app/(shopper)/cart/page.tsx` and `app/(catalog)/products/page.tsx` (Next.js) from the new template.
+
 ## 0.7.0
 
 ### Minor Changes

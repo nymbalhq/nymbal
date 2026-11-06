@@ -1,5 +1,29 @@
 # @nymbalhq/admin
 
+## 1.6.0
+
+### Minor Changes
+
+- 86ad196: Cmd-K in the admin has an Ask tab: the store's assistant answers from the store's own tools, and every write it wants is a proposal you approve or reject (only `agents.autoApprove` applies one at once). It needs an `ai` provider that can call tools.
+  `nymbal eval assistant` asks it 20 golden questions with your key on a throwaway store and exits 0 at 17 or more.
+- 00c2f07: Carts and orders record their `source`: `storefront`, `import`, or `agent:<name>` for one a shopping agent opened, kept through the buyer's sign-in. Migration `0022` adds the columns; existing rows read `storefront`.
+  The admin dashboard gains an Agents tile (the last 30 days' agent orders and revenue, per agent, and the surfaces on), and an order's page names its source.
+  `nymbal doctor` adds an `agents` line that warns when UCP checkout has no privacy or terms link in `agents.ucp.links`, or the public URL is plain http.
+- 7cb17f1: An agent's admin write is now a proposal you approve or reject in the admin's new Inbox (`/admin/inbox`); approving runs it once, as you. Migration `0021_proposals` adds the table.
+  `agents.autoApprove: ['product.update', …]` approves the commands it names at the call; a money command (`order.refund`, `order.markPaid`) cannot be listed and stops the store at boot, so only `agents.mcp.writes: 'apply'` runs those unasked.
+  `admin_settings_put` is no longer an agent tool, and the client name an MCP agent sends in `_meta` is now kept on its proposals.
+- 9d42cd4: The assistant's writes after it reads store data (a review, an order note, a description) always wait in the Inbox, at most ten a turn, and approval cards show the value now beside the value proposed.
+  `agents.assistant.customerData: false` keeps tools that answer customer emails, phones and addresses off the assistant; the docs list them. The assistant can no longer clear a saved setting.
+  `nymbal eval assistant` asks 25 golden questions, five of them injection questions, and exits 0 at 22 or more.
+
+### Patch Changes
+
+- 07ff236: The admin lets go of a refused session check's answer, so a non-admin sign-in no longer leaves a request open.
+- 040f754: Mark Shipped asks for carrier and tracking number; a refused order action says why; the Live badge shows when the stream is down; a customer's Order History lists their orders; Recent Orders scrolls on a phone.
+- 2778182: An existing product's Variants tab edits price only: SKU, name and status read as text, stock links to the variant in Inventory, and Add and Delete Variant stay on new products.
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+
 ## 1.5.0
 
 ### Patch Changes

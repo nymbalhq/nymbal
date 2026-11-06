@@ -1,5 +1,18 @@
 # @nymbalhq/shipping-easypost
 
+## 1.6.0
+
+### Minor Changes
+
+- 37d8f4a: Shipping adapters declare `rates`, `labels` and `tracking` and have only those methods (`rate`, `createLabel` and the new `startTracking` are optional; `track()` and `ShippingTracking` are removed; rate and label params and results are reshaped; native declares none), `GET /api/capabilities` reports `shipping`, and `runShippingContract` checks the words against the methods.
+  A shipped order's tracking number is registered with a provider that declares `tracking`: `@nymbalhq/shipping-easypost` with an `apiKey` (which also rates and buys labels), or the new `@nymbalhq/shipping-aftership`.
+  `store.shipFrom` sets the address the store ships from.
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+
 ## 1.5.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@nymbalhq/shipping-aftership",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Aftership shipping for Nymbal: the `aftership` shipping provider (tracker webhooks deliver shipped orders)",
   "license": "MIT",
   "repository": {

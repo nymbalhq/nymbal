@@ -1,5 +1,19 @@
 # @nymbalhq/email-resend
 
+## 1.6.0
+
+### Minor Changes
+
+- bb965f3: Breaking: the email adapters now need nodemailer 10.1.4 or later, the first release with every published security fix; on nodemailer 6 to 9, upgrade it with the adapter.
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+- Updated dependencies [bb965f3]
+- Updated dependencies [853d563]
+  - @nymbalhq/email-smtp@1.6.0
+
 ## 1.5.0
 
 ### Minor Changes

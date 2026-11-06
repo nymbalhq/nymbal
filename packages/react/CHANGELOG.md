@@ -1,5 +1,50 @@
 # @nymbalhq/react
 
+## 1.6.0
+
+### Minor Changes
+
+- 13a6b2d: Product listings, search, recently viewed and `GET /api/products/:slug` serve each product's `rating` (`{ average, count }`, or null with no approved review) from the reviews adapter; the native aggregate now counts every approved review. Product cards show the stars, average and count, `nymbal-review-list` takes a `rating` for its summary, and the product page's JSON-LD carries `aggregateRating`.
+  A scaffolded store copies `src/lib/seo.ts` and `src/pages/product/[slug].astro` (Astro) or `lib/seo.ts` and `app/(catalog)/product/[slug]/page.tsx` (Next.js, whose JSON-LD `url` now names `/product/<slug>`).
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+- 97133bc: A wrapped element no longer renders its default state first: it has its attributes (`qty`, `client`, `cart`) when it connects, even when the element was already defined.
+- Updated dependencies [0700627]
+- Updated dependencies [37d8f4a]
+- Updated dependencies [86ad196]
+- Updated dependencies [00c2f07]
+- Updated dependencies [7cb17f1]
+- Updated dependencies [5d95ad2]
+- Updated dependencies [5240c52]
+- Updated dependencies [d441055]
+- Updated dependencies [061bc68]
+- Updated dependencies [12e3285]
+- Updated dependencies [9d42cd4]
+- Updated dependencies [0f751fe]
+- Updated dependencies [7a136c9]
+- Updated dependencies [7a136c9]
+- Updated dependencies [7a4c608]
+- Updated dependencies [2be0e86]
+- Updated dependencies [2fbb296]
+- Updated dependencies [454e12a]
+- Updated dependencies [454e12a]
+- Updated dependencies [c9fe50b]
+- Updated dependencies [853d563]
+- Updated dependencies [ec1e87b]
+- Updated dependencies [c52ac10]
+- Updated dependencies [13a6b2d]
+- Updated dependencies [f2c9a19]
+- Updated dependencies [ac55979]
+- Updated dependencies [07ff236]
+- Updated dependencies [402a5d1]
+- Updated dependencies [1a5b417]
+  - @nymbalhq/types@1.6.0
+  - @nymbalhq/web-components@1.6.0
+  - @nymbalhq/sdk@1.6.0
+
 ## 1.5.0
 
 ### Patch Changes
