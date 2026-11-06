@@ -9,6 +9,8 @@ export default defineConfig({
   test: {
     name: 'platform-integration',
     environment: 'node',
+    // A fixed fast-check seed, so a property test kills the same mutants on every run.
+    setupFiles: ['vitest.stryker.setup.ts'],
     include: [
       'packages/platform/tests/integration/alerts*.test.ts',
       'packages/platform/tests/integration/recently-viewed-*.test.ts',

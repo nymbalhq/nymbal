@@ -1020,6 +1020,7 @@ export async function mutateSet(
 const STRYKER_INPUTS = [
   'stryker.config.mjs',
   'vitest.stryker.config.ts',
+  'vitest.stryker.setup.ts',
   'packages/platform/src/**/*.test.ts',
   'packages/importers/tests/mappers/**/*.test.ts',
 ].map(globToRegExp)

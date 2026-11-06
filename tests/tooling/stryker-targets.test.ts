@@ -60,10 +60,13 @@ describe('strykerTargets', () => {
     expect([...targets].sort()).toEqual(whole)
   })
 
-  it('a source change plus a Stryker config change targets the whole mutate set', async () => {
-    const targets = await strykerTargets(REPO, [SOURCE, 'vitest.stryker.config.ts'])
-    expect([...targets].sort()).toEqual(await wholeSet())
-  })
+  it.each(['vitest.stryker.config.ts', 'vitest.stryker.setup.ts'])(
+    'a source change plus a change to %s, which every Stryker run reads, targets the whole mutate set',
+    async (path) => {
+      const targets = await strykerTargets(REPO, [SOURCE, path])
+      expect([...targets].sort()).toEqual(await wholeSet())
+    },
+  )
 
   it('a source change alone targets only that source', async () => {
     const targets = await strykerTargets(REPO, [SOURCE, 'README.md'])

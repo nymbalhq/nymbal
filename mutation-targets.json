@@ -5,7 +5,6 @@
     { "name": "mappers", "glob": "packages/importers/src/woocommerce/mappers/**/*.ts", "floor": 80 }
   ],
   "exceptions": {
-    "packages/platform/src/repositories/page.ts": "an interface: Stryker makes no mutant of it",
-    "packages/platform/src/services/index.ts": "the composition root: wiring every integration test runs through"
+    "packages/platform/src/repositories/page.ts": "an interface: Stryker makes no mutant of it"
   }
 }

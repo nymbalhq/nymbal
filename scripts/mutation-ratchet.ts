@@ -12,24 +12,36 @@ import { globToRegExp, mutateSet, strykerConfig } from './gate'
 // origin/dev) or named by `--files`, and files with no entry yet. `--config` names another Stryker config and
 // `--ratchet` its own ratchet file (stryker.integration.config.mjs and mutation-ratchet.integration.json): the mutate
 // set and the remedies follow them.
-// Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100. A file
+// Scores are percent with two decimals: (killed + timeout) / (killed + timeout + survived + noCoverage) × 100. An
+// entry is recorded stricter than it is checked: `update` counts a Timeout with no "Hit limit" reason as undetected,
+// since only the time allowance ended it and a slower run can see it survive, while `check` counts every Timeout as
+// detected, so a run meets the entry its own report would record; `check` names a file above its entry only when
+// `update` would raise it. The total is the report's own score, every Timeout detected. A file
 // whose detected mutants all timed out, none killed, is unmeasured: nothing shows a test saw any of them, so it
 // scores 0 (it scored 100 before 2026-10-25), and `update` records that 0 over an entry that was never a measurement.
 // `check --static` also names the mutate-set files with no unit test file beside them (only integration tests reach
 // them), and, given a base, warns of a change to a measured file whose unit test file did not change: new code in a
 // service with no unit test passed every local gate and failed the incremental Stryker run in CI.
-// `target` holds each file of the unit mutate set that a group of mutation-targets.json names to that group's floor,
-// scoring a file the higher of its unit and integration entries. It is a release check: nothing else runs it.
+// `target` holds each file of either mutate set (stryker.config.mjs's and stryker.integration.config.mjs's) that a group
+// of mutation-targets.json names to that group's floor, scoring a file the higher of its unit and integration entries:
+// a file only the integration tests reach is mutated by the integration config alone. It is a release check: nothing
+// else runs it.
 
 export type Scores = Record<string, number>
 
 export type Ratchet = { measuredAt: string; command: string; total: number; files: Scores }
 
-type StrykerReport = { files?: Record<string, { mutants?: Array<{ status?: string }> }> }
+type Mutant = { status?: string; statusReason?: string }
+
+type StrykerReport = { files?: Record<string, { mutants?: Mutant[] }> }
+
+/** How a Timeout that only the time allowance ended counts: detected when checked, undetected when recorded. */
+export type AllowanceTimeouts = 'detected' | 'undetected'
 
 export const DEFAULT_COMMAND = 'pnpm mutation --force'
 
 const DEFAULT_CONFIG = 'stryker.config.mjs'
+const INTEGRATION_CONFIG = 'stryker.integration.config.mjs'
 const DEFAULT_RATCHET = 'mutation-ratchet.json'
 const DEFAULT_REPORT = 'reports/mutation/mutation.json'
 
@@ -67,7 +79,17 @@ function percent(detected: number, valid: number): number {
   return Math.round((detected * 10000) / valid) / 100
 }
 
-function tally(mutants: Array<{ status?: string }>): {
+/**
+ * A Timeout Stryker ended by its hit limit (a loop the mutant caused) shows a test reached it; any other one ran out
+ * the clock.
+ */
+const ranOutOfTime = ({ status, statusReason = '' }: Mutant): boolean =>
+  status === 'Timeout' && !statusReason.startsWith('Hit limit')
+
+function tally(
+  mutants: Mutant[],
+  allowance: AllowanceTimeouts = 'detected',
+): {
   detected: number
   valid: number
   killed: number
@@ -75,8 +97,9 @@ function tally(mutants: Array<{ status?: string }>): {
   let detected = 0
   let valid = 0
   let killed = 0
-  for (const { status = '' } of mutants) {
-    if (DETECTED.has(status)) detected += 1
+  for (const mutant of mutants) {
+    const status = mutant.status ?? ''
+    if (DETECTED.has(status) && (allowance === 'detected' || !ranOutOfTime(mutant))) detected += 1
     if (status === 'Killed') killed += 1
     if (DETECTED.has(status) || UNDETECTED.has(status)) valid += 1
   }
@@ -88,10 +111,10 @@ const unmeasured = (t: { detected: number; killed: number }): boolean =>
   t.detected > 0 && t.killed === 0
 
 /** Each file's score; a file with no valid mutant has none and is absent; an unmeasured file scores 0. */
-export function scoreByFile(report: unknown): Scores {
+export function scoreByFile(report: unknown, allowance: AllowanceTimeouts = 'detected'): Scores {
   const scores: Scores = {}
   for (const [path, file] of Object.entries((report as StrykerReport).files ?? {})) {
-    const t = tally(file.mutants ?? [])
+    const t = tally(file.mutants ?? [], allowance)
     if (t.valid > 0) scores[path] = unmeasured(t) ? 0 : percent(t.detected, t.valid)
   }
   return scores
@@ -214,12 +237,18 @@ async function targetCheck(
   targetsPath: string,
   unitPath: string,
   integrationPath: string,
+  integrationConfig: string,
 ): Promise<number> {
   const targets = readTargets(targetsPath)
-  const set = await trackedMutateSet(process.cwd(), DEFAULT_CONFIG)
-  if (set === undefined) {
+  const root = process.cwd()
+  const unitSet = await trackedMutateSet(root, DEFAULT_CONFIG)
+  if (unitSet === undefined) {
     throw new Error(`target reads Stryker's mutate set from git: run it inside the repository`)
   }
+  const integrationSet = existsSync(resolve(root, integrationConfig))
+    ? ((await trackedMutateSet(root, integrationConfig)) ?? [])
+    : []
+  const set = [...new Set([...unitSet, ...integrationSet])].sort()
   const files = (path: string): Scores => (existsSync(path) ? readJson<Ratchet>(path).files : {})
   const { below, excepted, stale } = shortfalls(
     targets,
@@ -316,7 +345,8 @@ function changedSince(root: string, base: string): string[] {
 
 async function check(report: unknown, ratchetPath: string, to: Target): Promise<number> {
   const ratchet = readJson<Ratchet>(ratchetPath)
-  const { lower, rose } = compare(ratchet.files, scoreByFile(report))
+  const { lower } = compare(ratchet.files, scoreByFile(report))
+  const { rose } = compare(ratchet.files, scoreByFile(report, 'undetected'))
   // A file with no entry cannot fall, so it does not fail the check; the hint keeps the ratchet following the set.
   const unheld = ((await trackedMutateSet(process.cwd(), to.config)) ?? []).filter(
     (path) => ratchet.files[path] === undefined,
@@ -445,7 +475,7 @@ async function update(
     Object.fromEntries(Object.entries(scores).filter(([path]) => inSet.has(path)))
   const dropped = Object.keys(before?.files ?? {}).filter((path) => !inSet.has(path))
   const held = follow(before?.files ?? {})
-  const scores = follow(scoreByFile(report))
+  const scores = follow(scoreByFile(report, 'undetected'))
   // A full run's scores are all measured afresh; an incremental run's are trusted only where the change reached.
   const within = new Set(total ? Object.keys(scores) : changed())
   const files = total ? raise(held, scores) : raiseWithin(held, scores, within)
@@ -509,6 +539,7 @@ async function main(argv: string[]): Promise<number> {
       base: { type: 'string' },
       targets: { type: 'string', default: 'mutation-targets.json' },
       'integration-ratchet': { type: 'string', default: 'mutation-ratchet.integration.json' },
+      'integration-config': { type: 'string', default: INTEGRATION_CONFIG },
     },
   })
   const [subcommand] = positionals
@@ -529,13 +560,18 @@ async function main(argv: string[]): Promise<number> {
     values.base ?? (values.config === DEFAULT_CONFIG ? process.env['GATE_BASE'] : undefined)
   const base = given === undefined || given === '' ? undefined : given
   if (subcommand === 'target') {
-    return targetCheck(resolve(values.targets), ratchetPath, resolve(values['integration-ratchet']))
+    return targetCheck(
+      resolve(values.targets),
+      ratchetPath,
+      resolve(values['integration-ratchet']),
+      values['integration-config'],
+    )
   }
   const to = await target(values.config, ratchet)
   if (subcommand === 'check' && values.static) return staticCheck(ratchetPath, base, to)
   if (values.report === undefined || (subcommand !== 'check' && subcommand !== 'update')) {
     throw new Error(
-      'usage: mutation-ratchet.ts target [--targets <file>] [--ratchet <file>] [--integration-ratchet <file>] | check --static [--base <ref>] [--config <stryker config>] [--ratchet <file>] | check --report <mutation.json> [--config <stryker config>] [--ratchet <file>] | update --report <mutation.json> [--config <stryker config>] [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
+      'usage: mutation-ratchet.ts target [--targets <file>] [--ratchet <file>] [--integration-ratchet <file>] [--integration-config <stryker config>] | check --static [--base <ref>] [--config <stryker config>] [--ratchet <file>] | check --report <mutation.json> [--config <stryker config>] [--ratchet <file>] | update --report <mutation.json> [--config <stryker config>] [--ratchet <file>] [--total] [--command <text>] [--files <a,b> | --base <ref>]',
     )
   }
   const report = readJson<unknown>(resolve(values.report))

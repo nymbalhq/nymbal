@@ -81,11 +81,16 @@ function mutant(status: Status, id: number): Record<string, unknown> {
     mutatorName: 'BlockStatement',
     replacement: '{}',
     status,
+    ...(status === 'Timeout' ? { statusReason: 'Hit limit reached (601/600)' } : {}),
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
   }
 }
 
-/** A report in Stryker's mutation-testing-report-schema shape, files keyed by repo-relative path. */
+/**
+ * A report in Stryker's mutation-testing-report-schema shape, files keyed by repo-relative path. A Timeout is one
+ * Stryker ended by its hit limit, which counts as detected everywhere; one the time allowance ended is recorded as
+ * undetected.
+ */
 function report(files: Record<string, Status[]>): Record<string, unknown> {
   return {
     schemaVersion: '1.0',
@@ -779,6 +784,37 @@ describe('an all-Timeout file is unmeasured', () => {
     const after = readRatchet(ratchetFile)
     expect(after.files[timedOut], 'recorded 0, below the 100 that was never measured').toBe(0)
     expect(after.files[measured], 'a measured file still only rises').toBe(50)
+  })
+})
+
+describe('a Timeout only the time allowance ended', () => {
+  it('update --total records it as undetected while a "Hit limit" Timeout stays detected, and check passes on that entry without naming the file above it', async () => {
+    const set = await mutateSet()
+    const [slow, ...rest] = set
+    const rep = report({
+      ...Object.fromEntries(rest.map((path) => [path, exactFile(1, 2, 0)])),
+      [slow!]: ['Killed', 'Timeout', 'Timeout', 'Survived'],
+    })
+    const mutants = (rep['files'] as Record<string, { mutants: Array<Record<string, unknown>> }>)[
+      slow!
+    ]!.mutants
+    delete mutants[2]!['statusReason']
+    const dir = scratch()
+    const ratchetFile = join(dir, 'mutation-ratchet.json')
+    const reportFile = writeJson(dir, 'mutation.json', rep)
+    const updated = await cli([
+      'update',
+      '--report',
+      reportFile,
+      '--ratchet',
+      ratchetFile,
+      '--total',
+    ])
+    expect(updated.code, updated.output).toBe(0)
+    expect(readRatchet(ratchetFile).files[slow!], 'Killed and the hit limit of four').toBe(50)
+    const checked = await cli(['check', '--report', reportFile, '--ratchet', ratchetFile])
+    expect(checked.code, checked.output).toBe(0)
+    expect(checked.output).not.toMatch(/below the ratchet|above the ratchet/)
   })
 })
 
