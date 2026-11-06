@@ -1,5 +1,16 @@
 # @nymbalhq/payments-stripe
 
+## 1.6.0
+
+### Minor Changes
+
+- 0700627: Agentic checkout over ACP (beta, off by default): with `agents.acp.enabled` and `NYMBAL_ACP_API_KEY` set, a shopping agent opens a checkout session at `/api/acp` and pays with a delegated token (a Stripe Shared Payment Token) for a normal store order.
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+
 ## 1.5.0
 
 ### Minor Changes

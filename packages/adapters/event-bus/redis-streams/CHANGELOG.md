@@ -1,5 +1,12 @@
 # @nymbalhq/event-bus-redis-streams
 
+## 1.4.2
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+
 ## 1.4.1
 
 ### Patch Changes

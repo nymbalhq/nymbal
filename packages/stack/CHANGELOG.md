@@ -1,5 +1,68 @@
 # @nymbalhq/stack
 
+## 1.6.0
+
+### Patch Changes
+
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+- Updated dependencies [0700627]
+- Updated dependencies [366760e]
+- Updated dependencies [37d8f4a]
+- Updated dependencies [366760e]
+- Updated dependencies [86ad196]
+- Updated dependencies [00c2f07]
+- Updated dependencies [7cb17f1]
+- Updated dependencies [5d95ad2]
+- Updated dependencies [5240c52]
+- Updated dependencies [d441055]
+- Updated dependencies [061bc68]
+- Updated dependencies [12e3285]
+- Updated dependencies [9d42cd4]
+- Updated dependencies [07ff236]
+- Updated dependencies [0f751fe]
+- Updated dependencies [7a136c9]
+- Updated dependencies [7a136c9]
+- Updated dependencies [7a136c9]
+- Updated dependencies [07ff236]
+- Updated dependencies [040f754]
+- Updated dependencies [a4a8db6]
+- Updated dependencies [366760e]
+- Updated dependencies [7a4c608]
+- Updated dependencies [424c8f0]
+- Updated dependencies [2efa507]
+- Updated dependencies [a8cca3d]
+- Updated dependencies [d2277af]
+- Updated dependencies [2be0e86]
+- Updated dependencies [2fbb296]
+- Updated dependencies [0a940fa]
+- Updated dependencies [73c9738]
+- Updated dependencies [454e12a]
+- Updated dependencies [454e12a]
+- Updated dependencies [454e12a]
+- Updated dependencies [c9fe50b]
+- Updated dependencies [853d563]
+- Updated dependencies [ec1e87b]
+- Updated dependencies [b8d68df]
+- Updated dependencies [c52ac10]
+- Updated dependencies [13a6b2d]
+- Updated dependencies [97133bc]
+- Updated dependencies [41ef49d]
+- Updated dependencies [f2c9a19]
+- Updated dependencies [ac55979]
+- Updated dependencies [07ff236]
+- Updated dependencies [402a5d1]
+- Updated dependencies [2778182]
+- Updated dependencies [1a5b417]
+  - @nymbalhq/platform@1.6.0
+  - @nymbalhq/config@1.6.0
+  - @nymbalhq/types@1.6.0
+  - @nymbalhq/http@1.6.0
+  - nymbal@1.6.0
+  - @nymbalhq/web-components@1.6.0
+  - @nymbalhq/sdk@1.6.0
+  - @nymbalhq/react@1.6.0
+
 ## 1.5.0
 
 ### Patch Changes

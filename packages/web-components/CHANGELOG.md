@@ -1,5 +1,56 @@
 # @nymbalhq/web-components
 
+## 1.6.0
+
+### Minor Changes
+
+- 454e12a: `<nymbal-checkout>` refuses an order that needs payment when the page has no payment element, and asks a shopper whose session ended to sign in again (`sign-in-href`, default `/account/login?redirect=%2Fcheckout`).
+- ec1e87b: Breaking for new stores: both storefront templates send a content security policy (`pagePolicy` in `lib/page-policy`), which refuses framing the store, http images and any third-party script, font, pixel, browser-side call or form target (analytics, chat, Google Fonts) until you add it there. `nymbal start` adds HSTS (https only), `nosniff`, `X-Frame-Options`, a `Referrer-Policy` and a minimal policy to any page that sets none.
+  The shopper's access token now stays in page memory: `client.auth.restore()` brings the session back from the refresh cookie on each page load, guests send nothing, and requests made meanwhile wait for it. A token an earlier version left in `localStorage` is removed and its shopper stays signed in.
+  A client built on `@nymbalhq/sdk/core`, as the Astro template's is, calls `resumeSession(client)` from `@nymbalhq/sdk/core` once per page load before its first request; a store that keeps its own older `lib/client.ts` must add it.
+- 13a6b2d: Product listings, search, recently viewed and `GET /api/products/:slug` serve each product's `rating` (`{ average, count }`, or null with no approved review) from the reviews adapter; the native aggregate now counts every approved review. Product cards show the stars, average and count, `nymbal-review-list` takes a `rating` for its summary, and the product page's JSON-LD carries `aggregateRating`.
+  A scaffolded store copies `src/lib/seo.ts` and `src/pages/product/[slug].astro` (Astro) or `lib/seo.ts` and `app/(catalog)/product/[slug]/page.tsx` (Next.js, whose JSON-LD `url` now names `/product/<slug>`).
+- f2c9a19: Signed-in shoppers can review a product (`POST /api/reviews`, 10 an hour per IP): one review per product, pending moderation, verified when they bought it (event `review.submitted.v1`); a guest sees "Sign in to write a review". `GET /api/products/:id/reviews` no longer publishes customer or order ids, and `GET /api/capabilities` reports `reviews`, so a reviews provider without `submit` shows no form.
+  Breaking for a reviews adapter or a kernel composed by hand: `ReviewSubmission` carries `author`, an adapter without `submit` rejects with `ReviewRefusedError`, and `buildServices` takes `reviews`. A scaffolded store copies `src/lib/reviews.ts` and `src/pages/product/[slug].astro` (Astro) or `lib/reviews.ts` and `app/(catalog)/product/[slug]/page.tsx` (Next.js).
+- ac55979: With the default JWT secret, `nymbal dev` listens on 127.0.0.1 only, and a custom server (`createApp` plus its own adapter) on a non-loopback host now throws `config.default_jwt_secret_exposed` outside production too: set `NYMBAL_JWT_SECRET`.
+  Cookies are `Secure` exactly when the public URL (`NYMBAL_PUBLIC_URL`, else `store.url`) is https; descriptions are stored sanitised (one saved before this version is not rewritten: re-save any that came from an untrusted source); a rotated refresh token replayed after 30 s signs its customer out everywhere; a 500 no longer shows a driver's message.
+  The WooCommerce importer fetches images only over http(s) from public addresses or the store's own host, and stores only image types.
+
+### Patch Changes
+
+- 0f751fe: A page the browser restores on Back reloads the mini-cart's count and unlocks a sign-in, register or Astro alert form that locked as it left. Text typed into a server-rendered form field before its element upgrades stays in the field.
+- 7a136c9: `nymbal-cart-page` links a line to its product page by slug; a line stored without one shows its name unlinked.
+- 7a4c608: Escape closes the open cart drawer. On a phone the header's mini-cart sits beside the menu toggle instead of inside the menu, in a new `cart` part. The product filter skips a facet with no values. An element your project defines before `registerClient` now follows its stores once the client registers. The server keeps quoted CSS strings in an element's styles exactly as written.
+- 853d563: Every package has a README on npm. `nymbal mcp` now passes on the name and version of the MCP host that connected, so proposals, carts and orders record that agent rather than a generic client.
+  `create-nymbal-app` ends by naming where to report a problem.
+- Updated dependencies [0700627]
+- Updated dependencies [37d8f4a]
+- Updated dependencies [86ad196]
+- Updated dependencies [00c2f07]
+- Updated dependencies [7cb17f1]
+- Updated dependencies [5d95ad2]
+- Updated dependencies [5240c52]
+- Updated dependencies [d441055]
+- Updated dependencies [061bc68]
+- Updated dependencies [12e3285]
+- Updated dependencies [9d42cd4]
+- Updated dependencies [7a136c9]
+- Updated dependencies [2be0e86]
+- Updated dependencies [2fbb296]
+- Updated dependencies [454e12a]
+- Updated dependencies [c9fe50b]
+- Updated dependencies [853d563]
+- Updated dependencies [ec1e87b]
+- Updated dependencies [c52ac10]
+- Updated dependencies [13a6b2d]
+- Updated dependencies [f2c9a19]
+- Updated dependencies [ac55979]
+- Updated dependencies [07ff236]
+- Updated dependencies [402a5d1]
+- Updated dependencies [1a5b417]
+  - @nymbalhq/types@1.6.0
+  - @nymbalhq/sdk@1.6.0
+
 ## 1.5.0
 
 ### Minor Changes
