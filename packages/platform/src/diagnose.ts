@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  ASSISTANT_MASK_FIELDS,
+  DEFAULT_ASSISTANT_MASK,
   nymbalConfigSchema,
   resolveOriginLock,
   slotFolder,
@@ -425,6 +427,9 @@ export async function diagnose(
     } else {
       slots.push(fromReport(`slot ${slot}`, provider, await health(adapter.value)))
     }
+    if (slot === 'ai' && slots.at(-1)?.status !== 'down') {
+      slots.push(aiHostCheck(config, provider, adapter.ok ? adapter.value : null))
+    }
   }
 
   const securityAdapter = await within(timeoutMs, () =>
@@ -550,4 +555,61 @@ async function eventLogCheck(store: CommandStore, timeoutMs: number): Promise<Di
 
 function fromReport(name: string, what: string, report: HealthReport): DiagnosisCheck {
   return { name, status: report.status, detail: described(what, report.detail) }
+}
+
+/** Where the assistant sends its requests, by the host's name alone (no lookup). */
+function placeOf(hostname: string): 'this machine' | 'your network' | 'remote' {
+  const name = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  if (name.includes(':')) {
+    if (name === '::1') return 'this machine'
+    const first = name.startsWith('::') ? 0 : parseInt(name.split(':')[0]!, 16)
+    if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80) return 'your network'
+    return 'remote'
+  }
+  const octets = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name)?.slice(1).map(Number)
+  if (octets !== undefined) {
+    const [a, b] = octets as [number, number]
+    if (a === 127 || name === '0.0.0.0') return 'this machine'
+    if (
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      (a === 100 && b >= 64 && b <= 127)
+    ) {
+      return 'your network'
+    }
+    return 'remote'
+  }
+  if (name === 'localhost' || name.endsWith('.localhost')) return 'this machine'
+  if (!name.includes('.') || /\.(local|internal|lan|home\.arpa)$/.test(name)) return 'your network'
+  return 'remote'
+}
+
+/** `nymbal doctor`'s disclosure of the assistant's AI host and what of a customer's data goes there; always ok. */
+function aiHostCheck(config: NymbalConfig, provider: string, adapter: unknown): DiagnosisCheck {
+  const name = 'ai host'
+  if (adapter === null) return { name, status: 'ok', detail: `${provider}: the assistant is off` }
+  const endpoint = (adapter as { endpoint?: unknown }).endpoint
+  if (typeof endpoint !== 'string') {
+    return {
+      name,
+      status: 'ok',
+      detail: `${provider}: its adapter does not say where it sends requests`,
+    }
+  }
+  const url = URL.parse(endpoint)
+  if (url === null || url.host === '') {
+    return { name, status: 'degraded', detail: `${provider}: its endpoint is not a URL` }
+  }
+  const assistant = (config.agents as Partial<NymbalConfig['agents']> | undefined)?.assistant
+  const mask: readonly string[] = assistant?.mask ?? DEFAULT_ASSISTANT_MASK
+  const listed = ASSISTANT_MASK_FIELDS.filter((field) => mask.includes(field))
+  const data =
+    assistant?.customerData === false
+      ? 'customer data off'
+      : listed.length === 0
+        ? 'customer fields sent as they are'
+        : `customer fields masked: ${listed.join(', ')}; ${listed.includes('name') ? '' : 'names, '}city and notes sent`
+  return { name, status: 'ok', detail: `${url.host} (${placeOf(url.hostname)}): ${data}` }
 }

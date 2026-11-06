@@ -350,6 +350,8 @@ export type ChatStreamEvent =
 
 export interface AiAdapter extends CommerceAdapter {
   readonly kind: 'ai'
+  /** The base URL its requests go to, for `nymbal doctor`; never a key. Absent when the adapter does not say. */
+  readonly endpoint?: string
   embed(texts: string[]): Promise<number[][]>
   /** The text `chat` answers to a single user turn. */
   complete(prompt: string, opts?: { maxTokens?: number }): Promise<string>

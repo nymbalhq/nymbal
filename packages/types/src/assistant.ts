@@ -5,7 +5,18 @@ import type { ProposalView } from './proposals.js'
  * the model called (or one `proposal` frame for a write kept for a person to approve), then `done` or `error`.
  */
 export type AssistantFrame =
-  | { event: 'text'; data: { delta: string } }
+  | {
+      event: 'text'
+      /** `revealed`: where in `delta` a customer's value stands that the provider saw only as a placeholder. */
+      data: {
+        delta: string
+        revealed?: Array<{
+          start: number
+          end: number
+          kind: 'email' | 'phone' | 'address' | 'postcode' | 'name'
+        }>
+      }
+    }
   | {
       event: 'tool'
       data: { name: string; title: string; ok: boolean; code?: string; applied?: true }

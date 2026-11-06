@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import fc from 'fast-check'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { adapterContext, runAiContract, type AiFailureMode } from '@nymbalhq/contract-tests'
 import type { AiAdapter, Logger } from '@nymbalhq/types'
 import { createAdapter } from '../../packages/adapters/ai/anthropic/src/index.js'
+import { DEFAULT_BASE_URL } from '../../packages/adapters/ai/anthropic/src/anthropic-adapter.js'
 import {
   contentText,
   LOOKUP_PRICE,
@@ -315,5 +317,27 @@ describe('the Anthropic wire', () => {
     expect(wire.requests.map((r) => r.headers['anthropic-version'])).toEqual(['2023-06-01', '2023-06-01'])
     expect({ ...streamed, stream: undefined }).toEqual({ ...plain, stream: undefined })
     expect(events.at(-1)?.type).toBe('done')
+  })
+})
+
+describe('AC-11: the adapter says where its requests go', () => {
+  it("AC-11: property: endpoint is the baseUrl the block gives, Anthropic's DEFAULT_BASE_URL when it gives none or an empty one, and never holds the key", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.oneof(
+          fc.webUrl({ withQueryParameters: false, withFragments: false }),
+          fc.constantFrom(undefined, ''),
+        ),
+        fc.stringMatching(/^[A-Za-z0-9_-]{24,48}$/),
+        async (baseUrl, secret) => {
+          const key = `sk-${secret}`
+          const adapter = await build({ apiKey: key, ...(baseUrl !== undefined && { baseUrl }) })
+
+          expect(adapter.endpoint).toBe(baseUrl === undefined || baseUrl === '' ? DEFAULT_BASE_URL : baseUrl)
+          expect(String(adapter.endpoint).includes(key)).toBe(false)
+        },
+      ),
+      { numRuns: 50 },
+    )
   })
 })

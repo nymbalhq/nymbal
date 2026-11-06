@@ -17,6 +17,13 @@ import {
 } from '@nymbalhq/types'
 import { routeSchemas } from '../routes/schemas.js'
 import type { ProposalService } from '../services/proposal-service.js'
+import {
+  createTurnMask,
+  neutralise,
+  TOKEN_SOURCE,
+  type MaskField,
+  type RevealedSpan,
+} from './mask.js'
 
 /** The agent name every tool call, proposal and audit entry of the assistant carries. */
 export const ASSISTANT_AGENT = 'nymbal-assistant'
@@ -38,6 +45,10 @@ export const STORE_DATA_RULE =
 /** The system prompt's line on a customer's personal details. */
 export const PERSONAL_DATA_RULE =
   "Use a customer's email, phone or address only when the merchant's question needs it, and do not repeat it otherwise."
+
+/** The system prompt's line on placeholders, when the turn masks a customer's details. */
+export const MASKED_DATA_RULE =
+  "A customer's details may appear as placeholders such as [email-1], [phone-1], [address-1], [postcode-1] or [name-1], each standing for one value: copy a placeholder exactly as written into a tool's arguments or into your answer, and the merchant sees the real value; never guess what it stands for."
 
 /**
  * The admin's routes (apps/admin/src/router.tsx): the prompt names the one the merchant is on, never the path. A literal
@@ -78,6 +89,8 @@ export interface AssistantDeps {
   limits?: { maxSteps?: number; turnMs?: number; resultChars?: number }
   /** `agents.assistant.customerData`: false leaves out every tool whose answer carries a customer's details. */
   customerData?: boolean
+  /** `agents.assistant.mask`: the customer fields the provider reads as placeholders; absent or [] masks nothing. */
+  mask?: readonly MaskField[]
 }
 
 export interface AssistantTurn {
@@ -86,7 +99,7 @@ export interface AssistantTurn {
   /** The signed-in admin, as agent `nymbal-assistant`. */
   caller: Caller
   /** The conversation so far as the admin's browser holds it; the last turn is the question. */
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: Array<{ role: 'user' | 'assistant'; content: string; revealed?: RevealedSpan[] }>
   /** The admin route the panel was opened on, e.g. `/products/ceramic-mug`. */
   page?: string
 }
@@ -156,7 +169,11 @@ export function adminPageOf(
   return undefined
 }
 
-function systemPrompt(store: AssistantDeps['store'], pattern: string | undefined): string {
+function systemPrompt(
+  store: AssistantDeps['store'],
+  pattern: string | undefined,
+  masked: boolean,
+): string {
   return [
     store === undefined
       ? "You are the store's assistant, inside its admin."
@@ -166,6 +183,7 @@ function systemPrompt(store: AssistantDeps['store'], pattern: string | undefined
     "Answer from the store's tools, never from a guess; say so when the tools cannot tell you.",
     STORE_DATA_RULE,
     PERSONAL_DATA_RULE,
+    ...(masked ? [MASKED_DATA_RULE] : []),
     'A write you call does not change the store: it becomes a proposal that a person approves or rejects in the inbox. Say that it waits for their approval.',
     'You cannot approve or reject proposals, and you cannot read or change secrets, keys or settings.',
     'Answer briefly.',
@@ -247,7 +265,18 @@ function cut(result: ToolResult, max: number): string {
   return `${text.slice(0, max)}\n[cut: ${text.length - max} of ${text.length} characters not shown]`
 }
 
-const refusalText = (code: string, message: string) => JSON.stringify({ code, message })
+const UNKNOWN_PLACEHOLDER =
+  'A placeholder in the arguments stands for no value of this turn: copy it exactly as a tool result gave it'
+
+/** `value` with every string passed through `f`. */
+function mapStrings(value: unknown, f: (text: string) => string): unknown {
+  if (typeof value === 'string') return f(value)
+  if (Array.isArray(value)) return value.map((item) => mapStrings(item, f))
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)]))
+  }
+  return value
+}
 
 /**
  * One assistant turn: the model is called with the store's tools, each tool it asks for runs through the tool surface
@@ -276,6 +305,24 @@ export async function runAssistantTurn(
   else signal?.addEventListener('abort', onAbort, { once: true })
 
   const turnId = turn.turnId ?? uuidv7()
+  const masking = (deps.mask?.length ?? 0) > 0
+  const mask = createTurnMask(deps.mask ?? [])
+  /** The reply streaming now, held back only inside what may still become a minted placeholder. */
+  let revealer: ReturnType<typeof mask.revealer> | undefined
+  const emitText = (shown: { text: string; revealed: RevealedSpan[] }) => {
+    if (shown.text === '') return
+    emit({
+      event: 'text',
+      data: {
+        delta: shown.text,
+        ...(shown.revealed.length > 0 && { revealed: shown.revealed }),
+      },
+    })
+  }
+  const flush = () => {
+    if (revealer !== undefined) emitText(revealer.flush())
+    revealer = undefined
+  }
   const offered = assistantTools(deps.tools.list(turn.caller), {
     customerData: deps.customerData ?? true,
   })
@@ -292,12 +339,17 @@ export async function runAssistantTurn(
     ...(withParams === undefined ? [] : [PAGE_TOOL]),
   ]
   const opts: ChatOptions = {
-    system: systemPrompt(deps.store, page?.pattern),
+    system: systemPrompt(deps.store, page?.pattern, masking),
     tools,
     signal: stopped,
   }
   const stream = streamOf(deps.ai)
-  const messages: ChatMessage[] = turn.messages.map((m) => ({ role: m.role, content: m.content }))
+  const messages: ChatMessage[] = turn.messages.map((m) => ({
+    role: m.role,
+    content: masking
+      ? mask.text(m.content, m.role === 'assistant' ? m.revealed : undefined)
+      : m.content,
+  }))
   // An earlier answer may quote a tool result, so a follow-up's first reply may already obey store data.
   const quotesStoreData = turn.messages.some((m) => m.role === 'assistant')
   const proposals: string[] = []
@@ -307,15 +359,77 @@ export async function runAssistantTurn(
   let writes = 0
   let outcome = 'done'
 
-  type Answered = { content: string; isError: boolean; fields: Fields }
+  /**
+   * A tool message's masked value before it was serialised, and how it was: `remask` reads the value's own strings,
+   * since a value after a JSON escape, or holding one, is never found in the serialised text.
+   */
+  type Kept = { value: unknown; render: (value: unknown) => string }
+  type Answered = { content: string; isError: boolean; fields: Fields; masked: number; kept?: Kept }
+  /** By index in `messages`. */
+  const keptOf = new Map<number, Kept>()
+
+  /** What the model reads of `result`: masked whole (so `cut` re-serialises masked items), then cut. */
+  const toModel = (result: ToolResult): { content: string; masked: number; kept?: Kept } => {
+    if (!masking) return { content: cut(result, limits.resultChars), masked: 0 }
+    if (result.structuredContent === undefined) {
+      const text = mask.text(result.content[0]?.text ?? '')
+      const masked = [...text.matchAll(new RegExp(TOKEN_SOURCE, 'g'))].length
+      const render = (value: unknown) =>
+        cut({ ...result, content: [{ type: 'text', text: String(value) }] }, limits.resultChars)
+      return { content: render(text), masked, kept: { value: text, render } }
+    }
+    const { value, masked } = mask.result(result.structuredContent)
+    const render = (next: unknown) => {
+      const structuredContent = next as Record<string, unknown>
+      const content = [{ type: 'text' as const, text: JSON.stringify(structuredContent) }]
+      return cut({ ...result, content, structuredContent }, limits.resultChars)
+    }
+    return { content: render(value), masked, kept: { value, render } }
+  }
+
+  /** Text the loop wrote itself (a refusal, the page): sent as written unless the turn masks. */
+  const ownText = (
+    value: Record<string, unknown>,
+  ): { content: string; masked: number; kept?: Kept } => {
+    if (!masking) return { content: JSON.stringify(value), masked: 0 }
+    const done = mask.result(value)
+    const render = (next: unknown) => JSON.stringify(next)
+    return { content: render(done.value), masked: done.masked, kept: { value: done.value, render } }
+  }
 
   const refuse = (name: string, title: string, code: string, message: string): Answered => {
     emit({ event: 'tool', data: { name, title, ok: false, code } })
-    return { content: refusalText(code, message), isError: true, fields: NO_FIELDS }
+    return { ...ownText({ code, message }), isError: true, fields: NO_FIELDS }
+  }
+
+  /** Every message passed through the table as it stands, so no request holds a value the turn has learned. */
+  const remask = () => {
+    for (const [i, m] of messages.entries()) {
+      if (m.role === 'assistant' && m.toolCalls !== undefined) {
+        messages[i] = {
+          ...m,
+          content: mask.known(m.content),
+          toolCalls: m.toolCalls.map((call) => ({
+            ...call,
+            args: mapStrings(call.args, (text) => mask.known(text)) as Record<string, unknown>,
+          })),
+        }
+      } else {
+        const kept = keptOf.get(i)
+        if (kept === undefined) {
+          messages[i] = { ...m, content: mask.known(m.content) }
+        } else {
+          kept.value = mapStrings(kept.value, (text) => mask.known(text))
+          messages[i] = { ...m, content: kept.render(kept.value) }
+        }
+      }
+    }
   }
 
   async function reply(): Promise<ChatResult> {
+    if (masking) remask()
     const iterator = stream(messages, opts)[Symbol.asyncIterator]()
+    revealer = masking ? mask.revealer() : undefined
     try {
       for (;;) {
         const next = await abortable(iterator.next(), stopped)
@@ -324,8 +438,10 @@ export async function runAssistantTurn(
         }
         const event: ChatStreamEvent = next.value
         if (event.type === 'text' && event.delta !== '') {
-          emit({ event: 'text', data: { delta: event.delta } })
+          if (revealer === undefined) emit({ event: 'text', data: { delta: event.delta } })
+          else emitText(revealer.push(event.delta))
         } else if (event.type === 'done') {
+          flush()
           return event.result
         }
       }
@@ -361,13 +477,18 @@ export async function runAssistantTurn(
     }
     if (paged !== undefined) {
       emit({ event: 'tool', data: { name: call.name, title, ok: true } })
-      const content = JSON.stringify({ route: paged.pattern, path: turn.page, params: paged.params })
-      used += content.length
-      return { content, isError: false, fields: NO_FIELDS }
+      const answered = ownText({ route: paged.pattern, path: turn.page, params: paged.params })
+      used += answered.content.length
+      return { ...answered, isError: false, fields: NO_FIELDS }
     }
     // A tool the model was not offered is one it cannot call, whatever the surface would run.
     if (tool === undefined) {
       return refuse(call.name, title, 'tool.unknown', `No tool is named ${call.name}`)
+    }
+    // The model's placeholders become the values they stand for; one standing for none is never run.
+    const args = masking ? mask.revealArgs(call.args) : call.args
+    if (masking && mask.stillHolds(args)) {
+      return refuse(call.name, title, 'assistant.unknown_placeholder', UNKNOWN_PLACEHOLDER)
     }
     const command = tool.kind === 'command'
     if (command && writes >= MAX_WRITES_PER_TURN) {
@@ -379,7 +500,7 @@ export async function runAssistantTurn(
       )
     }
     if (command) writes += 1
-    const result = await deps.tools.call(call.name, call.args, turn.caller, options)
+    const result = await deps.tools.call(call.name, args, turn.caller, options)
     const isError = result.isError === true
     const structured = result.structuredContent ?? {}
     if (!isError && command && structured['status'] === 'proposed') {
@@ -407,10 +528,10 @@ export async function runAssistantTurn(
         },
       })
     }
-    const content = cut(result, limits.resultChars)
-    used += content.length
+    const answered = toModel(result)
+    used += answered.content.length
     // Counted over the whole result: what the model is sent is at most this.
-    return { content, isError, fields: fieldsIn(structured) }
+    return { ...answered, isError, fields: fieldsIn(structured) }
   }
 
   try {
@@ -418,7 +539,8 @@ export async function runAssistantTurn(
       steps += 1
       const result = await reply()
       if (result.toolCalls.length === 0) {
-        emit({ event: 'done', data: { text: result.text, steps, proposals } })
+        const text = masking ? mask.reveal(result.text) : result.text
+        emit({ event: 'done', data: { text, steps, proposals } })
         return
       }
       if (steps >= limits.maxSteps) {
@@ -439,7 +561,7 @@ export async function runAssistantTurn(
         if (stopped.aborted) throw new Stopped()
         calls += 1
         const callId = `${turnId}.${calls}`
-        const { fields, ...answered } = await run(call, index, {
+        const { fields, masked, kept, ...answered } = await run(call, index, {
           correlationId: callId,
           proposeWrites,
         })
@@ -451,13 +573,16 @@ export async function runAssistantTurn(
             ok: !answered.isError,
             chars: answered.content.length,
             fields,
+            ...(masking && { masked }),
           },
           'assistant tool call',
         )
+        if (kept !== undefined) keptOf.set(messages.length, kept)
         messages.push({ role: 'tool', toolCallId: call.id, ...answered })
       }
     }
   } catch (error) {
+    flush()
     if (timedOut) {
       outcome = 'assistant.timeout'
       emit({
@@ -468,7 +593,8 @@ export async function runAssistantTurn(
       outcome = 'stopped'
     } else if (error instanceof NymbalError) {
       outcome = error.code
-      emit({ event: 'error', data: { code: error.code, message: error.message } })
+      const message = masking ? neutralise(mask.reveal(error.message)) : error.message
+      emit({ event: 'error', data: { code: error.code, message } })
     } else {
       outcome = 'assistant.failed'
       log.error({ name: (error as Error | null)?.name }, 'assistant turn failed')

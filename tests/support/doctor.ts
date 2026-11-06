@@ -158,7 +158,7 @@ export function categoryOf(name: string): number {
   if (name.startsWith('package ')) return 1
   if (name === 'command store') return 2
   if (name === 'migrations') return 3
-  if (name.startsWith('slot ')) return 4
+  if (name.startsWith('slot ') || name === 'ai host') return 4
   if (name.startsWith('primitive ')) return 5
   if (name === 'events') return 6
   if (name === 'agents') return 7
@@ -179,7 +179,8 @@ function hasPackage(slot: Slot, provider: string): boolean {
 /**
  * The check names a config gives, as a sorted set: `config`, `package <slot>` for every slot or primitive whose
  * provider resolves to a package (neither `custom` nor a built-in), `command store`, `migrations`, `slot <name>` per
- * commerce slot, `slot security` (with `package security` when `security.adapter` is not `middleware`),
+ * commerce slot, `ai host` (where the assistant's requests go; these configs keep `slot ai` up, and a down `slot ai`
+ * has no `ai host` line), `slot security` (with `package security` when `security.adapter` is not `middleware`),
  * `primitive <name>` per primitive, `events` (the event log's dead and retrying events), `agents` (how ready the agent
  * surfaces are), `trust proxy` (the proxy list, and client-address header, the server reads client addresses through) and
  * `origin lock` (whether requests must carry the CDN's secret, and whether the zone sends it). A slot is named as its
@@ -189,6 +190,7 @@ export function expectedCheckNames(config: NymbalConfig): string[] {
   const names = ['config', 'command store', 'migrations', 'events', 'agents']
   for (const { slot, provider } of commerceSlots(config)) {
     names.push(`slot ${slot}`)
+    if (slot === 'ai') names.push('ai host')
     if (hasPackage(slot as Slot, provider)) names.push(`package ${slotFolder(slot as Slot)}`)
   }
   names.push('slot security')

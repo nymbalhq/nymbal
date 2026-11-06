@@ -1,7 +1,12 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { ACP_LINK_TYPES, DEFAULT_AGENT_CRAWLERS } from './index.js'
+import {
+  ACP_LINK_TYPES,
+  ASSISTANT_MASK_FIELDS,
+  DEFAULT_AGENT_CRAWLERS,
+  DEFAULT_ASSISTANT_MASK,
+} from './index.js'
 import { nymbalConfigSchema, type NymbalConfigInput } from './schema.js'
 
 // AC-12: the `agents` block. A store that never mentions agents serves MCP with writes held as proposals; `writes`
@@ -180,7 +185,7 @@ describe('AC-1: agents.ucp and agents.crawl in the config', () => {
         allow: [...DEFAULT_AGENT_CRAWLERS],
         others: 'allow',
       },
-      assistant: { customerData: true },
+      assistant: { customerData: true, mask: ['email', 'phone', 'address', 'postcode'] },
     })
     expect(DEFAULT_AGENT_CRAWLERS.length).toBeGreaterThan(0)
     expect(NAMED_CRAWLERS).toEqual(expect.arrayContaining([...DEFAULT_AGENT_CRAWLERS]))
@@ -360,6 +365,7 @@ describe('AC-20: agents.assistant.customerData in the config', () => {
 
         expect((parsed.agents as { assistant?: unknown }).assistant).toEqual({
           customerData: set ?? true,
+          mask: ['email', 'phone', 'address', 'postcode'],
         })
       }),
     )
@@ -369,5 +375,66 @@ describe('AC-20: agents.assistant.customerData in the config', () => {
     expect(refusals({ assistant: { customerdata: false } })).toEqual([
       expect.stringMatching(/^agents\.assistant: .*customerdata/),
     ])
+  })
+})
+
+describe('AC-10: agents.assistant.mask in the config', () => {
+  const FIVE = ['email', 'phone', 'address', 'postcode', 'name'] as const
+  const DEFAULT = ['email', 'phone', 'address', 'postcode']
+
+  const assistantOf = (agents: unknown) =>
+    (
+      nymbalConfigSchema.parse({ ...baseConfig(), agents } as NymbalConfigInput).agents as {
+        assistant?: { customerData?: unknown; mask?: unknown }
+      }
+    ).assistant
+
+  it('AC-10: a config with no agents block, with an empty assistant block, or with customerData alone parses mask to email, phone, address and postcode, which are DEFAULT_ASSISTANT_MASK, out of the five ASSISTANT_MASK_FIELDS', () => {
+    expect([{}, { assistant: {} }, { assistant: { customerData: false } }].map((a) => assistantOf(a)?.mask)).toEqual([
+      DEFAULT,
+      DEFAULT,
+      DEFAULT,
+    ])
+    expect([...DEFAULT_ASSISTANT_MASK]).toEqual(DEFAULT)
+    expect([...ASSISTANT_MASK_FIELDS]).toEqual([...FIVE])
+  })
+
+  it('AC-10: property: any list of the five fields, in any order and with repeats, [] included, parses to each field once in the order first given, with customerData kept beside it', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...FIVE), { maxLength: 10 }),
+        fc.option(fc.boolean(), { nil: undefined }),
+        (mask, customerData) => {
+          const parsed = assistantOf({
+            assistant: { mask, ...(customerData !== undefined && { customerData }) },
+          })
+
+          expect(parsed?.mask).toEqual([...new Set(mask)])
+          expect(parsed?.customerData).toBe(customerData ?? true)
+        },
+      ),
+    )
+    expect(assistantOf({ assistant: { mask: ['email', 'phone', 'email'] } })?.mask).toEqual([
+      'email',
+      'phone',
+    ])
+  })
+
+  it('AC-10: property: a field outside the five is refused at agents.assistant.mask.<its index>', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(...FIVE), { maxLength: 5 }),
+        fc.constantFrom('Email', 'city', 'names', 'address1', 'zip', ''),
+        fc.nat(),
+        (good, bad, at) => {
+          const index = at % (good.length + 1)
+          const mask = [...good.slice(0, index), bad, ...good.slice(index)]
+
+          expect(refusals({ assistant: { mask } })).toEqual([
+            expect.stringMatching(new RegExp(`^agents\\.assistant\\.mask\\.${index}: `)),
+          ])
+        },
+      ),
+    )
   })
 })

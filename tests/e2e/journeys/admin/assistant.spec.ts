@@ -9,7 +9,7 @@ import type { APIRequestContext, Browser, BrowserContext, Page } from '@playwrig
 import { expect, test } from '../../support/fixtures'
 import { API_URL, csrf } from '../../support/csrf'
 import { adminToken as sharedAdminToken } from '../../support/checkout'
-import { ADMIN_EMAIL, ADMIN_PASSWORD, signInAsAdmin } from '../../support/admin'
+import { ADMIN_EMAIL, ADMIN_PASSWORD, SHIPPING_ADDRESS, signInAsAdmin } from '../../support/admin'
 import { startAiStandIn, type AiStandIn, type ScriptReply } from '../../../support/ai-stand-in'
 import { goldenScript } from '../../../support/assistant-golden'
 
@@ -23,6 +23,7 @@ import { goldenScript } from '../../../support/assistant-golden'
 // - AC-21: rapid Enters send one turn and make one proposal; rapid clicks on Reject decide once.
 // - AC-13 (cards that show the change): the price and stock questions show pending cards naming what they act on and
 //   the value now beside the value proposed, in the panel and in the inbox, and change nothing.
+// - AC-14 (masking): the provider reads a fresh order's email as [email-1] and the admin sees the email itself.
 // - AC-22: Esc mid-answer stops the turn (the provider request closed, nothing after it) and the answer reads Stopped;
 //   on a store with no provider, Ask points to Settings and proposes nothing.
 
@@ -197,6 +198,32 @@ const mugPrice = async (request: APIRequestContext, base: string, token: string)
       '/api/admin/products/ceramic-mug',
     )
   ).variants[0]!.priceMinor
+
+/** A guest order of one Stoneware Mug on the journey's store, placed with `email`: its order number. */
+async function placeOrderOn(
+  request: APIRequestContext,
+  base: string,
+  token: string,
+  email: string,
+): Promise<string> {
+  const mug = await getData<{ variants: Array<{ id: string }> }>(
+    request,
+    base,
+    token,
+    '/api/admin/products/ceramic-mug',
+  )
+  const added = await request.post(`${base}/api/cart/items`, {
+    headers: await csrf(request, base),
+    data: { variantId: mug.variants[0]!.id, qty: 1 },
+  })
+  expect(added.ok(), `POST /api/cart/items: ${await added.text()}`).toBe(true)
+  const placed = await request.post(`${base}/api/checkout`, {
+    headers: await csrf(request, base),
+    data: { email, billingAddress: SHIPPING_ADDRESS, shippingAddress: SHIPPING_ADDRESS },
+  })
+  expect(placed.ok(), `POST /api/checkout: ${await placed.text()}`).toBe(true)
+  return ((await placed.json()) as { data: { orderNumber: string } }).data.orderNumber
+}
 
 /** Minor units as the admin shows them (`formatMoney`, en-GB). */
 const pounds = (minor: number): string =>
@@ -586,6 +613,30 @@ test.describe('the assistant in the admin palette', () => {
     await expect(lastAnswer(page)).toContainText(/stopped/i)
     expect(await assistantSources(page)).toEqual([2])
     expect(store.standIn.requests.length).toBe(sent + 1)
+  })
+
+  test('AC-14: assistant.masked-details: after an order placed with a fresh email, asking who placed it shows that email in the panel’s answer; of the provider’s requests for that question, the one after the order read holds [email-1] and none holds the email', async ({
+    browser,
+    request,
+  }) => {
+    test.setTimeout(90_000)
+    const email = `masked-${Date.now()}-${Math.floor(Math.random() * 1e6)}@shoppers.test`
+    const orderNumber = await placeOrderOn(request, store.base, token, email)
+    const signed = await signedInContext(browser, store.base)
+    context = signed.context
+    const page = signed.page
+    await openAsk(page)
+    const sent = store.standIn.requests.length
+
+    await askQuestion(page, `Who placed order #${orderNumber}?`)
+    const answer = lastAnswer(page)
+    await expect(answer).toHaveAttribute('data-state', 'done', { timeout: 15_000 })
+
+    await expect(answer).toContainText(`was placed by ${email}`)
+    const asked = store.standIn.requests.slice(sent).map((r) => JSON.stringify(r.body))
+    expect(asked.length).toBe(2)
+    expect(asked[1]).toContain('[email-1]')
+    expect(asked.filter((body) => body.includes(email))).toEqual([])
   })
 })
 

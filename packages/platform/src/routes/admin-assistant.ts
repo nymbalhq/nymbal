@@ -10,7 +10,7 @@ import type {
   StreamContext,
   ToolSurface,
 } from '@nymbalhq/types'
-import { ASSISTANT_AGENT, runAssistantTurn } from '../assistant/loop.js'
+import { ASSISTANT_AGENT, runAssistantTurn, type AssistantTurn } from '../assistant/loop.js'
 import type { ProposalService } from '../services/proposal-service.js'
 import { fail, ok, renderError } from './envelope.js'
 import { requireRole } from './role-middleware.js'
@@ -25,7 +25,7 @@ const TICKET_PURPOSE = 'assistant-ticket'
 interface TurnRecord {
   uid: string
   roles: Role[]
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  messages: AssistantTurn['messages']
   page?: string
   nonce: string
   opened: boolean
@@ -190,6 +190,7 @@ export function registerAdminAssistantRoutes(
           logger: ctx.logger,
           store: { name: config.store.name, currency: config.store.currency },
           customerData: config.agents.assistant.customerData,
+          mask: config.agents.assistant.mask,
         },
         {
           turnId,

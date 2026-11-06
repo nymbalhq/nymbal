@@ -1,4 +1,5 @@
 import { z, type ZodTypeAny } from 'zod'
+import { ASSISTANT_MASK_FIELDS } from '@nymbalhq/config'
 import { CART_LINE_MAX_QTY, PRODUCT_SORT_KEYS } from '@nymbalhq/types'
 
 /**
@@ -689,10 +690,43 @@ export const routeSchemas: Record<string, RouteSchema> = {
     body: z.object({
       messages: z
         .array(
-          z.object({
-            role: z.enum(['user', 'assistant']),
-            content: z.string().min(1).max(8_000),
-          }),
+          z
+            .object({
+              role: z.enum(['user', 'assistant']),
+              content: z.string().min(1).max(8_000),
+              // Where an earlier answer showed a customer's value, so the next turn masks it again.
+              revealed: z
+                .array(
+                  z.object({
+                    start: z.number().int().min(0),
+                    end: z.number().int(),
+                    kind: z.enum(ASSISTANT_MASK_FIELDS),
+                  }),
+                )
+                .max(200)
+                .optional(),
+            })
+            .superRefine((turn, ctx) => {
+              if (turn.revealed === undefined) return
+              if (turn.role === 'user') {
+                ctx.addIssue({
+                  code: 'custom',
+                  message: 'only an assistant turn has revealed spans',
+                })
+                return
+              }
+              let last = 0
+              for (const span of turn.revealed) {
+                if (span.start < last || span.end <= span.start || span.end > turn.content.length) {
+                  ctx.addIssue({
+                    code: 'custom',
+                    message: 'revealed spans lie within the content, in order and apart',
+                  })
+                  return
+                }
+                last = span.end
+              }
+            }),
         )
         .min(1)
         .max(40)

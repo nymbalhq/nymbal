@@ -216,6 +216,7 @@ export function createOpenAiAdapter(config: OpenAiAdapterConfig): AiAdapter {
   const adapter: AiAdapter = {
     kind: 'ai',
     providerName: PROVIDER,
+    endpoint: base,
     capabilities: () => ['complete', 'chat', 'tools', 'stream'],
     producesEvents: [],
     consumesEvents: [],
