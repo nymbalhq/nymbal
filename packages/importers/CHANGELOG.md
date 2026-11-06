@@ -1,5 +1,14 @@
 # @nymbalhq/importers
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [071e340]
+  - @nymbalhq/platform@1.7.0
+  - @nymbalhq/config@1.7.0
+  - @nymbalhq/types@1.7.0
+
 ## 0.4.0
 
 ### Minor Changes

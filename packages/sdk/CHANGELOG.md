@@ -1,5 +1,12 @@
 # @nymbalhq/sdk
 
+## 1.7.0
+
+### Patch Changes
+
+- Updated dependencies [071e340]
+  - @nymbalhq/types@1.7.0
+
 ## 1.6.0
 
 ### Minor Changes
