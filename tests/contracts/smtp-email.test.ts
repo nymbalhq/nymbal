@@ -1,9 +1,10 @@
 import { createServer, type Server, type Socket } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { runEmailContract } from '@nymbalhq/contract-tests'
 import { createLogger } from '@nymbalhq/platform'
 import type { EmailAdapter } from '@nymbalhq/types'
 import { createSmtpEmailAdapter } from '../../packages/adapters/email/smtp/src/index.js'
+import { fakeTimeBounds, until } from '../support/fake-clock'
 import { fakeSmtpServer, type FakeSmtpServer } from '../support/smtp-server'
 import { closedPort, settleWithin } from '../support/tcp-proxy'
 
@@ -79,18 +80,25 @@ describe('AC-5: email-smtp on a dead host', () => {
   it('AC-5: on a host that accepts the connection and never greets, sendTransactional rejects within 6 s', async () => {
     const port = (silent!.address() as { port: number }).port
     const accepted = silentAccepted
-    const send = await settleWithin(
-      on(port).sendTransactional({
-        template: 'order-confirmation',
-        to: 'buyer@contracts.test',
-        vars: { orderNumber: 'NYM-1001' },
-      }),
-      HUNG_AFTER_MS,
-    )
+    const realClock = fakeTimeBounds()
+    try {
+      const settled = settleWithin(
+        on(port).sendTransactional({
+          template: 'order-confirmation',
+          to: 'buyer@contracts.test',
+          vars: { orderNumber: 'NYM-1001' },
+        }),
+        HUNG_AFTER_MS,
+      )
+      // The send reached the host: it was refused nothing, it waits on a greeting that never comes.
+      await until(() => silentAccepted > accepted, 'the host never took the connection')
+      await vi.advanceTimersByTimeAsync(HUNG_AFTER_MS)
+      const send = await settled
 
-    // The send reached the host: it was refused nothing, it waited on a greeting that never came.
-    expect(silentAccepted).toBeGreaterThan(accepted)
-    expect(send.state).toBe('rejected')
-    expect(send.ms).toBeLessThan(DOWN_WITHIN_MS)
-  }, 30_000)
+      expect(send.state).toBe('rejected')
+      expect(send.ms).toBeLessThan(DOWN_WITHIN_MS)
+    } finally {
+      realClock()
+    }
+  })
 })

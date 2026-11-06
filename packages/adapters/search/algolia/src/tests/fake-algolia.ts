@@ -318,10 +318,17 @@ const asList = (value: unknown): string[] =>
       ? value.split(',').map((s) => s.trim())
       : []
 
-/** Runs a server that accepts connections and never answers: Algolia hung. */
-export async function startSilentServer(): Promise<{ host: string; close(): Promise<void> }> {
+/** Runs a server that accepts connections and never answers: Algolia hung. `requests` counts what it took. */
+export async function startSilentServer(): Promise<{
+  host: string
+  requests(): number
+  close(): Promise<void>
+}> {
   const sockets = new Set<Socket>()
-  const server = createServer(() => undefined)
+  let requests = 0
+  const server = createServer(() => {
+    requests += 1
+  })
   server.on('connection', (s) => {
     sockets.add(s)
     s.on('close', () => sockets.delete(s))
@@ -333,6 +340,7 @@ export async function startSilentServer(): Promise<{ host: string; close(): Prom
   const { port } = server.address() as AddressInfo
   return {
     host: `http://127.0.0.1:${port}`,
+    requests: () => requests,
     async close() {
       for (const s of sockets) s.destroy()
       await new Promise<void>((resolve) => server.close(() => resolve()))

@@ -36,6 +36,7 @@ import {
   type SnsMessage,
   type UnsignedSnsMessage,
 } from '../../../../../tests/support/ses'
+import { fakeTimeBounds, until } from '../../../../../tests/support/fake-clock'
 import { createSesEmailAdapter, type SesEmailAdapterConfig } from './index.js'
 
 // receiveWebhook on SNS posts of SES feedback. Each message is signed with a self-signed test certificate; `fetch` is
@@ -51,6 +52,8 @@ const logger: Logger = {
   child: () => logger,
 }
 
+/** The certificate fetch's time bound. */
+const FETCH_BOUND_MS = 5_000
 const BOUNCED = 'ses.bounced.v1'
 const COMPLAINED = 'ses.complained.v1'
 
@@ -663,23 +666,26 @@ describe('AC-3: only an AWS-signed message for the store topic, with a certifica
 
   it('AC-3: a certificate fetch that never answers is cut off by its time bound, and the message is not verified', async () => {
     const net = stubFetch((_url, call) => neverAnswers(call))
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const deadline = new Promise<string>((resolve) => {
-      timer = setTimeout(() => resolve('still waiting after 9 s'), 9_000)
-    })
-
-    const outcome = await Promise.race([
-      receive(
+    const realClock = fakeTimeBounds()
+    try {
+      let verified: boolean | undefined
+      void receive(
         adapter(),
         signedSnsPost(
           unsignedBounce({ messageId: 'hangs', to: 'h@ses.test', version: '2' }, freshCertUrl()),
         ),
-      ).then((d) => d.verified),
-      deadline,
-    ])
-    clearTimeout(timer)
+      ).then((d) => (verified = d.verified))
+      await until(() => net.calls.length > 0, 'the certificate was never fetched')
 
-    expect(outcome).toBe(false)
-    expect(net.calls.map((c) => c.signal?.aborted)).toEqual([true])
-  }, 15_000)
+      await vi.advanceTimersByTimeAsync(FETCH_BOUND_MS - 1)
+      const justBefore = [verified, ...net.calls.map((c) => c.signal?.aborted)]
+      await vi.advanceTimersByTimeAsync(1)
+      await until(() => verified !== undefined, 'the delivery never settled')
+
+      expect(justBefore).toEqual([undefined, false])
+      expect([verified, ...net.calls.map((c) => c.signal?.aborted)]).toEqual([false, true])
+    } finally {
+      realClock()
+    }
+  })
 })
